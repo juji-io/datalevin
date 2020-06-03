@@ -99,18 +99,18 @@
   (close [this] "Close this LMDB env")
   (get-dbis [this] "Return a map from dbi names to DBI (i.e. sub-db)")
   (set-dbis [this dbis] "Set a map from dbi names to DBI")
+  (transact [this txs]
+    "Update db, txs is a seq of [op dbi-name k v k-type v-type] when op is :put,
+     [op dbi-name k k-type] when op is :del; k-type and v-type can be :long,
+     :bytes, or :data")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]
     [this dbi-name k k-type v-type]
     "Get the value of a key, k-type and v-type can be :data, :bytes or :long")
-  (transact [this txs]
-    "Update db, txs is a seq of [op dbi-name k v k-type v-type] when op is :put,
-     [op dbi-name k k-type] when op is :del; k-type and v-type can be :long,
-     :bytes, or :data")
-  #_(get-range
+  (get-range
     [this dbi-name k-range]
-    [this dbi-name k-range v-type]
+    [this dbi-name k-range k-type]
     [this dbi-name k-range k-type v-type]
     "Return a seq of kv pair in the specified key range,
      k-type and v-type can be :data (default), :long, or :bytes"))
@@ -132,6 +132,20 @@
     (.get bb arr)
     arr))
 
+(defn- read-buffer
+  [^ByteBuffer bb v-type]
+  (case v-type
+    :long  (.getLong bb)
+    :bytes (copy-bytes bb)
+    :data  (when-let [bs (copy-bytes bb)]
+             (nippy/fast-thaw bs))))
+
+(defn- fetch-value
+  [dbi rtx k k-type v-type]
+  (put-key dbi k k-type)
+  (when-let [^ByteBuffer bb (get dbi rtx)]
+    (read-buffer bb v-type)))
+
 (deftype LMDB [^Env env
                ^String dir
                ^Txn rtx ; reuse a transaction for random reads
@@ -144,28 +158,6 @@
     dbis)
   (set-dbis [_ new-dbis]
     (set! dbis new-dbis))
-  (get-value [this dbi-name k]
-    (get-value this dbi-name k :data :data))
-  (get-value [this dbi-name k k-type]
-    (get-value this dbi-name k k-type :data))
-  (get-value [this dbi-name k k-type v-type]
-    (.renew rtx)
-    (try
-      (let [dbis            (get-dbis this)
-           ^ByteBuffer raw (if-let [dbi (dbis dbi-name)]
-                             (do (put-key dbi k k-type)
-                                 (get dbi rtx))
-                             (throw-dbi-not-open dbi-name dbis))]
-       (when raw
-         (case v-type
-           :long  (.getLong raw)
-           :bytes (copy-bytes raw)
-           :data  (when-let [bs (copy-bytes raw)]
-                    (nippy/fast-thaw bs)))))
-      (catch Exception e
-        (throw (ex-info (str "Error get-value: " (ex-message e))
-                        {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
-      (finally (.reset rtx))))
   (transact [this txs]
     (with-open [txn (.txnWrite env)]
       (try
@@ -187,9 +179,37 @@
           (double-db-size env)
           (transact this txs)))
       (.commit txn)))
-  #_(iterator [this txn dbi-name k-range]
+  (get-value [this dbi-name k]
+    (get-value this dbi-name k :data :data))
+  (get-value [this dbi-name k k-type]
+    (get-value this dbi-name k k-type :data))
+  (get-value [this dbi-name k k-type v-type]
+    (.renew rtx)
+    (try
       (if-let [^DBI dbi (dbis dbi-name)]
-      (.iterate ^Dbi (.-db dbi) txn k-range)
+        (fetch-value dbi rtx k k-type v-type)
+        (throw-dbi-not-open dbi-name dbis))
+      (catch Exception e
+        (throw (ex-info (str "Fail to get-value: " (ex-message e))
+                        {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
+      (finally (.reset rtx))))
+  (get-range [this dbi-name k-range]
+    (get-range this dbi-name k-range :data :data))
+  (get-range [this dbi-name k-range k-type]
+    (get-range this dbi-name k-range k-type :data))
+  (get-range [this dbi-name k-range k-type v-type]
+    (if-let [^DBI dbi (dbis dbi-name)]
+      (with-open [^Txn txn (.txnRead env)
+                  iterable (.iterate ^Dbi (.-db dbi) txn k-range)]
+        (loop [^Iterator iter (.iterator ^CursorIterable iterable)
+               holder         (transient [])]
+          (let [^CursorIterable$KeyVal kv (.next iter)
+                k                         (-> kv (.key) (read-buffer k-type))
+                v                         (-> kv (.val) (read-buffer v-type))
+                holder'                   (conj! holder [k v])]
+            (if (.hasNext iter)
+              (recur iter holder')
+              (persistent! holder')))))
       (throw-dbi-not-open dbi-name dbis))))
 
 (defn open-lmdb
@@ -222,3 +242,24 @@
          dbis (get-dbis lmdb)]
      (set-dbis lmdb (assoc dbis name dbi))
      dbi)))
+
+(defn long-buffer
+  "Create a ByteBuffer to hold a long value."
+  ([]
+   (ByteBuffer/allocateDirect Long/BYTES))
+  ([v]
+   (let [^ByteBuffer bb (long-buffer)]
+     (put-long bb v)
+     (.flip bb))))
+
+(defn bytes-buffer
+  "Create a ByteBuffer to hold a byte array."
+  [^bytes bs]
+  (let [^ByteBuffer bb (ByteBuffer/allocateDirect (alength bs))]
+    (put-bytes bb bs)
+    (.flip bb)))
+
+(defn data-buffer
+  "Create a ByteBuffer to hold a piece of Clojure data."
+  [data]
+  (bytes-buffer (nippy/fast-freeze data)))

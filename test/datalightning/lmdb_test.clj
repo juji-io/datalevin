@@ -7,9 +7,8 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
-  (:import [java.util UUID Arrays Iterator]
-           [java.nio ByteBuffer]
-           [org.lmdbjava KeyRange Txn CursorIterable CursorIterable$KeyVal]))
+  (:import [java.util UUID Arrays]
+           [org.lmdbjava KeyRange]))
 
 (def ^:dynamic lmdb nil)
 
@@ -27,6 +26,7 @@
 (use-fixtures :each lmdb-test-fixture)
 
 (deftest basic-ops-test
+  ;; transact
   (sut/transact lmdb
                 [[:put "a" 1 2]
                  [:put "a" 'a 1]
@@ -40,6 +40,8 @@
                  [:put "b" 1 :long :long :data]
                  [:put "b" :long 1 :data :long]
                  [:put "b" 2 3 :long :long]])
+
+  ;; get
   (is (= 2 (sut/get-value lmdb "a" 1)))
   (is (nil? (sut/get-value lmdb "a" 2)))
   (is (nil? (sut/get-value lmdb "b" 1)))
@@ -79,7 +81,7 @@
 
 (test/defspec data-ops-generative-test
   100
-  (prop/for-all [k (gen/such-that (partial data-size-less-than? 500)
+  (prop/for-all [k (gen/such-that (partial data-size-less-than? sut/+max-key-size+)
                                   gen/any-equatable)
                  v gen/any-equatable]
                 (let [_      (sut/transact lmdb [[:put "a" k v]])
@@ -95,7 +97,8 @@
                 (let [_      (sut/transact lmdb [[:put "a" k v :bytes :bytes]])
                       put-ok (Arrays/equals v
                                             ^bytes
-                                            (sut/get-value lmdb "a" k :bytes :bytes))
+                                            (sut/get-value
+                                             lmdb "a" k :bytes :bytes))
                       _      (sut/transact lmdb [[:del "a" k :bytes]])
                       del-ok (nil? (sut/get-value lmdb "a" k :bytes))]
                   (and put-ok del-ok))))
@@ -110,38 +113,19 @@
                       del-ok (nil? (sut/get-value lmdb "a" k))]
                   (and put-ok del-ok))))
 
-#_(deftest long-iterate-test
-  (let [s (range 0 100)
-        txs (map (fn [i] [:put-long-kv "a" i i]) s)
-        get-key  (fn [kv]
-                   (.getLong ^ByteBuffer (.key ^CursorIterable$KeyVal kv)))
-        ]
+(deftest get-range-test
+  (let [ks  (range 0 100)
+        vs  (map inc ks)
+        txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)
+        res (map (fn [k v] [k v]) ks vs)]
     (sut/transact lmdb txs)
-    (is (= (range 0 100)
-           (let [o (transient [])
-                 conj-i (fn [i]
-                          (let [x (get-key i)]
-                            (log/debug x)
-                            (conj! o x)))]
-             (with-open [^Txn txn (sut/read-txn lmdb)
-                        ^CursorIterable iterable
-                        (sut/iterator lmdb txn "a"
-                                      (KeyRange/all))]
-              (let [iter ^Iterator (.iterator iterable)
-                    ;; sfn  (fn sfn []
-                    ;;       (if-not (.hasNext iter)
-                    ;;         '()
-                    ;;         (lazy-seq (cons (get-key (.next iter))
-                    ;;                         (sfn)))))
-                    ]
-
-                ;; (doseq [i (sfn)]
-                ;;   (log/debug "ok" i))
-
-                (loop [i (.next iter)]
-                  (conj-i i)
-                    (when (.hasNext iter)
-                      (recur (.next iter))))
-                )
-               )
-             (persistent! o))))))
+    (is (= res (sut/get-range lmdb "a" (KeyRange/all) :long :long)))
+    (is (= (take 10 res)
+           (sut/get-range lmdb "a"
+                          (KeyRange/atMost (sut/long-buffer 9))
+                          :long :long)))
+    (is (= (->> res (drop 10) (take 10))
+           (sut/get-range lmdb "a"
+                          (KeyRange/closed (sut/long-buffer 10)
+                                           (sut/long-buffer 19))
+                          :long :long)))))
