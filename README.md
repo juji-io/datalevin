@@ -1,14 +1,25 @@
-# datalogrocks
+# DataLightning
 
-A Clojure library designed to ... well, that part is up to you.
+A port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
+engine on top of [Lightning Memory-Mapped Data Manager
+(LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
+
+Similar to Datascript, Datalightling is a library, meant to be embedded in applications to
+manage state. However, the data is persistent on disk, so the state survives
+application restarts and the data size can be larger than memory. LMDB's lightweight and crash free design together with its fast read performance
+is well suited as the durable storage for Datalightning.
+
+Datalightning currently only supports Clojure, but we plan to add ClojureScript and JS support
+in the future as node.js bindings for LMDB exist.
 
 ## Usage
 
 FIXME
 
+
 ## License
 
-Copyright © 2020 FIXME
+Copyright © 2020 Juji Inc.
 
 This program and the accompanying materials are made available under the
 terms of the Eclipse Public License 2.0 which is available at

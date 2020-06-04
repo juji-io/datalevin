@@ -51,8 +51,8 @@
     (.put bb bs)))
 
 (defn- put-data
-  [^ByteBuffer b x]
-  (put-bytes b (nippy/fast-freeze x)))
+  [^ByteBuffer bb x]
+  (put-bytes bb (nippy/fast-freeze x)))
 
 (defn- put-buffer
   [bf x t]
