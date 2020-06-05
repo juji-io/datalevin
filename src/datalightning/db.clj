@@ -85,7 +85,17 @@
 
 (declare empty-db)
 
-(d/defrecord-updatable DB [schema eavt aevt avet max-eid max-tx rschema hash]
+(d/defrecord-updatable DB
+  [schema
+   lmdb
+   eavt
+   aevt
+   avet
+   datoms
+   max-eid
+   max-tx
+   rschema
+   hash]
   Object               (hashCode [db]      (hash-db db))
   clojure.lang.IHashEq (hasheq [db]        (hash-db db))
   clojure.lang.Seqable (seq [db]           (seq eavt))

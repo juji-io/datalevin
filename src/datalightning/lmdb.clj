@@ -2,14 +2,12 @@
   "Wrapping LMDB"
   (:refer-clojure :exclude [get])
   (:require [datalightning.util :as util]
-            [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
            [java.util Iterator]
+           [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer]))
-
-;; (set! *unchecked-math* :warn-on-boxed)
 
 (def default-env-flags [EnvFlags/MDB_NOTLS
                         EnvFlags/MDB_NORDAHEAD])
@@ -28,38 +26,12 @@
   (put-val [this data v-type]
     "put data in val buffer, v-type can be :long, :bytes, :data"))
 
-(defn- check-buffer-overflow
-  [^long length ^long remaining]
-  (assert (<= length remaining)
-          (str "BufferOverlfow: trying to put "
-               length
-               " bytes while "
-               remaining
-               "remaining in the ByteBuffer.")))
-
-(defn- put-long
-  [^ByteBuffer bb n]
-  (assert (integer? n) "put-long requires an integer")
-  (check-buffer-overflow Long/BYTES (.remaining bb))
-  (.putLong bb ^long (long n)))
-
-(defn- put-bytes
-  [^ByteBuffer bb ^bytes bs]
-  (let [len (alength bs)]
-    (assert (< 0 len) "Cannot put empty byte array into ByteBuffer")
-    (check-buffer-overflow len (.remaining bb))
-    (.put bb bs)))
-
-(defn- put-data
-  [^ByteBuffer bb x]
-  (put-bytes bb (nippy/fast-freeze x)))
-
 (defn- put-buffer
   [bf x t]
   (case t
-    :long  (put-long bf x)
-    :bytes (put-bytes bf x)
-    (put-data bf x)))
+    :long  (util/put-long bf x)
+    :bytes (util/put-bytes bf x)
+    (util/put-data bf x)))
 
 (defprotocol IKV
   (put [this txn] [this txn put-flags]
@@ -97,8 +69,9 @@
 
 (defprotocol ILMDB
   (close [this] "Close this LMDB env")
-  (get-dbis [this] "Return a map from dbi names to DBI (i.e. sub-db)")
-  (set-dbis [this dbis] "Set a map from dbi names to DBI")
+  (open-dbi [this dbi-name] [this dbi-name key-size val-size flags]
+    "Open a named dbi (i.e. sub-db) in a LMDB")
+  (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
   (transact [this txs]
     "Update db, txs is a seq of [op dbi-name k v k-type v-type] when op is :put,
      [op dbi-name k k-type] when op is :del; k-type and v-type can be :long,
@@ -118,27 +91,12 @@
 (defn- double-db-size [^Env env]
   (.setMapSize env (* 2 (-> env .info .mapSize))))
 
-(defn- throw-dbi-not-open
-  [dbi-name dbis]
-  (throw (ex-info (str "`open-dbi` was not called for " dbi-name)
-                  {:dbis (keys dbis)})))
-
-(defn- copy-bytes
-  "copy content from a ByteBuffer to a byte array, for buffer content is gone
-  when txn is done"
-  [^ByteBuffer bb]
-  (let [n   (.remaining bb)
-        arr (byte-array n)]
-    (.get bb arr)
-    arr))
-
 (defn- read-buffer
   [^ByteBuffer bb v-type]
   (case v-type
-    :long  (.getLong bb)
-    :bytes (copy-bytes bb)
-    :data  (when-let [bs (copy-bytes bb)]
-             (nippy/fast-thaw bs))))
+    :long  (util/get-long bb)
+    :bytes (util/get-bytes bb)
+    (util/get-data bb)))
 
 (defn- fetch-value
   [dbi rtx k k-type v-type]
@@ -149,31 +107,38 @@
 (deftype LMDB [^Env env
                ^String dir
                ^Txn rtx ; reuse a transaction for random reads
-               ^:volatile-mutable dbis]
+               ^ConcurrentHashMap dbis]
   ILMDB
   (close [_]
     (.close rtx)
     (.close env))
-  (get-dbis [_]
-    dbis)
-  (set-dbis [_ new-dbis]
-    (set! dbis new-dbis))
+  (open-dbi [this dbi-name]
+    (open-dbi this dbi-name +max-key-size+ +default-val-size+ default-dbi-flags))
+  (open-dbi [_ dbi-name key-size val-size flags]
+    (let [kb   (ByteBuffer/allocateDirect key-size)
+          vb   (ByteBuffer/allocateDirect val-size)
+          db   (.openDbi env
+                         ^String dbi-name
+                         ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))
+          dbi  (->DBI db kb vb)]
+      (.put dbis dbi-name dbi)
+      dbi))
+  (get-dbi [_ dbi-name]
+    (or (.get dbis dbi-name)
+        (throw (ex-info (str "`open-dbi` was not called for " dbi-name) {}))))
   (transact [this txs]
     (with-open [txn (.txnWrite env)]
       (try
         (doseq [[op dbi-name k & r] txs
-                :let                [dbis (get-dbis this)
-                                     dbi (dbis dbi-name)]]
-          (if dbi
-            (case op
-              :put (let [[v kt vt] r]
-                     (put-key dbi k kt)
-                     (put-val dbi v vt)
-                     (put dbi txn))
-              :del (let [[kt] r]
-                     (put-key dbi k kt)
-                     (del dbi txn)))
-            (throw-dbi-not-open dbi-name dbis)))
+                :let                [dbi (get-dbi this dbi-name)]]
+          (case op
+            :put (let [[v kt vt] r]
+                   (put-key dbi k kt)
+                   (put-val dbi v vt)
+                   (put dbi txn))
+            :del (let [[kt] r]
+                   (put-key dbi k kt)
+                   (del dbi txn))))
         (catch Env$MapFullException e
           (.abort txn)
           (double-db-size env)
@@ -186,9 +151,7 @@
   (get-value [this dbi-name k k-type v-type]
     (.renew rtx)
     (try
-      (if-let [^DBI dbi (dbis dbi-name)]
-        (fetch-value dbi rtx k k-type v-type)
-        (throw-dbi-not-open dbi-name dbis))
+      (fetch-value (get-dbi this dbi-name) rtx k k-type v-type)
       (catch Exception e
         (throw (ex-info (str "Fail to get-value: " (ex-message e))
                         {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
@@ -198,7 +161,7 @@
   (get-range [this dbi-name k-range k-type]
     (get-range this dbi-name k-range k-type :data))
   (get-range [this dbi-name k-range k-type v-type]
-    (if-let [^DBI dbi (dbis dbi-name)]
+    (let [^DBI dbi (get-dbi this dbi-name)]
       (with-open [^Txn txn (.txnRead env)
                   iterable (.iterate ^Dbi (.-db dbi) txn k-range)]
         (loop [^Iterator iter (.iterator ^CursorIterable iterable)
@@ -209,8 +172,7 @@
                 holder'                   (conj! holder [k v])]
             (if (.hasNext iter)
               (recur iter holder')
-              (persistent! holder')))))
-      (throw-dbi-not-open dbi-name dbis))))
+              (persistent! holder'))))))))
 
 (defn open-lmdb
   "Open an LMDB env"
@@ -224,42 +186,4 @@
          ^Env env (.open builder file (into-array EnvFlags flags))
          ^Txn rtx (.txnRead env)]
      (.reset rtx)
-     (->LMDB env dir rtx {}))))
-
-(defn open-dbi
-  "Open a named dbi (i.e. sub-db) in a LMDB"
-  ([lmdb name]
-   (apply open-dbi
-          lmdb name +max-key-size+ +default-val-size+ default-dbi-flags))
-  ([lmdb name key-size val-size & flags]
-   (let [env  (.-env ^LMDB lmdb)
-         kb   (ByteBuffer/allocateDirect key-size)
-         vb   (ByteBuffer/allocateDirect val-size)
-         db   (.openDbi ^Env env
-                        ^String name
-                        ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))
-         dbi  (->DBI db kb vb)
-         dbis (get-dbis lmdb)]
-     (set-dbis lmdb (assoc dbis name dbi))
-     dbi)))
-
-(defn long-buffer
-  "Create a ByteBuffer to hold a long value."
-  ([]
-   (ByteBuffer/allocateDirect Long/BYTES))
-  ([v]
-   (let [^ByteBuffer bb (long-buffer)]
-     (put-long bb v)
-     (.flip bb))))
-
-(defn bytes-buffer
-  "Create a ByteBuffer to hold a byte array."
-  [^bytes bs]
-  (let [^ByteBuffer bb (ByteBuffer/allocateDirect (alength bs))]
-    (put-bytes bb bs)
-    (.flip bb)))
-
-(defn data-buffer
-  "Create a ByteBuffer to hold a piece of Clojure data."
-  [data]
-  (bytes-buffer (nippy/fast-freeze data)))
+     (->LMDB env dir rtx (ConcurrentHashMap.)))))

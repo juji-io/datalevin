@@ -2,6 +2,7 @@
   "Implement indices on LMDB"
   (:refer-clojure :exclude [conj disj empty])
   (:require [datalightning.lmdb :as lmdb]
+            [datalightning.util :as util]
             [datascript.db :as d]))
 
 (defprotocol IIndex
@@ -11,6 +12,8 @@
   (disj [this datom])
   (slice [this start-datom end-datom])
   (rslice [this start-datom end-datom]))
+
+(deftype EAVT [^datalightning.lmdb.DBI])
 
 ;; TODO: define a protocol for this, dispatch on type instead
 (defn empty-index

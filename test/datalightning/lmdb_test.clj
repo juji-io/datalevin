@@ -122,10 +122,10 @@
     (is (= res (sut/get-range lmdb "a" (KeyRange/all) :long :long)))
     (is (= (take 10 res)
            (sut/get-range lmdb "a"
-                          (KeyRange/atMost (sut/long-buffer 9))
+                          (KeyRange/atMost (util/long-buffer 9))
                           :long :long)))
     (is (= (->> res (drop 10) (take 10))
            (sut/get-range lmdb "a"
-                          (KeyRange/closed (sut/long-buffer 10)
-                                           (sut/long-buffer 19))
+                          (KeyRange/closed (util/long-buffer 10)
+                                           (util/long-buffer 19))
                           :long :long)))))
