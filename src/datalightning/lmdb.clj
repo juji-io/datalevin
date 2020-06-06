@@ -7,6 +7,7 @@
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
+           [java.util.concurrent.atomic AtomicLong AtomicBoolean]
            [java.nio ByteBuffer]))
 
 (def default-env-flags [EnvFlags/MDB_NOTLS
@@ -17,6 +18,7 @@
 
 (def ^:const +init-db-size+ 10) ; in megabytes
 (def ^:const +max-dbs+ 64)
+(def ^:const +max-readers+ 126)
 (def ^:const +max-key-size+ 511) ; in bytes
 (def ^:const +default-val-size+ 3456)
 
@@ -67,6 +69,60 @@
     (.delete db txn kb)
     (.clear kb)))
 
+(defprotocol IRtx
+  (close-rtx [this] "close the read-only transaction")
+  (in-use? [this] "return true if this transaction is in use")
+  (reset [this] "reset transaction so it can be reused upon renew")
+  (renew [this] "renew and return previously reset transaction for reuse"))
+
+(deftype Rtx [^Txn txn ^AtomicBoolean use]
+  IRtx
+  (close-rtx [_]
+    (.set use false)
+    (.close txn))
+  (in-use? [_]
+    (.get use))
+  (reset [_]
+    (locking use
+      (.set use false)
+      (.reset txn)))
+  (renew [this]
+    (locking use
+      (.set use true)
+      (.renew txn)
+      this)))
+
+(defn- new-rtx
+  [^Env env ^ConcurrentHashMap rtxs ^AtomicLong cnt]
+  (locking cnt
+    (let [rtx (->Rtx (.txnRead env) (AtomicBoolean. false))]
+      (reset rtx)
+      (.put rtxs (.get cnt) rtx)
+      (.addAndGet cnt 1)
+      (renew rtx))))
+
+(defprotocol IRtxPool
+  (close-pool [this] "Close all transactions in the pool")
+  (get-rtx [this] "Obtain a ready-to-use read-only transaction")
+  (return-rtx [this rtx] "Reset the transaction and return it to the pool"))
+
+(deftype RtxPool [^Env env ^ConcurrentHashMap rtxs ^AtomicLong cnt]
+  IRtxPool
+  (close-pool [_]
+    (doseq [^Rtx rtx (.values rtxs)] (close-rtx rtx)))
+  (get-rtx [_]
+    (let [total (.get cnt)]
+      (if (zero? total)
+       (new-rtx env rtxs cnt)
+       (loop [i (.getId ^Thread (Thread/currentThread))]
+         (let [i'        (mod i total)
+               ^Rtx rtxi (.get rtxs i')]
+          (if-not (in-use? rtxi)
+            (renew rtxi)
+            (if (< total +max-readers+)
+              (new-rtx env rtxs cnt)
+              (recur (inc i'))))))))))
+
 (defprotocol ILMDB
   (close [this] "Close this LMDB env")
   (open-dbi [this dbi-name] [this dbi-name key-size val-size flags]
@@ -106,11 +162,11 @@
 
 (deftype LMDB [^Env env
                ^String dir
-               ^Txn rtx ; reuse a transaction for random reads
+               ^RtxPool pool
                ^ConcurrentHashMap dbis]
   ILMDB
   (close [_]
-    (.close rtx)
+    (close pool)
     (.close env))
   (open-dbi [this dbi-name]
     (open-dbi this dbi-name +max-key-size+ +default-val-size+ default-dbi-flags))
@@ -182,6 +238,7 @@
    (let [file     (util/file dir)
          builder  (doto (Env/create)
                     (.setMapSize (* ^long size 1024 1024))
+                    (.setMaxReaders +max-readers+)
                     (.setMaxDbs +max-dbs+))
          ^Env env (.open builder file (into-array EnvFlags flags))
          ^Txn rtx (.txnRead env)]

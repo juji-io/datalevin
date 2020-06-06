@@ -5,8 +5,8 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [datascript "0.18.13"]
-                 ;; [org.lmdbjava/lmdbjava "0.7.0"]
-                 [org.lmdbjava/lmdbjava "0.8.0-SNAPSHOT"]
+                 [org.lmdbjava/lmdbjava "0.8.1"]
+                 ;[org.lmdbjava/lmdbjava "0.8.0-SNAPSHOT"]
                  [com.taoensso/nippy "2.15.0-RC1"]]
   :repositories [["public-github" {:url "git://github.com"}]
                  ["sonatype-oss-public" {:url "https://oss.sonatype.org/content/groups/public/"}]]
