@@ -73,6 +73,30 @@
   (is (thrown? java.lang.AssertionError
                (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
+(deftest get-range-test
+  (let [ks  (range 0 1000)
+        vs  (map inc ks)
+        txs (shuffle (map (fn [k v] [:put "a" k v :long :long]) ks vs))
+        res (map (fn [k v] [k v]) ks vs)]
+    (sut/transact lmdb txs)
+    (is (= res (sut/get-range lmdb "a" (KeyRange/all) :long :long)))
+    (is (= (take 10 res)
+           (sut/get-range lmdb "a"
+                          (KeyRange/atMost (util/long-buffer 9))
+                          :long :long)))
+    (is (= (->> res (drop 10) (take 10))
+           (sut/get-range lmdb "a"
+                          (KeyRange/closed (util/long-buffer 10)
+                                           (util/long-buffer 19))
+                          :long :long)))))
+
+(deftest multi-threads-get-value-test
+  (let [ks (range 0 1000)
+        vs (map inc ks)
+        txs (shuffle (map (fn [k v] [:put "a" k v :long :long]) ks vs))]
+    (sut/transact lmdb txs)
+    (is (= vs (pmap #(sut/get-value lmdb "a" % :long :long) ks)))))
+
 ;; generative tests
 
 (defn- data-size-less-than?
@@ -83,7 +107,8 @@
   100
   (prop/for-all [k (gen/such-that (partial data-size-less-than? sut/+max-key-size+)
                                   gen/any-equatable)
-                 v gen/any-equatable]
+                 v (gen/such-that (partial data-size-less-than? sut/+default-val-size+)
+                                  gen/any-equatable)]
                 (let [_      (sut/transact lmdb [[:put "a" k v]])
                       put-ok (= v (sut/get-value lmdb "a" k))
                       _      (sut/transact lmdb [[:del "a" k]])
@@ -112,20 +137,3 @@
                       _      (sut/transact lmdb [[:del "a" k :long]])
                       del-ok (nil? (sut/get-value lmdb "a" k))]
                   (and put-ok del-ok))))
-
-(deftest get-range-test
-  (let [ks  (range 0 100)
-        vs  (map inc ks)
-        txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)
-        res (map (fn [k v] [k v]) ks vs)]
-    (sut/transact lmdb txs)
-    (is (= res (sut/get-range lmdb "a" (KeyRange/all) :long :long)))
-    (is (= (take 10 res)
-           (sut/get-range lmdb "a"
-                          (KeyRange/atMost (util/long-buffer 9))
-                          :long :long)))
-    (is (= (->> res (drop 10) (take 10))
-           (sut/get-range lmdb "a"
-                          (KeyRange/closed (util/long-buffer 10)
-                                           (util/long-buffer 19))
-                          :long :long)))))
