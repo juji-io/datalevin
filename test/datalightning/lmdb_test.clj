@@ -74,7 +74,7 @@
                (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
 (deftest get-range-test
-  (let [ks  (range 0 1000)
+  (let [ks  (range 0 100)
         vs  (map inc ks)
         txs (shuffle (map (fn [k v] [:put "a" k v :long :long]) ks vs))
         res (map (fn [k v] [k v]) ks vs)]
@@ -91,7 +91,7 @@
                           :long :long)))))
 
 (deftest multi-threads-get-value-test
-  (let [ks (range 0 1000)
+  (let [ks (range 0 100)
         vs (map inc ks)
         txs (shuffle (map (fn [k v] [:put "a" k v :long :long]) ks vs))]
     (sut/transact lmdb txs)

@@ -119,38 +119,39 @@
                  eavt       (.-eavt db)
                  aevt       (.-aevt db)
                  avet       (.-avet db)]
-             (d/case-tree [e a (some? v) tx]
-                        [(idx/slice eavt (d/datom e a v tx) (d/datom e a v tx))                   ;; e a v tx
-                         (idx/slice eavt (d/datom e a v d/tx0) (d/datom e a v d/txmax))               ;; e a v _
-                         (->> (idx/slice eavt (d/datom e a nil d/tx0) (d/datom e a nil d/txmax))      ;; e a _ tx
-                              (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
-                         (idx/slice eavt (d/datom e a nil d/tx0) (d/datom e a nil d/txmax))           ;; e a _ _
-                         (->> (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))  ;; e _ v tx
-                              (filter (fn [^Datom d] (and (= v (.-v d))
-                                                         (= tx (d/datom-tx d))))))
-                         (->> (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))  ;; e _ v _
-                              (filter (fn [^Datom d] (= v (.-v d)))))
-                         (->> (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))  ;; e _ _ tx
-                              (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
-                         (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))       ;; e _ _ _
-                         (if (d/indexing? db a)                                                   ;; _ a v tx
-                           (->> (idx/slice avet (d/datom d/e0 a v d/tx0) (d/datom d/emax a v d/txmax))
-                                (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
-                           (->> (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))
-                                (filter (fn [^Datom d] (and (= v (.-v d))
-                                                           (= tx (d/datom-tx d)))))))
-                         (if (d/indexing? db a)                                                   ;; _ a v _
-                           (idx/slice avet (d/datom d/e0 a v d/tx0) (d/datom d/emax a v d/txmax))
-                           (->> (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))
-                                (filter (fn [^Datom d] (= v (.-v d))))))
-                         (->> (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))  ;; _ a _ tx
-                              (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
-                         (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))       ;; _ a _ _
-                         (filter (fn [^Datom d] (and (= v (.-v d))
-                                                    (= tx (d/datom-tx d)))) eavt)                ;; _ _ v tx
-                         (filter (fn [^Datom d] (= v (.-v d))) eavt)                            ;; _ _ v _
-                         (filter (fn [^Datom d] (= tx (d/datom-tx d))) eavt)                      ;; _ _ _ tx
-                         eavt])))                                                               ;; _ _ _ _
+             (d/case-tree
+              [e a (some? v) tx]
+              [(idx/slice eavt (d/datom e a v tx) (d/datom e a v tx))                   ;; e a v tx
+               (idx/slice eavt (d/datom e a v d/tx0) (d/datom e a v d/txmax))               ;; e a v _
+               (->> (idx/slice eavt (d/datom e a nil d/tx0) (d/datom e a nil d/txmax))      ;; e a _ tx
+                    (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
+               (idx/slice eavt (d/datom e a nil d/tx0) (d/datom e a nil d/txmax))           ;; e a _ _
+               (->> (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))  ;; e _ v tx
+                    (filter (fn [^Datom d] (and (= v (.-v d))
+                                               (= tx (d/datom-tx d))))))
+               (->> (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))  ;; e _ v _
+                    (filter (fn [^Datom d] (= v (.-v d)))))
+               (->> (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))  ;; e _ _ tx
+                    (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
+               (idx/slice eavt (d/datom e nil nil d/tx0) (d/datom e nil nil d/txmax))       ;; e _ _ _
+               (if (d/indexing? db a)                                                   ;; _ a v tx
+                 (->> (idx/slice avet (d/datom d/e0 a v d/tx0) (d/datom d/emax a v d/txmax))
+                      (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
+                 (->> (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))
+                      (filter (fn [^Datom d] (and (= v (.-v d))
+                                                 (= tx (d/datom-tx d)))))))
+               (if (d/indexing? db a)                                                   ;; _ a v _
+                 (idx/slice avet (d/datom d/e0 a v d/tx0) (d/datom d/emax a v d/txmax))
+                 (->> (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))
+                      (filter (fn [^Datom d] (= v (.-v d))))))
+               (->> (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))  ;; _ a _ tx
+                    (filter (fn [^Datom d] (= tx (d/datom-tx d)))))
+               (idx/slice aevt (d/datom d/e0 a nil d/tx0) (d/datom d/emax a nil d/txmax))       ;; _ a _ _
+               (filter (fn [^Datom d] (and (= v (.-v d))
+                                          (= tx (d/datom-tx d)))) eavt)                ;; _ _ v tx
+               (filter (fn [^Datom d] (= v (.-v d))) eavt)                            ;; _ _ v _
+               (filter (fn [^Datom d] (= tx (d/datom-tx d))) eavt)                      ;; _ _ _ tx
+               eavt])))                                                               ;; _ _ _ _
 
   d/IIndexAccess
   (-datoms [db index cs]
@@ -212,16 +213,17 @@
     (validate-schema-key a :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})))
 
 (defn ^DB empty-db
-  ([] (empty-db nil))
-  ([schema]
+  ([dir] (empty-db dir nil))
+  ([dir schema]
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
    (map->DB
     {:schema  schema
      :rschema (rschema (merge d/implicit-schema schema))
-     :eavt    (idx/empty-index :eavt)
-     :aevt    (idx/empty-index :aevt)
-     :avet    (idx/empty-index :avet)
+     :lmdb    (idx/init-system dir)
+     :eavt    (idx/->EAVT lmdb)
+     :aevt    (idx/->AEVT lmdb)
+     :avet    (idx/->AVET lmdb)
      :max-eid d/e0
      :max-tx  d/tx0
      :hash    (atom 0)})))

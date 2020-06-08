@@ -69,8 +69,11 @@
 
 (deftype RtxPool [^Env env ^ConcurrentHashMap rtxs ^:volatile-mutable cnt]
   IRtxPool
-  (close-pool [_]
-    (doseq [^Rtx rtx (.values rtxs)] (close-rtx rtx)))
+  (close-pool [this]
+    (locking this
+      (doseq [^Rtx rtx (.values rtxs)] (close-rtx rtx))
+      (.clear rtxs)
+      (set! cnt 0)))
   (new-rtx [this]
     (locking this
       (when (< cnt +max-readers+)
@@ -182,12 +185,12 @@
   (open-dbi [this dbi-name]
     (open-dbi this dbi-name +max-key-size+ +default-val-size+ default-dbi-flags))
   (open-dbi [_ dbi-name key-size val-size flags]
-    (let [kb   (ByteBuffer/allocateDirect key-size)
-          vb   (ByteBuffer/allocateDirect val-size)
-          db   (.openDbi env
-                         ^String dbi-name
-                         ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))
-          dbi  (->DBI db kb vb)]
+    (let [kb  (ByteBuffer/allocateDirect key-size)
+          vb  (ByteBuffer/allocateDirect val-size)
+          db  (.openDbi env
+                        ^String dbi-name
+                        ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))
+          dbi (->DBI db kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
   (get-dbi [_ dbi-name]
@@ -218,11 +221,11 @@
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
-       (fetch-value dbi rtx k k-type v-type)
-       (catch Exception e
-         (throw (ex-info (str "Fail to get-value: " (ex-message e))
-                         {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
-       (finally (reset rtx)))))
+        (fetch-value dbi rtx k k-type v-type)
+        (catch Exception e
+          (throw (ex-info (str "Fail to get-value: " (ex-message e))
+                          {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
+        (finally (reset rtx)))))
   (get-range [this dbi-name k-range]
     (get-range this dbi-name k-range :data :data))
   (get-range [this dbi-name k-range k-type]
@@ -241,8 +244,8 @@
 (defn open-lmdb
   "Open an LMDB env"
   ([dir]
-   (apply open-lmdb dir +init-db-size+ default-env-flags))
-  ([dir size & flags]
+   (open-lmdb dir +init-db-size+ default-env-flags))
+  ([dir size flags]
    (let [file          (util/file dir)
          builder       (doto (Env/create)
                          (.setMapSize (* ^long size 1024 1024))
