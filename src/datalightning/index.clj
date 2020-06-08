@@ -27,7 +27,6 @@
     (lmdb/open-dbi lmdb config )
     lmdb))
 
-
 (defprotocol IIndex
   (add [this datom])
   (rmv [this datom])
