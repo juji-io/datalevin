@@ -1,0 +1,8 @@
+#kaocha/v1 {
+  :tests [
+    {:id :clj
+     :ns-patterns ["datascript\\.test\\."]}
+    {:id :cljs
+     :type :kaocha.type/cljs
+     :ns-patterns ["datascript\\.test\\."]}
+]}
