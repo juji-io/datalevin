@@ -1,8 +1,8 @@
-(ns datalightning.index
+(ns datalevin.index
   "Implement indices on LMDB"
-  (:require [datalightning.lmdb :as lmdb]
-            [datalightning.util :as util])
-  (:import [datalightning.lmdb LMDB]
+  (:require [datalevin.lmdb :as lmdb]
+            [datalevin.util :as util])
+  (:import [datalevin.lmdb LMDB]
            [org.lmdbjava DbiFlags KeyRange]))
 
 ;; dbi-names

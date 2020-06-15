@@ -1,4 +1,4 @@
-(ns datalightning.util
+(ns datalevin.util
   (:require [clojure.java.io :as io]
             [taoensso.nippy :as nippy])
   (:import [java.io File]

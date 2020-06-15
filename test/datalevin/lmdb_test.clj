@@ -1,6 +1,6 @@
-(ns datalightning.lmdb-test
-  (:require [datalightning.lmdb :as sut]
-            [datalightning.util :as util]
+(ns datalevin.lmdb-test
+  (:require [datalevin.lmdb :as sut]
+            [datalevin.util :as util]
             [clojure.test :refer [deftest is use-fixtures]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
@@ -31,7 +31,7 @@
                 [[:put "a" 1 2]
                  [:put "a" 'a 1]
                  [:put "a" 5 {}]
-                 [:put "a" :datalightning ["hello" "world"]]
+                 [:put "a" :datalevin ["hello" "world"]]
                  [:put "b" 2 3]
                  [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
                  [:put "b" [-1 -235254457N] 5]
@@ -48,7 +48,7 @@
   (is (= 5 (sut/get-value lmdb "b" [-1 -235254457N])))
   (is (= 1 (sut/get-value lmdb "a" 'a)))
   (is (= {} (sut/get-value lmdb "a" 5)))
-  (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalightning)))
+  (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
   (is (= 3 (sut/get-value lmdb "b" 2)))
   (is (= 4 (sut/get-value lmdb "b" :a)))
   (is (= :bk (sut/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))

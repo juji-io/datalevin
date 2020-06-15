@@ -1,7 +1,7 @@
-(ns datalightning.lmdb
+(ns datalevin.lmdb
   "Wrapping LMDB"
   (:refer-clojure :exclude [get])
-  (:require [datalightning.util :as util]
+  (:require [datalevin.util :as util]
             [taoensso.timbre :as log])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
