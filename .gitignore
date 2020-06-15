@@ -6,6 +6,7 @@ pom.xml
 pom.xml.asc
 *.jar
 *.class
+<<<<<<< HEAD
 /.lein-*
 /.nrepl-port
 /.repl*
@@ -25,3 +26,13 @@ TODO.txt
 node_modules
 package-lock.json
 reading
+/lib/
+/classes/
+/target/
+/checkouts/
+.lein-deps-sum
+.lein-repl-history
+.lein-plugins/
+.lein-failures
+.nrepl-port
+.cpcache/
