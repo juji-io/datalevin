@@ -46,6 +46,12 @@
     (check-buffer-overflow len (.remaining bb))
     (.put bb bs)))
 
+(defn put-byte
+  [^ByteBuffer bb b]
+  (assert (instance? Byte b) "put-byte requires a byte")
+  (check-buffer-overflow 1 (.remaining bb))
+  (.put bb ^byte b))
+
 (defn put-data
   [^ByteBuffer bb x]
   (put-bytes bb (nippy/fast-freeze x)))
@@ -54,6 +60,11 @@
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
   (.getLong bb))
+
+(defn get-byte
+  "Get a byte from a ByteBuffer"
+  [^ByteBuffer bb]
+  (.get bb))
 
 (defn get-bytes
   "Copy content from a ByteBuffer to a byte array, useful for

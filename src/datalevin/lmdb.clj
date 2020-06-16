@@ -23,14 +23,15 @@
 
 (defprotocol IBuffer
   (put-key [this data k-type]
-    "put data in key buffer, k-type can be :long, :bytes, :data")
+    "put data in key buffer, k-type can be :long, :byte, :bytes, :data")
   (put-val [this data v-type]
-    "put data in val buffer, v-type can be :long, :bytes, :data"))
+    "put data in val buffer, v-type can be :long, :byte, :bytes, :data"))
 
 (defn- put-buffer
   [bf x t]
   (case t
     :long  (util/put-long bf x)
+    :byte  (util/put-byte bf x)
     :bytes (util/put-bytes bf x)
     (util/put-data bf x)))
 
@@ -135,18 +136,22 @@
   (transact [this txs]
     "Update db, txs is a seq of [op dbi-name k v k-type v-type] when op is :put,
      [op dbi-name k k-type] when op is :del; k-type and v-type can be :long,
-     :bytes, or :data")
+     :byte, :bytes, or :data")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]
     [this dbi-name k k-type v-type]
-    "Get the value of a key, k-type and v-type can be :data, :bytes or :long")
+    "Get the value of a key, k-type and v-type can be :data (default), :byte,
+     :bytes or :long")
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
     [this dbi-name k-range k-type v-type]
+    [this dbi-name k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range,
-     k-type and v-type can be :data (default), :long, or :bytes"))
+     k-type and v-type can be :data (default), :long, :byte, :bytes.
+     ignore-key? is true means that the key ByteBuffer will be returned
+     directly without decoding for its value"))
 
 (defn- double-db-size [^Env env]
   (.setMapSize env (* 2 (-> env .info .mapSize))))
@@ -154,7 +159,9 @@
 (defn- read-buffer
   [^ByteBuffer bb v-type]
   (case v-type
+    :raw   bb
     :long  (util/get-long bb)
+    :byte  (util/get-byte bb)
     :bytes (util/get-bytes bb)
     (util/get-data bb)))
 
@@ -165,12 +172,16 @@
     (read-buffer bb v-type)))
 
 (defn- fetch-range
-  [^DBI dbi ^Rtx rtx k-range k-type v-type]
+  [^DBI dbi ^Rtx rtx k-range k-type v-type ignore-key?]
   (with-open [iterable (.iterate ^Dbi (.-db dbi) (.-txn rtx) k-range)]
     (loop [^Iterator iter (.iterator ^CursorIterable iterable)
            holder         (transient [])]
       (let [^CursorIterable$KeyVal kv (.next iter)
-            k                         (-> kv (.key) (read-buffer k-type))
+            k                         (-> kv
+                                          (.key)
+                                          (#(if ignore-key?
+                                              %
+                                              (read-buffer % k-type))))
             v                         (-> kv (.val) (read-buffer v-type))
             holder'                   (conj! holder [k v])]
         (if (.hasNext iter)
@@ -227,14 +238,16 @@
                           {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
         (finally (reset rtx)))))
   (get-range [this dbi-name k-range]
-    (get-range this dbi-name k-range :data :data))
+    (get-range this dbi-name k-range :data :data false))
   (get-range [this dbi-name k-range k-type]
-    (get-range this dbi-name k-range k-type :data))
+    (get-range this dbi-name k-range k-type :data false))
   (get-range [this dbi-name k-range k-type v-type]
+    (get-range this dbi-name k-range k-type v-type false))
+  (get-range [this dbi-name k-range k-type v-type ignore-key?]
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
-        (fetch-range dbi rtx k-range k-type v-type)
+        (fetch-range dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (throw (ex-info (str "Fail to get-range: " (ex-message e))
                           {:dbi    dbi-name :k-range k-range

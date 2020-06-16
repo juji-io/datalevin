@@ -8,7 +8,7 @@
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [java.util UUID Arrays]
-           [org.lmdbjava KeyRange]))
+           [org.lmdbjava KeyRange DbiFlags]))
 
 (def ^:dynamic lmdb nil)
 
@@ -19,6 +19,7 @@
     (with-redefs [lmdb (sut/open-lmdb dir)]
       (sut/open-dbi lmdb "a")
       (sut/open-dbi lmdb "b")
+      (sut/open-dbi lmdb "c" Long/BYTES Long/BYTES sut/default-dbi-flags)
       (f)
       (sut/close lmdb)
       (util/delete-files dir))))
@@ -33,6 +34,7 @@
                  [:put "a" 5 {}]
                  [:put "a" :datalevin ["hello" "world"]]
                  [:put "b" 2 3]
+                 [:put "b" (byte 0x01) #{1 2} :byte :data]
                  [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
                  [:put "b" [-1 -235254457N] 5]
                  [:put "b" :a 4]
@@ -51,6 +53,7 @@
   (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
   (is (= 3 (sut/get-value lmdb "b" 2)))
   (is (= 4 (sut/get-value lmdb "b" :a)))
+  (is (= #{1 2} (sut/get-value lmdb "b" (byte 0x01) :byte)))
   (is (= :bk (sut/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
   (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
                      ^bytes (sut/get-value lmdb "b" :bv :data :bytes)))
@@ -74,26 +77,35 @@
                (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
 (deftest get-range-test
-  (let [ks  (range 0 100)
+  (let [ks  (shuffle (range 0 1000))
         vs  (map inc ks)
-        txs (shuffle (map (fn [k v] [:put "a" k v :long :long]) ks vs))
-        res (map (fn [k v] [k v]) ks vs)]
+        txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
+        res (sort-by first (map (fn [k v] [k v]) ks vs))]
     (sut/transact lmdb txs)
-    (is (= res (sut/get-range lmdb "a" (KeyRange/all) :long :long)))
+    (is (= res (sut/get-range lmdb "c" (KeyRange/all) :long :long)))
     (is (= (take 10 res)
-           (sut/get-range lmdb "a"
+           (sut/get-range lmdb "c"
                           (KeyRange/atMost (util/long-buffer 9))
                           :long :long)))
-    (is (= (->> res (drop 10) (take 10))
-           (sut/get-range lmdb "a"
+    (is (= (->> res (drop 10) (take 100))
+           (sut/get-range lmdb "c"
                           (KeyRange/closed (util/long-buffer 10)
-                                           (util/long-buffer 19))
-                          :long :long)))))
+                                           (util/long-buffer 109))
+                          :long :long)))
+    (is (= (->> res (drop 990))
+           (sut/get-range lmdb "c"
+                          (KeyRange/atLeast (util/long-buffer 990))
+                          :long :long)))
+    (is (= (->> res (drop 10) (take 100) (map second))
+           (map second (sut/get-range lmdb "c"
+                                      (KeyRange/closed (util/long-buffer 10)
+                                                       (util/long-buffer 109))
+                                      :long :long true))))))
 
 (deftest multi-threads-get-value-test
-  (let [ks (range 0 100)
+  (let [ks (shuffle (range 0 1000))
         vs (map inc ks)
-        txs (shuffle (map (fn [k v] [:put "a" k v :long :long]) ks vs))]
+        txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
     (sut/transact lmdb txs)
     (is (= vs (pmap #(sut/get-value lmdb "a" % :long :long) ks)))))
 
