@@ -66,7 +66,7 @@
   (is (nil? (sut/get-value lmdb "a" 1)))
 
   ;; non-existent dbi
-  (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "c" 1)))
+  (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1)))
 
   ;; larger val
   (sut/transact lmdb [[:put "a" 1 (range 1000)]])
