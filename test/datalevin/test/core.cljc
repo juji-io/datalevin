@@ -6,8 +6,8 @@
     [clojure.string :as str]
     [datalevin.core :as d]
     [datalevin.impl.entity :as de]
-    [datalevin.db :as db #?@(:cljs [:refer-macros [defrecord-updatable]]
-                              :clj  [:refer [defrecord-updatable]])]
+    [datalevin.util #?@(:cljs [:refer-macros [defrecord-updatable]]
+                             :clj  [:refer [defrecord-updatable]])]
     #?(:cljs [datalevin.test.cljs])))
 
 #?(:cljs
@@ -67,7 +67,7 @@
 
 (defn no-namespace-maps [t]
   (binding [*print-namespace-maps* false]
-    (t))) 
+    (t)))
 
 ;; Core tests
 

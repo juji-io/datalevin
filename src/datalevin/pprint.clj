@@ -1,7 +1,9 @@
 (ns datalevin.pprint
   (:require [datalevin.db :as db]
+            [datalevin.datom :as dd]
             [clojure.pprint :as pp])
-  (:import [datalevin.db Datom DB FilteredDB]))
+  (:import [datalevin.db DB FilteredDB]
+           [datalevin.datom Datom]))
 
 (defmethod pp/simple-dispatch Datom [^Datom d]
   (pp/pprint-logical-block :prefix "#datalevin/Datom [" :suffix "]"
@@ -14,10 +16,10 @@
                            (pp/write-out (.-v d))
                            (.write ^java.io.Writer *out* " ")
                            (pp/pprint-newline :linear)
-                           (pp/write-out (db/datom-tx d))
+                           (pp/write-out (dd/datom-tx d))
                            (.write ^java.io.Writer *out* " ")
                            (pp/pprint-newline :linear)
-                           (pp/write-out (db/datom-added d))))
+                           (pp/write-out (dd/datom-added d))))
 
 (defn- pp-db [db ^java.io.Writer w]
   (pp/pprint-logical-block :prefix "#datalevin/DB {" :suffix "}"
@@ -37,7 +39,7 @@
                                                      (pp/print-length-loop [aseq (seq db)]
                                                                            (when aseq
                                                                              (let [^Datom d (first aseq)]
-                                                                               (pp/write-out [(.-e d) (.-a d) (.-v d) (db/datom-tx d)])
+                                                                               (pp/write-out [(.-e d) (.-a d) (.-v d) (dd/datom-tx d)])
                                                                                (when (next aseq)
                                                                                  (.write w " ")
                                                                                  (pp/pprint-newline :linear)

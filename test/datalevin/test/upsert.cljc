@@ -4,6 +4,7 @@
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     [datalevin.core :as d]
     [datalevin.db :as db]
+    [datalevin.constants :refer [tx0]]
     [datalevin.test.core :as tdc]))
 
 #?(:cljs
@@ -31,7 +32,7 @@
                {:name "Ivan" :email "@1" :age 35}))
         (is (= (tempids tx)
                {}))))
-    
+
     (testing "upsert with tempid"
       (let [tx (d/with db [{:db/id -1 :name "Ivan" :age 35}])]
         (is (= (touched tx 1)
@@ -50,14 +51,14 @@
         (is (= (tempids tx)
                {"1" 1
                 "2" 2}))))
-    
+
     (testing "upsert by 2 attrs with tempid"
       (let [tx (d/with db [{:db/id -1 :name "Ivan" :email "@1" :age 35}])]
         (is (= (touched tx 1)
                {:name "Ivan" :email "@1" :age 35}))
         (is (= (tempids tx)
                {-1 1}))))
-    
+
     (testing "upsert to two entities, resolve to same tempid"
       (let [tx (d/with db [{:db/id -1 :name "Ivan" :age 35}
                            {:db/id -1 :name "Ivan" :age 36}])]
@@ -95,7 +96,7 @@
     (testing "upsert conficts with non-existing id"
       (is (thrown-with-msg? Throwable #"Conflicting upsert: \[:name \"Ivan\"\] resolves to 1, but entity already has :db/id 3"
         (d/with db [{:db/id 3 :name "Ivan" :age 36}]))))
-    
+
     (testing "upsert by non-existing value resolves as update"
       (let [tx (d/with db [{:name "Ivan" :email "@3" :age 35}])]
         (is (= (touched tx 1)
@@ -114,7 +115,7 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {3 3}))))
-    
+
     (testing "upsert over intermediate db, tempids"
       (let [tx (d/with db [{:db/id -1 :name "Igor" :age 35}
                            {:db/id -1 :name "Igor" :age 36}])]
@@ -155,9 +156,9 @@
                          {:db/id -1 :name "Ivan" :age 36}])]
       (is (= #{[1 :age 36] [1 :name "Ivan"]}
              (tdc/all-datoms (:db-after tx))))
-      (is (= {-1 1, :db/current-tx (+ d/tx0 2)}
+      (is (= {-1 1, :db/current-tx (+ tx0 2)}
              (:tempids tx)))))
-  
+
   (let [db (-> (d/empty-db {:name  { :db/unique :db.unique/identity }})
                (d/db-with [{:db/id -1 :name "Ivan"}
                            {:db/id -2 :name "Oleg"}]))]
@@ -190,11 +191,11 @@
       [[:db/add -1 :name "Ivan"]
        [:db/add -1 :age 12]]
       #{[1 :age 12] [1 :name "Ivan"]}
-         
+
       [[:db/add -1 :age 12]
        [:db/add -1 :name "Ivan"]]
       #{[1 :age 12] [1 :name "Ivan"]}))
-  
+
   (let [db (-> (d/empty-db {:name  { :db/unique :db.unique/identity }})
                (d/db-with [[:db/add -1 :name "Ivan"]
                            [:db/add -2 :name "Oleg"]]))]

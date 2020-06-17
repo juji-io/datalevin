@@ -4,6 +4,8 @@
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     [datalevin.core :as d]
     [datalevin.db :as db]
+    [datalevin.datom :as dd]
+    [datalevin.constants :refer [tx0]]
     [datalevin.test.core :as tdc]))
 
 (deftest test-listen!
@@ -21,18 +23,18 @@
                        [:db/retract 4 :name "Evgeny"]])
     (d/unlisten! conn :test)
     (d/transact! conn [[:db/add -1 :name "Geogry"]])
-    
+
     (is (= (:tx-data (first @reports))
-           [(db/datom 3 :name "Dima"   (+ d/tx0 2) true)
-            (db/datom 3 :age 19        (+ d/tx0 2) true)
-            (db/datom 4 :name "Evgeny" (+ d/tx0 2) true)]))
+           [(dd/datom 3 :name "Dima"   (+ tx0 2) true)
+            (dd/datom 3 :age 19        (+ tx0 2) true)
+            (dd/datom 4 :name "Evgeny" (+ tx0 2) true)]))
     (is (= (:tx-meta (first @reports))
            {:some-metadata 1}))
     (is (= (:tx-data (second @reports))
-           [(db/datom 5 :name "Fedor"  (+ d/tx0 3) true)
-            (db/datom 1 :name "Alex"   (+ d/tx0 3) false)  ;; update -> retract
-            (db/datom 1 :name "Alex2"  (+ d/tx0 3) true)   ;;         + add
-            (db/datom 4 :name "Evgeny" (+ d/tx0 3) false)]))
+           [(dd/datom 5 :name "Fedor"  (+ tx0 3) true)
+            (dd/datom 1 :name "Alex"   (+ tx0 3) false)  ;; update -> retract
+            (dd/datom 1 :name "Alex2"  (+ tx0 3) true)   ;;         + add
+            (dd/datom 4 :name "Evgeny" (+ tx0 3) false)]))
     (is (= (:tx-meta (second @reports))
            nil))
     ))

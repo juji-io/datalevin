@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.pull-parser
   (:require
-   [datalevin.db :as db #?(:cljs :refer-macros :clj :refer) [raise]]))
+   [datalevin.db :as db]
+   [datalevin.util #?(:cljs :refer-macros :clj :refer) [raise]]))
 
 (defrecord PullSpec [wildcard? attrs])
 
@@ -46,7 +47,7 @@
   IPullSpecComponent
   (-as-spec [this]
     (-> (-as-spec attr)
-        (update 1 merge opts))))    
+        (update 1 merge opts))))
 
 (defn- aggregate-specs
   [res part]

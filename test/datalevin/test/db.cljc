@@ -4,8 +4,9 @@
     #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     [datalevin.core :as d]
-    [datalevin.db :as db #?@(:cljs [:refer-macros [defrecord-updatable]]
-                                      :clj  [:refer [defrecord-updatable]])]))
+    [datalevin.db :as db]
+    [datalevin.util #?@(:cljs [:refer-macros [defrecord-updatable]]
+                             :clj  [:refer [defrecord-updatable]])]))
 
 ;;
 ;; verify that defrecord-updatable works with compiler/core macro configuration

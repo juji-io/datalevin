@@ -3,7 +3,7 @@
   #?(:cljs (:require-macros [datalevin.parser :refer [deftrecord]]))
   (:require
     [clojure.set :as set]
-    [datalevin.db :as db #?(:cljs :refer-macros :clj :refer) [raise]]))
+    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]))
 
 ;; utils
 
@@ -53,7 +53,7 @@
     (cond
       (pred form)                    (conj acc form)
       (satisfies? ITraversable form) (-collect form pred acc)
-      (db/seqable? form)             (reduce (fn [acc form] (collect pred form acc)) acc form)
+      (u/seqable? form)             (reduce (fn [acc form] (collect pred form acc)) acc form)
       :else                          acc)))
 
 (defn distinct? [coll]
@@ -226,7 +226,7 @@
 ;; find-coll        = [ find-elem '...' ]
 ;; find-scalar      = find-elem '.'
 ;; find-tuple       = [ find-elem+ ]
-;; find-elem        = (variable | pull-expr | aggregate | custom-aggregate) 
+;; find-elem        = (variable | pull-expr | aggregate | custom-aggregate)
 ;; pull-expr        = [ 'pull' src-var? variable pull-pattern ]
 ;; pull-pattern     = (constant | variable | plain-symbol)
 ;; aggregate        = [ aggregate-fn fn-arg+ ]
@@ -301,7 +301,7 @@
       (let [long?         (= (count form) 4)
             src           (if long? (nth form 1) '$)
             [var pattern] (if long? (nnext form) (next form))
-            src*          (parse-src-var src)                    
+            src*          (parse-src-var src)
             var*          (parse-variable var)
             pattern*      (or (parse-variable pattern)
                               (parse-plain-variable pattern)
@@ -415,7 +415,7 @@
     (if-let [source* (parse-src-var (first form))]
       [source* (next form)]
       [(DefaultSrc.) form])))
-      
+
 (defn parse-pattern [form]
   (when-let [[source* next-form] (take-source form)]
     (when-let [pattern* (parse-seq parse-pattern-el next-form)]
@@ -481,7 +481,7 @@
 
 (defn- collect-vars [form]
   (collect-vars-acc [] form))
-    
+
 (defn collect-vars-distinct [form]
   (vec (distinct (collect-vars form))))
 
@@ -587,7 +587,7 @@
 
 
 (defn parse-clause [form]
-  (or 
+  (or
       (parse-not       form)
       (parse-not-join  form)
       (parse-or        form)
@@ -691,7 +691,7 @@
     (when-not (empty? shared)
       (raise ":find and :with should not use same variables: " (mapv :symbol shared)
              {:error :parser/query, :vars shared, :form form})))
-  
+
   (let [in-vars    (collect-vars (:qin q))
         in-sources (collect #(instance? SrcVar %) (:qin q))
         in-rules   (collect #(instance? RulesVar %) (:qin q))]
@@ -700,19 +700,19 @@
                    (distinct? in-rules))
       (raise "Vars used in :in should be distinct"
              {:error :parser/query, :form form})))
-  
+
   (let [with-vars (collect-vars (:qwith q))]
     (when-not (distinct? with-vars)
       (raise "Vars used in :with should be distinct"
              {:error :parser/query, :form form})))
-  
+
   (let [in-sources    (collect #(instance? SrcVar %) (:qin q) #{})
         where-sources (collect #(instance? SrcVar %) (:qwhere q) #{})
         unknown       (set/difference where-sources in-sources)]
     (when-not (empty? unknown)
       (raise "Where uses unknown source vars: " (mapv :symbol unknown)
              {:error :parser/query, :vars unknown, :form form})))
-  
+
   (let [rule-exprs (collect #(instance? RuleExpr %) (:qwhere q))
         rules-vars (collect #(instance? RulesVar %) (:qin q))]
     (when (and (not (empty? rule-exprs))

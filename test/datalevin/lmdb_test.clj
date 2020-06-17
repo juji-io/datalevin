@@ -1,6 +1,6 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as sut]
-            [datalevin.util :as util]
+            [datalevin.bits :as b]
             [clojure.test :refer [deftest is use-fixtures]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
@@ -22,7 +22,7 @@
       (sut/open-dbi lmdb "c" Long/BYTES Long/BYTES sut/default-dbi-flags)
       (f)
       (sut/close lmdb)
-      (util/delete-files dir))))
+      (b/delete-files dir))))
 
 (use-fixtures :each lmdb-test-fixture)
 
@@ -85,22 +85,22 @@
     (is (= res (sut/get-range lmdb "c" (KeyRange/all) :long :long)))
     (is (= (take 10 res)
            (sut/get-range lmdb "c"
-                          (KeyRange/atMost (util/long-buffer 9))
+                          (KeyRange/atMost (b/long-buffer 9))
                           :long :long)))
     (is (= (->> res (drop 10) (take 100))
            (sut/get-range lmdb "c"
-                          (KeyRange/closed (util/long-buffer 10)
-                                           (util/long-buffer 109))
+                          (KeyRange/closed (b/long-buffer 10)
+                                           (b/long-buffer 109))
                           :long :long)))
     (is (= (->> res (drop 990))
            (sut/get-range lmdb "c"
-                          (KeyRange/atLeast (util/long-buffer 990))
+                          (KeyRange/atLeast (b/long-buffer 990))
                           :long :long)))
     (is (= (->> res (drop 10) (take 100) (map second))
-           (map second (sut/get-range lmdb "c"
-                                      (KeyRange/closed (util/long-buffer 10)
-                                                       (util/long-buffer 109))
-                                      :long :long true))))))
+           (sut/get-range lmdb "c"
+                          (KeyRange/closed (b/long-buffer 10)
+                                           (b/long-buffer 109))
+                          :long :long true)))))
 
 (deftest multi-threads-get-value-test
   (let [ks (shuffle (range 0 1000))

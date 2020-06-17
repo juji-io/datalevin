@@ -5,6 +5,8 @@
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     [datalevin.core :as d]
     [datalevin.db :as db]
+    [datalevin.datom :as dd]
+    [datalevin.constants :refer [tx0]]
     [datalevin.test.core :as tdc])
     #?(:clj
       (:import [clojure.lang ExceptionInfo])))
@@ -20,14 +22,14 @@
 (deftest test-pr-read
   (doseq [[r read-fn] readers]
     (testing r
-      (let [d (db/datom 1 :name "Oleg" 17 true)]
+      (let [d (dd/datom 1 :name "Oleg" 17 true)]
         (is (= (pr-str d) "#datalevin/Datom [1 :name \"Oleg\" 17 true]"))
         (is (= d (read-fn (pr-str d)))))
-      
-      (let [d (db/datom 1 :name 3)]
+
+      (let [d (dd/datom 1 :name 3)]
         (is (= (pr-str d) "#datalevin/Datom [1 :name 3 536870912 true]"))
         (is (= d (read-fn (pr-str d)))))
-      
+
       (let [db (-> (d/empty-db {:name {:db/unique :db.unique/identity}})
                    (d/db-with [ [:db/add 1 :name "Petr"]
                                 [:db/add 1 :age 44] ])
@@ -62,13 +64,13 @@
    [3 :follows 2]
    [3 :attach  { :another :map }]
    [3 :avatar  30]
-   [4 :name    "Nick" d/tx0]
+   [4 :name    "Nick" tx0]
    ;; check that facts about transactions doesn’t set off max-eid
-   [d/tx0      :txInstant 0xdeadbeef]
+   [tx0      :txInstant 0xdeadbeef]
    [30 :url    "https://" ]])
 
 
-(def schema 
+(def schema
   { :name    { } ;; nothing special about name
     :aka     { :db/cardinality :db.cardinality/many }
     :age     { :db/index true }
@@ -94,7 +96,7 @@
       (let [assertions [ [:db/add -1 :name "Lex"] ]]
         (is (= (d/db-with db-init assertions)
                (d/db-with db-transact assertions)))))
-    
+
     (testing "Roundtrip"
       (doseq [[r read-fn] readers]
         (testing r

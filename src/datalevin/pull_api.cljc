@@ -4,7 +4,7 @@
     [datalevin.pull-parser :as dpp #?@(:cljs [:refer [PullSpec]])])
     #?(:clj
       (:import
-        [datalevin.db Datom]
+        [datalevin.datom Datom]
         [datalevin.pull_parser PullSpec])))
 
 (defn- into!
@@ -135,8 +135,8 @@
                (mapv datom-val)
                (expand-frame parent eid attr-key multi?)
                (conj frames parent))
-          
-          :else 
+
+          :else
           (let [as-value  (cond->> datom-val
                             ref? (comp #(hash-map :db/id %)))
                 single?   (not multi?)]

@@ -4,6 +4,7 @@
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     [datalevin.core :as d]
     [datalevin.db :as db]
+    [datalevin.constants :refer [tx0]]
     [datalevin.test.core :as tdc]))
 
 (deftest test-with
@@ -40,7 +41,7 @@
         (is (= (d/q '[:find ?v
                       :where [1 :name ?v]] db)
                #{["Petr"]})))))
-  
+
   (testing "Skipping nils in tx"
     (let [db (-> (d/empty-db)
                  (d/db-with [[:db/add 1 :attr 2]
@@ -54,20 +55,20 @@
   (testing "keeps tx number"
     (let [db (-> (d/empty-db)
                  (d/db-with [(d/datom 1 :name "Oleg")
-                             (d/datom 1 :age  17 (+ 1 d/tx0))
-                             [:db/add 1 :aka  "x" (+ 2 d/tx0)]]))]
-      (is (= [[1 :age  17     (+ 1 d/tx0)]
-              [1 :aka  "x"    (+ 2 d/tx0)]
-              [1 :name "Oleg" d/tx0      ]]
+                             (d/datom 1 :age  17 (+ 1 tx0))
+                             [:db/add 1 :aka  "x" (+ 2 tx0)]]))]
+      (is (= [[1 :age  17     (+ 1 tx0)]
+              [1 :aka  "x"    (+ 2 tx0)]
+              [1 :name "Oleg" tx0      ]]
              (map (juxt :e :a :v :tx)
                   (d/datoms db :eavt))))))
-  
+
   (testing "retraction"
     (let [db (-> (d/empty-db)
                  (d/db-with [(d/datom 1 :name "Oleg")
                              (d/datom 1 :age  17)
-                             (d/datom 1 :name "Oleg" d/tx0 false)]))]
-      (is (= [[1 :age 17 d/tx0]]
+                             (d/datom 1 :name "Oleg" tx0 false)]))]
+      (is (= [[1 :age 17 tx0]]
              (map (juxt :e :a :v :tx)
                   (d/datoms db :eavt)))))))
 
@@ -90,11 +91,11 @@
     (testing "Retract entitiy with incoming refs"
       (is (= (d/q '[:find ?e :where [1 :friend ?e]] db)
              #{[2]}))
-      
+
       (let [db (d/db-with db [ [:db.fn/retractEntity 2] ])]
         (is (= (d/q '[:find ?e :where [1 :friend ?e]] db)
                #{}))))
-    
+
     (let [db (d/db-with db [ [:db.fn/retractAttribute 1 :name] ])]
       (is (= (d/q '[:find ?a ?v
                     :where [1 ?a ?v]] db)
@@ -129,12 +130,12 @@
                     db)
                #{[:friend 2] [:age 15] [:name "Ivan"]}))))))
 
-  
+
 (deftest test-retract-fns-not-found
   (let [db  (-> (d/empty-db { :name { :db/unique :db.unique/identity } })
                 (d/db-with  [[:db/add 1 :name "Ivan"]]))
         all #(vec (d/datoms % :eavt))]
-    (are [op] (= [(d/datom 1 :name "Ivan")] 
+    (are [op] (= [(d/datom 1 :name "Ivan")]
                  (all (d/db-with db [op])))
       [:db/retract             2 :name "Petr"]
       [:db.fn/retractAttribute 2 :name]
@@ -143,8 +144,8 @@
       [:db/retract             [:name "Petr"] :name "Petr"]
       [:db.fn/retractAttribute [:name "Petr"] :name]
       [:db.fn/retractEntity    [:name "Petr"]])
-         
-    (are [op] (= [[] []] 
+
+    (are [op] (= [[] []]
                  [(all (d/db-with db [op]))
                   (all (d/db-with db [op op]))]) ;; idempotency
       [:db/retract             1 :name "Ivan"]
@@ -178,7 +179,7 @@
     (is (= (:weight (d/entity @conn 1)) 400))
     (is (thrown-msg? ":db.fn/cas failed on datom [1 :weight 400], expected 200"
           (d/transact! conn [[:db.fn/cas 1 :weight 200 210]]))))
-  
+
   (let [conn (d/create-conn {:label { :db/cardinality :db.cardinality/many }})]
     (d/transact! conn [[:db/add 1 :label :x]])
     (d/transact! conn [[:db/add 1 :label :y]])
@@ -260,11 +261,11 @@
                                 [:db/add -2 :age 22]])
         t2   (d/transact! conn [[:db/add "Serg" :name "Sergey"]
                                 [:db/add "Serg" :age 30]])]
-    (is (= (:tempids t1) { -1 1, -2 2, :db/current-tx (+ d/tx0 1) }))
-    (is (= (:tempids t2) { "Serg" 3, :db/current-tx (+ d/tx0 2) }))
-    (is (= #{[1 "Ivan" 19   (+ d/tx0 1)]
-             [2 "Petr" 22   (+ d/tx0 1)]
-             [3 "Sergey" 30 (+ d/tx0 2)]}
+    (is (= (:tempids t1) { -1 1, -2 2, :db/current-tx (+ tx0 1) }))
+    (is (= (:tempids t2) { "Serg" 3, :db/current-tx (+ tx0 2) }))
+    (is (= #{[1 "Ivan" 19   (+ tx0 1)]
+             [2 "Petr" 22   (+ tx0 1)]
+             [3 "Sergey" 30 (+ tx0 2)]}
            (d/q '[:find  ?e ?n ?a ?t
                   :where [?e :name ?n ?t]
                          [?e :age ?a]] @conn)))))
@@ -296,7 +297,7 @@
             :where [?e :name ?n]
                    [?e :friend ?fe]
                    [?fe :name ?fn]]]
-    (is (= (:tempids tx) { 1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ d/tx0 1) }))
+    (is (= (:tempids tx) { 1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1) }))
     (is (= (d/q q @conn "Sergey") #{["Ivan"] ["Petr"]}))
     (is (= (d/q q @conn "Boris") #{["Oleg"]}))
     (is (= (d/q q @conn "Oleg") #{["Boris"]}))))
@@ -312,21 +313,21 @@
                                     [:db/add -1 :created-at tx-tempid]])]
         (is (= (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)
               #{[1 :name "X"]
-                [1 :created-at (+ d/tx0 1)]
-                [(+ d/tx0 1) :prop1 "prop1"]
-                [(+ d/tx0 1) :prop2 "prop2"]
+                [1 :created-at (+ tx0 1)]
+                [(+ tx0 1) :prop1 "prop1"]
+                [(+ tx0 1) :prop2 "prop2"]
                 [2 :name "Y"]
-                [2 :created-at (+ d/tx0 1)]}))
-        (is (= (:tempids tx1) (assoc {1 1, -1 2, :db/current-tx (+ d/tx0 1)}
-                                     tx-tempid (+ d/tx0 1))))
+                [2 :created-at (+ tx0 1)]}))
+        (is (= (:tempids tx1) (assoc {1 1, -1 2, :db/current-tx (+ tx0 1)}
+                                     tx-tempid (+ tx0 1))))
         (let [tx2   (d/transact! conn [[:db/add tx-tempid :prop3 "prop3"]])
               tx-id (get-in tx2 [:tempids tx-tempid])]
-          (is (= tx-id (+ d/tx0 2)))
+          (is (= tx-id (+ tx0 2)))
           (is (= (into {} (d/entity @conn tx-id))
                  {:prop3 "prop3"})))
         (let [tx3   (d/transact! conn [{:db/id tx-tempid, :prop4 "prop4"}])
               tx-id (get-in tx3 [:tempids tx-tempid])]
-          (is (= tx-id (+ d/tx0 3)))
+          (is (= tx-id (+ tx0 3)))
           (is (= (into {} (d/entity @conn tx-id))
                  {:prop4 "prop4"})))))))
 
@@ -342,5 +343,5 @@
             (d/datom 1 :a3 3)
             (d/datom 2 :a1 1)
             (d/datom 2 :a2 2)
-            (d/datom 2 :a3 3)] 
+            (d/datom 2 :a3 3)]
            (:tx-data report)))))

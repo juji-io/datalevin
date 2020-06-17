@@ -3,6 +3,7 @@
     [clojure.set :as set]
     [datalevin.core :as d]
     [datalevin.db :as db]
+    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
     [datalevin.query :as dq]
     [datalevin.lru :as lru]
     [me.tonsky.persistent-sorted-set.arrays :as da]
@@ -10,13 +11,13 @@
                                                  Constant DefaultSrc Pattern RulesVar SrcVar Variable
                                                  Not Or And Predicate PlainSymbol]])])
   #?(:clj
-    (:import 
+    (:import
       [datalevin.parser
         BindColl BindIgnore BindScalar BindTuple
         Constant DefaultSrc Pattern RulesVar SrcVar Variable
         Not Or And Predicate PlainSymbol]
       [clojure.lang     IReduceInit Counted]
-      [datalevin.db  Datom])))
+      [datalevin.datom  Datom])))
 
 (declare resolve-clauses collect-rel-xf collect-to)
 
@@ -55,20 +56,20 @@
        (reify
          NativeColl
          (-native-coll [_] m)
-         
+
          clojure.lang.IEditableCollection
          (asTransient [this] this)
-         
+
          clojure.lang.ITransientAssociative
          (assoc [this k v] (.put m k v) this)
-         
+
          clojure.lang.ITransientCollection
          (persistent [this] this)
-         
+
          clojure.lang.IPersistentCollection
          clojure.lang.Counted
          (count [_] (.size m))
-         
+
          clojure.lang.ILookup
          (valAt [_ k] (.get m k))
          (valAt [_ k nf] (or (.get m k) nf))))
@@ -80,18 +81,18 @@
        (reify
          NativeColl
          (-native-coll [_] l)
-         
+
          clojure.lang.IEditableCollection
          (asTransient [this] this)
-         
+
          clojure.lang.ITransientCollection
          (conj [this v] (.add l v) this)
          (persistent [this] this)
-         
+
          clojure.lang.IPersistentCollection
          clojure.lang.Counted
          (count [_] (.size l))
-         
+
          clojure.lang.IReduceInit
          (reduce [_ f s]
            (loop [i   0
@@ -104,17 +105,17 @@
        (reify
          NativeColl
          (-native-coll [_] arr)
-         
+
          IEditableCollection
          (-as-transient [this] this)
-         
+
          ITransientCollection
          (-conj! [this v] (.push arr v) this)
          (-persistent! [this] this)
-         
+
          ICounted
          (-count [_] (alength arr))
-         
+
          IReduce
          (-reduce [_ f s]
            (loop [i   0
@@ -129,21 +130,21 @@
        (reify
          NativeColl
          (-native-coll [_] set)
-         
+
          clojure.lang.IEditableCollection
          (asTransient [this] this)
-         
+
          clojure.lang.ITransientCollection
          (conj [this v] (.add set v) this)
          (persistent [this] this)
-         
+
          clojure.lang.IPersistentCollection
          clojure.lang.IPersistentSet
          (contains [_ k] (.contains set k))
 
          clojure.lang.Counted
          (count [_] (.size set))
-         
+
          clojure.lang.IReduceInit
          (reduce [_ f s]
            (let [iter (.iterator set)]
@@ -186,7 +187,7 @@
 
 ;; (declare equiv-tuple)
 
-;; (deftype Tuple [arr hash]  
+;; (deftype Tuple [arr hash]
 ;;   #?@(
 ;;     :cljs [
 ;;       Object (equiv  [this other] (equiv-tuple this other))
@@ -309,7 +310,7 @@
 
 ;;; ProdRelation
 
-;; (deftype ProdRelation [rel1 rel2]  
+;; (deftype ProdRelation [rel1 rel2]
 ;;   IRelation
 ;;   (-symbols [_] (concatv (-symbols rel1) (-symbols rel2)))
 ;;   (-arity   [_] (+ (-arity rel1) (-arity rel2)))
@@ -442,7 +443,7 @@
         arity       (+ arity1 arity2)
         target-idxs1 (arange 0 arity1)
         target-idxs2 (arange arity1 arity)
-        
+
         coll        (-fold rel2 ;; iterate over rel2
                       (fn [acc t2]
                         (let [tuples1 (get hash1 (key-fn2 t2))]
@@ -474,8 +475,8 @@
         tuples)
 
     BindColl
-      (if (not (db/seqable? source))
-        (db/raise "Cannot bind value " source " to collection " (dp/source binding)
+      (if (not (u/seqable? source))
+        (raise "Cannot bind value " source " to collection " (dp/source binding)
                   {:error :query/binding, :value source, :binding (dp/source binding)})
         (let [inner-binding (:binding binding)]
           (case (count source)
@@ -489,19 +490,19 @@
 
     BindTuple
     (let [bindings (:bindings binding)]
-      (when-not (db/seqable? source)
-        (db/raise "Cannot bind value " source " to tuple " (dp/source binding)
+      (when-not (u/seqable? source)
+        (raise "Cannot bind value " source " to tuple " (dp/source binding)
                   {:error :query/binding, :value source, :binding (dp/source binding)}))
       (when (< (count source) (count bindings))
-        (db/raise "Not enough elements in a collection " source " to bind tuple " (dp/source binding)
+        (raise "Not enough elements in a collection " source " to bind tuple " (dp/source binding)
                   {:error :query/binding, :value source, :binding (dp/source binding)}))
       (reduce (fn [ts [b s]]
                 (bind! ts b s indexes))
               tuples
               (zip bindings source)))
-    
+
     :else
-      (db/raise "Unknown binding form " (dp/source binding)
+      (raise "Unknown binding form " (dp/source binding)
                {:error :query/binding, :value source, :binding (dp/source binding)})))
 
 
@@ -534,7 +535,7 @@
 
 (defn resolve-ins [context bindings values]
   (when (not= (count bindings) (count values))
-    (db/raise "Wrong number of arguments for bindings " (mapv dp/source bindings)
+    (raise "Wrong number of arguments for bindings " (mapv dp/source bindings)
            ", " (count bindings) " required, " (count values) " provided"
            {:error :query/binding, :binding (mapv dp/source bindings)}))
   (reduce resolve-in context (zip bindings values)))
@@ -551,11 +552,11 @@
   (let [symbol (cond
                  (instance? SrcVar source)     (:symbol source)
                  (instance? DefaultSrc source) (:default-source-symbol context)
-                 :else (db/raise "Source expected, got " source))]
+                 :else (raise "Source expected, got " source))]
     (or (get (:sources context) symbol)
-        (db/raise "Source " symbol " is not defined"
+        (raise "Source " symbol " is not defined"
                {:error :query/where, :symbol symbol}))))
-    
+
 
 ;; Patterns
 
@@ -568,11 +569,11 @@
 
 
 (defn- matches-pattern? [idxs tuple] ;; TODO handle repeated vars
-;;   (when-not (db/seqable? tuple)
-;;     (db/raise "Cannot match pattern " (dp/source clause) " because tuple is not a collection: " tuple
+;;   (when-not (u/seqable? tuple)
+;;     (raise "Cannot match pattern " (dp/source clause) " because tuple is not a collection: " tuple
 ;;            {:error :query/where, :value tuple, :binding (dp/source clause)}))
 ;;   (when (< (count tuple) (count (:pattern clause)))
-;;     (db/raise "Not enough elements in a relation tuple " tuple " to match " (dp/source clause)
+;;     (raise "Not enough elements in a relation tuple " tuple " to match " (dp/source clause)
 ;;            {:error :query/where, :value tuple, :binding (dp/source clause)}))
   (reduce-kv
     (fn [_ i v]
@@ -584,8 +585,8 @@
 
 
 (defn resolve-pattern-coll [coll clause]
-  (when-not (db/seqable? coll)
-    (db/raise "Cannot match by pattern " (dp/source clause) " because source is not a collection: " coll
+  (when-not (u/seqable? coll)
+    (raise "Cannot match by pattern " (dp/source clause) " because source is not a collection: " coll
        {:error :query/where, :value coll, :binding (dp/source clause)}))
   (let [pattern (:pattern clause)
         idxs    (->> (map #(when (instance? Constant %1) [%2 (:value %1)]) pattern (range))
@@ -737,7 +738,7 @@
                         {:error :query/where
                          :form  form
                          :vars  missing}))))))
-                           
+
 
 (defn resolve-not [context clause]
   (let [{:keys [source vars clauses]} clause
@@ -870,7 +871,7 @@
     (doseq [rel (:rels context)]
       (println " " rel)))
   (println "  :consts" (:consts context) "}"))
-    
+
 
 (defn resolve-clauses [context clauses]
   (reduce (fn [context clause]
@@ -890,7 +891,7 @@
       (let [val (get consts sym)]
         (da/aset specimen i val)))))
 
-        
+
 (defn collect-rel-xf [syms-indexed rel]
   (let [sym+idx     (for [[sym i] syms-indexed
                           :when (has? (-symbols rel) sym)]

@@ -1,10 +1,8 @@
-(ns datalevin.util
+(ns datalevin.bits
   (:require [clojure.java.io :as io]
             [taoensso.nippy :as nippy])
   (:import [java.io File]
            [java.nio ByteBuffer]))
-
-(set! *warn-on-reflection* true)
 
 (defn delete-files
   "Recursively delete "
@@ -68,7 +66,7 @@
 
 (defn get-bytes
   "Copy content from a ByteBuffer to a byte array, useful for
-  e.g. read txn result, as buffer content is gone when txn is done"
+       e.g. read txn result, as buffer content is gone when txn is done"
   [^ByteBuffer bb]
   (let [n   (.remaining bb)
         arr (byte-array n)]

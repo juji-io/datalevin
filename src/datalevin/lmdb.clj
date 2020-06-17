@@ -1,7 +1,7 @@
 (ns datalevin.lmdb
   "Wrapping LMDB"
   (:refer-clojure :exclude [get])
-  (:require [datalevin.util :as util]
+  (:require [datalevin.bits :as b]
             [taoensso.timbre :as log])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
@@ -12,14 +12,13 @@
 (def default-env-flags [EnvFlags/MDB_NOTLS
                         EnvFlags/MDB_NORDAHEAD])
 
-(def default-dbi-name "default")
 (def default-dbi-flags [DbiFlags/MDB_CREATE])
 
-(def ^:const +init-db-size+ 100) ; in megabytes
 (def ^:const +max-dbs+ 64)
 (def ^:const +max-readers+ 126)
+(def ^:const +init-db-size+ 100) ; in megabytes
 (def ^:const +max-key-size+ 511) ; in bytes
-(def ^:const +default-val-size+ 3456)
+(def ^:const +default-val-size+ 16384) ; 16 kilobytes
 
 (defprotocol IBuffer
   (put-key [this data k-type]
@@ -30,10 +29,10 @@
 (defn- put-buffer
   [bf x t]
   (case t
-    :long  (util/put-long bf x)
-    :byte  (util/put-byte bf x)
-    :bytes (util/put-bytes bf x)
-    (util/put-data bf x)))
+    :long  (b/put-long bf x)
+    :byte  (b/put-byte bf x)
+    :bytes (b/put-bytes bf x)
+    (b/put-data bf x)))
 
 (defprotocol IRtx
   (close-rtx [this] "close the read-only transaction")
@@ -143,15 +142,15 @@
     [this dbi-name k k-type v-type]
     "Get the value of a key, k-type and v-type can be :data (default), :byte,
      :bytes or :long")
+  ;; TODO use pre-allocated bytebuffers for defining k-range
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
     [this dbi-name k-range k-type v-type]
     [this dbi-name k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range,
-     k-type and v-type can be :data (default), :long, :byte, :bytes.
-     ignore-key? is true means that the key ByteBuffer will be returned
-     directly without decoding for its value"))
+     k-type and v-type can be :data (default), :long, :byte, :bytes,
+     only values will be returned if ignore-key? is true"))
 
 (defn- double-db-size [^Env env]
   (.setMapSize env (* 2 (-> env .info .mapSize))))
@@ -160,10 +159,10 @@
   [^ByteBuffer bb v-type]
   (case v-type
     :raw   bb
-    :long  (util/get-long bb)
-    :byte  (util/get-byte bb)
-    :bytes (util/get-bytes bb)
-    (util/get-data bb)))
+    :long  (b/get-long bb)
+    :byte  (b/get-byte bb)
+    :bytes (b/get-bytes bb)
+    (b/get-data bb)))
 
 (defn- fetch-value
   [dbi ^Rtx rtx k k-type v-type]
@@ -177,13 +176,14 @@
     (loop [^Iterator iter (.iterator ^CursorIterable iterable)
            holder         (transient [])]
       (let [^CursorIterable$KeyVal kv (.next iter)
-            k                         (-> kv
-                                          (.key)
-                                          (#(if ignore-key?
-                                              %
-                                              (read-buffer % k-type))))
             v                         (-> kv (.val) (read-buffer v-type))
-            holder'                   (conj! holder [k v])]
+            holder'                   (conj! holder
+                                             (if ignore-key?
+                                               v
+                                               [(-> kv
+                                                    (.key)
+                                                    (read-buffer k-type))
+                                                v]))]
         (if (.hasNext iter)
           (recur iter holder')
           (persistent! holder'))))))
@@ -259,7 +259,7 @@
   ([dir]
    (open-lmdb dir +init-db-size+ default-env-flags))
   ([dir size flags]
-   (let [file          (util/file dir)
+   (let [file          (b/file dir)
          builder       (doto (Env/create)
                          (.setMapSize (* ^long size 1024 1024))
                          (.setMaxReaders +max-readers+)
