@@ -133,9 +133,9 @@
     "Open a named dbi (i.e. sub-db) in a LMDB")
   (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
   (transact [this txs]
-    "Update db, txs is a seq of [op dbi-name k v k-type v-type] when op is :put,
-     [op dbi-name k k-type] when op is :del; k-type and v-type can be :long,
-     :byte, :bytes, or :data")
+    "Update db, txs is a seq of [op dbi-name k v k-type v-type put-flags]
+     when op is :put; [op dbi-name k k-type] when op is :del;
+     k-type and v-type can be :long, :byte, :bytes, or :data")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]
@@ -213,10 +213,12 @@
         (doseq [[op dbi-name k & r] txs
                 :let                [dbi (get-dbi this dbi-name)]]
           (case op
-            :put (let [[v kt vt] r]
+            :put (let [[v kt vt flags] r]
                    (put-key dbi k kt)
                    (put-val dbi v vt)
-                   (put dbi txn))
+                   (if flags
+                     (put dbi txn flags)
+                     (put dbi txn)))
             :del (let [[kt] r]
                    (put-key dbi k kt)
                    (del dbi txn))))

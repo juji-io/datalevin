@@ -5,7 +5,7 @@
             [datalevin.datom :as datom]
             [taoensso.nippy :as nippy])
   (:import [datalevin.lmdb LMDB]
-           [org.lmdbjava DbiFlags KeyRange]))
+           [org.lmdbjava DbiFlags PutFlags KeyRange]))
 
 ;; dbi-names
 (def ^:const eavt "eavt")
@@ -40,13 +40,15 @@
   IStore
   (close [_]
     (lmdb/close lmdb))
-  (insert [_ datom])
+  (insert [_ datom]
+    ;; datoms dbi should put with PutFlags/MDB_APPEND
+    )
   (delete [_ datom])
   (slice [_ index start-datom end-datom])
   (rslice [_ index start-datom end-datom]))
 
 (defn open
-  "Open and return the storage. max-datom-size is in bytes, default is 16kb"
+  "Open and return the storage. max-datom-size is in bytes"
   ([dir]
    (open dir lmdb/+default-val-size+))
   ([dir max-datom-size]
