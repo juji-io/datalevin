@@ -19,8 +19,9 @@
 (def ^:const +config-val-size+ 102400) ; 100 kilobytes
 
 ;; config keys
-(def max-eid (byte 0x01))
-(def max-tx (byte 0x02))
+(def max-dt (byte 0x00))  ; datom id
+(def max-eid (byte 0x01)) ; entity id
+(def max-tx (byte 0x02))  ; transaction id
 (def schema (byte 0x03))
 (def rschema (byte 0x04))
 
