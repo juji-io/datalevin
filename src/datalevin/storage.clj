@@ -2,7 +2,7 @@
   "storage layer of datalevin"
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as util]
-            [datalevin.datom :as datom]
+            [datalevin.datom :as d]
             [taoensso.nippy :as nippy])
   (:import [datalevin.lmdb LMDB]
            [org.lmdbjava DbiFlags PutFlags KeyRange]))
@@ -11,24 +11,22 @@
 (def ^:const eavt "eavt")
 (def ^:const aevt "aevt")
 (def ^:const avet "avet")
-(def ^:const vaet "vaet") ; for datoms with ref attr
+(def ^:const vaet "vaet")
 (def ^:const datoms "datoms")
 (def ^:const config "config")
 
 (def ^:const +config-key-size+ 1)
-(def ^:const +config-val-size+ 102400) ; 100 kilobytes
 
 ;; config keys
-(def max-dt (byte 0x00))  ; datom id
-(def max-eid (byte 0x01)) ; entity id
-(def max-tx (byte 0x02))  ; transaction id
-(def schema (byte 0x03))
-(def rschema (byte 0x04))
+(def schema (byte 0x01))
+(def rschema (byte 0x02))
 
 (def separator (byte 0x7f))
 
 (defprotocol IStore
   (close [this] "Close storage")
+  (init-max-tx [this] "Initialize and return the max transaction id")
+  (init-max-eid [this] "Initialize and return the max entity id")
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
   (slice [this index start-datom end-datom]
@@ -36,33 +34,36 @@
   (rslice [this index start-datom end-datom]
     "Return a range of datoms in reverse for the given index"))
 
-(deftype Store [^LMDB lmdb ^long max-datom-size]
+(deftype Store [^LMDB lmdb ^:volatile-mutable max-dt]
   IStore
   (close [_]
     (lmdb/close lmdb))
-  (insert [_ datom]
+  (init-max-tx [_]
+    )
+  (init-max-eid [this]
+    )
+  (insert [_ [e a v t]]
     ;; datoms dbi should put with PutFlags/MDB_APPEND
+    (let []
+      (lmdb/transact lmdb
+                    [[:put eavt ]]))
     )
   (delete [_ datom])
   (slice [_ index start-datom end-datom])
   (rslice [_ index start-datom end-datom]))
 
+(defn- init-max-dt
+  [lmdb]
+  )
+
 (defn open
-  "Open and return the storage. max-datom-size is in bytes"
-  ([dir]
-   (open dir lmdb/+default-val-size+))
-  ([dir max-datom-size]
-   (let [lmdb (lmdb/open-lmdb dir)]
-     (lmdb/open-dbi
-      lmdb eavt lmdb/+max-key-size+ Long/BYTES lmdb/default-dbi-flags)
-     (lmdb/open-dbi
-      lmdb aevt lmdb/+max-key-size+ Long/BYTES lmdb/default-dbi-flags)
-     (lmdb/open-dbi
-      lmdb avet lmdb/+max-key-size+ Long/BYTES lmdb/default-dbi-flags)
-     (lmdb/open-dbi
-      lmdb vaet lmdb/+max-key-size+ Long/BYTES lmdb/default-dbi-flags)
-     (lmdb/open-dbi
-      lmdb datoms Long/BYTES max-datom-size lmdb/default-dbi-flags)
-     (lmdb/open-dbi
-      lmdb config +config-key-size+ +config-val-size+ lmdb/default-dbi-flags)
-     (->Store lmdb max-datom-size))))
+  "Open and return the storage."
+  [dir]
+  (let [lmdb (lmdb/open-lmdb dir)]
+    (lmdb/open-dbi lmdb eavt lmdb/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb aevt lmdb/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb avet lmdb/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb vaet lmdb/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb datoms Long/BYTES)
+    (lmdb/open-dbi lmdb config +config-key-size+)
+    (->Store lmdb (init-max-dt lmdb))))

@@ -19,7 +19,7 @@
     (with-redefs [lmdb (sut/open-lmdb dir)]
       (sut/open-dbi lmdb "a")
       (sut/open-dbi lmdb "b")
-      (sut/open-dbi lmdb "c" Long/BYTES Long/BYTES sut/default-dbi-flags)
+      (sut/open-dbi lmdb "c" Long/BYTES Long/BYTES)
       (f)
       (sut/close lmdb)
       (b/delete-files dir))))

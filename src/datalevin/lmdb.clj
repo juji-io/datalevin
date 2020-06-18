@@ -129,7 +129,11 @@
 
 (defprotocol ILMDB
   (close [this] "Close this LMDB env")
-  (open-dbi [this dbi-name] [this dbi-name key-size val-size flags]
+  (open-dbi
+    [this dbi-name]
+    [this dbi-name key-size]
+    [this dbi-name key-size val-size]
+    [this dbi-name key-size val-size flags]
     "Open a named dbi (i.e. sub-db) in a LMDB")
   (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
   (transact [this txs]
@@ -195,6 +199,10 @@
     (.close env))
   (open-dbi [this dbi-name]
     (open-dbi this dbi-name +max-key-size+ +default-val-size+ default-dbi-flags))
+  (open-dbi [this dbi-name key-size]
+    (open-dbi this dbi-name key-size +default-val-size+ default-dbi-flags))
+  (open-dbi [this dbi-name key-size val-size]
+    (open-dbi this dbi-name key-size val-size default-dbi-flags))
   (open-dbi [_ dbi-name key-size val-size flags]
     (let [kb  (ByteBuffer/allocateDirect key-size)
           vb  (ByteBuffer/allocateDirect val-size)
@@ -207,6 +215,8 @@
   (get-dbi [_ dbi-name]
     (or (.get dbis dbi-name)
         (throw (ex-info (str "`open-dbi` was not called for " dbi-name) {}))))
+  ;; TODO check the put value size, if it's larger than current max-val-size,
+  ;; switch to bytebuffers with double the current size
   (transact [this txs]
     (try
       (with-open [txn (.txnWrite env)]

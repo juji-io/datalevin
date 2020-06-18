@@ -42,9 +42,9 @@
 
         IPrintWithWriter
         (-pr-writer [d writer opts]
-                    (pr-sequential-writer writer pr-writer
-                                          "#datalevin/Datom [" " " "]"
-                                          opts [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)]))]
+                    (pr-sequential-writer
+                     writer pr-writer "#datalevin/Datom [" " " "]" opts
+                     [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)]))]
       :clj
        [Object
         (hashCode [d]
@@ -63,7 +63,8 @@
 
         clojure.lang.IPersistentCollection
         (equiv [d o] (and (instance? Datom o) (equiv-datom d o)))
-        (empty [d] (throw (UnsupportedOperationException. "empty is not supported on Datom")))
+        (empty [d] (throw (UnsupportedOperationException.
+                           "empty is not supported on Datom")))
         (count [d] 5)
         (cons [d [k v]] (assoc-datom d k v))
 
@@ -78,10 +79,9 @@
         clojure.lang.Associative
         (entryAt [d k] (some->> (val-at-datom d k nil) (clojure.lang.MapEntry k)))
         (containsKey [e k] (#{:e :a :v :tx :added} k))
-        (assoc [d k v] (assoc-datom d k v))]
-))
+        (assoc [d k v] (assoc-datom d k v))]))
 
-#?(:cljs (goog/exportSymbol "datalevin.db.Datom" Datom))
+#?(:cljs (goog/exportSymbol "datalevin.datom.Datom" Datom))
 
 (defn ^Datom datom
   ([e a v] (Datom. e a v tx0 0))
@@ -124,8 +124,8 @@
       2 (.-v d)
       3 (datom-tx d)
       4 (datom-added d)
-        #?(:clj  (throw (IndexOutOfBoundsException.))
-           :cljs (throw (js/Error. (str "Datom/-nth: Index out of bounds: " i))))))
+      #?(:clj  (throw (IndexOutOfBoundsException.))
+         :cljs (throw (js/Error. (str "Datom/-nth: Index out of bounds: " i))))))
   ([^Datom d ^long i not-found]
     (case i
       0 (.-e d)
@@ -133,7 +133,7 @@
       2 (.-v d)
       3 (datom-tx d)
       4 (datom-added d)
-        not-found)))
+      not-found)))
 
 (defn- ^Datom assoc-datom [^Datom d k v]
   (case k

@@ -14,9 +14,11 @@ FIXME
 
 Besides the diffrence in data durability, Datalevin differs from Datascript in the following ways:
 
-* Full data is stored only once, for the indices in Datalevin actually point to the datoms, whereas Datascript stores full data in indices at least twice. 
+* Full data is stored only once, for the indices in Datalevin point to the datoms, are not datoms themselves, whereas Datascript stores full data in indices at least twice. 
 
-* Each datom has an auto increment long id, reflecting the order in which a datom is added. Datoms are stored in such an order, so one can think of this as the log index of Datomic.  
+* Internal integer ids are 64 bit long rather than 32 bit like in Datascript, so as to support a much larger workload.
+
+* Each datom is associated with an auto increment long id, reflecting the order in which a datom is added. Datoms are stored in such an order, so one can think of this as the log index of Datomic.  
 
 * Has VAET index. So Datalevin has five indices, similar to Datomic, whereas Datascript has three.  
 
@@ -24,9 +26,9 @@ Besides the diffrence in data durability, Datalevin differs from Datascript in t
 
 * Attribute name has length limitations: it cannot be longer than 400 characters.
 
-* Total data size of the database can be larger than memory. It has the same limit as LMDB's: 128TB on a modern 64-bit machine that implements 48-bit address spaces.  It is also totally fine to store large values in Datalevin, as LMDB is optimized for reading large values. Maximal individual datom size can be specified each time the database is opened, otherwise the default maximual individual datom size is 16KB. You may close the database and re-open it with an increased maximal dataom size.  The upper limit of the specified datom size is determined by the JVM's ability to allocate at least two off-heap buffers of that size, one for read and one for write, which Datalevin pre-allocates during database openning to save the expensive buffer allocation cost. 
+* Total data size of the database can be larger than physical memory. It has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.  It is also totally fine to store large values in Datalevin, as LMDB is optimized for reading large values.  
 
-* Datalevin currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible, since bindings for LMDB exist in almost all major languages and available on most platforms. However, Datalevin is unlikely to run in a browser, as it replies on the LMDB binary (written in C) to have disk access.
+* Datalevin currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms. However, Datalevin is unlikely to run in a browser, as it replies on the LMDB binary (written in C) to have local disk access.
 
 ## License
 
