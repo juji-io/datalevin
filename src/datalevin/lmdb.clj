@@ -2,6 +2,8 @@
   "Wrapping LMDB"
   (:refer-clojure :exclude [get])
   (:require [datalevin.bits :as b]
+            [datalevin.util :refer [raise]]
+            [clojure.string :as s]
             [taoensso.timbre :as log])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
@@ -44,7 +46,7 @@
   (put-key [_ x t]
     (put-buffer kb x t))
   (put-val [_ x t]
-    (throw (ex-info "put-val not allowed for read only txn buffer")))
+    (raise "put-val not allowed for read only txn buffer"))
 
   IRtx
   (close-rtx [_]
@@ -98,12 +100,19 @@
   (del [this txn] "Delete the key given in `put-key` of dbi")
   (get [this rtx] "Get value of the key given in `put-key` of rtx"))
 
-(deftype DBI [^Dbi db ^ByteBuffer kb ^ByteBuffer vb]
+(deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [_ x t]
     (put-buffer kb x t))
   (put-val [_ x t]
-    (put-buffer vb x t))
+    (try
+      (put-buffer vb x t)
+      (catch java.lang.AssertionError e
+        (if (s/includes? (ex-message e) b/buffer-overflow)
+          (let [size (b/measure-size x)]
+            (set! vb (ByteBuffer/allocateDirect size))
+            (put-buffer vb x t))
+          (throw e)))))
 
   IKV
   (put [this txn]

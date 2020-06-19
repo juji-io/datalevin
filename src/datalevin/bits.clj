@@ -22,10 +22,13 @@
       (do (.mkdir f)
           f))))
 
+(def ^:const buffer-overflow "BufferOverflow:")
+
 (defn- check-buffer-overflow
   [^long length ^long remaining]
   (assert (<= length remaining)
-          (str "BufferOverlfow: trying to put "
+          (str buffer-overflow
+               " trying to put "
                length
                " bytes while "
                remaining
@@ -54,6 +57,15 @@
   [^ByteBuffer bb x]
   (put-bytes bb (nippy/fast-freeze x)))
 
+(defn measure-size
+  "measure size of x in number of bytes"
+  [x]
+  (cond
+    (bytes? x)         (alength ^bytes x)
+    (integer? x)       8
+    (instance? Byte x) 1
+    :else              (alength ^bytes (nippy/fast-freeze x))))
+
 (defn get-long
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
@@ -66,7 +78,7 @@
 
 (defn get-bytes
   "Copy content from a ByteBuffer to a byte array, useful for
-       e.g. read txn result, as buffer content is gone when txn is done"
+   e.g. read txn result, as buffer content is gone when txn is done"
   [^ByteBuffer bb]
   (let [n   (.remaining bb)
         arr (byte-array n)]

@@ -68,11 +68,11 @@
   ;; non-existent dbi
   (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1)))
 
-  ;; larger val
-  (sut/transact lmdb [[:put "a" 1 (range 1000)]])
-  (is (= (range 1000) (sut/get-value lmdb "a" 1)))
+  ;; handle val overflow automatically
+  (sut/transact lmdb [[:put "c" 1 (range 1000)]])
+  (is (= (range 1000) (sut/get-value lmdb "c" 1)))
 
-  ;; key overflow
+  ;; key overflow throws instead
   (is (thrown? java.lang.AssertionError
                (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
