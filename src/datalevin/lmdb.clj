@@ -1,6 +1,6 @@
 (ns datalevin.lmdb
   "Wrapping LMDB"
-  (:refer-clojure :exclude [get])
+  (:refer-clojure :exclude [get iterate])
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [clojure.string :as s]
@@ -16,17 +16,11 @@
 
 (def default-dbi-flags [DbiFlags/MDB_CREATE])
 
-(def ^:const +max-dbs+ 64)
+(def ^:const +max-dbs+ 128)
 (def ^:const +max-readers+ 126)
 (def ^:const +init-db-size+ 100) ; in megabytes
 (def ^:const +max-key-size+ 511) ; in bytes
 (def ^:const +default-val-size+ 16384) ; 16 kilobytes
-
-(defprotocol IBuffer
-  (put-key [this data k-type]
-    "put data in key buffer, k-type can be :long, :byte, :bytes, :data")
-  (put-val [this data v-type]
-    "put data in val buffer, v-type can be :long, :byte, :bytes, :data"))
 
 (defn- put-buffer
   [bf x t]
@@ -36,17 +30,43 @@
     :bytes (b/put-bytes bf x)
     (b/put-data bf x)))
 
+(defprotocol IBuffer
+  (put-key [this data k-type]
+    "put data in key buffer, k-type can be :long, :byte, :bytes, :data")
+  (put-val [this data v-type]
+    "put data in val buffer, v-type can be :long, :byte, :bytes, :data"))
+
+(defprotocol IRange
+  (put-start-key [this data k-type]
+    "put data in start-key buffer, k-type can be :long, :byte, :bytes, :data")
+  (put-stop-key [this data k-type]
+    "put data in stop-key buffer, k-type can be :long, :byte, :bytes, :data"))
+
 (defprotocol IRtx
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
 
-(deftype Rtx [^Txn txn ^:volatile-mutable use ^ByteBuffer kb]
+(deftype Rtx [^Txn txn
+              ^:volatile-mutable use
+              ^ByteBuffer kb
+              ^ByteBuffer start-kb
+              ^ByteBuffer stop-kb]
   IBuffer
   (put-key [_ x t]
     (put-buffer kb x t))
   (put-val [_ x t]
-    (raise "put-val not allowed for read only txn buffer"))
+    (raise "put-val not allowed for read only txn buffer" {}))
+
+  IRange
+  (put-start-key [_ x t]
+    (when x
+      (.clear start-kb)
+      (put-buffer start-kb x t)))
+  (put-stop-key [_ x t]
+    (when x
+      (.clear stop-kb)
+      (put-buffer stop-kb x t)))
 
   IRtx
   (close-rtx [_]
@@ -81,6 +101,8 @@
       (when (< cnt +max-readers+)
         (let [rtx (->Rtx (.txnRead env)
                          false
+                         (ByteBuffer/allocateDirect +max-key-size+)
+                         (ByteBuffer/allocateDirect +max-key-size+)
                          (ByteBuffer/allocateDirect +max-key-size+))]
           (.put rtxs cnt rtx)
           (set! cnt (inc cnt))
@@ -98,7 +120,30 @@
   (put [this txn] [this txn put-flags]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
-  (get [this rtx] "Get value of the key given in `put-key` of rtx"))
+  (get [this rtx] "Get value of the key given in `put-key` of rtx")
+  (iterate [this rtx range-type] "Return a CursorIterable"))
+
+(defn- key-range
+  [range-type kb1 kb2]
+  (case range-type
+    :all               (KeyRange/all)
+    :all-back          (KeyRange/allBackward)
+    :at-least          (KeyRange/atLeast kb1)
+    :at-least-back     (KeyRange/atLeastBackward kb1)
+    :at-most           (KeyRange/atMost kb1)
+    :at-most-back      (KeyRange/atMostBackward kb1)
+    :closed            (KeyRange/closed kb1 kb2)
+    :closed-back       (KeyRange/closedBackward kb1 kb2)
+    :closed-open       (KeyRange/closedOpen kb1 kb2)
+    :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
+    :greater-than      (KeyRange/greaterThan kb1)
+    :greater-than-back (KeyRange/greaterThanBackward kb1)
+    :less-than         (KeyRange/lessThan kb1)
+    :less-than-back    (KeyRange/lessThanBackward kb1)
+    :open              (KeyRange/open kb1 kb2)
+    :open-back         (KeyRange/openBackward kb1 kb2)
+    :open-closed       (KeyRange/openClosed kb1 kb2)
+    :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))
 
 (deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
@@ -134,7 +179,13 @@
       (.flip kb)
       (let [res (.get db (.-txn ^Rtx rtx) kb)]
         (.clear kb)
-        res))))
+        res)))
+  (iterate [this rtx range-type]
+    (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
+          ^ByteBuffer stop-kb (.-stop-kb ^Rtx rtx)]
+      (.flip start-kb)
+      (.flip stop-kb)
+      (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
 (defprotocol ILMDB
   (close [this] "Close this LMDB env")
@@ -155,13 +206,16 @@
     [this dbi-name k k-type v-type]
     "Get the value of a key, k-type and v-type can be :data (default), :byte,
      :bytes or :long")
-  ;; TODO use pre-allocated bytebuffers for defining k-range
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
     [this dbi-name k-range k-type v-type]
     [this dbi-name k-range k-type v-type ignore-key?]
-    "Return a seq of kv pair in the specified key range,
+    "Return a seq of kv pair in the specified key range;
+     k-range is a vector [range-type k1 k2], range-type can be one of
+     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
+     :less-than, :open, :open-closed, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. :all-back;
      k-type and v-type can be :data (default), :long, :byte, :bytes,
      only values will be returned if ignore-key? is true"))
 
@@ -184,9 +238,11 @@
     (read-buffer bb v-type)))
 
 (defn- fetch-range
-  [^DBI dbi ^Rtx rtx k-range k-type v-type ignore-key?]
-  (with-open [iterable (.iterate ^Dbi (.-db dbi) (.-txn rtx) k-range)]
-    (loop [^Iterator iter (.iterator ^CursorIterable iterable)
+  [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
+  (put-start-key rtx k1 k-type)
+  (put-stop-key rtx k2 k-type)
+  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+    (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (let [^CursorIterable$KeyVal kv (.next iter)
             v                         (-> kv (.val) (read-buffer v-type))
@@ -223,9 +279,7 @@
       dbi))
   (get-dbi [_ dbi-name]
     (or (.get dbis dbi-name)
-        (throw (ex-info (str "`open-dbi` was not called for " dbi-name) {}))))
-  ;; TODO check the put value size, if it's larger than current max-val-size,
-  ;; switch to bytebuffers with double the current size
+        (raise "`open-dbi` was not called for " dbi-name {})))
   (transact [this txs]
     (try
       (with-open [txn (.txnWrite env)]
@@ -255,8 +309,8 @@
       (try
         (fetch-value dbi rtx k k-type v-type)
         (catch Exception e
-          (throw (ex-info (str "Fail to get-value: " (ex-message e))
-                          {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
+          (raise "Fail to get-value: " (ex-message e)
+                 {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
         (finally (reset rtx)))))
   (get-range [this dbi-name k-range]
     (get-range this dbi-name k-range :data :data false))
@@ -270,9 +324,9 @@
       (try
         (fetch-range dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
-          (throw (ex-info (str "Fail to get-range: " (ex-message e))
-                          {:dbi    dbi-name :k-range k-range
-                           :k-type k-type   :v-type  v-type})))
+          (raise "Fail to get-range: " (ex-message e)
+                 {:dbi    dbi-name :k-range k-range
+                  :k-type k-type   :v-type  v-type}))
         (finally (reset rtx))))))
 
 (defn open-lmdb

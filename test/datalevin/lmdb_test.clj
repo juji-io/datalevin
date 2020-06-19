@@ -82,25 +82,15 @@
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
         res (sort-by first (map (fn [k v] [k v]) ks vs))]
     (sut/transact lmdb txs)
-    (is (= res (sut/get-range lmdb "c" (KeyRange/all) :long :long)))
+    (is (= res (sut/get-range lmdb "c" [:all] :long :long)))
     (is (= (take 10 res)
-           (sut/get-range lmdb "c"
-                          (KeyRange/atMost (b/long-buffer 9))
-                          :long :long)))
+           (sut/get-range lmdb "c" [:at-most 9] :long :long)))
     (is (= (->> res (drop 10) (take 100))
-           (sut/get-range lmdb "c"
-                          (KeyRange/closed (b/long-buffer 10)
-                                           (b/long-buffer 109))
-                          :long :long)))
+           (sut/get-range lmdb "c" [:closed 10 109] :long :long)))
     (is (= (->> res (drop 990))
-           (sut/get-range lmdb "c"
-                          (KeyRange/atLeast (b/long-buffer 990))
-                          :long :long)))
+           (sut/get-range lmdb "c" [:at-least 990] :long :long)))
     (is (= (->> res (drop 10) (take 100) (map second))
-           (sut/get-range lmdb "c"
-                          (KeyRange/closed (b/long-buffer 10)
-                                           (b/long-buffer 109))
-                          :long :long true)))))
+           (sut/get-range lmdb "c" [:closed 10 109] :long :long true)))))
 
 (deftest multi-threads-get-value-test
   (let [ks (shuffle (range 0 1000))
