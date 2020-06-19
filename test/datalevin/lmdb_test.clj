@@ -76,6 +76,16 @@
   (is (thrown? java.lang.AssertionError
                (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
+(deftest get-first-test
+  (let [ks  (shuffle (range 0 1000))
+        vs  (map inc ks)
+        txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)]
+    (sut/transact lmdb txs)
+    (is (= [0 1] (sut/get-first lmdb "c" [:all] :long :long)))
+    (is (= [999 1000] (sut/get-first lmdb "c" [:all-back] :long :long)))
+    (is (= [9 10] (sut/get-first lmdb "c" [:at-least 9] :long :long)))
+    (is (= [10 11] (sut/get-first lmdb "c" [:greater-than 9] :long :long)))))
+
 (deftest get-range-test
   (let [ks  (shuffle (range 0 1000))
         vs  (map inc ks)

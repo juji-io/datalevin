@@ -194,7 +194,7 @@
     [this dbi-name key-size]
     [this dbi-name key-size val-size]
     [this dbi-name key-size val-size flags]
-    "Open a named dbi (i.e. sub-db) in a LMDB")
+    "Open a named dbi (i.e. sub-db) in the LMDB")
   (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
   (transact [this txs]
     "Update db, txs is a seq of [op dbi-name k v k-type v-type put-flags]
@@ -206,6 +206,18 @@
     [this dbi-name k k-type v-type]
     "Get the value of a key, k-type and v-type can be :data (default), :byte,
      :bytes or :long")
+  (get-first
+    [this dbi-name k-range]
+    [this dbi-name k-range k-type]
+    [this dbi-name k-range k-type v-type]
+    [this dbi-name k-range k-type v-type ignore-key?]
+    "Return the first kv pair in the specified key range;
+     k-range is a vector [range-type k1 k2], range-type can be one of
+     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
+     :less-than, :open, :open-closed, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. :all-back;
+     k-type and v-type can be :data (default), :long, :byte, :bytes,
+     only the value will be returned if ignore-key? is true")
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
@@ -236,6 +248,18 @@
   (put-key rtx k k-type)
   (when-let [^ByteBuffer bb (get dbi rtx)]
     (read-buffer bb v-type)))
+
+(defn- fetch-first
+  [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
+  (put-start-key rtx k1 k-type)
+  (put-stop-key rtx k2 k-type)
+  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+    (let [^Iterator iter            (.iterator iterable)
+          ^CursorIterable$KeyVal kv (.next iter)
+          v                         (-> kv (.val) (read-buffer v-type))]
+      (if ignore-key?
+        v
+        [(-> kv (.key) (read-buffer k-type)) v]))))
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -311,6 +335,22 @@
         (catch Exception e
           (raise "Fail to get-value: " (ex-message e)
                  {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
+        (finally (reset rtx)))))
+  (get-first [this dbi-name k-range]
+    (get-first this dbi-name k-range :data :data false))
+  (get-first [this dbi-name k-range k-type]
+    (get-first this dbi-name k-range k-type :data false))
+  (get-first [this dbi-name k-range k-type v-type]
+    (get-first this dbi-name k-range k-type v-type false))
+  (get-first [this dbi-name k-range k-type v-type ignore-key?]
+    (let [dbi (get-dbi this dbi-name)
+          rtx (get-rtx pool)]
+      (try
+        (fetch-first dbi rtx k-range k-type v-type ignore-key?)
+        (catch Exception e
+          (raise "Fail to get-first: " (ex-message e)
+                 {:dbi    dbi-name :k-range k-range
+                  :k-type k-type   :v-type  v-type}))
         (finally (reset rtx)))))
   (get-range [this dbi-name k-range]
     (get-range this dbi-name k-range :data :data false))
