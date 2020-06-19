@@ -8,7 +8,7 @@
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [java.util UUID Arrays]
-           [org.lmdbjava KeyRange DbiFlags]))
+           [org.lmdbjava CursorIterable$KeyVal]))
 
 (def ^:dynamic lmdb nil)
 
@@ -101,6 +101,16 @@
            (sut/get-range lmdb "c" [:at-least 990] :long :long)))
     (is (= (->> res (drop 10) (take 100) (map second))
            (sut/get-range lmdb "c" [:closed 10 109] :long :long true)))))
+
+(deftest get-some-test
+  (let [ks  (shuffle (range 0 1000))
+        vs  (map inc ks)
+        txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
+        pred (fn [^CursorIterable$KeyVal kv]
+               (let [k (-> kv (.key) (b/read-buffer :long))]
+                 (when (> k 15) (-> kv (.val) (b/read-buffer :long)))))]
+    (sut/transact lmdb txs)
+    (is (= 17 (sut/get-some lmdb pred "c" [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test
   (let [ks (shuffle (range 0 1000))

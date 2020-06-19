@@ -22,14 +22,6 @@
 (def ^:const +max-key-size+ 511) ; in bytes
 (def ^:const +default-val-size+ 16384) ; 16 kilobytes
 
-(defn- put-buffer
-  [bf x t]
-  (case t
-    :long  (b/put-long bf x)
-    :byte  (b/put-byte bf x)
-    :bytes (b/put-bytes bf x)
-    (b/put-data bf x)))
-
 (defprotocol IBuffer
   (put-key [this data k-type]
     "put data in key buffer, k-type can be :long, :byte, :bytes, :data")
@@ -54,7 +46,7 @@
               ^ByteBuffer stop-kb]
   IBuffer
   (put-key [_ x t]
-    (put-buffer kb x t))
+    (b/put-buffer kb x t))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
 
@@ -62,11 +54,11 @@
   (put-start-key [_ x t]
     (when x
       (.clear start-kb)
-      (put-buffer start-kb x t)))
+      (b/put-buffer start-kb x t)))
   (put-stop-key [_ x t]
     (when x
       (.clear stop-kb)
-      (put-buffer stop-kb x t)))
+      (b/put-buffer stop-kb x t)))
 
   IRtx
   (close-rtx [_]
@@ -148,15 +140,15 @@
 (deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [_ x t]
-    (put-buffer kb x t))
+    (b/put-buffer kb x t))
   (put-val [_ x t]
     (try
-      (put-buffer vb x t)
+      (b/put-buffer vb x t)
       (catch java.lang.AssertionError e
         (if (s/includes? (ex-message e) b/buffer-overflow)
           (let [size (b/measure-size x)]
             (set! vb (ByteBuffer/allocateDirect size))
-            (put-buffer vb x t))
+            (b/put-buffer vb x t))
           (throw e)))))
 
   IKV
@@ -229,25 +221,28 @@
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
      k-type and v-type can be :data (default), :long, :byte, :bytes,
+     only values will be returned if ignore-key? is true")
+  (get-some
+    [this pred dbi-name k-range]
+    [this pred dbi-name k-range k-type]
+    [this pred dbi-name k-range k-type v-type]
+    "Like some, return the first logical true value of (pred x) for any x,
+     a CursorIterable$KeyVal, in the specified key range, or return nil;
+     k-range is a vector [range-type k1 k2], range-type can be one of
+     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
+     :less-than, :open, :open-closed, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. :all-back;
+     k-type and v-type can be :data (default), :long, :byte, :bytes,
      only values will be returned if ignore-key? is true"))
 
 (defn- double-db-size [^Env env]
   (.setMapSize env (* 2 (-> env .info .mapSize))))
 
-(defn- read-buffer
-  [^ByteBuffer bb v-type]
-  (case v-type
-    :raw   bb
-    :long  (b/get-long bb)
-    :byte  (b/get-byte bb)
-    :bytes (b/get-bytes bb)
-    (b/get-data bb)))
-
 (defn- fetch-value
   [dbi ^Rtx rtx k k-type v-type]
   (put-key rtx k k-type)
   (when-let [^ByteBuffer bb (get dbi rtx)]
-    (read-buffer bb v-type)))
+    (b/read-buffer bb v-type)))
 
 (defn- fetch-first
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -256,10 +251,10 @@
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (let [^Iterator iter            (.iterator iterable)
           ^CursorIterable$KeyVal kv (.next iter)
-          v                         (-> kv (.val) (read-buffer v-type))]
+          v                         (-> kv (.val) (b/read-buffer v-type))]
       (if ignore-key?
         v
-        [(-> kv (.key) (read-buffer k-type)) v]))))
+        [(-> kv (.key) (b/read-buffer k-type)) v]))))
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -269,17 +264,27 @@
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (let [^CursorIterable$KeyVal kv (.next iter)
-            v                         (-> kv (.val) (read-buffer v-type))
+            v                         (-> kv (.val) (b/read-buffer v-type))
             holder'                   (conj! holder
                                              (if ignore-key?
                                                v
                                                [(-> kv
                                                     (.key)
-                                                    (read-buffer k-type))
+                                                    (b/read-buffer k-type))
                                                 v]))]
         (if (.hasNext iter)
           (recur iter holder')
           (persistent! holder'))))))
+
+(defn- fetch-some
+  [pred ^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type]
+  (put-start-key rtx k1 k-type)
+  (put-stop-key rtx k2 k-type)
+  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+    (loop [^Iterator iter (.iterator iterable)]
+      (if-let [res (pred (.next iter))]
+        res
+        (when (.hasNext iter) (recur iter))))))
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
@@ -365,6 +370,20 @@
         (fetch-range dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-range: " (ex-message e)
+                 {:dbi    dbi-name :k-range k-range
+                  :k-type k-type   :v-type  v-type}))
+        (finally (reset rtx)))))
+  (get-some [this pred dbi-name k-range]
+    (get-some this pred dbi-name k-range :data :data))
+  (get-some [this pred dbi-name k-range k-type]
+    (get-some this pred dbi-name k-range k-type :data))
+  (get-some [this pred dbi-name k-range k-type v-type]
+    (let [dbi (get-dbi this dbi-name)
+          rtx (get-rtx pool)]
+      (try
+        (fetch-some pred dbi rtx k-range k-type v-type)
+        (catch Exception e
+          (raise "Fail to get-some: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx))))))

@@ -91,23 +91,23 @@
   (when-let [bs (get-bytes bb)]
     (nippy/fast-thaw bs)))
 
-(defn long-buffer
-  "Create a ByteBuffer to hold a long value."
-  ([]
-   (ByteBuffer/allocateDirect Long/BYTES))
-  ([v]
-   (let [^ByteBuffer bb (long-buffer)]
-     (put-long bb v)
-     (.flip bb))))
+(defn put-buffer
+  "Put the given type of data x in buffer bf, x-type can be one of :long,
+  :byte, :bytes, or :data"
+  [bf x x-type]
+  (case x-type
+    :long  (put-long bf x)
+    :byte  (put-byte bf x)
+    :bytes (put-bytes bf x)
+    (put-data bf x)))
 
-(defn bytes-buffer
-  "Create a ByteBuffer to hold a byte array."
-  [^bytes bs]
-  (let [^ByteBuffer bb (ByteBuffer/allocateDirect (alength bs))]
-    (put-bytes bb bs)
-    (.flip bb)))
-
-(defn data-buffer
-  "Create a ByteBuffer to hold a piece of Clojure data."
-  [data]
-  (bytes-buffer (nippy/fast-freeze data)))
+(defn read-buffer
+  "Get the given type of data from buffer bf, v-type can be one of :raw,
+  :long, :byte, :bytes, or :data"
+  [^ByteBuffer bb v-type]
+  (case v-type
+    :raw   bb
+    :long  (get-long bb)
+    :byte  (get-byte bb)
+    :bytes (get-bytes bb)
+    (get-data bb)))
