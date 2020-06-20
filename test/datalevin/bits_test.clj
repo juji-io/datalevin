@@ -11,7 +11,9 @@
 (deftest datom-test
   (let [bf (ByteBuffer/allocateDirect 512)
         d1 (d/datom 1 :name "Mr. Kitty")]
-    (time (sut/put-buffer bf d1 :datom))
+    (sut/put-buffer bf d1 :datom)
     (.flip bf)
     (is (= d1 (nippy/thaw (nippy/freeze d1))))
-    (is (= d1 (time (sut/read-buffer bf :datom))))))
+    (is (= d1 (sut/read-buffer bf :datom)))))
+
+;;TODO generative test

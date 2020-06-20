@@ -191,13 +191,13 @@
   (transact [this txs]
     "Update db, txs is a seq of [op dbi-name k v k-type v-type put-flags]
      when op is :put; [op dbi-name k k-type] when op is :del;
-     k-type and v-type can be :long, :byte, :bytes, or :data")
+     k-type and v-type can be :long, :byte, :bytes, :datom, or :data")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]
     [this dbi-name k k-type v-type]
     "Get the value of a key, k-type and v-type can be :data (default), :byte,
-     :bytes or :long")
+     :bytes, :datom or :long")
   (get-first
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
@@ -208,7 +208,7 @@
      :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes,
+     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom
      only the value will be returned if ignore-key? is true")
   (get-range
     [this dbi-name k-range]
@@ -220,7 +220,7 @@
      :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes,
+     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom
      only values will be returned if ignore-key? is true")
   (get-some
     [this pred dbi-name k-range]
@@ -232,7 +232,7 @@
      :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes,
+     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom
      only values will be returned if ignore-key? is true"))
 
 (defn- double-db-size [^Env env]

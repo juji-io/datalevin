@@ -1,6 +1,7 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as sut]
             [datalevin.bits :as b]
+            [datalevin.datom :as d]
             [clojure.test :refer [deftest is use-fixtures]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
@@ -32,6 +33,7 @@
                  [:put "a" 'a 1]
                  [:put "a" 5 {}]
                  [:put "a" :datalevin ["hello" "world"]]
+                 [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
                  [:put "b" 2 3]
                  [:put "b" (byte 0x01) #{1 2} :byte :data]
                  [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
@@ -44,6 +46,7 @@
 
   ;; get
   (is (= 2 (sut/get-value lmdb "a" 1)))
+  (is (= (d/datom 1 :a/b {:id 4}) (sut/get-value lmdb "a" 42 :long :datom)))
   (is (nil? (sut/get-value lmdb "a" 2)))
   (is (nil? (sut/get-value lmdb "b" 1)))
   (is (= 5 (sut/get-value lmdb "b" [-1 -235254457N])))
