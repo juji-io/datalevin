@@ -12,7 +12,7 @@
   (datom-tx [this])
   (datom-added [this]))
 
-(deftype Datom #?(:clj [^long e a v ^long tx ^:unsynchronized-mutable ^long _hash]
+(deftype Datom #?(:clj [^long e a v ^long tx ^:unsynchronized-mutable ^int _hash]
                   :cljs [^number e a v ^number tx ^:mutable ^number _hash])
   IDatom
   (datom-tx [d] (if (pos? tx) tx (- tx)))
@@ -49,7 +49,7 @@
        [Object
         (hashCode [d]
           (if (zero? _hash)
-            (let [h (long (hash-datom d))]
+            (let [h (int (hash-datom d))]
               (set! _hash h)
               h)
             _hash))

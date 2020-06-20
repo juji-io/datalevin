@@ -14,7 +14,7 @@ FIXME
 
 Besides the diffrence in data durability, Datalevin differs from Datascript in the following ways:
 
-* Full data is stored only once, for the indices in Datalevin point to the datoms, are not datoms themselves, whereas Datascript stores full data in indices at least twice. 
+* Full data is stored only once, for the indices in Datalevin point to the datoms, but they are not datoms themselves, whereas Datascript stores full data in indices at least twice. 
 
 * Internal integer ids are 64 bit long rather than 32 bit like in Datascript, so as to support a much larger dataset.
 
@@ -26,7 +26,7 @@ Besides the diffrence in data durability, Datalevin differs from Datascript in t
 
 * Attribute name has length limitations: it cannot be longer than 400 characters.
 
-* Total data size of the database can be larger than physical memory. It has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.  It is also totally fine to store large values in Datalevin, as LMDB is optimized for reading large values.  
+* Total data size of the database can be larger than physical memory. It has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.  It is also totally acceptable to store large values in Datalevin, as LMDB is optimized for reading large values.  
 
 * Datalevin currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms. However, Datalevin is unlikely to run in a browser, as it replies on the LMDB binary (written in C) to have local disk access.
 

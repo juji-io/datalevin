@@ -3,9 +3,11 @@
   (:require [clojure.java.io :as io]
             [datalevin.datom :as d]
             [taoensso.nippy :as nippy])
-  (:import [java.io File]
+  (:import [java.io File DataInput DataOutput]
            [java.nio ByteBuffer]
            [datalevin.datom Datom]))
+
+;; files
 
 (defn delete-files
   "Recursively delete "
@@ -24,6 +26,8 @@
       f
       (do (.mkdir f)
           f))))
+
+;; byte buffer
 
 (defn- get-long
   "Get a long from a ByteBuffer"
@@ -94,39 +98,80 @@
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
 
+;; datom
+
+(nippy/extend-freeze Datom :datalevin/datom
+ [^Datom x ^DataOutput out]
+ (let [^bytes a (nippy/fast-freeze (.-a x))
+       al       (alength a)
+       ^bytes v (nippy/freeze (.-v x))
+       vl       (alength v)]
+   (.writeLong out (.-e x))
+   (.writeShort out al)
+   (.write out a)
+   (.writeInt out vl)
+   (.write out v)
+   (.writeLong out (.-tx x))))
+
+(nippy/extend-thaw :datalevin/datom
+ [^DataInput in]
+ (let [e  (.readLong in)
+       al (.readShort in)
+       ab (byte-array al)
+       _  (.readFully in ab)
+       vl (.readInt in)
+       vb (byte-array vl)
+       _  (.readFully in vb)
+       tx (.readLong in)]
+   (d/datom e (nippy/fast-thaw ab) (nippy/thaw vb) tx)))
+
+(defn- put-datom
+  [bf ^Datom x]
+  (put-bytes bf (nippy/freeze x)))
+
+(defn- get-datom
+  [bb]
+  (nippy/thaw (get-bytes bb)))
+
 (deftype DatomIndexable [e a p h t])
 
-(def ^:const +max-attr-size+ 400)
+(def ^:const +max-attr-size+ 401)
 
 (defn datom-indexable
   "Turn datom to a form that is suitable for putting in indices"
   [^Datom d]
-  (let [a (nippy/fast-freeze (.-a d))
-        _ (assert (<= (alength a) +max-attr-size+)
-                  "Attribute name is more than 400 bytes")]
+  (let [^bytes a (nippy/fast-freeze (.-a d))
+        _        (assert (<= (alength a) +max-attr-size+)
+                         "Attribute name cannot be longer than 400 characters")
+        ]
     (->DatomIndexable (.-e d))))
 
 
-(defn- put-eavt [bf x]
+(defn- put-eavt
+  [bf x]
   )
 
-(defn- put-aevt [bf x]
+(defn- put-aevt
+  [bf x]
   )
 
-(defn- put-avet [bf x]
+(defn- put-avet
+  [bf x]
   )
 
-(defn- put-vaet [bf x]
+(defn- put-vaet
+  [bf x]
   )
 
 (defn put-buffer
   "Put the given type of data x in buffer bf, x-type can be one of :long,
-  :byte, :bytes, :data, or datomic index type :eavt, :aevt, :avet, :vaet "
+  :byte, :bytes, :data, :datom or index type :eavt, :aevt, :avet, :vaet"
   [bf x x-type]
   (case x-type
     :long  (put-long bf x)
     :byte  (put-byte bf x)
     :bytes (put-bytes bf x)
+    :datom (put-datom bf x)
     :eavt  (put-eavt bf x)
     :aevt  (put-aevt bf x)
     :avet  (put-avet bf x)
@@ -134,11 +179,12 @@
     (put-data bf x)))
 
 (defn read-buffer
-  "Get the given type of data from buffer bf, v-type can be one of :raw,
-  :long, :byte, :bytes, or :data"
+  "Get the given type of data from buffer bf, v-type can be one of
+  :long, :byte, :bytes, :datom or :data"
   [^ByteBuffer bb v-type]
   (case v-type
     :long  (get-long bb)
     :byte  (get-byte bb)
     :bytes (get-bytes bb)
+    :datom (get-datom bb)
     (get-data bb)))
