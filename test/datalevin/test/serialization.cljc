@@ -27,7 +27,7 @@
         (is (= d (read-fn (pr-str d)))))
 
       (let [d (dd/datom 1 :name 3)]
-        (is (= (pr-str d) "#datalevin/Datom [1 :name 3 536870912 true]"))
+        (is (= (pr-str d) "#datalevin/Datom [1 :name 3 2305843009213693952 true]"))
         (is (= d (read-fn (pr-str d)))))
 
       (let [db (-> (d/empty-db {:name {:db/unique :db.unique/identity}})
@@ -38,9 +38,9 @@
                (str "#datalevin/DB {"
                     ":schema {:name {:db/unique :db.unique/identity}}, "
                     ":datoms ["
-                      "[1 :age 44 536870913] "
-                      "[1 :name \"Petr\" 536870913] "
-                      "[2 :name \"Ivan\" 536870914]"
+                    "[1 :age 44 2305843009213693953] "
+                    "[1 :name \"Petr\" 2305843009213693953] "
+                    "[2 :name \"Ivan\" 2305843009213693954]"
                     "]}")))
         (is (= db (read-fn (pr-str db))))))))
 

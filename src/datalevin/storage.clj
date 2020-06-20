@@ -5,7 +5,7 @@
             [datalevin.datom :as d]
             [taoensso.nippy :as nippy])
   (:import [datalevin.lmdb LMDB]
-           [org.lmdbjava DbiFlags PutFlags KeyRange]))
+           [org.lmdbjava PutFlags]))
 
 ;; dbi-names
 (def ^:const eavt "eavt")

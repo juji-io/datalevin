@@ -1,8 +1,11 @@
 (ns datalevin.bits
+  "low level bits"
   (:require [clojure.java.io :as io]
+            [datalevin.datom :as d]
             [taoensso.nippy :as nippy])
   (:import [java.io File]
-           [java.nio ByteBuffer]))
+           [java.nio ByteBuffer]
+           [datalevin.datom Datom]))
 
 (defn delete-files
   "Recursively delete "
@@ -22,6 +25,31 @@
       (do (.mkdir f)
           f))))
 
+(defn- get-long
+  "Get a long from a ByteBuffer"
+  [^ByteBuffer bb]
+  (.getLong bb))
+
+(defn- get-byte
+  "Get a byte from a ByteBuffer"
+  [^ByteBuffer bb]
+  (.get bb))
+
+(defn- get-bytes
+  "Copy content from a ByteBuffer to a byte array, useful for
+   e.g. read txn result, as buffer content is gone when txn is done"
+  [^ByteBuffer bb]
+  (let [n   (.remaining bb)
+        arr (byte-array n)]
+    (.get bb arr)
+    arr))
+
+(defn- get-data
+  "Read data from a ByteBuffer"
+  [^ByteBuffer bb]
+  (when-let [bs (get-bytes bb)]
+    (nippy/fast-thaw bs)))
+
 (def ^:const buffer-overflow "BufferOverflow:")
 
 (defn- check-buffer-overflow
@@ -34,26 +62,26 @@
                remaining
                "remaining in the ByteBuffer.")))
 
-(defn put-long
+(defn- put-long
   [^ByteBuffer bb n]
   (assert (integer? n) "put-long requires an integer")
   (check-buffer-overflow Long/BYTES (.remaining bb))
   (.putLong bb ^long (long n)))
 
-(defn put-bytes
+(defn- put-bytes
   [^ByteBuffer bb ^bytes bs]
   (let [len (alength bs)]
     (assert (< 0 len) "Cannot put empty byte array into ByteBuffer")
     (check-buffer-overflow len (.remaining bb))
     (.put bb bs)))
 
-(defn put-byte
+(defn- put-byte
   [^ByteBuffer bb b]
   (assert (instance? Byte b) "put-byte requires a byte")
   (check-buffer-overflow 1 (.remaining bb))
   (.put bb ^byte b))
 
-(defn put-data
+(defn- put-data
   [^ByteBuffer bb x]
   (put-bytes bb (nippy/fast-freeze x)))
 
@@ -66,39 +94,43 @@
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
 
-(defn get-long
-  "Get a long from a ByteBuffer"
-  [^ByteBuffer bb]
-  (.getLong bb))
+(deftype DatomIndexable [e a p h t])
 
-(defn get-byte
-  "Get a byte from a ByteBuffer"
-  [^ByteBuffer bb]
-  (.get bb))
+(def ^:const +max-attr-size+ 400)
 
-(defn get-bytes
-  "Copy content from a ByteBuffer to a byte array, useful for
-   e.g. read txn result, as buffer content is gone when txn is done"
-  [^ByteBuffer bb]
-  (let [n   (.remaining bb)
-        arr (byte-array n)]
-    (.get bb arr)
-    arr))
+(defn datom-indexable
+  "Turn datom to a form that is suitable for putting in indices"
+  [^Datom d]
+  (let [a (nippy/fast-freeze (.-a d))
+        _ (assert (<= (alength a) +max-attr-size+)
+                  "Attribute name is more than 400 bytes")]
+    (->DatomIndexable (.-e d))))
 
-(defn get-data
-  "Read data from a ByteBuffer"
-  [^ByteBuffer bb]
-  (when-let [bs (get-bytes bb)]
-    (nippy/fast-thaw bs)))
+
+(defn- put-eavt [bf x]
+  )
+
+(defn- put-aevt [bf x]
+  )
+
+(defn- put-avet [bf x]
+  )
+
+(defn- put-vaet [bf x]
+  )
 
 (defn put-buffer
   "Put the given type of data x in buffer bf, x-type can be one of :long,
-  :byte, :bytes, or :data"
+  :byte, :bytes, :data, or datomic index type :eavt, :aevt, :avet, :vaet "
   [bf x x-type]
   (case x-type
     :long  (put-long bf x)
     :byte  (put-byte bf x)
     :bytes (put-bytes bf x)
+    :eavt  (put-eavt bf x)
+    :aevt  (put-aevt bf x)
+    :avet  (put-avet bf x)
+    :vaet  (put-vaet bf x)
     (put-data bf x)))
 
 (defn read-buffer
@@ -106,7 +138,6 @@
   :long, :byte, :bytes, or :data"
   [^ByteBuffer bb v-type]
   (case v-type
-    :raw   bb
     :long  (get-long bb)
     :byte  (get-byte bb)
     :bytes (get-bytes bb)
