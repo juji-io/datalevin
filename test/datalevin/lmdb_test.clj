@@ -127,7 +127,18 @@
   [limit data]
   (< (alength ^bytes (nippy/fast-freeze data)) limit))
 
-;; TODO datom-ops-generative-test
+(test/defspec datom-ops-generative-test
+  100
+  (prop/for-all [k gen/large-integer
+                 e gen/large-integer
+                 a gen/keyword-ns
+                 v gen/any-equatable]
+                (let [d      (d/datom e a v e)
+                      _      (sut/transact lmdb [[:put "a" k d :long :datom]])
+                      put-ok (= d (sut/get-value lmdb "a" k :long :datom))
+                      _      (sut/transact lmdb [[:del "a" k :long]])
+                      del-ok (nil? (sut/get-value lmdb "a" k :long))]
+                  (and put-ok del-ok))))
 
 (test/defspec data-ops-generative-test
   100
