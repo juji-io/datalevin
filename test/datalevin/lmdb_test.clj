@@ -127,6 +127,8 @@
   [limit data]
   (< (alength ^bytes (nippy/fast-freeze data)) limit))
 
+;; TODO datom-ops-generative-test
+
 (test/defspec data-ops-generative-test
   100
   (prop/for-all [k (gen/such-that (partial data-size-less-than? sut/+max-key-size+)

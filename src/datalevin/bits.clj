@@ -102,28 +102,17 @@
 
 (nippy/extend-freeze Datom :datalevin/datom
  [^Datom x ^DataOutput out]
- (let [^bytes a (nippy/fast-freeze (.-a x))
-       al       (alength a)
-       ^bytes v (nippy/freeze (.-v x))
-       vl       (alength v)]
-   (.writeLong out (.-e x))
-   (.writeShort out al)
-   (.write out a)
-   (.writeInt out vl)
-   (.write out v)
-   (.writeLong out (.-tx x))))
+ (.writeLong out (.-e x))
+ (nippy/freeze-to-out! out (.-a x))
+ (nippy/freeze-to-out! out (.-v x))
+ (.writeLong out (.-tx x)))
 
 (nippy/extend-thaw :datalevin/datom
  [^DataInput in]
- (let [e  (.readLong in)
-       al (.readShort in)
-       ab (byte-array al)
-       _  (.readFully in ab)
-       vl (.readInt in)
-       vb (byte-array vl)
-       _  (.readFully in vb)
-       tx (.readLong in)]
-   (d/datom e (nippy/fast-thaw ab) (nippy/thaw vb) tx)))
+ (d/datom (.readLong in)
+          (nippy/thaw-from-in! in)
+          (nippy/thaw-from-in! in)
+          (.readLong in)))
 
 (defn- put-datom
   [bf ^Datom x]
