@@ -14,5 +14,4 @@
                                   [com.taoensso/timbre "4.10.0"]]}}
   :global-vars {*warn-on-reflection*   true
                 *print-namespace-maps* false
-                ;;     *unchecked-math* :warn-on-boxed
-                })
+                *unchecked-math* :warn-on-boxed})

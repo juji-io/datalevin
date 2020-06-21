@@ -86,7 +86,7 @@
 (defn ^Datom datom
   ([e a v] (Datom. e a v tx0 0))
   ([e a v tx] (Datom. e a v tx 0))
-  ([e a v tx added] (Datom. e a v (if added tx (- tx)) 0)))
+  ([e a v tx added] (Datom. e a v (if added tx (- ^long tx)) 0)))
 
 (defn datom? [x] (instance? Datom x))
 

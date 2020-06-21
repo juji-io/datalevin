@@ -2,8 +2,11 @@
   "low level bits"
   (:require [clojure.java.io :as io]
             [datalevin.datom :as d]
+            [datalevin.constants :as c]
             [taoensso.nippy :as nippy])
   (:import [java.io File DataInput DataOutput]
+           [java.nio.charset StandardCharsets]
+           [java.util Arrays]
            [java.nio ByteBuffer]
            [datalevin.datom Datom]))
 
@@ -54,12 +57,10 @@
   (when-let [bs (get-bytes bb)]
     (nippy/fast-thaw bs)))
 
-(def ^:const buffer-overflow "BufferOverflow:")
-
 (defn- check-buffer-overflow
   [^long length ^long remaining]
   (assert (<= length remaining)
-          (str buffer-overflow
+          (str c/buffer-overflow
                " trying to put "
                length
                " bytes while "
@@ -68,9 +69,13 @@
 
 (defn- put-long
   [^ByteBuffer bb n]
-  (assert (integer? n) "put-long requires an integer")
   (check-buffer-overflow Long/BYTES (.remaining bb))
   (.putLong bb ^long (long n)))
+
+(defn- put-int
+  [^ByteBuffer bb n]
+  (check-buffer-overflow Integer/BYTES (.remaining bb))
+  (.putInt bb ^int (int n)))
 
 (defn- put-bytes
   [^ByteBuffer bb ^bytes bs]
@@ -81,9 +86,8 @@
 
 (defn- put-byte
   [^ByteBuffer bb b]
-  (assert (instance? Byte b) "put-byte requires a byte")
   (check-buffer-overflow 1 (.remaining bb))
-  (.put bb ^byte b))
+  (.put bb ^byte (byte b)))
 
 (defn- put-data
   [^ByteBuffer bb x]
@@ -124,33 +128,61 @@
 
 (deftype DatomIndexable [e a p h t])
 
-(def ^:const +max-attr-size+ 401)
-
 (defn datom-indexable
   "Turn datom to a form that is suitable for putting in indices"
   [^Datom d]
-  (let [^bytes a (nippy/fast-freeze (.-a d))
-        _        (assert (<= (alength a) +max-attr-size+)
-                         "Attribute name cannot be longer than 400 characters")
-        ]
-    (->DatomIndexable (.-e d))))
-
+  (let [^bytes a (-> (.-a d) str (subs 1) (.getBytes StandardCharsets/UTF_8))
+        al       (alength a)
+        _        (assert (<= al c/+max-attr-size+)
+                         "Attribute name cannot be longer than 400 bytes")
+        ^bytes v (nippy/freeze (.-v d))
+        vl       (alength v)
+        p        (if (<= (+ al vl) c/+idx-attr+prefix-size+)
+                   v
+                   (Arrays/copyOf
+                    v (- c/+idx-attr+prefix-size+ al Integer/BYTES)))
+        h        (when-not (identical? p v) (hash (.-v d)))]
+    (->DatomIndexable (.-e d) a p h (.-tx d))))
 
 (defn- put-eavt
-  [bf x]
-  )
+  [bf ^DatomIndexable x]
+  (put-long bf (.-e x))
+  (put-bytes bf (.-a x))
+  (put-byte bf c/separator)
+  (put-bytes bf (.-p x))
+  (put-byte bf c/separator)
+  (put-long bf (.-t x))
+  (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-aevt
-  [bf x]
-  )
+  [bf ^DatomIndexable x]
+  (put-bytes bf (.-a x))
+  (put-byte bf c/separator)
+  (put-long bf (.-e x))
+  (put-bytes bf (.-p x))
+  (put-byte bf c/separator)
+  (put-long bf (.-t x))
+  (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-avet
-  [bf x]
-  )
+  [bf ^DatomIndexable x]
+  (put-bytes bf (.-a x))
+  (put-byte bf c/separator)
+  (put-bytes bf (.-p x))
+  (put-byte bf c/separator)
+  (put-long bf (.-e x))
+  (put-long bf (.-t x))
+  (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-vaet
-  [bf x]
-  )
+  [bf ^DatomIndexable x]
+  (put-bytes bf (.-p x))
+  (put-byte bf c/separator)
+  (put-bytes bf (.-a x))
+  (put-byte bf c/separator)
+  (put-long bf (.-e x))
+  (put-long bf (.-t x))
+  (when-let [h (.-h x)] (put-int bf h)))
 
 (defn put-buffer
   "Put the given type of data x in buffer bf, x-type can be one of :long,

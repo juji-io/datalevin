@@ -1,11 +1,13 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as sut]
             [datalevin.bits :as b]
+            [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test :refer [deftest is use-fixtures]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
+            [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [java.util UUID Arrays]
            [org.lmdbjava CursorIterable$KeyVal]))
@@ -142,9 +144,9 @@
 
 (test/defspec data-ops-generative-test
   100
-  (prop/for-all [k (gen/such-that (partial data-size-less-than? sut/+max-key-size+)
+  (prop/for-all [k (gen/such-that (partial data-size-less-than? c/+max-key-size+)
                                   gen/any-equatable)
-                 v (gen/such-that (partial data-size-less-than? sut/+default-val-size+)
+                 v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
                                   gen/any-equatable)]
                 (let [_      (sut/transact lmdb [[:put "a" k v]])
                       put-ok (= v (sut/get-value lmdb "a" k))

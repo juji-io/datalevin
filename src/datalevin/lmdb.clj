@@ -3,6 +3,7 @@
   (:refer-clojure :exclude [get iterate])
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
+            [datalevin.constants :as c]
             [clojure.string :as s]
             [taoensso.timbre :as log])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Dbi DbiFlags
@@ -15,12 +16,6 @@
                         EnvFlags/MDB_NORDAHEAD])
 
 (def default-dbi-flags [DbiFlags/MDB_CREATE])
-
-(def ^:const +max-dbs+ 128)
-(def ^:const +max-readers+ 126)
-(def ^:const +init-db-size+ 100) ; in megabytes
-(def ^:const +max-key-size+ 511) ; in bytes
-(def ^:const +default-val-size+ 16384) ; 16 kilobytes
 
 (defprotocol IBuffer
   (put-key [this data k-type]
@@ -81,7 +76,9 @@
   (new-rtx [this] "Create a new read-only transaction")
   (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
 
-(deftype RtxPool [^Env env ^ConcurrentHashMap rtxs ^:volatile-mutable cnt]
+(deftype RtxPool [^Env env
+                  ^ConcurrentHashMap rtxs
+                  ^:volatile-mutable ^long cnt]
   IRtxPool
   (close-pool [this]
     (locking this
@@ -90,19 +87,19 @@
       (set! cnt 0)))
   (new-rtx [this]
     (locking this
-      (when (< cnt +max-readers+)
+      (when (< cnt c/+max-readers+)
         (let [rtx (->Rtx (.txnRead env)
                          false
-                         (ByteBuffer/allocateDirect +max-key-size+)
-                         (ByteBuffer/allocateDirect +max-key-size+)
-                         (ByteBuffer/allocateDirect +max-key-size+))]
+                         (ByteBuffer/allocateDirect c/+max-key-size+)
+                         (ByteBuffer/allocateDirect c/+max-key-size+)
+                         (ByteBuffer/allocateDirect c/+max-key-size+))]
           (.put rtxs cnt rtx)
           (set! cnt (inc cnt))
           (reset rtx)
           (renew rtx)))))
   (get-rtx [this]
     (loop [i (.getId ^Thread (Thread/currentThread))]
-      (let [i'       (mod i cnt)
+      (let [^long i'       (mod i cnt)
             ^Rtx rtx (.get rtxs i')]
         (or (renew rtx)
             (new-rtx this)
@@ -145,7 +142,7 @@
     (try
       (b/put-buffer vb x t)
       (catch java.lang.AssertionError e
-        (if (s/includes? (ex-message e) b/buffer-overflow)
+        (if (s/includes? (ex-message e) c/buffer-overflow)
           (let [size (b/measure-size x)]
             (set! vb (ByteBuffer/allocateDirect size))
             (b/put-buffer vb x t))
@@ -292,9 +289,9 @@
     (close-pool pool)
     (.close env))
   (open-dbi [this dbi-name]
-    (open-dbi this dbi-name +max-key-size+ +default-val-size+ default-dbi-flags))
+    (open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+ default-dbi-flags))
   (open-dbi [this dbi-name key-size]
-    (open-dbi this dbi-name key-size +default-val-size+ default-dbi-flags))
+    (open-dbi this dbi-name key-size c/+default-val-size+ default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
     (open-dbi this dbi-name key-size val-size default-dbi-flags))
   (open-dbi [_ dbi-name key-size val-size flags]
@@ -391,13 +388,13 @@
 (defn open-lmdb
   "Open an LMDB env"
   ([dir]
-   (open-lmdb dir +init-db-size+ default-env-flags))
+   (open-lmdb dir c/+init-db-size+ default-env-flags))
   ([dir size flags]
    (let [file          (b/file dir)
          builder       (doto (Env/create)
                          (.setMapSize (* ^long size 1024 1024))
-                         (.setMaxReaders +max-readers+)
-                         (.setMaxDbs +max-dbs+))
+                         (.setMaxReaders c/+max-readers+)
+                         (.setMaxDbs c/+max-dbs+))
          ^Env env      (.open builder file (into-array EnvFlags flags))
          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
      (new-rtx pool)

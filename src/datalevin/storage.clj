@@ -2,26 +2,11 @@
   "storage layer of datalevin"
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as util]
+            [datalevin.constants :as c]
             [datalevin.datom :as d]
             [taoensso.nippy :as nippy])
   (:import [datalevin.lmdb LMDB]
            [org.lmdbjava PutFlags]))
-
-;; dbi-names
-(def ^:const eavt "eavt")
-(def ^:const aevt "aevt")
-(def ^:const avet "avet")
-(def ^:const vaet "vaet")
-(def ^:const datoms "datoms")
-(def ^:const config "config")
-
-(def ^:const +config-key-size+ 1)
-
-;; config keys
-(def schema (byte 0x01))
-(def rschema (byte 0x02))
-
-(def separator (byte 0x7f))
 
 (defprotocol IStore
   (close [this] "Close storage")
@@ -46,7 +31,7 @@
     ;; datoms dbi should put with PutFlags/MDB_APPEND
     (let []
       (lmdb/transact lmdb
-                    [[:put eavt ]]))
+                    [[:put c/eavt ]]))
     )
   (delete [_ datom])
   (slice [_ index start-datom end-datom])
@@ -60,10 +45,10 @@
   "Open and return the storage."
   [dir]
   (let [lmdb (lmdb/open-lmdb dir)]
-    (lmdb/open-dbi lmdb eavt lmdb/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb aevt lmdb/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb avet lmdb/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb vaet lmdb/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb datoms Long/BYTES)
-    (lmdb/open-dbi lmdb config +config-key-size+)
+    (lmdb/open-dbi lmdb c/eavt c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/aevt c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/avet c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/vaet c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/datoms Long/BYTES)
+    (lmdb/open-dbi lmdb c/config c/+config-key-size+)
     (->Store lmdb (init-max-dt lmdb))))
