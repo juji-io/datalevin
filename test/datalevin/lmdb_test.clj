@@ -34,6 +34,7 @@
                 [[:put "a" 1 2]
                  [:put "a" 'a 1]
                  [:put "a" 5 {}]
+                 [:put "a" :annunaki/enki true :attr :data]
                  [:put "a" :datalevin ["hello" "world"]]
                  [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
                  [:put "b" 2 3]
@@ -48,6 +49,7 @@
 
   ;; get
   (is (= 2 (sut/get-value lmdb "a" 1)))
+  (is (= true (sut/get-value lmdb "a" :annunaki/enki :attr :data)))
   (is (= (d/datom 1 :a/b {:id 4}) (sut/get-value lmdb "a" 42 :long :datom)))
   (is (nil? (sut/get-value lmdb "a" 2)))
   (is (nil? (sut/get-value lmdb "b" 1)))
@@ -88,7 +90,12 @@
     (is (= [0 1] (sut/get-first lmdb "c" [:all] :long :long)))
     (is (= [999 1000] (sut/get-first lmdb "c" [:all-back] :long :long)))
     (is (= [9 10] (sut/get-first lmdb "c" [:at-least 9] :long :long)))
-    (is (= [10 11] (sut/get-first lmdb "c" [:greater-than 9] :long :long)))))
+    (is (= [10 11] (sut/get-first lmdb "c" [:greater-than 9] :long :long)))
+    (sut/transact lmdb [[:put "a" 0xff 1 :byte]
+                        [:put "a" 0xee 2 :byte]
+                        [:put "a" 0x11 3 :byte]])
+    (is (= 3 (sut/get-first lmdb "a" [:all] :byte :data true)))
+    (is (= 1 (sut/get-first lmdb "a" [:all-back] :byte :data true)))))
 
 (deftest get-range-test
   (let [ks  (shuffle (range 0 1000))
@@ -112,7 +119,7 @@
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
         pred (fn [^CursorIterable$KeyVal kv]
                (let [k (-> kv (.key) (b/read-buffer :long))]
-                 (when (> k 15) (-> kv (.val) (b/read-buffer :long)))))]
+                 (when (> ^long k 15) (-> kv (.val) (b/read-buffer :long)))))]
     (sut/transact lmdb txs)
     (is (= 17 (sut/get-some lmdb pred "c" [:all] :long :long)))))
 
@@ -126,7 +133,7 @@
 ;; generative tests
 
 (defn- data-size-less-than?
-  [limit data]
+  [^long limit data]
   (< (alength ^bytes (nippy/fast-freeze data)) limit))
 
 (test/defspec datom-ops-generative-test

@@ -12,6 +12,8 @@
   (close [this] "Close storage")
   (init-max-tx [this] "Initialize and return the max transaction id")
   (init-max-eid [this] "Initialize and return the max entity id")
+  (init-schema [this] "Initialize and return the schema")
+  (update-schema [this attr props] "Update the schema")
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
   (slice [this index start-datom end-datom]
@@ -27,15 +29,21 @@
     )
   (init-max-eid [this]
     )
+  (init-schema [this]
+    )
+  (update-schema [this attr props]
+    )
   (insert [_ [e a v t]]
     ;; datoms dbi should put with PutFlags/MDB_APPEND
     (let []
       (lmdb/transact lmdb
-                    [[:put c/eavt ]]))
+                    [[:put c/eavt ]])))
+  (delete [_ datom]
     )
-  (delete [_ datom])
-  (slice [_ index start-datom end-datom])
-  (rslice [_ index start-datom end-datom]))
+  (slice [_ index start-datom end-datom]
+    )
+  (rslice [_ index start-datom end-datom]
+    ))
 
 (defn- init-max-dt
   [lmdb]
@@ -50,5 +58,5 @@
     (lmdb/open-dbi lmdb c/avet c/+max-key-size+ Long/BYTES)
     (lmdb/open-dbi lmdb c/vaet c/+max-key-size+ Long/BYTES)
     (lmdb/open-dbi lmdb c/datoms Long/BYTES)
-    (lmdb/open-dbi lmdb c/config c/+config-key-size+)
+    (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
     (->Store lmdb (init-max-dt lmdb))))

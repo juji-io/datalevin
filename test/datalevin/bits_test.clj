@@ -11,7 +11,7 @@
   (:import [java.util Arrays]
            [java.nio ByteBuffer]
            [datalevin.datom Datom]
-           [datalevin.bits DatomIndexable]))
+           [datalevin.bits Indexable]))
 
 (def ^ByteBuffer bf (ByteBuffer/allocateDirect 16384))
 
@@ -55,6 +55,14 @@
                 (.flip bf)
                 (= k (sut/read-buffer bf :long))))
 
+(test/defspec int-generative-test
+  1000
+  (prop/for-all [k gen/nat]
+                (.clear bf)
+                (sut/put-buffer bf k :int)
+                (.flip bf)
+                (= k (sut/read-buffer bf :int))))
+
 (test/defspec datom-generative-test
   1000
   (prop/for-all [e gen/large-integer
@@ -67,8 +75,19 @@
                   (.flip bf)
                   (is (= d (sut/read-buffer bf :datom))))))
 
-(def ^Datom d (d/datom 123456 :anunnaki/character "Enki"))
-(def ^DatomIndexable di (sut/datom-indexable d))
+(test/defspec attr-generative-test
+  1000
+  (prop/for-all [k gen/keyword-ns]
+                (.clear bf)
+                (sut/put-buffer bf k :attr)
+                (.flip bf)
+                (= k (sut/read-buffer bf :attr))))
+
+(def e 123456)
+(def a 235)
+(def v "Enki")
+(def t (+ c/tx0 100))
+(def ^Indexable d (sut/indexable e a v t))
 
 (def ^ByteBuffer bf1 (ByteBuffer/allocateDirect 16384))
 
@@ -83,177 +102,153 @@
         res
         (cond
           (and (= (.limit bf1) i)
-               (= (.limit bf2) j)) 0
+               (= (.limit bf2) j))    0
           (and (not= (.limit bf1) i)
-               (= (.limit bf2) j)) 1
+               (= (.limit bf2) j))    1
           (and (= (.limit bf1) i)
                (not= (.limit bf2) j)) -1
-          :else (recur (inc i) (inc j)))))))
+          :else                       (recur (inc i) (inc j)))))))
 
 (test/defspec eavt-generative-test
   1000
   (prop/for-all
-   [e (gen/large-integer* {:min c/e0})
-    a gen/keyword-ns
-    v gen/any-equatable
-    t (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/any-equatable
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
    (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf di :eavt)
+         _                   (sut/put-buffer bf d :eavt)
          _                   (.flip ^ByteBuffer bf)
-         ^Datom d1           (d/datom e a v t)
-         ^DatomIndexable di1 (sut/datom-indexable d1)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
          _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 di1 :eavt)
+         _                   (sut/put-buffer bf1 d1 :eavt)
          _                   (.flip ^ByteBuffer bf1)
          ^long  res          (bf-compare bf bf1)
-         e-d                 (.-e d)
-         e-d1                (.-e d1)
-         ^String a-d         (str (.-a d))
-         ^String a-d1        (str (.-a d1))
-         ^bytes v-d          (nippy/freeze (.-v d))
-         ^bytes v-d1         (nippy/freeze (.-v d1))
-         tx-d                (.-tx d)
-         tx-d1               (.-tx d1)]
-     (if (= e-d e-d1)
-       (if (= (.compareTo a-d a-d1) 0)
-         (if (= (Arrays/compare v-d v-d1) 0)
-           (if (= tx-d tx-d1)
+         ^bytes v-d          (nippy/freeze v)
+         ^bytes v-d1         (nippy/freeze v1)
+         v-cmp               (Arrays/compare v-d v-d1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (if (= t t1)
              (is (= (bf-compare bf bf1) 0))
-             (if (< tx-d tx-d1)
+             (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
-           (if (< (Arrays/compare v-d v-d1) 0)
+           (if (< v-cmp 0)
              (is (< res 0))
              (is (> res 0))))
-         (if (< (.compareTo a-d a-d1) 0)
+         (if (< ^int a ^int a1)
            (is (< res 0))
            (is (> res 0))))
-       (if (< e-d e-d1)
+       (if (< ^long e ^long e1)
          (is (< res 0))
          (is (> res 0)))))))
 
 (test/defspec aevt-generative-test
   1000
   (prop/for-all
-   [e (gen/large-integer* {:min c/e0})
-    a gen/keyword-ns
-    v gen/any-equatable
-    t (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/any-equatable
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
    (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf di :aevt)
+         _                   (sut/put-buffer bf d :aevt)
          _                   (.flip ^ByteBuffer bf)
-         ^Datom d1           (d/datom e a v t)
-         ^DatomIndexable di1 (sut/datom-indexable d1)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
          _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 di1 :aevt)
+         _                   (sut/put-buffer bf1 d1 :aevt)
          _                   (.flip ^ByteBuffer bf1)
          ^long  res          (bf-compare bf bf1)
-         e-d                 (.-e d)
-         e-d1                (.-e d1)
-         ^String a-d         (str (.-a d))
-         ^String a-d1        (str (.-a d1))
-         ^bytes v-d          (nippy/freeze (.-v d))
-         ^bytes v-d1         (nippy/freeze (.-v d1))
-         tx-d                (.-tx d)
-         tx-d1               (.-tx d1)]
-     (if (= (.compareTo a-d a-d1) 0)
-       (if (= e-d e-d1)
-         (if (= (Arrays/compare v-d v-d1) 0)
-           (if (= tx-d tx-d1)
+         ^bytes v-d          (nippy/freeze v)
+         ^bytes v-d1         (nippy/freeze v1)
+         v-cmp               (Arrays/compare v-d v-d1)]
+     (if (= a a1)
+       (if (= e e1)
+         (if (= v-cmp 0)
+           (if (= t t1)
              (is (= (bf-compare bf bf1) 0))
-             (if (< tx-d tx-d1)
+             (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
-           (if (< (Arrays/compare v-d v-d1) 0)
+           (if (< v-cmp 0)
              (is (< res 0))
              (is (> res 0))))
-         (if (< e-d e-d1)
+         (if (< ^long e ^long e1)
            (is (< res 0))
            (is (> res 0))))
-       (if (< (.compareTo a-d a-d1) 0)
+       (if (< ^int a ^int a1)
          (is (< res 0))
          (is (> res 0)))))))
 
 (test/defspec avet-generative-test
   1000
   (prop/for-all
-   [e (gen/large-integer* {:min c/e0})
-    a gen/keyword-ns
-    v gen/any-equatable
-    t (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/any-equatable
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
    (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf di :avet)
+         _                   (sut/put-buffer bf d :avet)
          _                   (.flip ^ByteBuffer bf)
-         ^Datom d1           (d/datom e a v t)
-         ^DatomIndexable di1 (sut/datom-indexable d1)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
          _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 di1 :avet)
+         _                   (sut/put-buffer bf1 d1 :avet)
          _                   (.flip ^ByteBuffer bf1)
          ^long  res          (bf-compare bf bf1)
-         e-d                 (.-e d)
-         e-d1                (.-e d1)
-         ^String a-d         (str (.-a d))
-         ^String a-d1        (str (.-a d1))
-         ^bytes v-d          (nippy/freeze (.-v d))
-         ^bytes v-d1         (nippy/freeze (.-v d1))
-         tx-d                (.-tx d)
-         tx-d1               (.-tx d1)]
-     (if (= (.compareTo a-d a-d1) 0)
-       (if (= (Arrays/compare v-d v-d1) 0)
-         (if (= e-d e-d1)
-           (if (= tx-d tx-d1)
+         ^bytes v-d          (nippy/freeze v)
+         ^bytes v-d1         (nippy/freeze v1)
+         v-cmp               (Arrays/compare v-d v-d1)]
+     (if (= a a1)
+       (if (= v-cmp 0)
+         (if (= e e1)
+           (if (= t t1)
              (is (= (bf-compare bf bf1) 0))
-             (if (< tx-d tx-d1)
+             (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
-           (if (< e-d e-d1)
+           (if (< ^long e ^long e1)
              (is (< res 0))
              (is (> res 0))))
-         (if (< (Arrays/compare v-d v-d1) 0)
+         (if (< v-cmp 0)
            (is (< res 0))
            (is (> res 0))))
-       (if (< (.compareTo a-d a-d1) 0)
+       (if (< ^int a ^int a1)
          (is (< res 0))
          (is (> res 0)))))))
 
 (test/defspec vaet-generative-test
   1000
   (prop/for-all
-   [e (gen/large-integer* {:min c/e0})
-    a gen/keyword-ns
-    v gen/any-equatable
-    t (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/any-equatable
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
    (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf di :vaet)
+         _                   (sut/put-buffer bf d :vaet)
          _                   (.flip ^ByteBuffer bf)
-         ^Datom d1           (d/datom e a v t)
-         ^DatomIndexable di1 (sut/datom-indexable d1)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
          _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 di1 :vaet)
+         _                   (sut/put-buffer bf1 d1 :vaet)
          _                   (.flip ^ByteBuffer bf1)
          ^long  res          (bf-compare bf bf1)
-         e-d                 (.-e d)
-         e-d1                (.-e d1)
-         ^String a-d         (str (.-a d))
-         ^String a-d1        (str (.-a d1))
-         ^bytes v-d          (nippy/freeze (.-v d))
-         ^bytes v-d1         (nippy/freeze (.-v d1))
-         tx-d                (.-tx d)
-         tx-d1               (.-tx d1)]
-     (if (= (Arrays/compare v-d v-d1) 0)
-       (if (= (.compareTo a-d a-d1) 0)
-         (if (= e-d e-d1)
-           (if (= tx-d tx-d1)
+         ^bytes v-d          (nippy/freeze v)
+         ^bytes v-d1         (nippy/freeze v1)
+         v-cmp               (Arrays/compare v-d v-d1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (if (= t t1)
              (is (= (bf-compare bf bf1) 0))
-             (if (< tx-d tx-d1)
+             (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
-           (if (< e-d e-d1)
+           (if (< ^long e ^long e1)
              (is (< res 0))
              (is (> res 0))))
-         (if (< (.compareTo a-d a-d1) 0)
+         (if (< ^int a ^int a1)
            (is (< res 0))
            (is (> res 0))))
-       (if (< (Arrays/compare v-d v-d1) 0)
+       (if (< v-cmp 0)
          (is (< res 0))
          (is (> res 0)))))))

@@ -6,7 +6,7 @@
             [taoensso.nippy :as nippy])
   (:import [java.io File DataInput DataOutput]
            [java.nio.charset StandardCharsets]
-           [java.util Arrays]
+           [java.util Arrays UUID]
            [java.nio ByteBuffer]
            [datalevin.datom Datom]))
 
@@ -36,6 +36,11 @@
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
   (.getLong bb))
+
+(defn- get-int
+  "Get an int from a ByteBuffer"
+  [^ByteBuffer bb]
+  (.getInt bb))
 
 (defn- get-byte
   "Get a byte from a ByteBuffer"
@@ -72,6 +77,11 @@
   (check-buffer-overflow Long/BYTES (.remaining bb))
   (.putLong bb ^long (long n)))
 
+(defn- put-double
+  [^ByteBuffer bb n]
+  (check-buffer-overflow Double/BYTES (.remaining bb))
+  (.putDouble bb ^double (double n)))
+
 (defn- put-int
   [^ByteBuffer bb n]
   (check-buffer-overflow Integer/BYTES (.remaining bb))
@@ -93,14 +103,34 @@
   [^ByteBuffer bb x]
   (put-bytes bb (nippy/fast-freeze x)))
 
+;; bytes
+
 (defn measure-size
   "measure size of x in number of bytes"
   [x]
   (cond
     (bytes? x)         (alength ^bytes x)
-    (integer? x)       8
+    (int? x)           8
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
+
+(defn hexify
+  "Convert bytes to hex string"
+  [bs]
+  (let [hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F]]
+    (letfn [(hexify-byte [b]
+              (let [v (bit-and ^byte b 0xFF)]
+                [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))]
+      (apply str (mapcat hexify-byte bs)))))
+
+(defn unhexify
+  "Convert hex string to byte sequence"
+  [s]
+  (letfn [(unhexify-2 [c1 c2]
+            (unchecked-byte
+             (+ (bit-shift-left (Character/digit ^char c1 16) 4)
+                (Character/digit ^char c2 16))))]
+    (map #(apply unhexify-2 %) (partition 2 s))))
 
 ;; datom
 
@@ -126,72 +156,155 @@
   [bb]
   (nippy/thaw (get-bytes bb)))
 
-(deftype DatomIndexable [e a p h t])
+;; index
 
-(defn datom-indexable
-  "Turn datom to a form that is suitable for putting in indices"
-  [^Datom d]
-  (let [^bytes a (-> (.-a d) str (subs 1) (.getBytes StandardCharsets/UTF_8))
-        al       (alength a)
-        _        (assert (<= al c/+max-attr-size+)
-                         "Attribute name cannot be longer than 400 bytes")
-        ^bytes v (nippy/freeze (.-v d))
-        vl       (alength v)
-        p        (if (<= (+ al vl) c/+idx-attr+prefix-size+)
-                   v
-                   (Arrays/copyOf
-                    v (- c/+idx-attr+prefix-size+ al Integer/BYTES)))
-        h        (when-not (identical? p v) (hash (.-v d)))]
-    (->DatomIndexable (.-e d) a p h (.-tx d))))
+(defn- keyword-bytes
+  [x]
+  (-> x str (subs 1) (.getBytes StandardCharsets/UTF_8)))
+
+(defn- put-attr
+  [bf x]
+  (let [^bytes a (keyword-bytes x)
+        al       (alength a)]
+    (assert (<= al c/+max-key-size+)
+            "Attribute cannot be longer than 511 bytes")
+    (put-bytes bf a)))
+
+(defn- get-attr
+  [bf]
+  (let [^bytes bs (get-bytes bf)]
+    (-> bs String. keyword)))
+
+(defn- symbol-bytes
+  [v]
+  (-> v str (.getBytes StandardCharsets/UTF_8)))
+
+(defn- string-bytes
+  [^String v]
+  (.getBytes v StandardCharsets/UTF_8))
+
+(defn- data-bytes
+  [v]
+  (nippy/freeze v))
+
+(defn- val-bytes
+  "Turn value into bytes according to :db/valueType"
+  [v t]
+  (case t
+    :db.type/keyword (keyword-bytes v)
+    :db.type/symbol  (symbol-bytes v)
+    :db.type/string  (string-bytes v)
+    :db.type/boolean nil
+    :db.type/long    nil
+    :db.type/double  nil
+    :db.type/ref     nil
+    :db.type/instant nil
+    :db.type/uuid    nil
+    :db.type/bytes   v
+    (data-bytes v)))
+
+(deftype Indexable [e a v f b h t])
+
+(defn- val-header
+  [t]
+  (case t
+    :db.type/keyword type-keyword
+    :db.type/symbol  type-symbol
+    :db.type/string  type-string
+    :db.type/boolean type-boolean
+    :db.type/long    type-long
+    :db.type/double  type-double
+    :db.type/ref     type-ref
+    :db.type/instant type-instant
+    :db.type/uuid    type-uuid
+    :db.type/bytes   type-bytes
+    nil))
+
+(defn indexable
+  "Turn datom parts into a form that is suitable for putting in indices,
+  where aid is the integer id of an attribute, vt is its :db/valueType"
+  [eid aid val tx vt]
+  (let [hdr (val-header vt)]
+    (if-let [vb (val-bytes val vt)]
+     (let [bl   (alength ^bytes vb)
+           cut? (> bl c/+val-bytes-wo-hdr+)
+           bas  (if cut?
+                  (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
+                  vb)
+           hsh  (when cut? (hash val))]
+       (->Indexable eid aid nil hdr bas hsh tx))
+     (->Indexable eid aid val hdr nil nil tx))))
+
+(defn- put-uuid
+  [bf ^UUID val]
+  (put-long bf (.getMostSignificantBits val))
+  (put-long bf (.getLeastSignificantBits val)))
+
+(defn- get-uuid
+  [bf]
+  (UUID. (get-long bf) (get-long bf)))
+
+(defn- put-native
+  [bf val hdr]
+  (condp = hdr
+    c/type-long    (put-long bf val)
+    c/type-ref     (put-long bf val)
+    c/type-uuid    (put-uuid bf val)
+    c/type-boolean (put-byte bf (if val c/true-value c/false-value))
+    c/type-instant (put-long bf val)
+    c/type-double  (put-double bf val)))
 
 (defn- put-eavt
-  [bf ^DatomIndexable x]
+  [bf ^Indexable x]
   (put-long bf (.-e x))
-  (put-bytes bf (.-a x))
-  (put-byte bf c/separator)
-  (put-bytes bf (.-p x))
+  (put-int bf (.-a x))
+  (when-let [hdr (.-f x)] (put-byte bf hdr))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-aevt
-  [bf ^DatomIndexable x]
-  (put-bytes bf (.-a x))
-  (put-byte bf c/separator)
+  [bf ^Indexable x]
+  (put-int bf (.-a x))
   (put-long bf (.-e x))
-  (put-bytes bf (.-p x))
+  (when-let [hdr (.-f x)] (put-byte bf hdr))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-avet
-  [bf ^DatomIndexable x]
-  (put-bytes bf (.-a x))
-  (put-byte bf c/separator)
-  (put-bytes bf (.-p x))
+  [bf ^Indexable x]
+  (put-int bf (.-a x))
+  (when-let [hdr (.-f x)] (put-byte bf hdr))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
   (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-vaet
-  [bf ^DatomIndexable x]
-  (put-bytes bf (.-p x))
+  [bf ^Indexable x]
+  (when-let [hdr (.-f x)] (put-byte bf hdr))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
   (put-byte bf c/separator)
-  (put-bytes bf (.-a x))
-  (put-byte bf c/separator)
+  (put-int bf (.-a x))
   (put-long bf (.-e x))
   (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
 (defn put-buffer
   "Put the given type of data x in buffer bf, x-type can be one of :long,
-  :byte, :bytes, :data, :datom or index type :eavt, :aevt, :avet, :vaet"
+  :int, :byte, :bytes, :data, :datom, :attr or index type :eavt, :aevt, :avet,
+  or :vaet"
   [bf x x-type]
   (case x-type
     :long  (put-long bf x)
+    :int   (put-int bf x)
     :byte  (put-byte bf x)
     :bytes (put-bytes bf x)
+    :attr  (put-attr bf x)
     :datom (put-datom bf x)
     :eavt  (put-eavt bf x)
     :aevt  (put-aevt bf x)
@@ -201,11 +314,13 @@
 
 (defn read-buffer
   "Get the given type of data from buffer bf, v-type can be one of
-  :long, :byte, :bytes, :datom or :data"
+  :long, :int, :byte, :bytes, :datom, :attr or :data"
   [^ByteBuffer bb v-type]
   (case v-type
     :long  (get-long bb)
+    :int   (get-int bb)
     :byte  (get-byte bb)
     :bytes (get-bytes bb)
+    :attr  (get-attr bb)
     :datom (get-datom bb)
     (get-data bb)))
