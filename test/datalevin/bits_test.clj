@@ -85,9 +85,9 @@
 
 (def e 123456)
 (def a 235)
-(def v "Enki")
+;; (def v "Enki")
 (def t (+ c/tx0 100))
-(def ^Indexable d (sut/indexable e a v t))
+;; (def ^Indexable d (sut/indexable e a v t))
 
 (def ^ByteBuffer bf1 (ByteBuffer/allocateDirect 16384))
 
@@ -109,29 +109,34 @@
                (not= (.limit bf2) j)) -1
           :else                       (recur (inc i) (inc j)))))))
 
-(test/defspec eavt-generative-test
+(vec (.getBytes ""))
+(.clear bf)
+(.put bf (.getBytes ""))
+(.flip bf)
+
+(test/defspec keyword-eavt-generative-test
   1000
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
-    v1 gen/any-equatable
+    v1 gen/keyword-ns
     t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
-   (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf d :eavt)
-         _                   (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
-         _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 d1 :eavt)
-         _                   (.flip ^ByteBuffer bf1)
-         ^long  res          (bf-compare bf bf1)
-         ^bytes v-d          (nippy/freeze v)
-         ^bytes v-d1         (nippy/freeze v1)
-         v-cmp               (Arrays/compare v-d v-d1)]
+   (let [v             :character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/keyword)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :eavt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/keyword)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :eavt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
      (if (= e e1)
        (if (= a a1)
          (if (= v-cmp 0)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -145,24 +150,24 @@
          (is (< res 0))
          (is (> res 0)))))))
 
-(test/defspec aevt-generative-test
+(test/defspec keyword-aevt-generative-test
   1000
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
-    v1 gen/any-equatable
+    v1 gen/keyword-ns
     t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
-   (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf d :aevt)
-         _                   (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
-         _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 d1 :aevt)
-         _                   (.flip ^ByteBuffer bf1)
-         ^long  res          (bf-compare bf bf1)
-         ^bytes v-d          (nippy/freeze v)
-         ^bytes v-d1         (nippy/freeze v1)
-         v-cmp               (Arrays/compare v-d v-d1)]
+   (let [v             :character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/keyword)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :aevt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/keyword)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :aevt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
      (if (= a a1)
        (if (= e e1)
          (if (= v-cmp 0)
@@ -181,29 +186,29 @@
          (is (< res 0))
          (is (> res 0)))))))
 
-(test/defspec avet-generative-test
+(test/defspec keyword-avet-generative-test
   1000
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
-    v1 gen/any-equatable
+    v1 gen/keyword-ns
     t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
-   (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf d :avet)
-         _                   (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
-         _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 d1 :avet)
-         _                   (.flip ^ByteBuffer bf1)
-         ^long  res          (bf-compare bf bf1)
-         ^bytes v-d          (nippy/freeze v)
-         ^bytes v-d1         (nippy/freeze v1)
-         v-cmp               (Arrays/compare v-d v-d1)]
+   (let [v             :character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/keyword)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :avet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/keyword)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :avet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
      (if (= a a1)
        (if (= v-cmp 0)
          (if (= e e1)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -217,29 +222,605 @@
          (is (< res 0))
          (is (> res 0)))))))
 
-(test/defspec vaet-generative-test
+(test/defspec keyword-vaet-generative-test
   1000
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
-    v1 gen/any-equatable
+    v1 gen/keyword-ns
     t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
-   (let [_                   (.clear ^ByteBuffer bf)
-         _                   (sut/put-buffer bf d :vaet)
-         _                   (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 t1)
-         _                   (.clear ^ByteBuffer bf1)
-         _                   (sut/put-buffer bf1 d1 :vaet)
-         _                   (.flip ^ByteBuffer bf1)
-         ^long  res          (bf-compare bf bf1)
-         ^bytes v-d          (nippy/freeze v)
-         ^bytes v-d1         (nippy/freeze v1)
-         v-cmp               (Arrays/compare v-d v-d1)]
+   (let [v             :character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/keyword)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :vaet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/keyword)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :vaet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
      (if (= v-cmp 0)
        (if (= a a1)
          (if (= e e1)
            (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< v-cmp 0)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec symbol-eavt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/symbol-ns
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             'character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/symbol)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :eavt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/symbol)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :eavt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^long e ^long e1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec symbol-aevt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/symbol-ns
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             'character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/symbol)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :aevt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/symbol)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :aevt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= e e1)
+         (if (= v-cmp 0)
+           (if (= t t1)
              (is (= (bf-compare bf bf1) 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^long e ^long e1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec symbol-avet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/symbol-ns
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             'character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/symbol)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :avet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/symbol)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :avet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= v-cmp 0)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< v-cmp 0)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec symbol-vaet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/symbol-ns
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             'character/enki
+         ^Indexable d  (sut/indexable e a v t :db.type/symbol)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :vaet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/symbol)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :vaet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< v-cmp 0)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec string-eavt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/string
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             "character/enki"
+         ^Indexable d  (sut/indexable e a v t :db.type/string)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :eavt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/string)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :eavt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^long e ^long e1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec string-aevt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/string
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             "character/enki"
+         ^Indexable d  (sut/indexable e a v t :db.type/string)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :aevt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/string)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :aevt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= e e1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= (bf-compare bf bf1) 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^long e ^long e1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec string-avet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/string
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             "character/enki"
+         ^Indexable d  (sut/indexable e a v t :db.type/string)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :avet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/string)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :avet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= v-cmp 0)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< v-cmp 0)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec string-vaet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/string
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             "character/enki"
+         ^Indexable d  (sut/indexable e a v t :db.type/string)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :vaet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/string)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :vaet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< v-cmp 0)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec boolean-eavt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/boolean
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             true
+         ^Indexable d  (sut/indexable e a v t :db.type/boolean)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :eavt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/boolean)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :eavt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^long e ^long e1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec boolean-aevt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/boolean
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             true
+         ^Indexable d  (sut/indexable e a v t :db.type/boolean)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :aevt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/boolean)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :aevt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= e e1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= (bf-compare bf bf1) 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^long e ^long e1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec boolean-avet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/boolean
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             true
+         ^Indexable d  (sut/indexable e a v t :db.type/boolean)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :avet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/boolean)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :avet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= v-cmp 0)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< v-cmp 0)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec boolean-vaet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/boolean
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             true
+         ^Indexable d  (sut/indexable e a v t :db.type/boolean)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :vaet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/boolean)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :vaet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< v-cmp 0)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec long-eavt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/large-integer
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             123456
+         ^Indexable d  (sut/indexable e a v t :db.type/long)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :eavt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/long)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :eavt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^long e ^long e1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec long-aevt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/large-integer
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             123456
+         ^Indexable d  (sut/indexable e a v t :db.type/long)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :aevt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/long)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :aevt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= e e1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= (bf-compare bf bf1) 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^long e ^long e1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec long-avet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/large-integer
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             123456
+         ^Indexable d  (sut/indexable e a v t :db.type/long)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :avet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/long)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :avet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= v-cmp 0)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< v-cmp 0)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec long-vaet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/large-integer
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             123456
+         ^Indexable d  (sut/indexable e a v t :db.type/long)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :vaet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/long)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :vaet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))

@@ -73,9 +73,9 @@
                "remaining in the ByteBuffer.")))
 
 (defn- put-long
-  [^ByteBuffer bb n]
-  (check-buffer-overflow Long/BYTES (.remaining bb))
-  (.putLong bb ^long (long n)))
+  ([^ByteBuffer bb n]
+   (check-buffer-overflow Long/BYTES (.remaining bb))
+   (.putLong bb ^long n)))
 
 (defn- put-double
   [^ByteBuffer bb n]
@@ -89,10 +89,8 @@
 
 (defn- put-bytes
   [^ByteBuffer bb ^bytes bs]
-  (let [len (alength bs)]
-    (assert (< 0 len) "Cannot put empty byte array into ByteBuffer")
-    (check-buffer-overflow len (.remaining bb))
-    (.put bb bs)))
+  (check-buffer-overflow (alength bs) (.remaining bb))
+  (.put bb bs))
 
 (defn- put-byte
   [^ByteBuffer bb b]
@@ -158,9 +156,13 @@
 
 ;; index
 
+(defn- string-bytes
+  [^String v]
+  (.getBytes v StandardCharsets/UTF_8))
+
 (defn- keyword-bytes
   [x]
-  (-> x str (subs 1) (.getBytes StandardCharsets/UTF_8)))
+  (-> x str (subs 1) string-bytes))
 
 (defn- put-attr
   [bf x]
@@ -177,15 +179,11 @@
 
 (defn- symbol-bytes
   [v]
-  (-> v str (.getBytes StandardCharsets/UTF_8)))
-
-(defn- string-bytes
-  [^String v]
-  (.getBytes v StandardCharsets/UTF_8))
+  (-> v str string-bytes))
 
 (defn- data-bytes
   [v]
-  (nippy/freeze v))
+  (nippy/fast-freeze v))
 
 (defn- val-bytes
   "Turn value into bytes according to :db/valueType"
@@ -203,28 +201,28 @@
     :db.type/bytes   v
     (data-bytes v)))
 
-(deftype Indexable [e a v f b h t])
-
 (defn- val-header
-  [t]
+  [v t]
   (case t
-    :db.type/keyword type-keyword
-    :db.type/symbol  type-symbol
-    :db.type/string  type-string
-    :db.type/boolean type-boolean
-    :db.type/long    type-long
-    :db.type/double  type-double
-    :db.type/ref     type-ref
-    :db.type/instant type-instant
-    :db.type/uuid    type-uuid
-    :db.type/bytes   type-bytes
+    :db.type/keyword c/type-keyword
+    :db.type/symbol  c/type-symbol
+    :db.type/string  c/type-string
+    :db.type/boolean c/type-boolean
+    :db.type/long    (if (neg? ^long v) c/type-long-neg c/type-long-pos)
+    :db.type/double  (if (neg? ^double v) c/type-double-neg c/type-double-pos)
+    :db.type/ref     c/type-ref
+    :db.type/instant c/type-instant
+    :db.type/uuid    c/type-uuid
+    :db.type/bytes   c/type-bytes
     nil))
+
+(deftype Indexable [e a v f b h t])
 
 (defn indexable
   "Turn datom parts into a form that is suitable for putting in indices,
   where aid is the integer id of an attribute, vt is its :db/valueType"
   [eid aid val tx vt]
-  (let [hdr (val-header vt)]
+  (let [hdr (val-header val vt)]
     (if-let [vb (val-bytes val vt)]
      (let [bl   (alength ^bytes vb)
            cut? (> bl c/+val-bytes-wo-hdr+)
@@ -247,19 +245,21 @@
 (defn- put-native
   [bf val hdr]
   (condp = hdr
-    c/type-long    (put-long bf val)
-    c/type-ref     (put-long bf val)
-    c/type-uuid    (put-uuid bf val)
-    c/type-boolean (put-byte bf (if val c/true-value c/false-value))
-    c/type-instant (put-long bf val)
-    c/type-double  (put-double bf val)))
+    c/type-long-pos   (put-long bf val)
+    c/type-ref        (put-long bf val)
+    c/type-uuid       (put-uuid bf val)
+    c/type-boolean    (put-byte bf (if val c/true-value c/false-value))
+    c/type-instant    (put-long bf val)
+    c/type-double-pos (put-double bf val)
+    c/type-long-neg   (put-long bf val)
+    c/type-double-neg (put-double bf val)))
 
 (defn- put-eavt
   [bf ^Indexable x]
   (put-long bf (.-e x))
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
@@ -269,7 +269,7 @@
   (put-int bf (.-a x))
   (put-long bf (.-e x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
@@ -278,7 +278,7 @@
   [bf ^Indexable x]
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
   (put-long bf (.-t x))
@@ -287,7 +287,7 @@
 (defn- put-vaet
   [bf ^Indexable x]
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf val (.-f x)))
+  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-int bf (.-a x))
   (put-long bf (.-e x))

@@ -20,26 +20,29 @@
 (def ^:const +val-bytes-wo-hdr+ 489) ; sans 1 byte header
 (def ^:const +val-bytes-trunc+ 485) ; sans 4 byte hash
 
-;; storage
+;; index storage
 
 (def ^:const buffer-overflow "BufferOverflow:")
 
-;; value type for front matter, abuse forbidden bytes of utf-8
-(def ^:const type-long (byte 0xF5))
-(def ^:const type-ref (byte 0xF6))
+;; value headers, use forbidden bytes of utf-8
+(def ^:const type-long-neg (byte 0xC0))
+(def ^:const type-long-pos (byte 0xC1))
+(def ^:const type-double-neg (byte 0xF5))
+(def ^:const type-double-pos (byte 0xF6))
 (def ^:const type-instant (byte 0xF7))
-(def ^:const type-double (byte 0xF8))
+(def ^:const type-ref (byte 0xF8))
 (def ^:const type-uuid (byte 0xF9))
 (def ^:const type-string (byte 0xFA))
 (def ^:const type-keyword (byte 0xFB))
 (def ^:const type-symbol (byte 0xFC))
 (def ^:const type-boolean (byte 0xFD))
 (def ^:const type-bytes (byte 0xFE))
+;;(def ^:const type-TBD (byte 0xFF))
 
-(def ^:const false-value (byte 0x00))
-(def ^:const true-value (byte 0x01))
+(def ^:const false-value (byte 0x01))
+(def ^:const true-value (byte 0x02))
 
-(def ^:const separator (byte 0xFF))
+(def ^:const separator (byte 0x00))
 
 ;; dbi-names
 (def ^:const eavt "eavt")
