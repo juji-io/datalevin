@@ -27,8 +27,8 @@
 ;; value headers, use forbidden bytes of utf-8
 (def ^:const type-long-neg (byte 0xC0))
 (def ^:const type-long-pos (byte 0xC1))
-(def ^:const type-double-neg (byte 0xF5))
-(def ^:const type-double-pos (byte 0xF6))
+(def ^:const type-float (byte 0xF5))
+(def ^:const type-double (byte 0xF6))
 (def ^:const type-instant (byte 0xF7))
 (def ^:const type-ref (byte 0xF8))
 (def ^:const type-uuid (byte 0xF9))

@@ -8,7 +8,7 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [datalevin.constants :as c])
-  (:import [java.util Arrays]
+  (:import [java.util Arrays UUID]
            [java.nio ByteBuffer]
            [datalevin.datom Datom]
            [datalevin.bits Indexable]))
@@ -55,14 +55,6 @@
                 (.flip bf)
                 (= k (sut/read-buffer bf :long))))
 
-(test/defspec int-generative-test
-  1000
-  (prop/for-all [k gen/nat]
-                (.clear bf)
-                (sut/put-buffer bf k :int)
-                (.flip bf)
-                (= k (sut/read-buffer bf :int))))
-
 (test/defspec datom-generative-test
   1000
   (prop/for-all [e gen/large-integer
@@ -83,11 +75,11 @@
                 (.flip bf)
                 (= k (sut/read-buffer bf :attr))))
 
+;; test indexing preserve the order of values
+
 (def e 123456)
 (def a 235)
-;; (def v "Enki")
 (def t (+ c/tx0 100))
-;; (def ^Indexable d (sut/indexable e a v t))
 
 (def ^ByteBuffer bf1 (ByteBuffer/allocateDirect 16384))
 
@@ -172,7 +164,7 @@
        (if (= e e1)
          (if (= v-cmp 0)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -316,7 +308,7 @@
        (if (= e e1)
          (if (= v-cmp 0)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -460,7 +452,7 @@
        (if (= e e1)
          (if (= v-cmp 0)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -604,7 +596,7 @@
        (if (= e e1)
          (if (= v-cmp 0)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -748,7 +740,7 @@
        (if (= e e1)
          (if (= v-cmp 0)
            (if (= t t1)
-             (is (= (bf-compare bf bf1) 0))
+             (is (= res 0))
              (if (< ^long t ^long t1)
                (is (< res 0))
                (is (> res 0))))
@@ -833,3 +825,149 @@
        (if (< v-cmp 0)
          (is (< res 0))
          (is (> res 0)))))))
+
+(test/defspec double-eavt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 (gen/double* {:NaN? false})
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             4.2
+         ^Indexable d  (sut/indexable e a v t :db.type/double)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :eavt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/double)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :eavt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^long e ^long e1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec double-aevt-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 (gen/double* {:NaN? false})
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             4.2
+         ^Indexable d  (sut/indexable e a v t :db.type/double)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :aevt)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/double)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :aevt)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= e e1)
+         (if (= v-cmp 0)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^long e ^long e1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec double-avet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 (gen/double* {:NaN? false})
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             4.2
+         ^Indexable d  (sut/indexable e a v t :db.type/double)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :avet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/double)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :avet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= a a1)
+       (if (= v-cmp 0)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< v-cmp 0)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^int a ^int a1)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+(test/defspec double-vaet-generative-test
+  1000
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 (gen/double* {:NaN? false})
+    t1 (gen/large-integer* {:min c/tx0 :max c/txmax})]
+   (let [v             4.2
+         ^Indexable d  (sut/indexable e a v t :db.type/double)
+         _             (.clear ^ByteBuffer bf)
+         _             (sut/put-buffer bf d :vaet)
+         _             (.flip ^ByteBuffer bf)
+         ^Indexable d1 (sut/indexable e1 a1 v1 t1 :db.type/double)
+         _             (.clear ^ByteBuffer bf1)
+         _             (sut/put-buffer bf1 d1 :vaet)
+         _             (.flip ^ByteBuffer bf1)
+         ^long  res    (bf-compare bf bf1)
+         v-cmp         (compare v v1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (if (= t t1)
+             (is (= res 0))
+             (if (< ^long t ^long t1)
+               (is (< res 0))
+               (is (> res 0))))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< v-cmp 0)
+         (is (< res 0))
+         (is (> res 0)))))))
+
+;; TODO test-check doesn't have a float generator yet

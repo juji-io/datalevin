@@ -77,10 +77,29 @@
    (check-buffer-overflow Long/BYTES (.remaining bb))
    (.putLong bb ^long n)))
 
+(defn- encode-float
+  [x]
+  (assert (not (Float/isNaN x)) "Cannot index NaN")
+  (if neg?
+    (bit-not (Float/floatToRawIntBits (float x)))
+    (bit-flip (Float/floatToRawIntBits (float x)) 31)))
+
+(defn- put-float
+  [^ByteBuffer bb n]
+  (check-buffer-overflow Float/BYTES (.remaining bb))
+  (.putFloat bb (encode-float n)))
+
+(defn- encode-double
+  [x]
+  (assert (not (Double/isNaN x)) "Cannot index NaN")
+  (if neg?
+    (bit-not (Double/doubleToRawLongBits (double x)))
+    (bit-flip (Double/doubleToRawLongBits (double x)) 63)))
+
 (defn- put-double
   [^ByteBuffer bb n]
   (check-buffer-overflow Double/BYTES (.remaining bb))
-  (.putDouble bb ^double (double n)))
+  (.putDouble bb (encode-double n)))
 
 (defn- put-int
   [^ByteBuffer bb n]
@@ -195,6 +214,7 @@
     :db.type/boolean nil
     :db.type/long    nil
     :db.type/double  nil
+    :db.type/float   nil
     :db.type/ref     nil
     :db.type/instant nil
     :db.type/uuid    nil
@@ -209,7 +229,8 @@
     :db.type/string  c/type-string
     :db.type/boolean c/type-boolean
     :db.type/long    (if (neg? ^long v) c/type-long-neg c/type-long-pos)
-    :db.type/double  (if (neg? ^double v) c/type-double-neg c/type-double-pos)
+    :db.type/float   c/type-float
+    :db.type/double  c/type-double
     :db.type/ref     c/type-ref
     :db.type/instant c/type-instant
     :db.type/uuid    c/type-uuid
@@ -245,14 +266,14 @@
 (defn- put-native
   [bf val hdr]
   (condp = hdr
-    c/type-long-pos   (put-long bf val)
-    c/type-ref        (put-long bf val)
-    c/type-uuid       (put-uuid bf val)
-    c/type-boolean    (put-byte bf (if val c/true-value c/false-value))
-    c/type-instant    (put-long bf val)
-    c/type-double-pos (put-double bf val)
-    c/type-long-neg   (put-long bf val)
-    c/type-double-neg (put-double bf val)))
+    c/type-long-pos (put-long bf val)
+    c/type-long-neg (put-long bf val)
+    c/type-ref      (put-long bf val)
+    c/type-uuid     (put-uuid bf val)
+    c/type-boolean  (put-byte bf (if val c/true-value c/false-value))
+    c/type-instant  (put-long bf val)
+    c/type-double   (put-double bf val)
+    c/type-float    (put-float bf val)))
 
 (defn- put-eavt
   [bf ^Indexable x]
@@ -296,12 +317,11 @@
 
 (defn put-buffer
   "Put the given type of data x in buffer bf, x-type can be one of :long,
-  :int, :byte, :bytes, :data, :datom, :attr or index type :eavt, :aevt, :avet,
+  :byte, :bytes, :data, :datom, :attr or index type :eavt, :aevt, :avet,
   or :vaet"
   [bf x x-type]
   (case x-type
     :long  (put-long bf x)
-    :int   (put-int bf x)
     :byte  (put-byte bf x)
     :bytes (put-bytes bf x)
     :attr  (put-attr bf x)
@@ -314,11 +334,10 @@
 
 (defn read-buffer
   "Get the given type of data from buffer bf, v-type can be one of
-  :long, :int, :byte, :bytes, :datom, :attr or :data"
+  :long, :byte, :bytes, :datom, :attr or :data"
   [^ByteBuffer bb v-type]
   (case v-type
     :long  (get-long bb)
-    :int   (get-int bb)
     :byte  (get-byte bb)
     :bytes (get-bytes bb)
     :attr  (get-attr bb)
