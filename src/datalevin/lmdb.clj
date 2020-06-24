@@ -206,7 +206,8 @@
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
      k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only the value will be returned if ignore-key? is true")
+     or :attr; only the value will be returned if ignore-key? is true;
+     If value is to be ignored, put :ignore as v-type")
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
@@ -218,7 +219,8 @@
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
      k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only values will be returned if ignore-key? is true")
+     or :attr; only values will be returned if ignore-key? is true;
+     If value is to be ignored, put :ignore as v-type")
   (get-some
     [this pred dbi-name k-range]
     [this pred dbi-name k-range k-type]
@@ -248,7 +250,8 @@
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (let [^Iterator iter            (.iterator iterable)
           ^CursorIterable$KeyVal kv (.next iter)
-          v                         (-> kv (.val) (b/read-buffer v-type))]
+          v                         (when (not= v-type :ignore)
+                                      (-> kv (.val) (b/read-buffer v-type)))]
       (if ignore-key?
         v
         [(-> kv (.key) (b/read-buffer k-type)) v]))))
@@ -261,7 +264,8 @@
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (let [^CursorIterable$KeyVal kv (.next iter)
-            v                         (-> kv (.val) (b/read-buffer v-type))
+            v                         (when (not= v-type :ignore)
+                                        (-> kv (.val) (b/read-buffer v-type)))
             holder'                   (conj! holder
                                              (if ignore-key?
                                                v

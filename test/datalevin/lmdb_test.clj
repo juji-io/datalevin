@@ -15,7 +15,6 @@
 (def ^:dynamic lmdb nil)
 
 (defn lmdb-test-fixture
-  "test using a default lmdb env, with two dbi 'a' and 'b'"
   [f]
   (let [dir (str "/tmp/lmdb-test-" (UUID/randomUUID))]
     (with-redefs [lmdb (sut/open-lmdb dir)]
@@ -88,6 +87,7 @@
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)]
     (sut/transact lmdb txs)
     (is (= [0 1] (sut/get-first lmdb "c" [:all] :long :long)))
+    (is (= [0 nil] (sut/get-first lmdb "c" [:all] :long :ignore)))
     (is (= [999 1000] (sut/get-first lmdb "c" [:all-back] :long :long)))
     (is (= [9 10] (sut/get-first lmdb "c" [:at-least 9] :long :long)))
     (is (= [10 11] (sut/get-first lmdb "c" [:greater-than 9] :long :long)))
@@ -104,6 +104,8 @@
         res (sort-by first (map (fn [k v] [k v]) ks vs))]
     (sut/transact lmdb txs)
     (is (= res (sut/get-range lmdb "c" [:all] :long :long)))
+    (is (= res
+           (sut/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
     (is (= (take 10 res)
            (sut/get-range lmdb "c" [:at-most 9] :long :long)))
     (is (= (->> res (drop 10) (take 100))
@@ -132,10 +134,6 @@
 
 ;; generative tests
 
-(defn- data-size-less-than?
-  [^long limit data]
-  (< (alength ^bytes (nippy/fast-freeze data)) limit))
-
 (test/defspec datom-ops-generative-test
   100
   (prop/for-all [k gen/large-integer
@@ -148,6 +146,10 @@
                       _      (sut/transact lmdb [[:del "a" k :long]])
                       del-ok (nil? (sut/get-value lmdb "a" k :long))]
                   (and put-ok del-ok))))
+
+(defn- data-size-less-than?
+  [^long limit data]
+  (< (alength ^bytes (nippy/fast-freeze data)) limit))
 
 (test/defspec data-ops-generative-test
   100

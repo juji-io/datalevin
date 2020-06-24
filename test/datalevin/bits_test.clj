@@ -1,13 +1,13 @@
 (ns datalevin.bits-test
   (:require [datalevin.bits :as sut]
             [datalevin.datom :as d]
+            [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log]
             [clojure.test :refer [deftest is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop]
-            [datalevin.constants :as c])
+            [clojure.test.check.properties :as prop])
   (:import [java.util Arrays UUID]
            [java.nio ByteBuffer]
            [datalevin.datom Datom]
@@ -75,7 +75,7 @@
                 (.flip bf)
                 (= k (sut/read-buffer bf :attr))))
 
-;; test indexing preserve the order of values
+;; test indexing preserves the order of values
 
 (def e 123456)
 (def a 235)
@@ -100,11 +100,6 @@
           (and (= (.limit bf1) i)
                (not= (.limit bf2) j)) -1
           :else                       (recur (inc i) (inc j)))))))
-
-(vec (.getBytes ""))
-(.clear bf)
-(.put bf (.getBytes ""))
-(.flip bf)
 
 (test/defspec keyword-eavt-generative-test
   1000
