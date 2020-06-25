@@ -188,7 +188,7 @@
   (transact [this txs]
     "Update db, txs is a seq of [op dbi-name k v k-type v-type put-flags]
      when op is :put; [op dbi-name k k-type] when op is :del;
-     k-type and v-type can be :long, :byte, :bytes, :attr, :datom, or :data")
+     See `bits/put-buffer` for allowed k-type and v-type")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]

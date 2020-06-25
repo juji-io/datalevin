@@ -126,8 +126,8 @@
     (is (= 17 (sut/get-some lmdb pred "c" [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test
-  (let [ks (shuffle (range 0 1000))
-        vs (map inc ks)
+  (let [ks  (shuffle (range 0 1000))
+        vs  (map inc ks)
         txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
     (sut/transact lmdb txs)
     (is (= vs (pmap #(sut/get-value lmdb "a" % :long :long) ks)))))

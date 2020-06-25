@@ -297,7 +297,7 @@
           _           (arrays/asort avet-arr d/cmp-datoms-avet-quick)
           avet        (set/from-sorted-array d/cmp-datoms-avet avet-arr)
           max-eid     (init-max-eid eavt)
-          max-tx      (transduce (map (fn [^Datom d] (datom-tx d))) max tx0 eavt)]
+          max-tx      tx0 #_(transduce (map (fn [^Datom d] (datom-tx d))) max tx0 eavt)]
       (map->DB {
         :schema  schema
         :rschema rschema

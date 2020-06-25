@@ -7,12 +7,12 @@
             [datalevin.datom :as d]
             [taoensso.nippy :as nippy])
   (:import [datalevin.lmdb LMDB]
+           [datalevin.datom Datom]
            [datalevin.bits Indexable]
            [org.lmdbjava PutFlags CursorIterable$KeyVal]))
 
 (defprotocol IStore
   (close [this] "Close storage")
-  (init-max-tx [this] "Initialize and return the max transaction id")
   (init-max-eid [this] "Initialize and return the max entity id")
   (init-schema [this] "Initialize and return the schema")
   (update-schema [this attr props] "Update the schema")
@@ -23,12 +23,12 @@
   (rslice [this index start-datom end-datom]
     "Return a range of datoms in reverse for the given index"))
 
-(deftype Store [^LMDB lmdb ^:volatile-mutable schema ^:volatile-mutable max-dt]
+(deftype Store [^LMDB lmdb
+                ^:volatile-mutable schema
+                ^:volatile-mutable ^long max-dt]
   IStore
   (close [_]
     (lmdb/close lmdb))
-  (init-max-tx [_]
-    )
   (init-max-eid [this]
     )
   (init-schema [this]
@@ -37,20 +37,19 @@
     )
   (insert [_ datom indexing?]
     (locking max-dt
-      (let [s (schema (.-a datom))
-            i (b/indexable (.-e datom)
+      (let [s (schema (.-a ^Datom datom))
+            i (b/indexable (.-e ^Datom datom)
                            (:db/aid s)
-                           (.-v datom)
-                           (d/datom-tx datom)
+                           (.-v ^Datom datom)
                            (:db/valueType s))]
         (lmdb/transact lmdb
-                       (cond-> [[:put c/eavt i max-dt :eavt :long]
-                                [:put c/aevt i max-dt :aevt :long]
-                                [:put c/datoms max-dt datom :long :datom
+                       (cond-> [[:put c/eav i max-dt :eav :long]
+                                [:put c/aev i max-dt :aev :long]
+                                [:put c/giants max-dt datom :long :datom
                                  [PutFlags/MDB_APPEND]]]
                          indexing? (concat
-                                    [[:put c/avet i max-dt :avet :long]
-                                     [:put c/vaet i max-dt :vaet :long]])))
+                                    [[:put c/ave i max-dt :ave :long]
+                                     [:put c/vae i max-dt :vae :long]])))
         (set! max-dt (inc max-dt)))))
   (delete [_ datom]
     )
@@ -61,17 +60,17 @@
 
 (defn- init-max-dt
   [lmdb]
-  (or (first (lmdb/get-first lmdb c/datoms [:all-back] :long :ignore))
+  (or (first (lmdb/get-first lmdb c/giants [:all-back] :long :ignore))
       0))
 
 (defn open
   "Open and return the storage."
   [dir]
   (let [lmdb (lmdb/open-lmdb dir)]
-    (lmdb/open-dbi lmdb c/eavt c/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb c/aevt c/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb c/avet c/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb c/vaet c/+max-key-size+ Long/BYTES)
-    (lmdb/open-dbi lmdb c/datoms Long/BYTES)
+    (lmdb/open-dbi lmdb c/eav c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/aev c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/ave c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/vae c/+max-key-size+ Long/BYTES)
+    (lmdb/open-dbi lmdb c/giants Long/BYTES)
     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
     (->Store lmdb (init-max-dt lmdb))))

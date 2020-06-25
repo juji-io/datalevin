@@ -155,15 +155,14 @@
  [^Datom x ^DataOutput out]
  (.writeLong out (.-e x))
  (nippy/freeze-to-out! out (.-a x))
- (nippy/freeze-to-out! out (.-v x))
- (.writeLong out (.-tx x)))
+ (nippy/freeze-to-out! out (.-v x)))
 
 (nippy/extend-thaw :datalevin/datom
  [^DataInput in]
  (d/datom (.readLong in)
           (nippy/thaw-from-in! in)
           (nippy/thaw-from-in! in)
-          (.readLong in)))
+          c/tx0))
 
 (defn- put-datom
   [bf ^Datom x]
@@ -179,26 +178,18 @@
   [^String v]
   (.getBytes v StandardCharsets/UTF_8))
 
-(defn- keyword-bytes
+(defn- key-sym-bytes
   [x]
-  (-> x str (subs 1) string-bytes))
-
-(defn- put-attr
-  [bf x]
-  (let [^bytes a (keyword-bytes x)
-        al       (alength a)]
-    (assert (<= al c/+max-key-size+)
-            "Attribute cannot be longer than 511 bytes")
-    (put-bytes bf a)))
-
-(defn- get-attr
-  [bf]
-  (let [^bytes bs (get-bytes bf)]
-    (-> bs String. keyword)))
-
-(defn- symbol-bytes
-  [v]
-  (-> v str string-bytes))
+  (let [^bytes nsb (string-bytes (namespace x))
+        nsl        (alength nsb)
+        ^bytes nmb (string-bytes (name x))
+        nml        (alength nmb)
+        sep        (byte-array [c/separator])
+        res        (byte-array (+ nsl nml 1))]
+    (System/arraycopy nsb 0 res 0 nsl)
+    (System/arraycopy sep 0 res nsl 1)
+    (System/arraycopy nmb 0 res (inc nsl) nml)
+    res))
 
 (defn- data-bytes
   [v]
@@ -208,8 +199,8 @@
   "Turn value into bytes according to :db/valueType"
   [v t]
   (case t
-    :db.type/keyword (keyword-bytes v)
-    :db.type/symbol  (symbol-bytes v)
+    :db.type/keyword (key-sym-bytes v)
+    :db.type/symbol  (key-sym-bytes v)
     :db.type/string  (string-bytes v)
     :db.type/boolean nil
     :db.type/long    nil
@@ -237,22 +228,22 @@
     :db.type/bytes   c/type-bytes
     nil))
 
-(deftype Indexable [e a v f b h t])
+(deftype Indexable [e a v f b h])
 
 (defn indexable
   "Turn datom parts into a form that is suitable for putting in indices,
   where aid is the integer id of an attribute, vt is its :db/valueType"
-  [eid aid val tx vt]
+  [eid aid val vt]
   (let [hdr (val-header val vt)]
     (if-let [vb (val-bytes val vt)]
-     (let [bl   (alength ^bytes vb)
-           cut? (> bl c/+val-bytes-wo-hdr+)
-           bas  (if cut?
-                  (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
-                  vb)
-           hsh  (when cut? (hash val))]
-       (->Indexable eid aid nil hdr bas hsh tx))
-     (->Indexable eid aid val hdr nil nil tx))))
+      (let [bl   (alength ^bytes vb)
+            cut? (> bl c/+val-bytes-wo-hdr+)
+            bas  (if cut?
+                   (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
+                   vb)
+            hsh  (when cut? (hash val))]
+        (->Indexable eid aid nil hdr bas hsh))
+      (->Indexable eid aid val hdr nil nil))))
 
 (defn- put-uuid
   [bf ^UUID val]
@@ -275,50 +266,72 @@
     c/type-double   (put-double bf val)
     c/type-float    (put-float bf val)))
 
-(defn- put-eavt
+(defn- put-eav
   [bf ^Indexable x]
   (put-long bf (.-e x))
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
+  (if-let [bs (.-b x)]
+    (do (put-bytes bf bs)
+        (when (.-h x) (put-byte bf c/truncator)))
+    (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
-  (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
-(defn- put-aevt
+(defn- put-aev
   [bf ^Indexable x]
   (put-int bf (.-a x))
   (put-long bf (.-e x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
+  (if-let [bs (.-b x)]
+    (do (put-bytes bf bs)
+        (when (.-h x) (put-byte bf c/truncator)))
+     (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
-  (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
-(defn- put-avet
+(defn- put-ave
   [bf ^Indexable x]
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
+  (if-let [bs (.-b x)]
+    (do (put-bytes bf bs)
+        (when (.-h x) (put-byte bf c/truncator)))
+    (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
-  (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
 
-(defn- put-vaet
+(defn- put-vae
   [bf ^Indexable x]
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)] (put-bytes bf bs) (put-native bf (.-v x) (.-f x)))
+  (if-let [bs (.-b x)]
+    (do (put-bytes bf bs)
+        (when (.-h x) (put-byte bf c/truncator)))
+    (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-int bf (.-a x))
   (put-long bf (.-e x))
-  (put-long bf (.-t x))
   (when-let [h (.-h x)] (put-int bf h)))
+
+(defn- put-attr
+  "NB. not going to do range query on attr names"
+  [bf x]
+  (let [^bytes a (-> x str (subs 1) string-bytes)
+        al       (alength a)]
+    (assert (<= al c/+max-key-size+)
+            "Attribute cannot be longer than 511 bytes")
+    (put-bytes bf a)))
+
+(defn- get-attr
+  [bf]
+  (let [^bytes bs (get-bytes bf)]
+    (-> bs String. keyword)))
 
 (defn put-buffer
   "Put the given type of data x in buffer bf, x-type can be one of :long,
-  :byte, :bytes, :data, :datom, :attr or index type :eavt, :aevt, :avet,
-  or :vaet"
+  :byte, :bytes, :data, :datom, :attr or index type :eav, :aev, :ave,
+  or :vae"
   [bf x x-type]
   (case x-type
     :long  (put-long bf x)
@@ -326,10 +339,10 @@
     :bytes (put-bytes bf x)
     :attr  (put-attr bf x)
     :datom (put-datom bf x)
-    :eavt  (put-eavt bf x)
-    :aevt  (put-aevt bf x)
-    :avet  (put-avet bf x)
-    :vaet  (put-vaet bf x)
+    :eav  (put-eav bf x)
+    :aev  (put-aev bf x)
+    :ave  (put-ave bf x)
+    :vae  (put-vae bf x)
     (put-data bf x)))
 
 (defn read-buffer

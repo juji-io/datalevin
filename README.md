@@ -4,7 +4,11 @@ A port of [Datascript](https://github.com/tonsky/datascript) in-memory database 
 engine to work on top of [Lightning Memory-Mapped Database
 (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). 
 
-Datalevin retains the library property of Datascript, so you can include it in your Clojure code just like any other dependency. Unlike Datomic, Crux or Datehike, Datalevin is not intended to be a standalone database server that one needs to run separately and communicate with over networks.  Datalevin relies on LMDB's lightweight and robust transactional database design and leverages its high performance for read intensive workload. As such, it does not support pluggable storage backends. Datalevin is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and the allowed data size can be larger than memory. 
+The rationale for Datalevin is to have a simple and free Datalog engine running on durable storage.  It is my observation that most developers prefer the flavor of Datalog populized by Datomic over any flavor of SQL, once they get to know it. However, Datomic is an enterprise grade software and its feature sets may be an overkill for many use cases. One thing that trips beginners over is the temporal features of Datomic, so to keep things simple, Datalevin does not keep transaction history.
+
+Datalevin also retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and the allowed data size can be larger than memory.  It is fine to store large values in Datalevin, as LMDB is optimized for reading large values. Effectively, anything can be put in as values. Individual value size is only limited by JVM's ability to allocate off-heap buffers for the value.
+
+Datalevin relies on LMDB's robust transactional database design and leverages its high performance for read intensive workload. As such, it does not support pluggable storage backends.
 
 ## Usage
 
@@ -12,22 +16,17 @@ FIXME
 
 ## Difference from Datascript
 
-Besides the diffrence in data durability, Datalevin differs from Datascript in the following ways:
+In addition to the diffrence in data durability, Datalevin differs from Datascript in the following ways:
 
-* Internal integer ids are 64 bit long rather than 32 bit like in Datascript, so as to support a much larger dataset.
+* Does not store transaction ids. Since history is not kept, storing transanction ids just wastes space and slows queries down.
 
-* Full data is stored only once in Datalevin, for the indices point to the datoms, but are not datoms themselves, whereas Datascript stores full data in indices at least twice. 
+* Entity ids are 64 bits long, so as to support a much larger data size.  The total data size of a Datalevin database has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.  
 
-* Each datom is associated with an auto-incremented long id, reflecting the order in which datoms are added. Datoms are also stored in such an order, so one can think of this as the log index of Datomic.  
+* Has an additional index that uses values as the primary key (VAE), similar to Datomic. 
 
-* Has VAET index. So Datalevin has five indices in total, similar to Datomic, whereas Datascript has three.  
+* Respects `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as EDN blobs, and are de/serialized with nippy. Because values in Datalevin are compared bitwisely, for numerical values to be sorted correctly, `:db/valueType` must be specified: `:db.type/long`, `:db.type/float` or `:db.type/double`. 
 
-* :db/valueType is respected like in Datomic. Because indices in Datalevin are compared bitwisely, for numerical values to be sorted correctly, :db/valueType must be specified, `:db.type/long`, `:db.type/float` or `:db.type/double`. 
-
-* It is also totally acceptable to store large values in Datalevin, as LMDB is optimized for reading large values. Anything can be put in as value. If :db/valueType is unspecified, the value is serialized as Clojure data using nippy. Individual value size is only limited by available memory and JVM's ability to allocate off-heap buffers for them.
-
-* Total data size of the database can be larger than physical memory. It has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.  
-* Attribute name has a length limit: it cannot has more than 511 bytes in the binary form.
+* Attributes have internal integer ids, and attribute names have a length limitation: an attribute name cannot be more than 511 bytes long in binary.
 
 * Datalevin currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms. 
 
