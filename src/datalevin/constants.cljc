@@ -43,6 +43,12 @@
 
 (def ^:const separator     (byte 0x00))
 (def ^:const truncator     (byte 0xFF))
+(def ^:const slash         (byte 0x2F))
+
+(def separator-ba (byte-array [(byte 0x00)]))
+
+(def ^:const complete-datom 0)
+(def ^:const gt0 1)
 
 ;; dbi-names
 (def ^:const eav "eav")

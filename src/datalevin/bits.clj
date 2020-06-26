@@ -1,9 +1,11 @@
 (ns datalevin.bits
-  "low level bits"
+  "low level bits, binary encoding, etc."
   (:require [clojure.java.io :as io]
             [datalevin.datom :as d]
             [datalevin.constants :as c]
-            [taoensso.nippy :as nippy])
+            [datalevin.util :as u]
+            [taoensso.nippy :as nippy]
+            [taoensso.timbre :as log])
   (:import [java.io File DataInput DataOutput]
            [java.nio.charset StandardCharsets]
            [java.util Arrays UUID]
@@ -50,17 +52,58 @@
 (defn- get-bytes
   "Copy content from a ByteBuffer to a byte array, useful for
    e.g. read txn result, as buffer content is gone when txn is done"
-  [^ByteBuffer bb]
-  (let [n   (.remaining bb)
-        arr (byte-array n)]
-    (.get bb arr)
-    arr))
+  ([^ByteBuffer bb]
+   (let [n  (.remaining bb)
+         ba (byte-array n)]
+     (.get bb ba)
+     ba))
+  ([^ByteBuffer bb n]
+   (let [ba (byte-array n)]
+     (.get bb ba 0 n)
+     ba)))
+
+(defn- get-bytes-val
+  [^ByteBuffer bf ^long post-v]
+  (get-bytes bf (- (.remaining bf) post-v)))
 
 (defn- get-data
   "Read data from a ByteBuffer"
+  ([^ByteBuffer bb]
+   (when-let [bs (get-bytes bb)]
+     (nippy/fast-thaw bs)))
+  ([^ByteBuffer bb n]
+   (when-let [bs (get-bytes-val bb n)]
+     (nippy/fast-thaw bs))))
+
+(def ^:const float-sign-idx 31)
+(def ^:const double-sign-idx 63)
+
+(defn- decode-float
+  [x]
+  (if (bit-test x float-sign-idx)
+    (Float/intBitsToFloat (bit-flip x float-sign-idx))
+    (Float/intBitsToFloat (bit-not ^int x))))
+
+(defn- get-float
   [^ByteBuffer bb]
-  (when-let [bs (get-bytes bb)]
-    (nippy/fast-thaw bs)))
+  (decode-float (.getInt bb)))
+
+(defn- decode-double
+  [x]
+  (if (bit-test x double-sign-idx)
+    (Double/longBitsToDouble (bit-flip x double-sign-idx))
+    (Double/longBitsToDouble (bit-not ^long x))))
+
+(defn- get-double
+  [^ByteBuffer bb]
+  (decode-double (.getLong bb)))
+
+(defn get-boolean
+  [^ByteBuffer bb]
+  (case (short (get-byte bb))
+    2 true
+    1 false
+    (u/raise "Illegal value in buffer, expecting a boolean" {})))
 
 (defn- check-buffer-overflow
   [^long length ^long remaining]
@@ -80,26 +123,28 @@
 (defn- encode-float
   [x]
   (assert (not (Float/isNaN x)) "Cannot index NaN")
-  (if neg?
-    (bit-not (Float/floatToRawIntBits (float x)))
-    (bit-flip (Float/floatToRawIntBits (float x)) 31)))
+  (let [x (if (= x -0.0) 0.0 x)]
+    (if (neg? ^float x)
+      (bit-not (Float/floatToRawIntBits x))
+      (bit-flip (Float/floatToRawIntBits x) float-sign-idx))))
 
 (defn- put-float
   [^ByteBuffer bb n]
   (check-buffer-overflow Float/BYTES (.remaining bb))
-  (.putFloat bb (encode-float n)))
+  (.putInt bb (encode-float n)))
 
 (defn- encode-double
-  [x]
+  [^double x]
   (assert (not (Double/isNaN x)) "Cannot index NaN")
-  (if neg?
-    (bit-not (Double/doubleToRawLongBits (double x)))
-    (bit-flip (Double/doubleToRawLongBits (double x)) 63)))
+  (let [x (if (= x -0.0) 0.0 x)]
+    (if (neg? x)
+      (bit-not (Double/doubleToRawLongBits x))
+      (bit-flip (Double/doubleToRawLongBits x) double-sign-idx))))
 
 (defn- put-double
   [^ByteBuffer bb n]
   (check-buffer-overflow Double/BYTES (.remaining bb))
-  (.putDouble bb (encode-double n)))
+  (.putLong bb (encode-double n)))
 
 (defn- put-int
   [^ByteBuffer bb n]
@@ -180,16 +225,20 @@
 
 (defn- key-sym-bytes
   [x]
-  (let [^bytes nsb (string-bytes (namespace x))
-        nsl        (alength nsb)
-        ^bytes nmb (string-bytes (name x))
-        nml        (alength nmb)
-        sep        (byte-array [c/separator])
-        res        (byte-array (+ nsl nml 1))]
-    (System/arraycopy nsb 0 res 0 nsl)
-    (System/arraycopy sep 0 res nsl 1)
-    (System/arraycopy nmb 0 res (inc nsl) nml)
-    res))
+  (let [^bytes nmb (string-bytes (name x))
+        nml        (alength nmb)]
+    (if-let [ns (namespace x)]
+      (let [^bytes nsb (string-bytes ns)
+            nsl        (alength nsb)
+            res        (byte-array (+ nsl nml 1))]
+        (System/arraycopy nsb 0 res 0 nsl)
+        (System/arraycopy c/separator-ba 0 res nsl 1)
+        (System/arraycopy nmb 0 res (inc nsl) nml)
+        res)
+      (let [res (byte-array (inc nml))]
+        (System/arraycopy c/separator-ba 0 res 0 1)
+        (System/arraycopy nmb 0 res 1 nml)
+        res))))
 
 (defn- data-bytes
   [v]
@@ -256,15 +305,15 @@
 
 (defn- put-native
   [bf val hdr]
-  (condp = hdr
-    c/type-long-pos (put-long bf val)
-    c/type-long-neg (put-long bf val)
-    c/type-ref      (put-long bf val)
-    c/type-uuid     (put-uuid bf val)
-    c/type-boolean  (put-byte bf (if val c/true-value c/false-value))
-    c/type-instant  (put-long bf val)
-    c/type-double   (put-double bf val)
-    c/type-float    (put-float bf val)))
+  (case (short hdr)
+    -64 (put-long bf val)
+    -63 (put-long bf val)
+    -11 (put-float bf val)
+    -10 (put-double bf val)
+    -9  (put-long bf val)
+    -8  (put-long bf val)
+    -7  (put-uuid bf val)
+    -3  (put-byte bf (if val c/true-value c/false-value))))
 
 (defn- put-eav
   [bf ^Indexable x]
@@ -314,6 +363,84 @@
   (put-long bf (.-e x))
   (when-let [h (.-h x)] (put-int bf h)))
 
+(defn- sep->slash
+  [^bytes bs]
+  (let [n-1 (dec (alength bs))]
+    (loop [i 0]
+      (cond
+        (= (aget bs i) c/separator) (aset-byte bs i c/slash)
+        (< i n-1)                   (recur (inc i)))))
+  bs)
+
+(defn- get-string
+  [^ByteBuffer bf ^long post-v]
+  (String. ^bytes (get-bytes-val bf post-v)))
+
+(defn- get-key-sym-str
+  [^ByteBuffer bf ^long post-v]
+  (let [^bytes ba (sep->slash (get-bytes-val bf post-v))
+        s         (String. ^bytes ba)]
+    (if (= (aget ba 0) c/slash) (subs s 1) s)))
+
+(defn- get-keyword
+  [^ByteBuffer bf ^long post-v]
+  (keyword (get-key-sym-str bf post-v)))
+
+(defn- get-symbol
+  [^ByteBuffer bf ^long post-v]
+  (symbol (get-key-sym-str bf post-v)))
+
+(defn- get-value
+  [^ByteBuffer bf post-v]
+  (.mark bf)
+  (case (short (get-byte bf))
+    -64 (get-long bf)
+    -63 (get-long bf)
+    -11 (get-float bf)
+    -10 (get-double bf)
+    -9  (get-long bf)
+    -8  (get-long bf)
+    -7  (get-uuid bf)
+    -6  (get-string bf post-v)
+    -5  (get-keyword bf post-v)
+    -4  (get-symbol bf post-v)
+    -3  (get-boolean bf)
+    -2  (get-bytes-val bf post-v)
+    (do (.reset bf)
+        (get-data bf post-v))))
+
+(deftype Retrieved [e a v])
+
+(defn- get-eav
+  [bf]
+  (let [e (get-long bf)
+        a (get-int bf)
+        v (get-value bf 1)]
+    (->Retrieved e a v)))
+
+(defn- get-aev
+  [bf]
+  (let [a (get-int bf)
+        e (get-long bf)
+        v (get-value bf 1)]
+    (->Retrieved e a v)))
+
+(defn- get-ave
+  [bf]
+  (let [a (get-int bf)
+        v (get-value bf 9)
+        _ (get-byte bf)
+        e (get-long bf)]
+    (->Retrieved e a v)))
+
+(defn- get-vae
+  [^ByteBuffer bf]
+  (let [v (get-value bf 13)
+        _ (get-byte bf)
+        a (get-int bf)
+        e (get-long bf)]
+    (->Retrieved e a v)))
+
 (defn- put-attr
   "NB. not going to do range query on attr names"
   [bf x]
@@ -339,15 +466,16 @@
     :bytes (put-bytes bf x)
     :attr  (put-attr bf x)
     :datom (put-datom bf x)
-    :eav  (put-eav bf x)
-    :aev  (put-aev bf x)
-    :ave  (put-ave bf x)
-    :vae  (put-vae bf x)
+    :eav   (put-eav bf x)
+    :aev   (put-aev bf x)
+    :ave   (put-ave bf x)
+    :vae   (put-vae bf x)
     (put-data bf x)))
 
 (defn read-buffer
   "Get the given type of data from buffer bf, v-type can be one of
-  :long, :byte, :bytes, :datom, :attr or :data"
+  :long, :byte, :bytes, :datom, :attr, :data or index type :eav, :aev, :ave,
+  or :vae"
   [^ByteBuffer bb v-type]
   (case v-type
     :long  (get-long bb)
@@ -355,4 +483,8 @@
     :bytes (get-bytes bb)
     :attr  (get-attr bb)
     :datom (get-datom bb)
+    :eav   (get-eav bb)
+    :aev   (get-aev bb)
+    :ave   (get-ave bb)
+    :vae   (get-vae bb)
     (get-data bb)))

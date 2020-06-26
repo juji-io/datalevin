@@ -1,10 +1,9 @@
 # Datalevin
 
 A port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
-engine to work on top of [Lightning Memory-Mapped Database
-(LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). 
+engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). 
 
-The rationale for Datalevin is to have a simple and free Datalog engine running on durable storage.  It is my observation that most developers prefer the flavor of Datalog populized by Datomic over any flavor of SQL, once they get to know it. However, Datomic is an enterprise grade software and its feature sets may be an overkill for many use cases. One thing that trips beginners over is the temporal features of Datomic, so to keep things simple, Datalevin does not keep transaction history.
+The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by Datomic over any flavor of SQL, once they get to know it. However, Datomic is an enterprise grade software and its feature sets may be an overkill for many use cases. One thing that often confuses casual users is the temporal feature of Datomic, so to keep things simple, Datalevin does not keep transaction history.
 
 Datalevin also retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and the allowed data size can be larger than memory.  It is fine to store large values in Datalevin, as LMDB is optimized for reading large values. Effectively, anything can be put in as values. Individual value size is only limited by JVM's ability to allocate off-heap buffers for the value.
 
@@ -18,7 +17,7 @@ FIXME
 
 In addition to the diffrence in data durability, Datalevin differs from Datascript in the following ways:
 
-* Does not store transaction ids. Since history is not kept, storing transanction ids just wastes space and slows queries down.
+* Does not store transaction ids. Since history is not kept, there is no need to store transanction ids.
 
 * Entity ids are 64 bits long, so as to support a much larger data size.  The total data size of a Datalevin database has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.  
 

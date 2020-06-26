@@ -25,7 +25,7 @@
 
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
-                ^:volatile-mutable ^long max-dt]
+                ^:volatile-mutable ^long max-gt]
   IStore
   (close [_]
     (lmdb/close lmdb))
@@ -36,21 +36,21 @@
   (update-schema [this attr props]
     )
   (insert [_ datom indexing?]
-    (locking max-dt
+    (locking max-gt
       (let [s (schema (.-a ^Datom datom))
             i (b/indexable (.-e ^Datom datom)
                            (:db/aid s)
                            (.-v ^Datom datom)
                            (:db/valueType s))]
         (lmdb/transact lmdb
-                       (cond-> [[:put c/eav i max-dt :eav :long]
-                                [:put c/aev i max-dt :aev :long]
-                                [:put c/giants max-dt datom :long :datom
+                       (cond-> [[:put c/eav i max-gt :eav :long]
+                                [:put c/aev i max-gt :aev :long]
+                                [:put c/giants max-gt datom :long :datom
                                  [PutFlags/MDB_APPEND]]]
                          indexing? (concat
-                                    [[:put c/ave i max-dt :ave :long]
-                                     [:put c/vae i max-dt :vae :long]])))
-        (set! max-dt (inc max-dt)))))
+                                    [[:put c/ave i max-gt :ave :long]
+                                     [:put c/vae i max-gt :vae :long]])))
+        (set! max-gt (inc max-gt)))))
   (delete [_ datom]
     )
   (slice [_ index start-datom end-datom]
@@ -58,10 +58,10 @@
   (rslice [_ index start-datom end-datom]
     ))
 
-(defn- init-max-dt
+(defn- init-max-gt
   [lmdb]
   (or (first (lmdb/get-first lmdb c/giants [:all-back] :long :ignore))
-      0))
+      c/gt0))
 
 (defn open
   "Open and return the storage."
@@ -73,4 +73,4 @@
     (lmdb/open-dbi lmdb c/vae c/+max-key-size+ Long/BYTES)
     (lmdb/open-dbi lmdb c/giants Long/BYTES)
     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-    (->Store lmdb (init-max-dt lmdb))))
+    (->Store lmdb (init-max-gt lmdb))))
