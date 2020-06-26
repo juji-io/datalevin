@@ -248,13 +248,16 @@
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
-    (let [^Iterator iter            (.iterator iterable)
-          ^CursorIterable$KeyVal kv (.next iter)
-          v                         (when (not= v-type :ignore)
-                                      (-> kv (.val) (b/read-buffer v-type)))]
-      (if ignore-key?
-        v
-        [(-> kv (.key) (b/read-buffer k-type)) v]))))
+    (let [^Iterator iter (.iterator iterable)]
+      (when (.hasNext iter)
+        (let [^CursorIterable$KeyVal kv (.next iter)
+              v                         (when (not= v-type :ignore)
+                                          (-> kv
+                                              (.val)
+                                              (b/read-buffer v-type)))]
+          (if ignore-key?
+           v
+           [(-> kv (.key) (b/read-buffer k-type)) v]))))))
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]

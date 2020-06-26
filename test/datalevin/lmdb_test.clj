@@ -91,6 +91,7 @@
     (is (= [999 1000] (sut/get-first lmdb "c" [:all-back] :long :long)))
     (is (= [9 10] (sut/get-first lmdb "c" [:at-least 9] :long :long)))
     (is (= [10 11] (sut/get-first lmdb "c" [:greater-than 9] :long :long)))
+    (is (nil? (sut/get-first lmdb "c" [:greater-than 1000] :long :ignore)))
     (sut/transact lmdb [[:put "a" 0xff 1 :byte]
                         [:put "a" 0xee 2 :byte]
                         [:put "a" 0x11 3 :byte]])

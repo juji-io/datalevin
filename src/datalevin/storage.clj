@@ -8,7 +8,7 @@
             [taoensso.nippy :as nippy])
   (:import [datalevin.lmdb LMDB]
            [datalevin.datom Datom]
-           [datalevin.bits Indexable]
+           [datalevin.bits Indexable Retrieved]
            [org.lmdbjava PutFlags CursorIterable$KeyVal]))
 
 (defprotocol IStore
@@ -30,7 +30,9 @@
   (close [_]
     (lmdb/close lmdb))
   (init-max-eid [this]
-    )
+    (or (when-let [[r _] (lmdb/get-first lmdb c/eav [:all-back] :eav :ignore)]
+          (.-e ^Retrieved r))
+        c/gt0))
   (init-schema [this]
     )
   (update-schema [this attr props]
