@@ -66,13 +66,13 @@
 
 (defn- migrate [lmdb attr old new]
   (doseq [[k v] new
-          :let [v' (old k)]]
+          :let  [v' (old k)]]
     (case k
       :db/cardinality (migrate-cardinality lmdb attr v' v)
-      :db/index (migrate-index lmdb attr v' v)
-      :db/valueType (handle-value-type lmdb attr v' v)
-      :db/unique (migrate-unique lmdb attr v' v)
-      )))
+      :db/index       (migrate-index lmdb attr v' v)
+      :db/valueType   (handle-value-type lmdb attr v' v)
+      :db/unique      (migrate-unique lmdb attr v' v)
+      :pass-through)))
 
 (defprotocol IStore
   (close [this] "Close storage")
@@ -80,9 +80,10 @@
   (max-aid [this])
   (schema [this] "Return the schema map")
   (init-max-eid [this] "Initialize and return the max entity id")
-  (swap-attr [this attr f args]
+  (datom-count [this index] "Return the number of datoms in the index")
+  (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
-  (insert [this datom indexing?] "Insert an datom")
+  (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
   (slice [this index start-datom end-datom]
     "Return a range of datoms for the given index")
@@ -106,18 +107,36 @@
     (or (when-let [[r _] (lmdb/get-first lmdb c/eav [:all-back] :eav :ignore)]
           (.-e ^Retrieved r))
         c/e0))
-  (swap-attr [_ attr f args]
-    (let [o (or (schema attr) {})
-          p (apply f o args)]
-      ;(migrate lmdb attr o p)
+  (swap-attr [this attr f]
+    (swap-attr this attr f nil nil))
+  (swap-attr [this attr f x]
+    (swap-attr this attr f x nil))
+  (swap-attr [_ attr f x y]
+    (let [o (or (schema attr)
+                (let [m {:db/aid max-aid}]
+                  (set! max-aid (inc max-aid))
+                  m))
+          p (cond
+              (and x y) (apply f o x y)
+              x         (apply f o x)
+              :else     (apply f o))]
+      (migrate lmdb attr o p)
       (transact-schema lmdb {attr p})
-      (set! schema (assoc schema attr p))))
-  (insert [_ datom indexing?]
-    (let [p (schema (.-a ^Datom datom))
-          i (b/indexable (.-e ^Datom datom)
-                         (:db/aid p)
-                         (.-v ^Datom datom)
-                         (:db/valueType p))]
+      (set! schema (assoc schema attr p))
+      p))
+  (datom-count [_ index]
+    (lmdb/entries lmdb index))
+  (insert [this datom]
+    (let [attr      (.-a ^Datom datom)
+          props     (or (schema attr)
+                        (swap-attr this attr identity))
+          indexing? (or (:db/index props)
+                        (:db/unique props)
+                        (= :db.type/ref (:db/valueType props)))
+          i         (b/indexable (.-e ^Datom datom)
+                                 (:db/aid props)
+                                 (.-v ^Datom datom)
+                                 (:db/valueType props))]
       (if (b/giant? i)
         (locking max-gt
           (lmdb/transact

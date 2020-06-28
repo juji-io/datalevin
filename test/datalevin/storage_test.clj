@@ -32,11 +32,16 @@
   (is (= c/e0 (sut/init-max-eid store)))
   (let [a :a/b
         p {:db/valueType :db.type/uuid
-           :db/aid       1}
-        d (d/datom c/e0 a (UUID/randomUUID) c/tx0)
-        s (assoc (sut/schema store) a p)]
+           :db/index     true}
+        v (UUID/randomUUID)
+        d (d/datom c/e0 a v c/tx0)
+        s (assoc (sut/schema store) a (assoc p :db/aid 1))]
     (sut/swap-attr store a merge p)
     (is (= s (sut/schema store)))
-    (sut/insert store d true)
+    (sut/insert store d)
+    (is (= 1 (sut/datom-count store c/eav)))
+    (is (= 1 (sut/datom-count store c/aev)))
+    (is (= 1 (sut/datom-count store c/ave)))
+    (is (= 1 (sut/datom-count store c/vae)))
     )
   )

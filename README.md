@@ -35,7 +35,7 @@ Assuming that you are interested in using Datalog, here are your options:
 
 * If you need a simple durable store with a battle tested backend, give Datalevin a try.
 
-* If you need a im-memory store, e.g. for single page applications running in a browser, Datascript is for you.
+* If you need a in-memory store, e.g. for single page applications running in a browser, Datascript is for you.
 
 * If you need time travel and rich features backed by the authors of Clojure, you should use Datomic.
 
