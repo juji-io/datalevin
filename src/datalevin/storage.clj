@@ -5,7 +5,8 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [taoensso.nippy :as nippy])
+            [taoensso.nippy :as nippy]
+            [taoensso.timbre :as log])
   (:import [datalevin.lmdb LMDB]
            [datalevin.datom Datom]
            [datalevin.bits Indexable Retrieved]
@@ -117,9 +118,9 @@
                   (set! max-aid (inc max-aid))
                   m))
           p (cond
-              (and x y) (apply f o x y)
-              x         (apply f o x)
-              :else     (apply f o))]
+              (and x y) (f o x y)
+              x         (f o x)
+              :else     (f o))]
       (migrate lmdb attr o p)
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
@@ -157,7 +158,20 @@
                       [[:put c/ave i c/normal :ave :long]
                        [:put c/vae i c/normal :vae :long]]))))))
   (delete [_ datom]
-    )
+    (let [props (schema (.-a ^Datom datom))
+          i     (b/indexable (.-e ^Datom datom)
+                             (:db/aid props)
+                             (.-v ^Datom datom)
+                             (:db/valueType props))]
+      (lmdb/transact
+       lmdb
+       (cond-> [[:del c/eav i :eav]
+                [:del c/aev i :aev]
+                [:del c/ave i :ave]
+                [:del c/vae i :vae]]
+         (b/giant? i)
+         (conj [:del c/giants (lmdb/get-value lmdb c/eav i :eav :long)
+                :long])))))
   (slice [_ index start-datom end-datom]
     )
   (rslice [_ index start-datom end-datom]

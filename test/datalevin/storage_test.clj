@@ -31,14 +31,29 @@
   (is (= c/implicit-schema (sut/schema store)))
   (is (= c/e0 (sut/init-max-eid store)))
   (let [a :a/b
-        p {:db/valueType :db.type/uuid
-           :db/index     true}
         v (UUID/randomUUID)
         d (d/datom c/e0 a v c/tx0)
-        s (assoc (sut/schema store) a (assoc p :db/aid 1))]
-    (sut/swap-attr store a merge p)
-    (is (= s (sut/schema store)))
+        s (assoc (sut/schema store) a {:db/aid 1})
+        b :b/c
+        p {:db/valueType :db.type/uuid
+           :db/index     true}
+        v1 (UUID/randomUUID)
+        d1 (d/datom c/e0 b v1 c/tx0)
+        s1 (assoc s b (merge p {:db/aid 2}))]
     (sut/insert store d)
+    (is (= s (sut/schema store)))
+    (is (= 1 (sut/datom-count store c/eav)))
+    (is (= 1 (sut/datom-count store c/aev)))
+    (is (= 0 (sut/datom-count store c/ave)))
+    (is (= 0 (sut/datom-count store c/vae)))
+    (sut/swap-attr store b merge p)
+    (sut/insert store d1)
+    (is (= s1 (sut/schema store)))
+    (is (= 2 (sut/datom-count store c/eav)))
+    (is (= 2 (sut/datom-count store c/aev)))
+    (is (= 1 (sut/datom-count store c/ave)))
+    (is (= 1 (sut/datom-count store c/vae)))
+    (sut/delete store d)
     (is (= 1 (sut/datom-count store c/eav)))
     (is (= 1 (sut/datom-count store c/aev)))
     (is (= 1 (sut/datom-count store c/ave)))

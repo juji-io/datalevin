@@ -67,7 +67,8 @@
   (is (= 3 (sut/get-value lmdb "b" 2 :long :long)))
 
   ;; del
-  (sut/transact lmdb [[:del "a" 1]])
+  (sut/transact lmdb [[:del "a" 1]
+                      [:del "a" :non-exist]])
   (is (nil? (sut/get-value lmdb "a" 1)))
 
   ;; non-existent dbi
