@@ -7,11 +7,12 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [datalevin.constants :as c]
-            [clojure.test :refer [deftest is]])
+            [clojure.test :refer [deftest is use-fixtures]])
   (:import [java.util UUID]
+           [datalevin.storage Store]
            [org.lmdbjava CursorIterable$KeyVal]))
 
-(def ^:dynamic store nil)
+(def ^:dynamic ^Store store nil)
 
 (defn store-test-fixture
   [f]
@@ -21,4 +22,21 @@
       (sut/close store)
       (b/delete-files dir))))
 
-(def anunnaki [])
+
+(use-fixtures :each store-test-fixture)
+
+(deftest basic-ops-test
+  (is (= c/gt0 (sut/max-gt store)))
+  (is (= 1 (sut/max-aid store)))
+  (is (= c/implicit-schema (sut/schema store)))
+  (is (= c/e0 (sut/init-max-eid store)))
+  (let [a :a/b
+        p {:db/valueType :db.type/uuid
+           :db/aid       1}
+        d (d/datom c/e0 a (UUID/randomUUID) c/tx0)
+        s (assoc (sut/schema store) a p)]
+    (sut/swap-attr store a merge p)
+    (is (= s (sut/schema store)))
+    (sut/insert store d true)
+    )
+  )

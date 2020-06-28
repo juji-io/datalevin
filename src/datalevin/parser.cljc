@@ -5,6 +5,9 @@
     [clojure.set :as set]
     [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]))
 
+;; TODO get ride of all satisfies
+;; See https://bsless.github.io/datahike-datalog-parser/
+
 ;; utils
 
 (declare collect-vars-acc parse-clause parse-clauses parse-binding)

@@ -1157,10 +1157,15 @@
      (is (= a (.-a r)))
      (is (= v (.-v r))))))
 
+(defn- bytes-size-less-than?
+  [^long limit ^bytes bs]
+  (< (alength bs) limit))
+
 (test/defspec bytes-eav-generative-test
   50
   (prop/for-all
-   [v  gen/bytes]
+   [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
+                      gen/bytes)]
    (let [^Indexable d (sut/indexable e a v :db.type/bytes)
          _            (.clear ^ByteBuffer bf)
          _            (sut/put-buffer bf d :eav)
@@ -1173,7 +1178,8 @@
 (test/defspec bytes-ave-generative-test
   50
   (prop/for-all
-   [v  gen/bytes]
+   [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
+                      gen/bytes)]
    (let [^Indexable d (sut/indexable e a v :db.type/bytes)
          _            (.clear ^ByteBuffer bf)
          _            (sut/put-buffer bf d :ave)
@@ -1186,7 +1192,8 @@
 (test/defspec bytes-vae-generative-test
   50
   (prop/for-all
-   [v  gen/bytes]
+   [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
+                               gen/bytes)]
    (let [^Indexable d  (sut/indexable e a v :db.type/bytes)
          _             (.clear ^ByteBuffer bf)
          _             (sut/put-buffer bf d :vae)
@@ -1196,10 +1203,15 @@
      (is (= a (.-a r)))
      (is (Arrays/equals ^bytes v ^bytes (.-v r))))))
 
+(defn data-size-less-than?
+  [^long limit data]
+  (< (alength ^bytes (nippy/freeze data)) limit))
+
 (test/defspec data-eav-generative-test
   50
   (prop/for-all
-   [v  gen/any-equatable]
+   [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
+                      gen/any-equatable)]
    (let [^Indexable d (sut/indexable e a v nil)
          _            (.clear ^ByteBuffer bf)
          _            (sut/put-buffer bf d :eav)
@@ -1212,7 +1224,8 @@
 (test/defspec data-ave-generative-test
   50
   (prop/for-all
-   [v  gen/any-equatable]
+   [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
+                      gen/any-equatable)]
    (let [^Indexable d (sut/indexable e a v nil)
          _            (.clear ^ByteBuffer bf)
          _            (sut/put-buffer bf d :ave)
@@ -1225,7 +1238,8 @@
 (test/defspec data-vae-generative-test
   50
   (prop/for-all
-   [v  gen/any-equatable]
+   [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
+                      gen/any-equatable)]
    (let [^Indexable d  (sut/indexable e a v nil)
          _             (.clear ^ByteBuffer bf)
          _             (sut/put-buffer bf d :vae)

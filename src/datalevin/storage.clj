@@ -11,11 +11,77 @@
            [datalevin.bits Indexable Retrieved]
            [org.lmdbjava PutFlags CursorIterable$KeyVal]))
 
+(defn- transact-schema
+  [lmdb schema]
+  (lmdb/transact lmdb (for [[attr props] schema]
+                        [:put c/schema attr props :attr :data]))
+  schema)
+
+(defn- init-schema
+  [lmdb]
+  (or (when-let [coll (seq (lmdb/get-range lmdb c/schema [:all] :attr :data))]
+        (into {} coll))
+      (transact-schema lmdb c/implicit-schema)))
+
+(defn- init-max-aid
+  [lmdb]
+  (lmdb/entries lmdb c/schema))
+
+(defn- init-max-gt
+  [lmdb]
+  (or (when-let [gt (-> (lmdb/get-first lmdb c/giants [:all-back] :long :ignore)
+                        first)]
+        (inc ^long gt))
+      c/gt0))
+
+(defn- migrate-cardinality
+  [lmdb attr old new]
+  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
+    ;; TODO figure out if this is consistent with data
+    ;; raise exception if not
+    ))
+
+(defn- migrate-index
+  [lmdb attr old new]
+  (cond
+    (and (not old) (true? new))
+    ;; TODO create ave and vae entries if datoms for this attr exists
+    (and (true? old) (false? new))
+    ;; TODO remove ave and vae entries for this attr
+    ))
+
+(defn- handle-value-type
+  [lmdb attr old new]
+  (when (not= old new)
+    ;; TODO raise if datom already exist for this attr
+    ))
+
+(defn- migrate-unique
+  [lmdb attr old new]
+  (when (and (not old) new)
+    ;; TODO figure out if the attr values are unique for each entity,
+    ;; raise if not
+    ;; also check if ave and vae entries exist for this attr, create if not
+    ))
+
+(defn- migrate [lmdb attr old new]
+  (doseq [[k v] new
+          :let [v' (old k)]]
+    (case k
+      :db/cardinality (migrate-cardinality lmdb attr v' v)
+      :db/index (migrate-index lmdb attr v' v)
+      :db/valueType (handle-value-type lmdb attr v' v)
+      :db/unique (migrate-unique lmdb attr v' v)
+      )))
+
 (defprotocol IStore
   (close [this] "Close storage")
+  (max-gt [this])
+  (max-aid [this])
+  (schema [this] "Return the schema map")
   (init-max-eid [this] "Initialize and return the max entity id")
-  (init-schema [this] "Initialize and return the schema")
-  (update-schema [this attr props] "Update the schema")
+  (swap-attr [this attr f args]
+    "Update an attribute, f is similar to that of swap!")
   (insert [this datom indexing?] "Insert an datom")
   (delete [this datom] "Delete an datom")
   (slice [this index start-datom end-datom]
@@ -25,45 +91,58 @@
 
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
+                ^:volatile-mutable ^long max-aid
                 ^:volatile-mutable ^long max-gt]
   IStore
   (close [_]
     (lmdb/close lmdb))
-  (init-max-eid [this]
+  (max-gt [_]
+    max-gt)
+  (max-aid [_]
+    max-aid)
+  (schema [_]
+    schema)
+  (init-max-eid [_]
     (or (when-let [[r _] (lmdb/get-first lmdb c/eav [:all-back] :eav :ignore)]
           (.-e ^Retrieved r))
-        c/gt0))
-  (init-schema [this]
-    )
-  (update-schema [this attr props]
-    )
+        c/e0))
+  (swap-attr [_ attr f args]
+    (let [o (or (schema attr) {})
+          p (apply f o args)]
+      ;(migrate lmdb attr o p)
+      (transact-schema lmdb {attr p})
+      (set! schema (assoc schema attr p))))
   (insert [_ datom indexing?]
-    (locking max-gt
-      (let [s (schema (.-a ^Datom datom))
-            i (b/indexable (.-e ^Datom datom)
-                           (:db/aid s)
-                           (.-v ^Datom datom)
-                           (:db/valueType s))]
-        (lmdb/transact lmdb
-                       (cond-> [[:put c/eav i max-gt :eav :long]
-                                [:put c/aev i max-gt :aev :long]
-                                [:put c/giants max-gt datom :long :datom
-                                 [PutFlags/MDB_APPEND]]]
-                         indexing? (concat
-                                    [[:put c/ave i max-gt :ave :long]
-                                     [:put c/vae i max-gt :vae :long]])))
-        (set! max-gt (inc max-gt)))))
+    (let [p (schema (.-a ^Datom datom))
+          i (b/indexable (.-e ^Datom datom)
+                         (:db/aid p)
+                         (.-v ^Datom datom)
+                         (:db/valueType p))]
+      (if (b/giant? i)
+        (locking max-gt
+          (lmdb/transact
+           lmdb
+           (cond-> [[:put c/eav i max-gt :eav :long]
+                    [:put c/aev i max-gt :aev :long]
+                    [:put c/giants max-gt datom :long :datom
+                     [PutFlags/MDB_APPEND]]]
+             indexing? (concat
+                        [[:put c/ave i max-gt :ave :long]
+                         [:put c/vae i max-gt :vae :long]])))
+          (set! max-gt (inc max-gt)))
+        (lmdb/transact
+         lmdb
+         (cond-> [[:put c/eav i c/normal :eav :long]
+                  [:put c/aev i c/normal :aev :long]]
+           indexing? (concat
+                      [[:put c/ave i c/normal :ave :long]
+                       [:put c/vae i c/normal :vae :long]]))))))
   (delete [_ datom]
     )
   (slice [_ index start-datom end-datom]
     )
   (rslice [_ index start-datom end-datom]
     ))
-
-(defn- init-max-gt
-  [lmdb]
-  (or (first (lmdb/get-first lmdb c/giants [:all-back] :long :ignore))
-      c/gt0))
 
 (defn open
   "Open and return the storage."
@@ -75,4 +154,4 @@
     (lmdb/open-dbi lmdb c/vae c/+max-key-size+ Long/BYTES)
     (lmdb/open-dbi lmdb c/giants Long/BYTES)
     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-    (->Store lmdb (init-max-gt lmdb))))
+    (->Store lmdb (init-schema lmdb) (init-max-aid lmdb) (init-max-gt lmdb))))

@@ -294,6 +294,10 @@
         (->Indexable eid aid nil hdr bas hsh))
       (->Indexable eid aid val hdr nil nil))))
 
+(defn giant?
+  [^Indexable i]
+  (.-h i))
+
 (defn- put-uuid
   [bf ^UUID val]
   (put-long bf (.getMostSignificantBits val))

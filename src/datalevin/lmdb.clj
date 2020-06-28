@@ -6,7 +6,7 @@
             [datalevin.constants :as c]
             [clojure.string :as s]
             [taoensso.timbre :as log])
-  (:import [org.lmdbjava Env EnvFlags Env$MapFullException Dbi DbiFlags
+  (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -185,6 +185,7 @@
     [this dbi-name key-size val-size flags]
     "Open a named dbi (i.e. sub-db) in the LMDB")
   (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
+  (entries [this dbi-name] "Get the number of data entries in a dbi")
   (transact [this txs]
     "Update db, txs is a seq of [op dbi-name k v k-type v-type put-flags]
      when op is :put; [op dbi-name k k-type] when op is :del;
@@ -266,19 +267,19 @@
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
-      (let [^CursorIterable$KeyVal kv (.next iter)
-            v                         (when (not= v-type :ignore)
-                                        (-> kv (.val) (b/read-buffer v-type)))
-            holder'                   (conj! holder
-                                             (if ignore-key?
-                                               v
-                                               [(-> kv
-                                                    (.key)
-                                                    (b/read-buffer k-type))
-                                                v]))]
-        (if (.hasNext iter)
-          (recur iter holder')
-          (persistent! holder'))))))
+      (if (.hasNext iter)
+        (let [^CursorIterable$KeyVal kv (.next iter)
+              v                         (when (not= v-type :ignore)
+                                          (-> kv (.val) (b/read-buffer v-type)))
+              holder'                   (conj! holder
+                                               (if ignore-key?
+                                                 v
+                                                 [(-> kv
+                                                      (.key)
+                                                      (b/read-buffer k-type))
+                                                  v]))]
+          (recur iter holder'))
+        (persistent! holder)))))
 
 (defn- fetch-some
   [pred ^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type]
@@ -286,9 +287,10 @@
   (put-stop-key rtx k2 k-type)
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)]
-      (if-let [res (pred (.next iter))]
-        res
-        (when (.hasNext iter) (recur iter))))))
+      (when (.hasNext iter)
+        (if-let [res (pred (.next iter))]
+          res
+          (recur iter))))))
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
@@ -313,6 +315,11 @@
   (get-dbi [_ dbi-name]
     (or (.get dbis dbi-name)
         (raise "`open-dbi` was not called for " dbi-name {})))
+  (entries [this dbi-name]
+    (let [^DBI dbi   (get-dbi this dbi-name)
+          ^Rtx rtx   (get-rtx pool)
+          ^Stat stat (.stat ^Dbi (.-db dbi) (.-txn rtx))]
+      (.-entries stat)))
   (transact [this txs]
     (try
       (with-open [txn (.txnWrite env)]

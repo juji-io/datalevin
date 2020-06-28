@@ -7,7 +7,8 @@
 (def ^:const tx0   0x2000000000000000)
 (def ^:const emax  0x7FFFFFFFFFFFFFFF)
 (def ^:const txmax 0x7FFFFFFFFFFFFFFF)
-(def ^:const implicit-schema {:db/ident {:db/unique :db.unique/identity}})
+(def ^:const implicit-schema
+  {:db/ident {:db/unique :db.unique/identity :db/aid 0}})
 
 ;; lmdb
 
@@ -47,7 +48,7 @@
 
 (def separator-ba (byte-array [(byte 0x00)]))
 
-(def ^:const complete-datom 0)
+(def ^:const normal 0)
 (def ^:const gt0 1)
 
 ;; dbi-names
