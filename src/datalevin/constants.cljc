@@ -1,4 +1,5 @@
-(ns datalevin.constants)
+(ns datalevin.constants
+  (:import [java.util UUID]))
 
 ;; TODO remove all traces of tx
 ;; datom
@@ -21,8 +22,8 @@
 ;; index storage
 
 (def ^:const +val-prefix-size+  498)  ; - eid - aid - s
-(def ^:const +val-bytes-wo-hdr+ 497)  ; - hdr
-(def ^:const +val-bytes-trunc+  492)  ; - hsh - tr
+(def ^:const +val-bytes-wo-hdr+ 496)  ; - hdr - 1 byte TBD
+(def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
 
 ;; value headers
 (def ^:const type-long-neg (byte 0xC0))
@@ -41,6 +42,9 @@
 
 (def ^:const false-value   (byte 0x01))
 (def ^:const true-value    (byte 0x02))
+
+(def max-uuid  (UUID. 0xFFFFFFFFFFFFFFFF 0xFFFFFFFFFFFFFFFF))
+(def min-uuid  (UUID. 0x0000000000000000 0x0000000000000000))
 
 (def ^:const separator     (byte 0x00))
 (def ^:const truncator     (byte 0xFF))

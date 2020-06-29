@@ -87,7 +87,9 @@
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
   (slice [this index start-datom end-datom]
-    "Return a range of datoms for the given index")
+    "Return a range of datoms for the given index with the given boundary
+    (inclusive). When one boundary is nil, that side is unbounded. Both
+    nil means all.")
   (rslice [this index start-datom end-datom]
     "Return a range of datoms in reverse for the given index"))
 
@@ -173,7 +175,9 @@
          (conj [:del c/giants (lmdb/get-value lmdb c/eav i :eav :long)
                 :long])))))
   (slice [_ index start-datom end-datom]
-    )
+    (cond
+      (and start-datom end-datom)
+      ()))
   (rslice [_ index start-datom end-datom]
     ))
 
