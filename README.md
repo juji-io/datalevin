@@ -7,7 +7,7 @@
 Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
 engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 
-The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the implict join in Datalog query is its killer feature.
+The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the implict join in Datalog query is its killer feature.
 
 > I love Datalog, why haven't everyone use this already? 
 
@@ -47,7 +47,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic, here
 
 * If you need an in-memory store, e.g. for single page applications running in a browser, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic](https://datomic.com).
+* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic](https://www.datomic.com).
 
 * If you need features such as bitemporal graph queries, You may try [Crux](https://github.com/juxt/crux).
 
