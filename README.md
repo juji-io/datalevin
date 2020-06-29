@@ -53,6 +53,8 @@ If you are interested in using the dialect of Datalog pioneered by Datomic, here
 
 * If you don't mind experimental storage backend, you may try [Datahike](https://github.com/replikativ/datahike).
 
+* There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
+
 ## License
 
 Copyright © 2020 Juji Inc.
