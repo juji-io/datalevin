@@ -7,7 +7,7 @@
 Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
 engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 
-The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the implict join in Datalog queries is its killer feature.
+The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the implict join in Datalog query is its killer feature.
 
 > I love Datalog, why haven't everyone use this already? 
 
@@ -31,7 +31,7 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Has an additional index that uses values as the primary key (VAE), similar to Datomic.
 
-* Indices respect `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as EDN blobs, and are de/serialized with nippy. Because values in Datalevin are compared bitwisely, for range queries to work correctly on an attribute, its `:db/valueType` should be specified.
+* Indices respect `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with nippy. Because values in Datalevin are compared bitwisely, for range queries to work correctly on an attribute, its `:db/valueType` should be specified.
 
 * Attributes have internal integer ids, and attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
 
@@ -41,13 +41,13 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 ## :shopping: Alternatives
 
-Assuming that you are interested in using Datalog, here are your options:
+If you are interested in using the dialect of Datalog pioneered by Datomic, here are your current options:
 
-* If you need a simple durable store with a battle tested backend, give Datalevin a try.
+* If you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-* If you need an in-memory store, e.g. for single page applications running in a browser, Datascript is for you.
+* If you need an in-memory store, e.g. for single page applications running in a browser, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need time travel and rich features backed by the authors of Clojure, you should use Datomic.
+* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic](https://datomic.com).
 
 * If you need features such as bitemporal graph queries, You may try [Crux](https://github.com/juxt/crux).
 
