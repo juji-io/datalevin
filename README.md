@@ -7,7 +7,8 @@
 Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
 engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 
-The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://datomic.com) over any flavor of SQL, once they get to use it. 
+The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the implict join in Datalog queries is its killer feature.
+
 > I love Datalog, why haven't everyone use this already? 
 
 Datomic is a closed source enterprise software and its feature sets may be an overkill for many use cases. One thing that often confuses novice users is the temporal feature of Datomic. To keep things simple and familiar (yes, this combination exists), Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
@@ -30,7 +31,7 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Has an additional index that uses values as the primary key (VAE), similar to Datomic.
 
-* Indices respects `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as EDN blobs, and are de/serialized with nippy. Because values in Datalevin are compared bitwisely, for range queries to work correctly on an attribute, its `:db/valueType` should be specified.
+* Indices respect `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as EDN blobs, and are de/serialized with nippy. Because values in Datalevin are compared bitwisely, for range queries to work correctly on an attribute, its `:db/valueType` should be specified.
 
 * Attributes have internal integer ids, and attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
 
