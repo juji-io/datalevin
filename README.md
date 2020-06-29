@@ -32,7 +32,7 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Indices respects `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as EDN blobs, and are de/serialized with nippy. Because values in Datalevin are compared bitwisely, for range queries to work correctly on an attribute, its `:db/valueType` should be specified.
 
-* Attributes have internal integer ids, and attribute names have a length limitation: an attribute name cannot be more than 511 bytes long in binary, the LMDB key size limit.
+* Attributes have internal integer ids, and attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
 
 * Handles schema migrations with `swap-attr` function. It only allows safe migration that does not alter existing data (e.g. one to many cardinaity, unique to non-unique, index to non-index and vice vesa), and refuses unsafe schema changes (e.g. many to one cardinality, non-unique to unique, value type changes) that are inconsistent with existing data.
 
@@ -44,7 +44,7 @@ Assuming that you are interested in using Datalog, here are your options:
 
 * If you need a simple durable store with a battle tested backend, give Datalevin a try.
 
-* If you need a in-memory store, e.g. for single page applications running in a browser, Datascript is for you.
+* If you need an in-memory store, e.g. for single page applications running in a browser, Datascript is for you.
 
 * If you need time travel and rich features backed by the authors of Clojure, you should use Datomic.
 
