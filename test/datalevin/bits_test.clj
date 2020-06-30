@@ -218,65 +218,50 @@
 
 ;; orders
 
-(test/defspec keyword-aev-generative-test
-  100
-  (prop/for-all
-   [e1 (gen/large-integer* {:min c/e0})
-    a1 gen/nat
-    v  gen/keyword-ns
-    v1 gen/keyword-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/keyword)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :aev)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/keyword)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :aev)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= e e1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^long e ^long e1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :aev)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :aev)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+(defn- aev-test
+  [v e1 a1 v1 ^Indexable d ^Indexable d1]
+  (let [_          (.clear ^ByteBuffer bf)
+        _          (sut/put-buffer bf d :aev)
+        _          (.flip ^ByteBuffer bf)
+        _          (.clear ^ByteBuffer bf1)
+        _          (sut/put-buffer bf1 d1 :aev)
+        _          (.flip ^ByteBuffer bf1)
+        ^long  res (bf-compare bf bf1)
+        v-cmp      (compare v v1)]
+    (if (= a a1)
+      (if (= e e1)
+        (if (= v-cmp 0)
+          (is (= res 0))
+          (if (< v-cmp 0)
+            (is (< res 0))
+            (is (> res 0))))
+        (if (< ^long e ^long e1)
+          (is (< res 0))
+          (is (> res 0))))
+      (if (< ^int a ^int a1)
+        (is (< res 0))
+        (is (> res 0))))
+    (.rewind ^ByteBuffer bf)
+    (let [^Retrieved r (sut/read-buffer bf :aev)]
+      (is (= e (.-e r)))
+      (is (= a (.-a r)))
+      (is (= v (.-v r))))
+    (.rewind ^ByteBuffer bf1)
+    (let [^Retrieved r (sut/read-buffer bf1 :aev)]
+      (is (= e1 (.-e r)))
+      (is (= a1 (.-a r)))
+      (is (= v1 (.-v r))))))
 
-(test/defspec keyword-ave-generative-test
-  100
-  (prop/for-all
-   [e1 (gen/large-integer* {:min c/e0})
-    a1 gen/nat
-    v1 gen/keyword-ns
-    v gen/keyword-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/keyword)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :ave)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/keyword)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :ave)
-         _             (.flip ^ByteBuffer bf1)
-         ^long res     (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
+(defn- ave-test
+  [v e1 a1 v1 ^Indexable d ^Indexable d1]
+  (let [_         (.clear ^ByteBuffer bf)
+        _         (sut/put-buffer bf d :ave)
+        _         (.flip ^ByteBuffer bf)
+        _         (.clear ^ByteBuffer bf1)
+        _         (sut/put-buffer bf1 d1 :ave)
+        _         (.flip ^ByteBuffer bf1)
+        ^long res (bf-compare bf bf1)
+        v-cmp     (compare v v1)]
      (if (= a a1)
        (if (= v-cmp 0)
          (if (= e e1)
@@ -299,8 +284,86 @@
      (let [^Retrieved r (sut/read-buffer bf1 :ave)]
        (is (= e1 (.-e r)))
        (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+       (is (= v1 (.-v r))))))
+
+(defn- vae-test
+  [v e1 a1 v1 ^Indexable d ^Indexable d1]
+  (let [_          (.clear ^ByteBuffer bf)
+        _          (sut/put-buffer bf d :vae)
+        _          (.flip ^ByteBuffer bf)
+        _          (.clear ^ByteBuffer bf1)
+        _          (sut/put-buffer bf1 d1 :vae)
+        _          (.flip ^ByteBuffer bf1)
+        ^long  res (bf-compare bf bf1)
+        v-cmp      (compare v v1)]
+     (if (= v-cmp 0)
+       (if (= a a1)
+         (if (= e e1)
+           (is (= res 0))
+           (if (< ^long e ^long e1)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< v-cmp 0)
+         (is (< res 0))
+         (is (> res 0))))
+     (.rewind ^ByteBuffer bf)
+     (let [^Retrieved r (sut/read-buffer bf :vae)]
+       (is (= e (.-e r)))
+       (is (= a (.-a r)))
+       (is (= v (.-v r))))
+     (.rewind ^ByteBuffer bf1)
+     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
+       (is (= e1 (.-e r)))
+       (is (= a1 (.-a r)))
+       (is (= v1 (.-v r))))))
+
+(defn- eav-test
+  [v e1 a1 v1 ^Indexable d ^Indexable d1]
+  (let [_          (.clear ^ByteBuffer bf)
+        _          (sut/put-buffer bf d :eav)
+        _          (.flip ^ByteBuffer bf)
+        _          (.clear ^ByteBuffer bf1)
+        _          (sut/put-buffer bf1 d1 :eav)
+        _          (.flip ^ByteBuffer bf1)
+        ^long  res (bf-compare bf bf1)
+        v-cmp      (compare v v1)]
+     (if (= e e1)
+       (if (= a a1)
+         (if (= v-cmp 0)
+           (is (= res 0))
+           (if (< v-cmp 0)
+             (is (< res 0))
+             (is (> res 0))))
+         (if (< ^int a ^int a1)
+           (is (< res 0))
+           (is (> res 0))))
+       (if (< ^long e ^long e1)
+         (is (< res 0))
+         (is (> res 0))))
+     (.rewind ^ByteBuffer bf)
+     (let [^Retrieved r (sut/read-buffer bf :eav)]
+       (is (= e (.-e r)))
+       (is (= a (.-a r)))
+       (is (= v (.-v r))))
+     (.rewind ^ByteBuffer bf1)
+     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
+       (is (= e1 (.-e r)))
+       (is (= a1 (.-a r)))
+       (is (= v1 (.-v r))))))
+
+(test/defspec keyword-eav-generative-test
+  100
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/keyword-ns
+    v gen/keyword-ns]
+   (eav-test v e1 a1 v1
+             (sut/indexable e a v :db.type/keyword)
+             (sut/indexable e1 a1 v1 :db.type/keyword))))
 
 (test/defspec keyword-vae-generative-test
   100
@@ -309,40 +372,31 @@
     a1 gen/nat
     v1 gen/keyword-ns
     v  gen/keyword-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/keyword)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :vae)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/keyword)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :vae)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= v-cmp 0)
-       (if (= a a1)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< v-cmp 0)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :vae)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (vae-test v e1 a1 v1
+             (sut/indexable e a v :db.type/keyword)
+             (sut/indexable e1 a1 v1 :db.type/keyword))))
+
+(test/defspec keyword-aev-generative-test
+  100
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v  gen/keyword-ns
+    v1 gen/keyword-ns]
+   (aev-test v e1 a1 v1
+             (sut/indexable e a v :db.type/keyword)
+             (sut/indexable e1 a1 v1 :db.type/keyword))))
+
+(test/defspec keyword-ave-generative-test
+  100
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/keyword-ns
+    v gen/keyword-ns]
+   (ave-test v e1 a1 v1
+             (sut/indexable e a v :db.type/keyword)
+             (sut/indexable e1 a1 v1 :db.type/keyword))))
 
 (test/defspec symbol-eav-generative-test
   100
@@ -351,40 +405,9 @@
     a1 gen/nat
     v1 gen/symbol-ns
     v gen/symbol-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/symbol)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :eav)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/symbol)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :eav)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= e e1)
-       (if (= a a1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^long e ^long e1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :eav)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (eav-test v e1 a1 v1
+             (sut/indexable e a v :db.type/symbol)
+             (sut/indexable e1 a1 v1 :db.type/symbol))))
 
 (test/defspec symbol-aev-generative-test
   100
@@ -393,40 +416,9 @@
     a1 gen/nat
     v1 gen/symbol-ns
     v  gen/symbol-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/symbol)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :aev)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/symbol)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :aev)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= e e1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^long e ^long e1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :aev)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :aev)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (aev-test v e1 a1 v1
+             (sut/indexable e a v :db.type/symbol)
+             (sut/indexable e1 a1 v1 :db.type/symbol))))
 
 (test/defspec symbol-ave-generative-test
   100
@@ -435,40 +427,9 @@
     a1 gen/nat
     v1 gen/symbol-ns
     v  gen/symbol-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/symbol)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :ave)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/symbol)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :ave)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= v-cmp 0)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< v-cmp 0)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :ave)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :ave)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (ave-test v e1 a1 v1
+             (sut/indexable e a v :db.type/symbol)
+             (sut/indexable e1 a1 v1 :db.type/symbol))))
 
 (test/defspec symbol-vae-generative-test
   100
@@ -477,40 +438,9 @@
     a1 gen/nat
     v1 gen/symbol-ns
     v  gen/symbol-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/symbol)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :vae)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/symbol)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :vae)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= v-cmp 0)
-       (if (= a a1)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< v-cmp 0)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :vae)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (vae-test v e1 a1 v1
+             (sut/indexable e a v :db.type/symbol)
+             (sut/indexable e1 a1 v1 :db.type/symbol))))
 
 (test/defspec string-eav-generative-test
   100
@@ -519,40 +449,9 @@
     a1 gen/nat
     v1 gen/string
     v  gen/string]
-   (let [^Indexable d  (sut/indexable e a v :db.type/string)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :eav)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/string)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :eav)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= e e1)
-       (if (= a a1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^long e ^long e1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :eav)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (eav-test v e1 a1 v1
+             (sut/indexable e a v :db.type/string)
+             (sut/indexable e1 a1 v1 :db.type/string))))
 
 (test/defspec string-aev-generative-test
   100
@@ -560,41 +459,10 @@
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
     v1 gen/string
-    v gen/string]
-   (let [^Indexable d  (sut/indexable e a v :db.type/string)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :aev)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/string)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :aev)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= e e1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^long e ^long e1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :aev)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :aev)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+    v  gen/string]
+   (aev-test v e1 a1 v1
+             (sut/indexable e a v :db.type/string)
+             (sut/indexable e1 a1 v1 :db.type/string))))
 
 (test/defspec string-ave-generative-test
   100
@@ -602,41 +470,10 @@
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
     v1 gen/string
-    v gen/string]
-   (let [^Indexable d  (sut/indexable e a v :db.type/string)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :ave)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/string)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :ave)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= v-cmp 0)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< v-cmp 0)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :ave)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :ave)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+    v  gen/string]
+   (ave-test v e1 a1 v1
+             (sut/indexable e a v :db.type/string)
+             (sut/indexable e1 a1 v1 :db.type/string))))
 
 (test/defspec string-vae-generative-test
   100
@@ -644,41 +481,10 @@
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
     v1 gen/string
-    v gen/string]
-   (let [^Indexable d  (sut/indexable e a v :db.type/string)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :vae)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/string)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :vae)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= v-cmp 0)
-       (if (= a a1)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< v-cmp 0)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :vae)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+    v  gen/string]
+   (vae-test v e1 a1 v1
+             (sut/indexable e a v :db.type/string)
+             (sut/indexable e1 a1 v1 :db.type/string))))
 
 (test/defspec boolean-eav-generative-test
   100
@@ -687,40 +493,9 @@
     a1 gen/nat
     v1 gen/boolean
     v  gen/boolean]
-   (let [^Indexable d  (sut/indexable e a v :db.type/boolean)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :eav)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/boolean)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :eav)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= e e1)
-       (if (= a a1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^long e ^long e1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :eav)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (eav-test v e1 a1 v1
+             (sut/indexable e a v :db.type/boolean)
+             (sut/indexable e1 a1 v1 :db.type/boolean))))
 
 (test/defspec boolean-aev-generative-test
   100
@@ -729,40 +504,9 @@
     a1 gen/nat
     v1 gen/boolean
     v  gen/boolean]
-   (let [^Indexable d  (sut/indexable e a v :db.type/boolean)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :aev)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/boolean)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :aev)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= e e1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^long e ^long e1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :aev)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :aev)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (aev-test v e1 a1 v1
+             (sut/indexable e a v :db.type/boolean)
+             (sut/indexable e1 a1 v1 :db.type/boolean))))
 
 (test/defspec boolean-ave-generative-test
   100
@@ -771,40 +515,9 @@
     a1 gen/nat
     v1 gen/boolean
     v  gen/boolean]
-   (let [^Indexable d  (sut/indexable e a v :db.type/boolean)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :ave)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/boolean)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :ave)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= v-cmp 0)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< v-cmp 0)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :ave)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :ave)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (ave-test v e1 a1 v1
+             (sut/indexable e a v :db.type/boolean)
+             (sut/indexable e1 a1 v1 :db.type/boolean))))
 
 (test/defspec boolean-vae-generative-test
   100
@@ -813,40 +526,9 @@
     a1 gen/nat
     v1 gen/boolean
     v  gen/boolean]
-   (let [^Indexable d  (sut/indexable e a v :db.type/boolean)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :vae)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/boolean)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :vae)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= v-cmp 0)
-       (if (= a a1)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< v-cmp 0)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :vae)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (vae-test v e1 a1 v1
+             (sut/indexable e a v :db.type/boolean)
+             (sut/indexable e1 a1 v1 :db.type/boolean))))
 
 (test/defspec long-eav-generative-test
   100
@@ -855,40 +537,10 @@
     a1 gen/nat
     v1 gen/large-integer
     v  gen/large-integer]
-   (let [^Indexable d  (sut/indexable e a v :db.type/long)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :eav)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/long)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :eav)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= e e1)
-       (if (= a a1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^long e ^long e1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :eav)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (eav-test v e1 a1 v1
+             (sut/indexable e a v :db.type/long)
+             (sut/indexable e1 a1 v1 :db.type/long))))
+
 
 (test/defspec long-aev-generative-test
   100
@@ -897,40 +549,9 @@
     a1 gen/nat
     v1 gen/large-integer
     v  gen/large-integer]
-   (let [^Indexable d  (sut/indexable e a v :db.type/long)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :aev)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/long)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :aev)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= e e1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^long e ^long e1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :aev)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :aev)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (aev-test v e1 a1 v1
+             (sut/indexable e a v :db.type/long)
+             (sut/indexable e1 a1 v1 :db.type/long))))
 
 (test/defspec long-ave-generative-test
   100
@@ -939,40 +560,9 @@
     a1 gen/nat
     v1 gen/large-integer
     v  gen/large-integer]
-   (let [^Indexable d  (sut/indexable e a v :db.type/long)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :ave)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/long)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :ave)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= v-cmp 0)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< v-cmp 0)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :ave)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :ave)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (ave-test v e1 a1 v1
+             (sut/indexable e a v :db.type/long)
+             (sut/indexable e1 a1 v1 :db.type/long))))
 
 (test/defspec long-vae-generative-test
   100
@@ -981,40 +571,9 @@
     a1 gen/nat
     v1 gen/large-integer
     v  gen/large-integer]
-   (let [^Indexable d  (sut/indexable e a v :db.type/long)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :vae)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/long)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :vae)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= v-cmp 0)
-       (if (= a a1)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< v-cmp 0)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :vae)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (vae-test v e1 a1 v1
+             (sut/indexable e a v :db.type/long)
+             (sut/indexable e1 a1 v1 :db.type/long))))
 
 (test/defspec double-eav-generative-test
   100
@@ -1023,40 +582,9 @@
     a1 gen/nat
     v1 (gen/double* {:NaN? false})
     v  (gen/double* {:NaN? false})]
-   (let [^Indexable d  (sut/indexable e a v :db.type/double)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :eav)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/double)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :eav)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= e e1)
-       (if (= a a1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^long e ^long e1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :eav)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (eav-test v e1 a1 v1
+             (sut/indexable e a v :db.type/double)
+             (sut/indexable e1 a1 v1 :db.type/double))))
 
 (test/defspec double-aev-generative-test
   100
@@ -1064,83 +592,10 @@
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
     v1 (gen/double* {:NaN? false})
-    v (gen/double* {:NaN? false})]
-   (let [^Indexable d  (sut/indexable e a v :db.type/double)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :aev)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/double)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :aev)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= e e1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^long e ^long e1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :aev)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :aev)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
-
-(test/defspec double-ave-generative-test
-  100
-  (prop/for-all
-   [e1 (gen/large-integer* {:min c/e0})
-    a1 gen/nat
-    v1 (gen/double* {:NaN? false})
-    v (gen/double* {:NaN? false})]
-   (let [^Indexable d  (sut/indexable e a v :db.type/double)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :ave)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/double)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :ave)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= a a1)
-       (if (= v-cmp 0)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< v-cmp 0)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^int a ^int a1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :ave)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :ave)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+    v  (gen/double* {:NaN? false})]
+   (aev-test v e1 a1 v1
+             (sut/indexable e a v :db.type/double)
+             (sut/indexable e1 a1 v1 :db.type/double))))
 
 (test/defspec double-vae-generative-test
   100
@@ -1149,40 +604,20 @@
     a1 gen/nat
     v1 (gen/double* {:NaN? false})
     v  (gen/double* {:NaN? false})]
-   (let [^Indexable d  (sut/indexable e a v :db.type/double)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :vae)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/double)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :vae)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= v-cmp 0)
-       (if (= a a1)
-         (if (= e e1)
-           (is (= res 0))
-           (if (< ^long e ^long e1)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< v-cmp 0)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :vae)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   (vae-test v e1 a1 v1
+             (sut/indexable e a v :db.type/double)
+             (sut/indexable e1 a1 v1 :db.type/double))))
+
+(test/defspec double-ave-generative-test
+  100
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 (gen/double* {:NaN? false})
+    v  (gen/double* {:NaN? false})]
+   (ave-test v e1 a1 v1
+             (sut/indexable e a v :db.type/double)
+             (sut/indexable e1 a1 v1 :db.type/double))))
 
 ;; TODO test-check doesn't have a float generator yet
 
