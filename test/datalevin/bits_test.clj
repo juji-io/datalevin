@@ -15,6 +15,8 @@
 
 (def ^ByteBuffer bf (ByteBuffer/allocateDirect 16384))
 
+;; buffer read/write
+
 (deftest datom-test
   (let [d1 (d/datom 1 :pet/name "Mr. Kitty")]
     (.clear bf)
@@ -24,7 +26,7 @@
     (is (= d1 (sut/read-buffer bf :datom)))))
 
 (test/defspec bytes-generative-test
-  500
+  100
   (prop/for-all [^bytes k (gen/not-empty gen/bytes)]
                 (.clear bf)
                 (sut/put-buffer bf k :bytes)
@@ -32,7 +34,7 @@
                 (Arrays/equals k ^bytes (sut/read-buffer bf :bytes))))
 
 (test/defspec byte-generative-test
-  500
+  100
   (prop/for-all [k gen/byte]
                 (.clear bf)
                 (sut/put-buffer bf k :byte)
@@ -40,7 +42,7 @@
                 (= k (sut/read-buffer bf :byte))))
 
 (test/defspec data-generative-test
-  500
+  100
   (prop/for-all [k gen/any-equatable]
                 (.clear bf)
                 (sut/put-buffer bf k :data)
@@ -48,7 +50,7 @@
                 (= k (sut/read-buffer bf :data))))
 
 (test/defspec long-generative-test
-  500
+  100
   (prop/for-all [k gen/large-integer]
                 (.clear bf)
                 (sut/put-buffer bf k :long)
@@ -56,7 +58,7 @@
                 (= k (sut/read-buffer bf :long))))
 
 (test/defspec datom-generative-test
-  500
+  100
   (prop/for-all [e gen/large-integer
                  a gen/keyword-ns
                  v gen/any-equatable
@@ -68,22 +70,14 @@
                   (is (= d (sut/read-buffer bf :datom))))))
 
 (test/defspec attr-generative-test
-  500
+  100
   (prop/for-all [k gen/keyword-ns]
                 (.clear bf)
                 (sut/put-buffer bf k :attr)
                 (.flip bf)
                 (= k (sut/read-buffer bf :attr))))
 
-(test/defspec double-generative-test
-  500
-  (prop/for-all [k gen/keyword-ns]
-                (.clear bf)
-                (sut/put-buffer bf k :attr)
-                (.flip bf)
-                (= k (sut/read-buffer bf :attr))))
-
-;; test indexing preserves the order of values
+;; binary indexing preserves the order of values
 
 (def e 123456)
 (def a 235)
@@ -93,65 +87,139 @@
 (defn- bf-compare
   "Jave ByteBuffer compareTo is byte-wise signed comparison, not good"
   [^ByteBuffer bf1 ^ByteBuffer bf2]
-  (loop [i 0 j 0]
-    (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
-          v2  (short (bit-and (.get bf2) (short 0xFF)))
-          res (- v1 v2)]
-      (if (not (zero? res))
-        res
-        (cond
-          (and (= (.limit bf1) i)
-               (= (.limit bf2) j))    0
-          (and (not= (.limit bf1) i)
-               (= (.limit bf2) j))    1
-          (and (= (.limit bf1) i)
-               (not= (.limit bf2) j)) -1
-          :else                       (recur (inc i) (inc j)))))))
+  (let [l1 (dec (.limit bf1))
+        l2 (dec (.limit bf2))]
+    (if (= l1 l2 0)
+      0
+      (loop [i 0]
+        (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
+              v2  (short (bit-and (.get bf2) (short 0xFF)))
+              res (- v1 v2)]
+         (if (not (zero? res))
+           res
+           (cond
+             (= l1 l2 i)             0
+             (and (< i l1) (= i l2)) 1
+             (and (= i l1) (< i l2)) -1
+             :else                   (recur (inc i)))))))))
 
-(test/defspec keyword-eav-generative-test
-  500
+;; extrema bounds
+
+(defn test-extrema
+  [v d dmin dmax]
+  (.clear bf)
+  (sut/put-buffer bf d :eav)
+  (.flip bf)
+  (.clear bf1)
+  (sut/put-buffer bf1 dmin :eav)
+  (.flip bf1)
+  (is (>= (bf-compare bf bf1) 0))
+  (.clear bf1)
+  (sut/put-buffer bf1 dmax :eav)
+  (.flip bf1)
+  (.rewind bf)
+  (is (<= (bf-compare bf bf1) 0))
+  (.clear bf)
+  (sut/put-buffer bf d :ave)
+  (.flip bf)
+  (.clear bf1)
+  (sut/put-buffer bf1 dmin :ave)
+  (.flip bf1)
+  (is (>=(bf-compare bf bf1) 0))
+  (.clear bf1)
+  (sut/put-buffer bf1 dmax :ave)
+  (.flip bf1)
+  (.rewind bf)
+  (is (<= (bf-compare bf bf1) 0))
+  (.clear bf)
+  (sut/put-buffer bf d :vae)
+  (.flip bf)
+  (.clear bf1)
+  (sut/put-buffer bf1 dmin :vae)
+  (.flip bf1)
+  (is (>= (bf-compare bf bf1) 0))
+  (.clear bf1)
+  (sut/put-buffer bf1 dmax :vae)
+  (.flip bf1)
+  (.rewind bf)
+  (is (<= (bf-compare bf bf1) 0)))
+
+(test/defspec keyword-extrema-generative-test
+  100
   (prop/for-all
-   [e1 (gen/large-integer* {:min c/e0})
-    a1 gen/nat
-    v  gen/keyword-ns
-    v1 gen/keyword-ns]
-   (let [^Indexable d  (sut/indexable e a v :db.type/keyword)
-         _             (.clear ^ByteBuffer bf)
-         _             (sut/put-buffer bf d :eav)
-         _             (.flip ^ByteBuffer bf)
-         ^Indexable d1 (sut/indexable e1 a1 v1 :db.type/keyword)
-         _             (.clear ^ByteBuffer bf1)
-         _             (sut/put-buffer bf1 d1 :eav)
-         _             (.flip ^ByteBuffer bf1)
-         ^long  res    (bf-compare bf bf1)
-         v-cmp         (compare v v1)]
-     (if (= e e1)
-       (if (= a a1)
-         (if (= v-cmp 0)
-           (is (= res 0))
-           (if (< v-cmp 0)
-             (is (< res 0))
-             (is (> res 0))))
-         (if (< ^int a ^int a1)
-           (is (< res 0))
-           (is (> res 0))))
-       (if (< ^long e ^long e1)
-         (is (< res 0))
-         (is (> res 0))))
-     (.rewind ^ByteBuffer bf)
-     (let [^Retrieved r (sut/read-buffer bf :eav)]
-       (is (= e (.-e r)))
-       (is (= a (.-a r)))
-       (is (= v (.-v r))))
-     (.rewind ^ByteBuffer bf1)
-     (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-       (is (= e1 (.-e r)))
-       (is (= a1 (.-a r)))
-       (is (= v1 (.-v r))))
-     )))
+   [v  gen/keyword-ns]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/keyword)
+                 (sut/indexable e a :db.value/sysMin :db.type/keyword)
+                 (sut/indexable e a :db.value/sysMax :db.type/keyword))))
+
+(test/defspec symbol-extrema-generative-test
+  100
+  (prop/for-all
+   [v  gen/symbol-ns]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/symbol)
+                 (sut/indexable e a :db.value/sysMin :db.type/symbol)
+                 (sut/indexable e a :db.value/sysMax :db.type/symbol))))
+
+(test/defspec string-extrema-generative-test
+  100
+  (prop/for-all
+   [v  gen/string]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/string)
+                 (sut/indexable e a :db.value/sysMin :db.type/string)
+                 (sut/indexable e a :db.value/sysMax :db.type/string))))
+
+(test/defspec boolean-extrema-generative-test
+  5
+  (prop/for-all
+   [v  gen/boolean]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/boolean)
+                 (sut/indexable e a :db.value/sysMin :db.type/boolean)
+                 (sut/indexable e a :db.value/sysMax :db.type/boolean))))
+
+(test/defspec long-extrema-generative-test
+  100
+  (prop/for-all
+   [v  gen/large-integer]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/long)
+                 (sut/indexable e a :db.value/sysMin :db.type/long)
+                 (sut/indexable e a :db.value/sysMax :db.type/long))))
+
+(test/defspec double-extrema-generative-test
+  100
+  (prop/for-all
+   [v (gen/double* {:NaN? false})]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/double)
+                 (sut/indexable e a :db.value/sysMin :db.type/double)
+                 (sut/indexable e a :db.value/sysMax :db.type/double))))
+
+(test/defspec ref-extrema-generative-test
+  100
+  (prop/for-all
+   [v  gen/nat]
+   (test-extrema v
+                 (sut/indexable e a v :db.type/ref)
+                 (sut/indexable e a :db.value/sysMin :db.type/ref)
+                 (sut/indexable e a :db.value/sysMax :db.type/ref))))
+
+(test/defspec uuid-extrema-generative-test
+  100
+  (prop/for-all
+   [v  gen/uuid]
+   (test-extrema v
+                 (sut/indexable e a v :db.tgen/uuid)
+                 (sut/indexable e a :db.value/sysMin :db.tgen/uuid)
+                 (sut/indexable e a :db.value/sysMax :db.tgen/uuid))))
+
+;; orders
 
 (test/defspec keyword-aev-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -193,7 +261,7 @@
      )))
 
 (test/defspec keyword-ave-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -235,7 +303,7 @@
      )))
 
 (test/defspec keyword-vae-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -277,7 +345,7 @@
      )))
 
 (test/defspec symbol-eav-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -319,7 +387,7 @@
      )))
 
 (test/defspec symbol-aev-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -361,7 +429,7 @@
      )))
 
 (test/defspec symbol-ave-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -403,7 +471,7 @@
      )))
 
 (test/defspec symbol-vae-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -445,7 +513,7 @@
      )))
 
 (test/defspec string-eav-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -487,7 +555,7 @@
      )))
 
 (test/defspec string-aev-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -529,7 +597,7 @@
      )))
 
 (test/defspec string-ave-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -571,7 +639,7 @@
      )))
 
 (test/defspec string-vae-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -613,7 +681,7 @@
      )))
 
 (test/defspec boolean-eav-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -655,7 +723,7 @@
      )))
 
 (test/defspec boolean-aev-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -697,7 +765,7 @@
      )))
 
 (test/defspec boolean-ave-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -739,7 +807,7 @@
      )))
 
 (test/defspec boolean-vae-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -781,7 +849,7 @@
      )))
 
 (test/defspec long-eav-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -823,7 +891,7 @@
      )))
 
 (test/defspec long-aev-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -865,7 +933,7 @@
      )))
 
 (test/defspec long-ave-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -907,7 +975,7 @@
      )))
 
 (test/defspec long-vae-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -949,12 +1017,12 @@
      )))
 
 (test/defspec double-eav-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
     v1 (gen/double* {:NaN? false})
-    v (gen/double* {:NaN? false})]
+    v  (gen/double* {:NaN? false})]
    (let [^Indexable d  (sut/indexable e a v :db.type/double)
          _             (.clear ^ByteBuffer bf)
          _             (sut/put-buffer bf d :eav)
@@ -991,7 +1059,7 @@
      )))
 
 (test/defspec double-aev-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -1033,7 +1101,7 @@
      )))
 
 (test/defspec double-ave-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat
@@ -1075,7 +1143,7 @@
      )))
 
 (test/defspec double-vae-generative-test
-  500
+  100
   (prop/for-all
    [e1 (gen/large-integer* {:min c/e0})
     a1 gen/nat

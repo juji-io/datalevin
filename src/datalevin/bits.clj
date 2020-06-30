@@ -219,9 +219,18 @@
 
 ;; index
 
+(defmacro wrap-extrema
+  [v vmin vmax b]
+  `(if (keyword? ~v)
+     (condp = ~v
+       :db.value/sysMin ~vmin
+       :db.value/sysMax ~vmax
+       (u/raise "Illegal keyword value " ~v {}))
+     ~b))
+
 (defn- string-bytes
   [^String v]
-  (.getBytes v StandardCharsets/UTF_8))
+  (wrap-extrema v c/min-bytes c/max-bytes (.getBytes v StandardCharsets/UTF_8)))
 
 (defn- key-sym-bytes
   [x]
@@ -240,16 +249,30 @@
         (System/arraycopy nmb 0 res 1 nml)
         res))))
 
+(defn- keyword-bytes
+  [x]
+  (condp = x
+    :db.value/sysMin c/min-bytes
+    :db.value/sysMax c/max-bytes
+    (key-sym-bytes x)))
+
+(defn- symbol-bytes
+  [x]
+  (wrap-extrema x c/min-bytes c/max-bytes (key-sym-bytes x)))
+
 (defn- data-bytes
   [v]
-  (nippy/fast-freeze v))
+  (condp = v
+    :db.value/sysMin c/min-bytes
+    :db.value/sysMax c/max-bytes
+    (nippy/fast-freeze v)))
 
 (defn- val-bytes
   "Turn value into bytes according to :db/valueType"
   [v t]
   (case t
-    :db.type/keyword (key-sym-bytes v)
-    :db.type/symbol  (key-sym-bytes v)
+    :db.type/keyword (keyword-bytes v)
+    :db.type/symbol  (symbol-bytes v)
     :db.type/string  (string-bytes v)
     :db.type/boolean nil
     :db.type/long    nil
@@ -258,8 +281,19 @@
     :db.type/ref     nil
     :db.type/instant nil
     :db.type/uuid    nil
-    :db.type/bytes   v
+    :db.type/bytes   (wrap-extrema v c/min-bytes c/max-bytes v)
     (data-bytes v)))
+
+(defn- long-header
+  [v]
+  (if (keyword? v)
+    (condp = v
+      :db.value/sysMin c/type-long-neg
+      :db.value/sysMax c/type-long-pos
+      (u/raise "Illegal keyword value " v {}))
+    (if (neg? ^long v)
+      c/type-long-neg
+      c/type-long-pos)))
 
 (defn- val-header
   [v t]
@@ -268,13 +302,13 @@
     :db.type/symbol  c/type-symbol
     :db.type/string  c/type-string
     :db.type/boolean c/type-boolean
-    :db.type/long    (if (neg? ^long v) c/type-long-neg c/type-long-pos)
     :db.type/float   c/type-float
     :db.type/double  c/type-double
     :db.type/ref     c/type-ref
     :db.type/instant c/type-instant
     :db.type/uuid    c/type-uuid
     :db.type/bytes   c/type-bytes
+    :db.type/long    (long-header v)
     nil))
 
 (deftype Indexable [e a v f b h])
@@ -310,14 +344,17 @@
 (defn- put-native
   [bf val hdr]
   (case (short hdr)
-    -64 (put-long bf val)
-    -63 (put-long bf val)
-    -11 (put-float bf val)
-    -10 (put-double bf val)
-    -9  (put-long bf val)
-    -8  (put-long bf val)
-    -7  (put-uuid bf val)
-    -3  (put-byte bf (if val c/true-value c/false-value))))
+    -64 (put-long bf (wrap-extrema val Long/MIN_VALUE -1 val))
+    -63 (put-long bf (wrap-extrema val 0 Long/MAX_VALUE val))
+    -11 (put-float bf (wrap-extrema val Float/NEGATIVE_INFINITY
+                                    Float/POSITIVE_INFINITY val))
+    -10 (put-double bf (wrap-extrema val Double/NEGATIVE_INFINITY
+                                     Double/POSITIVE_INFINITY val))
+    -9  (put-long bf (wrap-extrema val 0 Long/MAX_VALUE val))
+    -8  (put-long bf (wrap-extrema val c/e0 Long/MAX_VALUE val))
+    -7  (put-uuid bf (wrap-extrema val c/min-uuid c/max-uuid val))
+    -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
+                                   (if val c/true-value c/false-value)))))
 
 (defn- put-eav
   [bf ^Indexable x]
@@ -471,9 +508,13 @@
     :attr  (put-attr bf x)
     :datom (put-datom bf x)
     :eav   (put-eav bf x)
+    :eavt  (put-eav bf x)
     :aev   (put-aev bf x)
+    :aevt  (put-aev bf x)
     :ave   (put-ave bf x)
+    :avet  (put-ave bf x)
     :vae   (put-vae bf x)
+    :vaet  (put-vae bf x)
     (put-data bf x)))
 
 (defn read-buffer
@@ -488,7 +529,11 @@
     :attr  (get-attr bb)
     :datom (get-datom bb)
     :eav   (get-eav bb)
+    :eavt  (get-eav bb)
     :aev   (get-aev bb)
+    :aevt  (get-aev bb)
     :ave   (get-ave bb)
+    :avet  (get-ave bb)
     :vae   (get-vae bb)
+    :vaet  (get-vae bb)
     (get-data bb)))

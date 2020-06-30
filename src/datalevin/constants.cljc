@@ -1,11 +1,13 @@
 (ns datalevin.constants
-  (:import [java.util UUID]))
+  (:import [java.util UUID Arrays]))
 
 ;; TODO remove all traces of tx
 ;; datom
 
 (def ^:const e0    0)
+(def ^:const a0    0)
 (def ^:const tx0   0x2000000000000000)
+(def ^:const amax  0x7FFFFFFF)
 (def ^:const emax  0x7FFFFFFFFFFFFFFF)
 (def ^:const txmax 0x7FFFFFFFFFFFFFFF)
 (def ^:const implicit-schema
@@ -43,14 +45,19 @@
 (def ^:const false-value   (byte 0x01))
 (def ^:const true-value    (byte 0x02))
 
-(def max-uuid  (UUID. 0xFFFFFFFFFFFFFFFF 0xFFFFFFFFFFFFFFFF))
-(def min-uuid  (UUID. 0x0000000000000000 0x0000000000000000))
-
 (def ^:const separator     (byte 0x00))
 (def ^:const truncator     (byte 0xFF))
 (def ^:const slash         (byte 0x2F))
 
 (def separator-ba (byte-array [(byte 0x00)]))
+
+(def max-uuid (UUID. 0xFFFFFFFFFFFFFFFF 0xFFFFFFFFFFFFFFFF))
+(def min-uuid (UUID. 0x0000000000000000 0x0000000000000000))
+
+(def max-bytes (let [ba (byte-array +val-bytes-wo-hdr+)]
+                 (Arrays/fill ba (byte 0xFF))
+                 ba))
+(def min-bytes (byte-array 0))
 
 (def ^:const normal 0)
 (def ^:const gt0 1)

@@ -1,7 +1,7 @@
 (ns datalevin.storage
   "storage layer of datalevin"
   (:require [datalevin.lmdb :as lmdb]
-            [datalevin.util :as util]
+            [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
@@ -74,6 +74,40 @@
       :db/valueType   (handle-value-type lmdb attr v' v)
       :db/unique      (migrate-unique lmdb attr v' v)
       :pass-through)))
+
+(defn start-datom->indexable
+  [schema ^Datom d]
+  (let [e (if-let [e (.-e d)] e c/e0)]
+    (if-let [a (.-a d)]
+      (if-let [p (schema a)]
+        (if-let [v (.-v d)]
+          (b/indexable e (:db/aid p) v (:db/valueType p))
+          (b/indexable e (:db/aid p) :db.value/sysMin (:db/valueType p)))
+        (u/raise "Trying to slice with unknown attribute" a {}))
+      (b/indexable e c/a0 nil :db.type/sys-min))))
+
+(defn end-datom->indexable
+  [schema ^Datom d]
+  (let [e (if-let [e (.-e d)] e c/emax)]
+    (if-let [a (.-a d)]
+      (if-let [p (schema a)]
+        (if-let [v (.-v d)]
+          (b/indexable e (:db/aid p) v (:db/valueType p))
+          (b/indexable e (:db/aid p) :db.value/sysMax (:db/valueType p)))
+        (u/raise "Trying to slice with unknown attribute" a {}))
+      (b/indexable e c/amax nil :db.type/sys-max))))
+
+(defn- index->dbi
+  [index]
+  (case index
+    :eavt c/eav
+    :eav  c/eav
+    :aevt c/aev
+    :aev  c/aev
+    :avet c/ave
+    :ave  c/ave
+    :vaet c/vae
+    :vae  c/vae))
 
 (defprotocol IStore
   (close [this] "Close storage")
@@ -175,9 +209,14 @@
          (conj [:del c/giants (lmdb/get-value lmdb c/eav i :eav :long)
                 :long])))))
   (slice [_ index start-datom end-datom]
-    (cond
-      (and start-datom end-datom)
-      ()))
+    (lmdb/get-range
+     lmdb
+     (index->dbi index)
+     [:closed
+      (start-datom->indexable schema start-datom)
+      (end-datom->indexable schema end-datom)]
+     index
+     :long))
   (rslice [_ index start-datom end-datom]
     ))
 
