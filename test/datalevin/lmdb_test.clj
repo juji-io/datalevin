@@ -10,9 +10,10 @@
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [java.util UUID Arrays]
+           [datalevin.lmdb LMDB]
            [org.lmdbjava CursorIterable$KeyVal]))
 
-(def ^:dynamic lmdb nil)
+(def ^:dynamic ^LMDB lmdb nil)
 
 (defn lmdb-test-fixture
   [f]
@@ -80,7 +81,14 @@
 
   ;; key overflow throws instead
   (is (thrown? java.lang.AssertionError
-               (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
+               (sut/transact lmdb [[:put "a" (range 1000) 1]])))
+
+  ;; close then re-open
+  (let [dir  (.-dir lmdb)
+        _    (sut/close lmdb)
+        lmdb (sut/open-lmdb dir)
+        _    (sut/open-dbi lmdb "a")]
+    (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))

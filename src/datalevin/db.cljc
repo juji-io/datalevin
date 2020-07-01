@@ -49,7 +49,15 @@
     (update :aevt persistent!)
     (update :avet persistent!)))
 
-(defrecord-updatable DB [schema eavt aevt avet max-eid max-tx rschema hash]
+(defrecord-updatable DB [storage
+                         schema
+                         eavt
+                         aevt
+                         avet
+                         max-eid
+                         max-tx
+                         rschema
+                         hash]
   #?@(:cljs
       [IHash                (-hash  [db]        (hash-db db))
        IEquiv               (-equiv [db other]  (equiv-db db other))
@@ -260,8 +268,8 @@
     (validate-schema-key a :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})))
 
 (defn ^DB empty-db
-  ([] (empty-db nil))
-  ([schema]
+  ([dir] (empty-db dir nil))
+  ([dir schema]
     {:pre [(or (nil? schema) (map? schema))]}
     (validate-schema schema)
     (map->DB

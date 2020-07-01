@@ -7,9 +7,11 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [datalevin.constants :as c]
-            [clojure.test :refer [deftest is use-fixtures]])
+            [clojure.test :refer [deftest is use-fixtures]]
+            [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
            [datalevin.storage Store]
+           [datalevin.lmdb LMDB]
            [org.lmdbjava CursorIterable$KeyVal]))
 
 (def ^:dynamic ^Store store nil)
@@ -38,7 +40,8 @@
            :db/index     true}
         v1 (UUID/randomUUID)
         d1 (d/datom c/e0 b v1 c/tx0)
-        s1 (assoc s b (merge p {:db/aid 2}))]
+        s1 (assoc s b (merge p {:db/aid 2}))
+        dir (.-dir ^LMDB (.-lmdb store))]
     (sut/insert store d)
     (is (= s (sut/schema store)))
     (is (= 1 (sut/datom-count store c/eav)))
@@ -59,4 +62,6 @@
     (is (= 1 (sut/datom-count store c/aev)))
     (is (= 1 (sut/datom-count store c/ave)))
     (is (= 1 (sut/datom-count store c/vae)))
-    ))
+    (sut/close store)
+    (let [store (sut/open dir)]
+      (is (= [d1] (sut/slice store :eav d1 d1))))))

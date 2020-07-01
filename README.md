@@ -7,19 +7,18 @@
 Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
 engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 
-The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the implict join in Datalog query is its killer feature.
+The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  In my opinion, the automatic implict joins in Datalog query is its killer feature.
 
 > I love Datalog, why haven't everyone use this already? 
 
-Datomic is a closed source enterprise software and its feature sets may be an overkill for many use cases. One thing that often confuses novice users is the temporal feature of Datomic. To keep things simple and familiar (yes, this combination exists), Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
+Datomic is a closed source enterprise software and its feature sets may be an overkill for many use cases. One thing that often confuses novice users is its temporal features. To keep things simple and familiar (yes, this combination exists), Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and data size can be larger than memory.  
 
-Unlike some alternatives, it is totally fine to store large values in Datalevin. Effectively, anything can be put in as values. The maximum individual value size is 4GB. In practice, it is limited by LMDB's ability to find large enough continous space on disk and JVM's ability to allocate off-heap buffers for them.
-
-LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. Datalevin relies on LMDB's robust transactional database design and leverages its high performance for read intensive workload. As such, Datalevin does not support pluggable storage backend.
+To fulfill Datalevin's intended use of storing appication state (e.g. use as a Clojure native and persistent Redis), Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to good read performance, LMDB performs well in writing values larger than 2KB. Therefore, unlike some alternatives, it is fine to store large values in Datalevin. The maximum individual value size can be 4GB, as long as LMDB can find large enough continous space on disk and JVM can pre-allocate off-heap buffers for them. 
 
 ## :tada: Usage
+
 
 ## :floppy_disk: Difference from Datascript
 
