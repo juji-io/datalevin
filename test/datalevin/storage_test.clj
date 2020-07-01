@@ -22,7 +22,6 @@
       (sut/close store)
       (b/delete-files dir))))
 
-
 (use-fixtures :each store-test-fixture)
 
 (deftest basic-ops-test
@@ -53,10 +52,11 @@
     (is (= 2 (sut/datom-count store c/aev)))
     (is (= 1 (sut/datom-count store c/ave)))
     (is (= 1 (sut/datom-count store c/vae)))
+    (is (= [d d1] (sut/slice store :eav d d1)))
+    (is (= [d1 d] (sut/rslice store :eav d1 d)))
     (sut/delete store d)
     (is (= 1 (sut/datom-count store c/eav)))
     (is (= 1 (sut/datom-count store c/aev)))
     (is (= 1 (sut/datom-count store c/ave)))
     (is (= 1 (sut/datom-count store c/vae)))
-    )
-  )
+    ))

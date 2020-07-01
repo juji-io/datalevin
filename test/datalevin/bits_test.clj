@@ -103,6 +103,14 @@
              (and (= i l1) (< i l2)) -1
              :else                   (recur (inc i)))))))))
 
+(defn- bytes-size-less-than?
+  [^long limit ^bytes bs]
+  (< (alength bs) limit))
+
+(defn- string-size-less-than?
+  [^long limit ^String s]
+  (< (alength (.getBytes s)) limit))
+
 ;; extrema bounds
 
 (defn test-extrema
@@ -165,7 +173,8 @@
 (test/defspec string-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/string]
+   [v  (gen/such-that (partial string-size-less-than? c/+val-bytes-wo-hdr+)
+                      gen/string)]
    (test-extrema v
                  (sut/indexable e a v :db.type/string)
                  (sut/indexable e a :db.value/sysMin :db.type/string)
@@ -659,10 +668,6 @@
      (is (= e (.-e r)))
      (is (= a (.-a r)))
      (is (= v (.-v r))))))
-
-(defn- bytes-size-less-than?
-  [^long limit ^bytes bs]
-  (< (alength bs) limit))
 
 (test/defspec bytes-eav-generative-test
   50

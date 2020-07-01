@@ -75,7 +75,7 @@
       :db/unique      (migrate-unique lmdb attr v' v)
       :pass-through)))
 
-(defn start-datom->indexable
+(defn from-datom->indexable
   [schema ^Datom d]
   (let [e (if-let [e (.-e d)] e c/e0)]
     (if-let [a (.-a d)]
@@ -86,7 +86,7 @@
         (u/raise "Trying to slice with unknown attribute" a {}))
       (b/indexable e c/a0 nil :db.type/sys-min))))
 
-(defn end-datom->indexable
+(defn to-datom->indexable
   [schema ^Datom d]
   (let [e (if-let [e (.-e d)] e c/emax)]
     (if-let [a (.-a d)]
@@ -109,6 +109,12 @@
     :vaet c/vae
     :vae  c/vae))
 
+(defn- retrieved->datom
+  [lmdb attrs [^Retrieved k ^long v]]
+  (if (= v c/normal)
+    (d/datom (.-e k) (attrs (.-a k)) (.-v k))
+    (lmdb/get-value lmdb c/giants v :long)))
+
 (defprotocol IStore
   (close [this] "Close storage")
   (max-gt [this])
@@ -120,15 +126,14 @@
     "Update an attribute, f is similar to that of swap!")
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
-  (slice [this index start-datom end-datom]
-    "Return a range of datoms for the given index with the given boundary
-    (inclusive). When one boundary is nil, that side is unbounded. Both
-    nil means all.")
-  (rslice [this index start-datom end-datom]
-    "Return a range of datoms in reverse for the given index"))
+  (slice [this index from-datom to-datom]
+    "Return a range of datoms for with the given boundary (inclusive).")
+  (rslice [this index from-datom to-datom]
+    "Return a range of datoms in reverse for the given boundary (inclusive)"))
 
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
+                ^:volatile-mutable attrs
                 ^:volatile-mutable ^long max-aid
                 ^:volatile-mutable ^long max-gt]
   IStore
@@ -160,6 +165,7 @@
       (migrate lmdb attr o p)
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
+      (set! attrs (assoc attrs (:db/aid p) attr))
       p))
   (datom-count [_ index]
     (lmdb/entries lmdb index))
@@ -208,17 +214,31 @@
          (b/giant? i)
          (conj [:del c/giants (lmdb/get-value lmdb c/eav i :eav :long)
                 :long])))))
-  (slice [_ index start-datom end-datom]
-    (lmdb/get-range
-     lmdb
-     (index->dbi index)
-     [:closed
-      (start-datom->indexable schema start-datom)
-      (end-datom->indexable schema end-datom)]
-     index
-     :long))
-  (rslice [_ index start-datom end-datom]
-    ))
+  (slice [_ index from-datom to-datom]
+    (map
+     (partial retrieved->datom lmdb attrs)
+     (lmdb/get-range
+      lmdb
+      (index->dbi index)
+      [:closed
+       (from-datom->indexable schema from-datom)
+       (to-datom->indexable schema to-datom)]
+      index
+      :long)))
+  (rslice [_ index from-datom to-datom]
+    (map
+     (partial retrieved->datom lmdb attrs)
+     (lmdb/get-range
+      lmdb
+      (index->dbi index)
+      [:closed-back
+       (from-datom->indexable schema from-datom)
+       (to-datom->indexable schema to-datom)]
+      index
+      :long))))
+
+(defn- init-attrs [schema]
+  (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
 
 (defn open
   "Open and return the storage."
@@ -230,4 +250,9 @@
     (lmdb/open-dbi lmdb c/vae c/+max-key-size+ Long/BYTES)
     (lmdb/open-dbi lmdb c/giants Long/BYTES)
     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-    (->Store lmdb (init-schema lmdb) (init-max-aid lmdb) (init-max-gt lmdb))))
+    (let [schema (init-schema lmdb)]
+      (->Store lmdb
+               schema
+               (init-attrs schema)
+               (init-max-aid lmdb)
+               (init-max-gt lmdb)))))
