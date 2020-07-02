@@ -15,7 +15,7 @@ Datomic is a closed source enterprise software and its feature sets may be an ov
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and data size can be larger than memory.  
 
-To fulfill Datalevin's intended use of storing appication state, Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to good read performance, LMDB performs well in writing values larger than 2KB. Therefore, unlike some alternatives, it is fine to store large values in Datalevin. The maximum individual value size can be 4GB, as long as LMDB can find large enough continous space on disk and JVM can pre-allocate off-heap buffers for them. 
+To fulfill Datalevin's intended use of storing appication state, Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to good read performance, LMDB performs well in writing values larger than 2KB. Therefore, unlike some alternatives, it is fine to store large values in Datalevin. The maximum individual value size can be 4GB, as long as LMDB can find large enough continous space on disk and Datelevin can pre-allocate off-heap buffers in JVM for them. 
 
 ## :tada: Usage
 
@@ -34,7 +34,7 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Attributes have internal integer ids, and attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
 
-* Handles schema migrations with `swap-attr` function. It only allows safe migration that does not alter existing data (e.g. one to many cardinaity, unique to non-unique, index to non-index and vice vesa), and refuses unsafe schema changes (e.g. many to one cardinality, non-unique to unique, value type changes) that are inconsistent with existing data.
+* Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data (e.g. one to many cardinaity, unique to non-unique, index to non-index and vice vesa), and refuses unsafe schema changes (e.g. many to one cardinality, non-unique to unique, value type changes) that are inconsistent with existing data.
 
 * Datalevin currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms.
 

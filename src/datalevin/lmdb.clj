@@ -99,7 +99,7 @@
           (renew rtx)))))
   (get-rtx [this]
     (loop [i (.getId ^Thread (Thread/currentThread))]
-      (let [^long i'       (mod i cnt)
+      (let [^long i' (mod i cnt)
             ^Rtx rtx (.get rtxs i')]
         (or (renew rtx)
             (new-rtx this)
@@ -223,29 +223,46 @@
      or :attr; only values will be returned if ignore-key? is true;
      If value is to be ignored, put :ignore as v-type")
   (get-some
-    [this pred dbi-name k-range]
-    [this pred dbi-name k-range k-type]
-    [this pred dbi-name k-range k-type v-type]
-    "Like some, return the first logical true value of (pred x) for any x,
-     a CursorIterable$KeyVal, in the specified key range, or return nil;
+    [this dbi-name pred k-range]
+    [this dbi-name pred k-range k-type]
+    [this dbi-name pred k-range k-type v-type]
+    [this dbi-name pred k-range k-type v-type ignore-key?]
+    "Return the first kv pair that has logical true value of (pred x),
+     x is a CursorIterable$KeyVal, in the specified key range, or return nil;
      k-range is a vector [range-type k1 k2], range-type can be one of
      :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
      :less-than, :open, :open-closed, plus backward variants that put a
      `-back` suffix to each of the above, e.g. :all-back;
      k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only values will be returned if ignore-key? is true"))
+     or :attr; only values will be returned if ignore-key? is true")
+  (range-filter
+    [this dbi-name pred k-range]
+    [this dbi-name pred k-range k-type]
+    [this dbi-name pred k-range k-type v-type]
+    [this dbi-name pred k-range k-type v-type ignore-key?]
+    "Return a seq of kv pair in the specified key range, and only those
+     return true value for (pred x), where x is a CursorIterable$KeyVal;
+     k-range is a vector [range-type k1 k2], range-type can be one of
+     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
+     :less-than, :open, :open-closed, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. :all-back;
+     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
+     or :attr; only values will be returned if ignore-key? is true;
+     If value is to be ignored, put :ignore as v-type"))
 
 (defn- double-db-size [^Env env]
   (.setMapSize env (* 2 (-> env .info .mapSize))))
 
 (defn- fetch-value
-  [dbi ^Rtx rtx k k-type v-type]
+  [^DBI dbi ^Rtx rtx k k-type v-type]
   (put-key rtx k k-type)
   (when-let [^ByteBuffer bb (get dbi rtx)]
     (b/read-buffer bb v-type)))
 
 (defn- fetch-first
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
@@ -262,6 +279,8 @@
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
@@ -282,15 +301,49 @@
         (persistent! holder)))))
 
 (defn- fetch-some
-  [pred ^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type]
+  [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
-        (if-let [res (pred (.next iter))]
-          res
-          (recur iter))))))
+        (let [^CursorIterable$KeyVal kv (.next iter)]
+          (if (pred kv)
+            (let [v (when (not= v-type :ignore)
+                      (-> kv ^ByteBuffer (.val) .rewind
+                          (b/read-buffer v-type)))]
+              (if ignore-key?
+                v
+                [(-> kv ^ByteBuffer (.key) .rewind (b/read-buffer k-type))
+                 v]))
+            (recur iter)))))))
+
+(defn- fetch-range-filtered
+  [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
+  (put-start-key rtx k1 k-type)
+  (put-stop-key rtx k2 k-type)
+  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+    (loop [^Iterator iter (.iterator iterable)
+           holder         (transient [])]
+      (if (.hasNext iter)
+        (let [^CursorIterable$KeyVal kv (.next iter)]
+          (if (pred kv)
+            (let [v       (when (not= v-type :ignore)
+                            (-> kv ^ByteBuffer (.val) .rewind
+                                (b/read-buffer v-type)))
+                  holder' (conj! holder
+                                 (if ignore-key?
+                                   v
+                                   [(-> kv ^ByteBuffer (.key) .rewind
+                                        (b/read-buffer k-type))
+                                    v]))]
+              (recur iter holder'))
+            (recur iter holder)))
+        (persistent! holder)))))
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
@@ -298,7 +351,8 @@
     (close-pool pool)
     (.close env))
   (open-dbi [this dbi-name]
-    (open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+ default-dbi-flags))
+    (open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
+              default-dbi-flags))
   (open-dbi [this dbi-name key-size]
     (open-dbi this dbi-name key-size c/+default-val-size+ default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
@@ -384,17 +438,35 @@
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx)))))
-  (get-some [this pred dbi-name k-range]
-    (get-some this pred dbi-name k-range :data :data))
-  (get-some [this pred dbi-name k-range k-type]
-    (get-some this pred dbi-name k-range k-type :data))
-  (get-some [this pred dbi-name k-range k-type v-type]
+  (get-some [this dbi-name pred k-range]
+    (get-some this dbi-name pred k-range :data :data false))
+  (get-some [this dbi-name pred k-range k-type]
+    (get-some this dbi-name pred k-range k-type :data false))
+  (get-some [this dbi-name pred k-range k-type v-type]
+    (get-some this dbi-name pred k-range k-type v-type false))
+  (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
-        (fetch-some pred dbi rtx k-range k-type v-type)
+        (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-some: " (ex-message e)
+                 {:dbi    dbi-name :k-range k-range
+                  :k-type k-type   :v-type  v-type}))
+        (finally (reset rtx)))))
+  (range-filter [this dbi-name pred k-range]
+    (range-filter this dbi-name pred k-range :data :data false))
+  (range-filter [this dbi-name pred k-range k-type]
+    (range-filter this dbi-name pred k-range k-type :data false))
+  (range-filter [this dbi-name pred k-range k-type v-type]
+    (range-filter this dbi-name pred k-range k-type v-type false))
+  (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
+    (let [dbi (get-dbi this dbi-name)
+          rtx (get-rtx pool)]
+      (try
+        (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
+        (catch Exception e
+          (raise "Fail to range-filter: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx))))))

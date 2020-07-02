@@ -130,7 +130,12 @@
   (slice [this index from-datom to-datom]
     "Return a range of datoms for with the given boundary (inclusive).")
   (rslice [this index from-datom to-datom]
-    "Return a range of datoms in reverse for the given boundary (inclusive)"))
+    "Return a range of datoms in reverse for the given boundary (inclusive)")
+  (slice-filter [this index from-datom to-datom]
+    "Return a range of datoms for with the given boundary (inclusive).")
+  (rslice-filter [this index from-datom to-datom]
+    "Return a range of datoms in reverse for the given boundary (inclusive)")
+  )
 
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
@@ -259,3 +264,13 @@
                (init-attrs schema)
                (init-max-aid lmdb)
                (init-max-gt lmdb)))))
+
+(defprotocol IIndex
+  (-seq [this])
+  (-rseq [this])
+  (-count [this])
+  (-slice [this from-datom to-datom])
+  (-rslice [this from-datom to-datom])
+  (-slice-filter [this from-datom to-datom])
+  (-rslice-filter [this from-datom to-datom])
+  )

@@ -126,14 +126,29 @@
            (sut/get-range lmdb "c" [:closed 10 109] :long :long true)))))
 
 (deftest get-some-test
-  (let [ks  (shuffle (range 0 1000))
+  (let [ks  (shuffle (range 0 100))
         vs  (map inc ks)
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
         pred (fn [^CursorIterable$KeyVal kv]
-               (let [k (-> kv (.key) (b/read-buffer :long))]
-                 (when (> ^long k 15) (-> kv (.val) (b/read-buffer :long)))))]
+               (let [^long k (-> kv (.key) (b/read-buffer :long))]
+                 (> k 15)))]
     (sut/transact lmdb txs)
-    (is (= 17 (sut/get-some lmdb pred "c" [:all] :long :long)))))
+    (is (= 17 (sut/get-some lmdb "c" pred [:all] :long :long true)))
+    (is (= [16 17] (sut/get-some lmdb "c" pred [:all] :long :long)))))
+
+(deftest range-filter-test
+  (let [ks   (shuffle (range 0 100))
+        vs   (map inc ks)
+        txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
+        pred (fn [^CursorIterable$KeyVal kv]
+               (let [^long k (-> kv (.key) (b/read-buffer :long))]
+                 (< 10 k 20)))
+        fks (range 11 20)
+        fvs (map inc fks)
+        res (map (fn [k v] [k v]) fks fvs)]
+    (sut/transact lmdb txs)
+    (is (= fvs (sut/range-filter lmdb "c" pred [:all] :long :long true)))
+    (is (= res (sut/range-filter lmdb "c" pred [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test
   (let [ks  (shuffle (range 0 1000))
