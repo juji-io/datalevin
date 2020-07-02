@@ -1,6 +1,6 @@
-<p align="center"><img src="logo.png" alt="datalevin logo" height="120"></img></p>
+<p align="center"><img src="logo.png" alt="datalevin logo" height="140"></img></p>
 <h1 align="center">Datalevin</h1> 
-<p align="center">Simple durable Datalog database for everyone.</p>
+<p align="center"> 🧘 Simple durable Datalog database for everyone 💽 </p>
 
 ## :hear_no_evil: What and why
 
