@@ -120,6 +120,7 @@
   (max-gt [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
+  (attrs [this] "Return the aid -> attr map")
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
@@ -145,6 +146,8 @@
     max-aid)
   (schema [_]
     schema)
+  (attrs [_]
+    attrs)
   (init-max-eid [_]
     (or (when-let [[r _] (lmdb/get-first lmdb c/eav [:all-back] :eav :ignore)]
           (.-e ^Retrieved r))

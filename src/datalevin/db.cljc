@@ -50,10 +50,6 @@
     (update :avet persistent!)))
 
 (defrecord-updatable DB [storage
-                         schema
-                         eavt
-                         aevt
-                         avet
                          max-eid
                          max-tx
                          rschema
@@ -275,9 +271,9 @@
     (map->DB
       {:schema  schema
        :rschema (rschema (merge implicit-schema schema))
-       :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
-       :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
-       :avet    (set/sorted-set-by d/cmp-datoms-avet)
+       ;; :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
+       ;; :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
+       ;; :avet    (set/sorted-set-by d/cmp-datoms-avet)
        :max-eid e0
        :max-tx  tx0
        :hash    (atom 0)})))

@@ -1,4 +1,4 @@
-<p align="center"><img src="logo.png" alt="datalevin logo" height="80"></img></p>
+<p align="center"><img src="logo.png" alt="datalevin logo" height="120"></img></p>
 <h1 align="center">Datalevin</h1> 
 <p align="center">Simple durable Datalog database for everyone.</p>
 
@@ -15,7 +15,7 @@ Datomic is a closed source enterprise software and its feature sets may be an ov
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and data size can be larger than memory.  
 
-To fulfill Datalevin's intended use of storing appication state (e.g. use as a Clojure native and persistent Redis), Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to good read performance, LMDB performs well in writing values larger than 2KB. Therefore, unlike some alternatives, it is fine to store large values in Datalevin. The maximum individual value size can be 4GB, as long as LMDB can find large enough continous space on disk and JVM can pre-allocate off-heap buffers for them. 
+To fulfill Datalevin's intended use of storing appication state, Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to good read performance, LMDB performs well in writing values larger than 2KB. Therefore, unlike some alternatives, it is fine to store large values in Datalevin. The maximum individual value size can be 4GB, as long as LMDB can find large enough continous space on disk and JVM can pre-allocate off-heap buffers for them. 
 
 ## :tada: Usage
 
