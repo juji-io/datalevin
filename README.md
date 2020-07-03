@@ -15,9 +15,9 @@ Datomic is an enterprise software and its feature sets may be an overkill for ma
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and data size can be larger than memory.  
 
-Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. As a battle tested data store, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. it powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to fast read, LMDB performs well in writing large values (> 2KB). Therefore, unlike some alternatives, it is fine to store large values in Datalevin. 
+Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. As a battle tested data store, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. it powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to fast read, LMDB performs well in writing large values (> 2KB). Therefore, unlike some alternatives, it is fine to store large values (e.g. documents) in Datalevin. 
 
-Datalevin can also be used as a key-value store without Datalog. Datalevin supports full features of LMDB and we are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
+Datalevin can also be used as a key-value store without Datalog. Datalevin supports full features of LMDB, and [we](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
 
 ## :tada: Usage
 
@@ -32,13 +32,12 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Has an additional index that uses values as the primary key (VAE), similar to Datomic.
 
-* Indices respect `:db/valueType`. Currently, most Datomic value types are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with nippy. 
+* Indices respect `:db/valueType`. Currently, most [Datomic value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
 
 * Attributes have internal integer ids. 
 
-* Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data (e.g. one to many cardinaity, unique to non-unique, index to non-index and vice vesa), and refuses unsafe schema changes (e.g. many to one cardinality, non-unique to unique, value type changes) that are inconsistent with existing data.
+* Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data, and refuses unsafe schema changes that are inconsistent with existing data.
 
-* Datalevin currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms.
 
 ## :baby: Limitations
 
@@ -50,9 +49,11 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Because keys are compared bitwisely, for range queries to work as expected on an attribute, its `:db/valueType` should be specified.
 
-* As mentioned, Datalevin does not support transaction history.
+* As mentioned, Datalevin does not keep transaction history, so no temporal features, such as time travel.
 
-* Currently, there's no network interface. 
+* Currently, there's no network interface, but this may change.
+
+* Currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms.
 
 ## :shopping: Alternatives
 
