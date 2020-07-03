@@ -10,7 +10,7 @@
   (:import [datalevin.lmdb LMDB]
            [datalevin.datom Datom]
            [datalevin.bits Indexable Retrieved]
-           [org.lmdbjava PutFlags CursorIterable$KeyVal]))
+           [org.lmdbjava PutFlags]))
 
 (defn- transact-schema
   [lmdb schema]

@@ -10,8 +10,7 @@
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [java.util UUID Arrays]
-           [datalevin.lmdb LMDB]
-           [org.lmdbjava CursorIterable$KeyVal]))
+           [datalevin.lmdb LMDB]))
 
 (def ^:dynamic ^LMDB lmdb nil)
 
@@ -129,8 +128,8 @@
   (let [ks  (shuffle (range 0 100))
         vs  (map inc ks)
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-        pred (fn [^CursorIterable$KeyVal kv]
-               (let [^long k (-> kv (.key) (b/read-buffer :long))]
+        pred (fn [kv]
+               (let [^long k (b/read-buffer (key kv) :long)]
                  (> k 15)))]
     (sut/transact lmdb txs)
     (is (= 17 (sut/get-some lmdb "c" pred [:all] :long :long true)))
@@ -140,8 +139,8 @@
   (let [ks   (shuffle (range 0 100))
         vs   (map inc ks)
         txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-        pred (fn [^CursorIterable$KeyVal kv]
-               (let [^long k (-> kv (.key) (b/read-buffer :long))]
+        pred (fn [kv]
+               (let [^long k (b/read-buffer (key kv) :long)]
                  (< 10 k 20)))
         fks (range 11 20)
         fvs (map inc fks)

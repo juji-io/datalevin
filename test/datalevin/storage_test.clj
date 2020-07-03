@@ -11,8 +11,7 @@
             [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
            [datalevin.storage Store]
-           [datalevin.lmdb LMDB]
-           [org.lmdbjava CursorIterable$KeyVal]))
+           [datalevin.lmdb LMDB]))
 
 (def ^:dynamic ^Store store nil)
 

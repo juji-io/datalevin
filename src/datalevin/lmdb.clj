@@ -8,6 +8,7 @@
             [taoensso.timbre :as log])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
+           [clojure.lang IMapEntry]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer]))
@@ -176,6 +177,17 @@
       (.flip stop-kb)
       (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
+(defn- ^IMapEntry map-entry
+  [^CursorIterable$KeyVal kv]
+  (reify IMapEntry
+    (key [_] (.key kv))
+    (val [_] (.val kv))
+    (equals [_ o] (and (= (.key kv) (key o)) (= (.val kv) (val o))))
+    (getKey [_] (.key kv))
+    (getValue [_] (.val kv))
+    (setValue [_ _] (raise "IMapEntry is immutable"))
+    (hashCode [_] (hash-combine (hash (.key kv)) (hash (.val kv))))))
+
 (defprotocol ILMDB
   (close [this] "Close this LMDB env")
   (open-dbi
@@ -228,7 +240,7 @@
     [this dbi-name pred k-range k-type v-type]
     [this dbi-name pred k-range k-type v-type ignore-key?]
     "Return the first kv pair that has logical true value of (pred x),
-     x is a CursorIterable$KeyVal, in the specified key range, or return nil;
+     x is an IMapEntry , in the specified key range, or return nil;
      k-range is a vector [range-type k1 k2], range-type can be one of
      :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
      :less-than, :open, :open-closed, plus backward variants that put a
@@ -240,8 +252,8 @@
     [this dbi-name pred k-range k-type]
     [this dbi-name pred k-range k-type v-type]
     [this dbi-name pred k-range k-type v-type ignore-key?]
-    "Return a seq of kv pair in the specified key range, and only those
-     return true value for (pred x), where x is a CursorIterable$KeyVal;
+    "Return a seq of kv pair in the specified key range, for only those
+     return true value for (pred x), where x is an IMapEntry;
      k-range is a vector [range-type k1 k2], range-type can be one of
      :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
      :less-than, :open, :open-closed, plus backward variants that put a
@@ -268,14 +280,11 @@
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (let [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
-        (let [^CursorIterable$KeyVal kv (.next iter)
-              v                         (when (not= v-type :ignore)
-                                          (-> kv
-                                              (.val)
-                                              (b/read-buffer v-type)))]
+        (let [kv (map-entry (.next iter))
+              v  (when (not= v-type :ignore) (b/read-buffer (val kv) v-type))]
           (if ignore-key?
            v
-           [(-> kv (.key) (b/read-buffer k-type)) v]))))))
+           [(b/read-buffer (key kv) k-type) v]))))))
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -287,16 +296,13 @@
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (if (.hasNext iter)
-        (let [^CursorIterable$KeyVal kv (.next iter)
-              v                         (when (not= v-type :ignore)
-                                          (-> kv (.val) (b/read-buffer v-type)))
-              holder'                   (conj! holder
-                                               (if ignore-key?
-                                                 v
-                                                 [(-> kv
-                                                      (.key)
-                                                      (b/read-buffer k-type))
-                                                  v]))]
+        (let [kv      (map-entry (.next iter))
+              v       (when (not= v-type :ignore)
+                        (b/read-buffer (val kv) v-type))
+              holder' (conj! holder
+                             (if ignore-key?
+                               v
+                               [(b/read-buffer (key kv) k-type) v]))]
           (recur iter holder'))
         (persistent! holder)))))
 
@@ -309,15 +315,13 @@
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
-        (let [^CursorIterable$KeyVal kv (.next iter)]
+        (let [kv (map-entry (.next iter))]
           (if (pred kv)
             (let [v (when (not= v-type :ignore)
-                      (-> kv ^ByteBuffer (.val) .rewind
-                          (b/read-buffer v-type)))]
+                      (b/read-buffer (.rewind ^ByteBuffer (val kv)) v-type))]
               (if ignore-key?
                 v
-                [(-> kv ^ByteBuffer (.key) .rewind (b/read-buffer k-type))
-                 v]))
+                [(b/read-buffer (.rewind ^ByteBuffer (key kv)) k-type) v]))
             (recur iter)))))))
 
 (defn- fetch-range-filtered
@@ -330,16 +334,16 @@
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (if (.hasNext iter)
-        (let [^CursorIterable$KeyVal kv (.next iter)]
+        (let [kv (map-entry (.next iter))]
           (if (pred kv)
             (let [v       (when (not= v-type :ignore)
-                            (-> kv ^ByteBuffer (.val) .rewind
-                                (b/read-buffer v-type)))
+                            (b/read-buffer
+                             (.rewind ^ByteBuffer (val kv)) v-type))
                   holder' (conj! holder
                                  (if ignore-key?
                                    v
-                                   [(-> kv ^ByteBuffer (.key) .rewind
-                                        (b/read-buffer k-type))
+                                   [(b/read-buffer
+                                     (.rewind ^ByteBuffer (key kv)) k-type)
                                     v]))]
               (recur iter holder'))
             (recur iter holder)))

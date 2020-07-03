@@ -9,13 +9,13 @@ engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wi
 
 The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  The automatic implict joins seem to be its killer feature.
 
-> I love Datalog, why haven't everyone use this already? 
+> I love Datalog, why hasn't everyone use this already? 
 
 Datomic is an enterprise software and its feature sets may be an overkill for many use cases. One thing that often confuses novice users is its temporal features. To keep things simple and familiar, Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
 
-Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts and data size can be larger than memory.  
+Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.  
 
-Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. As a battle tested data store, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. it powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to fast read, LMDB performs well in writing large values (> 2KB). Therefore, unlike some alternatives, it is fine to store large values (e.g. documents) in Datalevin. 
+Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. it powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to fast reads, LMDB performs well in writing large values (> 2KB). Therefore, unlike some alternatives, it is fine to store large values (e.g. documents) in Datalevin. 
 
 Datalevin can also be used as a key-value store without Datalog. Datalevin supports full features of LMDB, and [we](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
 
