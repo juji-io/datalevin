@@ -392,7 +392,9 @@
         (.commit txn))
       (catch Env$MapFullException e
         (double-db-size env)
-        (transact this txs))))
+        (transact this txs))
+      (catch Exception e
+        (raise "Fail to transact: " (ex-message e) {:txs txs}))))
   (get-value [this dbi-name k]
     (get-value this dbi-name k :data :data))
   (get-value [this dbi-name k k-type]

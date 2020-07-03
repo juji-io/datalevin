@@ -17,6 +17,8 @@ Datalevin retains the library property of Datascript, and it is meant to be embe
 
 To fulfill Datalevin's intended use of storing appication state, Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is a battle tested data store used in [many projects](https://symas.com/lmdb/technical/#projects). For example, LMDB powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to good read performance, LMDB performs well in writing values larger than 2KB. Therefore, unlike some alternatives, it is fine to store large values in Datalevin. The maximum individual value size can be 4GB, as long as LMDB can find large enough continous space on disk and Datelevin can pre-allocate off-heap buffers in JVM for them. 
 
+One can also use Datalevin as a key-value store without Datalog. Datalevin supports full features of LMDB and we are committed to make Datalevin an efficient data store. A number of optimizatons are put in place. For instance, a transaction pool is used to enable transaction reuse. Buffers are pre-allocated to avoid query time allocation of buffers. Value size and database size are also automatically managed. 
+
 ## :tada: Usage
 
 
