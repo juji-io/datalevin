@@ -30,16 +30,16 @@
   (is (= 1 (sut/max-aid store)))
   (is (= c/implicit-schema (sut/schema store)))
   (is (= c/e0 (sut/init-max-eid store)))
-  (let [a :a/b
-        v (UUID/randomUUID)
-        d (d/datom c/e0 a v c/tx0)
-        s (assoc (sut/schema store) a {:db/aid 1})
-        b :b/c
-        p {:db/valueType :db.type/uuid
-           :db/index     true}
-        v1 (UUID/randomUUID)
-        d1 (d/datom c/e0 b v1 c/tx0)
-        s1 (assoc s b (merge p {:db/aid 2}))
+  (let [a   :a/b
+        v   (UUID/randomUUID)
+        d   (d/datom c/e0 a v c/tx0)
+        s   (assoc (sut/schema store) a {:db/aid 1})
+        b   :b/c
+        p   {:db/valueType :db.type/uuid
+             :db/index     true}
+        v1  (UUID/randomUUID)
+        d1  (d/datom c/e0 b v1 c/tx0)
+        s1  (assoc s b (merge p {:db/aid 2}))
         dir (.-dir ^LMDB (.-lmdb store))]
     (sut/insert store d)
     (is (= s (sut/schema store)))
@@ -56,6 +56,12 @@
     (is (= 1 (sut/datom-count store c/vae)))
     (is (= [d d1] (sut/slice store :eav d d1)))
     (is (= [d1 d] (sut/rslice store :eav d1 d)))
+    (is (= [d d1] (sut/slice store :eav
+                             (d/datom c/e0 a nil)
+                             (d/datom c/e0 nil nil))))
+    (is (= [d1 d] (sut/rslice store :eav
+                             (d/datom c/e0 b nil)
+                             (d/datom c/e0 nil nil))))
     (sut/delete store d)
     (is (= 1 (sut/datom-count store c/eav)))
     (is (= 1 (sut/datom-count store c/aev)))

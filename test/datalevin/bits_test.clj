@@ -158,8 +158,8 @@
    [v  gen/keyword-ns]
    (test-extrema v
                  (sut/indexable e a v :db.type/keyword)
-                 (sut/indexable e a :db.value/sysMin :db.type/keyword)
-                 (sut/indexable e a :db.value/sysMax :db.type/keyword))))
+                 (sut/indexable e a c/v0 :db.type/keyword)
+                 (sut/indexable e a c/vmax :db.type/keyword))))
 
 (test/defspec symbol-extrema-generative-test
   100
@@ -167,8 +167,8 @@
    [v  gen/symbol-ns]
    (test-extrema v
                  (sut/indexable e a v :db.type/symbol)
-                 (sut/indexable e a :db.value/sysMin :db.type/symbol)
-                 (sut/indexable e a :db.value/sysMax :db.type/symbol))))
+                 (sut/indexable e a c/v0 :db.type/symbol)
+                 (sut/indexable e a c/vmax :db.type/symbol))))
 
 (test/defspec string-extrema-generative-test
   100
@@ -177,8 +177,8 @@
                       gen/string)]
    (test-extrema v
                  (sut/indexable e a v :db.type/string)
-                 (sut/indexable e a :db.value/sysMin :db.type/string)
-                 (sut/indexable e a :db.value/sysMax :db.type/string))))
+                 (sut/indexable e a c/v0 :db.type/string)
+                 (sut/indexable e a c/vmax :db.type/string))))
 
 (test/defspec boolean-extrema-generative-test
   5
@@ -186,8 +186,8 @@
    [v  gen/boolean]
    (test-extrema v
                  (sut/indexable e a v :db.type/boolean)
-                 (sut/indexable e a :db.value/sysMin :db.type/boolean)
-                 (sut/indexable e a :db.value/sysMax :db.type/boolean))))
+                 (sut/indexable e a c/v0 :db.type/boolean)
+                 (sut/indexable e a c/vmax :db.type/boolean))))
 
 (test/defspec long-extrema-generative-test
   100
@@ -195,8 +195,8 @@
    [v  gen/large-integer]
    (test-extrema v
                  (sut/indexable e a v :db.type/long)
-                 (sut/indexable e a :db.value/sysMin :db.type/long)
-                 (sut/indexable e a :db.value/sysMax :db.type/long))))
+                 (sut/indexable e a c/v0 :db.type/long)
+                 (sut/indexable e a c/vmax :db.type/long))))
 
 (test/defspec double-extrema-generative-test
   100
@@ -204,8 +204,8 @@
    [v (gen/double* {:NaN? false})]
    (test-extrema v
                  (sut/indexable e a v :db.type/double)
-                 (sut/indexable e a :db.value/sysMin :db.type/double)
-                 (sut/indexable e a :db.value/sysMax :db.type/double))))
+                 (sut/indexable e a c/v0 :db.type/double)
+                 (sut/indexable e a c/vmax :db.type/double))))
 
 (test/defspec ref-extrema-generative-test
   100
@@ -213,17 +213,17 @@
    [v  gen/nat]
    (test-extrema v
                  (sut/indexable e a v :db.type/ref)
-                 (sut/indexable e a :db.value/sysMin :db.type/ref)
-                 (sut/indexable e a :db.value/sysMax :db.type/ref))))
+                 (sut/indexable e a c/v0 :db.type/ref)
+                 (sut/indexable e a c/vmax :db.type/ref))))
 
 (test/defspec uuid-extrema-generative-test
   100
   (prop/for-all
    [v  gen/uuid]
    (test-extrema v
-                 (sut/indexable e a v :db.tgen/uuid)
-                 (sut/indexable e a :db.value/sysMin :db.tgen/uuid)
-                 (sut/indexable e a :db.value/sysMax :db.tgen/uuid))))
+                 (sut/indexable e a v :db.type/uuid)
+                 (sut/indexable e a c/v0 :db.type/uuid)
+                 (sut/indexable e a c/vmax :db.type/uuid))))
 
 ;; orders
 

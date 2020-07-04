@@ -2,19 +2,22 @@
   (:require
    [clojure.walk]
    [clojure.data]
-   [datalevin.constants :refer [e0 tx0 emax txmax implicit-schema]]
+   [datalevin.constants :as c :refer [e0 tx0 emax txmax implicit-schema]]
    [datalevin.datom :as d
     :refer [datom datom-tx datom-added datom? diff-sorted]]
    [datalevin.util
     :refer [combine-hashes case-tree raise defrecord-updatable cond+]]
-   [datalevin.storage :as store]
+   [datalevin.storage :as s]
+   [datalevin.bits :as b]
    [me.tonsky.persistent-sorted-set :as set]
    [me.tonsky.persistent-sorted-set.arrays :as arrays])
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
   #?(:clj
-     (:import [datalevin.datom Datom])))
+     (:import [datalevin.datom Datom]
+              [datalevin.storage Store]
+              [datalevin.bits Retrieved])))
 
 
 ;;;;;;;;;; Searching
@@ -38,25 +41,27 @@
 #?(:cljs (declare pr-db))
 
 (defn db-transient [db]
-  (-> db
+  db
+  #_(-> db
     (update :eavt transient)
     (update :aevt transient)
     (update :avet transient)))
 
 (defn db-persistent! [db]
-  (-> db
+  db
+  #_(-> db
     (update :eavt persistent!)
     (update :aevt persistent!)
     (update :avet persistent!)))
 
-(defrecord-updatable DB [schema eavt aevt avet max-eid max-tx rschema hash]
+(defrecord-updatable DB [^Store store max-eid max-tx rschema hash]
   #?@(:cljs
       [IHash                (-hash  [db]        (hash-db db))
        IEquiv               (-equiv [db other]  (equiv-db db other))
-       ISeqable             (-seq   [db]        (-seq  (.-eavt db)))
-       IReversible          (-rseq  [db]        (-rseq (.-eavt db)))
-       ICounted             (-count [db]        (count (.-eavt db)))
-       IEmptyableCollection (-empty [db]        (with-meta (empty-db (.-schema db)) (meta db)))
+       ISeqable             (-seq   [db]        (-seq db :eavt))
+       IReversible          (-rseq  [db]        (-rseq db :eavt))
+       ICounted             (-count [db]        (-count db :eavt))
+       IEmptyableCollection (-empty [db]        (with-meta (empty-db (-schema db)) (meta db)))
        IPrintWithWriter     (-pr-writer [db w opts] (pr-db db w opts))
        IEditableCollection  (-as-transient [db] (db-transient db))
        ITransientCollection (-conj! [db key] (throw (ex-info "datalevin.DB/conj! is not supported" {})))
@@ -65,36 +70,43 @@
       :clj
       [Object               (hashCode [db]      (hash-db db))
        clojure.lang.IHashEq (hasheq [db]        (hash-db db))
-       clojure.lang.Seqable (seq [db]           (seq eavt))
+       clojure.lang.Seqable (seq [db]           (-seq db :eavt))
        clojure.lang.IPersistentCollection
-                            (count [db]         (count eavt))
+                            (count [db]         (-count db :eavt))
                             (equiv [db other]   (equiv-db db other))
        clojure.lang.IEditableCollection
-                            (empty [db]         (with-meta (empty-db schema) (meta db)))
+       (empty [db]         (with-meta (empty-db (-schema db)) (meta db)))
                             (asTransient [db] (db-transient db))
        clojure.lang.ITransientCollection
                             (conj [db key] (throw (ex-info "datalevin.DB/conj! is not supported" {})))
                             (persistent [db] (db-persistent! db))])
 
   IDB
-  (-schema [db] (.-schema db))
-  (-attrs-by [db property] ((.-rschema db) property))
+  (-schema [_] (schema store))
+  (-attrs-by [_ property] (rschema property))
 
   ISearch
   (-search [db pattern]
-    (let [[e a v tx] pattern
-          eavt (.-eavt db)
-          aevt (.-aevt db)
-          avet (.-avet db)]
+    (let [[e a v tx] pattern]
       (case-tree [e a (some? v) tx]
-        [(set/slice eavt (datom e a v tx) (datom e a v tx))                   ;; e a v tx
-         (set/slice eavt (datom e a v tx0) (datom e a v txmax))               ;; e a v _
-         (->> (set/slice eavt (datom e a nil tx0) (datom e a nil txmax))      ;; e a _ tx
+        [#_(set/slice eavt (datom e a v tx) (datom e a v tx))                   ;; e a v tx
+         (s/slice store :eavt (datom e a v tx) (datom e a v tx))
+         #_(set/slice eavt (datom e a v tx0) (datom e a v txmax))               ;; e a v _
+         (s/slice store :eavt (datom e a v tx0) (datom e a v txmax))
+
+         #_(->> (set/slice eavt (datom e a nil tx0) (datom e a nil txmax))      ;; e a _ tx
               (filter (fn [^Datom d] (= tx (datom-tx d)))))
-         (set/slice eavt (datom e a nil tx0) (datom e a nil txmax))           ;; e a _ _
-         (->> (set/slice eavt (datom e nil nil tx0) (datom e nil nil txmax))  ;; e _ v tx
+         (s/slice store :eavt (datom e a c/v0 tx0) (datom e a c/vmax txmax))
+         #_(set/slice eavt (datom e a nil tx0) (datom e a nil txmax))           ;; e a _ _
+         (s/slice store :eavt (datom e a c/v0 tx0) (datom e a c/vmax txmax))
+         #_(->> (set/slice eavt (datom e nil nil tx0) (datom e nil nil txmax))  ;; e _ v tx
               (filter (fn [^Datom d] (and (= v (.-v d))
                                           (= tx (datom-tx d))))))
+         (s/slice-filter store :eavt
+                         (fn [^Datom d] (= v (.-v d)))
+                         (datom e c/a0 c/v0 tx0)
+                         (datom e c/amax c/vmax txmax))
+
          (->> (set/slice eavt (datom e nil nil tx0) (datom e nil nil txmax))  ;; e _ v _
               (filter (fn [^Datom d] (= v (.-v d)))))
          (->> (set/slice eavt (datom e nil nil tx0) (datom e nil nil txmax))  ;; e _ _ tx
@@ -319,8 +331,8 @@
 (defn- hash-db [^DB db]
   (let [h @(.-hash db)]
     (if (zero? h)
-      (reset! (.-hash db) (combine-hashes (hash (.-schema db))
-                                          (hash (.-eavt db))))
+      (reset! (.-hash db) (combine-hashes (hash (-schema db))
+                                          (hash (-eavt db))))
       h)))
 
 (defn- hash-fdb [^FilteredDB db]

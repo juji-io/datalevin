@@ -75,27 +75,27 @@
       :db/unique      (migrate-unique lmdb attr v' v)
       :pass-through)))
 
-(defn from-datom->indexable
+(defn- low-datom->indexable
   [schema ^Datom d]
   (let [e (if-let [e (.-e d)] e c/e0)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-let [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) :db.value/sysMin (:db/valueType p)))
-        (u/raise "Trying to slice with unknown attribute" a {}))
-      (b/indexable e c/a0 nil :db.type/sys-min))))
+          (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
+        (u/raise "Cannot slice with unknown attribute " a {}))
+      (b/indexable e c/a0 c/v0 :db.type/sysMin))))
 
-(defn to-datom->indexable
+(defn- high-datom->indexable
   [schema ^Datom d]
   (let [e (if-let [e (.-e d)] e c/emax)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-let [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) :db.value/sysMax (:db/valueType p)))
-        (u/raise "Trying to slice with unknown attribute" a {}))
-      (b/indexable e c/amax nil :db.type/sys-max))))
+          (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
+        (u/raise "Cannot slice with unknown attribute " a {}))
+      (b/indexable e c/amax c/vmax :db.type/sysMax))))
 
 (defn- index->dbi
   [index]
@@ -115,6 +115,12 @@
     (d/datom (.-e k) (attrs (.-a k)) (.-v k))
     (lmdb/get-value lmdb c/giants v :long)))
 
+(defn- datom-pred->kv-pred
+  [lmdb attrs index pred]
+  (fn [kv]
+    (let [^Retrieved k (b/read-buffer (key kv) index)]
+      (< 10 k 20))))
+
 (defprotocol IStore
   (close [this] "Close storage")
   (max-gt [this])
@@ -127,15 +133,19 @@
     "Update an attribute, f is similar to that of swap!")
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
-  (slice [this index from-datom to-datom]
-    "Return a range of datoms for with the given boundary (inclusive).")
-  (rslice [this index from-datom to-datom]
-    "Return a range of datoms in reverse for the given boundary (inclusive)")
-  (slice-filter [this index from-datom to-datom]
-    "Return a range of datoms for with the given boundary (inclusive).")
-  (rslice-filter [this index from-datom to-datom]
-    "Return a range of datoms in reverse for the given boundary (inclusive)")
-  )
+  (slice [this index low-datom high-datom]
+    "Return a range of datoms within the given boundary (inclusive).")
+  (rslice [this index high-datom low-datom]
+    "Return a range of datoms in reverse within the given boundary (inclusive)")
+  (slice-filter [this index pred low-datom high-datom]
+    "Return a range of datoms within the given boundary (inclusive) that
+    return true for (pred x), where x is the datom")
+  (rslice-filter [this index pred high-datom low-datom]
+    "Return a range of datoms in reverse for the given boundary (inclusive)
+    that return true for (pred x), where x is the datom")
+  (-seq [this index])
+  (-rseq [this index])
+  (-count [this index]))
 
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
@@ -222,28 +232,62 @@
          (b/giant? i)
          (conj [:del c/giants (lmdb/get-value lmdb c/eav i :eav :long)
                 :long])))))
-  (slice [_ index from-datom to-datom]
+  (slice [_ index low-datom high-datom]
     (map
      (partial retrieved->datom lmdb attrs)
      (lmdb/get-range
       lmdb
       (index->dbi index)
       [:closed
-       (from-datom->indexable schema from-datom)
-       (to-datom->indexable schema to-datom)]
+       (low-datom->indexable schema low-datom)
+       (high-datom->indexable schema high-datom)]
       index
       :long)))
-  (rslice [_ index from-datom to-datom]
+  (rslice [_ index high-datom low-datom]
     (map
      (partial retrieved->datom lmdb attrs)
      (lmdb/get-range
       lmdb
       (index->dbi index)
       [:closed-back
-       (from-datom->indexable schema from-datom)
-       (to-datom->indexable schema to-datom)]
+       (high-datom->indexable schema high-datom)
+       (low-datom->indexable schema low-datom)]
       index
-      :long))))
+      :long)))
+  (slice-filter [_ index pred low-datom high-datom]
+    (map
+     (partial retrieved->datom lmdb attrs)
+     (lmdb/range-filter
+      lmdb
+      (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed
+       (low-datom->indexable schema low-datom)
+       (high-datom->indexable schema high-datom)]
+      index
+      :long)))
+  (rslice-filter [_ index pred high-datom low-datom]
+    (map
+     (partial retrieved->datom lmdb attrs)
+     (lmdb/range-filter
+      lmdb
+      (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed
+       (high-datom->indexable schema high-datom)
+       (low-datom->indexable schema low-datom)]
+      index
+      :long)))
+  (-seq [_ index]
+    (map
+     (partial retrieved->datom lmdb attrs)
+     (lmdb/get-range lmdb (index->dbi index) [:all] index :long)))
+  (-rseq [_ index]
+    (map
+     (partial retrieved->datom lmdb attrs)
+     (lmdb/get-range lmdb (index->dbi index) [:all-back] index :long)))
+  (-count [_ index]
+    (lmdb/entries lmdb (index->dbi index))))
 
 (defn- init-attrs [schema]
   (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
@@ -264,13 +308,3 @@
                (init-attrs schema)
                (init-max-aid lmdb)
                (init-max-gt lmdb)))))
-
-(defprotocol IIndex
-  (-seq [this])
-  (-rseq [this])
-  (-count [this])
-  (-slice [this from-datom to-datom])
-  (-rslice [this from-datom to-datom])
-  (-slice-filter [this from-datom to-datom])
-  (-rslice-filter [this from-datom to-datom])
-  )

@@ -223,8 +223,8 @@
   [v vmin vmax b]
   `(if (keyword? ~v)
      (condp = ~v
-       :db.value/sysMin ~vmin
-       :db.value/sysMax ~vmax
+       c/v0   ~vmin
+       c/vmax ~vmax
        (u/raise "Illegal keyword value " ~v {}))
      ~b))
 
@@ -252,8 +252,8 @@
 (defn- keyword-bytes
   [x]
   (condp = x
-    :db.value/sysMin c/min-bytes
-    :db.value/sysMax c/max-bytes
+    c/v0   c/min-bytes
+    c/vmax c/max-bytes
     (key-sym-bytes x)))
 
 (defn- symbol-bytes
@@ -263,8 +263,8 @@
 (defn- data-bytes
   [v]
   (condp = v
-    :db.value/sysMin c/min-bytes
-    :db.value/sysMax c/max-bytes
+    c/v0   c/min-bytes
+    c/vmax c/max-bytes
     (nippy/fast-freeze v)))
 
 (defn- val-bytes
@@ -288,8 +288,8 @@
   [v]
   (if (keyword? v)
     (condp = v
-      :db.value/sysMin c/type-long-neg
-      :db.value/sysMax c/type-long-pos
+      c/v0   c/type-long-neg
+      c/vmax c/type-long-pos
       (u/raise "Illegal keyword value " v {}))
     (if (neg? ^long v)
       c/type-long-neg
@@ -298,6 +298,8 @@
 (defn- val-header
   [v t]
   (case t
+    :db.type/sysMin  c/separator
+    :db.type/sysMax  c/truncator
     :db.type/keyword c/type-keyword
     :db.type/symbol  c/type-symbol
     :db.type/string  c/type-string

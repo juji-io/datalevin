@@ -4,20 +4,19 @@
 
 ## :hear_no_evil: What and why
 
-Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory database and Datalog query
-engine to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
+Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
 
-The rationale for Datalevin is to provide a simple and free Datalog engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  The automatic implict joins seem to be its killer feature.
+The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  The automatic implict joins seem to be its killer feature.
 
 > I love Datalog, why hasn't everyone use this already? 
 
-Datomic is an enterprise software and its feature sets may be an overkill for many use cases. One thing that often confuses novice users is its temporal features. To keep things simple and familiar, Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
+Datomic is an enterprise software, and its feature set may be an overkill for many use cases. One thing that often confuses casual users is its temporal features. To keep things simple and familiar, Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.  
 
-Datalevin relies on LMDB's robust transactional database design and leverages its high performance for concurrent read intensive workloads. LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. it powers [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. In addition to fast reads, LMDB performs well in writing large values (> 2KB). Therefore, unlike some alternatives, it is fine to store large values (e.g. documents) in Datalevin. 
+Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also performs well in writing large values (> 2KB). Therefore, it is fine to store large values (e.g. documents) in Datalevin. 
 
-Datalevin can also be used as a key-value store without Datalog. Datalevin supports full features of LMDB, and [we](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
+Datalevin can also be used as a key-value store without Datalog. [We](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
 
 ## :tada: Usage
 
@@ -38,7 +37,6 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data, and refuses unsafe schema changes that are inconsistent with existing data.
 
-
 ## :baby: Limitations
 
 * Attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
@@ -49,9 +47,9 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 * Because keys are compared bitwisely, for range queries to work as expected on an attribute, its `:db/valueType` should be specified.
 
-* As mentioned, Datalevin does not keep transaction history, so no temporal features, such as time travel.
+* As mentioned, Datalevin does not keep transaction history, so there are no temporal features such as time travel.
 
-* Currently, there's no network interface, but this may change.
+* There's no network interface for now, but this may change.
 
 * Currently only supports Clojure on JVM, but adding support for other Clojure-hosting runtimes is possible in the future, since bindings for LMDB exist in almost all major languages and available on most platforms.
 
@@ -59,17 +57,17 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 If you are interested in using the dialect of Datalog pioneered by Datomic, here are your current options:
 
-* If you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic](https://www.datomic.com).
 
 * If you need an in-memory store, e.g. for single page applications running in a browser, [Datascript](https://github.com/tonsky/datascript) is for you.
-
-* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic](https://www.datomic.com).
 
 * If you need features such as bitemporal graph queries, You may try [Crux](https://github.com/juxt/crux).
 
 * If you don't mind experimental storage backend, you may try [Datahike](https://github.com/replikativ/datahike).
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
+
+* Of course, if you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
 ## License
 
