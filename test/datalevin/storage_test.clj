@@ -11,7 +11,8 @@
             [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
            [datalevin.storage Store]
-           [datalevin.lmdb LMDB]))
+           [datalevin.lmdb LMDB]
+           [datalevin.datom Datom]))
 
 (def ^:dynamic ^Store store nil)
 
@@ -62,6 +63,10 @@
     (is (= [d1 d] (sut/rslice store :eav
                              (d/datom c/e0 b nil)
                              (d/datom c/e0 nil nil))))
+    (is (= [d] (sut/slice-filter store :eav
+                                 (fn [^Datom d] (= v (.-v d)))
+                                 (d/datom c/e0 nil nil)
+                                 (d/datom c/e0 nil nil))))
     (sut/delete store d)
     (is (= 1 (sut/datom-count store c/eav)))
     (is (= 1 (sut/datom-count store c/aev)))

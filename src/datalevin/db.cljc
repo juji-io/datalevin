@@ -104,8 +104,8 @@
                                           (= tx (datom-tx d))))))
          (s/slice-filter store :eavt
                          (fn [^Datom d] (= v (.-v d)))
-                         (datom e c/a0 c/v0 tx0)
-                         (datom e c/amax c/vmax txmax))
+                         (datom e nil nil tx0)
+                         (datom e nil nil txmax))
 
          (->> (set/slice eavt (datom e nil nil tx0) (datom e nil nil txmax))  ;; e _ v _
               (filter (fn [^Datom d] (= v (.-v d)))))

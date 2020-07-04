@@ -4,13 +4,13 @@
 
 ## :hear_no_evil: What and why
 
-Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to work on top of [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
+Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). 
 
-The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic](https://www.datomic.com) over any flavor of SQL, once they get to use it.  The automatic implict joins seem to be its killer feature.
+The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it.  The automatic implict joins seem to be its killer feature.
 
 > I love Datalog, why hasn't everyone use this already? 
 
-Datomic is an enterprise software, and its feature set may be an overkill for many use cases. One thing that often confuses casual users is its temporal features. To keep things simple and familiar, Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
+Datomic® is an enterprise grade software, and its feature set may be an overkill for some use cases. One thing that may confuse casual users is its temporal features. To keep things simple and familiar, Datalevin does not keep transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.  
 
@@ -23,15 +23,15 @@ Datalevin can also be used as a key-value store without Datalog. [We](https://ju
 
 ## :floppy_disk: Difference from Datascript
 
-In addition to the diffrence in data durability, Datalevin differs from Datascript in the following ways:
+Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. As a port of Datascript, in addition to the diffrence in data durability, Datalevin differs from Datascript in the following ways:
 
 * Does not store transaction ids. Since history is not kept, there is no need to store transanction ids.
 
 * Entity ids are 64 bits long, so as to support a much larger data size.  
 
-* Has an additional index that uses values as the primary key (VAE), similar to Datomic.
+* Has an additional index that uses values as the primary key (VAE).
 
-* Indices respect `:db/valueType`. Currently, most [Datomic value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
+* Indices respect `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
 
 * Attributes have internal integer ids. 
 
@@ -55,9 +55,9 @@ In addition to the diffrence in data durability, Datalevin differs from Datascri
 
 ## :shopping: Alternatives
 
-If you are interested in using the dialect of Datalog pioneered by Datomic, here are your current options:
+If you are interested in using the dialect of Datalog pioneered by Datomic®, here are your current options:
 
-* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic](https://www.datomic.com).
+* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
 
 * If you need an in-memory store, e.g. for single page applications running in a browser, [Datascript](https://github.com/tonsky/datascript) is for you.
 

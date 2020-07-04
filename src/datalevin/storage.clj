@@ -118,8 +118,10 @@
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
   (fn [kv]
-    (let [^Retrieved k (b/read-buffer (key kv) index)]
-      (< 10 k 20))))
+    (let [^Retrieved k (b/read-buffer (key kv) index)
+          ^long v      (b/read-buffer (val kv) :long)
+          ^Datom d     (retrieved->datom lmdb attrs [k v])]
+      (pred d))))
 
 (defprotocol IStore
   (close [this] "Close storage")
