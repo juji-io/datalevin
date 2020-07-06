@@ -210,19 +210,17 @@
            lmdb
            (cond-> [[:put c/eav i max-gt :eav :long]
                     [:put c/aev i max-gt :aev :long]
+                    [:put c/vae i max-gt :vae :long]
                     [:put c/giants max-gt datom :long :datom
                      [PutFlags/MDB_APPEND]]]
-             indexing? (concat
-                        [[:put c/ave i max-gt :ave :long]
-                         [:put c/vae i max-gt :vae :long]])))
+             indexing? (conj [:put c/ave i max-gt :ave :long])))
           (set! max-gt (inc max-gt)))
         (lmdb/transact
          lmdb
          (cond-> [[:put c/eav i c/normal :eav :long]
-                  [:put c/aev i c/normal :aev :long]]
-           indexing? (concat
-                      [[:put c/ave i c/normal :ave :long]
-                       [:put c/vae i c/normal :vae :long]]))))))
+                  [:put c/aev i c/normal :aev :long]
+                  [:put c/vae i c/normal :vae :long]]
+           indexing? (conj [:put c/ave i c/normal :ave :long]))))))
   (delete [_ datom]
     (let [props (schema (.-a ^Datom datom))
           i     (b/indexable (.-e ^Datom datom)
