@@ -327,7 +327,7 @@
                    (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
                    vb)
             hsh  (when cut? (hash val))]
-        (->Indexable eid aid nil hdr bas hsh))
+        (->Indexable eid aid val hdr bas hsh))
       (->Indexable eid aid val hdr nil nil))))
 
 (defn giant?
@@ -394,17 +394,19 @@
   (put-long bf (.-e x))
   (when-let [h (.-h x)] (put-int bf h)))
 
+;; don't expect range query on v in vae, treat v as data
 (defn- put-vae
   [bf ^Indexable x]
-  (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)]
-    (do (put-bytes bf bs)
-        (when (.-h x) (put-byte bf c/truncator)))
-    (put-native bf (.-v x) (.-f x)))
-  (put-byte bf c/separator)
-  (put-int bf (.-a x))
-  (put-long bf (.-e x))
-  (when-let [h (.-h x)] (put-int bf h)))
+  (let [^bytes bs (data-bytes (.-v x))
+        h         (.-h x)]
+    (if h
+      (do (put-bytes bf (Arrays/copyOf bs c/+val-bytes-trunc+))
+          (put-byte bf c/truncator))
+      (put-bytes bf bs))
+    (put-byte bf c/separator)
+    (put-int bf (.-a x))
+    (put-long bf (.-e x))
+    (when h (put-int bf h))))
 
 (defn- sep->slash
   [^bytes bs]
@@ -478,7 +480,7 @@
 
 (defn- get-vae
   [^ByteBuffer bf]
-  (let [v (get-value bf 13)
+  (let [v (get-data bf 13)
         _ (get-byte bf)
         a (get-int bf)
         e (get-long bf)]

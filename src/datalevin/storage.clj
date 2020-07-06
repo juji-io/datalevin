@@ -77,25 +77,29 @@
 
 (defn- low-datom->indexable
   [schema ^Datom d]
-  (let [e (if-let [e (.-e d)] e c/e0)]
+  (let [e (.-e d)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-let [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
           (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
         (u/raise "Cannot slice with unknown attribute " a {}))
-      (b/indexable e c/a0 c/v0 :db.type/sysMin))))
+      (if-let [v (.-v d)]
+        (b/indexable e c/a0 v nil)
+        (b/indexable e c/a0 c/v0 :db.type/sysMin)))))
 
 (defn- high-datom->indexable
   [schema ^Datom d]
-  (let [e (if-let [e (.-e d)] e c/emax)]
+  (let [e (.-e d)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-let [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
           (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
         (u/raise "Cannot slice with unknown attribute " a {}))
-      (b/indexable e c/amax c/vmax :db.type/sysMax))))
+      (if-let [v (.-v d)]
+        (b/indexable e c/amax v nil)
+        (b/indexable e c/amax c/vmax :db.type/sysMax)))))
 
 (defn- index->dbi
   [index]
