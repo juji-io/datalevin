@@ -3,7 +3,7 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [clojure.test :refer [deftest is use-fixtures]]
+            [clojure.test :refer [deftest use-fixtures testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
@@ -28,66 +28,66 @@
 (use-fixtures :each lmdb-test-fixture)
 
 (deftest basic-ops-test
-  ;; transact
-  (sut/transact lmdb
-                [[:put "a" 1 2]
-                 [:put "a" 'a 1]
-                 [:put "a" 5 {}]
-                 [:put "a" :annunaki/enki true :attr :data]
-                 [:put "a" :datalevin ["hello" "world"]]
-                 [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-                 [:put "b" 2 3]
-                 [:put "b" (byte 0x01) #{1 2} :byte :data]
-                 [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
-                 [:put "b" [-1 -235254457N] 5]
-                 [:put "b" :a 4]
-                 [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-                 [:put "b" 1 :long :long :data]
-                 [:put "b" :long 1 :data :long]
-                 [:put "b" 2 3 :long :long]])
+  (testing "transact"
+    (sut/transact lmdb
+                  [[:put "a" 1 2]
+                   [:put "a" 'a 1]
+                   [:put "a" 5 {}]
+                   [:put "a" :annunaki/enki true :attr :data]
+                   [:put "a" :datalevin ["hello" "world"]]
+                   [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                   [:put "b" 2 3]
+                   [:put "b" (byte 0x01) #{1 2} :byte :data]
+                   [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
+                   [:put "b" [-1 -235254457N] 5]
+                   [:put "b" :a 4]
+                   [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                   [:put "b" 1 :long :long :data]
+                   [:put "b" :long 1 :data :long]
+                   [:put "b" 2 3 :long :long]]))
 
-  ;; get
-  (is (= 2 (sut/get-value lmdb "a" 1)))
-  (is (= true (sut/get-value lmdb "a" :annunaki/enki :attr :data)))
-  (is (= (d/datom 1 :a/b {:id 4}) (sut/get-value lmdb "a" 42 :long :datom)))
-  (is (nil? (sut/get-value lmdb "a" 2)))
-  (is (nil? (sut/get-value lmdb "b" 1)))
-  (is (= 5 (sut/get-value lmdb "b" [-1 -235254457N])))
-  (is (= 1 (sut/get-value lmdb "a" 'a)))
-  (is (= {} (sut/get-value lmdb "a" 5)))
-  (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
-  (is (= 3 (sut/get-value lmdb "b" 2)))
-  (is (= 4 (sut/get-value lmdb "b" :a)))
-  (is (= #{1 2} (sut/get-value lmdb "b" (byte 0x01) :byte)))
-  (is (= :bk (sut/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
-  (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-                     ^bytes (sut/get-value lmdb "b" :bv :data :bytes)))
-  (is (= :long (sut/get-value lmdb "b" 1 :long :data)))
-  (is (= 1 (sut/get-value lmdb "b" :long :data :long)))
-  (is (= 3 (sut/get-value lmdb "b" 2 :long :long)))
+  (testing "get-value"
+    (is (= 2 (sut/get-value lmdb "a" 1)))
+    (is (= true (sut/get-value lmdb "a" :annunaki/enki :attr :data)))
+    (is (= (d/datom 1 :a/b {:id 4}) (sut/get-value lmdb "a" 42 :long :datom)))
+    (is (nil? (sut/get-value lmdb "a" 2)))
+    (is (nil? (sut/get-value lmdb "b" 1)))
+    (is (= 5 (sut/get-value lmdb "b" [-1 -235254457N])))
+    (is (= 1 (sut/get-value lmdb "a" 'a)))
+    (is (= {} (sut/get-value lmdb "a" 5)))
+    (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
+    (is (= 3 (sut/get-value lmdb "b" 2)))
+    (is (= 4 (sut/get-value lmdb "b" :a)))
+    (is (= #{1 2} (sut/get-value lmdb "b" (byte 0x01) :byte)))
+    (is (= :bk (sut/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
+    (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
+                       ^bytes (sut/get-value lmdb "b" :bv :data :bytes)))
+    (is (= :long (sut/get-value lmdb "b" 1 :long :data)))
+    (is (= 1 (sut/get-value lmdb "b" :long :data :long)))
+    (is (= 3 (sut/get-value lmdb "b" 2 :long :long))))
 
-  ;; del
-  (sut/transact lmdb [[:del "a" 1]
-                      [:del "a" :non-exist]])
-  (is (nil? (sut/get-value lmdb "a" 1)))
+  (testing "delete"
+    (sut/transact lmdb [[:del "a" 1]
+                        [:del "a" :non-exist]])
+    (is (nil? (sut/get-value lmdb "a" 1))))
 
-  ;; non-existent dbi
-  (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1)))
+  (testing "non-existent dbi"
+    (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1))))
 
-  ;; handle val overflow automatically
-  (sut/transact lmdb [[:put "c" 1 (range 1000)]])
-  (is (= (range 1000) (sut/get-value lmdb "c" 1)))
+  (testing "handle val overflow automatically"
+    (sut/transact lmdb [[:put "c" 1 (range 1000)]])
+    (is (= (range 1000) (sut/get-value lmdb "c" 1))))
 
-  ;; key overflow throws instead
-  (is (thrown? java.lang.AssertionError
-               (sut/transact lmdb [[:put "a" (range 1000) 1]])))
+  (testing "key overflow throws"
+    (is (thrown? java.lang.AssertionError
+                 (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
-  ;; close then re-open
-  (let [dir  (.-dir lmdb)
-        _    (sut/close lmdb)
-        lmdb (sut/open-lmdb dir)
-        _    (sut/open-dbi lmdb "a")]
-    (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))))
+  (testing "close then re-open"
+    (let [dir  (.-dir lmdb)
+          _    (sut/close lmdb)
+          lmdb (sut/open-lmdb dir)
+          _    (sut/open-dbi lmdb "a")]
+      (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin))))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))
@@ -112,6 +112,7 @@
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
         res (sort-by first (map (fn [k v] [k v]) ks vs))]
     (sut/transact lmdb txs)
+    (is (= [] (sut/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
     (is (= res (sut/get-range lmdb "c" [:all] :long :long)))
     (is (= res
            (sut/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))

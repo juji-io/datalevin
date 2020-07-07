@@ -26,9 +26,11 @@
 
 (defprotocol IRange
   (put-start-key [this data k-type]
-    "put data in start-key buffer, k-type can be :long, :byte, :bytes, :data")
+    "put data in start-key buffer, k-type can be :long, :byte, :bytes, :data
+     or index type, :eav etc.")
   (put-stop-key [this data k-type]
-    "put data in stop-key buffer, k-type can be :long, :byte, :bytes, :data"))
+    "put data in stop-key buffer, k-type can be :long, :byte, :bytes, :data
+    or index type, :eav etc."))
 
 (defprotocol IRtx
   (close-rtx [this] "close the read-only transaction")

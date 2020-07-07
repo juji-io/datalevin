@@ -128,8 +128,9 @@
 #?(:clj
    (defn- -case-tree [queries variants]
      (if queries
-       (let [v1 (take (/ (count variants) 2) variants)
-             v2 (drop (/ (count variants) 2) variants)]
+       (let [n  (/ (count variants) 2)
+             v1 (take n variants)
+             v2 (drop n variants)]
          (list 'if (first queries)
                (-case-tree (next queries) v1)
                (-case-tree (next queries) v2)))

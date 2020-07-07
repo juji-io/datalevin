@@ -147,7 +147,7 @@
 
 ; Creating DB
 
-(def ^{:arglists '([] [schema])
+(def ^{:arglists '([] [schema] [schema dir])
        :doc "Creates an empty database with an optional schema.
 
              Usage:

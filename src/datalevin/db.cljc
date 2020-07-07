@@ -2,6 +2,7 @@
   (:require
    [clojure.walk]
    [clojure.data]
+   [taoensso.timbre :as log]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax implicit-schema]]
    [datalevin.datom :as d
     :refer [datom datom-tx datom-added datom? diff-sorted]]
@@ -9,8 +10,9 @@
     :refer [combine-hashes case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
    [datalevin.bits :as b]
-   [me.tonsky.persistent-sorted-set :as set]
-   [me.tonsky.persistent-sorted-set.arrays :as arrays])
+   ;; [me.tonsky.persistent-sorted-set :as set]
+   ;; [me.tonsky.persistent-sorted-set.arrays :as arrays]
+   )
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
@@ -37,7 +39,9 @@
 
 ;; ----------------------------------------------------------------------------
 
-(declare hash-db hash-fdb equiv-db empty-db resolve-datom validate-attr components->pattern indexing?)
+(declare ;hash-db
+ ;; hash-fdb
+ equiv-db empty-db resolve-datom validate-attr components->pattern indexing?)
 #?(:cljs (declare pr-db))
 
 (defn db-transient [db]
@@ -56,7 +60,7 @@
 
 (defrecord-updatable DB [^Store store max-eid max-tx rschema hash]
   #?@(:cljs
-      [IHash                (-hash  [db]        (hash-db db))
+      [;IHash                (-hash  [db]        (hash-db db))
        IEquiv               (-equiv [db other]  (equiv-db db other))
        ISeqable             (-seq   [db]        (s/-seq store :eavt))
        IReversible          (-rseq  [db]        (s/-rseq store :eavt))
@@ -68,8 +72,8 @@
                             (-persistent! [db] (db-persistent! db))]
 
       :clj
-      [Object               (hashCode [db]      (hash-db db))
-       clojure.lang.IHashEq (hasheq [db]        (hash-db db))
+      [;Object               (hashCode [db]      (hash-db db))
+       ;clojure.lang.IHashEq (hasheq [db]        (hash-db db))
        clojure.lang.Seqable (seq [db]           (s/-seq store :eavt))
        clojure.lang.IPersistentCollection
                             (count [db]         (s/-count store :eavt))
@@ -95,9 +99,7 @@
                          (fn [^Datom d] (= v (.-v d)))
                          (datom e nil nil)
                          (datom e nil nil))  ; e _ v
-         (s/slice store :eav
-                         (datom e nil nil)
-                         (datom e nil nil)) ; e _ _
+         (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
          (if (indexing? db a)
            (s/slice store :ave (datom e0 a v) (datom emax a v))
            (s/slice-filter store :aev
@@ -110,21 +112,23 @@
 
   IIndexAccess
   (-datoms [db index cs]
-    (set/slice (get db index) (components->pattern db index cs e0 tx0) (components->pattern db index cs emax txmax)))
+           (s/slice store index (components->pattern db index cs e0 tx0)
+                    (components->pattern db index cs emax txmax)))
 
   (-seek-datoms [db index cs]
-    (set/slice (get db index) (components->pattern db index cs e0 tx0) (datom emax nil nil txmax)))
+                (s/slice store index (components->pattern db index cs e0 tx0)
+                         (datom emax nil nil txmax)))
 
   (-rseek-datoms [db index cs]
-    (set/rslice (get db index) (components->pattern db index cs emax txmax) (datom e0 nil nil tx0)))
+                 (s/rslice store index (components->pattern db index cs emax txmax)
+                           (datom e0 nil nil tx0)))
 
   (-index-range [db attr start end]
     (when-not (indexing? db attr)
       (raise "Attribute " attr " should be marked as :db/index true" {}))
     (validate-attr attr (list '-index-range 'db attr start end))
-    (set/slice (.-avet db)
-      (resolve-datom db nil attr start nil e0 tx0)
-      (resolve-datom db nil attr end nil emax txmax)))
+    (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
+             (resolve-datom db nil attr end nil emax txmax)))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db)
@@ -141,7 +145,7 @@
 ;; ----------------------------------------------------------------------------
 (defrecord-updatable FilteredDB [unfiltered-db pred hash]
   #?@(:cljs
-      [IHash                (-hash  [db]        (hash-fdb db))
+      [;IHash                (-hash  [db]        (hash-fdb db))
        IEquiv               (-equiv [db other]  (equiv-db db other))
        ISeqable             (-seq   [db]        (seq (-datoms db :eavt [])))
        ICounted             (-count [db]        (count (-datoms db :eavt [])))
@@ -157,9 +161,9 @@
                             (-assoc [_ _ _]       (throw (js/Error. "-assoc is not supported on FilteredDB")))]
 
       :clj
-      [Object               (hashCode [db]      (hash-fdb db))
+      [;Object               (hashCode [db]      (hash-fdb db))
 
-       clojure.lang.IHashEq (hasheq [db]        (hash-fdb db))
+       ;clojure.lang.IHashEq (hasheq [db]        (hash-fdb db))
 
        clojure.lang.IPersistentCollection
                             (count [db]         (count (-datoms db :eavt [])))
@@ -249,53 +253,50 @@
     (validate-schema-key a :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})))
 
 (defn ^DB empty-db
-  ([] (empty-db nil))
-  ([schema]
-    {:pre [(or (nil? schema) (map? schema))]}
+  ([] (empty-db nil nil))
+  ([schema] (empty-db schema nil))
+  ([schema dir]
+   {:pre [(or (nil? schema) (map? schema))]}
     (validate-schema schema)
     (map->DB
-      {:schema  schema
-       :rschema (rschema (merge implicit-schema schema))
-       :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
-       :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
-       :avet    (set/sorted-set-by d/cmp-datoms-avet)
-       :max-eid e0
-       :max-tx  tx0
-       :hash    (atom 0)})))
+     {:store   (s/open schema dir)
+      :rschema (rschema (merge implicit-schema schema))
+      :max-eid e0
+      :max-tx  tx0
+      :hash    (atom 0)})))
 
-(defn- init-max-eid [eavt]
+#_(defn- init-max-eid [eavt]
   (or (-> (set/rslice eavt (datom (dec tx0) nil nil txmax) (datom e0 nil nil tx0))
         (first)
         (:e))
     e0))
 
 (defn ^DB init-db
-  ([datoms] (init-db datoms nil))
-  ([datoms schema]
+  ([datoms] (init-db datoms nil nil))
+  ([datoms schema] (init-db datoms schema nil))
+  ([datoms schema dir]
     (validate-schema schema)
-    (let [rschema     (rschema (merge implicit-schema schema))
-          indexed     (:db/index rschema)
-          arr         (cond-> datoms
-                        (not (arrays/array? datoms)) (arrays/into-array))
-          _           (arrays/asort arr d/cmp-datoms-eavt-quick)
-          eavt        (set/from-sorted-array d/cmp-datoms-eavt arr)
-          _           (arrays/asort arr d/cmp-datoms-aevt-quick)
-          aevt        (set/from-sorted-array d/cmp-datoms-aevt arr)
-          avet-datoms (filter (fn [^Datom d] (contains? indexed (.-a d))) datoms)
-          avet-arr    (to-array avet-datoms)
-          _           (arrays/asort avet-arr d/cmp-datoms-avet-quick)
-          avet        (set/from-sorted-array d/cmp-datoms-avet avet-arr)
-          max-eid     (init-max-eid eavt)
-          max-tx      tx0 #_(transduce (map (fn [^Datom d] (datom-tx d))) max tx0 eavt)]
-      (map->DB {
-        :schema  schema
-        :rschema rschema
-        :eavt    eavt
-        :aevt    aevt
-        :avet    avet
-        :max-eid max-eid
-        :max-tx  max-tx
-        :hash    (atom 0)}))))
+   (let [store   (s/open schema dir)
+         rschema (rschema (merge implicit-schema schema))
+         ;; indexed     (:db/index rschema)
+         ;; arr         (cond-> datoms
+         ;;               (not (arrays/array? datoms)) (arrays/into-array))
+         ;; _           (arrays/asort arr d/cmp-datoms-eavt-quick)
+         ;; eavt        (set/from-sorted-array d/cmp-datoms-eavt arr)
+         ;; _           (arrays/asort arr d/cmp-datoms-aevt-quick)
+         ;; aevt        (set/from-sorted-array d/cmp-datoms-aevt arr)
+         ;; avet-datoms (filter (fn [^Datom d] (contains? indexed (.-a d))) datoms)
+         ;; avet-arr    (to-array avet-datoms)
+         ;; _           (arrays/asort avet-arr d/cmp-datoms-avet-quick)
+         ;; avet        (set/from-sorted-array d/cmp-datoms-avet avet-arr)
+         _       (s/load-datoms store datoms)
+         max-eid (s/init-max-eid store)
+         max-tx  tx0 #_ (transduce (map (fn [^Datom d] (datom-tx d))) max tx0 eavt)]
+     (map->DB {:store   store
+               :rschema rschema
+               :max-eid max-eid
+               :max-tx  max-tx
+               :hash    (atom 0)}))))
 
 (defn- equiv-db-index [x y]
   (loop [xs (seq x)
@@ -305,14 +306,14 @@
       (= (first xs) (first ys)) (recur (next xs) (next ys))
       :else false)))
 
-(defn- hash-db [^DB db]
+#_(defn- hash-db [^DB db]
   (let [h @(.-hash db)]
     (if (zero? h)
       (reset! (.-hash db) (combine-hashes (hash (-schema db))
                                           (hash (-eavt db))))
       h)))
 
-(defn- hash-fdb [^FilteredDB db]
+#_(defn- hash-fdb [^FilteredDB db]
   (let [h @(.-hash db)
         datoms (or (-datoms db :eavt []) #{})]
     (if (zero? h)
@@ -400,7 +401,7 @@
           :cljs [^boolean indexing?]) [db attr]
   (is-attr? db attr :db/index))
 
-(defn entid [db eid]
+(defn entid [db ^long eid]
   {:pre [(db? db)]}
   (cond
     (and (number? eid) (pos? eid))
@@ -466,10 +467,10 @@
            {:error :transact/syntax, :value v, :context at})))
 
 (defn- current-tx [report]
-  (inc (get-in report [:db-before :max-tx])))
+  (inc ^long (get-in report [:db-before :max-tx])))
 
 (defn- next-eid [db]
-  (inc (:max-eid db)))
+  (inc ^long (:max-eid db)))
 
 (defn- #?@(:clj  [^Boolean tx-id?]
            :cljs [^boolean tx-id?])
@@ -482,10 +483,10 @@
 (defn- #?@(:clj  [^Boolean tempid?]
            :cljs [^boolean tempid?])
   [x]
-  (or (and (number? x) (neg? x)) (string? x)))
+  (or (and (number? x) (neg? ^long x)) (string? x)))
 
-(defn- new-eid? [db eid]
-  (and (> eid (:max-eid db))
+(defn- new-eid? [db ^long eid]
+  (and (> eid ^long (:max-eid db))
        (< eid tx0))) ;; tx0 is max eid
 
 (defn- advance-max-eid [db eid]
@@ -511,23 +512,15 @@
 ;; In context of `with-datom` we can use faster comparators which
 ;; do not check for nil (~10-15% performance gain in `transact`)
 
-(defn- with-datom [db ^Datom datom]
+(defn- with-datom [^DB db ^Datom datom]
   (validate-datom db datom)
-  (let [indexing? (indexing? db (.-a datom))]
+  (let [^Store store (.-store db)]
     (if (datom-added datom)
-      (cond-> db
-        true      (update-in [:eavt] set/conj datom d/cmp-datoms-eavt-quick)
-        true      (update-in [:aevt] set/conj datom d/cmp-datoms-aevt-quick)
-        indexing? (update-in [:avet] set/conj datom d/cmp-datoms-avet-quick)
-        true      (advance-max-eid (.-e datom))
-        true      (assoc :hash (atom 0)))
-      (if-some [removing (first (-search db [(.-e datom) (.-a datom) (.-v datom)]))]
-        (cond-> db
-          true      (update-in [:eavt] set/disj removing d/cmp-datoms-eavt-quick)
-          true      (update-in [:aevt] set/disj removing d/cmp-datoms-aevt-quick)
-          indexing? (update-in [:avet] set/disj removing d/cmp-datoms-avet-quick)
-          true      (assoc :hash (atom 0)))
-        db))))
+     (do (s/insert store datom)
+         (advance-max-eid db (.-e datom)))
+     (s/delete store datom)))
+  (assoc db :hash (atom 0))
+  db)
 
 (defn- transact-report [report datom]
   (-> report
@@ -571,7 +564,7 @@
     (if (or (nil? _e)
             (tempid? _e)
             (nil? acc)
-            (== _e e))
+            (== ^long _e ^long e))
       acc
       (raise "Conflicting upsert: " [a v] " resolves to " e
              ", but entity already has :db/id " _e
@@ -610,9 +603,7 @@
 
             (and
               (multival? db a)
-              (or
-                (arrays/array? v)
-                (and (coll? v) (not (map? v)))))
+              (and (coll? v) (not (map? v))))
             (reduce #(upsert-reduce-fn db %1 a %2) eav v)
 
             :else
@@ -632,8 +623,7 @@
     [vs]
 
     ;; not a collection at all, so definitely a single value
-    (not (or (arrays/array? vs)
-             (and (coll? vs) (not (map? vs)))))
+    (not (and (coll? vs) (not (map? vs))))
     [vs]
 
     ;; probably lookup ref
@@ -669,6 +659,7 @@
         e         (entid-strict db e)
         v         (if (ref? db a) (entid-strict db v) v)
         new-datom (datom e a v tx)]
+    ;; (log/debug "schema" (s/schema (.-store db)))
     (if (multival? db a)
       (if (empty? (-search db [e a v]))
         (transact-report report new-datom)
