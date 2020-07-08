@@ -164,7 +164,7 @@
   (-rseq [this index])
   (-count [this index]))
 
-(declare insert-data)
+(declare insert-data delete-data)
 
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
@@ -215,27 +215,17 @@
           (lmdb/transact lmdb data)
           (advance-max-gt this))
         (lmdb/transact lmdb data))))
-  (delete [_ datom]
-    (let [props (schema (.-a ^Datom datom))
-          i     (b/indexable (.-e ^Datom datom)
-                             (:db/aid props)
-                             (.-v ^Datom datom)
-                             (:db/valueType props))]
-      (lmdb/transact
-       lmdb
-       (cond-> [[:del c/eav i :eav]
-                [:del c/aev i :aev]
-                [:del c/ave i :ave]
-                [:del c/vae i :vae]]
-         (b/giant? i)
-         (conj [:del c/giants (lmdb/get-value lmdb c/eav i :eav :long)
-                :long])))))
+  (delete [this datom]
+    (lmdb/transact lmdb (delete-data this datom)))
   (load-datoms [this datoms]
     (locking max-gt
       (let [add-fn (fn [holder datom]
-                     (let [[data giant?] (insert-data this datom)]
-                       (when giant? (advance-max-gt this))
-                       (reduce (fn [h d] (conj! h d)) holder data)))
+                     (let [conj-fn (fn [h d] (conj! h d))]
+                       (if (d/datom-added datom)
+                         (let [[data giant?] (insert-data this datom)]
+                           (when giant? (advance-max-gt this))
+                           (reduce conj-fn holder data))
+                         (reduce conj-fn holder (delete-data this datom)))))
             data   (persistent! (reduce add-fn (transient []) datoms))]
         (lmdb/transact lmdb data))))
   (slice [_ index low-datom high-datom]
@@ -320,6 +310,22 @@
                   [:put c/vae i c/normal :vae :long]]
            indexing? (conj [:put c/ave i c/normal :ave :long]))
          false])))
+
+(defn- delete-data
+  [^Store store ^Datom d]
+  (let [props  ((schema store) (.-a d))
+        i      (b/indexable (.-e d)
+                            (:db/aid props)
+                            (.-v d)
+                            (:db/valueType props))
+        giant? (b/giant? i)]
+    (cond-> [[:del c/eav i :eav]
+             [:del c/aev i :aev]
+             [:del c/ave i :ave]
+             [:del c/vae i :vae]]
+      giant?
+      (conj [:del c/giants (lmdb/get-value (.-lmdb store) c/eav i :eav :long)
+             :long]))))
 
 (defn- init-attrs [schema]
   (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))

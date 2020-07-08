@@ -8,6 +8,7 @@
     #?(:clj [datalevin.pprint])
     [datalevin.pull-api :as dp]
     [datalevin.query :as dq]
+    [taoensso.timbre :as log]
     [datalevin.impl.entity :as de])
   #?(:clj
     (:import

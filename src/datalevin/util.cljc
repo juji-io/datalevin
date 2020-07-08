@@ -1,7 +1,6 @@
 (ns datalevin.util
   (:require [clojure.walk]
-            [taoensso.nippy :as nippy]
-            [me.tonsky.persistent-sorted-set.arrays :as arrays])
+            [taoensso.nippy :as nippy])
   (:refer-clojure :exclude [seqable?]))
 
 ;; ----------------------------------------------------------------------------
@@ -26,13 +25,11 @@
           :cljs [^boolean seqable?])
   [x]
   (and (not (string? x))
-  #?(:cljs (or (cljs.core/seqable? x)
-               (arrays/array? x))
+       #?(:cljs (cljs.core/seqable? x)
      :clj  (or (seq? x)
                (instance? clojure.lang.Seqable x)
                (nil? x)
                (instance? Iterable x)
-               (arrays/array? x)
                (instance? java.util.Map x)))))
 
 #?(:clj
