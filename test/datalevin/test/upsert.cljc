@@ -11,7 +11,9 @@
 #?(:cljs
    (def Throwable js/Error))
 
-(deftest test-upsert
+;; break up the tests due to mutable nature of db
+
+(deftest test-upsert-1
   (let [db (d/db-with (d/empty-db {:name  { :db/unique :db.unique/identity }
                                    :email { :db/unique :db.unique/identity }
                                    :slugs { :db/unique      :db.unique/identity
@@ -67,6 +69,17 @@
                {:name "Ivan" :email "@1" :age 36}))
         (is (= (tempids tx)
                {-1 1}))))
+    ))
+
+(deftest test-upsert-2
+  (let [db (d/db-with (d/empty-db {:name  { :db/unique :db.unique/identity }
+                                   :email { :db/unique :db.unique/identity }
+                                   :slugs { :db/unique      :db.unique/identity
+                                            :db/cardinality :db.cardinality/many }})
+                      [{:db/id 1 :name "Ivan" :email "@1"}
+                       {:db/id 2 :name "Petr" :email "@2"}])
+        touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
+        tempids (fn [tx] (dissoc (:tempids tx) :db/current-tx))]
 
     (testing "upsert to two entities, two tempids"
       (let [tx (d/with db [{:db/id -1 :name "Ivan" :age 35}
@@ -116,6 +129,17 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {3 3}))))
+    ))
+
+(deftest test-upsert-3
+  (let [db (d/db-with (d/empty-db {:name  { :db/unique :db.unique/identity }
+                                   :email { :db/unique :db.unique/identity }
+                                   :slugs { :db/unique      :db.unique/identity
+                                            :db/cardinality :db.cardinality/many }})
+                      [{:db/id 1 :name "Ivan" :email "@1"}
+                       {:db/id 2 :name "Petr" :email "@2"}])
+        touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
+        tempids (fn [tx] (dissoc (:tempids tx) :db/current-tx))]
 
     (testing "upsert over intermediate db, tempids"
       (let [tx (d/with db [{:db/id -1 :name "Igor" :age 35}
@@ -124,6 +148,17 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {-1 3}))))
+    ))
+
+(deftest test-upsert-4
+  (let [db (d/db-with (d/empty-db {:name  { :db/unique :db.unique/identity }
+                                   :email { :db/unique :db.unique/identity }
+                                   :slugs { :db/unique      :db.unique/identity
+                                            :db/cardinality :db.cardinality/many }})
+                      [{:db/id 1 :name "Ivan" :email "@1"}
+                       {:db/id 2 :name "Petr" :email "@2"}])
+        touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
+        tempids (fn [tx] (dissoc (:tempids tx) :db/current-tx))]
 
     (testing "upsert over intermediate db, different tempids"
       (let [tx (d/with db [{:db/id -1 :name "Igor" :age 35}
@@ -141,8 +176,9 @@
       (let [tx  (d/with db [{:name "Ivan" :slugs "ivan1"}
                             {:name "Petr" :slugs "petr1"}])
             tx2 (d/with (:db-after tx) [{:name "Ivan" :slugs ["ivan1" "ivan2"]}])]
-        (is (= (touched tx 1)
-               {:name "Ivan" :email "@1" :slugs #{"ivan1"}}))
+        ;; Datalevin is mutable, so db is already mutated here.
+        ;; (is (= (touched tx 1)
+        ;;        {:name "Ivan" :email "@1" :slugs #{"ivan1"}}))
         (is (= (touched tx2 1)
                {:name "Ivan" :email "@1" :slugs #{"ivan1" "ivan2"}}))
         (is (thrown-with-msg? Throwable #"Conflicting upserts:"
@@ -167,7 +203,7 @@
           (d/with db [{:db/id -1 :name "Ivan" :age 35}
                       {:db/id -1 :name "Oleg" :age 36}])))))
 
-;; https://github.com/tonsky/datalevin/issues/285
+;; https://github.com/tonsky/datascript/issues/285
 (deftest test-retries-order
   (let [db (-> (d/empty-db {:name {:db/unique :db.unique/identity}})
                (d/db-with [[:db/add -1 :age 42]

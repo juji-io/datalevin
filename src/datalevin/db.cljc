@@ -433,14 +433,23 @@
 
 ;;;;;;;;;; Transacting
 
-(defn validate-datom [db ^Datom datom]
-  (when (and (datom-added datom)
-             (is-attr? db (.-a datom) :db/unique))
-    (when-some [found (not-empty (-datoms db :avet [(.-a datom) (.-v datom)]))]
-      (raise "Cannot add " datom " because of unique constraint: " found
-             {:error :transact/unique
-              :attribute (.-a datom)
-              :datom datom}))))
+(defn validate-datom [report ^Datom datom]
+  (let [db (:db-after report)]
+    (when (and (datom-added datom)
+              (is-attr? db (.-a datom) :db/unique))
+      (when-some [found (or
+                         (not-empty (-datoms db :avet [(.-a datom) (.-v datom)]))
+                         (some (fn [^Datom d]
+                                 (when (and (= (.-e datom) (.-e d))
+                                            (= (.-a datom) (.-a d))
+                                            (not= (.-v datom) (.-v d))
+                                            (datom-added d))
+                                   d))
+                               (:tx-data report)))]
+       (raise "Cannot add " datom " because of unique constraint: " found
+              {:error     :transact/unique
+               :attribute (.-a datom)
+               :datom     datom})))))
 
 (defn- validate-eid [eid at]
   (when-not (number? eid)
@@ -504,7 +513,7 @@
 ;; do not check for nil (~10-15% performance gain in `transact`)
 
 (defn- with-datom [^DB db ^Datom datom]
-  (validate-datom db datom)
+  ;; (validate-datom db datom)
   (let [^Store store (.-store db)]
     (if (datom-added datom)
       (do (s/insert store datom)
@@ -514,6 +523,7 @@
   db)
 
 (defn- transact-report [report datom]
+  (validate-datom report datom)
   (-> report
       ;; (update-in [:db-after] with-datom datom)
       (update-in [:tx-data] conj datom)))
@@ -563,8 +573,15 @@
                :entity entity
                :assertion acc }))))
 
-(defn- upsert-reduce-fn [db eav a v]
-  (let [e (:e (first (-datoms db :avet [a v])))]
+(defn- upsert-reduce-fn [report eav a v]
+  (let [db (:db-after report)
+        e  (or (:e (first (-datoms db :avet [a v])))
+               (:e (some (fn [^Datom d]
+                           (when (and (= a (.-a d))
+                                      (= v (.-v d))
+                                      (datom-added d))
+                             d))
+                         (:tx-data report))))]
     (cond
       (nil? e) ;; value not yet in db
       eav
@@ -579,30 +596,31 @@
       (let [[_e _a _v] eav]
         (raise "Conflicting upserts: " [_a _v] " resolves to " _e
                ", but " [a v] " resolves to " e
-               { :error     :transact/upsert
-                 :assertion [e a v]
-                 :conflict  [_e _a _v] })))))
+               { :error    :transact/upsert
+                :assertion [e a v]
+                :conflict  [_e _a _v] })))))
 
-(defn- upsert-eid [db entity]
-  (when-some [idents (not-empty (-attrs-by db :db.unique/identity))]
-    (->>
+(defn- upsert-eid [report entity]
+  (let [db (:db-after report)]
+    (when-some [idents (not-empty (-attrs-by db :db.unique/identity))]
+     (->>
       (reduce-kv
-        (fn [eav a v] ;; eav = [e a v]
-          (cond
-            (not (contains? idents a))
-            eav
+       (fn [eav a v] ;; eav = [e a v]
+         (cond
+           (not (contains? idents a))
+           eav
 
-            (and
-              (multival? db a)
-              (and (coll? v) (not (map? v))))
-            (reduce #(upsert-reduce-fn db %1 a %2) eav v)
+           (and
+            (multival? db a)
+            (and (coll? v) (not (map? v))))
+           (reduce #(upsert-reduce-fn report %1 a %2) eav v)
 
-            :else
-            (upsert-reduce-fn db eav a v)))
-        nil
-        entity)
-     (check-upsert-conflict entity)
-     first))) ;; getting eid from eav
+           :else
+           (upsert-reduce-fn report eav a v)))
+       nil
+       entity)
+      (check-upsert-conflict entity)
+      first)))) ;; getting eid from eav
 
 
 ;; multivals/reverse can be specified as coll or as a single value, trying to guess
@@ -656,12 +674,15 @@
         (transact-report report new-datom)
         report)
       (if-some [^Datom old-datom (or (first (-search db [e a]))
-                                     (some (fn [^Datom d]
-                                             (when (and (= e (.-e d))
-                                                        (= a (.-a d))
-                                                        (datom-added d))
-                                               d))
-                                           (:tx-data report)))]
+                                     (some
+                                      (fn [^Datom d]
+                                        (when (and (= e (.-e d))
+                                                   (= a (.-a d))
+                                                   (datom-added d)
+                                                   (not
+                                                    (is-attr? db a :db/unique)))
+                                          d))
+                                      (:tx-data report)))]
         (if (= (.-v old-datom) v)
           report
           (-> report
@@ -739,7 +760,7 @@
                           (cons (assoc entity :db/id id) entities)))
 
                  ;; upserted => explode | error
-                 :let [upserted-eid (upsert-eid db entity)]
+                 :let [upserted-eid (upsert-eid report entity)]
 
                  (some? upserted-eid)
                  (if (and (tempid? old-eid)
