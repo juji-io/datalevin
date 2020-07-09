@@ -51,15 +51,6 @@
     ;; raise exception if not
     ))
 
-(defn- migrate-index
-  [lmdb attr old new]
-  (cond
-    (and (not old) (true? new))
-    ;; TODO create ave and vae entries if datoms for this attr exists
-    (and (true? old) (false? new))
-    ;; TODO remove ave and vae entries for this attr
-    ))
-
 (defn- handle-value-type
   [lmdb attr old new]
   (when (not= old new)
@@ -79,7 +70,6 @@
           :let  [v' (old k)]]
     (case k
       :db/cardinality (migrate-cardinality lmdb attr v' v)
-      :db/index       (migrate-index lmdb attr v' v)
       :db/valueType   (handle-value-type lmdb attr v' v)
       :db/unique      (migrate-unique lmdb attr v' v)
       :pass-through)))

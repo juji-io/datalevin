@@ -8,7 +8,7 @@
 
 (deftest test-datoms
   (let [dvec #(vector (:e %) (:a %) (:v %))
-        db (-> (d/empty-db {:age {:db/index true}})
+        db (-> (d/empty-db)
                (d/db-with [ [:db/add 1 :name "Petr"]
                             [:db/add 1 :age 44]
                             [:db/add 2 :name "Ivan"]
@@ -52,8 +52,7 @@
 
 (deftest test-seek-datoms
   (let [dvec #(vector (:e %) (:a %) (:v %))
-        db (-> (d/empty-db { :name { :db/index true }
-                             :age  { :db/index true } })
+        db (-> (d/empty-db)
                (d/db-with [[:db/add 1 :name "Petr"]
                            [:db/add 1 :age 44]
                            [:db/add 2 :name "Ivan"]
@@ -82,8 +81,7 @@
 
 (deftest test-rseek-datoms
   (let [dvec #(vector (:e %) (:a %) (:v %))
-        db (-> (d/empty-db { :name { :db/index true }
-                             :age  { :db/index true } })
+        db (-> (d/empty-db)
                (d/db-with [[:db/add 1 :name "Petr"]
                            [:db/add 1 :age 44]
                            [:db/add 2 :name "Ivan"]
@@ -112,8 +110,7 @@
 (deftest test-index-range
   (let [dvec #(vector (:e %) (:a %) (:v %))
         db    (d/db-with
-                (d/empty-db { :name { :db/index true}
-                              :age  { :db/index true} })
+                (d/empty-db)
                 [ { :db/id 1 :name "Ivan"   :age 15 }
                   { :db/id 2 :name "Oleg"   :age 20 }
                   { :db/id 3 :name "Sergey" :age 7 }

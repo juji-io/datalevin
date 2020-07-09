@@ -6,7 +6,7 @@
 
 Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). 
 
-The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it, as Datalog is more declarative and composable than SQL, e.g. the automatic implict joins seem to be its killer feature.
+The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implict joins seem to be its killer feature.
 
 > I love Datalog, why hasn't everyone use this already? 
 
@@ -16,14 +16,14 @@ Datalevin retains the library property of Datascript, and it is meant to be embe
 
 Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also performs well in writing large values (> 2KB). Therefore, it is fine to store large values (e.g. documents) in Datalevin. 
 
-Datalevin can also be used as a key-value store. [We](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
+Independent from Datalog, Datalevin can be used as an efficient key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
 
 ## :tada: Usage
 
 
 ## :floppy_disk: Difference from Datascript
 
-Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port of Datascript, Datalevin differs from Datascript in some important ways, in addition to the diffirence in data durability:
+Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port of Datascript, Datalevin differs from Datascript in more ways than the diffirence in data durability:
 
 * Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transanction ids are not stored. 
 
@@ -67,6 +67,6 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 ## License
 
-Copyright © 2020 Juji Inc.
+Copyright © 2020 Huahai Yang
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).

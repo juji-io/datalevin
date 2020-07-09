@@ -198,14 +198,13 @@
 
 (defn attr->properties [k v]
   (case v
-    :db.unique/identity  [:db/unique :db.unique/identity :db/index]
-    :db.unique/value     [:db/unique :db.unique/value :db/index]
+    :db.unique/identity  [:db/unique :db.unique/identity]
+    :db.unique/value     [:db/unique :db.unique/value]
     :db.cardinality/many [:db.cardinality/many]
-    :db.type/ref         [:db.type/ref :db/index]
+    :db.type/ref         [:db.type/ref]
     (when (true? v)
       (case k
         :db/isComponent [:db/isComponent]
-        :db/index       [:db/index]
         []))))
 
 (defn- rschema [schema]
@@ -262,20 +261,9 @@
     (validate-schema schema)
    (let [store   (s/open schema dir)
          rschema (rschema (merge implicit-schema schema))
-         ;; indexed     (:db/index rschema)
-         ;; arr         (cond-> datoms
-         ;;               (not (arrays/array? datoms)) (arrays/into-array))
-         ;; _           (arrays/asort arr d/cmp-datoms-eavt-quick)
-         ;; eavt        (set/from-sorted-array d/cmp-datoms-eavt arr)
-         ;; _           (arrays/asort arr d/cmp-datoms-aevt-quick)
-         ;; aevt        (set/from-sorted-array d/cmp-datoms-aevt arr)
-         ;; avet-datoms (filter (fn [^Datom d] (contains? indexed (.-a d))) datoms)
-         ;; avet-arr    (to-array avet-datoms)
-         ;; _           (arrays/asort avet-arr d/cmp-datoms-avet-quick)
-         ;; avet        (set/from-sorted-array d/cmp-datoms-avet avet-arr)
          _       (s/load-datoms store datoms)
          max-eid (s/init-max-eid store)
-         max-tx  tx0 #_ (transduce (map (fn [^Datom d] (datom-tx d))) max tx0 eavt)]
+         max-tx  tx0]
      (map->DB {:store   store
                :rschema rschema
                :max-eid max-eid

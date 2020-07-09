@@ -279,7 +279,6 @@
        ;     #datalevin/Datom [2 :likes \"pizza\"])
 
        ; find all datoms that have attribute == `:likes` and value == `\"pizza\"` (any entity id)
-       ; `:likes` must be a unique attr, reference or marked as `:db/index true`
        (datoms db :avet :likes \"pizza\")
        ; => (#datalevin/Datom [1 :likes \"pizza\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])
@@ -311,10 +310,7 @@
 
    - Index lookup is usually more efficient than doing a query with a single clause.
    - Resulting iterator is calculated in constant time and small constant memory overhead.
-   - Iterator supports efficient `first`, `next`, `reverse`, `seq` and is itself a sequence.
-   - Will not return datoms that are not part of the index (e.g. attributes with no `:db/index` in schema when querying `:avet` index).
-     - `:eavt` and `:aevt` contain all datoms.
-     - `:avet` only contains datoms for references, `:db/unique` and `:db/index` attributes."
+   - Iterator supports efficient `first`, `next`, `reverse`, `seq` and is itself a sequence."
   ([db index]             {:pre [(db/db? db)]} (db/-datoms db index []))
   ([db index c1]          {:pre [(db/db? db)]} (db/-datoms db index [c1]))
   ([db index c1 c2]       {:pre [(db/db? db)]} (db/-datoms db index [c1 c2]))
@@ -373,8 +369,6 @@
   "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
 
    Same properties as [[datoms]].
-
-   `attr` must be a reference, unique attribute or marked as `:db/index true`.
 
    Usage:
 
