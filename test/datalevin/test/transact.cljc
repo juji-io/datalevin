@@ -72,7 +72,7 @@
              (map (juxt :e :a :v :tx)
                   (d/datoms db :eavt)))))))
 
-(deftest test-retract-fns
+(deftest test-retract-fns-1
   (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
                             :friend { :db/valueType :db.type/ref }})
                (d/db-with [ { :db/id 1, :name  "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
@@ -87,6 +87,13 @@
 
     (is (= (d/db-with db [[:db.fn/retractEntity 1]])
            (d/db-with db [[:db/retractEntity 1]])))
+    ))
+
+(deftest test-retract-fns-2
+  (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
+                            :friend { :db/valueType :db.type/ref }})
+               (d/db-with [ { :db/id 1, :name  "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
+                            { :db/id 2, :name  "Petr", :age 37 } ]))]
 
     (testing "Retract entitiy with incoming refs"
       (is (= (d/q '[:find ?e :where [1 :friend ?e]] db)
@@ -95,6 +102,13 @@
       (let [db (d/db-with db [ [:db.fn/retractEntity 2] ])]
         (is (= (d/q '[:find ?e :where [1 :friend ?e]] db)
                #{}))))
+    ))
+
+(deftest test-retract-fns-3
+  (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
+                            :friend { :db/valueType :db.type/ref }})
+               (d/db-with [ { :db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
+                           { :db/id 2, :name "Petr", :age 37 } ]))]
 
     (let [db (d/db-with db [ [:db.fn/retractAttribute 1 :name] ])]
       (is (= (d/q '[:find ?a ?v
@@ -103,6 +117,13 @@
       (is (= (d/q '[:find ?a ?v
                     :where [2 ?a ?v]] db)
              #{[:name "Petr"] [:age 37]})))
+    ))
+
+(deftest test-retract-fns-4
+  (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
+                            :friend { :db/valueType :db.type/ref }})
+               (d/db-with [ { :db/id 1, :name  "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
+                            { :db/id 2, :name  "Petr", :age 37 } ]))]
 
     (let [db (d/db-with db [ [:db.fn/retractAttribute 1 :aka] ])]
       (is (= (d/q '[:find ?a ?v
@@ -208,7 +229,7 @@
                                                    :where [[?e :name ?name]
                                                            [?e :age ?age]]}
                                                   db name))]
-                    [{:db/id eid :age (inc age)} [:db/add eid :had-birthday true]]
+                    [{:db/id eid :age (inc ^long age)} [:db/add eid :had-birthday true]]
                     (throw (ex-info (str "No entity with name: " name) {}))))]
     (d/transact! conn [{:db/id 1 :name "Ivan" :age 31}])
     (d/transact! conn [[:db/add 1 :name "Petr"]])
@@ -233,7 +254,7 @@
         inc-age (fn [db name]
                   (if-some [ent (d/entity db [:name name])]
                     [{:db/id (:db/id ent)
-                      :age   (inc (:age ent))}
+                      :age   (inc ^long (:age ent))}
                      [:db/add (:db/id ent) :had-birthday true]]
                     (throw (ex-info (str "No entity with name: " name) {}))))]
     (d/transact! conn [{:db/id    1

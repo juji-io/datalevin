@@ -844,7 +844,14 @@
 
                   (tempid? e)
                   (let [upserted-eid  (when (is-attr? db a :db.unique/identity)
-                                        (:e (first (-datoms db :avet [a v]))))
+                                        (or (:e (first (-datoms db :avet [a v])))
+                                            (:e (some
+                                                 (fn [^Datom d]
+                                                   (when (and (= a (.-a d))
+                                                              (= v (.-v d))
+                                                              (datom-added d))
+                                                     d))
+                                                 (:tx-data report)))))
                         allocated-eid (get tempids e)]
                     (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
                       (retry-with-tempid initial-report report initial-es e upserted-eid)
@@ -877,7 +884,10 @@
                       (= op :db/retractEntity))
                   (if-some [e (entid db e)]
                     (let [e-datoms (vec (-search db [e]))
-                          v-datoms (vec (mapcat (fn [a] (-search db [nil a e])) (-attrs-by db :db.type/ref)))]
+                          v-datoms (vec (filter
+                                         (fn [^Datom d]
+                                           ((-attrs-by db :db.type/ref) (.-a d)))
+                                         (-search db [nil nil e])))]
                       (recur (reduce transact-retract-datom report (concat e-datoms v-datoms))
                              (concat (retract-components db e-datoms) entities)))
                     (recur report entities))
