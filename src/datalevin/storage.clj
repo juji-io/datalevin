@@ -94,7 +94,10 @@
           (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
         (b/indexable e c/a0 c/v0 nil))
       (if-let [v (.-v d)]
-        (b/indexable e c/a0 v nil)
+        (if (integer? v)
+          (b/indexable e c/a0 v :db.type/ref)
+          (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
+                   {:v v}))
         (b/indexable e c/a0 c/v0 :db.type/sysMin)))))
 
 (defn- high-datom->indexable
@@ -105,9 +108,13 @@
         (if-let [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
           (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
-        (b/indexable e c/a0 c/v0 nil)) ; same as low-datom-indexable to get [] fast
+        ;; same as low-datom-indexable to get [] fast
+        (b/indexable e c/a0 c/v0 nil))
       (if-let [v (.-v d)]
-        (b/indexable e c/amax v nil)
+        (if (integer? v)
+          (b/indexable e c/amax v :db.type/ref)
+          (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
+                   {:v v}))
         (b/indexable e c/amax c/vmax :db.type/sysMax)))))
 
 (defn- index->dbi
@@ -287,33 +294,30 @@
 
 (defn- insert-data
   [^Store store ^Datom d]
-  (let [attr      (.-a d)
-        props     (or ((schema store) attr)
-                      (swap-attr store attr identity))
-        indexing? (or (:db/index props)
-                      (:db/unique props)
-                      (= :db.type/ref (:db/valueType props)))
-        i         (b/indexable (.-e d)
-                               (:db/aid props)
-                               (.-v d)
-                               (:db/valueType props))
-        max-gt    (max-gt store)]
+  (let [attr   (.-a d)
+        props  (or ((schema store) attr)
+                   (swap-attr store attr identity))
+        ref?   (= :db.type/ref (:db/valueType props))
+        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
+                            (:db/valueType props))
+        max-gt (max-gt store)]
       (if (b/giant? i)
         [(cond-> [[:put c/eav i max-gt :eav :long]
                   [:put c/aev i max-gt :aev :long]
-                  [:put c/vae i max-gt :vae :long]
+                  [:put c/ave i max-gt :ave :long]
                   [:put c/giants max-gt d :long :datom [PutFlags/MDB_APPEND]]]
-           indexing? (conj [:put c/ave i max-gt :ave :long]))
+           ref? (conj [:put c/vae i max-gt :vae :long]))
          true]
         [(cond-> [[:put c/eav i c/normal :eav :long]
                   [:put c/aev i c/normal :aev :long]
-                  [:put c/vae i c/normal :vae :long]]
-           indexing? (conj [:put c/ave i c/normal :ave :long]))
+                  [:put c/ave i c/normal :ave :long]]
+           ref? (conj [:put c/vae i c/normal :vae :long]))
          false])))
 
 (defn- delete-data
   [^Store store ^Datom d]
   (let [props  ((schema store) (.-a d))
+        ref?   (= :db.type/ref (:db/valueType props))
         i      (b/indexable (.-e d)
                             (:db/aid props)
                             (.-v d)
@@ -321,11 +325,11 @@
         giant? (b/giant? i)]
     (cond-> [[:del c/eav i :eav]
              [:del c/aev i :aev]
-             [:del c/ave i :ave]
-             [:del c/vae i :vae]]
-      giant?
-      (conj [:del c/giants (lmdb/get-value (.-lmdb store) c/eav i :eav :long)
-             :long]))))
+             [:del c/ave i :ave]]
+      ref?   (conj [:del c/vae i :vae])
+      giant? (conj [:del c/giants
+                    (lmdb/get-value (.-lmdb store) c/eav i :eav :long)
+                    :long]))))
 
 (defn- init-attrs [schema]
   (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))

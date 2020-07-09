@@ -16,7 +16,7 @@ Datalevin retains the library property of Datascript, and it is meant to be embe
 
 Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also performs well in writing large values (> 2KB). Therefore, it is fine to store large values (e.g. documents) in Datalevin. 
 
-Datalevin can also be used as a key-value store without Datalog. [We](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
+Datalevin can also be used as a key-value store. [We](https://juji.io) are committed to make Datalevin as efficient as possible. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
 
 ## :tada: Usage
 
@@ -29,25 +29,25 @@ Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built 
 
 * Datoms in a transaction are commited together in a batch, rather than being saved by `with-datom` one at a time.
 
-* Entity ids are 64 bits long, so as to support a much larger data size.  
-
-* Has an additional index that uses values as the primary key (VAE).
-
 * Indices respect `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
+
+* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute. 
+
+* Attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index`. 
 
 * Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data, and refuses unsafe schema changes that are inconsistent with existing data.
 
 ## :baby: Limitations
 
+* Datalevin is not an immutable database, and there is no "database as a value" feature. 
+
 * Attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
+
+* Because keys are compared bitwisely, for range queries to work as expected on an attribute, its `:db/valueType` should be specified.
 
 * The maximum individual value size is 4GB. In practice, value size is determined by LMDB's ability to find large enough continous space on disk and Datelevin's ability to pre-allocate off-heap buffers in JVM for them. 
 
 * The total data size of a Datalevin database has the same limit as LMDB's, e.g. 128TB on a modern 64-bit machine that implements 48-bit address spaces.
-
-* Because keys are compared bitwisely, for range queries to work as expected on an attribute, its `:db/valueType` should be specified.
-
-* Datalevin is not an immutable database, and there is no "database as a value" here. 
 
 * There's no network interface as of now, but this may change.
 

@@ -394,19 +394,11 @@
   (put-long bf (.-e x))
   (when-let [h (.-h x)] (put-int bf h)))
 
-;; don't expect range query on v in vae, treat v as data
 (defn- put-vae
   [bf ^Indexable x]
-  (let [^bytes bs (data-bytes (.-v x))
-        h         (.-h x)]
-    (if h
-      (do (put-bytes bf (Arrays/copyOf bs c/+val-bytes-trunc+))
-          (put-byte bf c/truncator))
-      (put-bytes bf bs))
-    (put-byte bf c/separator)
-    (put-int bf (.-a x))
-    (put-long bf (.-e x))
-    (when h (put-int bf h))))
+  (put-native bf (.-v x) (.-f x))
+  (put-int bf (.-a x))
+  (put-long bf (.-e x)))
 
 (defn- sep->slash
   [^bytes bs]
@@ -480,8 +472,7 @@
 
 (defn- get-vae
   [^ByteBuffer bf]
-  (let [v (get-data bf 13)
-        _ (get-byte bf)
+  (let [v (get-long bf)
         a (get-int bf)
         e (get-long bf)]
     (->Retrieved e a v)))

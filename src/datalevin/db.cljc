@@ -884,10 +884,7 @@
                       (= op :db/retractEntity))
                   (if-some [e (entid db e)]
                     (let [e-datoms (vec (-search db [e]))
-                          v-datoms (vec (filter
-                                         (fn [^Datom d]
-                                           ((-attrs-by db :db.type/ref) (.-a d)))
-                                         (-search db [nil nil e])))]
+                          v-datoms (vec (-search db [nil nil e]))]
                       (recur (reduce transact-retract-datom report (concat e-datoms v-datoms))
                              (concat (retract-components db e-datoms) entities)))
                     (recur report entities))
