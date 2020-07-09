@@ -38,7 +38,7 @@
 
 (declare ;hash-db
  ;; hash-fdb
- equiv-db empty-db resolve-datom validate-attr components->pattern indexing?)
+ equiv-db empty-db resolve-datom validate-attr components->pattern)
 #?(:cljs (declare pr-db))
 
 (defn db-transient [db]
@@ -97,12 +97,7 @@
                          (datom e nil nil)
                          (datom e nil nil))  ; e _ v
          (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-         (if (indexing? db a)
-           (s/slice store :ave (datom e0 a v) (datom emax a v))
-           (s/slice-filter store :aev
-                           (fn [^Datom d] (= v (.-v d)))
-                           (datom e0 a nil)
-                           (datom emax a nil))) ; _ a v
+         (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
          (s/slice store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
          (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
          (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))]))) ; _ _ _
@@ -121,8 +116,6 @@
                            (datom e0 nil nil tx0)))
 
   (-index-range [db attr start end]
-    (when-not (indexing? db attr)
-      (raise "Attribute " attr " should be marked as :db/index true" {}))
     (validate-attr attr (list '-index-range 'db attr start end))
     (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
              (resolve-datom db nil attr end nil emax txmax)))
@@ -387,10 +380,6 @@
 (defn #?@(:clj  [^Boolean component?]
           :cljs [^boolean component?]) [db attr]
   (is-attr? db attr :db/isComponent))
-
-(defn #?@(:clj  [^Boolean indexing?]
-          :cljs [^boolean indexing?]) [db attr]
-  (is-attr? db attr :db/index))
 
 (defn entid [db eid]
   {:pre [(db? db)]}

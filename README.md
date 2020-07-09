@@ -23,23 +23,19 @@ Datalevin can also be used as a key-value store. [We](https://juji.io) are commi
 
 ## :floppy_disk: Difference from Datascript
 
-Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. As a port of Datascript, in addition to the diffrence in data durability, Datalevin differs from Datascript in the following ways:
+Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port of Datascript, Datalevin differs from Datascript in some important ways, in addition to the diffirence in data durability:
 
-* Does not store transaction ids. Since history is not kept, there is no need to store transanction ids. 
+* Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transanction ids are not stored. 
 
 * Datoms in a transaction are commited together in a batch, rather than being saved by `with-datom` one at a time.
 
 * Indices respect `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
 
-* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute. 
-
-* Attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index`. 
+* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute. Attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index`.  
 
 * Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data, and refuses unsafe schema changes that are inconsistent with existing data.
 
 ## :baby: Limitations
-
-* Datalevin is not an immutable database, and there is no "database as a value" feature. 
 
 * Attribute names have a length limitation: an attribute name cannot be more than 511 bytes long, due to LMDB key size limit.
 

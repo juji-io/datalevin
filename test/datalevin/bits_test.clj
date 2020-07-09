@@ -77,7 +77,7 @@
                 (.flip bf)
                 (= k (sut/read-buffer bf :attr))))
 
-;; binary indexing preserves the order of values
+;; binary index preserves the order of values
 
 (def e 123456)
 (def a 235)
