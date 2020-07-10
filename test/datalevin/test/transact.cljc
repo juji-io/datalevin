@@ -7,8 +7,8 @@
     [datalevin.constants :refer [tx0]]
     [datalevin.test.core :as tdc]))
 
-(deftest test-with
-  (let [db  (-> (d/empty-db {:aka { :db/cardinality :db.cardinality/many }})
+(deftest test-with-1
+  (let [db (-> (d/empty-db {:aka { :db/cardinality :db.cardinality/many }})
                 (d/db-with [[:db/add 1 :name "Ivan"]])
                 (d/db-with [[:db/add 1 :name "Petr"]])
                 (d/db-with [[:db/add 1 :aka  "Devil"]])
@@ -22,9 +22,9 @@
            #{["Devil"] ["Tupen"]}))
 
     (testing "Retract"
-      (let [db  (-> db
-                  (d/db-with [[:db/retract 1 :name "Petr"]])
-                  (d/db-with [[:db/retract 1 :aka  "Devil"]]))]
+      (let [db (-> db
+                    (d/db-with [[:db/retract 1 :name "Petr"]])
+                    (d/db-with [[:db/retract 1 :aka  "Devil"]]))]
 
         (is (= (d/q '[:find ?v
                       :where [1 :name ?v]] db)
@@ -33,14 +33,7 @@
                       :where [1 :aka ?v]] db)
                #{["Tupen"]}))
 
-        (is (= (into {} (d/entity db 1)) { :aka #{"Tupen"} }))))
-
-    (testing "Cannot retract what's not there"
-      (let [db  (-> db
-                    (d/db-with [[:db/retract 1 :name "Ivan"]]))]
-        (is (= (d/q '[:find ?v
-                      :where [1 :name ?v]] db)
-               #{["Petr"]})))))
+        (is (= (into {} (d/entity db 1)) { :aka #{"Tupen"} })))))
 
   (testing "Skipping nils in tx"
     (let [db (-> (d/empty-db)
@@ -50,27 +43,40 @@
       (is (= [[1 :attr 2], [3 :attr 4]]
              (map (juxt :e :a :v) (d/datoms db :eavt)))))))
 
+(deftest test-with-2
+  (let [db  (-> (d/empty-db {:aka { :db/cardinality :db.cardinality/many }})
+                (d/db-with [[:db/add 1 :name "Ivan"]])
+                (d/db-with [[:db/add 1 :name "Petr"]])
+                (d/db-with [[:db/add 1 :aka  "Devil"]])
+                (d/db-with [[:db/add 1 :aka  "Tupen"]]))]
 
-(deftest test-with-datoms
-  (testing "keeps tx number"
+    (testing "Cannot retract what's not there"
+      (let [db  (-> db
+                    (d/db-with [[:db/retract 1 :name "Ivan"]]))]
+        (is (= (d/q '[:find ?v
+                      :where [1 :name ?v]] db)
+               #{["Petr"]}))))))
+
+(deftest test-with-datoms-1
+  (testing "add"
     (let [db (-> (d/empty-db)
                  (d/db-with [(d/datom 1 :name "Oleg")
-                             (d/datom 1 :age  17 (+ 1 tx0))
-                             [:db/add 1 :aka  "x" (+ 2 tx0)]]))]
-      (is (= [[1 :age  17     (+ 1 tx0)]
-              [1 :aka  "x"    (+ 2 tx0)]
-              [1 :name "Oleg" tx0      ]]
-             (map (juxt :e :a :v :tx)
-                  (d/datoms db :eavt))))))
+                             (d/datom 1 :age  17)
+                             [:db/add 1 :aka  "x"]]))]
+      (is (= #{[1 :age  17]
+               [1 :aka  "x"]
+               [1 :name "Oleg"]}
+             (set (map (juxt :e :a :v) (d/datoms db :eavt))))))))
 
+(deftest test-with-datoms-2
   (testing "retraction"
     (let [db (-> (d/empty-db)
                  (d/db-with [(d/datom 1 :name "Oleg")
                              (d/datom 1 :age  17)
                              (d/datom 1 :name "Oleg" tx0 false)]))]
-      (is (= [[1 :age 17 tx0]]
-             (map (juxt :e :a :v :tx)
-                  (d/datoms db :eavt)))))))
+      (is (= #{[1 :age 17]}
+             (set (map (juxt :e :a :v)
+                   (d/datoms db :eavt))))))))
 
 (deftest test-retract-fns-1
   (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
@@ -133,17 +139,23 @@
                     :where [2 ?a ?v]] db)
              #{[:name "Petr"] [:age 37]})))))
 
-(deftest test-retract-without-value-339
+(deftest test-retract-without-value-339-1
   (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
                             :friend { :db/valueType :db.type/ref }})
-               (d/db-with [ { :db/id 1, :name  "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
-                           { :db/id 2, :name  "Petr", :age 37 } ]))]
+               (d/db-with [ { :db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
+                           { :db/id 2, :name "Petr", :age 37 } ]))]
     (testing "Retract :name without providing v"
       (let [db (d/db-with db [[:db/retract 1 :name]])]
         (is (= (d/q '[:find ?a ?v
                       :where [1 ?a ?v]]
                     db)
-               #{[:friend 2] [:age 15] [:aka "Z"] [:aka "Y"] [:aka "X"]}))))
+               #{[:friend 2] [:age 15] [:aka "Z"] [:aka "Y"] [:aka "X"]}))))))
+
+(deftest test-retract-without-value-339-2
+  (let [db (-> (d/empty-db {:aka    { :db/cardinality :db.cardinality/many }
+                            :friend { :db/valueType :db.type/ref }})
+               (d/db-with [ { :db/id 1, :name  "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2 }
+                           { :db/id 2, :name  "Petr", :age 37 } ]))]
     (testing "Retract :aka (cardinality many) without providing v"
       (let [db (d/db-with db [[:db/retract 1 :aka]])]
         (is (= (d/q '[:find ?a ?v
@@ -249,7 +261,8 @@
       (is (= (:age e) 32))
       (is (:had-birthday e)))))
 
-(deftest test-db-ident-fn
+;; TODO persist transaction function
+#_(deftest test-db-ident-fn
   (let [conn    (d/create-conn {:name {:db/unique :db.unique/identity}})
         inc-age (fn [db name]
                   (if-some [ent (d/entity db [:name name])]
@@ -272,7 +285,8 @@
     (d/transact! conn [[:inc-age "Petr"]])
     (let [e (d/entity @conn 1)]
       (is (= (:age e) 32))
-      (is (:had-birthday e)))))
+      (is (:had-birthday e)))
+    ))
 
 (deftest test-resolve-eid
   (let [conn (d/create-conn)
@@ -284,9 +298,9 @@
                                 [:db/add "Serg" :age 30]])]
     (is (= (:tempids t1) { -1 1, -2 2, :db/current-tx (+ tx0 1) }))
     (is (= (:tempids t2) { "Serg" 3, :db/current-tx (+ tx0 2) }))
-    (is (= #{[1 "Ivan" 19   (+ tx0 1)]
-             [2 "Petr" 22   (+ tx0 1)]
-             [3 "Sergey" 30 (+ tx0 2)]}
+    (is (= #{[1 "Ivan" 19   tx0]
+             [2 "Petr" 22   tx0]
+             [3 "Sergey" 30 tx0]}
            (d/q '[:find  ?e ?n ?a ?t
                   :where [?e :name ?n ?t]
                          [?e :age ?a]] @conn)))))

@@ -187,7 +187,7 @@
 
              Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
-             Used internally in db (de)serialization. See also [[datom]]."}
+             See also [[datom]]."}
   init-db db/init-db)
 
 

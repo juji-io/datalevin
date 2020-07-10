@@ -4,7 +4,7 @@
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     #?(:clj [clojure.java.shell :as sh])
     datalevin.test.core
-   
+
     datalevin.test.components
     datalevin.test.conn
     datalevin.test.db
@@ -32,7 +32,6 @@
     datalevin.test.query-pull
     datalevin.test.query-rules
     datalevin.test.query-v3
-    datalevin.test.serialization
     datalevin.test.transact
     datalevin.test.validation
     datalevin.test.upsert

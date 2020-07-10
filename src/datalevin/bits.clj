@@ -194,7 +194,7 @@
                 (Character/digit ^char c2 16))))]
     (map #(apply unhexify-2 %) (partition 2 s))))
 
-;; datom
+;; nippy
 
 (nippy/extend-freeze Datom :datalevin/datom
  [^Datom x ^DataOutput out]
@@ -208,6 +208,8 @@
           (nippy/thaw-from-in! in)
           (nippy/thaw-from-in! in)
           c/tx0))
+
+;; datom
 
 (defn- put-datom
   [bf ^Datom x]

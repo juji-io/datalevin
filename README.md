@@ -4,19 +4,19 @@
 
 ## :hear_no_evil: What and why
 
+> I love Datalog, why hasn't everyone use this already? 
+
 Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). 
 
 The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implict joins seem to be its killer feature.
-
-> I love Datalog, why hasn't everyone use this already? 
 
 Datomic® is an enterprise grade software, and its feature set may be an overkill for some use cases. One thing that may confuse casual users is its temporal features. To keep things simple and familiar, Datalevin does not store transaction history, and behaves the same way as most other mutable databases: when data are deleted, they are gone.
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.  
 
-Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also performs well in writing large values (> 2KB). Therefore, it is fine to store large values (e.g. documents) in Datalevin. 
+Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also performs well in writing large values (> 2KB). Therefore, it is fine to store documents in Datalevin. 
 
-Independent from Datalog, Datalevin can be used as an efficient key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizatons are put in place. For instance, it uses a transaction pool to enable transaction reuse, pre-allocates buffers, and so on. 
+Independent from Datalog, Datalevin can also be used as an efficient key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizatons are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates buffers, and so on. 
 
 ## :tada: Usage
 
@@ -27,13 +27,23 @@ Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built 
 
 * Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transanction ids are not stored. 
 
-* Datoms in a transaction are commited together in a batch, rather than being saved by `with-datom` one at a time.
+* Datoms in a transaction are commited together as a batch, rather than being saved by `with-datom` one at a time. This improves the performance writing to disk.
 
-* Indices respect `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
+* Respects `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
 
-* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute. Attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index`.  
+* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute; The attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index. These are the same as Datomic® Cloud.  
 
-* Handles schema migrations with `swap-attr` function. It allows safe migration that does not alter existing data, and refuses unsafe schema changes that are inconsistent with existing data.
+* Attributes have internal integer ids, so a lexicographic ordering of attributes should not be expected for the results of index access, same as Datomic®.
+
+* No serialization of database, since the data are already persisted. [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the data files.
+
+## :construction: Todo Items
+
+* Handle schema migrations with `swap-attr` function. It should allow safe migration that does not alter existing data, and refuse unsafe schema changes that are inconsistent with existing data.
+
+* Persist transaction functions on disk.
+
+* Keep up with latest changes in Datascript, currently on par with 0.18.13.
 
 ## :baby: Limitations
 
@@ -63,7 +73,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
-* Of course, if you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+* If you need a simple and familiar durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
 ## License
 
