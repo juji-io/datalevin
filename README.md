@@ -14,16 +14,16 @@ Datomic® is an enterprise grade software, and its feature set may be an overkil
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.  
 
-Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in [many projects](https://symas.com/lmdb/technical/#projects), e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also performs well in writing large values (> 2KB). Therefore, it is fine to store documents in Datalevin. 
+Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in many projects, e.g. [Cloadflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also [performs well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB). Therefore, it is fine to store documents in Datalevin. 
 
-Independent from Datalog, Datalevin can also be used as an efficient key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizatons are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates buffers, and so on. 
+Independent from Datalog, Datalevin can also be used as an efficient key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizatons are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on. 
 
 ## :tada: Usage
 
 
 ## :floppy_disk: Differences from Datascript
 
-Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port of Datascript, Datalevin differs from Datascript in more ways than the diffirence in data durability:
+Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port, Datalevin differs from Datascript in more ways than the diffirence in data durability:
 
 * Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transanction ids are not stored. 
 
@@ -35,11 +35,11 @@ Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built 
 
 * Attributes have internal integer ids, so a lexicographic ordering of attributes should not be expected for the results of index access, same as Datomic®.
 
-* Has no features that applicable only for an in-memory DB, such as DB as an immutable data structure, DB serialization, pretty print DB, filtered DB, etc. For now, [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the database files.
+* Has no features that are applicable only for an in-memory DB, such as DB as an immutable data structure, DB serialization, pretty print DB, filtered DB, etc. For now, [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the database files.
 
 ## :construction: Todo Items
 
-* Handle schema migrations with `swap-attr` function. It should allow safe migration that does not alter existing data, and refuse unsafe schema changes that are inconsistent with existing data.
+* Handle schema migrations in `swap-attr` function. It should allow safe migration that does not alter existing data, and refuse unsafe schema changes that are inconsistent with existing data.
 
 * Persist transaction functions on disk.
 
@@ -73,7 +73,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
-* If you need a simple and familiar durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+* If you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
 ## License
 
