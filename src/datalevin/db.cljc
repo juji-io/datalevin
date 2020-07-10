@@ -36,57 +36,13 @@
 
 ;; ----------------------------------------------------------------------------
 
-(declare ;hash-db
- ;; hash-fdb
- equiv-db empty-db resolve-datom validate-attr components->pattern)
+(declare empty-db resolve-datom validate-attr components->pattern)
 #?(:cljs (declare pr-db))
-
-#_(defn db-transient [db]
-  db
-  #_(-> db
-    (update :eavt transient)
-    (update :aevt transient)
-    (update :avet transient)))
-
-#_(defn db-persistent! [db]
-  db
-  #_(-> db
-    (update :eavt persistent!)
-    (update :aevt persistent!)
-    (update :avet persistent!)))
 
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
 (defrecord-updatable DB [^Store store ^TxReport report
                          max-eid max-tx rschema hash]
-  #?@(:cljs
-      [;IHash                (-hash  [db]        (hash-db db))
-       IEquiv               (-equiv [db other]  (equiv-db db other))
-       ISeqable             (-seq   [db]        (s/-seq store :eavt))
-       IReversible          (-rseq  [db]        (s/-rseq store :eavt))
-       ICounted             (count [db]        (s/-count store :eavt))
-       IEmptyableCollection (-empty [db]        (with-meta (empty-db (s/schema store)) (meta db)))
-       IPrintWithWriter     (-pr-writer [db w opts] (pr-db db w opts))
-       ;; IEditableCollection  (-as-transient [db] (db-transient db))
-       ;; ITransientCollection (-conj! [db key] (throw (ex-info "datalevin.DB/conj! is not supported" {})))
-       ;; (-persistent! [db] (db-persistent! db))
-       ]
-
-      :clj
-      [;Object               (hashCode [db]      (hash-db db))
-       ;clojure.lang.IHashEq (hasheq [db]        (hash-db db))
-       clojure.lang.Seqable (seq [db]           (s/-seq store :eavt))
-       clojure.lang.IPersistentCollection
-                            (count [db]         (s/-count store :eavt))
-                            (equiv [db other]   (equiv-db db other))
-       clojure.lang.IEditableCollection
-       (empty [db]         (with-meta (empty-db (s/schema store)) (meta db)))
-       (asTransient [db] db)
-       ;; clojure.lang.ITransientCollection
-       ;;                      (conj [db key] (throw (ex-info "datalevin.DB/conj! is not supported" {})))
-       ;; (persistent [db] (db-persistent! db))
-       ])
-
   IDB
   (-schema [_] (s/schema store))
   (-attrs-by [_ property] (rschema property))
@@ -137,69 +93,7 @@
        (satisfies? IIndexAccess x)
        (satisfies? IDB x)))
 
-;; ----------------------------------------------------------------------------
-(defrecord-updatable FilteredDB [unfiltered-db pred hash]
-  #?@(:cljs
-      [;IHash                (-hash  [db]        (hash-fdb db))
-       IEquiv               (-equiv [db other]  (equiv-db db other))
-       ISeqable             (-seq   [db]        (seq (-datoms db :eavt [])))
-       ICounted             (-count [db]        (count (-datoms db :eavt [])))
-       IPrintWithWriter     (-pr-writer [db w opts] (pr-db db w opts))
-
-       IEmptyableCollection (-empty [_]         (throw (js/Error. "-empty is not supported on FilteredDB")))
-
-       ILookup              (-lookup ([_ _]     (throw (js/Error. "-lookup is not supported on FilteredDB")))
-                                     ([_ _ _]   (throw (js/Error. "-lookup is not supported on FilteredDB"))))
-
-
-       IAssociative         (-contains-key? [_ _] (throw (js/Error. "-contains-key? is not supported on FilteredDB")))
-                            (-assoc [_ _ _]       (throw (js/Error. "-assoc is not supported on FilteredDB")))]
-
-      :clj
-      [;Object               (hashCode [db]      (hash-fdb db))
-
-       ;clojure.lang.IHashEq (hasheq [db]        (hash-fdb db))
-
-       clojure.lang.IPersistentCollection
-                            (count [db]         (count (-datoms db :eavt [])))
-                            (equiv [db o]       (equiv-db db o))
-                            (cons [db [k v]]    (throw (UnsupportedOperationException. "cons is not supported on FilteredDB")))
-                            (empty [db]         (throw (UnsupportedOperationException. "empty is not supported on FilteredDB")))
-
-       clojure.lang.Seqable (seq [db]           (seq (-datoms db :eavt [])))
-
-       clojure.lang.ILookup (valAt [db k]       (throw (UnsupportedOperationException. "valAt/2 is not supported on FilteredDB")))
-                            (valAt [db k nf]    (throw (UnsupportedOperationException. "valAt/3 is not supported on FilteredDB")))
-       clojure.lang.IKeywordLookup (getLookupThunk [db k]
-                                                (throw (UnsupportedOperationException. "getLookupThunk is not supported on FilteredDB")))
-
-       clojure.lang.Associative
-                            (containsKey [e k]  (throw (UnsupportedOperationException. "containsKey is not supported on FilteredDB")))
-                            (entryAt [db k]     (throw (UnsupportedOperationException. "entryAt is not supported on FilteredDB")))
-                            (assoc [db k v]     (throw (UnsupportedOperationException. "assoc is not supported on FilteredDB")))])
-
-  IDB
-  (-schema [db] (-schema (.-unfiltered-db db)))
-  (-attrs-by [db property] (-attrs-by (.-unfiltered-db db) property))
-
-  ISearch
-  (-search [db pattern]
-           (filter (.-pred db) (-search (.-unfiltered-db db) pattern)))
-
-  IIndexAccess
-  (-datoms [db index cs]
-           (filter (.-pred db) (-datoms (.-unfiltered-db db) index cs)))
-
-  (-seek-datoms [db index cs]
-                (filter (.-pred db) (-seek-datoms (.-unfiltered-db db) index cs)))
-
-  (-rseek-datoms [db index cs]
-                (filter (.-pred db) (-rseek-datoms (.-unfiltered-db db) index cs)))
-
-  (-index-range [db attr start end]
-                (filter (.-pred db) (-index-range (.-unfiltered-db db) attr start end))))
-
-;; ----------------------------------------------------------------------------
+; ----------------------------------------------------------------------------
 
 (defn attr->properties [k v]
   (case v
@@ -287,62 +181,6 @@
                :max-eid max-eid
                :max-tx  max-tx
                :hash    (atom 0)}))))
-
-(defn- equiv-db-index [x y]
-  (loop [xs (seq x)
-         ys (seq y)]
-    (cond
-      (nil? xs) (nil? ys)
-      (= (first xs) (first ys)) (recur (next xs) (next ys))
-      :else false)))
-
-#_(defn- hash-db [^DB db]
-  (let [h @(.-hash db)]
-    (if (zero? h)
-      (reset! (.-hash db) (combine-hashes (hash (-schema db))
-                                          (hash (-eavt db))))
-      h)))
-
-#_(defn- hash-fdb [^FilteredDB db]
-  (let [h @(.-hash db)
-        datoms (or (-datoms db :eavt []) #{})]
-    (if (zero? h)
-      (let [datoms (or (-datoms db :eavt []) #{})]
-        (reset! (.-hash db) (combine-hashes (hash (-schema db))
-                                            (hash-unordered-coll datoms))))
-      h)))
-
-(defn- equiv-db [db other]
-  (and (or (instance? DB other) (instance? FilteredDB other))
-       (= (-schema db) (-schema other))
-       (equiv-db-index (-datoms db :eavt []) (-datoms other :eavt []))))
-
-#?(:cljs
-   (defn pr-db [db w opts]
-     (-write w "#datalevin/DB {")
-     (-write w ":schema ")
-     (pr-writer (-schema db) w opts)
-     (-write w ", :datoms ")
-     (pr-sequential-writer w
-                           (fn [d w opts]
-                             (pr-sequential-writer w pr-writer "[" " " "]" opts [(.-e d) (.-a d) (.-v d) (datom-tx d)]))
-                           "[" " " "]" opts (-datoms db :eavt []))
-     (-write w "}")))
-
-#?(:clj
-   (do
-     (defn pr-db [db, ^java.io.Writer w]
-       (.write w (str "#datalevin/DB {"))
-       (.write w ":schema ")
-       (binding [*out* w]
-         (pr (-schema db))
-         (.write w ", :datoms [")
-         (apply pr (map (fn [^Datom d] [(.-e d) (.-a d) (.-v d) (datom-tx d)]) (-datoms db :eavt []))))
-       (.write w "]}"))
-
-     (defmethod print-method DB [db w] (pr-db db w))
-     (defmethod print-method FilteredDB [db w] (pr-db db w))
-))
 
 (defn db-from-reader [{:keys [schema datoms]}]
   (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))

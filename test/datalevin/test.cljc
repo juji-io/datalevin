@@ -10,7 +10,6 @@
     datalevin.test.db
     datalevin.test.entity
     datalevin.test.explode
-    datalevin.test.filter
     datalevin.test.ident
     datalevin.test.index
     datalevin.test.listen

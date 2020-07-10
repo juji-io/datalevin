@@ -10,7 +10,7 @@ Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-mem
 
 The rationale is to have a simple and free Datalog query engine running on durable storage.  It is my observation that many developers prefer the flavor of Datalog populized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implict joins seem to be its killer feature.
 
-Datomic® is an enterprise grade software, and its feature set may be an overkill for some use cases. One thing that may confuse casual users is its temporal features. To keep things simple and familiar, Datalevin does not store transaction history, and behaves the same way as most other mutable databases: when data are deleted, they are gone.
+Datomic® is an enterprise grade software, and its feature set may be an overkill for some use cases. One thing that may confuse casual users is its [temporal features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To keep things simple and familiar, Datalevin does not store transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
 
 Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.  
 
@@ -21,21 +21,21 @@ Independent from Datalog, Datalevin can also be used as an efficient key-value s
 ## :tada: Usage
 
 
-## :floppy_disk: Difference from Datascript
+## :floppy_disk: Differences from Datascript
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port of Datascript, Datalevin differs from Datascript in more ways than the diffirence in data durability:
 
 * Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transanction ids are not stored. 
 
-* Datoms in a transaction are commited together as a batch, rather than being saved by `with-datom` one at a time. This improves the performance writing to disk.
+* Datoms in a transaction are commited together as a batch, rather than being saved by `with-datom` one at a time. This improves the performance in writing to disk.
 
 * Respects `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy). 
 
-* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute; The attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index. These are the same as Datomic® Cloud.  
+* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute; The attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index`. These are the same as Datomic® Cloud.  
 
 * Attributes have internal integer ids, so a lexicographic ordering of attributes should not be expected for the results of index access, same as Datomic®.
 
-* No serialization of database, since the data are already persisted. [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the data files.
+* Has no features that applicable only for an in-memory DB, such as DB as an immutable data structure, DB serialization, pretty print DB, filtered DB, etc. For now, [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the database files.
 
 ## :construction: Todo Items
 

@@ -2,17 +2,15 @@
   (:refer-clojure :exclude [filter])
   (:require
     [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-    [datalevin.db :as db #?@(:cljs [:refer [FilteredDB]])]
+    [datalevin.db :as db]
     [datalevin.datom :as dd]
     [datalevin.constants :refer [tx0]]
-    #?(:clj [datalevin.pprint])
     [datalevin.pull-api :as dp]
     [datalevin.query :as dq]
     [taoensso.timbre :as log]
     [datalevin.impl.entity :as de])
   #?(:clj
     (:import
-      [datalevin.db FilteredDB]
       [datalevin.impl.entity Entity]
       [java.util UUID])))
 
@@ -190,34 +188,6 @@
              See also [[datom]]."}
   init-db db/init-db)
 
-
-; Filtered db
-
-(defn is-filtered
-  "Returns `true` if this database was filtered using [[filter]], `false` otherwise."
-  [x]
-  (instance? FilteredDB x))
-
-
-(defn filter
-  "Returns a view over database that has same interface but only includes datoms for which the `(pred db datom)` is true. Can be applied multiple times.
-
-   Filtered DB gotchas:
-
-   - All operations on filtered database are proxied to original DB, then filter pred is applied.
-   - Not cached. You pay filter penalty every time.
-   - Supports entities, pull, queries, index access.
-   - Does not support [[with]] and [[db-with]]."
-  [db pred]
-  {:pre [(db/db? db)]}
-  (if (is-filtered db)
-    (let [^FilteredDB fdb db
-          orig-pred (.-pred fdb)
-          orig-db   (.-unfiltered-db fdb)]
-      (FilteredDB. orig-db #(and (orig-pred %) (pred orig-db %)) (atom 0)))
-    (FilteredDB. db #(pred db %) (atom 0))))
-
-
 ; Changing DB
 
 (defn with
@@ -225,14 +195,12 @@
   ([db tx-data] (with db tx-data nil))
   ([db tx-data tx-meta]
     {:pre [(db/db? db)]}
-    (if (is-filtered db)
-      (throw (ex-info "Filtered DB cannot be modified" {:error :transaction/filtered}))
-      (db/transact-tx-data (db/map->TxReport
-                             { :db-before db
-                               :db-after  db
-                               :tx-data   []
-                               :tempids   {}
-                               :tx-meta   tx-meta}) tx-data))))
+   (db/transact-tx-data (db/map->TxReport
+                         { :db-before db
+                          :db-after   db
+                          :tx-data    []
+                          :tempids    {}
+                          :tx-meta    tx-meta}) tx-data)))
 
 
 (defn db-with
