@@ -42,7 +42,7 @@
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
 (defrecord-updatable DB [^Store store ^TxReport report
-                         max-eid max-tx rschema hash]
+                         max-eid max-tx schema rschema hash]
   IDB
   (-schema [_] (s/schema store))
   (-attrs-by [_ property] (rschema property))
@@ -157,13 +157,15 @@
   ([schema dir]
    {:pre [(or (nil? schema) (map? schema))]}
     (validate-schema schema)
-    (map->DB
-     {:store   (s/open schema dir)
-      :report  nil
-      :rschema (rschema (merge implicit-schema schema))
-      :max-eid e0
-      :max-tx  tx0
-      :hash    (atom 0)})))
+   (let [store (s/open schema dir)]
+     (map->DB
+      {:store   store
+       :report  nil
+       :schema  (s/schema store)
+       :rschema (rschema (merge implicit-schema schema))
+       :max-eid e0
+       :max-tx  tx0
+       :hash    (atom 0)}))))
 
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil))
@@ -171,12 +173,14 @@
   ([datoms schema dir]
     (validate-schema schema)
    (let [store   (s/open schema dir)
+         schema  (s/schema store)
          rschema (rschema (merge implicit-schema schema))
          _       (s/load-datoms store datoms)
          max-eid (s/init-max-eid store)
          max-tx  tx0]
      (map->DB {:store   store
                :report  nil
+               :schema  schema
                :rschema rschema
                :max-eid max-eid
                :max-tx  max-tx

@@ -194,13 +194,13 @@
   "Same as [[transact!]], but applies to an immutable database value. Returns transaction report (see [[transact!]])."
   ([db tx-data] (with db tx-data nil))
   ([db tx-data tx-meta]
-    {:pre [(db/db? db)]}
+   {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
-                         { :db-before db
-                          :db-after   db
-                          :tx-data    []
-                          :tempids    {}
-                          :tx-meta    tx-meta}) tx-data)))
+                         {:db-before db
+                          :db-after  db
+                          :tx-data   []
+                          :tempids   {}
+                          :tx-meta   tx-meta}) tx-data)))
 
 
 (defn db-with
@@ -640,7 +640,7 @@
     (future-call #(transact! conn tx-data tx-meta))))
 
 
-(defn- rand-bits [pow]
+(defn- rand-bits [^long pow]
   (rand-int (bit-shift-left 1 pow)))
 
 
@@ -661,7 +661,7 @@
   ([]
     (squuid #?(:clj  (System/currentTimeMillis)
                :cljs (.getTime (js/Date.)))))
-  ([msec]
+  ([^long msec]
   #?(:clj
       (let [uuid     (UUID/randomUUID)
             time     (int (/ msec 1000))

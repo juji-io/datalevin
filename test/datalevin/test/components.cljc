@@ -12,7 +12,7 @@
 #?(:cljs
    (def Throwable js/Error))
 
-(deftest test-components
+(deftest test-components-1
   (is (thrown-msg? "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
         (d/empty-db {:profile {:db/isComponent true}})))
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
@@ -50,13 +50,28 @@
     (testing "retractAttribute"
       (let [db (d/db-with db [[:db.fn/retractAttribute 1 :profile]])]
         (is (= (d/q '[:find ?a ?v :where [3 ?a ?v]] db)
-               #{}))))
+               #{}))))))
+
+(deftest test-components-2
+  (is (thrown-msg? "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
+        (d/empty-db {:profile {:db/isComponent true}})))
+  (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
+        (d/empty-db {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
+
+  (let [db (d/db-with
+             (d/empty-db {:profile {:db/valueType   :db.type/ref
+                                    :db/isComponent true}})
+             [{:db/id 1 :name "Ivan" :profile 3}
+              {:db/id 3 :email "@3"}
+              {:db/id 4 :email "@4"}])
+        visible #(edn/read-string (pr-str %))
+        touched #(visible (d/touch %))]
 
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
              {:db/id 1})))))
 
-(deftest test-components-multival
+(deftest test-components-multival-1
   (let [db (d/db-with
              (d/empty-db {:profile {:db/valueType   :db.type/ref
                                     :db/cardinality :db.cardinality/many
@@ -82,7 +97,18 @@
     (testing "retractAttribute"
       (let [db (d/db-with db [[:db.fn/retractAttribute 1 :profile]])]
         (is (= (d/q '[:find ?a ?v :in $ [?e ...] :where [?e ?a ?v]] db [3 4])
-               #{}))))
+               #{}))))))
+
+(deftest test-components-multival-2
+  (let [db (d/db-with
+             (d/empty-db {:profile {:db/valueType   :db.type/ref
+                                    :db/cardinality :db.cardinality/many
+                                    :db/isComponent true}})
+             [{:db/id 1 :name "Ivan" :profile [3 4]}
+              {:db/id 3 :email "@3"}
+              {:db/id 4 :email "@4"}])
+        visible #(edn/read-string (pr-str %))
+        touched #(visible (d/touch %))]
 
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
