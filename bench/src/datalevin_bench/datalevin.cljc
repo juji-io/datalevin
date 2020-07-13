@@ -49,11 +49,12 @@
 
 
 (def db100k
-  (d/db-with (d/empty-db) core/people20k))
+  (d/db-with (d/empty-db schema "/tmp/datalevin-bench-query")
+             core/people20k))
 
 
 (defn ^:export add-1 []
-  (core/bench
+  (core/bench-once
     (reduce
       (fn [db p]
         (-> db
@@ -62,18 +63,21 @@
           (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
           (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
           (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
-      (d/empty-db)
+      (d/empty-db schema "/tmp/datalevin-bench-add-1")
       core/people20k)))
 
 
 (defn ^:export add-5 []
-  (core/bench
-    (reduce (fn [db p] (d/db-with db [p])) (d/empty-db) core/people20k)))
+  (core/bench-once
+   (reduce (fn [db p] (d/db-with db [p]))
+           (d/empty-db schema "/tmp/datalevin-bench-add-5")
+           core/people20k)))
 
 
 (defn ^:export add-all []
-  (core/bench
-    (d/db-with (d/empty-db) core/people20k)))
+  (core/bench-once
+   (d/db-with (d/empty-db schema "/tmp/datalevin-bench-add-all")
+              core/people20k)))
 
 
 (defn ^:export init []
@@ -83,14 +87,15 @@
                        [k v] p
                        :when (not= k :db/id)]
                    (d/datom id k v)))]
-    (core/bench
+    (core/bench-once
       (d/init-db datoms))))
 
 
 (defn ^:export retract-5 []
-  (let [db   (d/db-with (d/empty-db) core/people20k)
+  (let [db   (d/db-with (d/empty-db schema "/tmp/datalevin-bench-retract")
+                        core/people20k)
         eids (->> (d/datoms db :aevt :name) (map :e) (shuffle))]
-    (core/bench
+    (core/bench-once
       (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
 
 

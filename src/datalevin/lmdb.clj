@@ -263,8 +263,8 @@
      or :attr; only values will be returned if ignore-key? is true;
      If value is to be ignored, put :ignore as v-type"))
 
-(defn- double-db-size [^Env env]
-  (.setMapSize env (* 2 (-> env .info .mapSize))))
+(defn- up-db-size [^Env env]
+  (.setMapSize env (* 10 (-> env .info .mapSize))))
 
 (defn- fetch-value
   [^DBI dbi ^Rtx rtx k k-type v-type]
@@ -396,9 +396,9 @@
                    (del dbi txn))))
         (.commit txn))
       (catch Env$MapFullException e
-        (double-db-size env)
+        (up-db-size env)
         (transact this txs))
-      (catch Exception e
+      #_(catch Exception e
         (raise "Fail to transact: " (ex-message e) {:txs txs}))))
   (get-value [this dbi-name k]
     (get-value this dbi-name k :data :data))

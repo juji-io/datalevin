@@ -12,6 +12,8 @@
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.0.0"]
                                   [criterium "0.4.5"]
                                   [com.taoensso/timbre "4.10.0"]]}}
+  :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+             "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"]
   :global-vars {*warn-on-reflection*   true
                 *print-namespace-maps* false
                 *unchecked-math* :warn-on-boxed})

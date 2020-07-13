@@ -55,14 +55,14 @@
         (= "rebuild" arg)
         (recur (assoc opts :rebuild true) (next args))
 
-        (re-matches #"(jvm|datascript|datomic)" arg)
+        (re-matches #"(datalevin|datascript|datomic)" arg)
         (recur (update opts :versions conj ["latest" arg]) (next args))
 
         (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)" arg)
-        (recur (update opts :versions conj [arg "jvm"]) (next args))
+        (recur (update opts :versions conj [arg "datalevin"]) (next args))
 
-        (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(jvm|datascript|datomic)" arg)
-        (let [[_ version vm] (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(jvm|datascript|datomic)" arg)]
+        (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(datalevin|datascript|datomic)" arg)
+        (let [[_ version vm] (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(datalevin|datascript|datomic)" arg)]
           (recur (update opts :versions conj [version vm]) (next args)))
 
         :else
@@ -72,7 +72,7 @@
 
 (defn run-benchmarks [version vm benchmarks]
   (case vm
-    "jvm"
+    "datalevin"
     (apply run "clojure" "-Sdeps"
       (cond
         (= "latest" version)
@@ -111,11 +111,11 @@
 
 (def default-benchmarks
   [
-   ;; "add-1"
-   ;; "add-5"
-   ;; "add-all"
-   ;; "init"
-   ;; "retract-5"
+   "add-1"
+   "add-5"
+   "add-all"
+   "init"
+   "retract-5"
    "q1"
    "q2"
    "q3"
@@ -125,9 +125,9 @@
 
 
 (def default-versions
-  [["latest" "datomic"]
-   ["latest" "datascript"]
-   ["latest" "jvm"]])
+  [;["latest" "datomic"]
+   ["0.18.13" "datascript"]
+   ["latest" "datalevin"]])
 
 
 (binding [sh/*sh-env* (merge {} (System/getenv) {})

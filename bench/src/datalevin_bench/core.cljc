@@ -72,3 +72,9 @@
           ; max#     (reduce max results#)
           ]
       med#)))
+
+#?(:clj
+   (defmacro bench-once [& body]
+     `(let [start-t# (now)]
+        ~@body
+        (- (now) start-t#))))
