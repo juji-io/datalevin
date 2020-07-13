@@ -3,7 +3,6 @@
             [datalevin.datom :as d]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
-            [taoensso.timbre :as log]
             [clojure.test :refer [deftest is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]

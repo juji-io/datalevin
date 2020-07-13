@@ -1,9 +1,9 @@
-(ns datascript-bench.datomic
+(ns datalevin-bench.datomic
   (:require
     [clojure.string :as str]
     [datomic.api :as d]
     [datomic.btset :as btset]
-    [datascript-bench.core :as core]))
+    [datalevin-bench.core :as core]))
 
 ;; test-db
 
@@ -161,7 +161,7 @@
 
 (defn ^:export -main [& names]
   (doseq [n names]
-    (if-some [benchmark (ns-resolve 'datascript-bench.datomic (symbol n))]
+    (if-some [benchmark (ns-resolve 'datalevin-bench.datomic (symbol n))]
       (let [perf (benchmark)]
         (print (core/round perf) "\t")
         (flush))

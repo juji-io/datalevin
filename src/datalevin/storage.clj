@@ -5,8 +5,7 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [taoensso.nippy :as nippy]
-            [taoensso.timbre :as log])
+            [taoensso.nippy :as nippy])
   (:import [java.util UUID]
            [datalevin.lmdb LMDB]
            [datalevin.datom Datom]

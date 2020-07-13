@@ -55,14 +55,14 @@
         (= "rebuild" arg)
         (recur (assoc opts :rebuild true) (next args))
 
-        (re-matches #"(jvm|v8|datomic)" arg)
+        (re-matches #"(jvm|datascript|datomic)" arg)
         (recur (update opts :versions conj ["latest" arg]) (next args))
 
         (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)" arg)
         (recur (update opts :versions conj [arg "jvm"]) (next args))
 
-        (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(jvm|v8|datomic)" arg)
-        (let [[_ version vm] (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(jvm|v8|datomic)" arg)]
+        (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(jvm|datascript|datomic)" arg)
+        (let [[_ version vm] (re-matches #"(\d+\.\d+\.\d+|[0-9a-fA-F]{40}|latest)-(jvm|datascript|datomic)" arg)]
           (recur (update opts :versions conj [version vm]) (next args)))
 
         :else
@@ -77,38 +77,45 @@
       (cond
         (= "latest" version)
         (str "{:paths [\"src\"]"
-          "    :deps {datascript {:local/root \"..\"}}}")
+          "    :deps {datalevin {:local/root \"..\"} org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"} com.taoensso/nippy {:mvn/version \"2.14.0\"}}}")
 
         (re-matches #"\d+\.\d+\.\d+" version)
         (str "{:paths [\"src\"]"
-          "    :deps {datascript {:mvn/version \"" version "\"}}}")
+          "    :deps {datalevin {:mvn/version \"" version "\"}}}")
 
         (re-matches #"[0-9a-fA-F]{40}" version)
         (str "{:paths [\"src\"]"
-          "    :deps {datascript {:git/url \"https://github.com/tonsky/datascript.git\" :sha \"" version "\"}}}"))
-      "-m" "datascript-bench.datascript"
+          "    :deps {datalevin {:git/url \"https://github.com/juji-io\" :sha \"" version "\"}}}"))
+      "-m" "datalevin-bench.datalevin"
       benchmarks)
 
-    "v8"
-    (apply run "node" "run_v8.js" benchmarks)
+    "datascript"
+    (apply run "clojure" "-Sdeps"
+           (str "{"
+                " :paths [\"src\"]"
+                " :deps {datascript {:mvn/version \"" (if (= "latest" version) "1.0.0" version) "\"}}"
+                "}")
+           "-m" "datascript-bench.datascript"
+           benchmarks)
 
     "datomic"
     (apply run "clojure" "-Sdeps"
       (str "{"
         " :paths [\"src\" \"src-datomic\"]"
-        " :deps {com.datomic/datomic-free {:mvn/version \"" (if (= "latest" version) "0.9.5703" version) "\"}}"
+        " :deps {com.datomic/datomic-free {:mvn/version \"" (if (= "latest" version) "0.9.5697" version) "\"}}"
         "}")
-      "-m" "datascript-bench.datomic"
+      "-m" "datalevin-bench.datomic"
       benchmarks)
     ))
 
- 
+
 (def default-benchmarks
-  ["add-1"
-   "add-5"
-   "add-all"
-   "init"
-   "retract-5"
+  [
+   ;; "add-1"
+   ;; "add-5"
+   ;; "add-all"
+   ;; "init"
+   ;; "retract-5"
    "q1"
    "q2"
    "q3"
@@ -118,7 +125,9 @@
 
 
 (def default-versions
-  [["latest" "jvm"]])
+  [["latest" "datomic"]
+   ["latest" "datascript"]
+   ["latest" "jvm"]])
 
 
 (binding [sh/*sh-env* (merge {} (System/getenv) {})

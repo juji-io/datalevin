@@ -4,8 +4,7 @@
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
-            [clojure.string :as s]
-            [taoensso.timbre :as log])
+            [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
            [clojure.lang IMapEntry]
@@ -144,7 +143,7 @@
   (put-val [_ x t]
     (try
       (b/put-buffer vb x t)
-      (catch java.lang.AssertionError e
+      (catch Exception e
         (if (s/includes? (ex-message e) c/buffer-overflow)
           (let [size (b/measure-size x)]
             (set! vb (ByteBuffer/allocateDirect size))

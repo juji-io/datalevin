@@ -2,7 +2,6 @@
   (:require
    [clojure.walk]
    [clojure.data]
-   [taoensso.timbre :as log]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax implicit-schema]]
    [datalevin.datom :as d
     :refer [datom datom-tx datom-added datom? diff-sorted]]

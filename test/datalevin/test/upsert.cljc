@@ -4,7 +4,6 @@
        :clj  [clojure.test :as t :refer        [is are deftest testing]])
     [datalevin.core :as d]
     [datalevin.db :as db]
-    [taoensso.timbre :as log]
     [datalevin.constants :refer [tx0]]
     [datalevin.test.core :as tdc]))
 

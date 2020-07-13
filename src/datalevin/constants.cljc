@@ -20,7 +20,7 @@
 
 (def ^:const +max-dbs+          128)
 (def ^:const +max-readers+      126)
-(def ^:const +init-db-size+     10)    ; in megabytes
+(def ^:const +init-db-size+     100)   ; in megabytes
 (def ^:const +default-val-size+ 16384) ; in bytes
 (def ^:const +max-key-size+     511)   ; in bytes
 
@@ -31,34 +31,33 @@
 (def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
 
 ;; value headers
-(def ^:const type-long-neg (byte 0xC0))
-(def ^:const type-long-pos (byte 0xC1))
-(def ^:const type-float    (byte 0xF5))
-(def ^:const type-double   (byte 0xF6))
-(def ^:const type-instant  (byte 0xF7))
-(def ^:const type-ref      (byte 0xF8))
-(def ^:const type-uuid     (byte 0xF9))
-(def ^:const type-string   (byte 0xFA))
-(def ^:const type-keyword  (byte 0xFB))
-(def ^:const type-symbol   (byte 0xFC))
-(def ^:const type-boolean  (byte 0xFD))
-(def ^:const type-bytes    (byte 0xFE))
-;;(def ^:const type-TBD (byte 0xFF))
+(def ^:const type-long-neg (unchecked-byte 0xC0))
+(def ^:const type-long-pos (unchecked-byte 0xC1))
+(def ^:const type-float    (unchecked-byte 0xF5))
+(def ^:const type-double   (unchecked-byte 0xF6))
+(def ^:const type-instant  (unchecked-byte 0xF7))
+(def ^:const type-ref      (unchecked-byte 0xF8))
+(def ^:const type-uuid     (unchecked-byte 0xF9))
+(def ^:const type-string   (unchecked-byte 0xFA))
+(def ^:const type-keyword  (unchecked-byte 0xFB))
+(def ^:const type-symbol   (unchecked-byte 0xFC))
+(def ^:const type-boolean  (unchecked-byte 0xFD))
+(def ^:const type-bytes    (unchecked-byte 0xFE))
 
-(def ^:const false-value   (byte 0x01))
-(def ^:const true-value    (byte 0x02))
+(def ^:const false-value   (unchecked-byte 0x01))
+(def ^:const true-value    (unchecked-byte 0x02))
 
-(def ^:const separator     (byte 0x00))
-(def ^:const truncator     (byte 0xFF))
-(def ^:const slash         (byte 0x2F))
+(def ^:const separator     (unchecked-byte 0x00))
+(def ^:const truncator     (unchecked-byte 0xFF))
+(def ^:const slash         (unchecked-byte 0x2F))
 
-(def separator-ba (byte-array [(byte 0x00)]))
+(def separator-ba (byte-array [(unchecked-byte 0x00)]))
 
 (def max-uuid (UUID. 0xFFFFFFFFFFFFFFFF 0xFFFFFFFFFFFFFFFF))
 (def min-uuid (UUID. 0x0000000000000000 0x0000000000000000))
 
 (def max-bytes (let [ba (byte-array +val-bytes-wo-hdr+)]
-                 (Arrays/fill ba (byte 0xFF))
+                 (Arrays/fill ba (unchecked-byte 0xFF))
                  ba))
 (def min-bytes (byte-array 0))
 

@@ -4,8 +4,7 @@
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    [datalevin.core :as d]
    [datalevin.db :as db]
-   [datalevin.test.core :as tdc]
-   [taoensso.timbre :as log]))
+   [datalevin.test.core :as tdc]))
 
 (deftest test-rules
   (let [db [                  [5 :follow 3]

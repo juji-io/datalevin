@@ -3,7 +3,6 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [taoensso.timbre :as log]
             [clojure.set :as set]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]

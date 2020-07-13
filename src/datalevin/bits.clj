@@ -4,8 +4,7 @@
             [datalevin.datom :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [taoensso.nippy :as nippy]
-            [taoensso.timbre :as log])
+            [taoensso.nippy :as nippy])
   (:import [java.io File DataInput DataOutput]
            [java.nio.charset StandardCharsets]
            [java.util Arrays UUID]
@@ -107,13 +106,14 @@
 
 (defn- check-buffer-overflow
   [^long length ^long remaining]
-  (assert (<= length remaining)
-          (str c/buffer-overflow
-               " trying to put "
-               length
-               " bytes while "
-               remaining
-               "remaining in the ByteBuffer.")))
+  (when (< remaining length)
+    (u/raise (str c/buffer-overflow
+                  " trying to put "
+                  length
+                  " bytes while "
+                  remaining
+                  " remaining in the ByteBuffer.")
+             {})))
 
 (defn- put-long
   ([^ByteBuffer bb n]

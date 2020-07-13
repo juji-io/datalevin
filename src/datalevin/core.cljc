@@ -7,7 +7,6 @@
     [datalevin.constants :refer [tx0]]
     [datalevin.pull-api :as dp]
     [datalevin.query :as dq]
-    [taoensso.timbre :as log]
     [datalevin.impl.entity :as de])
   #?(:clj
     (:import

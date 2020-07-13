@@ -7,8 +7,7 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
-            [taoensso.nippy :as nippy]
-            [taoensso.timbre :as log])
+            [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays]
            [datalevin.lmdb LMDB]))
 
@@ -79,8 +78,8 @@
     (is (= (range 1000) (sut/get-value lmdb "c" 1))))
 
   (testing "key overflow throws"
-    (is (thrown? java.lang.AssertionError
-                 (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
+    (is (thrown-with-msg? Exception #"BufferOverflow"
+                          (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
   (testing "close then re-open"
     (let [dir  (.-dir lmdb)
