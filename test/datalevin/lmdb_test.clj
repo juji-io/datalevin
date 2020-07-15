@@ -47,6 +47,7 @@
 
   (testing "get-value"
     (is (= 2 (sut/get-value lmdb "a" 1)))
+    (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false)))
     (is (= true (sut/get-value lmdb "a" :annunaki/enki :attr :data)))
     (is (= (d/datom 1 :a/b {:id 4}) (sut/get-value lmdb "a" 42 :long :datom)))
     (is (nil? (sut/get-value lmdb "a" 2)))
@@ -150,7 +151,7 @@
     (is (= res (sut/range-filter lmdb "c" pred [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test
-  (let [ks  (shuffle (range 0 1000))
+  (let [ks  (shuffle (range 0 10000))
         vs  (map inc ks)
         txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
     (sut/transact lmdb txs)

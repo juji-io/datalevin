@@ -146,6 +146,7 @@
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
   (load-datoms [this datoms] "Load datams")
+  (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (slice [this index low-datom high-datom]
     "Return a range of datoms within the given boundary (inclusive).")
   (rslice [this index high-datom low-datom]
@@ -156,9 +157,16 @@
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given boundary (inclusive)
     that return true for (pred x), where x is the datom")
-  (-seq [this index])
-  (-rseq [this index])
-  (-count [this index]))
+  ;; (-seq [this index])
+  ;; (-rseq [this index])
+  ;; (-count [this index])
+  )
+
+;; (defmacro wrap-retrieve
+;;   [store lmdb attrs index body]
+;;   `(if (< 0 (long (datom-count ~store ~index)))
+;;      (map (partial retrieved->datom ~lmdb ~attrs) ~body)
+;;      []))
 
 (declare insert-data delete-data)
 
@@ -203,7 +211,7 @@
       (set! attrs (assoc attrs (:db/aid p) attr))
       p))
   (datom-count [_ index]
-    (lmdb/entries lmdb index))
+    (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
   (insert [this datom]
     (let [[data giant?] (insert-data this datom)]
       (if giant?
@@ -224,19 +232,27 @@
                          (reduce conj-fn holder (delete-data this datom)))))
             data   (persistent! (reduce add-fn (transient []) datoms))]
         (lmdb/transact lmdb data))))
+  (fetch [this datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (when-let [kv (lmdb/get-value lmdb
+                                        c/eav
+                                        (low-datom->indexable schema datom)
+                                        :eav
+                                        :long
+                                        false)]
+            [kv])))
   (slice [_ index low-datom high-datom]
-    (map
-     (partial retrieved->datom lmdb attrs)
-     (lmdb/get-range
-      lmdb
-      (index->dbi index)
-      [:closed
-       (low-datom->indexable schema low-datom)
-       (high-datom->indexable schema high-datom)]
-      index
-      :long)))
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/get-range
+           lmdb
+           (index->dbi index)
+           [:closed
+            (low-datom->indexable schema low-datom)
+            (high-datom->indexable schema high-datom)]
+           index
+           :long)))
   (rslice [_ index high-datom low-datom]
-    (map
+    (mapv
      (partial retrieved->datom lmdb attrs)
      (lmdb/get-range
       lmdb
@@ -247,7 +263,7 @@
       index
       :long)))
   (slice-filter [_ index pred low-datom high-datom]
-    (map
+    (mapv
      (partial retrieved->datom lmdb attrs)
      (lmdb/range-filter
       lmdb
@@ -259,7 +275,7 @@
       index
       :long)))
   (rslice-filter [_ index pred high-datom low-datom]
-    (map
+    (mapv
      (partial retrieved->datom lmdb attrs)
      (lmdb/range-filter
       lmdb
@@ -270,16 +286,17 @@
        (low-datom->indexable schema low-datom)]
       index
       :long)))
-  (-seq [_ index]
-    (map
-     (partial retrieved->datom lmdb attrs)
-     (lmdb/get-range lmdb (index->dbi index) [:all] index :long)))
-  (-rseq [_ index]
-    (map
-     (partial retrieved->datom lmdb attrs)
-     (lmdb/get-range lmdb (index->dbi index) [:all-back] index :long)))
-  (-count [_ index]
-    (lmdb/entries lmdb (index->dbi index))))
+  ;; (-seq [_ index]
+  ;;   (map
+  ;;    (partial retrieved->datom lmdb attrs)
+  ;;    (lmdb/get-range lmdb (index->dbi index) [:all] index :long)))
+  ;; (-rseq [_ index]
+  ;;   (map
+  ;;    (partial retrieved->datom lmdb attrs)
+  ;;    (lmdb/get-range lmdb (index->dbi index) [:all-back] index :long)))
+  ;; (-count [_ index]
+  ;;   (lmdb/entries lmdb (index->dbi index)))
+  )
 
 (defn- insert-data
   [^Store store ^Datom d]

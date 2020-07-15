@@ -29,7 +29,7 @@
 (defn arange [start end]
   (to-array (range start end)))
 
-(defn subarr [arr start end]
+(defn subarr [arr ^long start ^long end]
   (da/acopy arr start end (da/make-array (- end start)) 0))
 
 (defn concatv [& xs]
@@ -378,7 +378,7 @@
         idxs2  (-indexes rel2 (-symbols rel2))
         arity1 (-arity rel1)
         arity2 (-arity rel2)
-        arity  (+ arity1 arity2)
+        arity  (+ ^long arity1 ^long arity2)
         target-idxs1 (arange 0 arity1)
         target-idxs2 (arange arity1 arity)
         coll   (-fold rel1
@@ -514,7 +514,7 @@
 
 
 (defn- rel->consts [rel]
-  {:pre [(== (-size rel) 1)]}
+  {:pre [(== ^long (-size rel) 1)]}
   (let [tuple (-fold rel (fn [_ t] t) nil)]
     (into {}
       (map #(vector % ((-getter rel %) tuple)) (-symbols rel)))))
@@ -529,7 +529,7 @@
 ;;       (assoc context :rules (parse-rules value))
     :else
       (let [rel (bind binding value)]
-        (if (== 1 (-size rel))
+        (if (== 1 ^long (-size rel))
           (update-in context [:consts] merge (rel->consts rel))
           (update-in context [:rels] conj rel)))))
 
@@ -640,7 +640,7 @@
 
 
 (defn hash-join-rel [context rel]
-  (if (== 0 (-size rel))
+  (if (== 0 ^long (-size rel))
     empty-context
     (let [syms                    (set (-symbols rel))
           [related-rels context*] (extract-rels context syms)]
@@ -657,7 +657,7 @@
 (defn resolve-pattern [context clause]
   (let [clause* (substitute-constants clause context)
         rel     (let [source (get-source context (:source clause))]
-                  (if (satisfies? db/ISearch source)
+                  (if (db/-searchable? source)
                     (resolve-pattern-db   source clause*)
                     (resolve-pattern-coll source clause*)))]
     (hash-join-rel context rel)))

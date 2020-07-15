@@ -121,7 +121,7 @@
       (every? number? (vals attrs-a)) ;; can’t conj into BTSetIter
       (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
                               [idx-b (attrs-a sym)]))
-            tlen    (->> (vals attrs-a) (reduce max) (inc))
+            tlen    (->> (vals attrs-a) ^long (reduce max) (inc))
             tuples' (persistent!
                       (reduce
                         (fn [acc tuple-b]
@@ -211,23 +211,23 @@
 
 (def built-in-aggregates
  (letfn [(sum [coll] (reduce + 0 coll))
-         (avg [coll] (/ (sum coll) (count coll)))
+         (avg [coll] (/ ^double (sum coll) (count coll)))
          (median
            [coll]
            (let [terms (sort coll)
                  size (count coll)
                  med (bit-shift-right size 1)]
-             (cond-> (nth terms med)
+             (cond-> ^double (nth terms med)
                (even? size)
-               (-> (+ (nth terms (dec med)))
+               (-> (+ ^double (nth terms ^long (dec med)))
                    (/ 2)))))
          (variance
            [coll]
            (let [mean (avg coll)
                  sum  (sum (for [x coll
-                                 :let [delta (- x mean)]]
+                                 :let [delta (- ^double x ^double mean)]]
                              (* delta delta)))]
-             (/ sum (count coll))))
+             (/ ^double sum (count coll))))
          (stddev
            [coll]
            (#?(:cljs js/Math.sqrt :clj Math/sqrt) (variance coll)))]
@@ -245,7 +245,7 @@
                   (vec
                     (reduce (fn [acc x]
                               (cond
-                                (< (count acc) n)
+                                (< (count acc) ^long n)
                                   (sort compare (conj acc x))
                                 (neg? (compare x (last acc)))
                                   (sort compare (conj (butlast acc) x))
@@ -260,7 +260,7 @@
                   (vec
                     (reduce (fn [acc x]
                               (cond
-                                (< (count acc) n)
+                                (< (count acc) ^long n)
                                   (sort compare (conj acc x))
                                 (pos? (compare x (first acc)))
                                   (sort compare (conj (next acc) x))
@@ -453,7 +453,7 @@
 
 (defn lookup-pattern [source pattern]
   (cond
-    (satisfies? db/ISearch source)
+    (db/-searchable? source)
       (lookup-pattern-db source pattern)
     :else
       (lookup-pattern-coll source pattern)))
@@ -670,7 +670,7 @@
         rel))))
 
 (defn resolve-pattern-lookup-refs [source pattern]
-  (if (satisfies? db/IDB source)
+  (if (db/-searchable? source)
     (let [[e a v tx] pattern]
       (->
         [(if (or (lookup-ref? e) (attr? e)) (db/entid-strict source e) e)
@@ -804,7 +804,7 @@
      (let [source   *implicit-source*
            pattern  (resolve-pattern-lookup-refs source clause)
            relation (lookup-pattern source pattern)]
-       (binding [*lookup-attrs* (if (satisfies? db/IDB source)
+       (binding [*lookup-attrs* (if (db/-searchable? source)
                                   (dynamic-lookup-attrs source pattern)
                                   *lookup-attrs*)]
          (update context :rels collapse-rels relation))))))

@@ -86,7 +86,7 @@
     (unlimited-recursion? spec)
     (PullRecursionLimit. nil)
 
-    (and (number? spec) (pos? spec))
+    (and (number? spec) (pos? ^long spec))
     (PullRecursionLimit. spec)))
 
 (defn- maybe-attr-expr?
@@ -100,7 +100,7 @@
   (let [[limit-sym attr-name-spec pos-num] spec]
     (when (limit? limit-sym)
       (if-let [attr-name (and (or (nil? pos-num)
-                                  (and (number? pos-num) (pos? pos-num)))
+                                  (and (number? pos-num) (pos? ^long pos-num)))
                               (parse-attr-name attr-name-spec))]
         (PullLimitExpr. attr-name pos-num)
         (raise "Expected [\"limit\" attr-name (positive-number | nil)]"

@@ -35,17 +35,17 @@
                  (dissoc g)
                  (assoc gen k))
              (assoc key-gen k gen)
-             (inc gen)
+             (inc ^long gen)
              limit)
       (cleanup-lru
         (->LRU (assoc key-value k v)
                (assoc gen-key gen k)
                (assoc key-gen k gen)
-               (inc gen)
+               (inc ^long gen)
                limit)))))
 
 (defn cleanup-lru [^LRU lru]
-  (if (> (count (.-key-value lru)) (.-limit lru))
+  (if (> (count (.-key-value lru)) ^long (.-limit lru))
     (let [key-value (.-key-value lru)
           gen-key   (.-gen-key lru)
           key-gen   (.-key-gen lru)
@@ -61,4 +61,3 @@
 
 (defn lru [limit]
   (->LRU {} (sorted-map) {} 0 limit))
-

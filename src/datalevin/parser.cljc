@@ -5,9 +5,6 @@
     [clojure.set :as set]
     [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]))
 
-;; TODO get ride of all satisfies
-;; See https://bsless.github.io/datahike-datalog-parser/
-
 ;; utils
 
 (declare collect-vars-acc parse-clause parse-clauses parse-binding)
@@ -16,6 +13,17 @@
   (-collect      [_ pred acc])
   (-collect-vars [_ acc])
   (-postwalk     [_ f]))
+
+(defprotocol Traversable
+  (-traversable? [_]))
+
+(extend-type #?(:clj Object :cljs object)
+  Traversable
+  (-traversable? [_] false))
+
+(extend-type nil
+  Traversable
+  (-traversable? [_] false))
 
 #?(:clj
    (defmacro deftrecord
@@ -37,6 +45,10 @@
           (~'-collect-vars [_# ~acc]
             ;; [x y z] -> (collect-vars-acc (collect-vars-acc (collect-vars-acc acc x) y) z)
             ~(reduce #(list 'datalevin.parser/collect-vars-acc %1 %2) acc fields))
+
+          Traversable
+          (~'-traversable? [_#] true)
+
           ~@rest))))
 
 (defn of-size? [form size]
@@ -54,10 +66,10 @@
   ([pred form] (collect pred form []))
   ([pred form acc]
     (cond
-      (pred form)                    (conj acc form)
-      (satisfies? ITraversable form) (-collect form pred acc)
-      (u/seqable? form)             (reduce (fn [acc form] (collect pred form acc)) acc form)
-      :else                          acc)))
+      (pred form)          (conj acc form)
+      (-traversable? form) (-collect form pred acc)
+      (u/seqable? form)    (reduce (fn [acc form] (collect pred form acc)) acc form)
+      :else                acc)))
 
 (defn distinct? [coll]
   (or (empty? coll)
@@ -66,7 +78,7 @@
 (defn postwalk [form f]
   (cond
     ;; additional handling for maps and records that keeps structure type
-    (satisfies? ITraversable form) (f (-postwalk form f))
+    (-traversable? form) (f (-postwalk form f))
     (map? form)  (f (reduce (fn [form [k v]] (assoc form k (postwalk v f))) form form))
     ;; rest comes from clojure.core
     (seq? form)  (f (map #(postwalk % f) form))
@@ -476,7 +488,7 @@
       (into acc (:vars form))
     (instance? Or form)
       (collect-vars-acc acc (:rule-vars form))
-    (satisfies? ITraversable form)
+    (-traversable? form)
       (-collect-vars form acc)
     (sequential? form)
       (reduce collect-vars-acc acc form)

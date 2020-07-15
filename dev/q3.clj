@@ -1,8 +1,8 @@
-(ns datascript.query-v3
+(ns datalevin.query-v3
   (:require
-    [datascript.core :as d]
-    [datascript.query-v3 :as q]
-     datascript.perf))
+    [datalevin.core :as d]
+    [datalevin.query-v3 :as q]
+    [datalevin-bench.perf :as perf]))
 
 (comment
 
@@ -26,8 +26,8 @@
      (repeatedly 10 (fn [] [(rand-int 10) (rand-nth [:a :b :c :d]) ]))
      1))
 
-(require 'datascript.perf :reload-all)
-(require '[datascript.query-v3 :as q] :reload)
+(require 'datalevin.perf :reload-all)
+(require '[datalevin.query-v3 :as q] :reload)
 
 (perf/with-debug
   (let [entities [{:db/id 1 :name "Ivan" :age 10}
@@ -60,9 +60,9 @@
            (not [?e  :age 10]
                 [?e2 :age 20])]
          db)))
-                  
 
-(require '[datascript.query-v3 :as q] :reload-all)
+
+(require '[datalevin.query-v3 :as q] :reload-all)
 
 (defn bench [name q & args]
   (println "\n---\n")
@@ -72,11 +72,11 @@
 
 (def db (d/db-with (d/empty-db) (repeatedly 2000 random-man)))
 
-(require 'datascript.perf :reload-all)
-(require '[datascript.query-v3 :as q] :reload)
+(require 'datalevin.perf :reload-all)
+(require '[datalevin.query-v3 :as q] :reload)
 
-;; (require 'datascript.test.query-not :reload)
-;; (clojure.test/test-ns 'datascript.test.query-not)
+;; (require 'datalevin.test.query-not :reload)
+;; (clojure.test/test-ns 'datalevin.test.query-not)
 
 (bench "pred"
   '[:find ?e ?a
@@ -102,7 +102,7 @@
        db)
 
 (bench "q5"
-        '[:find ?e ?a ?s ?w ?ln 
+        '[:find ?e ?a ?s ?w ?ln
          :where [?e :name "Ivan"]
                 [?e :age ?a]
                 [?e :sex ?s]

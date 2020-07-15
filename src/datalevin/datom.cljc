@@ -168,7 +168,7 @@
         (recur
           (next comps)
           `(let [c# ~(first comps)]
-             (if (== 0 c#)
+             (if (= 0 (long c#))
                ~res
                c#)))
         res))))
@@ -183,24 +183,31 @@
 
 (defn cmp-datoms-eavt [^Datom d1, ^Datom d2]
   (combine-cmp
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
-    (cmp (.-a d1) (.-a d2))
-    (cmp (.-v d1) (.-v d2))
-    (#?(:clj Long/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+   (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+   (cmp (.-a d1) (.-a d2))
+   (cmp (.-v d1) (.-v d2))
+   (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defn cmp-datoms-aevt [^Datom d1, ^Datom d2]
   (combine-cmp
     (cmp (.-a d1) (.-a d2))
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
     (cmp (.-v d1) (.-v d2))
-    (#?(:clj Long/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defn cmp-datoms-avet [^Datom d1, ^Datom d2]
   (combine-cmp
     (cmp (.-a d1) (.-a d2))
     (cmp (.-v d1) (.-v d2))
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj Long/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+
+(defn cmp-datoms-vaet [^Datom d1, ^Datom d2]
+  (combine-cmp
+   (cmp (.-v d1) (.-v d2))
+   (cmp (.-a d1) (.-a d2))
+   (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+   (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 ;; fast versions without nil checks
 
@@ -213,58 +220,30 @@
      :clj
      (.compareTo ^Comparable a1 a2)))
 
-(defn cmp-datoms-eav-quick [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
-    (cmp-attr-quick (.-a d1) (.-a d2))
-    (compare (.-v d1) (.-v d2))))
-
 (defn cmp-datoms-eavt-quick [^Datom d1, ^Datom d2]
   (combine-cmp
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
     (cmp-attr-quick (.-a d1) (.-a d2))
     (compare (.-v d1) (.-v d2))
-    (#?(:clj Long/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defn cmp-datoms-aevt-quick [^Datom d1, ^Datom d2]
   (combine-cmp
     (cmp-attr-quick (.-a d1) (.-a d2))
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
     (compare (.-v d1) (.-v d2))
-    (#?(:clj Long/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defn cmp-datoms-avet-quick [^Datom d1, ^Datom d2]
   (combine-cmp
     (cmp-attr-quick (.-a d1) (.-a d2))
     (compare (.-v d1) (.-v d2))
-    (#?(:clj Long/compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj Long/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
-(defn diff-sorted [a b cmp]
-  (loop [only-a []
-         only-b []
-         both   []
-         a      a
-         b      b]
-    (cond
-      (empty? a)
-      [(not-empty only-a) (not-empty (into only-b b)) (not-empty both)]
-
-      (empty? b)
-      [(not-empty (into only-a a)) (not-empty only-b) (not-empty both)]
-
-      :else
-      (let [first-a (first a)
-            first-b (first b)
-            diff    (cmp first-a first-b)]
-        (cond
-          (== diff 0)
-          (recur only-a only-b (conj both first-a) (next a) (next b))
-
-          (< diff 0)
-          (recur (conj only-a first-a) only-b both (next a) b)
-
-          (> diff 0)
-          (recur only-a (conj only-b first-b) both a (next b)))))))
-
-;; ----------------------------------------------------------------------------
+(defn cmp-datoms-vaet-quick [^Datom d1, ^Datom d2]
+  (combine-cmp
+   (compare (.-v d1) (.-v d2))
+   (cmp-attr-quick (.-a d1) (.-a d2))
+   (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+   (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))

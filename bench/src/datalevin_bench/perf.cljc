@@ -103,10 +103,10 @@
 
 ;; minibench
 
-; #?(:clj
-;   (defmacro minibench [spec & body]
-;    `(let [_#     (dotime *warmup-t* ~@body)
-;           avg-t# (dotime *bench-t* ~@body)]
-;       (println (format-time avg-t#) ~spec "avg time")
-;       (with-debug
-;         ~@body))))
+#?(:clj
+  (defmacro minibench [spec & body]
+   `(let [_#     (dotime *warmup-t* ~@body)
+          avg-t# (dotime *bench-t* ~@body)]
+      (println (format-time avg-t#) ~spec "avg time")
+      (with-debug
+        ~@body))))

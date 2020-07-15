@@ -207,8 +207,10 @@
     [this dbi-name k]
     [this dbi-name k k-type]
     [this dbi-name k k-type v-type]
-    "Get the value of a key, k-type and v-type can be :data (default), :byte,
-     :bytes, :attr, :datom or :long")
+    [this dbi-name k k-type v-type ignore-key?]
+    "Get kv pair of the specified key, k-type and v-type can be
+     :data (default), :byte, :bytes, :attr, :datom or :long;
+     if ignore-key? (default true), only return value")
   (get-first
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
@@ -267,10 +269,12 @@
   (.setMapSize env (* 10 (-> env .info .mapSize))))
 
 (defn- fetch-value
-  [^DBI dbi ^Rtx rtx k k-type v-type]
+  [^DBI dbi ^Rtx rtx k k-type v-type ignore-key?]
   (put-key rtx k k-type)
   (when-let [^ByteBuffer bb (get dbi rtx)]
-    (b/read-buffer bb v-type)))
+    (if ignore-key?
+      (b/read-buffer bb v-type)
+      [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
 
 (defn- fetch-first
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -401,14 +405,16 @@
       #_(catch Exception e
         (raise "Fail to transact: " (ex-message e) {:txs txs}))))
   (get-value [this dbi-name k]
-    (get-value this dbi-name k :data :data))
+    (get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]
-    (get-value this dbi-name k k-type :data))
+    (get-value this dbi-name k k-type :data true))
   (get-value [this dbi-name k k-type v-type]
+    (get-value this dbi-name k k-type v-type true))
+  (get-value [this dbi-name k k-type v-type ignore-key?]
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
-        (fetch-value dbi rtx k k-type v-type)
+        (fetch-value dbi rtx k k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-value: " (ex-message e)
                  {:dbi dbi-name :k k :k-type k-type :v-type v-type}))

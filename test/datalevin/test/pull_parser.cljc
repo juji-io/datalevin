@@ -15,7 +15,7 @@
     '[:db/id :foo/bar]
     (dpp/->PullSpec false {:db/id   {:attr :db/id}
                          :foo/bar {:attr :foo/bar}})
-    
+
     '[(limit :foo 1)]
     (dpp/->PullSpec false {:foo {:attr :foo :limit 1}})
 
@@ -51,5 +51,3 @@
 (deftest test-parse-bad-default
   (is
    (thrown? Throwable (dpp/parse-pull '[(default 1 :bar)]))))
-
-#_(t/test-ns 'datalevin.test.pull-parser)

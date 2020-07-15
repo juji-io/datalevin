@@ -111,11 +111,11 @@
 
 (def default-benchmarks
   [
-   "add-1"
-   "add-5"
-   "add-all"
-   "init"
-   "retract-5"
+   ;; "add-1"
+   ;; "add-5"
+   ;; "add-all"
+   ;; "init"
+   ;; "retract-5"
    "q1"
    "q2"
    "q3"
@@ -126,7 +126,8 @@
 
 (def default-versions
   [;["latest" "datomic"]
-   ["0.18.13" "datascript"]
+   ;["0.18.13" "datascript"]
+   ;["latest" "datascript"]
    ["latest" "datalevin"]])
 
 

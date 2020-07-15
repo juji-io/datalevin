@@ -450,6 +450,24 @@
 
 (deftype Retrieved [e a v])
 
+(defn- indexable->retrieved
+  [^Indexable i]
+  (->Retrieved (.-e i) (.-a i) (.-v i)))
+
+(defn expected-return
+  "Given what's put in, return the expected output from storage"
+  [x x-type]
+  (case x-type
+    :eav   (indexable->retrieved x)
+    :eavt  (indexable->retrieved x)
+    :aev   (indexable->retrieved x)
+    :aevt  (indexable->retrieved x)
+    :ave   (indexable->retrieved x)
+    :avet  (indexable->retrieved x)
+    :vae   (indexable->retrieved x)
+    :vaet  (indexable->retrieved x)
+    x))
+
 (defn- get-eav
   [bf]
   (let [e (get-long bf)
