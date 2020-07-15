@@ -43,7 +43,7 @@
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
-  (sh "lein" "test-clj"))
+  (sh "lein" "test"))
 
 (defn make-commit []
   (println "\n\n[ Making a commit ]\n")

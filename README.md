@@ -21,13 +21,16 @@ Independent from Datalog, Datalevin can also be used as a key-value store for [E
 Datalevin uses cover index and has no write-ahead log, so once the data
 are written, they are indexed. There is no separate processes for indexing, compaction or any such database maintenance jobs that compete with your applications for resources.
 
-## :tada: Usage
-
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. Running the
 benchmark suite of Datascript, here is how it looks.
+
+<p align="center">
+<img src="datalevin-bench-query-07-15-2020.png" alt="query benchmark" height="200"></img>
+<img src="datalevin-bench-write-07-15-2020.png" alt="write benchmark" height="200"></img>
+</p>
 
 Considering that we are comparing a disk store with a memory store, the query time of Datalevin is not bad.
 
@@ -85,6 +88,8 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
 * If you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+
+Version: 0.1.0
 
 ## License
 
