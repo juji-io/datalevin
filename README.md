@@ -2,7 +2,7 @@
 <h1 align="center">Datalevin</h1>
 <p align="center"> 🧘 Simple durable Datalog database for everyone 💽 </p>
 <p align="center">
-<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg&color=success" alt="datalevin on clojars"></img></a>
+<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg" alt="datalevin on clojars"></img></a>
 </p>
 
 ## :hear_no_evil: What and why
