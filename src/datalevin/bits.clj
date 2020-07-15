@@ -159,7 +159,7 @@
 (defn- put-byte
   [^ByteBuffer bb b]
   (check-buffer-overflow 1 (.remaining bb))
-  (.put bb ^byte (byte b)))
+  (.put bb ^byte (unchecked-byte b)))
 
 (defn- put-data
   [^ByteBuffer bb x]
