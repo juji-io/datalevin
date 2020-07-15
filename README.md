@@ -3,7 +3,6 @@
 <p align="center"> 🧘 Simple durable Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg" alt="datalevin on clojars"></img></a>o
-<a href="https://cljdoc.org/d/datalevin/datalevin/CURRENT"><img src="https://cljdoc.org/badge/datalevin/datalevin" alt="cljdoc"></img></a>
 </p>
 
 ## :hear_no_evil: What and why
