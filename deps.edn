@@ -19,7 +19,6 @@
     :dev {
       :extra-paths ["dev" "target/classes"]
       :extra-deps {
-        org.clojure/clojurescript {:mvn/version "1.10.520"}
         org.clojure/tools.namespace {:mvn/version "0.2.11"}
       }
     }
@@ -27,9 +26,6 @@
     :test {
       :extra-paths ["test"]
       :extra-deps {
-        org.clojure/clojurescript {:mvn/version "1.10.520"}
-        lambdaisland/kaocha       {:mvn/version "0.0-389"}
-        lambdaisland/kaocha-cljs  {:mvn/version "0.0-21"}
       }
     }
 
