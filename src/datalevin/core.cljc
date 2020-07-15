@@ -161,7 +161,7 @@
 
 
 (def ^{:arglists '([x])
-       :doc "Returns `true` if the given value is an immutable database, `false` otherwise."}
+       :doc "Returns `true` if the given value is an database, `false` otherwise."}
   db? db/db?)
 
 
@@ -190,7 +190,7 @@
 ; Changing DB
 
 (defn with
-  "Same as [[transact!]], but applies to an immutable database value. Returns transaction report (see [[transact!]])."
+  "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
   ([db tx-data] (with db tx-data nil))
   ([db tx-data tx-meta]
    {:pre [(db/db? db)]}
@@ -203,7 +203,7 @@
 
 
 (defn db-with
-  "Applies transaction to an immutable db value, returning new immutable db value. Same as `(:db-after (with db tx-data))`."
+  "Applies transaction. Return the db."
   [db tx-data]
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
@@ -370,7 +370,7 @@
 
 
 (defn conn-from-db
-  "Creates a mutable reference to a given immutable database. See [[create-conn]]."
+  "Creates a mutable reference to a given database. See [[create-conn]]."
   [db]
   (atom db :meta { :listeners (atom {}) }))
 
@@ -378,17 +378,19 @@
 (defn conn-from-datoms
   "Creates an empty DB and a mutable reference to it. See [[create-conn]]."
   ([datoms]        (conn-from-db (init-db datoms)))
-  ([datoms schema] (conn-from-db (init-db datoms schema))))
+  ([datoms schema] (conn-from-db (init-db datoms schema)))
+  ([datoms schema dir] (conn-from-db (init-db datoms schema dir))))
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to an empty immutable database.
+  "Creates a mutable reference (a “connection”) to an empty database.
 
-   Connections are lightweight in-memory structures (~atoms) with direct support of transaction listeners ([[listen!]], [[unlisten!]]) and other handy DataScript APIs ([[transact!]], [[reset-conn!]], [[db]]).
+   Connections are lightweight in-memory structures (~atoms) DataScript APIs ([[transact!]], [[db]]).
 
-   To access underlying immutable DB value, deref: `@conn`."
+   To access underlying DB, deref: `@conn`."
   ([]       (conn-from-db (empty-db)))
-  ([schema] (conn-from-db (empty-db schema))))
+  ([schema] (conn-from-db (empty-db schema)))
+  ([schema dir] (conn-from-db (empty-db schema))))
 
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
@@ -580,7 +582,7 @@
 
 
 (defn db
-  "Returns the underlying immutable database value from a connection.
+  "Returns the underlying database value from a connection.
 
    Exists for Datomic API compatibility. Prefer using `@conn` directly if possible."
   [conn]
