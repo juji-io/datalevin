@@ -1,3 +1,0 @@
-{
-  :externs ["datalevin/externs.js"]
-}
