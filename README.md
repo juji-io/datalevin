@@ -42,6 +42,7 @@ Use as a Datalog store:
 (def conn (d/create-conn schema "/tmp/datalevin-test"))
 
 ;; transact some data
+;; notice :nation is not defined in schema, so it will be treated as an EDN blob
 (d/transact! conn
              [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
               {:name "Peirce", :db/id -2, :nation "france"}
