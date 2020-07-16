@@ -515,40 +515,44 @@
   "Put the given type of data `x` in buffer `bf`, `x-type` can be one of
   `:data` (default), `:long`, `:byte`, `:bytes`, `:datom`, `:attr` or
   index type `:eav`, `:aev`, `:ave`, or `:vae`"
-  [bf x x-type]
-  (case x-type
-    :long  (put-long bf x)
-    :byte  (put-byte bf x)
-    :bytes (put-bytes bf x)
-    :attr  (put-attr bf x)
-    :datom (put-datom bf x)
-    :eav   (put-eav bf x)
-    :eavt  (put-eav bf x)
-    :aev   (put-aev bf x)
-    :aevt  (put-aev bf x)
-    :ave   (put-ave bf x)
-    :avet  (put-ave bf x)
-    :vae   (put-vae bf x)
-    :vaet  (put-vae bf x)
-    (put-data bf x)))
+  ([bf x]
+   (put-buffer bf x :data))
+  ([bf x x-type]
+   (case x-type
+     :long  (put-long bf x)
+     :byte  (put-byte bf x)
+     :bytes (put-bytes bf x)
+     :attr  (put-attr bf x)
+     :datom (put-datom bf x)
+     :eav   (put-eav bf x)
+     :eavt  (put-eav bf x)
+     :aev   (put-aev bf x)
+     :aevt  (put-aev bf x)
+     :ave   (put-ave bf x)
+     :avet  (put-ave bf x)
+     :vae   (put-vae bf x)
+     :vaet  (put-vae bf x)
+     (put-data bf x))))
 
 (defn read-buffer
   "Get the given type of data from buffer `bf`, `v-type` can be one of
   `:data` (default), `:long`, `:byte`, `:bytes`, `:datom`, `:attr`, or
   index type `:eav`, `:aev`, `:ave`, or `:vae`"
-  [^ByteBuffer bb v-type]
-  (case v-type
-    :long  (get-long bb)
-    :byte  (get-byte bb)
-    :bytes (get-bytes bb)
-    :attr  (get-attr bb)
-    :datom (get-datom bb)
-    :eav   (get-eav bb)
-    :eavt  (get-eav bb)
-    :aev   (get-aev bb)
-    :aevt  (get-aev bb)
-    :ave   (get-ave bb)
-    :avet  (get-ave bb)
-    :vae   (get-vae bb)
-    :vaet  (get-vae bb)
-    (get-data bb)))
+  ([bf]
+   (read-buffer bf :data))
+  ([^ByteBuffer bf v-type]
+   (case v-type
+     :long  (get-long bf)
+     :byte  (get-byte bf)
+     :bytes (get-bytes bf)
+     :attr  (get-attr bf)
+     :datom (get-datom bf)
+     :eav   (get-eav bf)
+     :eavt  (get-eav bf)
+     :aev   (get-aev bf)
+     :aevt  (get-aev bf)
+     :ave   (get-ave bf)
+     :avet  (get-ave bf)
+     :vae   (get-vae bf)
+     :vaet  (get-vae bf)
+     (get-data bf))))
