@@ -82,6 +82,8 @@ Use as a key value store:
                              :source "The Hitchhiker's Guide to the Galaxy"}]])
 
 ;; get the value with the key
+(l/get-value db table :datalevin)
+;; => "Hello, world!"
 (l/get-value db table 42)
 ;; => {:saying "So Long, and thanks for all the fish", :source "The Hitchhiker's Guide to the Galaxy"}
 
