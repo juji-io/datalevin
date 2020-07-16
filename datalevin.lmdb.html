@@ -12,10 +12,19 @@
 <p>Only the value will be returned if <code>ignore-key?</code> is <code>true</code>; If value is to be ignored, put <code>:ignore</code> as <code>v-type</code></p></div></div></div><div class="public anchor" id="var-get-value"><h3>get-value</h3><div class="usage"><code>(get-value this dbi-name k)</code><code>(get-value this dbi-name k k-type)</code><code>(get-value this dbi-name k k-type v-type)</code><code>(get-value this dbi-name k k-type v-type ignore-key?)</code></div><div class="doc"><div class="markdown"><p>Get kv pair of the specified key <code>k</code>, <code>k-type</code> and <code>v-type</code> can be <code>:data</code> (default), <code>:byte</code>, <code>:bytes</code>, <code>:attr</code>, <code>:datom</code> or <code>:long</code>;</p>
 <p>If <code>ignore-key?</code> is true (default <code>true</code>), only return the value, otherwise return <code>[k v]</code>, where <code>v</code> is the value</p>
 <p>Examples:</p>
-<p>(get-value lmdb “a” 1) ;;==&gt; 2</p>
-<p>(get-value lmdb “a” :annunaki/enki :attr :data) ;;==&gt; true</p>
-<p>;; return key value pair (get-value lmdb “a” 1 :data :data false) ;;==&gt; [1 2]</p>
-<p>;; key doesn’t exist (get-value lmdb “a” 2)</p></div></div></div><div class="public anchor" id="var-open-dbi"><h3>open-dbi</h3><div class="usage"><code>(open-dbi this dbi-name)</code><code>(open-dbi this dbi-name key-size)</code><code>(open-dbi this dbi-name key-size val-size)</code><code>(open-dbi this dbi-name key-size val-size flags)</code></div><div class="doc"><div class="markdown"><p>Open a named dbi (i.e. sub-db) in the LMDB DB</p></div></div></div><div class="public anchor" id="var-range-filter"><h3>range-filter</h3><div class="usage"><code>(range-filter this dbi-name pred k-range)</code><code>(range-filter this dbi-name pred k-range k-type)</code><code>(range-filter this dbi-name pred k-range k-type v-type)</code><code>(range-filter this dbi-name pred k-range k-type v-type ignore-key?)</code></div><div class="doc"><div class="markdown"><p>Return a seq of kv pair in the specified key range, for only those return true value for <code>(pred x)</code>, where <code>pred</code> is a function, and <code>x</code> is an <code>IMapEntry</code>;</p>
+<pre><code> (get-value lmdb "a" 1)
+ ;;==&gt; 2
+
+ (get-value lmdb "a" :annunaki/enki :attr :data)
+ ;;==&gt; true
+
+ ;; return key value pair
+ (get-value lmdb "a" 1 :data :data false)
+ ;;==&gt; [1 2]
+
+ ;; key doesn't exist
+ (get-value lmdb "a" 2)
+</code></pre></div></div></div><div class="public anchor" id="var-open-dbi"><h3>open-dbi</h3><div class="usage"><code>(open-dbi this dbi-name)</code><code>(open-dbi this dbi-name key-size)</code><code>(open-dbi this dbi-name key-size val-size)</code><code>(open-dbi this dbi-name key-size val-size flags)</code></div><div class="doc"><div class="markdown"><p>Open a named dbi (i.e. sub-db) in the LMDB DB</p></div></div></div><div class="public anchor" id="var-range-filter"><h3>range-filter</h3><div class="usage"><code>(range-filter this dbi-name pred k-range)</code><code>(range-filter this dbi-name pred k-range k-type)</code><code>(range-filter this dbi-name pred k-range k-type v-type)</code><code>(range-filter this dbi-name pred k-range k-type v-type ignore-key?)</code></div><div class="doc"><div class="markdown"><p>Return a seq of kv pair in the specified key range, for only those return true value for <code>(pred x)</code>, where <code>pred</code> is a function, and <code>x</code> is an <code>IMapEntry</code>;</p>
 <p><code>k-range</code> is a vector <code>[range-type k1 k2]</code>, <code>range-type</code> can be one of <code>:all</code>, <code>:at-least</code>, <code>:at-most</code>, <code>:closed</code>, <code>:closed-open</code>, <code>:greater-than</code>, <code>:less-than</code>, <code>:open</code>, <code>:open-closed</code>, plus backward variants that put a <code>-back</code> suffix to each of the above, e.g. <code>:all-back</code>;</p>
 <p><code>k-type</code> and <code>v-type</code> indicate the data type, and they can be <code>:data</code> (default), <code>:long</code>, <code>:byte</code>, <code>:bytes</code>, <code>:datom</code>, or <code>:attr</code>;</p>
 <p>Only the value will be returned if <code>ignore-key?</code> is <code>true</code>; If value is to be ignored, put <code>:ignore</code> as <code>v-type</code></p></div></div></div><div class="public anchor" id="var-transact"><h3>transact</h3><div class="usage"><code>(transact this txs)</code></div><div class="doc"><div class="markdown"><p>Update DB, insert or delete key value pairs.</p>
@@ -26,6 +35,20 @@
 <p><code>v-type</code> indicates the type of <code>v</code> can be one of <code>:data</code> (default), <code>:long</code>, <code>:byte</code>, <code>:bytes</code>, <code>:datom</code>, or <code>attr</code></p>
 <p><code>put-flags</code> is a vector of <a href="https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/org/lmdbjava/PutFlags.html">LMDB put flags</a>.</p>
 <p>Example:</p>
-<p>(transact lmdb  [ [:put “a” 1 2]
-            [:put “a” ’a 1]  [:put “a” 5 {}]
-            [:put “a” :annunaki/enki true :attr :data]  [:put “a” :datalevin [</p></div></div></div></div></div><div class="src-link"><a href="https://github.com/juji-io/datalevin/blob/master/src/datalevin/lmdb.clj#L192">view source</a></div></div><div class="public anchor" id="var-open-lmdb"><h3>open-lmdb</h3><div class="usage"><code>(open-lmdb dir)</code><code>(open-lmdb dir size flags)</code></div><div class="doc"><div class="markdown"><p>Open an LMDB database. <code>dir</code> is a string path where the data are to be stored. <code>size</code> is the initial DB size in MB. <code>flags</code> are <a href="https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html">LMDB EnvFlags</a>.</p></div></div><div class="src-link"><a href="https://github.com/juji-io/datalevin/blob/master/src/datalevin/lmdb.clj#L557">view source</a></div></div></div></body></html>
+<pre><code>(transact lmdb
+          [ [:put "a" 1 2]
+            [:put "a" 'a 1]
+            [:put "a" 5 {}]
+            [:put "a" :annunaki/enki true :attr :data]
+            [:put "a" :datalevin ["hello" "world"]]
+            [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+            [:put "a" (byte 0x01) #{1 2} :byte :data]
+            [:put "a" (byte-array [0x41 0x42]) :bk :bytes :data]
+            [:put "a" [-1 -235254457N] 5]
+            [:put "a" :a 4]
+            [:put "a" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+            [:put "a" :long 1 :data :long]
+            [:put "a" 2 3 :long :long]
+            [:del "a" 1]
+            [:del "a" :non-exist] ])
+</code></pre></div></div></div></div></div><div class="src-link"><a href="https://github.com/juji-io/datalevin/blob/master/src/datalevin/lmdb.clj#L192">view source</a></div></div><div class="public anchor" id="var-open-lmdb"><h3>open-lmdb</h3><div class="usage"><code>(open-lmdb dir)</code><code>(open-lmdb dir size flags)</code></div><div class="doc"><div class="markdown"><p>Open an LMDB database. <code>dir</code> is a string path where the data are to be stored. <code>size</code> is the initial DB size in MB. <code>flags</code> are <a href="https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html">LMDB EnvFlags</a>.</p></div></div><div class="src-link"><a href="https://github.com/juji-io/datalevin/blob/master/src/datalevin/lmdb.clj#L557">view source</a></div></div></div></body></html>
