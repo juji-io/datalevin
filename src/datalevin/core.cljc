@@ -390,7 +390,7 @@
    To access underlying DB, deref: `@conn`."
   ([]       (conn-from-db (empty-db)))
   ([schema] (conn-from-db (empty-db schema)))
-  ([schema dir] (conn-from-db (empty-db schema))))
+  ([schema dir] (conn-from-db (empty-db schema dir))))
 
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
