@@ -4,6 +4,7 @@
     [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
     [datalevin.db :as db]
     [datalevin.datom :as dd]
+    [datalevin.storage :as s]
     [datalevin.constants :refer [tx0]]
     [datalevin.pull-api :as dp]
     [datalevin.query :as dq]
@@ -11,6 +12,7 @@
   #?(:clj
     (:import
       [datalevin.impl.entity Entity]
+      [datalevin.storage Store]
       [java.util UUID])))
 
 
@@ -214,7 +216,7 @@
 (defn datoms
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
-   Datoms are sorted in index sort order. Possible `index` values are: `:eavt`, `:aevt`, `:avet`.
+   Datoms are sorted in index sort order. Possible `index` values are: `:eavt`, `:aevt`, `:avet`, `:vaet`, or without the `t` at the end, e.g. `:eav`.
 
    Usage:
 
@@ -542,7 +544,7 @@
 
 ; Data Readers
 
-(def ^{:doc "Data readers for EDN readers. In CLJS they’re registered automatically. In CLJ, if `data_readers.clj` do not work, you can always do
+(def ^{:doc "Data readers for EDN readers. If `data_readers.clj` do not work, you can always do
 
              ```
              (clojure.edn/read-string {:readers data-readers} \"...\")
@@ -589,6 +591,13 @@
   {:pre [(conn? conn)]}
   @conn)
 
+(defn close
+  "Close the connection"
+  [conn]
+  (s/close (.-store @conn))
+  (reset! conn nil))
+
+
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
@@ -632,9 +641,7 @@
 
 
 (defn transact-async
-  "In CLJ, calls [[transact!]] on a future thread pool, returning immediately.
-
-   In CLJS, just calls [[transact!]] and returns a realized future."
+  "Calls [[transact!]] on a future thread pool, returning immediately."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta]
     {:pre [(conn? conn)]}

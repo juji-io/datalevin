@@ -1,4 +1,4 @@
-(ns datalevin.util
+(ns ^:no-doc datalevin.util
   (:require [clojure.walk]
             [taoensso.nippy :as nippy])
   (:refer-clojure :exclude [seqable?]))

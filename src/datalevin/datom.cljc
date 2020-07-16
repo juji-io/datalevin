@@ -1,4 +1,4 @@
-(ns datalevin.datom
+(ns ^:no-doc datalevin.datom
   (:require
    #?(:cljs [goog.array :as garray])
    [datalevin.constants :refer [tx0]]

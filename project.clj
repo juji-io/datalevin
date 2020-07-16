@@ -7,7 +7,14 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :dependencies [[org.clojure/clojure "1.10.1" :scope "provided"]
                  [persistent-sorted-set "0.1.2"]
-                 [org.lmdbjava/lmdbjava "0.8.1"]
+                 [org.lmdbjava/lmdbjava "0.8.1"
+                  ;; uncomment when run lein codox
+                  ;; :exclusions
+                  ;; [org.ow2.asm/asm-analysis
+                  ;;  org.ow2.asm/asm-commons
+                  ;;  org.ow2.asm/asm-tree
+                  ;;  org.ow2.asm/asm-util]
+                  ]
                  [com.taoensso/nippy "2.14.0"]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.0.0"]
                                   [criterium "0.4.6"]
@@ -19,7 +26,9 @@
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password
                                     :sign-releases false}]]
-  :global-vars {*warn-on-reflection*   true
-                *print-namespace-maps* false
+  :plugins [[lein-codox "0.10.7"]]
+  :codox {:output-path "codox"}
+  :global-vars {*print-namespace-maps* false
                 ;; *unchecked-math* :warn-on-boxed
+                ;; *warn-on-reflection*   true
                 })

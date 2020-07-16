@@ -1,4 +1,4 @@
-(ns datalevin.bits
+(ns ^:no-doc datalevin.bits
   "low level bits, binary encoding, etc."
   (:require [clojure.java.io :as io]
             [datalevin.datom :as d]

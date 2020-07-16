@@ -12,18 +12,18 @@
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer]))
 
-(def default-env-flags [EnvFlags/MDB_NOTLS
-                        EnvFlags/MDB_NORDAHEAD])
+(def ^:no-doc default-env-flags [EnvFlags/MDB_NOTLS
+                                 EnvFlags/MDB_NORDAHEAD])
 
-(def default-dbi-flags [DbiFlags/MDB_CREATE])
+(def ^:no-doc default-dbi-flags [DbiFlags/MDB_CREATE])
 
-(defprotocol IBuffer
+(defprotocol ^:no-doc IBuffer
   (put-key [this data k-type]
     "put data in key buffer, k-type can be :long, :byte, :bytes, :data")
   (put-val [this data v-type]
     "put data in val buffer, v-type can be :long, :byte, :bytes, :data"))
 
-(defprotocol IRange
+(defprotocol ^:no-doc IRange
   (put-start-key [this data k-type]
     "put data in start-key buffer, k-type can be :long, :byte, :bytes, :data
      or index type, :eav etc.")
@@ -31,16 +31,16 @@
     "put data in stop-key buffer, k-type can be :long, :byte, :bytes, :data
     or index type, :eav etc."))
 
-(defprotocol IRtx
+(defprotocol ^:no-doc IRtx
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
 
-(deftype Rtx [^Txn txn
-              ^:volatile-mutable use
-              ^ByteBuffer kb
-              ^ByteBuffer start-kb
-              ^ByteBuffer stop-kb]
+(deftype ^:no-doc Rtx [^Txn txn
+                       ^:volatile-mutable use
+                       ^ByteBuffer kb
+                       ^ByteBuffer start-kb
+                       ^ByteBuffer stop-kb]
   IBuffer
   (put-key [_ x t]
     (b/put-buffer kb x t))
@@ -73,14 +73,14 @@
         (set! use true)
         this))))
 
-(defprotocol IRtxPool
+(defprotocol ^:no-doc IRtxPool
   (close-pool [this] "Close all transactions in the pool")
   (new-rtx [this] "Create a new read-only transaction")
   (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
 
-(deftype RtxPool [^Env env
-                  ^ConcurrentHashMap rtxs
-                  ^:volatile-mutable ^long cnt]
+(deftype ^:no-doc RtxPool [^Env env
+                           ^ConcurrentHashMap rtxs
+                           ^:volatile-mutable ^long cnt]
   IRtxPool
   (close-pool [this]
     (locking this
@@ -107,7 +107,7 @@
             (new-rtx this)
             (recur (long (inc i'))))))))
 
-(defprotocol IKV
+(defprotocol ^:no-doc IKV
   (put [this txn] [this txn put-flags]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
@@ -136,7 +136,7 @@
     :open-closed       (KeyRange/openClosed kb1 kb2)
     :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))
 
-(deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
+(deftype ^:no-doc DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [_ x t]
     (b/put-buffer kb x t))
@@ -173,7 +173,7 @@
         res)))
   (iterate [this rtx range-type]
     (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
-          ^ByteBuffer stop-kb (.-stop-kb ^Rtx rtx)]
+          ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
       (.flip start-kb)
       (.flip stop-kb)
       (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
@@ -196,13 +196,14 @@
     [this dbi-name key-size]
     [this dbi-name key-size val-size]
     [this dbi-name key-size val-size flags]
-    "Open a named dbi (i.e. sub-db) in the LMDB")
+    "Open a named dbi (i.e. sub-db) in the LMDB DB")
   (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
-  (entries [this dbi-name] "Get the number of data entries in a dbi")
+  (entries [this dbi-name] "Get the number of data entries in a DBI")
   (transact [this txs]
-    "Update db, txs is a seq of [op dbi-name k v k-type v-type put-flags]
-     when op is :put; [op dbi-name k k-type] when op is :del;
-     See `bits/put-buffer` for allowed k-type and v-type")
+    "Update DB. txs is a seq of [op dbi-name k v k-type v-type put-flags]
+     when op is :put; [op dbi-name k k-type] when op is :del; k-type can be
+     one of :long, :byte, :bytes, :data, :datom, :attr or index type :eav,
+     :aev, :ave, or :vae")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]
@@ -288,8 +289,8 @@
         (let [kv (map-entry (.next iter))
               v  (when (not= v-type :ignore) (b/read-buffer (val kv) v-type))]
           (if ignore-key?
-           v
-           [(b/read-buffer (key kv) k-type) v]))))))
+            v
+            [(b/read-buffer (key kv) k-type) v]))))))
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -403,7 +404,7 @@
         (up-db-size env)
         (transact this txs))
       #_(catch Exception e
-        (raise "Fail to transact: " (ex-message e) {:txs txs}))))
+          (raise "Fail to transact: " (ex-message e) {:txs txs}))))
   (get-value [this dbi-name k]
     (get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]
@@ -485,7 +486,8 @@
         (finally (reset rtx))))))
 
 (defn open-lmdb
-  "Open an LMDB env"
+  "Open an LMDB database. dir is a path the data are to be stored.
+  size is the initial DB size in MB. flags are LMDB EnvFlags."
   ([dir]
    (open-lmdb dir c/+init-db-size+ default-env-flags))
   ([dir size flags]

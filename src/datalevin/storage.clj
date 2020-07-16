@@ -1,4 +1,4 @@
-(ns datalevin.storage
+(ns ^:no-doc datalevin.storage
   "storage layer of datalevin"
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]

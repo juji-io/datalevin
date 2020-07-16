@@ -1,4 +1,4 @@
-(ns datalevin.constants
+(ns ^:no-doc datalevin.constants
   (:import [java.util UUID Arrays]))
 
 ;; datom

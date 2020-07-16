@@ -36,3 +36,4 @@ reading
 .lein-failures
 .nrepl-port
 .cpcache/
+/codox

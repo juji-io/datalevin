@@ -24,6 +24,77 @@ Independent from Datalog, Datalevin can also be used as a key-value store for [E
 Datalevin uses cover index and has no write-ahead log, so once the data
 are written, they are indexed. There is no separate processes for indexing, compaction or any such database maintenance jobs that compete with your applications for resources.
 
+## :tada: Usage
+
+Use as a Datalog store:
+
+```clojure
+(require '[datalevin.core :as d])
+
+;; define a schema
+(def schema {:aka    {:db/cardinality :db.cardinality/many}
+             :name   {:db/valueType :db.type/string
+                      :db/unique    :db.unique/identity}
+             :nation {:db/valueType :db.type/string}})
+
+;; create DB and connect to it
+(def conn (d/create-conn schema "/tmp/datalevin-test"))
+
+;; transact some data
+(d/transact! conn
+             [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
+              {:name "Peirce", :db/id -2, :nation "france"}
+              {:name "De Morgan", :db/id -3, :nation "English"}])
+
+;; query the data
+(d/q '[:find ?nation
+       :in $ ?alias
+       :where
+       [?e :aka ?alias]
+       [?e :nation ?nation]]
+     @conn
+     "fred")
+;; => #{["France"]}
+
+;; close conn
+(d/close conn)
+```
+
+Use as a key value store:
+```clojure
+(require '[datalevin.lmdb :as l])
+
+;; open a key value DB
+(def db (l/open-lmdb "/tmp/lmdb-test"))
+
+;; define a table (dbi) name
+(def table "test-table")
+
+;; open the table
+(l/open-dbi db table)
+
+;; transact some data, a transaction can put data into multiple tables
+(l/transact db
+            [[:put table :datalevin "Hello, world!"]
+             [:put table 42 "thanks for all the fish"]])
+
+;; get the value with the key
+(l/get-value db table 42)
+;; => "thanks for all the fish"
+
+;; delete some data
+(l/transact db [[:del table 42]])
+
+;; now it's gone
+(l/get-value db table 42)
+;; => nil
+
+;; close db
+(l/close db)
+```
+
+See also [API doc](https://juji-io.github.io/datalevin/index.html).
+
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
