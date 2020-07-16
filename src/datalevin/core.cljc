@@ -1,4 +1,5 @@
 (ns datalevin.core
+  "API for Datalog store"
   (:refer-clojure :exclude [filter])
   (:require
     [#?(:cljs cljs.reader :clj clojure.edn) :as edn]

@@ -1,5 +1,5 @@
 (ns datalevin.lmdb
-  "Wrapping LMDB"
+  "API for Key Value Store"
   (:refer-clojure :exclude [get iterate])
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
@@ -200,71 +200,203 @@
   (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
   (entries [this dbi-name] "Get the number of data entries in a DBI")
   (transact [this txs]
-    "Update DB. txs is a seq of [op dbi-name k v k-type v-type put-flags]
-     when op is :put; [op dbi-name k k-type] when op is :del; k-type can be
-     one of :long, :byte, :bytes, :data, :datom, :attr or index type :eav,
-     :aev, :ave, or :vae")
+    "Update DB, insert or delete key value pairs.
+
+     txs is a seq of `[op dbi-name k v k-type v-type put-flags]`
+     when `op` is `:put`, for insertion of a key value pair `k` and `v`;
+     or `[op dbi-name k k-type]`when `op` is `:del` for deletion of key `k`;
+
+     `dbi-name` is the name of the DBI to be transacted, a string.
+
+     `k-type`, `v-type` and `put-flags` are optional.
+
+    `k-type` indicates the type of `k`, and it can be one of `:data` (default),
+    `:long`, `:byte`, `:bytes`, `:datom`, `:attr` or one of the index types
+    `:eav`, `:aev`, `:ave`, or `:vae`
+
+    `v-type` indicates the type of `v` can be one of `:data` (default),
+    `:long`, `:byte`, `:bytes`, `:datom`, or `attr`
+
+    `put-flags` is a vector of [LMDB put flags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/org/lmdbjava/PutFlags.html).
+
+    Example:
+
+            (transact lmdb
+                      [ [:put \"a\" 1 2]
+                        [:put \"a\" 'a 1]
+                        [:put \"a\" 5 {}]
+                        [:put \"a\" :annunaki/enki true :attr :data]
+                        [:put \"a\" :datalevin [\"hello\" \"world\"]]
+                        [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                        [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+                        [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+                        [:put \"a\" [-1 -235254457N] 5]
+                        [:put \"a\" :a 4]
+                        [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                        [:put \"a\" :long 1 :data :long]
+                        [:put \"a\" 2 3 :long :long]
+                        [:del \"a\" 1]
+                        [:del \"a\" :non-exist] ])")
   (get-value
     [this dbi-name k]
     [this dbi-name k k-type]
     [this dbi-name k k-type v-type]
     [this dbi-name k k-type v-type ignore-key?]
-    "Get kv pair of the specified key, k-type and v-type can be
-     :data (default), :byte, :bytes, :attr, :datom or :long;
-     if ignore-key? (default true), only return value")
+    "Get kv pair of the specified key `k`, `k-type` and `v-type` can be
+     `:data` (default), `:byte`, `:bytes`, `:attr`, `:datom` or `:long`;
+
+     If `ignore-key?` is true (default `true`), only return the value,
+     otherwise return `[k v]`, where `v` is the value
+
+     Examples:
+
+              (get-value lmdb \"a\" 1)
+              ;;==> 2
+
+              ;; specify data types
+              (get-value lmdb \"a\" :annunaki/enki :attr :data)
+              ;;==> true
+
+              ;; return key value pair
+              (get-value lmdb \"a\" 1 :data :data false)
+              ;;==> [1 2]
+
+              ;; key doesn't exist
+              (get-value lmdb \"a\" 2)
+              ;;==> nil ")
   (get-first
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
     [this dbi-name k-range k-type v-type]
     [this dbi-name k-range k-type v-type ignore-key?]
     "Return the first kv pair in the specified key range;
-     k-range is a vector [range-type k1 k2], range-type can be one of
-     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
-     :less-than, :open, :open-closed, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only the value will be returned if ignore-key? is true;
-     If value is to be ignored, put :ignore as v-type")
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
+     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+
+              (get-first lmdb \"c\" [:all] :long :long)
+              ;;==> [0 1]
+
+              ;; ignore value
+              (get-first lmdb \"c\" [:all-back] :long :ignore)
+              ;;==> [999 nil]
+
+              ;; ignore key
+              (get-first lmdb \"a\" [:greater-than 9] :long :data true)
+              ;;==> {:some :data} ")
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
     [this dbi-name k-range k-type v-type]
     [this dbi-name k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range;
-     k-range is a vector [range-type k1 k2], range-type can be one of
-     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
-     :less-than, :open, :open-closed, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only values will be returned if ignore-key? is true;
-     If value is to be ignored, put :ignore as v-type")
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
+     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+
+              (get-range lmdb \"c\" [:at-least 9] :long :long)
+              ;;==> [[10 11] [11 15] [13 14]]
+
+              ;; ignore value
+              (get-range lmdb \"c\" [:all-back] :long :ignore)
+              ;;==> [[999 nil] [998 nil]]
+
+              ;; ignore keys, only return values
+              (get-range lmdb \"a\" [:closed 9 11] :long :long true)
+              ;;==> [10 11 12]
+
+              ;; out of range
+              (get-range lmdb \"c\" [:greater-than 1500] :long :ignore)
+              ;;==> [] ")
   (get-some
     [this dbi-name pred k-range]
     [this dbi-name pred k-range k-type]
     [this dbi-name pred k-range k-type v-type]
     [this dbi-name pred k-range k-type v-type ignore-key?]
-    "Return the first kv pair that has logical true value of (pred x),
-     x is an IMapEntry , in the specified key range, or return nil;
-     k-range is a vector [range-type k1 k2], range-type can be one of
-     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
-     :less-than, :open, :open-closed, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only values will be returned if ignore-key? is true")
+    "Return the first kv pair that has logical true value of `(pred x)`,
+     where `pred` is a function, `x` is the `IMapEntry` fetched from the store.
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
+     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+              (require ' [datalevin.bits :as b])
+
+              (def pred (fn [kv]
+                         (let [^long k (b/read-buffer (key kv) :long)]
+                          (> k 15)))
+
+              (get-some lmdb \"c\" pred [:less-than 20] :long :long)
+              ;;==> [16 2]
+
+              ;; ignore key
+              (get-some lmdb \"c\" pred [:greater-than 9] :long :data true)
+              ;;==> 16 ")
   (range-filter
     [this dbi-name pred k-range]
     [this dbi-name pred k-range k-type]
     [this dbi-name pred k-range k-type v-type]
     [this dbi-name pred k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range, for only those
-     return true value for (pred x), where x is an IMapEntry;
-     k-range is a vector [range-type k1 k2], range-type can be one of
-     :all, :at-least, :at-most, :closed, :closed-open, :greater-than,
-     :less-than, :open, :open-closed, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. :all-back;
-     k-type and v-type can be :data (default), :long, :byte, :bytes, :datom,
-     or :attr; only values will be returned if ignore-key? is true;
-     If value is to be ignored, put :ignore as v-type"))
+     return true value for `(pred x)`, where `pred` is a function, and `x`
+     is an `IMapEntry`;
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
+     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+              (require ' [datalevin.bits :as b])
+
+              (def pred (fn [kv]
+                         (let [^long k (b/read-buffer (key kv) :long)]
+                          (> k 15)))
+
+              (range-filter lmdb \"c\" pred [:less-than 20] :long :long)
+              ;;==> [[16 2] [17 3]]
+
+              ;; ignore key
+              (get-some lmdb \"c\" pred [:greater-than 9] :long :data true)
+              ;;==> [16 17] "))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* 10 (-> env .info .mapSize))))
@@ -486,8 +618,8 @@
         (finally (reset rtx))))))
 
 (defn open-lmdb
-  "Open an LMDB database. dir is a path the data are to be stored.
-  size is the initial DB size in MB. flags are LMDB EnvFlags."
+  "Open an LMDB database. `dir` is a string path where the data are to be stored.
+  `size` is the initial DB size in MB. `flags` are [LMDB EnvFlags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html)."
   ([dir]
    (open-lmdb dir c/+init-db-size+ default-env-flags))
   ([dir size flags]

@@ -1,5 +1,5 @@
-(ns ^:no-doc datalevin.bits
-  "low level bits, binary encoding, etc."
+(ns datalevin.bits
+  "Handle binary encoding, byte buffers, etc."
   (:require [clojure.java.io :as io]
             [datalevin.datom :as d]
             [datalevin.constants :as c]
@@ -13,7 +13,7 @@
 
 ;; files
 
-(defn delete-files
+(defn ^:no-doc delete-files
   "Recursively delete "
   [& fs]
   (when-let [f (first fs)]
@@ -22,7 +22,7 @@
       (do (io/delete-file f)
           (recur (rest fs))))))
 
-(defn file
+(defn ^:no-doc file
   "Return path as File, create it if missing"
   [path]
   (let [^File f (io/file path)]
@@ -74,8 +74,8 @@
    (when-let [bs (get-bytes-val bb n)]
      (nippy/fast-thaw bs))))
 
-(def ^:const float-sign-idx 31)
-(def ^:const double-sign-idx 63)
+(def ^:no-doc ^:const float-sign-idx 31)
+(def ^:no-doc ^:const double-sign-idx 63)
 
 (defn- decode-float
   [x]
@@ -97,7 +97,7 @@
   [^ByteBuffer bb]
   (decode-double (.getLong bb)))
 
-(defn get-boolean
+(defn- get-boolean
   [^ByteBuffer bb]
   (case (short (get-byte bb))
     2 true
@@ -167,7 +167,7 @@
 
 ;; bytes
 
-(defn measure-size
+(defn ^:no-doc measure-size
   "measure size of x in number of bytes"
   [x]
   (cond
@@ -176,7 +176,7 @@
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
 
-(defn hexify
+(defn ^:no-doc hexify
   "Convert bytes to hex string"
   [bs]
   (let [hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F]]
@@ -185,7 +185,7 @@
                 [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))]
       (apply str (mapcat hexify-byte bs)))))
 
-(defn unhexify
+(defn ^:no-doc unhexify
   "Convert hex string to byte sequence"
   [s]
   (letfn [(unhexify-2 [c1 c2]
@@ -221,7 +221,7 @@
 
 ;; index
 
-(defmacro wrap-extrema
+(defmacro ^:no-doc wrap-extrema
   [v vmin vmax b]
   `(if (keyword? ~v)
      (condp = ~v
@@ -315,9 +315,9 @@
     :db.type/long    (long-header v)
     nil))
 
-(deftype Indexable [e a v f b h])
+(deftype ^:no-doc Indexable [e a v f b h])
 
-(defn indexable
+(defn ^:no-doc indexable
   "Turn datom parts into a form that is suitable for putting in indices,
   where aid is the integer id of an attribute, vt is its :db/valueType"
   [eid aid val vt]
@@ -332,7 +332,7 @@
         (->Indexable eid aid val hdr bas hsh))
       (->Indexable eid aid val hdr nil nil))))
 
-(defn giant?
+(defn ^:no-doc giant?
   [^Indexable i]
   (.-h i))
 
@@ -448,13 +448,13 @@
     (do (.reset bf)
         (get-data bf post-v))))
 
-(deftype Retrieved [e a v])
+(deftype ^:no-doc Retrieved [e a v])
 
 (defn- indexable->retrieved
   [^Indexable i]
   (->Retrieved (.-e i) (.-a i) (.-v i)))
 
-(defn expected-return
+(defn ^:no-doc expected-return
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
@@ -512,9 +512,9 @@
     (-> bs String. keyword)))
 
 (defn put-buffer
-  "Put the given type of data x in buffer bf, x-type can be one of :long,
-  :byte, :bytes, :data, :datom, :attr or index type :eav, :aev, :ave,
-  or :vae"
+  "Put the given type of data `x` in buffer `bf`, `x-type` can be one of
+  `:data` (default), `:long`, `:byte`, `:bytes`, `:datom`, `:attr` or
+  index type `:eav`, `:aev`, `:ave`, or `:vae`"
   [bf x x-type]
   (case x-type
     :long  (put-long bf x)
@@ -533,9 +533,9 @@
     (put-data bf x)))
 
 (defn read-buffer
-  "Get the given type of data from buffer bf, v-type can be one of
-  :long, :byte, :bytes, :datom, :attr, :data or index type :eav, :aev, :ave,
-  or :vae"
+  "Get the given type of data from buffer `bf`, `v-type` can be one of
+  `:data` (default), `:long`, `:byte`, `:bytes`, `:datom`, `:attr`, or
+  index type `:eav`, `:aev`, `:ave`, or `:vae`"
   [^ByteBuffer bb v-type]
   (case v-type
     :long  (get-long bb)
