@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file. This change
 
 ## WIP
 ### Added
+- add an arity for read/put byte buffer
 
 ## 0.2.0
 ### Added
