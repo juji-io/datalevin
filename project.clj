@@ -27,7 +27,11 @@
                                     :password      :env/clojars_password
                                     :sign-releases false}]]
   :plugins [[lein-codox "0.10.7"]]
-  :codox {:output-path "codox"}
+  :codox {:output-path "codox"
+          :metadata {:doc/format :markdown}
+          :source-uri
+          {#"target/classes" "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
+           #".*"             "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
   :global-vars {*print-namespace-maps* false
                 ;; *unchecked-math* :warn-on-boxed
                 ;; *warn-on-reflection*   true

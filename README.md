@@ -33,9 +33,10 @@ Use as a Datalog store:
 
 ;; define a schema
 (def schema {:aka    {:db/cardinality :db.cardinality/many}
+             ;; :db/valueType is optional, if unspecified, the attribute will be
+             ;; treated as EDN blobs
              :name   {:db/valueType :db.type/string
-                      :db/unique    :db.unique/identity}
-             :nation {:db/valueType :db.type/string}})
+                      :db/unique    :db.unique/identity}})
 
 ;; create DB and connect to it
 (def conn (d/create-conn schema "/tmp/datalevin-test"))
