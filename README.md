@@ -32,11 +32,11 @@ Use as a Datalog store:
 (require '[datalevin.core :as d])
 
 ;; define a schema
-(def schema {:aka    {:db/cardinality :db.cardinality/many}
+(def schema {:aka  {:db/cardinality :db.cardinality/many}
              ;; :db/valueType is optional, if unspecified, the attribute will be
              ;; treated as EDN blobs
-             :name   {:db/valueType :db.type/string
-                      :db/unique    :db.unique/identity}})
+             :name {:db/valueType :db.type/string
+                    :db/unique    :db.unique/identity}})
 
 ;; create DB and connect to it
 (def conn (d/create-conn schema "/tmp/datalevin-test"))
@@ -78,11 +78,12 @@ Use as a key value store:
 ;; transact some data, a transaction can put data into multiple tables
 (l/transact db
             [[:put table :datalevin "Hello, world!"]
-             [:put table 42 "thanks for all the fish"]])
+             [:put table 42 {:saying "So Long, and thanks for all the fish"
+                             :source "The Hitchhiker's Guide to the Galaxy"}]])
 
 ;; get the value with the key
 (l/get-value db table 42)
-;; => "thanks for all the fish"
+;; => {:saying "So Long, and thanks for all the fish", :source "The Hitchhiker's Guide to the Galaxy"}
 
 ;; delete some data
 (l/transact db [[:del table 42]])
