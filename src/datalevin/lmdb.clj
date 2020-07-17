@@ -89,7 +89,7 @@
       (set! cnt 0)))
   (new-rtx [this]
     (locking this
-      (when (< cnt c/+max-readers+)
+      (when (< cnt c/+use-readers+)
         (let [rtx (->Rtx (.txnRead env)
                          false
                          (ByteBuffer/allocateDirect c/+max-key-size+)

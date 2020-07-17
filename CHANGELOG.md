@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. This change
 ## WIP
 ### Added
 - add an arity for read/put byte buffer
+- use only half reader slots, so other processes may read
 
 ## 0.2.0
 ### Added
@@ -12,4 +13,3 @@ All notable changes to this project will be documented in this file. This change
 ## 0.1.0
 ### Added
 - Port datascript 0.18.13
-

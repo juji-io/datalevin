@@ -91,18 +91,18 @@
   ISearch
   (-search [db pattern]
            (let [[e a v _] pattern]
-      (case-tree [e a (some? v)]
-        [(s/fetch store (datom e a v)) ; e a v
-         (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
-         (s/slice-filter store :eav
-                         (fn [^Datom d] (= v (.-v d)))
-                         (datom e nil nil)
-                         (datom e nil nil))  ; e _ v
-         (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-         (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
-         (s/slice store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
-         (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
-         (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))]))) ; _ _ _
+             (case-tree [e a (some? v)]
+                        [(s/fetch store (datom e a v)) ; e a v
+                         (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+                         (s/slice-filter store :eav
+                                         (fn [^Datom d] (= v (.-v d)))
+                                         (datom e nil nil)
+                                         (datom e nil nil))  ; e _ v
+                         (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
+                         (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+                         (s/slice store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
+                         (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+                         (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))]))) ; _ _ _
 
   IIndexAccess
   (-datoms [db index cs]
@@ -118,16 +118,16 @@
                            (datom e0 nil nil tx0)))
 
   (-index-range [db attr start end]
-    (validate-attr attr (list '-index-range 'db attr start end))
-    (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
-             (resolve-datom db nil attr end nil emax txmax)))
+                (validate-attr attr (list '-index-range 'db attr start end))
+                (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
+                         (resolve-datom db nil attr end nil emax txmax)))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
 
 (defn db? [x] (-searchable? x))
 
-; ----------------------------------------------------------------------------
+;; ----------------------------------------------------------------------------
 
 (defn attr->properties [k v]
   (case v
@@ -142,24 +142,24 @@
 
 (defn- rschema [schema]
   (reduce-kv
-    (fn [m attr keys->values]
-      (reduce-kv
-        (fn [m key value]
-          (reduce
-            (fn [m prop]
-              (assoc m prop (conj (get m prop #{}) attr)))
-            m (attr->properties key value)))
-        m keys->values))
-    {} schema))
+   (fn [m attr keys->values]
+     (reduce-kv
+      (fn [m key value]
+        (reduce
+         (fn [m prop]
+           (assoc m prop (conj (get m prop #{}) attr)))
+         m (attr->properties key value)))
+      m keys->values))
+   {} schema))
 
 (defn- validate-schema-key [a k v expected]
   (when-not (or (nil? v)
                 (contains? expected v))
     (throw (ex-info (str "Bad attribute specification for " (pr-str {a {k v}}) ", expected one of " expected)
-                    {:error :schema/validation
+                    {:error     :schema/validation
                      :attribute a
-                     :key k
-                     :value v}))))
+                     :key       k
+                     :value     v}))))
 
 (defn- validate-schema [schema]
   (doseq [[a kv] schema]
@@ -190,7 +190,7 @@
   ([schema] (empty-db schema nil))
   ([schema dir]
    {:pre [(or (nil? schema) (map? schema))]}
-    (validate-schema schema)
+   (validate-schema schema)
    (let [store (s/open schema dir)]
      (map->DB
       {:store   store
@@ -208,7 +208,7 @@
   ([datoms] (init-db datoms nil nil))
   ([datoms schema] (init-db datoms schema nil))
   ([datoms schema dir]
-    (validate-schema schema)
+   (validate-schema schema)
    (let [store   (s/open schema dir)
          schema  (s/schema store)
          rschema (rschema (merge implicit-schema schema))
@@ -236,12 +236,12 @@
 (defn- resolve-datom [db e a v t default-e default-tx]
   (when a (validate-attr a (list 'resolve-datom 'db e a v t)))
   (datom
-    (or (entid-some db e) default-e)  ;; e
-    a                                 ;; a
-    (if (and (some? v) (ref? db a))   ;; v
-      (entid-strict db v)
-      v)
-    (or (entid-some db t) default-tx))) ;; t
+   (or (entid-some db e) default-e)  ;; e
+   a                                 ;; a
+   (if (and (some? v) (ref? db a))   ;; v
+     (entid-strict db v)
+     v)
+   (or (entid-some db t) default-tx))) ;; t
 
 (defn- components->pattern [db index [c0 c1 c2 c3] default-e default-tx]
   (case index
@@ -311,7 +311,7 @@
 (defn entid-strict [db eid]
   (or (entid db eid)
       (raise "Nothing found for entity id " eid
-             {:error :entity-id/missing
+             {:error     :entity-id/missing
               :entity-id eid})))
 
 (defn entid-some [db eid]
@@ -376,22 +376,22 @@
 (defn- advance-max-eid [db eid]
   (cond-> db
     (new-eid? db eid)
-      (assoc :max-eid eid)))
+    (assoc :max-eid eid)))
 
 (defn- allocate-eid
   ([report eid]
-    (update report :db-after advance-max-eid eid))
+   (update report :db-after advance-max-eid eid))
   ([report e eid]
-    (cond-> report
-      (tx-id? e)
-        (assoc-in [:tempids e] eid)
-      (tempid? e)
-        (assoc-in [:tempids e] eid)
-      (and (not (tempid? e))
-           (new-eid? (:db-after report) eid))
-        (assoc-in [:tempids eid] eid)
-      true
-        (update :db-after advance-max-eid eid))))
+   (cond-> report
+     (tx-id? e)
+     (assoc-in [:tempids e] eid)
+     (tempid? e)
+     (assoc-in [:tempids e] eid)
+     (and (not (tempid? e))
+          (new-eid? (:db-after report) eid))
+     (assoc-in [:tempids eid] eid)
+     true
+     (update :db-after advance-max-eid eid))))
 
 (defn- with-datom-store [^DB db ^Datom datom]
   (validate-datom db datom)
@@ -423,13 +423,13 @@
                            (get db :eavt)
                            (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
                            (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))]
-          (cond-> db
-            true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
-            true (update :aevt set/disj datom d/cmp-datoms-aevt-quick)
-            true (update :avet set/disj datom d/cmp-datoms-avet-quick)
-            ref? (update :vaet set/conj datom d/cmp-datoms-vaet-quick)
-            true (assoc :hash (atom 0)))
-          db))))
+        (cond-> db
+          true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
+          true (update :aevt set/disj datom d/cmp-datoms-aevt-quick)
+          true (update :avet set/disj datom d/cmp-datoms-avet-quick)
+          ref? (update :vaet set/conj datom d/cmp-datoms-vaet-quick)
+          true (assoc :hash (atom 0)))
+        db))))
 
 (defn- transact-report [report datom]
   (-> report
@@ -456,20 +456,20 @@
       (keyword (namespace attr) (subs (name attr) 1))
       (keyword (namespace attr) (str "_" (name attr))))
 
-   (string? attr)
-   (let [[_ ns name] (re-matches #"(?:([^/]+)/)?([^/]+)" attr)]
-     (if (= \_ (nth name 0))
-       (if ns (str ns "/" (subs name 1)) (subs name 1))
-       (if ns (str ns "/_" name) (str "_" name))))
+    (string? attr)
+    (let [[_ ns name] (re-matches #"(?:([^/]+)/)?([^/]+)" attr)]
+      (if (= \_ (nth name 0))
+        (if ns (str ns "/" (subs name 1)) (subs name 1))
+        (if ns (str ns "/_" name) (str "_" name))))
 
-   :else
+    :else
     (raise "Bad attribute type: " attr ", expected keyword or string"
            {:error :transact/syntax, :attribute attr})))
 
 
 (defn- check-upsert-conflict [entity acc]
   (let [[e a v] acc
-        _e (:db/id entity)]
+        _e      (:db/id entity)]
     (if (or (nil? _e)
             (tempid? _e)
             (nil? acc)
@@ -477,9 +477,9 @@
       acc
       (raise "Conflicting upsert: " [a v] " resolves to " e
              ", but entity already has :db/id " _e
-             { :error :transact/upsert
-               :entity entity
-               :assertion acc }))))
+             { :error    :transact/upsert
+              :entity    entity
+              :assertion acc }))))
 
 (defn- upsert-reduce-fn [db eav a v]
   (let [e (or (:e (first (set/slice (get db :avet)
@@ -585,8 +585,8 @@
         (if (= (.-v old-datom) v)
           report
           (-> report
-            (transact-report (datom e a (.-v old-datom) tx false))
-            (transact-report new-datom)))
+              (transact-report (datom e a (.-v old-datom) tx false))
+              (transact-report new-datom)))
         (transact-report report new-datom)))))
 
 (defn- transact-retract-datom [report ^Datom d]
@@ -595,8 +595,8 @@
 
 (defn- retract-components [db datoms]
   (into #{} (comp
-              (filter (fn [^Datom d] (component? db (.-a d))))
-              (map (fn [^Datom d] [:db.fn/retractEntity (.-v d)]))) datoms))
+             (filter (fn [^Datom d] (component? db (.-a d))))
+             (map (fn [^Datom d] [:db.fn/retractEntity (.-v d)]))) datoms))
 
 (declare transact-tx-data)
 
@@ -604,11 +604,11 @@
   (if (contains? (:tempids initial-report) tempid)
     (raise "Conflicting upsert: " tempid " resolves"
            " both to " upserted-eid " and " (get-in initial-report [:tempids tempid])
-      { :error :transact/upsert })
+           { :error :transact/upsert })
     ;; try to re-run from the beginning
     ;; but remembering that `tempid` will resolve to `upserted-eid`
     (let [tempids' (-> (:tempids report)
-                     (assoc tempid upserted-eid))
+                       (assoc tempid upserted-eid))
           report'  (assoc initial-report :tempids tempids')]
       (transact-tx-data report' es))))
 
