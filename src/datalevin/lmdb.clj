@@ -336,7 +336,10 @@
     [this dbi-name pred k-range k-type v-type]
     [this dbi-name pred k-range k-type v-type ignore-key?]
     "Return the first kv pair that has logical true value of `(pred x)`,
-     where `pred` is a function, `x` is the `IMapEntry` fetched from the store.
+     where `pred` is a function, `x` is the `IMapEntry` fetched from the store,
+     with both key and value fields being a `ByteBuffer`.
+
+     `pred` can use [[datalevin.bits/read-buffer]] to read the content.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -370,7 +373,9 @@
     [this dbi-name pred k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IMapEntry`;
+     is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
+
+     `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -395,7 +400,7 @@
               ;;==> [[16 2] [17 3]]
 
               ;; ignore key
-              (get-some lmdb \"c\" pred [:greater-than 9] :long :data true)
+              (range-filter lmdb \"c\" pred [:greater-than 9] :long :data true)
               ;;==> [16 17] "))
 
 (defn- up-db-size [^Env env]
