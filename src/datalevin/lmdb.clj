@@ -191,22 +191,29 @@
 
 (defprotocol ILMDB
   (close [this] "Close this LMDB env")
+  (closed? [this] "Return true if this LMDB env is closed")
   (open-dbi
     [this dbi-name]
     [this dbi-name key-size]
     [this dbi-name key-size val-size]
     [this dbi-name key-size val-size flags]
-    "Open a named dbi (i.e. sub-db) in the LMDB DB")
-  (get-dbi [this dbi-name] "Lookup DBI (i.e. sub-db) by name")
-  (entries [this dbi-name] "Get the number of data entries in a DBI")
+    "Open a named DBI (i.e. sub-db) in the LMDB env")
+  (clear-dbi [this dbi-name]
+    "Clear data in the DBI (i.e sub-db), but leave it open")
+  (drop-dbi [this dbi-name]
+    "Clear data in the DBI (i.e. sub-db), then delete it")
+  (get-dbi [this dbi-name]
+    "Lookup open DBI (i.e. sub-db) by name, throw if it's not open")
+  (entries [this dbi-name]
+    "Get the number of data entries in a DBI (i.e. sub-db)")
   (transact [this txs]
     "Update DB, insert or delete key value pairs.
 
-     txs is a seq of `[op dbi-name k v k-type v-type put-flags]`
+     `txs` is a seq of `[op dbi-name k v k-type v-type put-flags]`
      when `op` is `:put`, for insertion of a key value pair `k` and `v`;
-     or `[op dbi-name k k-type]`when `op` is `:del` for deletion of key `k`;
+     or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
-     `dbi-name` is the name of the DBI to be transacted, a string.
+     `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
 
      `k-type`, `v-type` and `put-flags` are optional.
 
@@ -494,9 +501,13 @@
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
-  (close [_]
+  (close [this]
     (close-pool pool)
     (.close env))
+
+  (closed? [this]
+    (.isClosed env))
+
   (open-dbi [this dbi-name]
     (open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
               default-dbi-flags))
@@ -504,7 +515,8 @@
     (open-dbi this dbi-name key-size c/+default-val-size+ default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
     (open-dbi this dbi-name key-size val-size default-dbi-flags))
-  (open-dbi [_ dbi-name key-size val-size flags]
+  (open-dbi [this dbi-name key-size val-size flags]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [kb  (ByteBuffer/allocateDirect key-size)
           vb  (ByteBuffer/allocateDirect val-size)
           db  (.openDbi env
@@ -513,15 +525,41 @@
           dbi (->DBI db kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
+
   (get-dbi [_ dbi-name]
     (or (.get dbis dbi-name)
         (raise "`open-dbi` was not called for " dbi-name {})))
+
+  (clear-dbi [this dbi-name]
+    (assert (not (closed? this)) "LMDB env is closed.")
+    (try
+      (with-open [txn (.txnWrite env)]
+        (let [^DBI dbi (get-dbi this dbi-name)]
+          (.drop ^Dbi (.-db dbi) txn))
+        (.commit txn))
+      (catch Exception e
+        (raise "Fail to clear DBI: " dbi-name (ex-message e) {}))))
+
+  (drop-dbi [this dbi-name]
+    (assert (not (closed? this)) "LMDB env is closed.")
+    (try
+      (with-open [txn (.txnWrite env)]
+        (let [^DBI dbi (get-dbi this dbi-name)]
+          (.drop ^Dbi (.-db dbi) txn true)
+          (.remove dbis dbi-name))
+        (.commit txn))
+      (catch Exception e
+        (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+
   (entries [this dbi-name]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [^DBI dbi   (get-dbi this dbi-name)
           ^Rtx rtx   (get-rtx pool)
           ^Stat stat (.stat ^Dbi (.-db dbi) (.-txn rtx))]
       (.-entries stat)))
+
   (transact [this txs]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (try
       (with-open [txn (.txnWrite env)]
         (doseq [[op dbi-name k & r] txs
@@ -540,8 +578,9 @@
       (catch Env$MapFullException e
         (up-db-size env)
         (transact this txs))
-      #_(catch Exception e
-          (raise "Fail to transact: " (ex-message e) {:txs txs}))))
+      (catch Exception e
+          (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
+
   (get-value [this dbi-name k]
     (get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]
@@ -549,6 +588,7 @@
   (get-value [this dbi-name k k-type v-type]
     (get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
@@ -557,6 +597,7 @@
           (raise "Fail to get-value: " (ex-message e)
                  {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
         (finally (reset rtx)))))
+
   (get-first [this dbi-name k-range]
     (get-first this dbi-name k-range :data :data false))
   (get-first [this dbi-name k-range k-type]
@@ -564,6 +605,7 @@
   (get-first [this dbi-name k-range k-type v-type]
     (get-first this dbi-name k-range k-type v-type false))
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
@@ -573,6 +615,7 @@
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx)))))
+
   (get-range [this dbi-name k-range]
     (get-range this dbi-name k-range :data :data false))
   (get-range [this dbi-name k-range k-type]
@@ -580,6 +623,7 @@
   (get-range [this dbi-name k-range k-type v-type]
     (get-range this dbi-name k-range k-type v-type false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
@@ -589,6 +633,7 @@
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx)))))
+
   (get-some [this dbi-name pred k-range]
     (get-some this dbi-name pred k-range :data :data false))
   (get-some [this dbi-name pred k-range k-type]
@@ -596,6 +641,7 @@
   (get-some [this dbi-name pred k-range k-type v-type]
     (get-some this dbi-name pred k-range k-type v-type false))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try
@@ -605,6 +651,7 @@
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx)))))
+
   (range-filter [this dbi-name pred k-range]
     (range-filter this dbi-name pred k-range :data :data false))
   (range-filter [this dbi-name pred k-range k-type]
@@ -612,6 +659,7 @@
   (range-filter [this dbi-name pred k-range k-type v-type]
     (range-filter this dbi-name pred k-range k-type v-type false))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
+    (assert (not (closed? this)) "LMDB env is closed.")
     (let [dbi (get-dbi this dbi-name)
           rtx (get-rtx pool)]
       (try

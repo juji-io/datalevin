@@ -82,12 +82,17 @@
     (is (thrown-with-msg? Exception #"BufferOverflow"
                           (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
-  (testing "close then re-open"
-    (let [dir  (.-dir lmdb)
-          _    (sut/close lmdb)
-          lmdb (sut/open-lmdb dir)
-          _    (sut/open-dbi lmdb "a")]
-      (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin))))))
+  (testing "close then re-open, clear and drop"
+    (let [dir  (.-dir lmdb)]
+      (sut/close lmdb)
+      (is (sut/closed? lmdb))
+      (let [lmdb (sut/open-lmdb dir)]
+        (sut/open-dbi lmdb "a")
+       (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
+       (sut/clear-dbi lmdb "a")
+       (is (nil? (sut/get-value lmdb "a" :datalevin)))
+       (sut/drop-dbi lmdb "a")
+       (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "a" 1)))))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))
