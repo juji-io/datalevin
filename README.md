@@ -106,7 +106,7 @@ them, Datalevin is extensively tested with property-based testing. Running the
 benchmark suite of Datascript, here is how it looks.
 
 <p align="center">
-<img src="bench/datalevin-bench-query-07-15-2020.png" alt="query benchmark" height="240"></img>
+<img src="bench/datalevin-bench-query-07-18-2020.png" alt="query benchmark" height="240"></img>
 <img src="bench/datalevin-bench-write-07-15-2020.png" alt="write benchmark" height="240"></img>
 </p>
 
