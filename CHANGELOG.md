@@ -1,10 +1,13 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.2.1
+### Changed
+- use only half of the reader slots, so other processes may read
+
 ### Added
-- add an arity for read/put byte buffer
-- use only half reader slots, so other processes may read
+- add an arity for `bits/read-buffer` and `bits/put-buffer` 
+- add `lmdb/closed?`, `lmdb/clear-dbi`, and `lmdb/drop-dbi`
 
 ## 0.2.0
 ### Added
