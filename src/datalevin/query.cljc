@@ -140,9 +140,10 @@
             tuples' (persistent!
                       (reduce
                         (fn [acc tuple-b]
-                          (let [tuple' (da/make-array tlen)]
+                          (let [tuple' (da/make-array tlen)
+                                tg      (if (da/array? tuple-b) typed-aget get)]
                             (doseq [[idx-b idx-a] idxb->idxa]
-                              (aset tuple' idx-a (#?(:cljs da/aget :clj get) tuple-b idx-b)))
+                              (aset tuple' idx-a (tg tuple-b idx-b)))
                             (conj! acc tuple')))
                         (transient (vec tuples-a))
                         tuples-b))]
@@ -368,14 +369,17 @@
   (let [idx (attrs attr)]
     (if (contains? *lookup-attrs* attr)
       (fn [tuple]
-        (let [eid (#?(:cljs da/aget :clj get) tuple idx)]
+        (let [tg  (if (da/array? tuple) typed-aget get)
+              eid (tg tuple idx)]
           (cond
             (number? eid)     eid ;; quick path to avoid fn call
             (sequential? eid) (db/entid *implicit-source* eid)
             (da/array? eid)   (db/entid *implicit-source* eid)
             :else             eid)))
       (fn [tuple]
-        (#?(:cljs da/aget :clj get) tuple idx)))))
+        (let [tg (if (da/array? tuple) typed-aget get)]
+          (tg tuple idx)
+          (#?(:cljs da/aget :clj get) tuple idx))))))
 
 (defn tuple-key-fn [getters]
   (if (== (count getters) 1)
@@ -488,8 +492,10 @@
 
 (defn- context-resolve-val [context sym]
   (when-some [rel (rel-with-attr context sym)]
-    (when-some [tuple (first (:tuples rel))]
-      (#?(:cljs da/aget :clj get) tuple ((:attrs rel) sym)))))
+    (when-some [tuple (first (:tuples rel))
+                ]
+      (let [tg (if (da/array? tuple) typed-aget get)]
+        (tg tuple ((:attrs rel) sym))))))
 
 (defn- rel-contains-attrs? [rel attrs]
   (some #(contains? (:attrs rel) %) attrs))
@@ -520,15 +526,18 @@
         ;; TODO raise if not all args are bound
         (let [args (da/aclone static-args)]
           (dotimes [i len]
-            (when-some [tuple-idx (aget tuples-args i)]
-              (let [v (#?(:cljs da/aget :clj get) tuple tuple-idx)]
+            (when-some [tuple-idx (aget tuples-args i)
+                        ]
+              (let [tg (if (da/array? tuple) typed-aget get)
+                    v  (tg tuple tuple-idx)]
                 (da/aset args i v))))
           (apply f args)))
       (fn [tuple]
         ;; TODO raise if not all args are bound
         (dotimes [i len]
           (when-some [tuple-idx (aget tuples-args i)]
-            (let [v (#?(:cljs da/aget :clj get) tuple tuple-idx)]
+            (let [tg (if (da/array? tuple) typed-aget get)
+                  v  (tg tuple tuple-idx)]
               (da/aset static-args i v))))
         (apply f static-args)))))
 
@@ -838,22 +847,23 @@
 
 (defn -collect
   ([context symbols]
-    (let [rels (:rels context)]
+   (let [rels (:rels context)]
       (-collect [(da/make-array (count symbols))] rels symbols)))
   ([acc rels symbols]
-    (if-some [rel (first rels)]
-      (let [keep-attrs (select-keys (:attrs rel) symbols)]
+   (if-some [rel (first rels)]
+     (let [keep-attrs (select-keys (:attrs rel) symbols)]
         (if (empty? keep-attrs)
           (recur acc (next rels) symbols)
           (let [copy-map (to-array (map #(get keep-attrs %) symbols))
                 len      (count symbols)]
             (recur (for [#?(:cljs t1
                             :clj ^{:tag "[[Ljava.lang.Object;"} t1) acc
-                         t2 (:tuples rel)]
-                     (let [res (aclone t1)]
+                         t2                                         (:tuples rel)]
+                     (let [res (aclone t1)
+                           tg  (if (da/array? t2) typed-aget get)]
                        (dotimes [i len]
                          (when-some [idx (aget copy-map i)]
-                           (aset res i (#?(:cljs da/aget :clj get) t2 idx))))
+                           (aset res i (tg t2 idx))))
                        res))
                    (next rels)
                    symbols))))

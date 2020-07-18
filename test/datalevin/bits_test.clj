@@ -86,21 +86,19 @@
 (defn- bf-compare
   "Jave ByteBuffer compareTo is byte-wise signed comparison, not good"
   [^ByteBuffer bf1 ^ByteBuffer bf2]
-  (let [l1 (dec (.limit bf1))
-        l2 (dec (.limit bf2))]
-    (if (= l1 l2 0)
-      0
-      (loop [i 0]
-        (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
-              v2  (short (bit-and (.get bf2) (short 0xFF)))
-              res (- v1 v2)]
-         (if (not (zero? res))
-           res
-           (cond
-             (= l1 l2 i)             0
-             (and (< i l1) (= i l2)) 1
-             (and (= i l1) (< i l2)) -1
-             :else                   (recur (inc i)))))))))
+  (loop []
+    (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
+          v2  (short (bit-and (.get bf2) (short 0xFF)))
+          res (- v1 v2)]
+      (if (not (zero? res))
+        res
+        (let [r1 (.remaining bf1)
+              r2 (.remaining bf2)]
+          (cond
+           (= r1 r2 0)             0
+           (and (< 0 r1) (= 0 r2)) 1
+           (and (= 0 r1) (< 0 r2)) -1
+           :else                   (recur)))))))
 
 (defn- bytes-size-less-than?
   [^long limit ^bytes bs]
