@@ -20,7 +20,7 @@
 ; Entities
 
 (def ^{:arglists '([db eid])
-       :doc "Retrieves an entity by its id from database. Entities are lazy map-like structures to navigate DataScript database content.
+       :doc "Retrieves an entity by its id from database. Entities are lazy map-like structures to navigate Datalevin database content.
 
              For `eid` pass entity id or lookup attr:
 
@@ -61,8 +61,7 @@
              Entity gotchas:
 
              - Entities print as map, but are not exactly maps (they have compatible get interface though).
-             - Entities are effectively immutable “views” into a particular version of a database.
-             - Entities retain reference to the whole database.
+             - Entities retain reference to the database.
              - You can’t change database through entities, only read.
              - Creating an entity by id is very cheap, almost no-op (attributes are looked up on demand).
              - Comparing entities just compares their ids. Be careful when comparing entities taken from differenct dbs or from different versions of the same db.
@@ -365,7 +364,7 @@
 ;; Conn
 
 (defn conn?
-  "Returns `true` if this is a connection to a DataScript db, `false` otherwise."
+  "Returns `true` if this is a connection to a Datalevin db, `false` otherwise."
   [conn]
   (and #?(:clj  (instance? clojure.lang.IDeref conn)
           :cljs (satisfies? cljs.core/IDeref conn))
@@ -388,7 +387,7 @@
 (defn create-conn
   "Creates a mutable reference (a “connection”) to an empty database.
 
-   Connections are lightweight in-memory structures (~atoms) DataScript APIs ([[transact!]], [[db]]).
+   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]].
 
    To access underlying DB, deref: `@conn`."
   ([]       (conn-from-db (empty-db)))
@@ -437,7 +436,7 @@
       (transact! conn [[:db.fn/retractEntity 1]])
 
       ; create a new entity (`-1`, as any other negative value, is a tempid
-      ; that will be replaced with DataScript to a next unused eid)
+      ; that will be replaced with Datalevin to a next unused eid)
       (transact! conn [[:db/add -1 :name \"Ivan\"]])
 
       ; check assigned id (here `*1` is a result returned from previous `transact!` call)
