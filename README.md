@@ -21,8 +21,7 @@ Datalevin relies on the robust ACID transactional database features of LMDB. Des
 
 Independent from Datalog, Datalevin can also be used as a key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
 
-Datalevin uses cover index and has no write-ahead log, so once the data
-are written, they are indexed. There is no separate processes for indexing, compaction or any such database maintenance jobs that compete with your applications for resources.
+Datalevin uses cover index and has no write-ahead log, so once the data are written, they are indexed. There are no separate processes or threads for indexing, compaction or doing any database maintenance work that compete with your applications for resources.
 
 ## :tada: Usage
 
@@ -98,7 +97,7 @@ Use as a key value store:
 (l/close db)
 ```
 
-See also [API doc](https://juji-io.github.io/datalevin/index.html).
+See details in the [API doc](https://juji-io.github.io/datalevin/index.html).
 
 ## :rocket: Status
 
