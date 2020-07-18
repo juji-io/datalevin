@@ -153,7 +153,7 @@
   [db spec eid frames]
   (let [[attr-key opts] spec]
     (if (= :db/id attr-key)
-      (if (not-empty (db/-datoms db :eavt [eid]))
+      (if (db/-populated? db :eavt [eid])
         (conj (rest frames)
               (update (first frames) :kvps assoc! :db/id eid))
         frames)

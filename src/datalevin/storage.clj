@@ -119,10 +119,11 @@
     :vae  c/vae))
 
 (defn- retrieved->datom
-  [lmdb attrs [^Retrieved k ^long v]]
-  (if (= v c/normal)
-    (d/datom (.-e k) (attrs (.-a k)) (.-v k))
-    (lmdb/get-value lmdb c/giants v :long)))
+  [lmdb attrs [^Retrieved k ^long v :as kv]]
+  (when kv
+    (if (= v c/normal)
+      (d/datom (.-e k) (attrs (.-a k)) (.-v k))
+      (lmdb/get-value lmdb c/giants v :long))))
 
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
@@ -145,17 +146,24 @@
     "Update an attribute, f is similar to that of swap!")
   (insert [this datom] "Insert an datom")
   (delete [this datom] "Delete an datom")
-  (load-datoms [this datoms] "Load datams")
+  (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
+  (populated? [this index low-datom high-datom]
+    "Return true if there exists at least one datom in the given boundary (inclusive)")
+  (head [this index low-datom high-datom]
+    "Return the first datom within the given range (inclusive)")
   (slice [this index low-datom high-datom]
-    "Return a range of datoms within the given boundary (inclusive).")
+    "Return a range of datoms within the given range (inclusive).")
   (rslice [this index high-datom low-datom]
-    "Return a range of datoms in reverse within the given boundary (inclusive)")
+    "Return a range of datoms in reverse within the given range (inclusive)")
+  (head-filter [this index pred low-datom high-datom]
+    "Return the first datom within the given range (inclusive) that
+    return true for (pred x), where x is the datom")
   (slice-filter [this index pred low-datom high-datom]
-    "Return a range of datoms within the given boundary (inclusive) that
+    "Return a range of datoms within the given range (inclusive) that
     return true for (pred x), where x is the datom")
   (rslice-filter [this index pred high-datom low-datom]
-    "Return a range of datoms in reverse for the given boundary (inclusive)
+    "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
   ;; (-seq [this index])
   ;; (-rseq [this index])
@@ -241,6 +249,24 @@
                                         :long
                                         false)]
             [kv])))
+  (populated? [_ index low-datom high-datom]
+    (lmdb/get-first lmdb
+                    (index->dbi index)
+                    [:closed
+                     (low-datom->indexable schema low-datom)
+                     (high-datom->indexable schema high-datom)]
+                    index
+                    :ignore
+                    true))
+  (head [_ index low-datom high-datom]
+    (retrieved->datom
+     lmdb attrs (lmdb/get-first lmdb
+                                (index->dbi index)
+                                [:closed
+                                 (low-datom->indexable schema low-datom)
+                                 (high-datom->indexable schema high-datom)]
+                                index
+                                :long)))
   (slice [_ index low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/get-range
@@ -262,6 +288,16 @@
        (low-datom->indexable schema low-datom)]
       index
       :long)))
+  (head-filter [_ index pred low-datom high-datom]
+    (retrieved->datom
+     lmdb attrs (lmdb/get-some lmdb
+                                (index->dbi index)
+                                (datom-pred->kv-pred lmdb attrs index pred)
+                                [:closed
+                                 (low-datom->indexable schema low-datom)
+                                 (high-datom->indexable schema high-datom)]
+                                index
+                                :long)))
   (slice-filter [_ index pred low-datom high-datom]
     (mapv
      (partial retrieved->datom lmdb attrs)

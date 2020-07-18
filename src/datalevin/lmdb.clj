@@ -289,6 +289,9 @@
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
 
+     If both key and value are ignored, return true if found an entry, otherwise
+     return nil.
+
      Examples:
 
 
@@ -301,7 +304,11 @@
 
               ;; ignore key
               (get-first lmdb \"a\" [:greater-than 9] :long :data true)
-              ;;==> {:some :data} ")
+              ;;==> {:some :data}
+
+              ;; ignore both, this is like testing if the range is empty
+              (get-first lmdb \"a\" [:greater-than 5] :long :ignore true)
+              ;;==> true")
   (get-range
     [this dbi-name k-range]
     [this dbi-name k-range k-type]
@@ -423,8 +430,6 @@
 
 (defn- fetch-first
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
-  (assert (not (and (= v-type :ignore) ignore-key?))
-          "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
   (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
@@ -433,7 +438,7 @@
         (let [kv (map-entry (.next iter))
               v  (when (not= v-type :ignore) (b/read-buffer (val kv) v-type))]
           (if ignore-key?
-            v
+            (if v v true)
             [(b/read-buffer (key kv) k-type) v]))))))
 
 (defn- fetch-range
