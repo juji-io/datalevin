@@ -106,11 +106,13 @@ them, Datalevin is extensively tested with property-based testing. Running the
 benchmark suite of Datascript, here is how it looks.
 
 <p align="center">
-<img src="bench/datalevin-bench-query-07-18-2020.png" alt="query benchmark" height="240"></img>
-<img src="bench/datalevin-bench-write-07-15-2020.png" alt="write benchmark" height="240"></img>
+<img src="bench/datalevin-bench-query-07-18-2020.png" alt="query benchmark" height="250"></img>
+<img src="bench/datalevin-bench-write-07-15-2020.png" alt="write benchmark" height="250"></img>
 </p>
 
-Considering that we are comparing a disk store with a memory store, the query time of Datalevin is not bad. In some queries, Datalevin is even faster than Datascript, likely due to the AVE index that is always on in Datalevin.
+Considering that we are comparing a disk store with a memory store, the query
+time of Datalevin is not bad. In some queries, Datalevin is even faster than
+Datascript, indicating potentials for further optimization.
 
 Writes can be a few orders of magnitude slower, as expected, as Datalevin
 is writing to disk while Datascript is in memory. The bulk write speed is
