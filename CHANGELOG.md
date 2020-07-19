@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file. This change
 - apply `query/join-tuples` optimization https://github.com/tonsky/datascript/pull/203
 - use array get wherenever we can in query, saw significant improvement in some queries.
 - use `db/-first` instead of `(first (db/-datom ..))`, `db/-populated?` instead of `(not-empty (db/-datoms ..)`, as they do not realize the results hence faster.
-- storage teat improvements
+- storage test improvements
 
 ## 0.2.1
 ### Changed
