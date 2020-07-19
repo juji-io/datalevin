@@ -13,7 +13,8 @@
 (def schema
   { :follows { :db/valueType   :db.type/ref
               :db/cardinality :db.cardinality/many }
-   :name {:db/index true}})
+   :name {:db/index true}
+   :salary {:db/index true}})
 
 
 (defn- wide-db
