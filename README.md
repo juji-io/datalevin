@@ -97,7 +97,7 @@ Use as a key value store:
 (l/close db)
 ```
 
-See details in the [API doc](https://juji-io.github.io/datalevin/index.html).
+Refer to the [API documentation](https://juji-io.github.io/datalevin/index.html) for more details.
 
 ## :rocket: Status
 
