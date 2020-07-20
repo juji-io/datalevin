@@ -1,9 +1,9 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.2.4
 ## Fixed
-- avoid lock primitive
+- avoid locking primitive
 - create all parent directories if necessary
 
 ## 0.2.3
