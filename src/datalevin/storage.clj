@@ -223,14 +223,14 @@
   (insert [this datom]
     (let [[data giant?] (insert-data this datom)]
       (if giant?
-        (locking max-gt
+        (locking this
           (lmdb/transact lmdb data)
           (advance-max-gt this))
         (lmdb/transact lmdb data))))
   (delete [this datom]
     (lmdb/transact lmdb (delete-data this datom)))
   (load-datoms [this datoms]
-    (locking max-gt
+    (locking this
       (let [add-fn (fn [holder datom]
                      (let [conj-fn (fn [h d] (conj! h d))]
                        (if (d/datom-added datom)

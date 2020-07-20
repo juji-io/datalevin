@@ -28,7 +28,8 @@
   (let [^File f (io/file path)]
     (if (.exists f)
       f
-      (do (.mkdir f)
+      (do (io/make-parents path)
+          (.mkdir f)
           f))))
 
 ;; byte buffer
