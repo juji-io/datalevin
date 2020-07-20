@@ -53,8 +53,8 @@
 
 (def separator-ba (byte-array [(unchecked-byte 0x00)]))
 
-(def max-uuid (UUID. 0xFFFFFFFFFFFFFFFF 0xFFFFFFFFFFFFFFFF))
-(def min-uuid (UUID. 0x0000000000000000 0x0000000000000000))
+(def max-uuid (UUID. -1 -1))
+(def min-uuid (UUID. 0 0))
 
 (def max-bytes (let [ba (byte-array +val-bytes-wo-hdr+)]
                  (Arrays/fill ba (unchecked-byte 0xFF))
