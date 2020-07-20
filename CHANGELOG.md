@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file. This change
 
 ## 0.2.4
 ## Fixed
-- avoid locking primitive https://github.com/juji-io/datalevin/issues/5
+- avoid locking primitive [#5](https://github.com/juji-io/datalevin/issues/5)
 - create all parent directories if necessary
 
 ## 0.2.3
