@@ -45,6 +45,10 @@
                    [:put "b" :long 1 :data :long]
                    [:put "b" 2 3 :long :long]]))
 
+  (testing "entries"
+    (is (= 6 (sut/entries lmdb "a")))
+    (is (= 9 (sut/entries lmdb "b"))))
+
   (testing "get-value"
     (is (= 2 (sut/get-value lmdb "a" 1)))
     (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false)))
@@ -70,6 +74,10 @@
     (sut/transact lmdb [[:del "a" 1]
                         [:del "a" :non-exist]])
     (is (nil? (sut/get-value lmdb "a" 1))))
+
+  (testing "entries-again"
+    (is (= 5 (sut/entries lmdb "a")))
+    (is (= 9 (sut/entries lmdb "b"))))
 
   (testing "non-existent dbi"
     (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1))))

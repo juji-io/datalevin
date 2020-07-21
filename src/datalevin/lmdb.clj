@@ -559,9 +559,13 @@
   (entries [this dbi-name]
     (assert (not (closed? this)) "LMDB env is closed.")
     (let [^DBI dbi   (get-dbi this dbi-name)
-          ^Rtx rtx   (get-rtx pool)
-          ^Stat stat (.stat ^Dbi (.-db dbi) (.-txn rtx))]
-      (.-entries stat)))
+          ^Rtx rtx   (get-rtx pool)]
+      (try
+        (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))
+        (catch Exception e
+          (raise "Fail to get entries: " (ex-message e)
+                 {:dbi dbi-name}))
+        (finally (reset rtx)))))
 
   (transact [this txs]
     (assert (not (closed? this)) "LMDB env is closed.")
