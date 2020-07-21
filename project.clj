@@ -1,4 +1,4 @@
-(def version "0.2.4")
+(def version "0.2.5")
 
 (defproject datalevin version
   :description "A port of Datascript to LMDB"
