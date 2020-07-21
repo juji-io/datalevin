@@ -380,3 +380,13 @@
             (d/datom 2 :a2 2)
             (d/datom 2 :a3 3)]
            (:tx-data report)))))
+
+(deftest test-transact-same
+  "same data, transacted twice"
+  (let [es [{:db/id -1 :company "IBM" :country "US"}
+            {:db/id -2 :company "PwC" :country "Germany"}]
+        db (d/db-with (d/empty-db) es)
+        dts1 (d/datoms db :eavt)
+        db (d/db-with (d/empty-db) es)
+        dts2 (d/datoms db :eavt)]
+    (is (= dts1 dts2))))

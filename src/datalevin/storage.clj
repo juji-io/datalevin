@@ -17,24 +17,36 @@
   (lmdb/transact lmdb (for [[attr props] schema]
                         [:put c/schema attr props :attr :data])))
 
+(defn- load-schema
+  [lmdb]
+  (into {} (lmdb/get-range lmdb c/schema [:all] :attr :data)))
+
 (defn- init-max-aid
   [lmdb]
   (lmdb/entries lmdb c/schema))
 
-(defn- assign-aid
-  [lmdb schema]
-  (let [^long init-aid (init-max-aid lmdb)]
+;; TODO schema migration
+(defn- update-schema
+  [lmdb old schema]
+  (let [^long init-aid (init-max-aid lmdb)
+        i              (atom 0)]
     (into {}
-          (map-indexed (fn [^long i [attr props]]
-                         [attr (assoc props :db/aid (+ init-aid i))]))
+          (map (fn [[attr props]]
+                 (if-let [old-props (old attr)]
+                   [attr (merge old-props props)]
+                   (let [res [attr (assoc props :db/aid (+ init-aid @i))]]
+                     (swap! i inc)
+                     res))))
           schema)))
 
 (defn- init-schema
   [lmdb schema]
-  (when-not (seq (lmdb/get-range lmdb c/schema [:all] :attr :data))
+  (when (empty? (load-schema lmdb))
     (transact-schema lmdb c/implicit-schema))
-  (when schema (transact-schema lmdb (assign-aid lmdb schema)))
-  (into {} (lmdb/get-range lmdb c/schema [:all] :attr :data)))
+  (when schema
+    (let [now (load-schema lmdb)]
+      (transact-schema lmdb (update-schema lmdb now schema))))
+  (load-schema lmdb))
 
 (defn- init-max-gt
   [lmdb]

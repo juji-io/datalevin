@@ -124,3 +124,14 @@
           store (sut/open {d p3} dir)]
       (is (= s3 (sut/schema store))))
     ))
+
+(deftest schema-test
+  (let [s     {:a {:db/valueType :db.type/string}
+               :b {:db/valueType :db.type/long}}
+        dir   (str "/tmp/datalevin-schema-test-" (UUID/randomUUID))
+        store (sut/open s dir)
+        s1    (sut/schema store)]
+    (sut/close store)
+    (let [store (sut/open s dir)]
+      (is (= s1 (sut/schema store))))
+    ))
