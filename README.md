@@ -106,8 +106,8 @@ them, Datalevin is extensively tested with property-based testing. Running the
 benchmark suite of Datascript, here is how it looks.
 
 <p align="center">
-<img src="bench/datalevin-bench-query-07-18-2020.png" alt="query benchmark" height="250"></img>
-<img src="bench/datalevin-bench-write-07-15-2020.png" alt="write benchmark" height="250"></img>
+<img src="bench/datalevin-bench-query-07-22-2020.png" alt="query benchmark" height="250"></img>
+<img src="bench/datalevin-bench-write-07-22-2020.png" alt="write benchmark" height="250"></img>
 </p>
 
 Considering that we are comparing a disk store with a memory store, the query
@@ -119,7 +119,7 @@ is writing to disk while Datascript is in memory. The bulk write speed is
 good, writing 100K datoms to disk in less than a second; the same data can also be transacted as a whole in less than 2 seconds.
 
 If transacting one datom or a few datoms at a time, it is much slower. Each
-transaction syncs to disk, so it is inherently slow. Also, the current implementation does a lot of reads during transaction. Because LMDB does copy on write and never overwrites data that are being read, large write amplification can occur. The advice is to write data in larger batch and in fewer transactions.
+transaction syncs to disk, so it is inherently slow. Because LMDB does copy on write and never overwrites data that are being read, large write amplification can occur. The advice is to write data in larger batch.
 
 In short, Datalevin is quite usable for small or medium projects right now.
 
