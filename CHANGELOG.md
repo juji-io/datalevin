@@ -1,6 +1,12 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+## Fixed
+- fix invalid reuse of reader locktable slot [#7](https://github.com/juji-io/datalevin/issues/7)
+## Changed
+- remove MDB_NOTLS flag to gain significant small writes speed 
+
 ## 0.2.6
 ## Fixed
 - update existing schema instead of creating new ones
