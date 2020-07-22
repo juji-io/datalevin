@@ -12,8 +12,7 @@
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer]))
 
-(def ^:no-doc default-env-flags [EnvFlags/MDB_NOTLS
-                                 EnvFlags/MDB_NORDAHEAD])
+(def ^:no-doc default-env-flags [EnvFlags/MDB_NORDAHEAD])
 
 (def ^:no-doc default-dbi-flags [DbiFlags/MDB_CREATE])
 
@@ -100,12 +99,15 @@
           (reset rtx)
           (renew rtx)))))
   (get-rtx [this]
-    (loop [i (.getId ^Thread (Thread/currentThread))]
-      (let [^long i' (mod i cnt)
-            ^Rtx rtx (.get rtxs i')]
-        (or (renew rtx)
-            (new-rtx this)
-            (recur (long (inc i'))))))))
+    (locking this
+      (if (zero? cnt)
+       (new-rtx this)
+       (loop [i (.getId ^Thread (Thread/currentThread))]
+         (let [^long i' (mod i cnt)
+               ^Rtx rtx (.get rtxs i')]
+           (or (renew rtx)
+               (new-rtx this)
+               (recur (long (inc i'))))))))))
 
 (defprotocol ^:no-doc IKV
   (put [this txn] [this txn put-flags]
@@ -692,5 +694,4 @@
                          (.setMaxDbs c/+max-dbs+))
          ^Env env      (.open builder file (into-array EnvFlags flags))
          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-     (new-rtx pool)
      (->LMDB env dir pool (ConcurrentHashMap.)))))

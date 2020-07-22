@@ -91,7 +91,7 @@
                           (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
   (testing "close then re-open, clear and drop"
-    (let [dir  (.-dir lmdb)]
+    (let [dir (.-dir lmdb)]
       (sut/close lmdb)
       (is (sut/closed? lmdb))
       (let [lmdb (sut/open-lmdb dir)]
@@ -101,6 +101,17 @@
        (is (nil? (sut/get-value lmdb "a" :datalevin)))
        (sut/drop-dbi lmdb "a")
        (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "a" 1)))))))
+
+(deftest reentry-test
+  (let [dir (.-dir lmdb)]
+    (sut/transact lmdb [[:put "a" :old 1]])
+    (let [lmdb2 (sut/open-lmdb dir)]
+      (sut/open-dbi lmdb2 "a")
+      (is (= 1 (sut/get-value lmdb2 "a" :old)))
+      (sut/transact lmdb2 [[:put "a" :something 1]])
+      (is (= 1 (sut/get-value lmdb2 "a" :something)))
+      (sut/close lmdb2))
+    (is (= 1 (sut/get-value lmdb "a" :something)))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))
