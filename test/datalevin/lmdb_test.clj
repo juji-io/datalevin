@@ -9,6 +9,7 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays]
+           [org.lmdbjava Txn$BadReaderLockException]
            [datalevin.lmdb LMDB]))
 
 (def ^:dynamic ^LMDB lmdb nil)
@@ -105,13 +106,20 @@
 (deftest reentry-test
   (let [dir (.-dir lmdb)]
     (sut/transact lmdb [[:put "a" :old 1]])
-    (let [lmdb2 (sut/open-lmdb dir)]
-      (sut/open-dbi lmdb2 "a")
-      (is (= 1 (sut/get-value lmdb2 "a" :old)))
-      (sut/transact lmdb2 [[:put "a" :something 1]])
-      (is (= 1 (sut/get-value lmdb2 "a" :something)))
-      (sut/close lmdb2))
-    (is (= 1 (sut/get-value lmdb "a" :something)))))
+    (is (= 1 (sut/get-value lmdb "a" :old)))
+    (let [res (future
+                (let [lmdb2 (sut/open-lmdb dir)]
+                  (sut/open-dbi lmdb2 "a")
+                  (is (= 1 (sut/get-value lmdb2 "a" :old)))
+                  (sut/transact lmdb2 [[:put "a" :something 1]])
+                  (is (= 1 (sut/get-value lmdb2 "a" :something)))
+                  (is (= 1 (sut/get-value lmdb "a" :something)))
+                  ;; should not close this
+                  ;; https://github.com/juji-io/datalevin/issues/7
+                  (sut/close lmdb2)
+                  1))]
+      (is (= 1 @res)))
+    (is (thrown? Txn$BadReaderLockException (sut/get-value lmdb "a" :something)))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))
