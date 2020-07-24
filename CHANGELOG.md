@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+## Added
+- hash-join optimization [submitted PR #362 to Datascript](https://github.com/tonsky/datascript/pull/362)
+
 ## 0.2.7
 ## Fixed
 - fix invalid reuse of reader locktable slot [#7](https://github.com/juji-io/datalevin/issues/7)
@@ -27,7 +31,7 @@ All notable changes to this project will be documented in this file. This change
 
 ## 0.2.2
 ## Changed
-- apply `query/join-tuples` optimization https://github.com/tonsky/datascript/pull/203
+- apply [query/join-tuples optimization](https://github.com/tonsky/datascript/pull/203)
 - use array get wherenever we can in query, saw significant improvement in some queries.
 - use `db/-first` instead of `(first (db/-datom ..))`, `db/-populated?` instead of `(not-empty (db/-datoms ..)`, as they do not realize the results hence faster.
 - storage test improvements
