@@ -129,7 +129,7 @@ that we are comparing a disk store with a memory store, this result may be
 counter-intuitive. The primary reason is that Datalevin is not an immutable
 database, hence it is possible to cache aggressively, where as an immutable
 database cannot (e.g. see [this issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
-caching in version 0.2.8, Datalevin is only faster than Datascript for single
+caching in version 0.2.8, Datalevin was only faster than Datascript for single
 clause queries due to the highly efficient reads of LMDB. With caching enabled,
 Datalevin is faster across the board.
 
