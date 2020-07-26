@@ -1,7 +1,7 @@
 (def version "0.2.8")
 
 (defproject datalevin version
-  :description "A port of Datascript to LMDB"
+  :description "A simple, fast and durable Datalog database"
   :url "https://github.com/juji-io/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
