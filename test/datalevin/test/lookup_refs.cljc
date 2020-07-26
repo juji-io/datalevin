@@ -237,7 +237,7 @@
 
      (are [index attrs resolved-attrs] (= (vec (apply d/seek-datoms db index attrs))
                                           (vec (apply d/seek-datoms db index resolved-attrs)))
-       :eavt [[:name "Ivan"]] [1]
+       ;; :eavt [[:name "Ivan"]] [1]
        :eavt [[:name "Ivan"] :name] [1 :name]
        :eavt [[:name "Ivan"] :friends [:name "Oleg"]] [1 :friends 3]
 

@@ -2,8 +2,10 @@
   (:require
    [clojure.walk]
    [clojure.data]
+   [clojure.set]
    [me.tonsky.persistent-sorted-set :as set]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax implicit-schema]]
+   [datalevin.lru :as lru]
    [datalevin.datom :as d
     :refer [datom datom-tx datom-added datom?]]
    [datalevin.util
@@ -16,7 +18,9 @@
   #?(:clj
      (:import [datalevin.datom Datom]
               [datalevin.storage Store]
-              [datalevin.bits Retrieved])))
+              [datalevin.lru LRU]
+              [datalevin.bits Retrieved]
+              [java.util.concurrent ConcurrentHashMap])))
 
 
 ;;;;;;;;;; Searching
@@ -72,6 +76,17 @@
   Searchable
   (-searchable? [_] false))
 
+(def ^:private caches (ConcurrentHashMap.))
+
+(defmacro wrap-cache
+  [store pattern body]
+  `(let [cache# (.get caches ~store)]
+     (if-some [cached# (get cache# ~pattern nil)]
+       cached#
+       (let [res# ~body]
+         (.put caches ~store (assoc cache# ~pattern res#))
+         res#))))
+
 (defrecord-updatable DB [^Store store eavt aevt avet vaet
                          max-eid max-tx schema rschema hash]
 
@@ -91,57 +106,87 @@
   (-attrs-by [_ property] (rschema property))
 
   ISearch
-  (-search [db pattern]
-           (let [[e a v _] pattern]
-             (case-tree
-              [e a (some? v)]
-              [(s/fetch store (datom e a v)) ; e a v
-               (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
-               (s/slice-filter store :eav
-                               (fn [^Datom d] (= v (.-v d)))
-                               (datom e nil nil)
-                               (datom e nil nil))  ; e _ v
-               (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-               (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
-               (s/slice store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
-               (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
-               (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))]))) ; _ _ _
-  (-first [db pattern]
-          (let [[e a v _] pattern]
-             (case-tree
-              [e a (some? v)]
-              [(s/fetch store (datom e a v)) ; e a v
-               (s/head store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
-               (s/head-filter store :eav
-                               (fn [^Datom d] (= v (.-v d)))
-                               (datom e nil nil)
-                               (datom e nil nil))  ; e _ v
-               (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-               (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
-               (s/head store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
-               (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
-               (s/head store :eav (datom e0 nil nil) (datom emax nil nil))]))) ; _ _ _
+  (-search
+   [db pattern]
+   (let [[e a v _] pattern]
+     (wrap-cache
+      store
+      [e a v]
+      (case-tree
+       [e a (some? v)]
+       [(s/fetch store (datom e a v)) ; e a v
+        (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+        (s/slice-filter store :eav
+                        (fn [^Datom d] (= v (.-v d)))
+                        (datom e nil nil)
+                        (datom e nil nil))  ; e _ v
+        (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
+        (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+        (s/slice store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
+        (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+        (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))]))))
+
+  (-first
+   [db pattern]
+   (let [[e a v _] pattern]
+     (wrap-cache
+      store
+      [e a v]
+      (case-tree
+       [e a (some? v)]
+       [(s/fetch store (datom e a v)) ; e a v
+        (s/head store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+        (s/head-filter store :eav
+                       (fn [^Datom d] (= v (.-v d)))
+                       (datom e nil nil)
+                       (datom e nil nil))  ; e _ v
+        (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
+        (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+        (s/head store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
+        (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+        (s/head store :eav (datom e0 nil nil) (datom emax nil nil))]))))
 
   IIndexAccess
-  (-populated? [db index cs]
-               (s/slice store index (components->pattern db index cs e0 tx0)
-                        (components->pattern db index cs emax txmax)))
-  (-datoms [db index cs]
-           (s/slice store index (components->pattern db index cs e0 tx0)
-                    (components->pattern db index cs emax txmax)))
+  (-populated?
+   [db index cs]
+   (wrap-cache
+    store
+    [index cs]
+    (s/slice store index (components->pattern db index cs e0 tx0)
+             (components->pattern db index cs emax txmax))))
 
-  (-seek-datoms [db index cs]
-                (s/slice store index (components->pattern db index cs e0 tx0)
-                         (datom emax nil nil txmax)))
+  (-datoms
+   [db index cs]
+   (wrap-cache
+    store
+    [index cs]
+    (s/slice store index (components->pattern db index cs e0 tx0)
+             (components->pattern db index cs emax txmax))))
 
-  (-rseek-datoms [db index cs]
-                 (s/rslice store index (components->pattern db index cs emax txmax)
-                           (datom e0 nil nil tx0)))
+  (-seek-datoms
+   [db index cs]
+   (wrap-cache
+    store
+    [index cs]
+    (s/slice store index (components->pattern db index cs e0 tx0)
+             (datom emax nil nil txmax))))
 
-  (-index-range [db attr start end]
-                (validate-attr attr (list '-index-range 'db attr start end))
-                (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
-                         (resolve-datom db nil attr end nil emax txmax)))
+  (-rseek-datoms
+   [db index cs]
+   (wrap-cache
+    store
+    [index cs]
+    (s/rslice store index (components->pattern db index cs emax txmax)
+              (datom e0 nil nil tx0))))
+
+  (-index-range
+   [db attr start end]
+   (wrap-cache
+    store
+    [attr start end]
+    (do (validate-attr attr (list '-index-range 'db attr start end))
+        (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
+                 (resolve-datom db nil attr end nil emax txmax)))))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
@@ -213,6 +258,7 @@
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
    (let [store (s/open schema dir)]
+     (.put caches store (lru/lru c/+cache-limit+))
      (map->DB
       {:store   store
        :schema  (s/schema store)
@@ -236,6 +282,7 @@
          _       (s/load-datoms store datoms)
          max-eid (s/init-max-eid store)
          max-tx  tx0]
+     (.put caches store (lru/lru c/+cache-limit+))
      (map->DB {:store   store
                :schema  schema
                :rschema rschema
@@ -413,16 +460,6 @@
      (assoc-in [:tempids eid] eid)
      true
      (update :db-after advance-max-eid eid))))
-
-(defn- with-datom-store [^DB db ^Datom datom]
-  (validate-datom db datom)
-  (let [^Store store (.-store db)]
-    (if (datom-added datom)
-      (do (s/insert store datom)
-          (advance-max-eid db (.-e datom)))
-      (s/delete store datom)))
-  (assoc db :hash (atom 0))
-  db)
 
 ;; In context of `with-datom` we can use faster comparators which
 ;; do not check for nil (~10-15% performance gain in `transact`)
@@ -750,13 +787,12 @@
                            ov            (if (ref? db a) (entid-strict db ov) ov)
                            nv            (if (ref? db a) (entid-strict db nv) nv)
                            _             (validate-val nv entity)
-                           datoms        (vec
-                                          (concat
-                                           (set/slice
-                                            (get db :eavt)
-                                            (datom e a nil tx0)
-                                            (datom e a nil txmax))
-                                           (-search db [e a])))]
+                           datoms        (clojure.set/union
+                                          (set/slice
+                                           (get db :eavt)
+                                           (datom e a nil tx0)
+                                           (datom e a nil txmax))
+                                          (-search db [e a]))]
                        (if (multival? db a)
                          (if (some (fn [^Datom d] (= (.-v d) ov)) datoms)
                            (recur (transact-add report [:db/add e a nv]) entities)
@@ -859,4 +895,5 @@
                  (raise "Bad entity type at " entity ", expected map or vector"
                         {:error :transact/syntax, :tx-data entity}))))]
     (s/load-datoms (.-store ^DB (:db-after rp)) (:tx-data rp))
+    (.put caches (.-store ^DB (:db-after rp)) (lru/lru c/+cache-limit+))
     rp))

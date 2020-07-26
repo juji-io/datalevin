@@ -4,6 +4,7 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
+   ;; [taoensso.timbre :as log]
    [datalevin.db :as db]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
@@ -405,15 +406,15 @@
         common-attrs (vec (intersect-keys (:attrs rel1) (:attrs rel2)))
         common-gtrs1 (map #(getter-fn attrs1 %) common-attrs)
         common-gtrs2 (map #(getter-fn attrs2 %) common-attrs)
-        keep-attrs1 (keys attrs1)
-        keep-attrs2 (vec (set/difference (set (keys attrs2)) (set (keys attrs1))))
-        keep-idxs1  (to-array (map attrs1 keep-attrs1))
-        keep-idxs2  (to-array (map attrs2 keep-attrs2))
-        key-fn1     (tuple-key-fn common-gtrs1)
-        key-fn2     (tuple-key-fn common-gtrs2)]
+        keep-attrs1  (keys attrs1)
+        keep-attrs2  (vec (set/difference (set (keys attrs2)) (set (keys attrs1))))
+        keep-idxs1   (to-array (map attrs1 keep-attrs1))
+        keep-idxs2   (to-array (map attrs2 keep-attrs2))
+        key-fn1      (tuple-key-fn common-gtrs1)
+        key-fn2      (tuple-key-fn common-gtrs2)]
     (if (< (count tuples1) (count tuples2))
-      (let [hash        (hash-attrs key-fn1 tuples1)
-            new-tuples  (->>
+      (let [hash       (hash-attrs key-fn1 tuples1)
+            new-tuples (->>
                          (reduce (fn [acc tuple2]
                                    (let [key (key-fn2 tuple2)]
                                      (if-some [tuples1 (get hash key)]
@@ -425,8 +426,8 @@
                          (persistent!))]
         (Relation. (zipmap (concat keep-attrs1 keep-attrs2) (range))
                    new-tuples))
-      (let [hash         (hash-attrs key-fn2 tuples2)
-            new-tuples   (->>
+      (let [hash       (hash-attrs key-fn2 tuples2)
+            new-tuples (->>
                           (reduce (fn [acc tuple1]
                                     (let [key (key-fn1 tuple1)]
                                       (if-some [tuples2 (get hash key)]
@@ -454,6 +455,7 @@
 (defn lookup-pattern-db [db pattern]
   ;; TODO optimize with bound attrs min/max values here
   (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)
+        ;; _ (log/debug search-pattern)
         datoms         (db/-search db search-pattern)
         attr->prop     (->> (map vector pattern ["e" "a" "v" "tx"])
                             (filter (fn [[s _]] (free-var? s)))

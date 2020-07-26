@@ -109,7 +109,7 @@
              #{[1 "ivan@mail.ru"]
                [2 "petr@gmail.com"]
                [3 "ivan@mail.ru"]})))
-    
+
     (testing "Query without DB"
       (is (= (d/q '[:find ?a ?b
                     :in   ?a ?b]
@@ -162,7 +162,7 @@
                 [2 :name "Petr"]]
                [])
              #{})))
-    
+
     (testing "Placeholders"
       (is (= (d/q '[:find ?x ?z
                     :in [?x _ ?z]]
@@ -172,7 +172,7 @@
                     :in [[?x _ ?z]]]
                   [[:x :y :z] [:a :b :c]])
              #{[:x :z] [:a :c]})))
-    
+
     (testing "Error reporting"
       (is (thrown-with-msg? ExceptionInfo #"Cannot bind value :a to tuple \[\?a \?b\]"
             (d/q '[:find ?a ?b :in [?a ?b]] :a)))
@@ -182,7 +182,7 @@
             (d/q '[:find ?a ?b :in [?a ?b]] [:a]))))
 
 ))
-        
+
 (deftest test-nested-bindings
   (is (= (d/q '[:find  ?k ?v
                 :in    [[?k ?v] ...]

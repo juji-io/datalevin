@@ -8,7 +8,7 @@
 #?(:clj
    (:import [clojure.lang ExceptionInfo])))
 
-(deftest test-query-fns
+(deftest test-query-fns-1
   (testing "predicate without free variables"
     (is (= (d/q '[:find ?x
                   :in [?x ...]
@@ -30,7 +30,7 @@
                     :where [?e :age ?age]
                            [(get-else $ ?e :height 300) ?height]] db)
              #{[1 15 300] [2 22 240] [3 37 300]}))
-      
+
       (is (thrown-with-msg? ExceptionInfo #"get-else: nil default value is not supported"
             (d/q '[:find ?e ?height
                     :where [?e :age]
@@ -43,6 +43,13 @@
              #{[1 :age 15]
                [2 :height 240]
                [3 :age 37]})))
+))
+
+(deftest test-query-fns-2
+  (let [db (-> (d/empty-db {:parent {:db/valueType :db.type/ref}})
+               (d/db-with [ { :db/id 1, :name  "Ivan",  :age   15 }
+                            { :db/id 2, :name  "Petr",  :age   22, :height 240, :parent 1}
+                            { :db/id 3, :name  "Slava", :age   37, :parent 2}]))]
 
     (testing "missing?"
       (is (= (d/q '[:find ?e ?age
@@ -64,7 +71,7 @@
                            [?e2 :age ?a2]
                            [(< ?a1 18 ?a2)]] db)
              #{[1 2] [1 3]}))
-      
+
       (is (= (d/q '[:find  ?x ?c
                     :in    [?x ...]
                     :where [(count ?x) ?c]]
@@ -165,7 +172,7 @@
                            [(+ ?x 100) ?y]]
                   [[0 :age 15] [1 :age 35]])
              #{})))
-    
+
     (testing "Returning nil from function filters out tuple from result"
       (is (= (d/q '[:find ?x
                     :in    [?in ...] ?f
@@ -192,7 +199,7 @@
                     :where [(ground ?in) [[?x _ ?z]...]]]
                   [[:a :b :c] [:d :e :f]])
              #{[:a :c] [:d :f]}))
-      
+
       (is (= (d/q '[:find ?in
                     :in [?in ...]
                     :where [(ground ?in) _]]
@@ -220,7 +227,7 @@
               [?e2 :name]
               [(< ?e ?e2)]]
       #{[1 2] [1 3] [1 4] [2 3] [2 4] [3 4]}
-         
+
       ;; join with extra symbols
       [:find  ?e ?e2
        :where [?e  :age ?a]
@@ -264,7 +271,7 @@
            :in   [?e ...]
            :where [(fun ?e)]]
          [1])))
-  
+
   (is (thrown-with-msg? ExceptionInfo #"Unknown function 'fun in \[\(fun \?e\) \?x\]"
     (d/q '[:find ?e ?x
            :in   [?e ...]

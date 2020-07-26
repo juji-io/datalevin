@@ -23,6 +23,7 @@
 (def ^:const +init-db-size+     100)   ; in megabytes
 (def ^:const +default-val-size+ 16384) ; in bytes
 (def ^:const +max-key-size+     511)   ; in bytes
+(def ^:const +cache-limit+      1000)  ; per Datalog db
 
 ;; index storage
 
