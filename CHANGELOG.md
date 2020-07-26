@@ -4,12 +4,13 @@ All notable changes to this project will be documented in this file. This change
 ## WIP
 ## Added
 - hash-join optimization [submitted PR #362 to Datascript](https://github.com/tonsky/datascript/pull/362)
+- caching DB query results
 
 ## 0.2.7
 ## Fixed
 - fix invalid reuse of reader locktable slot [#7](https://github.com/juji-io/datalevin/issues/7)
 ## Changed
-- remove MDB_NOTLS flag to gain significant small writes speed 
+- remove MDB_NOTLS flag to gain significant small writes speed
 
 ## 0.2.6
 ## Fixed
@@ -27,7 +28,7 @@ All notable changes to this project will be documented in this file. This change
 
 ## 0.2.3
 ## Fixed
-- long out of range error during native compile 
+- long out of range error during native compile
 
 ## 0.2.2
 ## Changed
@@ -41,14 +42,14 @@ All notable changes to this project will be documented in this file. This change
 - use only half of the reader slots, so other processes may read
 
 ### Added
-- add an arity for `bits/read-buffer` and `bits/put-buffer` 
+- add an arity for `bits/read-buffer` and `bits/put-buffer`
 - add `lmdb/closed?`, `lmdb/clear-dbi`, and `lmdb/drop-dbi`
 
 ## 0.2.0
 ### Added
 - code samples
 - API doc
-- `core/close` 
+- `core/close`
 
 ## 0.1.0
 ### Added
