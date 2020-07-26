@@ -131,7 +131,7 @@ database, hence it is possible to cache aggressively, where as an immutable
 database cannot (e.g. see [this issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
 caching in version 0.2.8, Datalevin was only faster than Datascript for single
 clause queries due to the highly efficient reads of LMDB. With caching enabled,
-Datalevin is faster across the board.
+Datalevin is now faster across the board.
 
 Writes can be a few orders of magnitude slower, as expected, as Datalevin
 is writing to disk while Datascript is in memory. The bulk write speed is
