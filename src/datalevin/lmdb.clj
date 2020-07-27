@@ -1,6 +1,5 @@
 (ns datalevin.lmdb
   "API for Key Value Store"
-  (:refer-clojure :exclude [get iterate])
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
@@ -36,7 +35,7 @@
   (renew [this] "renew and return previously reset transaction for reuse"))
 
 (deftype ^:no-doc Rtx [^Txn txn
-                       ^:volatile-mutable use
+                       ^:volatile-mutable ^Boolean use?
                        ^ByteBuffer kb
                        ^ByteBuffer start-kb
                        ^ByteBuffer stop-kb]
@@ -58,18 +57,18 @@
 
   IRtx
   (close-rtx [_]
-    (set! use false)
+    (set! use? false)
     (.close txn))
   (reset [this]
     (locking this
       (.reset txn)
-      (set! use false)
+      (set! use? false)
       this))
   (renew [this]
     (locking this
-      (when-not use
+      (when-not use?
         (.renew txn)
-        (set! use true)
+        (set! use? true)
         this))))
 
 (defprotocol ^:no-doc IRtxPool
@@ -113,8 +112,8 @@
   (put [this txn] [this txn put-flags]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
-  (get [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate [this rtx range-type] "Return a CursorIterable"))
+  (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
+  (iterate-kv [this rtx range-type] "Return a CursorIterable"))
 
 (defn- key-range
   [range-type kb1 kb2]
@@ -167,13 +166,13 @@
     (.flip kb)
     (.delete db txn kb)
     (.clear kb))
-  (get [_ rtx]
+  (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.flip kb)
       (let [res (.get db (.-txn ^Rtx rtx) kb)]
         (.clear kb)
         res)))
-  (iterate [this rtx range-type]
+  (iterate-kv [this rtx range-type]
     (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
           ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
       (.flip start-kb)
@@ -285,8 +284,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+     `k-type` and `v-type` indicate the data type, and they can be `:data`
+     (default), `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -323,8 +322,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+     `k-type` and `v-type` indicate the data type, and they can be `:data`
+     (default), `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -473,7 +472,7 @@
 (defn- fetch-value
   [^DBI dbi ^Rtx rtx k k-type v-type ignore-key?]
   (put-key rtx k k-type)
-  (when-let [^ByteBuffer bb (get dbi rtx)]
+  (when-let [^ByteBuffer bb (get-kv dbi rtx)]
     (if ignore-key?
       (b/read-buffer bb v-type)
       [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
@@ -482,7 +481,7 @@
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (let [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
         (let [kv (map-entry (.next iter))
@@ -497,7 +496,7 @@
           "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (if (.hasNext iter)
@@ -515,7 +514,7 @@
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type]
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            c              0]
       (if (.hasNext iter)
@@ -528,7 +527,7 @@
           "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
         (let [kv (map-entry (.next iter))]
@@ -546,7 +545,7 @@
           "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (if (.hasNext iter)
@@ -569,7 +568,7 @@
   [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type]
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            c              0]
       (if (.hasNext iter)
