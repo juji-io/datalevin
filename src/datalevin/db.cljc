@@ -125,7 +125,7 @@
         (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
         (s/slice store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
         (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
-        (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))]))))
+        (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-first
    [db pattern]
@@ -145,7 +145,7 @@
         (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
         (s/head store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
         (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
-        (s/head store :eav (datom e0 nil nil) (datom emax nil nil))]))))
+        (s/head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-count
    [db pattern]
@@ -155,7 +155,7 @@
       [:count e a v]
       (case-tree
        [e a (some? v)]
-       [1 ; e a v
+       [(s/size store :eav (datom e a v) (datom e a v)) ; e a v
         (s/size store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
         (s/size-filter store :eav
                        (fn [^Datom d] (= v (.-v d)))
@@ -165,7 +165,7 @@
         (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
         (s/size store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
         (s/size store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
-        (s/size store :eav (datom e0 nil nil) (datom emax nil nil))]))))
+        (s/datom-count store :eav)])))) ; _ _ _
 
   IIndexAccess
   (-populated?
