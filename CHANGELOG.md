@@ -1,9 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.2.9
 ## Changed
-- change system dbi names to avoid potential collision
+- automatically re-order simple where clauses according to the sizes of result sets
+- change system dbi names to avoid potential collisions
 
 ## Fixed
 - miss function keywords in cache keys
