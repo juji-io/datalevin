@@ -4,7 +4,6 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
-   ;; [taoensso.timbre :as log]
    [datalevin.db :as db]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
@@ -455,7 +454,6 @@
 (defn lookup-pattern-db [db pattern]
   ;; TODO optimize with bound attrs min/max values here
   (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)
-        ;; _ (log/debug search-pattern)
         datoms         (db/-search db search-pattern)
         attr->prop     (->> (map vector pattern ["e" "a" "v" "tx"])
                             (filter (fn [[s _]] (free-var? s)))
@@ -486,11 +484,15 @@
     (concat ['$] clause)))
 
 (defn lookup-pattern [source pattern]
-  (cond
-    (db/-searchable? source)
-      (lookup-pattern-db source pattern)
-    :else
-      (lookup-pattern-coll source pattern)))
+  (if (db/-searchable? source)
+    (lookup-pattern-db source pattern)
+    (lookup-pattern-coll source pattern)))
+
+(defn- pattern-size [source pattern]
+  (if (db/-searchable? source)
+    (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)]
+      (db/-count source search-pattern))
+    (count (filter #(matches-pattern? pattern %) source))))
 
 (defn collapse-rels [rels new-rel]
   (loop [rels    rels
@@ -729,6 +731,12 @@
         (not (free-var? a))
         (db/ref? source a)) (conj v))))
 
+(defn- clause-size
+  [clause]
+  (let [source   *implicit-source*
+        pattern  (resolve-pattern-lookup-refs source clause)]
+    (pattern-size source pattern)))
+
 (defn limit-rel [rel vars]
   (when-some [attrs' (not-empty (select-keys (:attrs rel) vars))]
     (assoc rel :attrs attrs')))
@@ -856,9 +864,46 @@
       (update context :rels collapse-rels (solve-rule context clause)))
     (-resolve-clause context clause)))
 
+(defn- sort-clauses [context clauses]
+  (sort-by (fn [clause]
+             (if (rule? context clause)
+               Long/MAX_VALUE
+               ;; TODO dig into these
+               (condp looks-like? clause
+                 [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
+                 Long/MAX_VALUE
+
+                 [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
+                 Long/MAX_VALUE
+
+                 [source? '*] ;; source + anything
+                 Long/MAX_VALUE
+
+                 '[or *] ;; (or ...)
+                 Long/MAX_VALUE
+
+                 '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
+                 Long/MAX_VALUE
+
+                 '[or-join [*] *] ;; (or-join [vars] ...)
+                 Long/MAX_VALUE
+
+                 '[and *] ;; (and ...)
+                 Long/MAX_VALUE
+
+                 '[not *] ;; (not ...)
+                 Long/MAX_VALUE
+
+                 '[not-join [*] *] ;; (not-join [vars] ...)
+                 Long/MAX_VALUE
+
+                 '[*] ;; pattern
+                 (clause-size clause))))
+           clauses))
+
 (defn -q [context clauses]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context clauses)))
+    (reduce resolve-clause context (sort-clauses context clauses))))
 
 (defn -collect
   ([context symbols]

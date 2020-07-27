@@ -8,7 +8,7 @@
 #?(:clj
    (:import [clojure.lang ExceptionInfo])))
 
-(deftest test-query-fns-1
+(deftest test-query-fns
   (testing "predicate without free variables"
     (is (= (d/q '[:find ?x
                   :in [?x ...]
@@ -28,29 +28,21 @@
     (testing "get-else"
       (is (= (d/q '[:find ?e ?age ?height
                     :where [?e :age ?age]
-                           [(get-else $ ?e :height 300) ?height]] db)
+                    [(get-else $ ?e :height 300) ?height]] db)
              #{[1 15 300] [2 22 240] [3 37 300]}))
 
       (is (thrown-with-msg? ExceptionInfo #"get-else: nil default value is not supported"
-            (d/q '[:find ?e ?height
-                    :where [?e :age]
-                           [(get-else $ ?e :height nil) ?height]] db))))
+                            (d/q '[:find ?e ?height
+                                   :where [?e :age]
+                                   [(get-else $ ?e :height nil) ?height]] db))))
 
     (testing "get-some"
       (is (= (d/q '[:find ?e ?a ?v
                     :where [?e :name _]
-                           [(get-some $ ?e :height :age) [?a ?v]]] db)
+                    [(get-some $ ?e :height :age) [?a ?v]]] db)
              #{[1 :age 15]
                [2 :height 240]
                [3 :age 37]})))
-))
-
-(deftest test-query-fns-2
-  (let [db (-> (d/empty-db {:parent {:db/valueType :db.type/ref}})
-               (d/db-with [ { :db/id 1, :name  "Ivan",  :age   15 }
-                            { :db/id 2, :name  "Petr",  :age   22, :height 240, :parent 1}
-                            { :db/id 3, :name  "Slava", :age   37, :parent 2}]))]
-
     (testing "missing?"
       (is (= (d/q '[:find ?e ?age
                     :in $

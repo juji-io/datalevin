@@ -160,12 +160,17 @@
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
     "Return true if there exists at least one datom in the given boundary (inclusive)")
+  (size [this index low-datom high-datom]
+    "Return the number of datoms within the given range (inclusive)")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")
   (slice [this index low-datom high-datom]
     "Return a range of datoms within the given range (inclusive).")
   (rslice [this index high-datom low-datom]
     "Return a range of datoms in reverse within the given range (inclusive)")
+  (size-filter [this index pred low-datom high-datom]
+    "Return the number of datoms within the given range (inclusive) that
+    return true for (pred x), where x is the datom")
   (head-filter [this index pred low-datom high-datom]
     "Return the first datom within the given range (inclusive) that
     return true for (pred x), where x is the datom")
@@ -261,6 +266,14 @@
                     :ignore
                     true))
 
+  (size [_ index low-datom high-datom]
+    (lmdb/range-count lmdb
+                      (index->dbi index)
+                      [:closed
+                       (low-datom->indexable schema low-datom)
+                       (high-datom->indexable schema high-datom)]
+                      index))
+
   (head [_ index low-datom high-datom]
     (retrieved->datom
      lmdb attrs (lmdb/get-first lmdb
@@ -283,16 +296,24 @@
            :long)))
 
   (rslice [_ index high-datom low-datom]
-    (mapv
-     (partial retrieved->datom lmdb attrs)
-     (lmdb/get-range
-      lmdb
-      (index->dbi index)
-      [:closed-back
-       (high-datom->indexable schema high-datom)
-       (low-datom->indexable schema low-datom)]
-      index
-      :long)))
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/get-range
+           lmdb
+           (index->dbi index)
+           [:closed-back
+            (high-datom->indexable schema high-datom)
+            (low-datom->indexable schema low-datom)]
+           index
+           :long)))
+
+  (size-filter [_ index pred low-datom high-datom]
+    (lmdb/range-filter-count lmdb
+                             (index->dbi index)
+                             (datom-pred->kv-pred lmdb attrs index pred)
+                             [:closed
+                              (low-datom->indexable schema low-datom)
+                              (high-datom->indexable schema high-datom)]
+                             index))
 
   (head-filter [_ index pred low-datom high-datom]
     (retrieved->datom

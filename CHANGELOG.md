@@ -1,10 +1,17 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+## Changed
+- change system dbi names to avoid potential collision
+
+## Fixed
+- miss function keywords in cache keys
+
 ## 0.2.8
 ## Added
 - hash-join optimization [submitted PR #362 to Datascript](https://github.com/tonsky/datascript/pull/362)
-- caching DB query results
+- caching DB query results, significant query speed improvement
 
 ## 0.2.7
 ## Fixed

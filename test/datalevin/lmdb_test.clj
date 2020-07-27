@@ -143,12 +143,16 @@
   (let [ks  (shuffle (range 0 1000))
         vs  (map inc ks)
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-        res (sort-by first (map (fn [k v] [k v]) ks vs))]
+        res (sort-by first (map (fn [k v] [k v]) ks vs))
+        rc  (count res)]
     (sut/transact lmdb txs)
     (is (= [] (sut/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
+    (is (= 0 (sut/range-count lmdb "c" [:greater-than 1500] :long)))
     (is (= res (sut/get-range lmdb "c" [:all] :long :long)))
+    (is (= rc (sut/range-count lmdb "c" [:all] :long)))
     (is (= res
            (sut/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
+    (is (= rc (sut/range-count lmdb "c" [:less-than Long/MAX_VALUE] :long)))
     (is (= (take 10 res)
            (sut/get-range lmdb "c" [:at-most 9] :long :long)))
     (is (= (->> res (drop 10) (take 100))
@@ -176,11 +180,13 @@
         pred (fn [kv]
                (let [^long k (b/read-buffer (key kv) :long)]
                  (< 10 k 20)))
-        fks (range 11 20)
-        fvs (map inc fks)
-        res (map (fn [k v] [k v]) fks fvs)]
+        fks  (range 11 20)
+        fvs  (map inc fks)
+        res  (map (fn [k v] [k v]) fks fvs)
+        rc   (count res)]
     (sut/transact lmdb txs)
     (is (= fvs (sut/range-filter lmdb "c" pred [:all] :long :long true)))
+    (is (= rc (sut/range-filter-count lmdb "c" pred [:all] :long)))
     (is (= res (sut/range-filter lmdb "c" pred [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test

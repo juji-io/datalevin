@@ -27,6 +27,7 @@
 
 (defprotocol ISearch
   (-search [data pattern])
+  (-count [data pattern])
   (-first [data pattern]))
 
 (defprotocol IIndexAccess
@@ -111,7 +112,7 @@
    (let [[e a v _] pattern]
      (wrap-cache
       store
-      [e a v]
+      [:search e a v]
       (case-tree
        [e a (some? v)]
        [(s/fetch store (datom e a v)) ; e a v
@@ -131,7 +132,7 @@
    (let [[e a v _] pattern]
      (wrap-cache
       store
-      [e a v]
+      [:first e a v]
       (case-tree
        [e a (some? v)]
        [(s/fetch store (datom e a v)) ; e a v
@@ -146,20 +147,40 @@
         (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
         (s/head store :eav (datom e0 nil nil) (datom emax nil nil))]))))
 
+  (-count
+   [db pattern]
+   (let [[e a v _] pattern]
+     (wrap-cache
+      store
+      [:count e a v]
+      (case-tree
+       [e a (some? v)]
+       [1 ; e a v
+        (s/size store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+        (s/size-filter store :eav
+                       (fn [^Datom d] (= v (.-v d)))
+                       (datom e nil nil)
+                       (datom e nil nil))  ; e _ v
+        (s/size store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
+        (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+        (s/size store :aev (datom e0 a nil) (datom emax a nil)) ; _ a _
+        (s/size store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+        (s/size store :eav (datom e0 nil nil) (datom emax nil nil))]))))
+
   IIndexAccess
   (-populated?
    [db index cs]
    (wrap-cache
     store
-    [index cs]
-    (s/slice store index (components->pattern db index cs e0 tx0)
+    [:populated? index cs]
+    (s/populated? store index (components->pattern db index cs e0 tx0)
              (components->pattern db index cs emax txmax))))
 
   (-datoms
    [db index cs]
    (wrap-cache
     store
-    [index cs]
+    [:datoms index cs]
     (s/slice store index (components->pattern db index cs e0 tx0)
              (components->pattern db index cs emax txmax))))
 
@@ -167,7 +188,7 @@
    [db index cs]
    (wrap-cache
     store
-    [index cs]
+    [:seek index cs]
     (s/slice store index (components->pattern db index cs e0 tx0)
              (datom emax nil nil txmax))))
 
@@ -175,7 +196,7 @@
    [db index cs]
    (wrap-cache
     store
-    [index cs]
+    [:rseek index cs]
     (s/rslice store index (components->pattern db index cs emax txmax)
               (datom e0 nil nil tx0))))
 
