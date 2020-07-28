@@ -103,10 +103,10 @@
                          :clj  ^{:tag "[[Ljava.lang.Object;"} idxs1)
                    t2 #?(:cljs idxs2
                          :clj  ^{:tag "[[Ljava.lang.Object;"} idxs2)]
-(let [l1  (alength idxs1)
+  (let [l1  (alength idxs1)
         l2  (alength idxs2)
-      tg1 (if (da/array? t1) typed-aget get)
-      tg2 (if (da/array? t2) typed-aget get)
+        tg1 (if (da/array? t1) typed-aget get)
+        tg2 (if (da/array? t2) typed-aget get)
         res (da/make-array (+ l1 l2))]
     (dotimes [i l1]
       (aset res i (tg1 t1 (aget idxs1 i))))
