@@ -1,11 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
-## Added
-- database replication
+## 0.2.10
 
 ## Fixed
+- correct results when there are more than 8 clauses
 - correct query result size 
 
 ## 0.2.9
