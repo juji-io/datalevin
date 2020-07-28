@@ -13,7 +13,7 @@
 (deftest test-many-joins
   (let [data (->> (range 1000)
                   (map (fn [^long i]
-                         {:db/id (inc i)
+                         {:db/id i
                           :a (str (UUID/randomUUID))
                           :b (str (UUID/randomUUID))
                           :c (str (UUID/randomUUID))

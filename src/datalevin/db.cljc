@@ -363,7 +363,7 @@
 
 (defn entid [db eid]
   (cond
-    (and (integer? eid) (pos? (long eid)))
+    (and (integer? eid) (not (neg? (long eid))))
     eid
 
     (sequential? eid)
