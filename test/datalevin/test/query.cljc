@@ -11,7 +11,7 @@
 
 ;; #8
 (deftest test-many-joins
-  (let [data (->> (range 10)
+  (let [data (->> (range 1000)
                   (map (fn [^long i]
                          {:db/id (inc i)
                           :a (str (UUID/randomUUID))
@@ -31,19 +31,18 @@
                             :g {:db/valueType :db.type/long}
                             :h {:db/valueType :db.type/long}})
                (d/db-with data))]
-    (d/q '[:find ?eid1 .
-           :where
-           [?eid1 :a ?a1]
-           [?eid1 :b ?b1]
-           [?eid1 :c ?c1]
-           [?eid1 :d ?d1]
-           [?eid1 :e ?e1]
-           [?eid1 :f ?f1]
-           [?eid1 :g ?g1]
-           [?eid1 :h ?h1]
-           [?eid2 :e ?e1]
-           ]
-         db)))
+    (is (= 100 (d/q '[:find ?eid1 .
+                :where
+                [?eid1 :a ?a1]
+                [?eid1 :b ?b1]
+                [?eid1 :c ?c1]
+                [?eid1 :d ?d1]
+                [?eid1 :e ?e1]
+                [?eid1 :f ?f1]
+                [?eid1 :g ?g1]
+                [?eid1 :h ?h1]
+                [?eid2 :e ?e1]]
+              db)))))
 
 (deftest test-joins
   (let [db (-> (d/empty-db)
