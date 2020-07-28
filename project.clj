@@ -7,6 +7,7 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :dependencies [[org.clojure/clojure "1.10.1" :scope "provided"]
                  [persistent-sorted-set "0.1.2"]
+                 [com.taoensso/nippy "2.15.0"]
                  [org.lmdbjava/lmdbjava "0.8.1"
                   ;; uncomment when run lein codox
                   ;; :exclusions
@@ -14,9 +15,8 @@
                   ;;  org.ow2.asm/asm-commons
                   ;;  org.ow2.asm/asm-tree
                   ;;  org.ow2.asm/asm-util]
-                  ]
-                 [com.taoensso/nippy "2.14.0"]]
-  :profiles {:dev {:dependencies [[org.clojure/test.check "1.0.0"]
+                  ]]
+  :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.0"]
                                   [criterium "0.4.6"]
                                   [com.taoensso/timbre "4.10.0"]]}}
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"

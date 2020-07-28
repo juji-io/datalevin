@@ -214,7 +214,7 @@
   'rand rand, 'rand-int rand-int,
   'true? true?, 'false? false?, 'nil? nil?, 'some? some?, 'not not, 'and and-fn, 'or or-fn,
   'complement complement, 'identical? identical?,
-  'identity identity, 'meta meta, 'name name, 'namespace namespace, 'type type,
+  'identity identity, 'keyword keyword, 'meta meta, 'name name, 'namespace namespace, 'type type,
   'vector vector, 'list list, 'set set, 'hash-map hash-map, 'array-map array-map,
   'count count, 'range range, 'not-empty not-empty, 'empty? empty?, 'contains? contains?,
   'str str, 'pr-str pr-str, 'print-str print-str, 'println-str println-str, 'prn-str prn-str, 'subs subs,
@@ -294,7 +294,8 @@
 ;;
 
 (defn parse-rules [rules]
-  (let [rules (if (string? rules) (edn/read-string rules) rules)] ;; for datalevin.js interop
+  (let [rules (if (string? rules) (edn/read-string rules) rules)]
+    (dp/parse-rules rules) ;; validation
     (group-by ffirst rules)))
 
 (defn empty-rel [binding]
@@ -352,7 +353,19 @@
       (update context :rels conj (in->rel binding value))))
 
 (defn resolve-ins [context bindings values]
-  (reduce resolve-in context (zipmap bindings values)))
+  (let [cb (count bindings)
+        cv (count values)]
+    (cond
+      (< cb cv)
+      (raise "Extra inputs passed, expected: " (mapv #(:source (meta %)) bindings) ", got: " cv
+             {:error :query/inputs :expected bindings :got values})
+
+      (> cb cv)
+      (raise "Too few inputs passed, expected: " (mapv #(:source (meta %)) bindings) ", got: " cv
+             {:error :query/inputs :expected bindings :got values})
+
+      :else
+      (reduce resolve-in context (zipmap bindings values)))))
 
 ;;
 
@@ -604,11 +617,29 @@
 ;;; RULES
 
 (defn rule? [context clause]
-  (and (sequential? clause)
-       (contains? (:rules context)
-                  (if (source? (first clause))
-                    (second clause)
-                    (first clause)))))
+  (u/cond+
+    (not (sequential? clause))
+    false
+
+    :let [head (if (source? (first clause))
+                 (second clause)
+                 (first clause))]
+
+    (not (symbol? head))
+    false
+
+    (free-var? head)
+    false
+
+    (contains? #{'_ 'or 'or-join 'and 'not 'not-join} head)
+    false
+
+    (not (contains? (:rules context) head))
+    (raise "Unknown rule '" head " in " clause
+           {:error :query/where
+            :form  clause})
+
+    :else true))
 
 (def rule-seqid (atom 0))
 
@@ -781,10 +812,14 @@
   ([context clause orig-clause]
    (condp looks-like? clause
      [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
-     (filter-by-pred context clause)
+     (do
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       (filter-by-pred context clause))
 
      [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
-     (bind-by-fn context clause)
+     (do
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       (bind-by-fn context clause))
 
      [source? '*] ;; source + anything
      (let [[source-sym & rest] clause]
@@ -976,18 +1011,42 @@
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
 
+(defn map* [f xs]
+  (reduce #(conj %1 (f %2)) (empty xs) xs))
+
+(defn tuples->return-map [return-map tuples]
+  (let [symbols (:symbols return-map)
+        idxs    (range 0 (count symbols))]
+    (map*
+      (fn [tuple]
+        (reduce
+          (fn [m i] (assoc m (nth symbols i) (nth tuple i)))
+          {} idxs))
+      tuples)))
+
 (defprotocol IPostProcess
-  (-post-process [find tuples]))
+  (-post-process [find return-map tuples]))
 
 (extend-protocol IPostProcess
   FindRel
-  (-post-process [_ tuples] tuples)
+  (-post-process [_ return-map tuples]
+    (if (nil? return-map)
+      tuples
+      (tuples->return-map return-map tuples)))
+
   FindColl
-  (-post-process [_ tuples] (into [] (map first) tuples))
+  (-post-process [_ return-map tuples]
+    (into [] (map first) tuples))
+
   FindScalar
-  (-post-process [_ tuples] (ffirst tuples))
+  (-post-process [_ return-map tuples]
+    (ffirst tuples))
+
   FindTuple
-  (-post-process [_ tuples] (first tuples)))
+  (-post-process [_ return-map tuples]
+    (if (some? return-map)
+      (first (tuples->return-map return-map [(first tuples)]))
+      (first tuples))))
 
 (defn- pull [find-elements context resultset]
   (let [resolved (for [find find-elements]
@@ -1038,4 +1097,4 @@
       (some dp/pull? find-elements)
         (pull find-elements context)
       true
-        (-post-process find))))
+        (-post-process find (:qreturn-map parsed-q)))))

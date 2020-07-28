@@ -6,9 +6,44 @@
     [datalevin.db :as db]
     [datalevin.test.core :as tdc])
     #?(:clj
-      (:import [clojure.lang ExceptionInfo])))
+       (:import [clojure.lang ExceptionInfo]
+                [java.util UUID])))
 
-
+;; #8
+(deftest test-many-joins
+  (let [data (->> (range 10)
+                  (map (fn [^long i]
+                         {:db/id (inc i)
+                          :a (str (UUID/randomUUID))
+                          :b (str (UUID/randomUUID))
+                          :c (str (UUID/randomUUID))
+                          :d (str (UUID/randomUUID))
+                          :e (rand-int 3)
+                          :f (rand-int 3)
+                          :g (rand-int 3)
+                          :h (rand-int 3)})))
+        db (-> (d/empty-db {:a {:db/valueType :db.type/string}
+                            :b {:db/valueType :db.type/string}
+                            :c {:db/valueType :db.type/string}
+                            :d {:db/valueType :db.type/string}
+                            :e {:db/valueType :db.type/long}
+                            :f {:db/valueType :db.type/long}
+                            :g {:db/valueType :db.type/long}
+                            :h {:db/valueType :db.type/long}})
+               (d/db-with data))]
+    (d/q '[:find ?eid1 .
+           :where
+           [?eid1 :a ?a1]
+           [?eid1 :b ?b1]
+           [?eid1 :c ?c1]
+           [?eid1 :d ?d1]
+           [?eid1 :e ?e1]
+           [?eid1 :f ?f1]
+           [?eid1 :g ?g1]
+           [?eid1 :h ?h1]
+           [?eid2 :e ?e1]
+           ]
+         db)))
 
 (deftest test-joins
   (let [db (-> (d/empty-db)

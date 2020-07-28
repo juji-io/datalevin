@@ -33,7 +33,7 @@
 
       (is (thrown-with-msg? ExceptionInfo #"get-else: nil default value is not supported"
                             (d/q '[:find ?e ?height
-                                   :where [?e :age]
+                                   :where [?e :age] 
                                    [(get-else $ ?e :height nil) ?height]] db))))
 
     (testing "get-some"
@@ -105,15 +105,13 @@
     (testing "Two conflicting function values for one binding."
       (is (= (d/q '[:find  ?n
                     :where [(identity 1) ?n]
-                           [(identity 2) ?n]]
-                  db)
+                           [(identity 2) ?n]])
              #{})))
 
     (testing "Destructured conflicting function values for two bindings."
       (is (= (d/q '[:find  ?n ?x
                     :where [(identity [3 4]) [?n ?x]]
-                           [(identity [1 2]) [?n ?x]]]
-                  db)
+                           [(identity [1 2]) [?n ?x]]])
              #{})))
 
     (testing "Rule bindings interacting with function binding. (fn, rule)"
@@ -268,7 +266,24 @@
     (d/q '[:find ?e ?x
            :in   [?e ...]
            :where [(fun ?e) ?x]]
-         [1]))))
+         [1])))
+
+  (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(zero? ?x)]"
+        (d/q '[:find ?x
+               :where [(zero? ?x)]])))
+
+  (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(inc ?x) ?y]"
+        (d/q '[:find ?x
+               :where [(inc ?x) ?y]])))
+
+  (is (thrown-msg? "Where uses unknown source vars: [$2]"
+        (d/q '[:find ?x
+               :where [?x] [(zero? $2 ?x)]])))
+
+  (is (thrown-msg? "Where uses unknown source vars: [$]"
+        (d/q '[:find  ?x
+               :in    $2 
+               :where [$2 ?x] [(zero? $ ?x)]]))))
 
 (deftest test-issue-180
   (is (= #{}
