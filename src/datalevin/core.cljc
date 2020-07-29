@@ -14,6 +14,7 @@
     (:import
       [datalevin.impl.entity Entity]
       [datalevin.storage Store]
+      [datalevin.db DB]
       [java.util UUID])))
 
 
@@ -594,7 +595,7 @@
 (defn close
   "Close the connection"
   [conn]
-  (s/close (.-store @conn))
+  (s/close ^Store (.-store ^DB @conn))
   (reset! conn nil))
 
 
