@@ -34,7 +34,7 @@
           (map (fn [[attr props]]
                  (if-let [old-props (old attr)]
                    [attr (merge old-props props)]
-                   (let [res [attr (assoc props :db/aid (+ init-aid @i))]]
+                   (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
                      (swap! i inc)
                      res))))
           schema)))

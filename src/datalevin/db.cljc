@@ -81,11 +81,11 @@
 
 (defmacro wrap-cache
   [store pattern body]
-  `(let [cache# (.get caches ~store)]
-     (if-some [cached# (get cache# ~pattern nil)]
+  `(let [cache# (.get ^ConcurrentHashMap caches ~store)]
+     (if-some [cached# (get ^LRU cache# ~pattern nil)]
        cached#
        (let [res# ~body]
-         (.put caches ~store (assoc cache# ~pattern res#))
+         (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
 (defrecord-updatable DB [^Store store eavt aevt avet vaet
@@ -279,7 +279,7 @@
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
    (let [store (s/open schema dir)]
-     (.put caches store (lru/lru c/+cache-limit+))
+     (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
      (map->DB
       {:store   store
        :schema  (s/schema store)
@@ -303,7 +303,7 @@
          _       (s/load-datoms store datoms)
          max-eid (s/init-max-eid store)
          max-tx  tx0]
-     (.put caches store (lru/lru c/+cache-limit+))
+     (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
      (map->DB {:store   store
                :schema  schema
                :rschema rschema
@@ -916,5 +916,6 @@
                  (raise "Bad entity type at " entity ", expected map or vector"
                         {:error :transact/syntax, :tx-data entity}))))]
     (s/load-datoms (.-store ^DB (:db-after rp)) (:tx-data rp))
-    (.put caches (.-store ^DB (:db-after rp)) (lru/lru c/+cache-limit+))
+    (.put ^ConcurrentHashMap caches
+          (.-store ^DB (:db-after rp)) (lru/lru c/+cache-limit+))
     rp))
