@@ -784,6 +784,8 @@
   `size` is the initial DB size in MB. `flags` are [LMDB EnvFlags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html)."
   ([dir]
    (open-lmdb dir c/+init-db-size+ default-env-flags))
+  ([dir size]
+   (open-lmdb dir size default-env-flags))
   ([dir size flags]
    (let [file          (b/file dir)
          builder       (doto (Env/create)
