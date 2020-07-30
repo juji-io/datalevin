@@ -28,7 +28,7 @@ be larger than memory.
 Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in many projects, e.g. [Cloudflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also [performs well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB). Therefore, it is fine to store documents in Datalevin.
 
 Datalevin uses cover index and has no write-ahead log, so once the data are
-written, they are indexed. There are no separate processes or threads for
+written, they are indexed. In the standalone mode, there are no separate processes or threads for
 indexing, compaction or doing any database maintenance work that compete with
 your applications for resources.
 
@@ -144,11 +144,21 @@ may also occur. The advice is to write data in larger batches.
 
 In short, Datalevin is quite capable for small or medium projects right now.
 
+## :earth_americas: Roadmap
+
+These are the short term goals that we will try to reach quickly:
+
+* 0.3.0 Schema migration
+* 0.4.0 Distributed mode with raft based replication
+* 0.5.0 Parity with Datascript: composite tuples and persisted transaction functions
+
+We welcome any suggestions on what to do next. Please file issues.
+
 ## :floppy_disk: Differences from Datascript
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
 totally from scratch and is not related by any means to" Datomic®. Although a
-port, Datalevin differs from Datascript in significant ways than just the difference in data durability:
+port, Datalevin differs from Datascript in more significant ways than just the difference in data durability:
 
 * As mentioned, Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transaction ids are not stored.
 
