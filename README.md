@@ -148,8 +148,8 @@ In short, Datalevin is quite capable for small or medium projects right now.
 
 These are the short term goals that we will try to reach quickly:
 
-* 0.3.0 Schema migration
-* 0.4.0 Distributed mode with raft based replication
+* 0.3.0 Distributed mode with raft based replication
+* 0.4.0 Schema migration
 * 0.5.0 Query parity with Datascript: composite tuples and persisted transaction functions
 
 We welcome any suggestions on what to do next. Please file issues.
