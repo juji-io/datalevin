@@ -151,7 +151,8 @@ These are the short term goals that we will try to reach quickly:
 * 0.3.0 Distributed mode with raft based replication
 * 0.4.0 Schema migration
 * 0.5.0 Query parity with Datascript: composite tuples and persisted transaction functions
-* 0.6.0 Query optimizer
+* 0.6.0 Statistics collector
+* 0.7.0 Query optimizer
 
 We welcome any suggestions on what to do next. Please file issues.
 
