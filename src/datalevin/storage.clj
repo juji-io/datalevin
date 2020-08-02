@@ -147,6 +147,7 @@
 
 (defprotocol IStore
   (close [this] "Close storage")
+  (closed? [this] "Return true if the storage is closed")
   (max-gt [this])
   (advance-max-gt [this])
   (max-aid [this])
@@ -191,6 +192,9 @@
   IStore
   (close [_]
     (lmdb/close lmdb))
+
+  (closed? [_]
+    (lmdb/closed? lmdb))
 
   (max-gt [_]
     max-gt)

@@ -1,9 +1,13 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+## Added
+- `core/closed?` 
+
 ## 0.2.12
 ## Fixed
-- entid allows 0 as eid
+- `db/entid` allows 0 as eid
 
 ## 0.2.11
 ## Fixed

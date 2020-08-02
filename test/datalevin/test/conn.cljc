@@ -11,6 +11,12 @@
 (def datoms #{(d/datom 1 :age  17)
               (d/datom 1 :name "Ivan")})
 
+(deftest test-close
+  (let [conn (d/create-conn)]
+    (is (not (d/closed? conn)))
+    (d/close conn)
+    (is (d/closed? conn))))
+
 (deftest test-ways-to-create-conn-1
   (let [conn (d/create-conn)]
     (is (= #{} (set (d/datoms @conn :eavt))))

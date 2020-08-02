@@ -598,7 +598,12 @@
   (s/close ^Store (.-store ^DB @conn))
   (reset! conn nil))
 
-
+(defn closed?
+  "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
+  [conn]
+  (or (nil? conn)
+      (nil? @conn)
+      (s/closed? ^Store (.-store ^DB @conn))))
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.

@@ -118,6 +118,7 @@
     (is (= 2 (sut/datom-count store c/ave)))
     (is (= 1 (sut/datom-count store c/vae)))
     (sut/close store)
+    (is (sut/closed? store))
     (let [store (sut/open nil dir)]
       (is (= [d1] (sut/slice store :eav d1 d1)))
       (sut/load-datoms store [(d/delete d1)])
@@ -139,6 +140,7 @@
         store (sut/open s dir)
         s1    (sut/schema store)]
     (sut/close store)
+    (is (sut/closed? store))
     (let [store (sut/open s dir)]
       (is (= s1 (sut/schema store))))
     ))
