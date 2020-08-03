@@ -605,6 +605,22 @@
       (nil? @conn)
       (s/closed? ^Store (.-store ^DB @conn))))
 
+(defn schema
+  "Return the schema"
+  [conn]
+  (s/schema ^Store (.-store ^DB @conn)))
+
+(defn update-schema
+  "Update the schema of an open connection. `schema-update` is a map from
+  attribute keywords to maps of corresponding properties.
+
+  Example:
+
+          (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
+  [conn schema-update]
+  (s/set-schema ^Store (.-store ^DB @conn) schema-update))
+
+
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
 

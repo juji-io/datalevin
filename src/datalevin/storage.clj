@@ -152,6 +152,8 @@
   (advance-max-gt [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
+  (set-schema [this new-schema]
+    "Update the schema of open storage, return updated schema")
   (attrs [this] "Return the aid -> attr map")
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
@@ -206,6 +208,10 @@
     max-aid)
 
   (schema [_]
+    schema)
+
+  (set-schema [_ new-schema]
+    (set! schema (init-schema lmdb new-schema))
     schema)
 
   (attrs [_]

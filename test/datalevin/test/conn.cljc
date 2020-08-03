@@ -17,6 +17,12 @@
     (d/close conn)
     (is (d/closed? conn))))
 
+(deftest test-update-schema
+  (let [conn1 (d/create-conn)
+        s {:a/b {:db/valueType :db.type/string}}
+        conn2 (d/create-conn s)]
+    (is (= (d/schema conn2) (d/update-schema conn1 s)))))
+
 (deftest test-ways-to-create-conn-1
   (let [conn (d/create-conn)]
     (is (= #{} (set (d/datoms @conn :eavt))))

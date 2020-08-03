@@ -36,7 +36,7 @@
         d   (d/datom c/e0 a v)
         s   (assoc (sut/schema store) a {:db/aid 1})
         b   :b/c
-        p1   {:db/valueType :db.type/uuid}
+        p1  {:db/valueType :db.type/uuid}
         v1  (UUID/randomUUID)
         d1  (d/datom c/e0 b v1)
         s1  (assoc s b (merge p1 {:db/aid 2}))
@@ -127,11 +127,13 @@
       (is (= 3 (sut/datom-count store c/eav))))
     (sut/close store)
     (let [d     :d/e
-          p3     {:db/valueType :db.type/long}
+          p3    {:db/valueType :db.type/long}
           s3    (assoc s2 d (merge p3 {:db/aid 4}))
+          s4    (assoc s3 :f/g {:db/aid 5 :db/valueType :db.type/string})
           store (sut/open {d p3} dir)]
-      (is (= s3 (sut/schema store))))
-    ))
+      (is (= s3 (sut/schema store)))
+      (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
+      (is (= s4 (sut/schema store))))))
 
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
