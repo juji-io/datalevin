@@ -84,8 +84,8 @@
     (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1))))
 
   (testing "handle val overflow automatically"
-    (sut/transact lmdb [[:put "c" 1 (range 1000)]])
-    (is (= (range 1000) (sut/get-value lmdb "c" 1))))
+    (sut/transact lmdb [[:put "c" 1 (range 100000)]])
+    (is (= (range 100000) (sut/get-value lmdb "c" 1))))
 
   (testing "key overflow throws"
     (is (thrown-with-msg? Exception #"BufferOverflow"
@@ -95,13 +95,14 @@
     (let [dir (.-dir lmdb)]
       (sut/close lmdb)
       (is (sut/closed? lmdb))
-      (let [lmdb (sut/open-lmdb dir)]
-        (sut/open-dbi lmdb "a")
-       (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
-       (sut/clear-dbi lmdb "a")
-       (is (nil? (sut/get-value lmdb "a" :datalevin)))
-       (sut/drop-dbi lmdb "a")
-       (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "a" 1)))))))
+      (let [lmdb  (sut/open-lmdb dir)
+            dbi-a (sut/open-dbi lmdb "a")]
+        (is (= "a" (sut/dbi-name dbi-a)))
+        (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
+        (sut/clear-dbi lmdb "a")
+        (is (nil? (sut/get-value lmdb "a" :datalevin)))
+        (sut/drop-dbi lmdb "a")
+        (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "a" 1)))))))
 
 (deftest reentry-test
   (let [dir (.-dir lmdb)]

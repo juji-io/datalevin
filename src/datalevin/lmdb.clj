@@ -9,6 +9,7 @@
            [clojure.lang IMapEntry]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
+           [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
 
 (def ^:no-doc default-env-flags [EnvFlags/MDB_NORDAHEAD])
@@ -41,7 +42,12 @@
                        ^ByteBuffer stop-kb]
   IBuffer
   (put-key [_ x t]
-    (b/put-buffer kb x t))
+    (try
+      (b/put-buffer kb x t)
+      (catch Exception e
+        (raise (str "Error putting read-only transaction key buffer: "
+                    (ex-message e))
+               {:value x :type t}))))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
 
@@ -49,11 +55,21 @@
   (put-start-key [_ x t]
     (when x
       (.clear start-kb)
-      (b/put-buffer start-kb x t)))
+      (try
+        (b/put-buffer start-kb x t)
+        (catch Exception e
+          (raise (str "Error putting read-only transaction start key buffer: "
+                      (ex-message e))
+                 {:value x :type t})))))
   (put-stop-key [_ x t]
     (when x
       (.clear stop-kb)
-      (b/put-buffer stop-kb x t)))
+      (try
+        (b/put-buffer stop-kb x t)
+        (catch Exception e
+          (raise (str "Error putting read-only transaction stop key buffer: "
+                      (ex-message e))
+                 {:value x :type t})))))
 
   IRtx
   (close-rtx [_]
@@ -109,6 +125,7 @@
                (recur (long (inc i'))))))))))
 
 (defprotocol ^:no-doc IKV
+  (dbi-name [this] "Return string name of the dbi")
   (put [this txn] [this txn put-flags]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
@@ -139,9 +156,14 @@
 
 (deftype ^:no-doc DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
-  (put-key [_ x t]
-    (b/put-buffer kb x t))
-  (put-val [_ x t]
+  (put-key [this x t]
+    (try
+      (b/put-buffer kb x t)
+      (catch Exception e
+        (raise (str "Error putting r/w key buffer of "
+                    (dbi-name this) ": " (ex-message e))
+               {:value x :type t :dbi (dbi-name this)}))))
+  (put-val [this x t]
     (try
       (b/put-buffer vb x t)
       (catch Exception e
@@ -149,9 +171,13 @@
           (let [size (b/measure-size x)]
             (set! vb (ByteBuffer/allocateDirect size))
             (b/put-buffer vb x t))
-          (throw e)))))
+          (raise (str "Error putting r/w value buffer of "
+                      (dbi-name this) ": " (ex-message e))
+                 {:value x :type t :dbi (dbi-name this)})))))
 
   IKV
+  (dbi-name [_]
+    (String. (.getName db) StandardCharsets/UTF_8))
   (put [this txn]
     (put this txn nil))
   (put [_ txn flags]
@@ -187,7 +213,7 @@
     (equals [_ o] (and (= (.key kv) (key o)) (= (.val kv) (val o))))
     (getKey [_] (.key kv))
     (getValue [_] (.val kv))
-    (setValue [_ _] (raise "IMapEntry is immutable"))
+    (setValue [_ _] (raise "IMapEntry is immutable" {}))
     (hashCode [_] (hash-combine (hash (.key kv)) (hash (.val kv))))))
 
 (defprotocol ILMDB
