@@ -20,8 +20,14 @@
 (deftest test-update-schema
   (let [conn1 (d/create-conn)
         s {:a/b {:db/valueType :db.type/string}}
+        s1 {:c/d {:db/valueType :db.type/string}}
+        txs [{:c/d "cd" :db/id -1}]
         conn2 (d/create-conn s)]
-    (is (= (d/schema conn2) (d/update-schema conn1 s)))))
+    (is (= (d/schema conn2) (d/update-schema conn1 s)))
+    (d/update-schema conn1 s1)
+    (d/transact! conn1 txs)
+    (is (not (nil? (:a (first (d/datoms @conn1 :eavt))))))))
+
 
 (deftest test-ways-to-create-conn-1
   (let [conn (d/create-conn)]

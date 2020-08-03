@@ -48,6 +48,9 @@
       (transact-schema lmdb (update-schema lmdb now schema))))
   (load-schema lmdb))
 
+(defn- init-attrs [schema]
+  (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
+
 (defn- init-max-gt
   [lmdb]
   (or (when-let [gt (-> (lmdb/get-first lmdb c/giants [:all-back] :long :ignore)
@@ -212,6 +215,7 @@
 
   (set-schema [_ new-schema]
     (set! schema (init-schema lmdb new-schema))
+    (set! attrs (init-attrs schema))
     schema)
 
   (attrs [_]
@@ -400,9 +404,6 @@
       giant? (conj [:del c/giants
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :long)
                     :long]))))
-
-(defn- init-attrs [schema]
-  (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
 
 (defn open
   "Open and return the storage."
