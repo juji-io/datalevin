@@ -8,7 +8,7 @@
   :dependencies [[org.clojure/clojure "1.10.1" :scope "provided"]
                  [persistent-sorted-set "0.1.2"]
                  [com.taoensso/nippy "2.15.0"]
-                 [com.alipay.sofa/jraft-core "1.3.3"]
+                 ;; [com.alipay.sofa/jraft-core "1.3.4"]
                  [org.lmdbjava/lmdbjava "0.8.1"
                   ;; uncomment when run lein codox
                   ;; :exclusions
