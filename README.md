@@ -151,7 +151,7 @@ In short, Datalevin is quite capable for small or medium projects right now.
 These are the short term goals that we will try to reach quickly:
 
 * 0.3.0 Distributed mode with raft based replication
-* 0.4.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/quoll/asami) 
+* 0.4.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami) 
 * 0.5.0 Schema migration
 * 0.6.0 Query parity with Datascript: composite tuples and persisted transaction functions
 * 0.7.0 Materialized views and incremental maintenance
