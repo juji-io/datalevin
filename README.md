@@ -9,7 +9,7 @@
 
 > I love Datalog, why hasn't everyone use this already?
 
-Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
+Datalevin is a simple durable Datalog database.
 
 The rationale is to have a simple, fast and free Datalog query engine running on durable storage.  It is our observation that many developers prefer the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implicit joins seem to be its killer feature.
 
@@ -20,7 +20,8 @@ keep things simple and familiar, Datalevin does not store transaction history,
 and behaves the same way as most other databases: when data are deleted, they
 are gone.
 
-Datalevin retains the library property of Datascript, and it is meant to be
+Datalevin started out as a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
+[Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). It retains the library property of Datascript, and it is meant to be
 embedded in applications to manage state. Because data is persistent on disk in
 Datalevin, application state can survive application restarts, and data size can
 be larger than memory.
@@ -131,7 +132,8 @@ database, so it is easy to cache aggressively, whereas it may be difficult in an
 database (e.g. see [this issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
 caching in version 0.2.8, Datalevin was only faster than Datascript for single
 clause queries due to the highly efficient reads of LMDB. With caching enabled,
-Datalevin is now faster across the board.
+Datalevin is now faster across the board. In addition, we will soon move to a
+more efficient query implementation as the Datascript query engine is not very efficient.
 
 Writes can be a few orders of magnitude slower, as expected, as Datalevin
 is writing to disk while Datascript is in memory. The bulk write speed is
@@ -149,18 +151,18 @@ In short, Datalevin is quite capable for small or medium projects right now.
 These are the short term goals that we will try to reach quickly:
 
 * 0.3.0 Distributed mode with raft based replication
-* 0.4.0 Schema migration
-* 0.5.0 Query parity with Datascript: composite tuples and persisted transaction functions
-* 0.6.0 Statistics collector
-* 0.7.0 Query optimizer
-* 0.8.0 Materialized views and incremental maintenance
+* 0.4.0 New query engine with a query optimizer
+* 0.5.0 Schema migration
+* 0.6.0 Query parity with Datascript: composite tuples and persisted transaction functions
+* 0.7.0 Materialized views and incremental maintenance
 
 We welcome any suggestions on what to do next. Please file issues.
 
 ## :floppy_disk: Differences from Datascript
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
-totally from scratch and is not related by any means to" Datomic®. Although a
+totally from scratch and is not related by any means to" Datomic®. Although
+currently a
 port, Datalevin differs from Datascript in more significant ways than just the difference in data durability:
 
 * As mentioned, Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transaction ids are not stored.
@@ -199,9 +201,11 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
 
-* If you need an in-memory store, e.g. for single page applications in a browser, [Datascript](https://github.com/tonsky/datascript) is for you.
+* If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need features such as bi-temporal graph queries, You may try [Crux](https://github.com/juxt/crux).
+* If you need a fast in-memory graph database, you may try [asami](https://github.com/threatgrid/asami),
+
+* If you need features such as bi-temporal graph queries, you may try [Crux](https://github.com/juxt/crux).
 
 * If you don't mind experimental storage backend, you may try [Datahike](https://github.com/replikativ/datahike).
 
