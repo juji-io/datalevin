@@ -150,8 +150,8 @@ In short, Datalevin is quite capable for small or medium projects right now.
 
 These are the short term goals that we will try to reach quickly:
 
-* 0.3.0 New query engine with a query optimizer
-* 0.4.0 Distributed mode with raft based replication
+* 0.3.0 Distributed mode with raft based replication
+* 0.4.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/quoll/asami) 
 * 0.5.0 Schema migration
 * 0.6.0 Query parity with Datascript: composite tuples and persisted transaction functions
 * 0.7.0 Materialized views and incremental maintenance
@@ -162,8 +162,7 @@ We welcome any suggestions on what to do next. Please file issues.
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
 totally from scratch and is not related by any means to" Datomic®. Although
-currently a
-port, Datalevin differs from Datascript in more significant ways than just the difference in data durability:
+currently a port, Datalevin differs from Datascript in more significant ways than just the difference in data durability:
 
 * As mentioned, Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transaction ids are not stored.
 
@@ -203,7 +202,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need a fast in-memory graph database, you may try [asami](https://github.com/threatgrid/asami),
+* If you need an in-memory graph database, [Asami](https://github.com/threatgrid/asami) is fast.
 
 * If you need features such as bi-temporal graph queries, you may try [Crux](https://github.com/juxt/crux).
 
