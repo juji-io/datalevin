@@ -228,7 +228,7 @@
      (condp = ~v
        c/v0   ~vmin
        c/vmax ~vmax
-       (u/raise "Illegal keyword value " ~v {}))
+       (u/raise "Expect other data types, got keyword instead" ~v {}))
      ~b))
 
 (defn- string-bytes

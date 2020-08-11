@@ -253,5 +253,17 @@
               "X")
          #{["abcX"] ["aXb"]})))
 
+
+(deftest test-some-strings
+  (let [conn (d/create-conn {:id   {:db/valueType :db.type/long}
+                             :text {:db/valueType :db.type/string}})]
+    (d/transact! conn [{:text "[7/3, 15:36]"
+                        :id   3}])
+    (is (= '([{:db/id 1, :id 3, :text "[7/3, 15:36]"}])
+           (d/q '[:find (pull ?e [*])
+                  :where
+                  [?e :id 3]]
+                @conn)))))
+
 #_(require 'datalevin.test.query :reload)
 #_(clojure.test/test-ns 'datalevin.test.query)

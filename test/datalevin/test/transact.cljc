@@ -203,6 +203,18 @@
                   :where [1 :aka ?v]] @conn)
            #{["Devil"] ["Tupen"]}))))
 
+(deftest test-transact!-1
+  (let [conn (d/create-conn)]
+    (d/transact! conn [{:db/id -1 :a 1}])
+    (is (= (d/q '[:find ?v
+                  :where [_ :a ?v]] @conn)
+           #{[1]}))
+
+    (d/transact! conn [{:db/id -1 :a 2}])
+    (is (= (d/q '[:find ?v
+                  :where [_ :a ?v]] @conn)
+           #{[1] [2]}))))
+
 (deftest test-db-fn-cas
   (let [conn (d/create-conn)]
     (d/transact! conn [[:db/add 1 :weight 200]])
