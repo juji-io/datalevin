@@ -138,7 +138,7 @@
   (when kv
     (if (= v c/normal)
       (d/datom (.-e k) (attrs (.-a k)) (.-v k))
-      (lmdb/get-value lmdb c/giants v :long))))
+      (lmdb/get-value lmdb c/giants v :long :datom))))
 
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]

@@ -8,7 +8,8 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [clojure.test :refer [deftest is use-fixtures]]
-            [datalevin.lmdb :as lmdb])
+            [datalevin.lmdb :as lmdb]
+            [datalevin.db :as db])
   (:import [java.util UUID]
            [datalevin.storage Store]
            [datalevin.lmdb LMDB]
@@ -146,3 +147,12 @@
     (let [store (sut/open s dir)]
       (is (= s1 (sut/schema store))))
     ))
+
+(deftest giants-test
+  (let [schema {:a {:db/valueType :db.type/string}}
+        dir    (str "/tmp/datalevin-giants-test-" (UUID/randomUUID))
+        store  (sut/open schema dir)
+        v      (apply str (repeat 10000 (UUID/randomUUID)))
+        d      (d/datom c/e0 :a v)]
+    (sut/load-datoms store [d])
+    (is (= [d] (sut/fetch store d)))))
