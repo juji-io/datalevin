@@ -37,3 +37,4 @@ reading
 .nrepl-port
 .cpcache/
 /codox
+.clj-kondo/

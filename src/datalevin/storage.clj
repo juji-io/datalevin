@@ -4,12 +4,11 @@
             [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.constants :as c]
-            [datalevin.datom :as d]
-            [taoensso.nippy :as nippy])
+            [datalevin.datom :as d])
   (:import [java.util UUID]
            [datalevin.lmdb LMDB]
            [datalevin.datom Datom]
-           [datalevin.bits Indexable Retrieved]
+           [datalevin.bits Retrieved]
            [org.lmdbjava PutFlags]))
 
 (defn- transact-schema
