@@ -1,5 +1,6 @@
 (ns ^:no-doc datalevin.constants
-  (:import [java.util UUID Arrays]))
+  (:import [java.util UUID Arrays]
+           [org.lmdbjava PutFlags]))
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -21,6 +22,8 @@
 ;; lmdb
 
 (def ^:const +max-key-size+     511)   ; in bytes
+
+(def default-put-flags (make-array PutFlags 0))
 
 ;; index storage
 

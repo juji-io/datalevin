@@ -43,7 +43,9 @@
   IBuffer
   (put-key [_ x t]
     (try
+      (.clear kb)
       (b/put-buffer kb x t)
+      (.flip kb)
       (catch Exception e
         (raise (str "Error putting read-only transaction key buffer: "
                     (ex-message e))
@@ -54,18 +56,20 @@
   IRange
   (put-start-key [_ x t]
     (when x
-      (.clear start-kb)
       (try
+        (.clear start-kb)
         (b/put-buffer start-kb x t)
+        (.flip start-kb)
         (catch Exception e
           (raise (str "Error putting read-only transaction start key buffer: "
                       (ex-message e))
                  {:value x :type t})))))
   (put-stop-key [_ x t]
     (when x
-      (.clear stop-kb)
       (try
+        (.clear stop-kb)
         (b/put-buffer stop-kb x t)
+        (.flip stop-kb)
         (catch Exception e
           (raise (str "Error putting read-only transaction stop key buffer: "
                       (ex-message e))
@@ -158,19 +162,24 @@
   IBuffer
   (put-key [this x t]
     (try
+      (.clear kb)
       (b/put-buffer kb x t)
+      (.flip kb)
       (catch Exception e
         (raise (str "Error putting r/w key buffer of "
                     (dbi-name this) ": " (ex-message e))
                {:value x :type t :dbi (dbi-name this)}))))
   (put-val [this x t]
     (try
+      (.clear vb)
       (b/put-buffer vb x t)
+      (.flip vb)
       (catch Exception e
         (if (s/includes? (ex-message e) c/buffer-overflow)
-          (let [size (b/measure-size x)]
+          (let [size (* 2 ^long (b/measure-size x))]
             (set! vb (ByteBuffer/allocateDirect size))
-            (b/put-buffer vb x t))
+            (b/put-buffer vb x t)
+            (.flip vb))
           (raise (str "Error putting r/w value buffer of "
                       (dbi-name this) ": " (ex-message e))
                  {:value x :type t :dbi (dbi-name this)})))))
@@ -181,28 +190,17 @@
   (put [this txn]
     (put this txn nil))
   (put [_ txn flags]
-    (.flip kb)
-    (.flip vb)
     (if flags
       (.put db txn kb vb (into-array PutFlags flags))
-      (.put db txn kb vb (make-array PutFlags 0)))
-    (.clear kb)
-    (.clear vb))
+      (.put db txn kb vb c/default-put-flags)))
   (del [_ txn]
-    (.flip kb)
-    (.delete db txn kb)
-    (.clear kb))
+    (.delete db txn kb))
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
-      (.flip kb)
-      (let [res (.get db (.-txn ^Rtx rtx) kb)]
-        (.clear kb)
-        res)))
+      (.get db (.-txn ^Rtx rtx) kb)))
   (iterate-kv [this rtx range-type]
     (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
           ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
-      (.flip start-kb)
-      (.flip stop-kb)
       (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
 (defn- ^IMapEntry map-entry

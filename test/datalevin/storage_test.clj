@@ -3,13 +3,11 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [clojure.set :as set]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [clojure.test :refer [deftest is use-fixtures]]
-            [datalevin.lmdb :as lmdb]
-            [datalevin.db :as db])
+            [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
            [datalevin.storage Store]
            [datalevin.lmdb LMDB]
@@ -145,8 +143,7 @@
     (sut/close store)
     (is (sut/closed? store))
     (let [store (sut/open s dir)]
-      (is (= s1 (sut/schema store))))
-    ))
+      (is (= s1 (sut/schema store))))))
 
 (deftest giants-test
   (let [schema {:a {:db/valueType :db.type/string}}
@@ -156,3 +153,18 @@
         d      (d/datom c/e0 :a v)]
     (sut/load-datoms store [d])
     (is (= [d] (sut/fetch store d)))))
+
+(deftest false-value-test
+  (let [d (d/datom c/e0 :a false)]
+    (sut/load-datoms store [d])
+    (is (= [d] (sut/fetch store d)))))
+
+(test/defspec random-data-test
+  1000
+  (prop/for-all
+   [v gen/any-printable-equatable
+    a gen/keyword-ns
+    e gen/large-integer]
+   (let [d (d/datom e a v)]
+     (sut/load-datoms store [d])
+     (is (= [d] (sut/fetch store d))))))

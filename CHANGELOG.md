@@ -1,83 +1,89 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+
+### Fixed
+- correctly handle `false` value as `:data`
+- always clear buffer before put data in
+
 ## 0.2.17
 
-## Fixed
-- thraw exception when fetching large values
+### Fixed
+- thaw exception when fetching large values
 
 ## 0.2.16
 
-## Changed
+### Changed
 - clearer error messages for byte buffer overflow
 
 ## 0.2.15
 
-## Fixed
+### Fixed
 - correct schema update
 
 ## 0.2.14
 
-## Added
+### Added
 - `core/schema` and `core/update-schema`
 
 ## 0.2.13
-## Added
-- `core/closed?` 
+### Added
+- `core/closed?`
 
 ## 0.2.12
-## Fixed
+### Fixed
 - `db/entid` allows 0 as eid
 
 ## 0.2.11
-## Fixed
+### Fixed
 - fix test
 
 ## 0.2.10
 
-## Fixed
+### Fixed
 - correct results when there are more than 8 clauses
-- correct query result size 
+- correct query result size
 
 ## 0.2.9
-## Changed
+### Changed
 - automatically re-order simple where clauses according to the sizes of result sets
 - change system dbi names to avoid potential collisions
 
-## Fixed
+### Fixed
 - miss function keywords in cache keys
 
 ## 0.2.8
-## Added
+### Added
 - hash-join optimization [submitted PR #362 to Datascript](https://github.com/tonsky/datascript/pull/362)
 - caching DB query results, significant query speed improvement
 
 ## 0.2.7
-## Fixed
+### Fixed
 - fix invalid reuse of reader locktable slot [#7](https://github.com/juji-io/datalevin/issues/7)
-## Changed
+### Changed
 - remove MDB_NOTLS flag to gain significant small writes speed
 
 ## 0.2.6
-## Fixed
+### Fixed
 - update existing schema instead of creating new ones
 
 ## 0.2.5
-## Fixed
+### Fixed
 - Reset transaction after getting entries
 - Only use 24 reader slots
 
 ## 0.2.4
-## Fixed
+### Fixed
 - avoid locking primitive [#5](https://github.com/juji-io/datalevin/issues/5)
 - create all parent directories if necessary
 
 ## 0.2.3
-## Fixed
+### Fixed
 - long out of range error during native compile
 
 ## 0.2.2
-## Changed
+### Changed
 - apply [query/join-tuples optimization](https://github.com/tonsky/datascript/pull/203)
 - use array get wherenever we can in query, saw significant improvement in some queries.
 - use `db/-first` instead of `(first (db/-datom ..))`, `db/-populated?` instead of `(not-empty (db/-datoms ..)`, as they do not realize the results hence faster.

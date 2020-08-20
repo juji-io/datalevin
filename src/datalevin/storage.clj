@@ -92,11 +92,11 @@
   (let [e (.-e d)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
-        (if-let [v (.-v d)]
+        (if-some [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
           (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
         (b/indexable e c/a0 c/v0 nil))
-      (if-let [v (.-v d)]
+      (if-some [v (.-v d)]
         (if (integer? v)
           (b/indexable e c/a0 v :db.type/ref)
           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
@@ -108,12 +108,12 @@
   (let [e (.-e d)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
-        (if-let [v (.-v d)]
+        (if-some [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
           (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
         ;; same as low-datom-indexable to get [] fast
         (b/indexable e c/a0 c/v0 nil))
-      (if-let [v (.-v d)]
+      (if-some [v (.-v d)]
         (if (integer? v)
           (b/indexable e c/amax v :db.type/ref)
           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
@@ -261,7 +261,7 @@
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
-          (when-let [kv (lmdb/get-value lmdb
+          (when-some [kv (lmdb/get-value lmdb
                                         c/eav
                                         (low-datom->indexable schema datom)
                                         :eav

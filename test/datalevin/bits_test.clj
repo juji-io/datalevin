@@ -9,7 +9,6 @@
             [clojure.test.check.properties :as prop])
   (:import [java.util Arrays UUID]
            [java.nio ByteBuffer]
-           [datalevin.datom Datom]
            [datalevin.bits Indexable Retrieved]))
 
 (def ^ByteBuffer bf (ByteBuffer/allocateDirect 16384))
