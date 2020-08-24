@@ -386,9 +386,9 @@
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to a database. Will create the database if it doesn't exist yet. Update schema if given.
+  "Creates a mutable reference (a “connection”) to a database at the given data directory and open the database. Create the database if it doesn't exist yet. Update schema if one is given.
 
-   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]].
+   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], and [[close]].
 
    To access underlying DB, deref: `@conn`."
   ([] (conn-from-db (empty-db)))
