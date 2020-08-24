@@ -12,14 +12,19 @@
          :juji.data/attribute     {:db/valueType :db.type/keyword,
                                    :db/unique    :db.unique/identity, :db/aid 5},
          :sales/top-product-use   {:db/valueType :db.type/string, :db/aid 6},
-         :juji.data/of-attribute  {:db/valueType :db.type/keyword},
+         :juji.data/of-attribute  {:db/valueType :db.type/keyword, :db/aid 7},
          :juji.data/references    {:db/valueType :db.type/keyword, :db/aid 8},
          :juji.data/value         {:db/valueType :db.type/string, :db/aid 9},
          :sales/year              {:db/valueType :db.type/long, :db/aid 10},
          :sales/total             {:db/valueType :db.type/long, :db/aid 11},
          :juji.data/synonyms      {:db/valueType   :db.type/string,
                                    :db/cardinality :db.cardinality/many, :db/aid 12}}
-        conn (sut/create-conn schema)
+
+        schema-update
+        {:regions/region {:db/valueType :db.type/string :db/aid 13}
+         :regions/country {:db/valueType :db.type/string :db/aid 14}}
+
+        conn (sut/create-conn nil schema)
         txs
         [{:juji.data/synonyms      ["company" "customer"],
           :juji.data/display?      true,
@@ -143,4 +148,6 @@
                                     "UK" "United Kingdom"]}]
             [#:juji.data{:value    "us",
                          :synonyms ["U.S.A." "US" "america" "u.s."
-                                    "united states" "usa"]}]]))))
+                                    "united states" "usa"]}]]))
+    (sut/update-schema conn schema-update)
+    (is (= (sut/schema conn) (merge schema schema-update)))))

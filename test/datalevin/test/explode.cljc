@@ -1,10 +1,8 @@
 (ns datalevin.test.explode
   (:require
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.test.core :as tdc]))
+   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.core :as d]))
 
 #?(:cljs
    (def Throwable js/Error))
@@ -18,10 +16,10 @@
                 ;; (to-array ["Devil" "Tupen"])
                 ]]
     (testing coll
-      (let [conn (d/create-conn { :aka {:db/cardinality :db.cardinality/many
-                                        :db/valueType :db.type/string}
-                                 :also {:db/cardinality :db.cardinality/many
-                                        :db/valueType :db.type/string} })]
+      (let [conn (d/create-conn nil { :aka {:db/cardinality :db.cardinality/many
+                                            :db/valueType   :db.type/string}
+                                     :also {:db/cardinality :db.cardinality/many
+                                            :db/valueType   :db.type/string} })]
         (d/transact! conn [{:db/id -1
                             :name  "Ivan"
                             :age   16
@@ -39,14 +37,14 @@
                #{["Devil"] ["Tupen"]}))))))
 
 (deftest test-explode-ref
-  (let [db0 (d/empty-db { :children { :db/valueType :db.type/ref
-                                      :db/cardinality :db.cardinality/many } })]
+  (let [db0 (d/empty-db nil { :children { :db/valueType  :db.type/ref
+                                         :db/cardinality :db.cardinality/many } })]
     (let [db (d/db-with db0 [{:db/id -1, :name "Ivan", :children [-2 -3]}
                              {:db/id -2, :name "Petr"}
                              {:db/id -3, :name "Evgeny"}])]
       (is (= (d/q '[:find ?n
                     :where [_ :children ?e]
-                           [?e :name ?n]] db)
+                    [?e :name ?n]] db)
              #{["Petr"] ["Evgeny"]})))
 
     (let [db (d/db-with db0 [{:db/id -1, :name "Ivan"}
@@ -54,15 +52,15 @@
                              {:db/id -3, :name "Evgeny", :_children -1}])]
       (is (= (d/q '[:find ?n
                     :where [_ :children ?e]
-                           [?e :name ?n]] db)
+                    [?e :name ?n]] db)
              #{["Petr"] ["Evgeny"]})))
 
     (is (thrown-msg? "Bad attribute :_parent: reverse attribute name requires {:db/valueType :db.type/ref} in schema"
-      (d/db-with db0 [{:name "Sergey" :_parent 1}])))))
+                     (d/db-with db0 [{:name "Sergey" :_parent 1}])))))
 
 (deftest test-explode-nested-maps-1
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        db     (d/empty-db schema)]
+        db     (d/empty-db nil schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
                             :where [?e ?a ?v]]
                           (d/db-with db tx)) res)
@@ -71,7 +69,7 @@
 
 (deftest test-explode-nested-maps-2
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        db     (d/empty-db schema)]
+        db     (d/empty-db nil schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
                             :where [?e ?a ?v]]
                           (d/db-with db tx)) res)
@@ -81,7 +79,7 @@
 
 (deftest test-explode-nested-maps-3
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        db     (d/empty-db schema)]
+        db     (d/empty-db nil schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
                             :where [?e ?a ?v]]
                           (d/db-with db tx)) res)
@@ -91,7 +89,7 @@
 
 (deftest test-explode-nested-maps-4
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        db     (d/empty-db schema)]
+        db     (d/empty-db nil schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
                             :where [?e ?a ?v]]
                           (d/db-with db tx)) res)
@@ -101,9 +99,9 @@
 
 (deftest test-explode-nested-maps-5
   (testing "multi-valued"
-    (let [schema { :profile { :db/valueType :db.type/ref
-                              :db/cardinality :db.cardinality/many }}
-          db     (d/empty-db schema)]
+    (let [schema { :profile { :db/valueType  :db.type/ref
+                             :db/cardinality :db.cardinality/many }}
+          db     (d/empty-db nil schema)]
       (are [tx res] (= (d/q '[:find ?e ?a ?v
                               :where [?e ?a ?v]]
                             (d/db-with db tx)) res)
@@ -117,7 +115,7 @@
   (testing "multi-valued"
     (let [schema { :profile { :db/valueType  :db.type/ref
                              :db/cardinality :db.cardinality/many }}
-          db     (d/empty-db schema)]
+          db     (d/empty-db nil schema)]
       (are [tx res] (= (d/q '[:find ?e ?a ?v
                               :where [?e ?a ?v]]
                             (d/db-with db tx)) res)
@@ -130,9 +128,9 @@
 
 (deftest test-explode-nested-maps-7
   (testing "multi-valued"
-    (let [schema { :profile { :db/valueType :db.type/ref
-                              :db/cardinality :db.cardinality/many }}
-          db     (d/empty-db schema)]
+    (let [schema { :profile { :db/valueType  :db.type/ref
+                             :db/cardinality :db.cardinality/many }}
+          db     (d/empty-db nil schema)]
       (are [tx res] (= (d/q '[:find ?e ?a ?v
                               :where [?e ?a ?v]]
                             (d/db-with db tx)) res)
@@ -142,37 +140,37 @@
 
         [ {:email "@2" :_profile [{:name "Ivan"} {:name "Petr"} ]} ]
         #{ [1 :email "@2"] [2 :name "Ivan"] [2 :profile 1] [3 :name "Petr"] [3 :profile 1] }
-      ))))
+        ))))
 
 (deftest test-circular-refs
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many
                        :db/isComponent true}}
-        db     (d/db-with (d/empty-db schema)
-                 [{:db/id 1, :comp [{:name "C"}]}])]
+        db     (d/db-with (d/empty-db nil schema)
+                          [{:db/id 1, :comp [{:name "C"}]}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-             [ 2 :name "C"] ])))
+            [ 2 :name "C"] ])))
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many}}
-        db     (d/db-with (d/empty-db schema)
-                 [{:db/id 1, :comp [{:name "C"}]}])]
+        db     (d/db-with (d/empty-db nil schema)
+                          [{:db/id 1, :comp [{:name "C"}]}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-             [ 2 :name "C"] ])))
+            [ 2 :name "C"] ])))
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/isComponent true}}
-        db     (d/db-with (d/empty-db schema)
-                 [{:db/id 1, :comp {:name "C"}}])]
+        db     (d/db-with (d/empty-db nil schema)
+                          [{:db/id 1, :comp {:name "C"}}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-             [ 2 :name "C"] ])))
+            [ 2 :name "C"] ])))
 
-  (let [schema {:comp {:db/valueType   :db.type/ref}}
-        db     (d/db-with (d/empty-db schema)
-                 [{:db/id 1, :comp {:name "C"}}])]
+  (let [schema {:comp {:db/valueType :db.type/ref}}
+        db     (d/db-with (d/empty-db nil schema)
+                          [{:db/id 1, :comp {:name "C"}}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-             [ 2 :name "C"] ]))))
+            [ 2 :name "C"] ]))))

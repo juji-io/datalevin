@@ -148,6 +148,7 @@
       (pred d))))
 
 (defprotocol IStore
+  (dir [db] "Return the data file directory")
   (close [this] "Close storage")
   (closed? [this] "Return true if the storage is closed")
   (max-gt [this])
@@ -194,6 +195,8 @@
                 ^:volatile-mutable ^long max-aid
                 ^:volatile-mutable ^long max-gt]
   IStore
+  (dir [_]
+    (.-dir lmdb))
   (close [_]
     (lmdb/close lmdb))
 
@@ -408,9 +411,9 @@
   "Open and return the storage."
   ([]
    (open nil nil))
-  ([schema]
-   (open schema nil))
-  ([schema dir]
+  ([dir]
+   (open dir nil))
+  ([dir schema]
    (let [dir  (or dir (str "/tmp/datalevin-" (UUID/randomUUID)))
          lmdb (lmdb/open-lmdb dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ Long/BYTES)

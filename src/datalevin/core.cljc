@@ -6,7 +6,6 @@
     [datalevin.db :as db]
     [datalevin.datom :as dd]
     [datalevin.storage :as s]
-    [datalevin.constants :refer [tx0]]
     [datalevin.pull-api :as dp]
     [datalevin.query :as dq]
     [datalevin.impl.entity :as de])
@@ -148,17 +147,18 @@
 
 ; Creating DB
 
-(def ^{:arglists '([] [schema] [schema dir])
-       :doc "Creates an empty database with an optional schema.
+(def ^{:arglists '([] [dir] [dir schema])
+       :doc "Creates an empty database with an optional schema. Open the database
+             if the directory contains data already. Update schema if given.
 
              Usage:
 
              ```
-             (empty-db) ; => #datalevin/DB {:schema {}, :datoms []}
+             (empty-db)
 
-             (empty-db {:likes {:db/cardinality :db.cardinality/many}})
-             ; => #datalevin/DB {:schema {:likes {:db/cardinality :db.cardinality/many}}
-             ;                    :datoms []}
+             (empty-db \"/tmp/test-empty-db\")
+
+             (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
              ```"}
   empty-db db/empty-db)
 
@@ -182,7 +182,7 @@
   datom? dd/datom?)
 
 
-(def ^{:arglists '([datoms] [datoms schema])
+(def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
        :doc "Low-level fn for creating database quickly from a trusted sequence of datoms.
 
              Does no validation on inputs, so `datoms` must be well-formed and match schema.
@@ -380,20 +380,20 @@
 
 (defn conn-from-datoms
   "Creates an empty DB and a mutable reference to it. See [[create-conn]]."
-  ([datoms]        (conn-from-db (init-db datoms)))
-  ([datoms schema] (conn-from-db (init-db datoms schema)))
-  ([datoms schema dir] (conn-from-db (init-db datoms schema dir))))
+  ([datoms] (conn-from-db (init-db datoms)))
+  ([datoms dir] (conn-from-db (init-db datoms dir)))
+  ([datoms dir schema] (conn-from-db (init-db datoms dir schema))))
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to an empty database.
+  "Creates a mutable reference (a “connection”) to a database. Will create the database if it doesn't exist yet. Update schema if given.
 
    Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]].
 
    To access underlying DB, deref: `@conn`."
-  ([]       (conn-from-db (empty-db)))
-  ([schema] (conn-from-db (empty-db schema)))
-  ([schema dir] (conn-from-db (empty-db schema dir))))
+  ([] (conn-from-db (empty-db)))
+  ([dir] (conn-from-db (empty-db dir)))
+  ([dir schema] (conn-from-db (empty-db dir schema))))
 
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
@@ -612,14 +612,20 @@
 
 (defn update-schema
   "Update the schema of an open connection. `schema-update` is a map from
-  attribute keywords to maps of corresponding properties.
+  attribute keywords to maps of corresponding properties. Return the updated
+  schema.
 
   Example:
 
           (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
   [conn schema-update]
-  (s/set-schema ^Store (.-store ^DB @conn) schema-update))
-
+  (let [^DB db (db conn)
+        s      (s/set-schema ^Store (.-store db) schema-update)]
+    (swap! conn (fn [db]
+                  (assoc db
+                         :schema s
+                         :rschema (db/rschema s))))
+    (schema conn)))
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
@@ -672,7 +678,6 @@
 
 (defn- rand-bits [^long pow]
   (rand-int (bit-shift-left 1 pow)))
-
 
 #?(:cljs
   (defn- to-hex-string [n l]

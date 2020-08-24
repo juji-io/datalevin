@@ -1,10 +1,8 @@
 (ns datalevin.test.conn
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   #?(:cljs [cljs.test    :as t :refer-macros [is deftest]]
+      :clj  [clojure.test :as t :refer        [is deftest]])
    [datalevin.core :as d]
-   [datalevin.db :as db]
-   [datalevin.test.core :as tdc]
    [datalevin.constants :as c]))
 
 (def schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}})
@@ -19,10 +17,10 @@
 
 (deftest test-update-schema
   (let [conn1 (d/create-conn)
-        s {:a/b {:db/valueType :db.type/string}}
-        s1 {:c/d {:db/valueType :db.type/string}}
-        txs [{:c/d "cd" :db/id -1}]
-        conn2 (d/create-conn s)]
+        s     {:a/b {:db/valueType :db.type/string}}
+        s1    {:c/d {:db/valueType :db.type/string}}
+        txs   [{:c/d "cd" :db/id -1}]
+        conn2 (d/create-conn nil s)]
     (is (= (d/schema conn2) (d/update-schema conn1 s)))
     (d/update-schema conn1 s1)
     (d/transact! conn1 txs)
@@ -35,7 +33,7 @@
     (is (= c/implicit-schema (:schema @conn)))))
 
 (deftest test-ways-to-create-conn-2
-  (let [conn (d/create-conn schema)]
+  (let [conn (d/create-conn nil schema)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= (:schema @conn) (merge schema c/implicit-schema)))))
 
@@ -45,7 +43,7 @@
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= c/implicit-schema (:schema @conn))))
 
-  (let [conn (d/conn-from-datoms datoms schema)]
+  (let [conn (d/conn-from-datoms datoms nil schema)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (merge schema c/implicit-schema) (:schema @conn))))
 
@@ -53,6 +51,6 @@
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= c/implicit-schema (:schema @conn))))
 
-  (let [conn (d/conn-from-db (d/init-db datoms schema))]
+  (let [conn (d/conn-from-db (d/init-db datoms nil schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (merge schema c/implicit-schema) (:schema @conn)))))

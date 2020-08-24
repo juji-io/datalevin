@@ -53,7 +53,7 @@ Use as a Datalog store:
                     :db/unique    :db.unique/identity}})
 
 ;; create DB and connect to it
-(def conn (d/create-conn schema "/tmp/datalevin-test"))
+(def conn (d/create-conn "/tmp/datalevin-test" schema))
 
 ;; transact some data
 ;; notice :nation is not defined in schema, so it will be treated as an EDN blob
@@ -72,7 +72,7 @@ Use as a Datalog store:
      "fred")
 ;; => #{["France"]}
 
-;; close conn
+;; close DB connection
 (d/close conn)
 ```
 
@@ -108,7 +108,7 @@ Use as a key value store:
 (l/get-value db table 42)
 ;; => nil
 
-;; close db
+;; close DB
 (l/close db)
 ```
 

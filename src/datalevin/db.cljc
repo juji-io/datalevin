@@ -92,7 +92,7 @@
                          max-eid max-tx schema rschema hash]
 
   clojure.lang.IEditableCollection
-  (empty [db]         (with-meta (empty-db schema) (meta db)))
+  (empty [db]         (with-meta (empty-db (s/dir store) schema) (meta db)))
   (asTransient [db] (db-transient db))
 
   clojure.lang.ITransientCollection
@@ -227,7 +227,7 @@
         :db/isComponent [:db/isComponent]
         []))))
 
-(defn- rschema [schema]
+(defn rschema [schema]
   (reduce-kv
    (fn [m attr keys->values]
      (reduce-kv
@@ -274,11 +274,11 @@
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))
-  ([schema] (empty-db schema nil))
-  ([schema dir]
+  ([dir] (empty-db dir nil))
+  ([dir schema]
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
-   (let [store (s/open schema dir)]
+   (let [store (s/open dir schema)]
      (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
      (map->DB
       {:store   store
@@ -294,10 +294,10 @@
 
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil))
-  ([datoms schema] (init-db datoms schema nil))
-  ([datoms schema dir]
+  ([datoms dir] (init-db datoms dir nil))
+  ([datoms dir schema]
    (validate-schema schema)
-   (let [store   (s/open schema dir)
+   (let [store   (s/open dir schema)
          schema  (s/schema store)
          rschema (rschema (merge implicit-schema schema))
          _       (s/load-datoms store datoms)

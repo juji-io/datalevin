@@ -1,35 +1,33 @@
 (ns datalevin.test.query
   (:require
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.test.core :as tdc])
-    #?(:clj
-       (:import [clojure.lang ExceptionInfo]
-                [java.util UUID])))
+   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
+      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.core :as d])
+  #?(:clj
+     (:import [clojure.lang ExceptionInfo]
+              [java.util UUID])))
 
 ;; #8
 (deftest test-many-joins
   (let [data (->> (range 1000)
                   (map (fn [^long i]
                          {:db/id i
-                          :a     (str (UUID/randomUUID))
-                          :b     (str (UUID/randomUUID))
-                          :c     (str (UUID/randomUUID))
-                          :d     (str (UUID/randomUUID))
+                          :a     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
+                          :b     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
+                          :c     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
+                          :d     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
                           :e     (rand-int 3)
                           :f     (rand-int 3)
                           :g     (rand-int 3)
                           :h     (rand-int 3)})))
-        db   (-> (d/empty-db {:a {:db/valueType :db.type/string}
-                              :b {:db/valueType :db.type/string}
-                              :c {:db/valueType :db.type/string}
-                              :d {:db/valueType :db.type/string}
-                              :e {:db/valueType :db.type/long}
-                              :f {:db/valueType :db.type/long}
-                              :g {:db/valueType :db.type/long}
-                              :h {:db/valueType :db.type/long}})
+        db   (-> (d/empty-db nil {:a {:db/valueType :db.type/string}
+                                  :b {:db/valueType :db.type/string}
+                                  :c {:db/valueType :db.type/string}
+                                  :d {:db/valueType :db.type/string}
+                                  :e {:db/valueType :db.type/long}
+                                  :f {:db/valueType :db.type/long}
+                                  :g {:db/valueType :db.type/long}
+                                  :h {:db/valueType :db.type/long}})
                  (d/db-with data))]
     (is (number? (d/q '[:find ?eid1 .
                         :where
@@ -46,44 +44,44 @@
 
 (deftest test-joins
   (let [db (-> (d/empty-db)
-               (d/db-with [ { :db/id 1, :name  "Ivan", :age   15 }
-                           { :db/id 2, :name  "Petr", :age   37 }
-                           { :db/id 3, :name  "Ivan", :age   37 }
+               (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
+                           { :db/id 2, :name "Petr", :age 37 }
+                           { :db/id 3, :name "Ivan", :age 37 }
                            { :db/id 4, :age 15 }]))]
     (is (= (d/q '[:find ?e
                   :where [?e :name]] db)
            #{[1] [2] [3]}))
     (is (= (d/q '[:find  ?e ?v
                   :where [?e :name "Ivan"]
-                         [?e :age ?v]] db)
+                  [?e :age ?v]] db)
            #{[1 15] [3 37]}))
     (is (= (d/q '[:find  ?e1 ?e2
                   :where [?e1 :name ?n]
-                         [?e2 :name ?n]] db)
+                  [?e2 :name ?n]] db)
            #{[1 1] [2 2] [3 3] [1 3] [3 1]}))
     (is (= (d/q '[:find  ?e ?e2 ?n
                   :where [?e :name "Ivan"]
-                         [?e :age ?a]
-                         [?e2 :age ?a]
-                         [?e2 :name ?n]] db)
+                  [?e :age ?a]
+                  [?e2 :age ?a]
+                  [?e2 :name ?n]] db)
            #{[1 1 "Ivan"]
              [3 3 "Ivan"]
              [3 2 "Petr"]}))))
 
 
 (deftest test-q-many
-  (let [db (-> (d/empty-db {:aka {:db/cardinality :db.cardinality/many}})
+  (let [db (-> (d/empty-db nil {:aka {:db/cardinality :db.cardinality/many}})
                (d/db-with [ [:db/add 1 :name "Ivan"]
-                            [:db/add 1 :aka  "ivolga"]
-                            [:db/add 1 :aka  "pi"]
-                            [:db/add 2 :name "Petr"]
-                            [:db/add 2 :aka  "porosenok"]
-                            [:db/add 2 :aka  "pi"] ]))]
+                           [:db/add 1 :aka  "ivolga"]
+                           [:db/add 1 :aka  "pi"]
+                           [:db/add 2 :name "Petr"]
+                           [:db/add 2 :aka  "porosenok"]
+                           [:db/add 2 :aka  "pi"] ]))]
     (is (= (d/q '[:find  ?n1 ?n2
                   :where [?e1 :aka ?x]
-                         [?e2 :aka ?x]
-                         [?e1 :name ?n1]
-                         [?e2 :name ?n2]] db)
+                  [?e2 :aka ?x]
+                  [?e1 :name ?n1]
+                  [?e2 :name ?n2]] db)
            #{["Ivan" "Ivan"]
              ["Petr" "Petr"]
              ["Ivan" "Petr"]
@@ -92,31 +90,31 @@
 
 (deftest test-q-coll
   (let [db [ [1 :name "Ivan"]
-             [1 :age  19]
-             [1 :aka  "dragon_killer_94"]
-             [1 :aka  "-=autobot=-"] ] ]
+            [1 :age  19]
+            [1 :aka  "dragon_killer_94"]
+            [1 :aka  "-=autobot=-"] ] ]
     (is (= (d/q '[ :find  ?n ?a
-                   :where [?e :aka "dragon_killer_94"]
-                          [?e :name ?n]
-                          [?e :age  ?a]] db)
+                  :where [?e :aka "dragon_killer_94"]
+                  [?e :name ?n]
+                  [?e :age  ?a]] db)
            #{["Ivan" 19]})))
 
   (testing "Query over long tuples"
     (let [db [ [1 :name "Ivan" 945 :db/add]
-               [1 :age  39     999 :db/retract]] ]
+              [1 :age  39     999 :db/retract]] ]
       (is (= (d/q '[ :find  ?e ?v
-                     :where [?e :name ?v]] db)
+                    :where [?e :name ?v]] db)
              #{[1 "Ivan"]}))
       (is (= (d/q '[ :find  ?e ?a ?v ?t
-                     :where [?e ?a ?v ?t :db/retract]] db)
+                    :where [?e ?a ?v ?t :db/retract]] db)
              #{[1 :age 39 999]})))))
 
 
 (deftest test-q-in
-  (let [db (-> (d/empty-db)
-               (d/db-with [ { :db/id 1, :name  "Ivan", :age   15 }
-                            { :db/id 2, :name  "Petr", :age   37 }
-                            { :db/id 3, :name  "Ivan", :age   37 }]))
+  (let [db    (-> (d/empty-db)
+                  (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
+                              { :db/id 2, :name "Petr", :age 37 }
+                              { :db/id 3, :name "Ivan", :age 37 }]))
         query '{:find  [?e]
                 :in    [$ ?attr ?value]
                 :where [[?e ?attr ?value]]}]
@@ -136,7 +134,7 @@
       (is (= (d/q '[:find  ?e ?email
                     :in    $ $b
                     :where [?e :name ?n]
-                           [$b ?n ?email]]
+                    [$b ?n ?email]]
                   db
                   [["Ivan" "ivan@mail.ru"]
                    ["Petr" "petr@gmail.com"]])
@@ -152,9 +150,9 @@
 
 (deftest test-bindings
   (let [db (-> (d/empty-db)
-             (d/db-with [ { :db/id 1, :name  "Ivan", :age   15 }
-                          { :db/id 2, :name  "Petr", :age   37 }
-                          { :db/id 3, :name  "Ivan", :age   37 }]))]
+               (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
+                           { :db/id 2, :name "Petr", :age 37 }
+                           { :db/id 3, :name "Ivan", :age 37 }]))]
     (testing "Relation binding"
       (is (= (d/q '[:find  ?e ?email
                     :in    $ [[?n ?email]]
@@ -170,7 +168,7 @@
       (is (= (d/q '[:find  ?e
                     :in    $ [?name ?age]
                     :where [?e :name ?name]
-                           [?e :age ?age]]
+                    [?e :age ?age]]
                   db ["Ivan" 37])
              #{[3]})))
 
@@ -185,16 +183,16 @@
       (is (= (d/q '[:find ?id
                     :in $ [?id ...]
                     :where [?id :age _]]
-               [[1 :name "Ivan"]
-                [2 :name "Petr"]]
-               [])
+                  [[1 :name "Ivan"]
+                   [2 :name "Petr"]]
+                  [])
              #{}))
       (is (= (d/q '[:find ?id
                     :in $ [[?id]]
                     :where [?id :age _]]
-               [[1 :name "Ivan"]
-                [2 :name "Petr"]]
-               [])
+                  [[1 :name "Ivan"]
+                   [2 :name "Petr"]]
+                  [])
              #{})))
 
     (testing "Placeholders"
@@ -209,13 +207,13 @@
 
     (testing "Error reporting"
       (is (thrown-with-msg? ExceptionInfo #"Cannot bind value :a to tuple \[\?a \?b\]"
-            (d/q '[:find ?a ?b :in [?a ?b]] :a)))
+                            (d/q '[:find ?a ?b :in [?a ?b]] :a)))
       (is (thrown-with-msg? ExceptionInfo #"Cannot bind value :a to collection \[\?a \.\.\.\]"
-            (d/q '[:find ?a :in [?a ...]] :a)))
+                            (d/q '[:find ?a :in [?a ...]] :a)))
       (is (thrown-with-msg? ExceptionInfo #"Not enough elements in a collection \[:a\] to bind tuple \[\?a \?b\]"
-            (d/q '[:find ?a ?b :in [?a ?b]] [:a]))))
+                            (d/q '[:find ?a ?b :in [?a ?b]] [:a]))))
 
-))
+    ))
 
 (deftest test-nested-bindings
   (is (= (d/q '[:find  ?k ?v
@@ -227,7 +225,7 @@
   (is (= (d/q '[:find  ?k ?min ?max
                 :in    [[?k ?v] ...] ?minmax
                 :where [(?minmax ?v) [?min ?max]]
-                       [(> ?max ?min)]]
+                [(> ?max ?min)]]
               {:a [1 2 3 4]
                :b [5 6 7]
                :c [3]}
@@ -237,7 +235,7 @@
   (is (= (d/q '[:find  ?k ?x
                 :in    [[?k [?min ?max]] ...] ?range
                 :where [(?range ?min ?max) [?x ...]]
-                       [(even? ?x)]]
+                [(even? ?x)]]
               {:a [1 7]
                :b [2 4]}
               range)
@@ -248,15 +246,15 @@
   (is (= (d/q '[:find  ?name
                 :in    [?name ...] ?key
                 :where [(re-pattern ?key) ?pattern]
-                       [(re-find ?pattern ?name)]]
+                [(re-find ?pattern ?name)]]
               #{"abc" "abcX" "aXb"}
               "X")
          #{["abcX"] ["aXb"]})))
 
 
 (deftest test-some-strings
-  (let [conn (d/create-conn {:id   {:db/valueType :db.type/long}
-                             :text {:db/valueType :db.type/string}})]
+  (let [conn (d/create-conn nil {:id   {:db/valueType :db.type/long}
+                                 :text {:db/valueType :db.type/string}})]
     (d/transact! conn [{:text "[7/3, 15:36]"
                         :id   3}])
     (is (= '([{:db/id 1, :id 3, :text "[7/3, 15:36]"}])
@@ -264,6 +262,3 @@
                   :where
                   [?e :id 3]]
                 @conn)))))
-
-#_(require 'datalevin.test.query :reload)
-#_(clojure.test/test-ns 'datalevin.test.query)
