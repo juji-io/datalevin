@@ -1,4 +1,4 @@
-(def version "0.2.19")
+(def version "0.3.0")
 
 (defproject datalevin version
   :description "A simple, fast and durable Datalog database"
@@ -11,11 +11,11 @@
                  ;; [com.alipay.sofa/jraft-core "1.3.4"]
                  [org.lmdbjava/lmdbjava "0.8.1"
                   ;; uncomment when run lein codox
-                  ;; :exclusions
-                  ;; [org.ow2.asm/asm-analysis
-                  ;;  org.ow2.asm/asm-commons
-                  ;;  org.ow2.asm/asm-tree
-                  ;;  org.ow2.asm/asm-util]
+                  :exclusions
+                  [org.ow2.asm/asm-analysis
+                   org.ow2.asm/asm-commons
+                   org.ow2.asm/asm-tree
+                   org.ow2.asm/asm-util]
                   ]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.0"]
                                   [criterium "0.4.6"]

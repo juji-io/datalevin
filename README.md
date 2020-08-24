@@ -150,11 +150,11 @@ In short, Datalevin is quite capable for small or medium projects right now.
 
 These are the short term goals that we will try to reach quickly:
 
-* 0.3.0 Distributed mode with raft based replication
-* 0.4.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami) 
-* 0.5.0 Schema migration
-* 0.6.0 Query parity with Datascript: composite tuples and persisted transaction functions
-* 0.7.0 Materialized views and incremental maintenance
+* 0.4.0 Distributed mode with raft based replication
+* 0.5.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
+* 0.6.0 Schema migration
+* 0.7.0 Query parity with Datascript: composite tuples and persisted transaction functions
+* 0.8.0 Materialized views and incremental maintenance
 
 We welcome any suggestions on what to do next. Please file issues.
 
@@ -212,7 +212,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.2.19
+Version: 0.3.0
 
 ## License
 

@@ -1,6 +1,12 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.3.0
+### Changed
+- [**Breaking**] Change argument order of `core/create-conn`, `db/empty-db`
+  etc., and put `dir` in front, since it is more likely to be specified than
+  `schema` in real use, so users don't have to put `nil` for `schema`.
+
 ## 0.2.19
 ### Fixed
 - correct `core/update-schema`
