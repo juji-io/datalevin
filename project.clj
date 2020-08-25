@@ -18,7 +18,6 @@
                   ;;  org.ow2.asm/asm-util]
                   ]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.0"]
-                                  [criterium "0.4.6"]
                                   [com.taoensso/timbre "4.10.0"]]}}
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"]
@@ -29,11 +28,11 @@
                                     :sign-releases false}]]
   :plugins [[lein-codox "0.10.7"]]
   :codox {:output-path "codox"
-          :metadata {:doc/format :markdown}
+          :metadata    {:doc/format :markdown}
           :source-uri
           {#"target/classes" "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
            #".*"             "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
   :global-vars {*print-namespace-maps* false
-                *unchecked-math* :warn-on-boxed
-                *warn-on-reflection*   true
+                ;; *unchecked-math*       :warn-on-boxed
+                ;; *warn-on-reflection*   true
                 })

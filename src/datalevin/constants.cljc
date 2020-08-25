@@ -12,7 +12,9 @@
 (def ^:const emax  0x7FFFFFFF)
 (def ^:const txmax 0x7FFFFFFF)
 (def ^:const implicit-schema
-  {:db/ident {:db/unique :db.unique/identity :db/aid 0}})
+  {:db/ident {:db/unique    :db.unique/identity
+              :db/valueType :db.type/keyword
+              :db/aid       0}})
 
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)

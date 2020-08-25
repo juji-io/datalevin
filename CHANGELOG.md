@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+### Changed
+- Add value type for `:db/ident` in implicit schema
+
 ## 0.3.1
 ### Changed
 - [**Breaking**] Change argument order of `core/create-conn`, `db/empty-db`
@@ -15,7 +19,7 @@ All notable changes to this project will be documented in this file. This change
 
 ### Fixed
 - correctly handle `false` value as `:data`
-- always clear buffer before put data in
+- always clear buffer before putting data in
 
 ## 0.2.17
 

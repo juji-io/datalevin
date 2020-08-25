@@ -4,7 +4,9 @@
 
 (deftest basic-ops-test
   (let [schema
-        {:db/ident                {:db/unique :db.unique/identity, :db/aid 0},
+        {:db/ident                {:db/unique    :db.unique/identity,
+                                   :db/valueType :db.type/keyword,
+                                   :db/aid       0},
          :sales/country           {:db/valueType :db.type/string, :db/aid 1},
          :juji.data/display?      {:db/valueType :db.type/boolean, :db/aid 2},
          :juji.data/origin-column {:db/valueType :db.type/long, :db/aid 3},
@@ -21,7 +23,7 @@
                                    :db/cardinality :db.cardinality/many, :db/aid 12}}
 
         schema-update
-        {:regions/region {:db/valueType :db.type/string :db/aid 13}
+        {:regions/region  {:db/valueType :db.type/string :db/aid 13}
          :regions/country {:db/valueType :db.type/string :db/aid 14}}
 
         conn (sut/create-conn nil schema)
