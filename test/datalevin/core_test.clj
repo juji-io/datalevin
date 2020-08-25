@@ -11,42 +11,40 @@
          :juji.data/display?      {:db/valueType :db.type/boolean, :db/aid 2},
          :juji.data/origin-column {:db/valueType :db.type/long, :db/aid 3},
          :sales/company           {:db/valueType :db.type/string, :db/aid 4},
-         :juji.data/attribute     {:db/valueType :db.type/keyword,
-                                   :db/unique    :db.unique/identity, :db/aid 5},
-         :sales/top-product-use   {:db/valueType :db.type/string, :db/aid 6},
-         :juji.data/of-attribute  {:db/valueType :db.type/keyword, :db/aid 7},
-         :juji.data/references    {:db/valueType :db.type/keyword, :db/aid 8},
-         :juji.data/value         {:db/valueType :db.type/string, :db/aid 9},
-         :sales/year              {:db/valueType :db.type/long, :db/aid 10},
-         :sales/total             {:db/valueType :db.type/long, :db/aid 11},
+         :sales/top-product-use   {:db/valueType :db.type/string, :db/aid 5},
+         :juji.data/of-attribute  {:db/valueType :db.type/keyword, :db/aid 6},
+         :juji.data/references    {:db/valueType :db.type/keyword, :db/aid 7},
+         :juji.data/value         {:db/valueType :db.type/string, :db/aid 8},
+         :sales/year              {:db/valueType :db.type/long, :db/aid 9},
+         :sales/total             {:db/valueType :db.type/long, :db/aid 10},
          :juji.data/synonyms      {:db/valueType   :db.type/string,
-                                   :db/cardinality :db.cardinality/many, :db/aid 12}}
+                                   :db/cardinality :db.cardinality/many, :db/aid 11}}
 
         schema-update
-        {:regions/region  {:db/valueType :db.type/string :db/aid 13}
-         :regions/country {:db/valueType :db.type/string :db/aid 14}}
+        {:regions/region  {:db/valueType :db.type/string :db/aid 12}
+         :regions/country {:db/valueType :db.type/string :db/aid 13}}
 
         conn (sut/create-conn nil schema)
         txs
         [{:juji.data/synonyms      ["company" "customer"],
           :juji.data/display?      true,
-          :juji.data/attribute     :sales/company,
+          :db/ident     :sales/company,
           :juji.data/origin-column 0, :db/id -1}
          {:juji.data/references    :regions/country,
-          :juji.data/attribute     :sales/country,
+          :db/ident     :sales/country,
           :juji.data/origin-column 1,
           :db/id                   -2}
          {:sales/year              2019,
           :juji.data/synonyms      ["total" "spending" "payment"],
           :juji.data/display?      true,
-          :juji.data/attribute     :sales/total,
+          :db/ident     :sales/total,
           :juji.data/origin-column 2,
           :db/id                   -3}
          {:sales/year              2018,
-          :juji.data/attribute     :sales/total,
+          :db/ident     :sales/total,
           :juji.data/origin-column 3,
           :db/id                   -4}
-         {:juji.data/attribute     :sales/top-product-use,
+         {:db/ident     :sales/top-product-use,
           :juji.data/origin-column 4,
           :db/id                   -5}
          {:juji.data/synonyms     ["US" "u.s." "usa" "united states" "america" "U.S.A."],
