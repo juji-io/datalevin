@@ -288,7 +288,7 @@
        :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
        :avet    (set/sorted-set-by d/cmp-datoms-avet)
        :vaet    (set/sorted-set-by d/cmp-datoms-vaet)
-       :max-eid e0
+       :max-eid (s/init-max-eid store)
        :max-tx  tx0
        :hash    (atom 0)}))))
 

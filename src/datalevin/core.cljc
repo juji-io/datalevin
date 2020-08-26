@@ -148,8 +148,7 @@
 ; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema])
-       :doc "Creates an empty database with an optional schema. Open the database
-             if the directory contains data already. Update schema if given.
+       :doc "Open database at the given data directory. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
              Usage:
 
@@ -386,11 +385,20 @@
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to a database at the given data directory and opens the database. Creates a database if it doesn't exist yet. Update the schema if one is given.
+  "Creates a mutable reference (a “connection”) to a database at the given data directory and opens the database. Creates the database if it doesn't exist yet. Update the schema if one is given. Return the connection.
 
    Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], and [[close]].
 
-   To access underlying DB, deref: `@conn`."
+   To access underlying DB, deref: `@conn`.
+
+   Usage:
+
+             (create-conn)
+
+             (create-conn \"/tmp/test-create-conn\")
+
+             (create-conn \"/tmp/test-create-conn\" {:likes {:db/cardinality :db.cardinality/many}})
+  "
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
   ([dir schema] (conn-from-db (empty-db dir schema))))

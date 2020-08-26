@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+### Fixed
+- Properly initialize max-eid in `core/empty-db`
+
 ## 0.3.2
 ### Changed
 - Add value type for `:db/ident` in implicit schema

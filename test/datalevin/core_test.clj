@@ -1,6 +1,7 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
-            [clojure.test :refer [is deftest]]))
+            [clojure.test :refer [is deftest]])
+  (:import [java.util UUID]))
 
 (deftest basic-ops-test
   (let [schema
@@ -24,27 +25,29 @@
         {:regions/region  {:db/valueType :db.type/string :db/aid 12}
          :regions/country {:db/valueType :db.type/string :db/aid 13}}
 
-        conn (sut/create-conn nil schema)
+        dir (str "/tmp/datalevin-core-test-" (UUID/randomUUID))
+        conn (sut/create-conn dir schema)
         txs
         [{:juji.data/synonyms      ["company" "customer"],
           :juji.data/display?      true,
-          :db/ident     :sales/company,
-          :juji.data/origin-column 0, :db/id -1}
+          :db/ident                :sales/company,
+          :juji.data/origin-column 0,
+          :db/id                   -1}
          {:juji.data/references    :regions/country,
-          :db/ident     :sales/country,
+          :db/ident                :sales/country,
           :juji.data/origin-column 1,
           :db/id                   -2}
          {:sales/year              2019,
           :juji.data/synonyms      ["total" "spending" "payment"],
           :juji.data/display?      true,
-          :db/ident     :sales/total,
+          :db/ident                :sales/total,
           :juji.data/origin-column 2,
           :db/id                   -3}
          {:sales/year              2018,
-          :db/ident     :sales/total,
+          :db/ident                :sales/total,
           :juji.data/origin-column 3,
           :db/id                   -4}
-         {:db/ident     :sales/top-product-use,
+         {:db/ident                :sales/top-product-use,
           :juji.data/origin-column 4,
           :db/id                   -5}
          {:juji.data/synonyms     ["US" "u.s." "usa" "united states" "america" "U.S.A."],
@@ -150,4 +153,7 @@
                          :synonyms ["U.S.A." "US" "america" "u.s."
                                     "united states" "usa"]}]]))
     (sut/update-schema conn schema-update)
-    (is (= (sut/schema conn) (merge schema schema-update)))))
+    (is (= (sut/schema conn) (merge schema schema-update)))
+    (sut/close conn)
+    (let [conn' (sut/create-conn dir)]
+      (is (= 83 (count (sut/datoms @conn' :eavt)))))))
