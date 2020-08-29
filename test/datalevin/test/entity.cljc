@@ -1,18 +1,15 @@
 (ns datalevin.test.entity
   (:require
-    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.test.core :as tdc])
-    #?(:clj
-      (:import [clojure.lang ExceptionInfo])))
+   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
+      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.core :as d]
+   [datalevin.test.core :as tdc]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
 
 (deftest test-entity
-  (let [db (-> (d/empty-db {:aka {:db/cardinality :db.cardinality/many}})
+  (let [db (-> (d/empty-db nil {:aka {:db/cardinality :db.cardinality/many}})
                (d/db-with [{:db/id 1, :name "Ivan", :age 19, :aka ["X" "Y"]}
                            {:db/id 2, :name "Ivan", :sex "male", :aka ["Z"]}
                            [:db/add 3 :huh? false]]))
@@ -42,14 +39,14 @@
            (edn/read-string "{:name \"Ivan\", :db/id 1}")))))
 
 (deftest test-entity-refs
-  (let [db (-> (d/empty-db {:father   {:db/valueType   :db.type/ref}
-                            :children {:db/valueType   :db.type/ref
-                                       :db/cardinality :db.cardinality/many}})
+  (let [db (-> (d/empty-db nil {:father   {:db/valueType :db.type/ref}
+                                :children {:db/valueType   :db.type/ref
+                                           :db/cardinality :db.cardinality/many}})
                (d/db-with
-                 [{:db/id 1, :children [10]}
-                  {:db/id 10, :father 1, :children [100 101]}
-                  {:db/id 100, :father 10}
-                  {:db/id 101, :father 10}]))
+                [{:db/id 1, :children [10]}
+                 {:db/id 10, :father 1, :children [100 101]}
+                 {:db/id 100, :father 10}
+                 {:db/id 101, :father 10}]))
         e  #(d/entity db %)]
 
     (is (= (:children (e 1))   #{(e 10)}))
@@ -78,16 +75,16 @@
       (is (= (:_children (e 10)) #{(e 1)}))
       (is (= (:_father   (e 10)) #{(e 100) (e 101)}))
       (is (= (-> (e 100) :_children first :_children) #{(e 1)}))
-    )))
+      )))
 
 (deftest test-entity-misses
-  (let [db (-> (d/empty-db {:name {:db/unique :db.unique/identity}})
-             (d/db-with [{:db/id 1, :name "Ivan"}
-                         {:db/id 2, :name "Oleg"}]))]
+  (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
+               (d/db-with [{:db/id 1, :name "Ivan"}
+                           {:db/id 2, :name "Oleg"}]))]
     (is (nil? (d/entity db nil)))
     (is (nil? (d/entity db "abc")))
     (is (nil? (d/entity db :keyword)))
     (is (nil? (d/entity db [:name "Petr"])))
     (is (= 777 (:db/id (d/entity db 777))))
     (is (thrown-msg? "Lookup ref attribute should be marked as :db/unique: [:not-an-attr 777]"
-          (d/entity db [:not-an-attr 777])))))
+                     (d/entity db [:not-an-attr 777])))))

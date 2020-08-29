@@ -1,5 +1,9 @@
 (ns ^:no-doc datalevin.constants
-  (:import [java.util UUID Arrays]))
+  (:import [java.util UUID Arrays]
+           [org.lmdbjava PutFlags]))
+
+;;---------------------------------------------
+;; system constants, fixed
 
 ;; datom
 
@@ -8,7 +12,9 @@
 (def ^:const emax  0x7FFFFFFF)
 (def ^:const txmax 0x7FFFFFFF)
 (def ^:const implicit-schema
-  {:db/ident {:db/unique :db.unique/identity :db/aid 0}})
+  {:db/ident {:db/unique    :db.unique/identity
+              :db/valueType :db.type/keyword
+              :db/aid       0}})
 
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)
@@ -17,12 +23,9 @@
 
 ;; lmdb
 
-(def ^:const +max-dbs+          128)
-(def ^:const +max-readers+      126)
-(def ^:const +use-readers+      24)    ; leave the rest to others
-(def ^:const +init-db-size+     100)   ; in megabytes
-(def ^:const +default-val-size+ 16384) ; in bytes
 (def ^:const +max-key-size+     511)   ; in bytes
+
+(def default-put-flags (make-array PutFlags 0))
 
 ;; index storage
 
@@ -65,11 +68,28 @@
 (def ^:const gt0 1)
 
 ;; dbi-names
-(def ^:const eav "eav")
-(def ^:const aev "aev")
-(def ^:const ave "ave")
-(def ^:const vae "vae")
-(def ^:const giants "giants")
-(def ^:const schema "schema")
+(def ^:const eav "datalevin/eav")
+(def ^:const aev "datalevin/aev")
+(def ^:const ave "datalevin/ave")
+(def ^:const vae "datalevin/vae")
+(def ^:const giants "datalevin/giants")
+(def ^:const schema "datalevin/schema")
 
 (def ^:const buffer-overflow "BufferOverflow:")
+
+;;-------------------------------------------------------------
+
+;; user configurable TODO: make it so
+
+;; lmdb
+
+(def ^:const +max-dbs+          128)
+(def ^:const +max-readers+      126)
+(def ^:const +use-readers+      24)    ; leave the rest to others
+(def ^:const +init-db-size+     100)   ; in megabytes
+(def ^:const +default-val-size+ 16384) ; in bytes
+
+
+;; query
+
+(def ^:const +cache-limit+ 1000)  ; per Datalog db

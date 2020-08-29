@@ -9,6 +9,7 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays]
+           [org.lmdbjava Txn$BadReaderLockException]
            [datalevin.lmdb LMDB]))
 
 (def ^:dynamic ^LMDB lmdb nil)
@@ -83,24 +84,43 @@
     (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1))))
 
   (testing "handle val overflow automatically"
-    (sut/transact lmdb [[:put "c" 1 (range 1000)]])
-    (is (= (range 1000) (sut/get-value lmdb "c" 1))))
+    (sut/transact lmdb [[:put "c" 1 (range 100000)]])
+    (is (= (range 100000) (sut/get-value lmdb "c" 1))))
 
   (testing "key overflow throws"
     (is (thrown-with-msg? Exception #"BufferOverflow"
                           (sut/transact lmdb [[:put "a" (range 1000) 1]]))))
 
   (testing "close then re-open, clear and drop"
-    (let [dir  (.-dir lmdb)]
+    (let [dir (.-dir lmdb)]
       (sut/close lmdb)
       (is (sut/closed? lmdb))
-      (let [lmdb (sut/open-lmdb dir)]
-        (sut/open-dbi lmdb "a")
-       (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
-       (sut/clear-dbi lmdb "a")
-       (is (nil? (sut/get-value lmdb "a" :datalevin)))
-       (sut/drop-dbi lmdb "a")
-       (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "a" 1)))))))
+      (let [lmdb  (sut/open-lmdb dir)
+            dbi-a (sut/open-dbi lmdb "a")]
+        (is (= "a" (sut/dbi-name dbi-a)))
+        (is (= ["hello" "world"] (sut/get-value lmdb "a" :datalevin)))
+        (sut/clear-dbi lmdb "a")
+        (is (nil? (sut/get-value lmdb "a" :datalevin)))
+        (sut/drop-dbi lmdb "a")
+        (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "a" 1)))))))
+
+(deftest reentry-test
+  (let [dir (.-dir lmdb)]
+    (sut/transact lmdb [[:put "a" :old 1]])
+    (is (= 1 (sut/get-value lmdb "a" :old)))
+    (let [res (future
+                (let [lmdb2 (sut/open-lmdb dir)]
+                  (sut/open-dbi lmdb2 "a")
+                  (is (= 1 (sut/get-value lmdb2 "a" :old)))
+                  (sut/transact lmdb2 [[:put "a" :something 1]])
+                  (is (= 1 (sut/get-value lmdb2 "a" :something)))
+                  (is (= 1 (sut/get-value lmdb "a" :something)))
+                  ;; should not close this
+                  ;; https://github.com/juji-io/datalevin/issues/7
+                  (sut/close lmdb2)
+                  1))]
+      (is (= 1 @res)))
+    (is (thrown? Txn$BadReaderLockException (sut/get-value lmdb "a" :something)))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))
@@ -124,12 +144,16 @@
   (let [ks  (shuffle (range 0 1000))
         vs  (map inc ks)
         txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-        res (sort-by first (map (fn [k v] [k v]) ks vs))]
+        res (sort-by first (map (fn [k v] [k v]) ks vs))
+        rc  (count res)]
     (sut/transact lmdb txs)
     (is (= [] (sut/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
+    (is (= 0 (sut/range-count lmdb "c" [:greater-than 1500] :long)))
     (is (= res (sut/get-range lmdb "c" [:all] :long :long)))
+    (is (= rc (sut/range-count lmdb "c" [:all] :long)))
     (is (= res
            (sut/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
+    (is (= rc (sut/range-count lmdb "c" [:less-than Long/MAX_VALUE] :long)))
     (is (= (take 10 res)
            (sut/get-range lmdb "c" [:at-most 9] :long :long)))
     (is (= (->> res (drop 10) (take 100))
@@ -157,11 +181,13 @@
         pred (fn [kv]
                (let [^long k (b/read-buffer (key kv) :long)]
                  (< 10 k 20)))
-        fks (range 11 20)
-        fvs (map inc fks)
-        res (map (fn [k v] [k v]) fks fvs)]
+        fks  (range 11 20)
+        fvs  (map inc fks)
+        res  (map (fn [k v] [k v]) fks fvs)
+        rc   (count res)]
     (sut/transact lmdb txs)
     (is (= fvs (sut/range-filter lmdb "c" pred [:all] :long :long true)))
+    (is (= rc (sut/range-filter-count lmdb "c" pred [:all] :long)))
     (is (= res (sut/range-filter lmdb "c" pred [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test

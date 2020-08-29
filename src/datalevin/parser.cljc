@@ -116,6 +116,11 @@
              (= (first (name form)) \?))
     (Variable. form)))
 
+(defn parse-var-required [form]
+  (or (parse-variable form)
+    (raise "Cannot parse var, expected symbol starting with ?, got: " form
+      {:error :parser/rule-var, :form form})))
+
 (defn parse-src-var [form]
   (when (and (symbol? form)
              (= (first (name form)) \$))
@@ -160,8 +165,8 @@
     (let [[required rest] (if (sequential? (first form))
                             [(first form) (next form)]
                             [nil form])
-          required* (parse-seq parse-variable required)
-          free*     (parse-seq parse-variable rest)]
+          required* (parse-seq parse-var-required required)
+          free*     (parse-seq parse-var-required rest)]
       (when (and (empty? required*) (empty? free*))
         (raise "Cannot parse rule-vars, expected [ variable+ | ([ variable+ ] variable*) ]"
                {:error :parser/rule-vars, :form form}))
@@ -372,6 +377,22 @@
       (raise "Cannot parse :find, expected: (find-rel | find-coll | find-tuple | find-scalar)"
              {:error :parser/find, :fragment form})))
 
+
+;; return-map  = (return-keys | return-syms | return-strs)
+;; return-keys = ':keys' symbol+
+;; return-syms = ':syms' symbol+
+;; return-strs = ':strs' symbol+
+
+(deftrecord ReturnMap [type symbols])
+
+(defn parse-return-map [type form]
+  (when (and (not (empty? form))
+          (every? symbol? form))
+    (case type
+      :keys (ReturnMap. type (mapv keyword form))
+      :syms (ReturnMap. type (vec form))
+      :strs (ReturnMap. type (mapv str form))
+      nil)))
 
 ;; with = [ variable+ ]
 
@@ -630,14 +651,6 @@
 (deftrecord RuleBranch [vars clauses])
 (deftrecord Rule [name branches])
 
-(defn validate-vars [vars clauses form]
-  (let [declared-vars   (collect #(instance? Variable %) vars #{})
-        used-vars       (collect #(instance? Variable %) clauses #{})
-        undeclared-vars (set/difference used-vars declared-vars)]
-    (when-not (empty? undeclared-vars)
-      (raise "Reference to the unknown variables: " (map :symbol undeclared-vars)
-             {:error :parser/rule, :form form, :vars undeclared-vars}))))
-
 (defn parse-rule [form]
   (if (sequential? form)
     (let [[head & clauses] form]
@@ -650,11 +663,10 @@
               clauses* (or (not-empty (parse-clauses clauses))
                            (raise "Rule branch should have clauses"
                                   {:error :parser/rule, :form form}))]
-            (validate-vars vars* clauses* form)
             {:name    name*
              :vars    vars*
              :clauses clauses*})
-        (raise "Cannot parse rule head, expected [rule-name rule-vars]"
+        (raise "Cannot parse rule head, expected [rule-name rule-vars], got: " head
                {:error :parser/rule, :form form})))
     (raise "Cannot parse rule, expected [rule-head clause+]"
            {:error :parser/rule, :form form})))
@@ -682,7 +694,7 @@
 ;; query
 
 ;; q* prefix because of https://dev.clojure.org/jira/browse/CLJS-2237
-(deftrecord Query [qfind qwith qin qwhere])
+(deftrecord Query [qfind qwith return-map qin qwhere])
 
 (defn query->map [query]
   (loop [parsed {}, key nil, qs query]
@@ -692,7 +704,20 @@
         (recur (update-in parsed [key] (fnil conj []) q) key (next qs)))
       parsed)))
 
-(defn validate-query [q form]
+(defn explicit-input [parsed]
+  (let [source (:source parsed)]
+    (if (instance? Pattern parsed)
+      source
+      (when (some? source)
+        (when (not (instance? DefaultSrc source))
+          source)))))
+
+(defn default-in [qwhere]
+  (if (not (empty? (collect explicit-input qwhere)))
+    '[$]
+    []))
+
+(defn validate-query [q form form-map]
   (let [find-vars  (set (collect-vars (:qfind q)))
         with-vars  (set (:qwith q))
         in-vars    (set (collect-vars (:qin q)))
@@ -707,6 +732,29 @@
       (raise ":find and :with should not use same variables: " (mapv :symbol shared)
              {:error :parser/query, :vars shared, :form form})))
 
+  (when-some [return-map (:qreturn-map q)]
+    (when (instance? FindScalar (:qfind q))
+      (raise (:type return-map) " does not work with single-scalar :find"
+        {:error :parser/query, :form form}))
+    (when (instance? FindColl (:qfind q))
+      (raise (:type return-map) " does not work with collection :find"
+        {:error :parser/query, :form form})))
+
+  (when-some [return-symbols (:symbols (:qreturn-map q))]
+    (let [find-elements (find-elements (:qfind q))]
+      (when-not (= (count return-symbols) (count find-elements))
+        (raise "Count of " (:type (:qreturn-map q)) " must match count of :find"
+          {:error      :parser/query
+           :return-map (cons (:type (:qreturn-map q)) return-symbols)
+           :find       find-elements
+           :form       form}))))
+
+  (when (< 1 (->> [(:keys form-map) (:syms form-map) (:strs form-map)]
+               (filter some?)
+               (count)))
+    (raise "Only one of :keys/:syms/:strs must be present"
+      {:error :parser/query, :form form}))
+  
   (let [in-vars    (collect-vars (:qin q))
         in-sources (collect #(instance? SrcVar %) (:qin q))
         in-rules   (collect #(instance? RulesVar %) (:qin q))]
@@ -733,8 +781,7 @@
     (when (and (not (empty? rule-exprs))
                (empty? rules-vars))
       (raise "Missing rules var '%' in :in"
-             {:error :parser/query, :form form})))
-  )
+             {:error :parser/query, :form form}))))
 
 (defn parse-query [q]
   (let [qm  (cond
@@ -742,11 +789,16 @@
               (sequential? q) (query->map q)
               :else (raise "Query should be a vector or a map"
                            {:error :parser/query, :form q}))
+        qwhere (parse-where (:where qm []))
         res (map->Query
               {:qfind  (parse-find (:find qm))
                :qwith  (when-let [with (:with qm)]
-                         (parse-with with))
-               :qin    (parse-in (:in qm ['$]))
-               :qwhere (parse-where (:where qm []))})]
-    (validate-query res q)
+                         (parse-with with)) 
+               :qreturn-map (or (parse-return-map :keys (:keys qm))
+                              (parse-return-map :syms (:syms qm))
+                              (parse-return-map :strs (:strs qm)))
+               :qin    (parse-in 
+                         (or (:in qm) (default-in qwhere)))
+               :qwhere qwhere})]
+    (validate-query res q qm)
     res))

@@ -124,6 +124,15 @@
                   [?e :sex :male]]
       db100k)))
 
+(defn ^:export q5 []
+  (core/bench
+   (d/q '[:find ?e1 ?l ?a
+          :where [?e :name "Ivan"]
+          [?e :age ?a]
+          [?e1 :age ?a]
+          [?e1 :last-name ?l]]
+        db100k)))
+
 
 (defn ^:export qpred1 []
   (core/bench

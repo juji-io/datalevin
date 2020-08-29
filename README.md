@@ -1,6 +1,6 @@
 <p align="center"><img src="logo.png" alt="datalevin logo" height="140"></img></p>
 <h1 align="center">Datalevin</h1>
-<p align="center"> 🧘 Simple durable Datalog database for everyone 💽 </p>
+<p align="center"> 🧘 Simple, fast and durable Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
 </p>
@@ -9,19 +9,34 @@
 
 > I love Datalog, why hasn't everyone use this already?
 
-Datalevin is a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to [Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database).
+Datalevin is a simple durable Datalog database.
 
-The rationale is to have a simple and free Datalog query engine running on durable storage.  It is our observation that many developers prefer the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implicit joins seem to be its killer feature.
+The rationale is to have a simple, fast and free Datalog query engine running on durable storage.  It is our observation that many developers prefer the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implicit joins seem to be its killer feature.
 
-Datomic® is an enterprise grade software, and its feature set may be an overkill for some use cases. One thing that may confuse casual users is its [temporal features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To keep things simple and familiar, Datalevin does not store transaction history, and behaves the same way as most other databases: when data are deleted, they are gone.
+Datomic® is an enterprise grade software, and its feature set may be an overkill
+for some use cases. One thing that may confuse casual users is its [temporal
+features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To
+keep things simple and familiar, Datalevin does not store transaction history,
+and behaves the same way as most other databases: when data are deleted, they
+are gone.
 
-Datalevin retains the library property of Datascript, and it is meant to be embedded in applications to manage state. Because data is persistent on disk in Datalevin, application state can survive application restarts, and data size can be larger than memory.
+Datalevin started out as a port of [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
+[Lightning Memory-Mapped Database (LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). It retains the library property of Datascript, and it is meant to be
+embedded in applications to manage state. Because data is persistent on disk in
+Datalevin, application state can survive application restarts, and data size can
+be larger than memory.
 
 Datalevin relies on the robust ACID transactional database features of LMDB. Designed for concurrent read intensive workloads, LMDB is used in many projects, e.g. [Cloudflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/) global configuration distribution. LMDB also [performs well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB). Therefore, it is fine to store documents in Datalevin.
 
-Independent from Datalog, Datalevin can also be used as a key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
+Datalevin uses cover index and has no write-ahead log, so once the data are
+written, they are indexed. In the standalone mode, there are no separate processes or threads for
+indexing, compaction or doing any database maintenance work that compete with
+your applications for resources.
 
-Datalevin uses cover index and has no write-ahead log, so once the data are written, they are indexed. There are no separate processes or threads for indexing, compaction or doing any database maintenance work that compete with your applications for resources.
+By giving up the "database as a value" doctrine adopted by the alternatives,
+Datalevin is able to leverage caching aggressively, achieving significant query speed advantage.
+
+Independent from Datalog, Datalevin can also be used as a fast key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
 
 ## :tada: Usage
 
@@ -38,7 +53,7 @@ Use as a Datalog store:
                     :db/unique    :db.unique/identity}})
 
 ;; create DB and connect to it
-(def conn (d/create-conn schema "/tmp/datalevin-test"))
+(def conn (d/create-conn "/tmp/datalevin-test" schema))
 
 ;; transact some data
 ;; notice :nation is not defined in schema, so it will be treated as an EDN blob
@@ -57,7 +72,7 @@ Use as a Datalog store:
      "fred")
 ;; => #{["France"]}
 
-;; close conn
+;; close DB connection
 (d/close conn)
 ```
 
@@ -93,7 +108,7 @@ Use as a key value store:
 (l/get-value db table 42)
 ;; => nil
 
-;; close db
+;; close DB
 (l/close db)
 ```
 
@@ -106,28 +121,50 @@ them, Datalevin is extensively tested with property-based testing. Running the
 benchmark suite of Datascript, here is how it looks.
 
 <p align="center">
-<img src="bench/datalevin-bench-query-07-22-2020.png" alt="query benchmark" height="250"></img>
-<img src="bench/datalevin-bench-write-07-22-2020.png" alt="write benchmark" height="250"></img>
+<img src="bench/datalevin-bench-query-07-25-2020.png" alt="query benchmark" height="250"></img>
+<img src="bench/datalevin-bench-write-07-25-2020.png" alt="write benchmark" height="250"></img>
 </p>
 
-Considering that we are comparing a disk store with a memory store, the query
-time of Datalevin is not bad. In some queries, Datalevin is even faster than
-Datascript, indicating potentials for further optimization.
+In all benchmarked queries, Datalevin is faster than Datascript. Considering
+that we are comparing a disk store with a memory store, this result may be
+counter-intuitive. The primary reason is that Datalevin is not an immutable
+database, so it is easy to cache aggressively, whereas it may be difficult in an immutable
+database (e.g. see [this issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
+caching in version 0.2.8, Datalevin was only faster than Datascript for single
+clause queries due to the highly efficient reads of LMDB. With caching enabled,
+Datalevin is now faster across the board. In addition, we will soon move to a
+more efficient query implementation as the Datascript query engine is not very efficient.
 
 Writes can be a few orders of magnitude slower, as expected, as Datalevin
 is writing to disk while Datascript is in memory. The bulk write speed is
-good, writing 100K datoms to disk in less than a second; the same data can also be transacted as a whole in less than 2 seconds.
+good, writing 100K datoms to disk in less than a second; the same data can also be transacted as a whole in less than 3 seconds.
 
 If transacting one datom or a few datoms at a time, it is much slower. Each
-transaction syncs to disk, so it is inherently slow. Because LMDB does copy on write and never overwrites data that are being read, large write amplification can occur. The advice is to write data in larger batch.
+transaction syncs to disk, so it is inherently slow. Because LMDB does copy on
+write and never overwrites data that are being read, large write amplification
+may also occur. The advice is to write data in larger batches.
 
-In short, Datalevin is quite usable for small or medium projects right now.
+In short, Datalevin is quite capable for small or medium projects right now.
+
+## :earth_americas: Roadmap
+
+These are the short term goals that we will try to reach quickly:
+
+* 0.4.0 Distributed mode with raft based replication
+* 0.5.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
+* 0.6.0 Schema migration
+* 0.7.0 Query parity with Datascript: composite tuples and persisted transaction functions
+* 0.8.0 Materialized views and incremental maintenance
+
+We welcome any suggestions on what to do next. Please file issues.
 
 ## :floppy_disk: Differences from Datascript
 
-Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built totally from scratch and is not related by any means to" Datomic®. Although a port, Datalevin differs from Datascript in more ways than the difference in data durability:
+Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
+totally from scratch and is not related by any means to" Datomic®. Although
+currently a port, Datalevin differs from Datascript in more significant ways than just the difference in data durability:
 
-* Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transaction ids are not stored.
+* As mentioned, Datalevin is not an immutable database, and there is no "database as a value" feature.  Since history is not kept, transaction ids are not stored.
 
 * Datoms in a transaction are committed together as a batch, rather than being saved by `with-datom` one at a time.
 
@@ -138,6 +175,10 @@ Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built 
 * Attributes are stored in indices as integer ids, thus attributes in index access are returned in attribute creation order, not in lexicographic order (i.e. do not expect `:b` to come after `:a`). This is the same as Datomic®.
 
 * Has no features that are applicable only for in-memory DBs, such as DB as an immutable data structure, DB serialization, DB pretty print, filtered DB, etc. For now, [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the database files.
+
+This project would not have started without the existence of Datascript, we will
+continue submitting pull requests to Datascript with our improvements where they
+are applicable to Datascript.
 
 ## :baby: Limitations
 
@@ -159,17 +200,19 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
 
-* If you need an in-memory store, e.g. for single page applications in a browser, [Datascript](https://github.com/tonsky/datascript) is for you.
+* If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need features such as bi-temporal graph queries, You may try [Crux](https://github.com/juxt/crux).
+* If you need an in-memory graph database, [Asami](https://github.com/threatgrid/asami) is fast.
+
+* If you need features such as bi-temporal graph queries, you may try [Crux](https://github.com/juxt/crux).
 
 * If you need a durable store with some storage choices, you may try [Datahike](https://github.com/replikativ/datahike).
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
-* If you need a simple durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+* If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.2.6
+Version: 0.3.3
 
 ## License
 

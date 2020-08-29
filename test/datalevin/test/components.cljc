@@ -1,11 +1,10 @@
 (ns datalevin.test.components
   (:require
-    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.test.core :as tdc]))
+   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
+      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.core :as d]
+   [datalevin.test.core :as tdc]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
 
@@ -14,30 +13,30 @@
 
 (deftest test-components-1
   (is (thrown-msg? "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
-        (d/empty-db {:profile {:db/isComponent true}})))
+                   (d/empty-db nil {:profile {:db/isComponent true}})))
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
-        (d/empty-db {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
+                   (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
-  (let [db (d/db-with
-             (d/empty-db {:profile {:db/valueType   :db.type/ref
-                                    :db/isComponent true}})
-             [{:db/id 1 :name "Ivan" :profile 3}
-              {:db/id 3 :email "@3"}
-              {:db/id 4 :email "@4"}])
+  (let [db      (d/db-with
+                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                            :db/isComponent true}})
+                 [{:db/id 1 :name "Ivan" :profile 3}
+                  {:db/id 3 :email "@3"}
+                  {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
         touched #(visible (d/touch %))]
 
     (testing "touch"
       (is (= (touched (d/entity db 1))
-             {:db/id 1
-              :name "Ivan"
+             {:db/id   1
+              :name    "Ivan"
               :profile {:db/id 3
                         :email "@3"}}))
       (is (= (touched (d/entity (d/db-with db [[:db/add 3 :profile 4]]) 1))
-             {:db/id 1
-              :name "Ivan"
-              :profile {:db/id 3
-                        :email "@3"
+             {:db/id   1
+              :name    "Ivan"
+              :profile {:db/id   3
+                        :email   "@3"
                         :profile {:db/id 4
                                   :email "@4"}}})))
     (testing "retractEntity"
@@ -54,38 +53,38 @@
 
 (deftest test-components-2
   (is (thrown-msg? "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
-        (d/empty-db {:profile {:db/isComponent true}})))
+                   (d/empty-db nil {:profile {:db/isComponent true}})))
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
-        (d/empty-db {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
+                   (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
-  (let [db (d/db-with
-             (d/empty-db {:profile {:db/valueType   :db.type/ref
-                                    :db/isComponent true}})
-             [{:db/id 1 :name "Ivan" :profile 3}
-              {:db/id 3 :email "@3"}
-              {:db/id 4 :email "@4"}])
+  (let [db      (d/db-with
+                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                            :db/isComponent true}})
+                 [{:db/id 1 :name "Ivan" :profile 3}
+                  {:db/id 3 :email "@3"}
+                  {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
-        touched #(visible (d/touch %))]
+        _       #(visible (d/touch %))]
 
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
              {:db/id 1})))))
 
 (deftest test-components-multival-1
-  (let [db (d/db-with
-             (d/empty-db {:profile {:db/valueType   :db.type/ref
-                                    :db/cardinality :db.cardinality/many
-                                    :db/isComponent true}})
-             [{:db/id 1 :name "Ivan" :profile [3 4]}
-              {:db/id 3 :email "@3"}
-              {:db/id 4 :email "@4"}])
+  (let [db      (d/db-with
+                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                            :db/cardinality :db.cardinality/many
+                                            :db/isComponent true}})
+                 [{:db/id 1 :name "Ivan" :profile [3 4]}
+                  {:db/id 3 :email "@3"}
+                  {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
         touched #(visible (d/touch %))]
 
     (testing "touch"
       (is (= (touched (d/entity db 1))
-             {:db/id 1
-              :name "Ivan"
+             {:db/id   1
+              :name    "Ivan"
               :profile #{{:db/id 3 :email "@3"}
                          {:db/id 4 :email "@4"}}})))
 
@@ -100,15 +99,15 @@
                #{}))))))
 
 (deftest test-components-multival-2
-  (let [db (d/db-with
-             (d/empty-db {:profile {:db/valueType   :db.type/ref
-                                    :db/cardinality :db.cardinality/many
-                                    :db/isComponent true}})
-             [{:db/id 1 :name "Ivan" :profile [3 4]}
-              {:db/id 3 :email "@3"}
-              {:db/id 4 :email "@4"}])
+  (let [db      (d/db-with
+                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                            :db/cardinality :db.cardinality/many
+                                            :db/isComponent true}})
+                 [{:db/id 1 :name "Ivan" :profile [3 4]}
+                  {:db/id 3 :email "@3"}
+                  {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
-        touched #(visible (d/touch %))]
+        _       #(visible (d/touch %))]
 
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))

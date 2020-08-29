@@ -103,23 +103,15 @@
                          :clj  ^{:tag "[[Ljava.lang.Object;"} idxs1)
                    t2 #?(:cljs idxs2
                          :clj  ^{:tag "[[Ljava.lang.Object;"} idxs2)]
-  (let [l1        (da/alength idxs1)
-        l2        (da/alength idxs2)
-        t1-array? (da/array? t1)
-        t2-array? (da/array? t2)
-        t1-acopy? (and t1-array? (= l1 (da/alength t1)))
-        t2-acopy? (and t2-array? (= l2 (da/alength t2)))
-        g1        (if t1-array? typed-aget get)
-        g2        (if t2-array? typed-aget get)
+  (let [l1  (alength idxs1)
+        l2  (alength idxs2)
+        tg1 (if (da/array? t1) typed-aget get)
+        tg2 (if (da/array? t2) typed-aget get)
         res (da/make-array (+ l1 l2))]
-    (if t1-acopy?
-      (da/acopy t1 0 l1 res 0)
-      (dotimes [i l1]
-        (da/aset res i (g1 t1 (da/aget idxs1 i)))))
-    (if t2-acopy?
-      (da/acopy t2 0 l2 res l1)
-      (dotimes [i l2]
-        (da/aset res (+ l1 i) (g2 t2 (da/aget idxs2 i)))))
+    (dotimes [i l1]
+      (aset res i (tg1 t1 (aget idxs1 i))))
+    (dotimes [i l2]
+      (aset res (+ l1 i) (tg2 t2 (aget idxs2 i))))
     res))
 
 (defn sum-rel [a b]
@@ -170,8 +162,7 @@
               (reduce (fn [acc t2]
                         (conj! acc (join-tuples t1 idxs1 t2 idxs2)))
                       acc (:tuples rel2)))
-            (transient []) (:tuples rel1)))
-        ))))
+            (transient []) (:tuples rel1)))))))
 
 ;; built-ins
 
@@ -215,7 +206,7 @@
   'rand rand, 'rand-int rand-int,
   'true? true?, 'false? false?, 'nil? nil?, 'some? some?, 'not not, 'and and-fn, 'or or-fn,
   'complement complement, 'identical? identical?,
-  'identity identity, 'meta meta, 'name name, 'namespace namespace, 'type type,
+  'identity identity, 'keyword keyword, 'meta meta, 'name name, 'namespace namespace, 'type type,
   'vector vector, 'list list, 'set set, 'hash-map hash-map, 'array-map array-map,
   'count count, 'range range, 'not-empty not-empty, 'empty? empty?, 'contains? contains?,
   'str str, 'pr-str pr-str, 'print-str print-str, 'println-str println-str, 'prn-str prn-str, 'subs subs,
@@ -295,7 +286,8 @@
 ;;
 
 (defn parse-rules [rules]
-  (let [rules (if (string? rules) (edn/read-string rules) rules)] ;; for datalevin.js interop
+  (let [rules (if (string? rules) (edn/read-string rules) rules)]
+    (dp/parse-rules rules) ;; validation
     (group-by ffirst rules)))
 
 (defn empty-rel [binding]
@@ -353,7 +345,19 @@
       (update context :rels conj (in->rel binding value))))
 
 (defn resolve-ins [context bindings values]
-  (reduce resolve-in context (zipmap bindings values)))
+  (let [cb (count bindings)
+        cv (count values)]
+    (cond
+      (< cb cv)
+      (raise "Extra inputs passed, expected: " (mapv #(:source (meta %)) bindings) ", got: " cv
+             {:error :query/inputs :expected bindings :got values})
+
+      (> cb cv)
+      (raise "Too few inputs passed, expected: " (mapv #(:source (meta %)) bindings) ", got: " cv
+             {:error :query/inputs :expected bindings :got values})
+
+      :else
+      (reduce resolve-in context (zipmap bindings values)))))
 
 ;;
 
@@ -399,32 +403,46 @@
       (persistent! hash-table))))
 
 (defn hash-join [rel1 rel2]
-  (let [tuples1       (:tuples rel1)
-        tuples2       (:tuples rel2)
-        attrs1        (:attrs rel1)
-        attrs2        (:attrs rel2)
-        common-attrs  (vec (intersect-keys (:attrs rel1) (:attrs rel2)))
-        common-gtrs1  (map #(getter-fn attrs1 %) common-attrs)
-        common-gtrs2  (map #(getter-fn attrs2 %) common-attrs)
-        keep-attrs1   (keys attrs1)
-        keep-attrs2   (vec (set/difference (set (keys attrs2)) (set (keys attrs1))))
-        keep-idxs1    (to-array (map attrs1 keep-attrs1))
-        keep-idxs2    (to-array (map attrs2 keep-attrs2))
-        key-fn1       (tuple-key-fn common-gtrs1)
-        hash          (hash-attrs key-fn1 tuples1)
-        key-fn2       (tuple-key-fn common-gtrs2)
-        new-tuples    (->>
-                        (reduce (fn [acc tuple2]
-                                  (let [key (key-fn2 tuple2)]
-                                    (if-some [tuples1 (get hash key)]
-                                      (reduce (fn [acc tuple1]
-                                                (conj! acc (join-tuples tuple1 keep-idxs1 tuple2 keep-idxs2)))
-                                              acc tuples1)
-                                      acc)))
-                          (transient []) tuples2)
-                        (persistent!))]
-    (Relation. (zipmap (concat keep-attrs1 keep-attrs2) (range))
-               new-tuples)))
+  (let [tuples1      (:tuples rel1)
+        tuples2      (:tuples rel2)
+        attrs1       (:attrs rel1)
+        attrs2       (:attrs rel2)
+        common-attrs (vec (intersect-keys (:attrs rel1) (:attrs rel2)))
+        common-gtrs1 (map #(getter-fn attrs1 %) common-attrs)
+        common-gtrs2 (map #(getter-fn attrs2 %) common-attrs)
+        keep-attrs1  (keys attrs1)
+        keep-attrs2  (vec (set/difference (set (keys attrs2)) (set (keys attrs1))))
+        keep-idxs1   (to-array (map attrs1 keep-attrs1))
+        keep-idxs2   (to-array (map attrs2 keep-attrs2))
+        key-fn1      (tuple-key-fn common-gtrs1)
+        key-fn2      (tuple-key-fn common-gtrs2)]
+    (if (< (count tuples1) (count tuples2))
+      (let [hash       (hash-attrs key-fn1 tuples1)
+            new-tuples (->>
+                         (reduce (fn [acc tuple2]
+                                   (let [key (key-fn2 tuple2)]
+                                     (if-some [tuples1 (get hash key)]
+                                       (reduce (fn [acc tuple1]
+                                                 (conj! acc (join-tuples tuple1 keep-idxs1 tuple2 keep-idxs2)))
+                                               acc tuples1)
+                                       acc)))
+                                 (transient []) tuples2)
+                         (persistent!))]
+        (Relation. (zipmap (concat keep-attrs1 keep-attrs2) (range))
+                   new-tuples))
+      (let [hash       (hash-attrs key-fn2 tuples2)
+            new-tuples (->>
+                          (reduce (fn [acc tuple1]
+                                    (let [key (key-fn1 tuple1)]
+                                      (if-some [tuples2 (get hash key)]
+                                        (reduce (fn [acc tuple2]
+                                                  (conj! acc (join-tuples tuple1 keep-idxs1 tuple2 keep-idxs2)))
+                                                acc tuples2)
+                                        acc)))
+                                  (transient []) tuples1)
+                          (persistent!))]
+        (Relation. (zipmap (concat keep-attrs1 keep-attrs2) (range))
+                   new-tuples)))))
 
 (defn subtract-rel [a b]
   (let [{attrs-a :attrs, tuples-a :tuples} a
@@ -471,11 +489,15 @@
     (concat ['$] clause)))
 
 (defn lookup-pattern [source pattern]
-  (cond
-    (db/-searchable? source)
-      (lookup-pattern-db source pattern)
-    :else
-      (lookup-pattern-coll source pattern)))
+  (if (db/-searchable? source)
+    (lookup-pattern-db source pattern)
+    (lookup-pattern-coll source pattern)))
+
+(defn- pattern-size [source pattern]
+  (if (db/-searchable? source)
+    (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)]
+      (db/-count source search-pattern))
+    (count (filter #(matches-pattern? pattern %) source))))
 
 (defn collapse-rels [rels new-rel]
   (loop [rels    rels
@@ -587,11 +609,29 @@
 ;;; RULES
 
 (defn rule? [context clause]
-  (and (sequential? clause)
-       (contains? (:rules context)
-                  (if (source? (first clause))
-                    (second clause)
-                    (first clause)))))
+  (u/cond+
+    (not (sequential? clause))
+    false
+
+    :let [head (if (source? (first clause))
+                 (second clause)
+                 (first clause))]
+
+    (not (symbol? head))
+    false
+
+    (free-var? head)
+    false
+
+    (contains? #{'_ 'or 'or-join 'and 'not 'not-join} head)
+    false
+
+    (not (contains? (:rules context) head))
+    (raise "Unknown rule '" head " in " clause
+           {:error :query/where
+            :form  clause})
+
+    :else true))
 
 (def rule-seqid (atom 0))
 
@@ -714,6 +754,12 @@
         (not (free-var? a))
         (db/ref? source a)) (conj v))))
 
+(defn- clause-size
+  [clause]
+  (let [source   *implicit-source*
+        pattern  (resolve-pattern-lookup-refs source clause)]
+    (pattern-size source pattern)))
+
 (defn limit-rel [rel vars]
   (when-some [attrs' (not-empty (select-keys (:attrs rel) vars))]
     (assoc rel :attrs attrs')))
@@ -758,10 +804,14 @@
   ([context clause orig-clause]
    (condp looks-like? clause
      [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
-     (filter-by-pred context clause)
+     (do
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       (filter-by-pred context clause))
 
      [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
-     (bind-by-fn context clause)
+     (do
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       (bind-by-fn context clause))
 
      [source? '*] ;; source + anything
      (let [[source-sym & rest] clause]
@@ -841,9 +891,46 @@
       (update context :rels collapse-rels (solve-rule context clause)))
     (-resolve-clause context clause)))
 
+(defn- sort-clauses [context clauses]
+  (sort-by (fn [clause]
+             (if (rule? context clause)
+               Long/MAX_VALUE
+               ;; TODO dig into these
+               (condp looks-like? clause
+                 [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
+                 Long/MAX_VALUE
+
+                 [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
+                 Long/MAX_VALUE
+
+                 [source? '*] ;; source + anything
+                 Long/MAX_VALUE
+
+                 '[or *] ;; (or ...)
+                 Long/MAX_VALUE
+
+                 '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
+                 Long/MAX_VALUE
+
+                 '[or-join [*] *] ;; (or-join [vars] ...)
+                 Long/MAX_VALUE
+
+                 '[and *] ;; (and ...)
+                 Long/MAX_VALUE
+
+                 '[not *] ;; (not ...)
+                 Long/MAX_VALUE
+
+                 '[not-join [*] *] ;; (not-join [vars] ...)
+                 Long/MAX_VALUE
+
+                 '[*] ;; pattern
+                 (clause-size clause))))
+           clauses))
+
 (defn -q [context clauses]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context clauses)))
+    (reduce resolve-clause context (sort-clauses context clauses))))
 
 (defn -collect
   ([context symbols]
@@ -916,18 +1003,42 @@
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
 
+(defn map* [f xs]
+  (reduce #(conj %1 (f %2)) (empty xs) xs))
+
+(defn tuples->return-map [return-map tuples]
+  (let [symbols (:symbols return-map)
+        idxs    (range 0 (count symbols))]
+    (map*
+      (fn [tuple]
+        (reduce
+          (fn [m i] (assoc m (nth symbols i) (nth tuple i)))
+          {} idxs))
+      tuples)))
+
 (defprotocol IPostProcess
-  (-post-process [find tuples]))
+  (-post-process [find return-map tuples]))
 
 (extend-protocol IPostProcess
   FindRel
-  (-post-process [_ tuples] tuples)
+  (-post-process [_ return-map tuples]
+    (if (nil? return-map)
+      tuples
+      (tuples->return-map return-map tuples)))
+
   FindColl
-  (-post-process [_ tuples] (into [] (map first) tuples))
+  (-post-process [_ return-map tuples]
+    (into [] (map first) tuples))
+
   FindScalar
-  (-post-process [_ tuples] (ffirst tuples))
+  (-post-process [_ return-map tuples]
+    (ffirst tuples))
+
   FindTuple
-  (-post-process [_ tuples] (first tuples)))
+  (-post-process [_ return-map tuples]
+    (if (some? return-map)
+      (first (tuples->return-map return-map [(first tuples)]))
+      (first tuples))))
 
 (defn- pull [find-elements context resultset]
   (let [resolved (for [find find-elements]
@@ -978,4 +1089,4 @@
       (some dp/pull? find-elements)
         (pull find-elements context)
       true
-        (-post-process find))))
+        (-post-process find (:qreturn-map parsed-q)))))

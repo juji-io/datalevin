@@ -1,6 +1,5 @@
 (ns datalevin.lmdb
   "API for Key Value Store"
-  (:refer-clojure :exclude [get iterate])
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
@@ -10,10 +9,10 @@
            [clojure.lang IMapEntry]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
+           [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
 
-(def ^:no-doc default-env-flags [EnvFlags/MDB_NOTLS
-                                 EnvFlags/MDB_NORDAHEAD])
+(def ^:no-doc default-env-flags [EnvFlags/MDB_NORDAHEAD])
 
 (def ^:no-doc default-dbi-flags [DbiFlags/MDB_CREATE])
 
@@ -37,40 +36,59 @@
   (renew [this] "renew and return previously reset transaction for reuse"))
 
 (deftype ^:no-doc Rtx [^Txn txn
-                       ^:volatile-mutable use
+                       ^:volatile-mutable ^Boolean use?
                        ^ByteBuffer kb
                        ^ByteBuffer start-kb
                        ^ByteBuffer stop-kb]
   IBuffer
   (put-key [_ x t]
-    (b/put-buffer kb x t))
+    (try
+      (.clear kb)
+      (b/put-buffer kb x t)
+      (.flip kb)
+      (catch Exception e
+        (raise (str "Error putting read-only transaction key buffer: "
+                    (ex-message e))
+               {:value x :type t}))))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
   (put-start-key [_ x t]
     (when x
-      (.clear start-kb)
-      (b/put-buffer start-kb x t)))
+      (try
+        (.clear start-kb)
+        (b/put-buffer start-kb x t)
+        (.flip start-kb)
+        (catch Exception e
+          (raise (str "Error putting read-only transaction start key buffer: "
+                      (ex-message e))
+                 {:value x :type t})))))
   (put-stop-key [_ x t]
     (when x
-      (.clear stop-kb)
-      (b/put-buffer stop-kb x t)))
+      (try
+        (.clear stop-kb)
+        (b/put-buffer stop-kb x t)
+        (.flip stop-kb)
+        (catch Exception e
+          (raise (str "Error putting read-only transaction stop key buffer: "
+                      (ex-message e))
+                 {:value x :type t})))))
 
   IRtx
   (close-rtx [_]
-    (set! use false)
+    (set! use? false)
     (.close txn))
   (reset [this]
     (locking this
       (.reset txn)
-      (set! use false)
+      (set! use? false)
       this))
   (renew [this]
     (locking this
-      (when-not use
+      (when-not use?
         (.renew txn)
-        (set! use true)
+        (set! use? true)
         this))))
 
 (defprotocol ^:no-doc IRtxPool
@@ -100,19 +118,23 @@
           (reset rtx)
           (renew rtx)))))
   (get-rtx [this]
-    (loop [i (.getId ^Thread (Thread/currentThread))]
-      (let [^long i' (mod i cnt)
-            ^Rtx rtx (.get rtxs i')]
-        (or (renew rtx)
-            (new-rtx this)
-            (recur (long (inc i'))))))))
+    (locking this
+      (if (zero? cnt)
+       (new-rtx this)
+       (loop [i (.getId ^Thread (Thread/currentThread))]
+         (let [^long i' (mod i cnt)
+               ^Rtx rtx (.get rtxs i')]
+           (or (renew rtx)
+               (new-rtx this)
+               (recur (long (inc i'))))))))))
 
 (defprotocol ^:no-doc IKV
+  (dbi-name [this] "Return string name of the dbi")
   (put [this txn] [this txn put-flags]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
-  (get [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate [this rtx range-type] "Return a CursorIterable"))
+  (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
+  (iterate-kv [this rtx range-type] "Return a CursorIterable"))
 
 (defn- key-range
   [range-type kb1 kb2]
@@ -138,44 +160,47 @@
 
 (deftype ^:no-doc DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
-  (put-key [_ x t]
-    (b/put-buffer kb x t))
-  (put-val [_ x t]
+  (put-key [this x t]
     (try
+      (.clear kb)
+      (b/put-buffer kb x t)
+      (.flip kb)
+      (catch Exception e
+        (raise (str "Error putting r/w key buffer of "
+                    (dbi-name this) ": " (ex-message e))
+               {:value x :type t :dbi (dbi-name this)}))))
+  (put-val [this x t]
+    (try
+      (.clear vb)
       (b/put-buffer vb x t)
+      (.flip vb)
       (catch Exception e
         (if (s/includes? (ex-message e) c/buffer-overflow)
-          (let [size (b/measure-size x)]
+          (let [size (* 2 ^long (b/measure-size x))]
             (set! vb (ByteBuffer/allocateDirect size))
-            (b/put-buffer vb x t))
-          (throw e)))))
+            (b/put-buffer vb x t)
+            (.flip vb))
+          (raise (str "Error putting r/w value buffer of "
+                      (dbi-name this) ": " (ex-message e))
+                 {:value x :type t :dbi (dbi-name this)})))))
 
   IKV
+  (dbi-name [_]
+    (String. (.getName db) StandardCharsets/UTF_8))
   (put [this txn]
     (put this txn nil))
   (put [_ txn flags]
-    (.flip kb)
-    (.flip vb)
     (if flags
       (.put db txn kb vb (into-array PutFlags flags))
-      (.put db txn kb vb (make-array PutFlags 0)))
-    (.clear kb)
-    (.clear vb))
+      (.put db txn kb vb c/default-put-flags)))
   (del [_ txn]
-    (.flip kb)
-    (.delete db txn kb)
-    (.clear kb))
-  (get [_ rtx]
+    (.delete db txn kb))
+  (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
-      (.flip kb)
-      (let [res (.get db (.-txn ^Rtx rtx) kb)]
-        (.clear kb)
-        res)))
-  (iterate [this rtx range-type]
+      (.get db (.-txn ^Rtx rtx) kb)))
+  (iterate-kv [this rtx range-type]
     (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
           ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
-      (.flip start-kb)
-      (.flip stop-kb)
       (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
 (defn- ^IMapEntry map-entry
@@ -186,27 +211,27 @@
     (equals [_ o] (and (= (.key kv) (key o)) (= (.val kv) (val o))))
     (getKey [_] (.key kv))
     (getValue [_] (.val kv))
-    (setValue [_ _] (raise "IMapEntry is immutable"))
+    (setValue [_ _] (raise "IMapEntry is immutable" {}))
     (hashCode [_] (hash-combine (hash (.key kv)) (hash (.val kv))))))
 
 (defprotocol ILMDB
-  (close [this] "Close this LMDB env")
-  (closed? [this] "Return true if this LMDB env is closed")
+  (close [db] "Close this LMDB env")
+  (closed? [db] "Return true if this LMDB env is closed")
   (open-dbi
-    [this dbi-name]
-    [this dbi-name key-size]
-    [this dbi-name key-size val-size]
-    [this dbi-name key-size val-size flags]
+    [db dbi-name]
+    [db dbi-name key-size]
+    [db dbi-name key-size val-size]
+    [db dbi-name key-size val-size flags]
     "Open a named DBI (i.e. sub-db) in the LMDB env")
-  (clear-dbi [this dbi-name]
+  (clear-dbi [db dbi-name]
     "Clear data in the DBI (i.e sub-db), but leave it open")
-  (drop-dbi [this dbi-name]
+  (drop-dbi [db dbi-name]
     "Clear data in the DBI (i.e. sub-db), then delete it")
-  (get-dbi [this dbi-name]
+  (get-dbi [db dbi-name]
     "Lookup open DBI (i.e. sub-db) by name, throw if it's not open")
-  (entries [this dbi-name]
+  (entries [db dbi-name]
     "Get the number of data entries in a DBI (i.e. sub-db)")
-  (transact [this txs]
+  (transact [db txs]
     "Update DB, insert or delete key value pairs.
 
      `txs` is a seq of `[op dbi-name k v k-type v-type put-flags]`
@@ -245,10 +270,10 @@
                         [:del \"a\" 1]
                         [:del \"a\" :non-exist] ])")
   (get-value
-    [this dbi-name k]
-    [this dbi-name k k-type]
-    [this dbi-name k k-type v-type]
-    [this dbi-name k k-type v-type ignore-key?]
+    [db dbi-name k]
+    [db dbi-name k k-type]
+    [db dbi-name k k-type v-type]
+    [db dbi-name k k-type v-type ignore-key?]
     "Get kv pair of the specified key `k`, `k-type` and `v-type` can be
      `:data` (default), `:byte`, `:bytes`, `:attr`, `:datom` or `:long`;
 
@@ -272,10 +297,10 @@
               (get-value lmdb \"a\" 2)
               ;;==> nil ")
   (get-first
-    [this dbi-name k-range]
-    [this dbi-name k-range k-type]
-    [this dbi-name k-range k-type v-type]
-    [this dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type v-type]
+    [db dbi-name k-range k-type v-type ignore-key?]
     "Return the first kv pair in the specified key range;
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
@@ -283,8 +308,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+     `k-type` and `v-type` indicate the data type, and they can be `:data`
+     (default), `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -310,19 +335,19 @@
               (get-first lmdb \"a\" [:greater-than 5] :long :ignore true)
               ;;==> true")
   (get-range
-    [this dbi-name k-range]
-    [this dbi-name k-range k-type]
-    [this dbi-name k-range k-type v-type]
-    [this dbi-name k-range k-type v-type ignore-key?]
-    "Return a seq of kv pair in the specified key range;
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type v-type]
+    [db dbi-name k-range k-type v-type ignore-key?]
+    "Return a seq of kv pairs in the specified key range;
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+     `k-type` and `v-type` indicate the data type, and they can be `:data`
+     (default), `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -344,11 +369,30 @@
               ;; out of range
               (get-range lmdb \"c\" [:greater-than 1500] :long :ignore)
               ;;==> [] ")
+  (range-count
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    "Return the number of kv pairs in the specified key range, does not process
+     the kv pairs.
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     `k-type` indicates the data type of key, and it can be `:data` (default),
+     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+
+     Examples:
+
+
+              (range-count lmdb \"c\" [:at-least 9] :long)
+              ;;==> 10 ")
   (get-some
-    [this dbi-name pred k-range]
-    [this dbi-name pred k-range k-type]
-    [this dbi-name pred k-range k-type v-type]
-    [this dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range]
+    [db dbi-name pred k-range k-type]
+    [db dbi-name pred k-range k-type v-type]
+    [db dbi-name pred k-range k-type v-type ignore-key?]
     "Return the first kv pair that has logical true value of `(pred x)`,
      where `pred` is a function, `x` is the `IMapEntry` fetched from the store,
      with both key and value fields being a `ByteBuffer`.
@@ -381,10 +425,10 @@
               (get-some lmdb \"c\" pred [:greater-than 9] :long :data true)
               ;;==> 16 ")
   (range-filter
-    [this dbi-name pred k-range]
-    [this dbi-name pred k-range k-type]
-    [this dbi-name pred k-range k-type v-type]
-    [this dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range]
+    [db dbi-name pred k-range k-type]
+    [db dbi-name pred k-range k-type v-type]
+    [db dbi-name pred k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
      is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
@@ -410,12 +454,41 @@
                          (let [^long k (b/read-buffer (key kv) :long)]
                           (> k 15)))
 
-              (range-filter lmdb \"c\" pred [:less-than 20] :long :long)
+              (range-filter lmdb \"a\" pred [:less-than 20] :long :long)
               ;;==> [[16 2] [17 3]]
 
               ;; ignore key
-              (range-filter lmdb \"c\" pred [:greater-than 9] :long :data true)
-              ;;==> [16 17] "))
+              (range-filter lmdb \"a\" pred [:greater-than 9] :long :data true)
+              ;;==> [16 17] ")
+  (range-filter-count
+    [db dbi-name pred k-range]
+    [db dbi-name pred k-range k-type]
+    "Return the number of kv pairs in the specified key range, for only those
+     return true value for `(pred x)`, where `pred` is a function, and `x`
+     is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
+     Does not process the kv pairs.
+
+     `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
+
+     `k-type` indicates the data type of key, and it can be `:data` (default),
+     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     Examples:
+
+
+              (require ' [datalevin.bits :as b])
+
+              (def pred (fn [kv]
+                         (let [^long k (b/read-buffer (key kv) :long)]
+                          (> k 15)))
+
+              (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
+              ;;==> 3"))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* 10 (-> env .info .mapSize))))
@@ -423,7 +496,7 @@
 (defn- fetch-value
   [^DBI dbi ^Rtx rtx k k-type v-type ignore-key?]
   (put-key rtx k k-type)
-  (when-let [^ByteBuffer bb (get dbi rtx)]
+  (when-let [^ByteBuffer bb (get-kv dbi rtx)]
     (if ignore-key?
       (b/read-buffer bb v-type)
       [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
@@ -432,7 +505,7 @@
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (let [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
         (let [kv (map-entry (.next iter))
@@ -447,7 +520,7 @@
           "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (if (.hasNext iter)
@@ -461,13 +534,24 @@
           (recur iter holder'))
         (persistent! holder)))))
 
+(defn- fetch-range-count
+  [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type]
+  (put-start-key rtx k1 k-type)
+  (put-stop-key rtx k2 k-type)
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
+    (loop [^Iterator iter (.iterator iterable)
+           c              0]
+      (if (.hasNext iter)
+        (do (.next iter) (recur iter (inc c)))
+        c))))
+
 (defn- fetch-some
   [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)]
       (when (.hasNext iter)
         (let [kv (map-entry (.next iter))]
@@ -485,7 +569,7 @@
           "Cannot ignore both key and value")
   (put-start-key rtx k1 k-type)
   (put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (iterate dbi rtx range-type)]
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
     (loop [^Iterator iter (.iterator iterable)
            holder         (transient [])]
       (if (.hasNext iter)
@@ -504,13 +588,27 @@
             (recur iter holder)))
         (persistent! holder)))))
 
+(defn- fetch-range-filtered-count
+  [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type]
+  (put-start-key rtx k1 k-type)
+  (put-stop-key rtx k2 k-type)
+  (with-open [^CursorIterable iterable (iterate-kv dbi rtx range-type)]
+    (loop [^Iterator iter (.iterator iterable)
+           c              0]
+      (if (.hasNext iter)
+        (let [kv (map-entry (.next iter))]
+          (if (pred kv)
+            (recur iter (inc c))
+            (recur iter c)))
+        c))))
+
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
-  (close [this]
+  (close [_]
     (close-pool pool)
     (.close env))
 
-  (closed? [this]
+  (closed? [_]
     (.isClosed env))
 
   (open-dbi [this dbi-name]
@@ -643,6 +741,19 @@
                   :k-type k-type   :v-type  v-type}))
         (finally (reset rtx)))))
 
+  (range-count [this dbi-name k-range]
+    (range-count this dbi-name k-range :data))
+  (range-count [this dbi-name k-range k-type]
+    (assert (not (closed? this)) "LMDB env is closed.")
+    (let [dbi (get-dbi this dbi-name)
+          rtx (get-rtx pool)]
+      (try
+        (fetch-range-count dbi rtx k-range k-type)
+        (catch Exception e
+          (raise "Fail to range-count: " (ex-message e)
+                 {:dbi dbi-name :k-range k-range :k-type k-type}))
+        (finally (reset rtx)))))
+
   (get-some [this dbi-name pred k-range]
     (get-some this dbi-name pred k-range :data :data false))
   (get-some [this dbi-name pred k-range k-type]
@@ -677,6 +788,19 @@
           (raise "Fail to range-filter: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
                   :k-type k-type   :v-type  v-type}))
+        (finally (reset rtx)))))
+
+  (range-filter-count [this dbi-name pred k-range]
+    (range-filter-count this dbi-name pred k-range :data))
+  (range-filter-count [this dbi-name pred k-range k-type]
+    (assert (not (closed? this)) "LMDB env is closed.")
+    (let [dbi (get-dbi this dbi-name)
+          rtx (get-rtx pool)]
+      (try
+        (fetch-range-filtered-count dbi rtx pred k-range k-type)
+        (catch Exception e
+          (raise "Fail to range-filter-count: " (ex-message e)
+                 {:dbi dbi-name :k-range k-range :k-type k-type}))
         (finally (reset rtx))))))
 
 (defn open-lmdb
@@ -684,6 +808,8 @@
   `size` is the initial DB size in MB. `flags` are [LMDB EnvFlags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html)."
   ([dir]
    (open-lmdb dir c/+init-db-size+ default-env-flags))
+  ([dir size]
+   (open-lmdb dir size default-env-flags))
   ([dir size flags]
    (let [file          (b/file dir)
          builder       (doto (Env/create)
@@ -692,5 +818,4 @@
                          (.setMaxDbs c/+max-dbs+))
          ^Env env      (.open builder file (into-array EnvFlags flags))
          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-     (new-rtx pool)
      (->LMDB env dir pool (ConcurrentHashMap.)))))

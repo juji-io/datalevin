@@ -1,66 +1,64 @@
 (ns datalevin.test.pull-api
   (:require
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.test.core :as tdc]))
+   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
+      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.core :as d]))
 
 (def ^:private test-schema
   {:aka    { :db/cardinality :db.cardinality/many }
    :child  { :db/cardinality :db.cardinality/many
-             :db/valueType :db.type/ref }
+            :db/valueType    :db.type/ref }
    :friend { :db/cardinality :db.cardinality/many
-             :db/valueType :db.type/ref }
+            :db/valueType    :db.type/ref }
    :enemy  { :db/cardinality :db.cardinality/many
-             :db/valueType :db.type/ref }
+            :db/valueType    :db.type/ref }
    :father { :db/valueType :db.type/ref }
 
-   :part   { :db/valueType :db.type/ref
-             :db/isComponent true
-             :db/cardinality :db.cardinality/many }
-   :spec   { :db/valueType :db.type/ref
-             :db/isComponent true
-             :db/cardinality :db.cardinality/one }})
+   :part { :db/valueType  :db.type/ref
+          :db/isComponent true
+          :db/cardinality :db.cardinality/many }
+   :spec { :db/valueType  :db.type/ref
+          :db/isComponent true
+          :db/cardinality :db.cardinality/one }})
 
 (def test-datoms
   (->>
-    [[1 :name  "Petr"]
-     [1 :aka   "Devil"]
-     [1 :aka   "Tupen"]
-     [2 :name  "David"]
-     [3 :name  "Thomas"]
-     [4 :name  "Lucy"]
-     [5 :name  "Elizabeth"]
-     [6 :name  "Matthew"]
-     [7 :name  "Eunan"]
-     [8 :name  "Kerri"]
-     [9 :name  "Rebecca"]
-     [1 :child 2]
-     [1 :child 3]
-     [2 :father 1]
-     [3 :father 1]
-     [6 :father 3]
-     [10 :name  "Part A"]
-     [11 :name  "Part A.A"]
-     [10 :part 11]
-     [12 :name  "Part A.A.A"]
-     [11 :part 12]
-     [13 :name  "Part A.A.A.A"]
-     [12 :part 13]
-     [14 :name  "Part A.A.A.B"]
-     [12 :part 14]
-     [15 :name  "Part A.B"]
-     [10 :part 15]
-     [16 :name  "Part A.B.A"]
-     [15 :part 16]
-     [17 :name  "Part A.B.A.A"]
-     [16 :part 17]
-     [18 :name  "Part A.B.A.B"]
-     [16 :part 18]]
+   [[1 :name  "Petr"]
+    [1 :aka   "Devil"]
+    [1 :aka   "Tupen"]
+    [2 :name  "David"]
+    [3 :name  "Thomas"]
+    [4 :name  "Lucy"]
+    [5 :name  "Elizabeth"]
+    [6 :name  "Matthew"]
+    [7 :name  "Eunan"]
+    [8 :name  "Kerri"]
+    [9 :name  "Rebecca"]
+    [1 :child 2]
+    [1 :child 3]
+    [2 :father 1]
+    [3 :father 1]
+    [6 :father 3]
+    [10 :name  "Part A"]
+    [11 :name  "Part A.A"]
+    [10 :part 11]
+    [12 :name  "Part A.A.A"]
+    [11 :part 12]
+    [13 :name  "Part A.A.A.A"]
+    [12 :part 13]
+    [14 :name  "Part A.A.A.B"]
+    [12 :part 14]
+    [15 :name  "Part A.B"]
+    [10 :part 15]
+    [16 :name  "Part A.B.A"]
+    [15 :part 16]
+    [17 :name  "Part A.B.A.A"]
+    [16 :part 17]
+    [18 :name  "Part A.B.A.B"]
+    [16 :part 18]]
    (map #(apply d/datom %))))
 
-(def ^:private test-db (d/init-db test-datoms test-schema))
+(def ^:private test-db (d/init-db test-datoms nil test-schema))
 
 (deftest test-pull-attr-spec
   (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
@@ -97,18 +95,18 @@
   (let [parts {:name "Part A",
                :part
                [{:db/id 11
-                 :name "Part A.A",
+                 :name  "Part A.A",
                  :part
                  [{:db/id 12
-                   :name "Part A.A.A",
+                   :name  "Part A.A.A",
                    :part
                    [{:db/id 13 :name "Part A.A.A.A"}
                     {:db/id 14 :name "Part A.A.A.B"}]}]}
                 {:db/id 15
-                 :name "Part A.B",
+                 :name  "Part A.B",
                  :part
                  [{:db/id 16
-                   :name "Part A.B.A",
+                   :name  "Part A.B.A",
                    :part
                    [{:db/id 17 :name "Part A.B.A.A"}
                     {:db/id 18 :name "Part A.B.A.B"}]}]}]}
@@ -116,13 +114,14 @@
                          (partial into [{:db/id 10}]))
         recdb (d/init-db
                (concat test-datoms [(d/datom 12 :part 10)])
+               nil
                test-schema)
-
-        mutdb (d/init-db
+        _     (d/init-db
                (concat test-datoms [(d/datom 12 :part 10)
                                     (d/datom 12 :spec 10)
                                     (d/datom 10 :spec 13)
                                     (d/datom 13 :spec 12)])
+               nil
                test-schema)]
 
     (testing "Component entities are expanded recursively"
@@ -148,15 +147,16 @@
 
 (deftest test-pull-limit
   (let [db (d/init-db
-             (concat
-               test-datoms
-               [(d/datom 4 :friend 5)
-                (d/datom 4 :friend 6)
-                (d/datom 4 :friend 7)
-                (d/datom 4 :friend 8)]
-               (for [idx (range 2000)]
-                 (d/datom 8 :aka (str "aka-" idx))))
-              test-schema)]
+            (concat
+             test-datoms
+             [(d/datom 4 :friend 5)
+              (d/datom 4 :friend 6)
+              (d/datom 4 :friend 7)
+              (d/datom 4 :friend 8)]
+             (for [idx (range 2000)]
+               (d/datom 8 :aka (str "aka-" idx))))
+            nil
+            test-schema)]
 
     (testing "Without an explicit limit, the default is 1000"
       (is (= 1000 (->> (d/pull db '[:aka] 8) :aka count))))
@@ -172,7 +172,7 @@
       (is (= 2000 (->> (d/pull db '[(limit :aka nil)] 8) :aka count))))
 
     (testing "Limits can be used as map specification keys"
-      (is (= {:name "Lucy"
+      (is (= {:name   "Lucy"
               :friend [{:name "Elizabeth"} {:name "Matthew"}]}
              (d/pull db '[:name {(limit :friend 2) [:name]}] 4))))))
 
@@ -231,19 +231,19 @@
                                 [:db/add 6 :enemy 8]
                                 [:db/add 7 :enemy 4]]))
         friends {:db/id 4
-                 :name "Lucy"
+                 :name  "Lucy"
                  :friend
                  [{:db/id 5
-                   :name "Elizabeth"
+                   :name  "Elizabeth"
                    :friend
                    [{:db/id 6
-                     :name "Matthew"
+                     :name  "Matthew"
                      :friend
                      [{:db/id 7
-                       :name "Eunan"
+                       :name  "Eunan"
                        :friend
                        [{:db/id 8
-                         :name "Kerri"}]}]}]}]}
+                         :name  "Kerri"}]}]}]}]}
         enemies {:db/id 4 :name "Lucy"
                  :friend
                  [{:db/id 5 :name "Elizabeth"
@@ -255,7 +255,7 @@
                      :friend
                      [{:db/id 8 :name "Kerri"}]
                      :enemy
-                     [{:db/id 4 :name "Lucy"
+                     [{:db/id  4 :name "Lucy"
                        :friend [{:db/id 5}]}]}]}]
                  :enemy
                  [{:db/id 6 :name "Matthew"
@@ -263,7 +263,7 @@
                    [{:db/id 7 :name "Eunan"
                      :friend
                      [{:db/id 8 :name "Kerri"}]
-                     :enemy [{:db/id 4 :name "Lucy"
+                     :enemy [{:db/id  4 :name "Lucy"
                               :friend [{:db/id 5 :name "Elizabeth"}]}]}]
                    :enemy
                    [{:db/id 8 :name "Kerri"}]}]}]
@@ -281,42 +281,43 @@
                (d/pull db '[:db/id :name {:friend ...}] 4)))))))
 
 (deftest test-dual-recursion
-  (let [empty (d/empty-db {:part { :db/valueType :db.type/ref }
-                           :spec { :db/valueType :db.type/ref }})]
-    (let [db (d/db-with empty [[:db/add 1 :part 2]
-                               [:db/add 2 :part 3]
-                               [:db/add 3 :part 1]
-                               [:db/add 1 :spec 2]
-                               [:db/add 2 :spec 1]])]
-      (is (= (d/pull db '[:db/id {:part ...} {:spec ...}] 1)
-             {:db/id 1,
-              :spec {:db/id 2
-                     :spec {:db/id 1,
-                            :spec {:db/id 2}, :part {:db/id 2}}
-                     :part {:db/id 3,
-                            :part {:db/id 1,
-                                   :spec {:db/id 2},
-                                   :part {:db/id 2}}}}
-              :part {:db/id 2
-                     :spec {:db/id 1, :spec {:db/id 2}, :part {:db/id 2}}
-                     :part {:db/id 3,
-                            :part {:db/id 1,
-                                   :spec {:db/id 2},
-                                   :part {:db/id 2}}}}})))))
+  (let [empty (d/empty-db nil {:part { :db/valueType :db.type/ref }
+                               :spec { :db/valueType :db.type/ref }})
+        db    (d/db-with empty [[:db/add 1 :part 2]
+                                [:db/add 2 :part 3]
+                                [:db/add 3 :part 1]
+                                [:db/add 1 :spec 2]
+                                [:db/add 2 :spec 1]])]
+    (is (= (d/pull db '[:db/id {:part ...} {:spec ...}] 1)
+           {:db/id 1,
+            :spec  {:db/id 2
+                    :spec  {:db/id 1,
+                            :spec  {:db/id 2}, :part {:db/id 2}}
+                    :part  {:db/id 3,
+                            :part  {:db/id 1,
+                                    :spec  {:db/id 2},
+                                    :part  {:db/id 2}}}}
+            :part  {:db/id 2
+                    :spec  {:db/id 1, :spec {:db/id 2}, :part {:db/id 2}}
+                    :part  {:db/id 3,
+                            :part  {:db/id 1,
+                                    :spec  {:db/id 2},
+                                    :part  {:db/id 2}}}}}))))
 
 (deftest test-deep-recursion
-  (let [start 100
-        depth 1500
-        txd   (mapcat
-               (fn [^long idx]
-                 [(d/datom idx :name (str "Person-" idx))
-                  (d/datom (dec idx) :friend idx)])
-               (range (inc start) depth))
-        db    (d/init-db (concat
+  (let [start  100
+        depth  1500
+        txd    (mapcat
+                (fn [^long idx]
+                  [(d/datom idx :name (str "Person-" idx))
+                   (d/datom (dec idx) :friend idx)])
+                (range (inc start) depth))
+        db     (d/init-db (concat
                            test-datoms
                            [(d/datom start :name (str "Person-" start))]
                            txd)
-                         test-schema)
+                          nil
+                          test-schema)
         pulled (d/pull db '[:name {:friend ...}] start)
         path   (->> [:friend 0]
                     (repeat (dec (- depth start)))

@@ -1,11 +1,11 @@
 (ns datalevin.test.ident
   (:require
-    [clojure.test :as t :refer [is are deftest testing]]
-    [datalevin.core :as d]))
+   [clojure.test :as t :refer [is deftest]]
+   [datalevin.core :as d]))
 
 
 (def db
-  (-> (d/empty-db {:ref {:db/valueType :db.type/ref}})
+  (-> (d/empty-db nil {:ref {:db/valueType :db.type/ref}})
       (d/db-with [[:db/add 1 :db/ident :ent1]
                   [:db/add 2 :db/ident :ent2]
                   [:db/add 2 :ref 1]])))
@@ -31,7 +31,3 @@
 (deftest test-pull
   (is (= {:db/id 1, :db/ident :ent1}
          (d/pull db '[*] :ent1))))
-
-
-#_(user/test-var #'test-transact!)
-#_(t/test-ns 'datalevin.test.ident)
