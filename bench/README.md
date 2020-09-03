@@ -8,4 +8,4 @@ To run the benchmarks, you need to have the [Clojure CLI](https://clojure.org/gu
 ./bench.clj
 ```
 
-Some of the benchmarks are commented out for they may takes a long time to run. You can comment out the appropriate lines in `default-benchmarks`` in bench.clj to run them.
+Some of the benchmarks are commented out for they may takes a long time to run. You can comment out the appropriate lines in `default-benchmarks` in bench.clj to run them.
