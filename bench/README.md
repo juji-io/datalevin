@@ -9,3 +9,5 @@ To run the benchmarks, you need to have the [Clojure CLI](https://clojure.org/gu
 ```
 
 Some of the benchmarks are commented out for they take a long time to run. You can uncomment the appropriate lines in [default-benchmarks](https://github.com/juji-io/datalevin/blob/master/bench/bench.clj#L112) in `bench.clj` to run them.
+
+If you are on a version of JVM newer than JDK 8, you may get some warnings. Please ignore them. 
