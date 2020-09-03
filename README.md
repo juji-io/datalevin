@@ -206,7 +206,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need features such as bi-temporal graph queries, you may try [Crux](https://github.com/juxt/crux).
 
-* If you don't mind experimental storage backend, you may try [Datahike](https://github.com/replikativ/datahike).
+* If you need a durable store with some storage choices, you may try [Datahike](https://github.com/replikativ/datahike).
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
