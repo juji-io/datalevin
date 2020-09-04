@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file. This change
 
 ## WIP
 ### Changed
-- portable temporary directory [#20, thx @joinr]
+- portable temporary directory. #20, thx @joinr.
 
 ## 0.3.3
 ### Fixed
