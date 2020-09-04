@@ -1,5 +1,6 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
+            [datalevin.util :as u]
             [clojure.test :refer [is deftest]])
   (:import [java.util UUID]))
 
@@ -25,7 +26,7 @@
         {:regions/region  {:db/valueType :db.type/string :db/aid 12}
          :regions/country {:db/valueType :db.type/string :db/aid 13}}
 
-        dir (str "/tmp/datalevin-core-test-" (UUID/randomUUID))
+        dir (u/tmp-dir (str "datalevin-core-test-" (UUID/randomUUID)))
         conn (sut/create-conn dir schema)
         txs
         [{:juji.data/synonyms      ["company" "customer"],

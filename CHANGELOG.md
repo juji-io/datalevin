@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+### Changed
+- portable temporary directory [Thanks to @joinr]
+
 ## 0.3.3
 ### Fixed
 - Properly initialize max-eid in `core/empty-db`

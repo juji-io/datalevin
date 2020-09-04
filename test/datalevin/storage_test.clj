@@ -1,6 +1,7 @@
 (ns datalevin.storage-test
   (:require [datalevin.storage :as sut]
             [datalevin.bits :as b]
+            [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test.check.generators :as gen]
@@ -17,7 +18,7 @@
 
 (defn store-test-fixture
   [f]
-  (let [dir (str "/tmp/store-test-" (UUID/randomUUID))]
+  (let [dir (u/tmp-dir (str "store-test-" (UUID/randomUUID)))]
     (with-redefs [store (sut/open dir)]
       (f)
       (sut/close store)
@@ -137,7 +138,7 @@
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
                :b {:db/valueType :db.type/long}}
-        dir   (str "/tmp/datalevin-schema-test-" (UUID/randomUUID))
+        dir   (u/tmp-dir (str "datalevin-schema-test-" (UUID/randomUUID)))
         store (sut/open dir s)
         s1    (sut/schema store)]
     (sut/close store)
@@ -147,7 +148,7 @@
 
 (deftest giants-test
   (let [schema {:a {:db/valueType :db.type/string}}
-        dir    (str "/tmp/datalevin-giants-test-" (UUID/randomUUID))
+        dir    (u/tmp-dir (str "datalevin-giants-test-" (UUID/randomUUID)))
         store  (sut/open dir schema)
         v      (apply str (repeat 10000 (UUID/randomUUID)))
         d      (d/datom c/e0 :a v)]

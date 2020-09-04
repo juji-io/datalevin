@@ -1,17 +1,16 @@
 (ns ^:no-doc datalevin.util
   (:require [clojure.walk]
-            [taoensso.nippy :as nippy]
-            #?(:clj [clojure.java.io :as io])
-            )
+            [taoensso.nippy :as nippy])
+  (:import [java.io File]
+           [java.lang System])
   (:refer-clojure :exclude [seqable?]))
 
 (def +tmp+
-  #?(:clj (System/getProperty "java.io.tmpdir")
-     :default "/tmp/"))
+  (or (System/getProperty "java.io.tmpdir") "/tmp"))
 
 (defn tmp-dir
   ([] +tmp+)
-  ([dir] (str +tmp+ dir)))
+  ([dir] (str +tmp+ File/separator dir)))
 
 ;; ----------------------------------------------------------------------------
 

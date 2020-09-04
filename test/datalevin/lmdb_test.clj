@@ -1,6 +1,7 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as sut]
             [datalevin.bits :as b]
+            [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test :refer [deftest use-fixtures testing is]]
@@ -16,7 +17,7 @@
 
 (defn lmdb-test-fixture
   [f]
-  (let [dir (str "/tmp/lmdb-test-" (UUID/randomUUID))]
+  (let [dir (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))]
     (with-redefs [lmdb (sut/open-lmdb dir)]
       (sut/open-dbi lmdb "a")
       (sut/open-dbi lmdb "b")
