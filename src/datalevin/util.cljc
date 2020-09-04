@@ -1,16 +1,30 @@
 (ns ^:no-doc datalevin.util
   (:require [clojure.walk]
-            [taoensso.nippy :as nippy])
-  (:import [java.io File]
-           [java.lang System])
+            [taoensso.nippy :as nippy]
+            [clojure.string :as s])
+  #?(:clj
+     (:import [java.io File]
+              [java.lang System]))
   (:refer-clojure :exclude [seqable?]))
 
+(def  +separator+
+  #?(:clj  java.io.File/separator
+     ;;this is faulty, since we could in node.js
+     ;;on windows...but it will work for now!
+     :cljs "/"))
+
 (def +tmp+
-  (or (System/getProperty "java.io.tmpdir") "/tmp"))
+  (let [path #?(:clj (System/getProperty "java.io.tmpdir")
+               :default "/tmp/")]
+    (if-not (s/ends-with? path +separator+)
+      (str path +separator+)
+      path)))
 
 (defn tmp-dir
+  "Given a directory name as a string, returns an platform
+   neutral temporary directory path."
   ([] +tmp+)
-  ([dir] (str +tmp+ File/separator dir)))
+  ([dir] (str +tmp+ dir)))
 
 ;; ----------------------------------------------------------------------------
 
