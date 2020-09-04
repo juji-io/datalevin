@@ -414,7 +414,7 @@
   ([dir]
    (open dir nil))
   ([dir schema]
-   (let [dir  (or dir (str "/tmp/datalevin-" (UUID/randomUUID)))
+   (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-lmdb dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ Long/BYTES)
      (lmdb/open-dbi lmdb c/aev c/+max-key-size+ Long/BYTES)
