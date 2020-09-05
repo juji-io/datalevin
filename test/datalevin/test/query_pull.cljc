@@ -88,6 +88,12 @@
                    test-db))
          #{{:name "Ivan"} {:name "Petr"} {:name "Oleg"}}))
 
+  (is (= (set (d/q '[:find [(pull ?e [*]) ...]
+                     :where [?e :age ?a]]
+                   test-db))
+         #{{:db/id 3, :name "Oleg", :age 11} {:db/id 2, :name "Ivan", :age 25}
+           {:db/id 1, :name "Petr", :age 44}}))
+
   (is (= (d/q '[:find [?e (pull ?e [:name])]
                 :where [?e :age 25]]
               test-db)
