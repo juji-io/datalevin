@@ -64,8 +64,12 @@
                  ba))
 (def min-bytes (byte-array 0))
 
+(def ^:const overflown :overflown-key)
 (def ^:const normal 0)
 (def ^:const gt0 1)
+
+(def ^:const index-types #{:eavt :eav :aev :aevt :ave :avet :vae :vaet})
+
 
 ;; dbi-names
 (def ^:const eav "datalevin/eav")

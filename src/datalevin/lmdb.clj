@@ -7,6 +7,7 @@
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
            [clojure.lang IMapEntry]
+           [datalevin.bits Retrieved]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
@@ -501,6 +502,17 @@
       (b/read-buffer bb v-type)
       [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
 
+(defn- read-key
+  ([kv k-type v]
+   (read-key kv k-type v false))
+  ([kv k-type v rewind?]
+   (if (and (not= v c/normal) (c/index-types k-type))
+     (b/->Retrieved c/e0 c/overflown c/overflown)
+     (b/read-buffer (if rewind?
+                      (.rewind ^ByteBuffer (key kv))
+                      (key kv))
+                    k-type))))
+
 (defn- fetch-first
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
   (put-start-key rtx k1 k-type)
@@ -512,7 +524,7 @@
               v  (when (not= v-type :ignore) (b/read-buffer (val kv) v-type))]
           (if ignore-key?
             (if v v true)
-            [(b/read-buffer (key kv) k-type) v]))))))
+            [(read-key kv k-type v) v]))))))
 
 (defn- fetch-range
   [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -530,7 +542,7 @@
               holder' (conj! holder
                              (if ignore-key?
                                v
-                               [(b/read-buffer (key kv) k-type) v]))]
+                               [(read-key kv k-type v) v]))]
           (recur iter holder'))
         (persistent! holder)))))
 
@@ -560,7 +572,7 @@
                       (b/read-buffer (.rewind ^ByteBuffer (val kv)) v-type))]
               (if ignore-key?
                 v
-                [(b/read-buffer (.rewind ^ByteBuffer (key kv)) k-type) v]))
+                [(read-key kv k-type v true) v]))
             (recur iter)))))))
 
 (defn- fetch-range-filtered
@@ -581,9 +593,7 @@
                   holder' (conj! holder
                                  (if ignore-key?
                                    v
-                                   [(b/read-buffer
-                                     (.rewind ^ByteBuffer (key kv)) k-type)
-                                    v]))]
+                                   [(read-key kv k-type v true) v]))]
               (recur iter holder'))
             (recur iter holder)))
         (persistent! holder)))))
