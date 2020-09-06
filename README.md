@@ -127,9 +127,7 @@ benchmark suite of Datascript, here is how it looks.
 
 In all benchmarked queries, Datalevin is faster than Datascript. Considering
 that we are comparing a disk store with a memory store, this result may be
-counter-intuitive. The primary reason is that Datalevin is not an immutable
-database, so it is easy to cache aggressively, whereas it may be difficult in an immutable
-database (e.g. see [this issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
+counter-intuitive. The primary reason is that Datalevin caches more aggressively, whereas Datascript chose not to do so (e.g. see [this issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
 caching in version 0.2.8, Datalevin was only faster than Datascript for single
 clause queries due to the highly efficient reads of LMDB. With caching enabled,
 Datalevin is now faster across the board. In addition, we will soon move to a
