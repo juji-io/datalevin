@@ -517,26 +517,30 @@
 (defn put-buffer
   "Put the given type of data `x` in buffer `bf`. `x-type` can be one of
   the following data types:
-  - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
-  - `:string`, UTF-8 string
-  - `:int`, 32 bits integer
-  - `:long`, 64 bits integer
-  - `:float`, 32 bits IEEE754 floating point number
-  - `:double`, 64 bits IEEE754 floating point number
-  - `:byte`, single byte
-  - `:bytes`, byte array
-  - `:keyword`, EDN keyword
-  - `:symbol`, EDN symbol
-  - `:boolean`, `true` or `false`
-  - `:instant`, timestamp, same as `java.util.Date`
-  - `:uuid`, UUID, same as `java.util.UUID`
+
+    - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
+    - `:string`, UTF-8 string
+    - `:int`, 32 bits integer
+    - `:long`, 64 bits integer
+    - `:float`, 32 bits IEEE754 floating point number
+    - `:double`, 64 bits IEEE754 floating point number
+    - `:byte`, single byte
+    - `:bytes`, byte array
+    - `:keyword`, EDN keyword
+    - `:symbol`, EDN symbol
+    - `:boolean`, `true` or `false`
+    - `:instant`, timestamp, same as `java.util.Date`
+    - `:uuid`, UUID, same as `java.util.UUID`
+
   or one of the following Datalog specific data types
-  - `:datom`
-  - `:attr`
-  - `:eav`
-  - `:aev`
-  - `:ave`
-  - `:vae`
+
+    - `:datom`
+    - `:attr`
+    - `:eav`
+    - `:aev`
+    - `:ave`
+    - `:vae`
+
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."
   ([bf x]
@@ -570,26 +574,29 @@
 (defn read-buffer
   "Get the given type of data from buffer `bf`, `v-type` can be one of
   the following data types:
-  - `:data` (default), arbitrary EDN data
-  - `:string`, UTF-8 string
-  - `:int`, 32 bits integer
-  - `:long`, 64 bits integer
-  - `:float`, 32 bits IEEE754 floating point number
-  - `:double`, 64 bits IEEE754 floating point number
-  - `:byte`, single byte
-  - `:bytes`, an byte array
-  - `:keyword`, EDN keyword
-  - `:symbol`, EDN symbol
-  - `:boolean`, `true` or `false`
-  - `:instant`, timestamp, same as `java.util.Date`
-  - `:uuid`, UUID, same as `java.util.UUID`
+
+    - `:data` (default), arbitrary EDN data
+    - `:string`, UTF-8 string
+    - `:int`, 32 bits integer
+    - `:long`, 64 bits integer
+    - `:float`, 32 bits IEEE754 floating point number
+    - `:double`, 64 bits IEEE754 floating point number
+    - `:byte`, single byte
+    - `:bytes`, an byte array
+    - `:keyword`, EDN keyword
+    - `:symbol`, EDN symbol
+    - `:boolean`, `true` or `false`
+    - `:instant`, timestamp, same as `java.util.Date`
+    - `:uuid`, UUID, same as `java.util.UUID`
+
   or one of the following Datalog specific data types
-  - `:datom`
-  - `:attr`
-  - `:eav`
-  - `:aev`
-  - `:ave`
-  - `:vae`"
+
+    - `:datom`
+    - `:attr`
+    - `:eav`
+    - `:aev`
+    - `:ave`
+    - `:vae`"
   ([bf]
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]

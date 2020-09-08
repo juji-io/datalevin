@@ -98,8 +98,8 @@ Use as a key value store:
             [[:put misc-table :datalevin "Hello, world!"]
              [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
                              :source "The Hitchhiker's Guide to the Galaxy"}]
-             [:put date-table (Date. 626572800000) "The fall of the Berlin Wall" :instant]
-             [:put date-table (Date. 693619200000) "USSR broke apart" :instant]])
+             [:put date-table (Date. 693619200000) "USSR broke apart" :instant]
+             [:put date-table (Date. 626572800000) "The fall of the Berlin Wall" :instant]])
 
 ;; get the value with the key
 (l/get-value db misc-table :datalevin)
