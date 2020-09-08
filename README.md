@@ -78,7 +78,7 @@ Use as a Datalog store:
 (d/transact! conn [[:db/retract 1 :name "Frege"]])
 
 ;; pull the entity, now the name is gone
-(d/q '[:find (pull ?e [**])
+(d/q '[:find (pull ?e [*])
        :in $ ?alias
        :where
        [?e :aka ?alias]]
