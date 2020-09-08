@@ -111,7 +111,7 @@ Use as a key value store:
 (l/transact db
             [[:put misc-table :datalevin "Hello, world!"]
              [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
-                             :source "The Hitchhiker's Guide to the Galaxy"}]
+                                  :source "The Hitchhiker's Guide to the Galaxy"}]
              [:put date-table #inst "1991-12-25" "USSR broke apart" :instant]
              [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
 
