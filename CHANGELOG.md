@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.3.6
 ### Fixed
 - Add headers to key-value store keys, so that range queries work in mixed data tables
 
