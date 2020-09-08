@@ -36,7 +36,9 @@ your applications for resources.
 By giving up the "database as a value" doctrine adopted by the alternatives,
 Datalevin is able to leverage caching aggressively, achieving significant query speed advantage.
 
-Independent from Datalog, Datalevin can also be used as a fast key-value store for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
+Independent from Datalog, Datalevin can also be used as a fast key-value store
+for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with
+support for range queries, predicate filtering and more. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
 
 ## :tada: Usage
 
