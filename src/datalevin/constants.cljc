@@ -33,6 +33,8 @@
 (def ^:const +val-bytes-wo-hdr+ 496)  ; - hdr - 1 byte TBD
 (def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
 
+(def ^:const +id-bytes+ Long/BYTES)
+
 ;; value headers
 (def ^:const type-long-neg (unchecked-byte 0xC0))
 (def ^:const type-long-pos (unchecked-byte 0xC1))

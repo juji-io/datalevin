@@ -172,7 +172,7 @@
   "measure size of x in number of bytes"
   [x]
   (cond
-    (bytes? x)         (alength ^bytes x)
+    (bytes? x)         (inc (alength ^bytes x))
     (int? x)           8
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
@@ -514,6 +514,21 @@
   (let [^bytes bs (get-bytes bf)]
     (-> bs String. keyword)))
 
+(defn- raw-header
+  [v t]
+  (case t
+    :keyword c/type-keyword
+    :symbol  c/type-symbol
+    :string  c/type-string
+    :boolean c/type-boolean
+    :float   c/type-float
+    :double  c/type-double
+    :instant c/type-instant
+    :uuid    c/type-uuid
+    :bytes   c/type-bytes
+    :long    (long-header v)
+    nil))
+
 (defn put-buffer
   "Put the given type of data `x` in buffer `bf`. `x-type` can be one of
   the following data types:
@@ -522,6 +537,7 @@
     - `:string`, UTF-8 string
     - `:int`, 32 bits integer
     - `:long`, 64 bits integer
+    - `:id`, 64 bits integer, not prefixed with a type header
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
     - `:byte`, single byte
@@ -547,18 +563,29 @@
    (put-buffer bf x :data))
   ([bf x x-type]
    (case x-type
-     :string  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8))
+     :string  (do (put-byte bf (raw-header x :string))
+                  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
      :int     (put-int bf x)
-     :long    (put-long bf x)
-     :float   (put-float bf x)
-     :double  (put-double bf x)
+     :long    (do (put-byte bf (raw-header x :long))
+                  (put-long bf x))
+     :id      (put-long bf x)
+     :float   (do (put-byte bf (raw-header x :float))
+                  (put-float bf x))
+     :double  (do (put-byte bf (raw-header x :double))
+                  (put-double bf x))
      :byte    (put-byte bf x)
-     :bytes   (put-bytes bf x)
-     :keyword (put-bytes bf (key-sym-bytes x))
-     :symbol  (put-bytes bf (key-sym-bytes x))
-     :boolean (put-byte bf (if x c/true-value c/false-value))
-     :instant (put-long bf (.getTime ^Date x))
-     :uuid    (put-uuid bf x)
+     :bytes   (do (put-byte bf (raw-header x :bytes))
+                  (put-bytes bf x))
+     :keyword (do (put-byte bf (raw-header x :keyword))
+                  (put-bytes bf (key-sym-bytes x)))
+     :symbol  (do (put-byte bf (raw-header x :symbol))
+                  (put-bytes bf (key-sym-bytes x)))
+     :boolean (do (put-byte bf (raw-header x :boolean))
+                  (put-byte bf (if x c/true-value c/false-value)))
+     :instant (do (put-byte bf (raw-header x :instant))
+                  (put-long bf (.getTime ^Date x)))
+     :uuid    (do (put-byte bf (raw-header x :uuid))
+                  (put-uuid bf x))
      :attr    (put-attr bf x)
      :datom   (put-datom bf x)
      :eav     (put-eav bf x)
@@ -579,6 +606,7 @@
     - `:string`, UTF-8 string
     - `:int`, 32 bits integer
     - `:long`, 64 bits integer
+    - `:id`, 64 bits integer, not prefixed with a type header
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
     - `:byte`, single byte
@@ -601,18 +629,19 @@
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
    (case v-type
-     :string  (get-string bf)
+     :string  (do (get-byte bf) (get-string bf))
      :int     (get-int bf)
-     :long    (get-long bf)
-     :float   (get-float bf)
-     :double  (get-double bf)
+     :long    (do (get-byte bf) (get-long bf))
+     :id      (get-long bf)
+     :float   (do (get-byte bf) (get-float bf))
+     :double  (do (get-byte bf) (get-double bf))
      :byte    (get-byte bf)
-     :bytes   (get-bytes bf)
-     :keyword (get-keyword bf 0)
-     :symbol  (get-symbol bf 0)
-     :boolean (get-boolean bf)
-     :instant (Date. ^long (get-long bf))
-     :uuid    (get-uuid bf)
+     :bytes   (do (get-byte bf) (get-bytes bf))
+     :keyword (do (get-byte bf) (get-keyword bf 0))
+     :symbol  (do (get-byte bf) (get-symbol bf 0))
+     :boolean (do (get-byte bf) (get-boolean bf))
+     :instant (do (get-byte bf) (Date. ^long (get-long bf)))
+     :uuid    (do (get-byte bf) (get-uuid bf))
      :attr    (get-attr bf)
      :datom   (get-datom bf)
      :eav     (get-eav bf)

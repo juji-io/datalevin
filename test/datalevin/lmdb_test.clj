@@ -21,7 +21,7 @@
     (with-redefs [lmdb (sut/open-lmdb dir)]
       (sut/open-dbi lmdb "a")
       (sut/open-dbi lmdb "b")
-      (sut/open-dbi lmdb "c" Long/BYTES Long/BYTES)
+      (sut/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
       (sut/open-dbi lmdb "d")
       (f)
       (sut/close lmdb)

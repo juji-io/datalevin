@@ -52,7 +52,7 @@
 
 (defn- init-max-gt
   [lmdb]
-  (or (when-let [gt (-> (lmdb/get-first lmdb c/giants [:all-back] :long :ignore)
+  (or (when-let [gt (-> (lmdb/get-first lmdb c/giants [:all-back] :id :ignore)
                         first)]
         (inc ^long gt))
       c/gt0))
@@ -137,13 +137,13 @@
   (when kv
     (if (= v c/normal)
       (d/datom (.-e k) (attrs (.-a k)) (.-v k))
-      (lmdb/get-value lmdb c/giants v :long :datom))))
+      (lmdb/get-value lmdb c/giants v :id :datom))))
 
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
   (fn [kv]
     (let [^Retrieved k (b/read-buffer (key kv) index)
-          ^long v      (b/read-buffer (val kv) :long)
+          ^long v      (b/read-buffer (val kv) :id)
           ^Datom d     (retrieved->datom lmdb attrs [k v])]
       (pred d))))
 
@@ -268,7 +268,7 @@
                                         c/eav
                                         (low-datom->indexable schema datom)
                                         :eav
-                                        :long
+                                        :id
                                         false)]
             [kv])))
 
@@ -298,7 +298,7 @@
                                  (low-datom->indexable schema low-datom)
                                  (high-datom->indexable schema high-datom)]
                                 index
-                                :long)))
+                                :id)))
 
   (slice [_ index low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -309,7 +309,7 @@
             (low-datom->indexable schema low-datom)
             (high-datom->indexable schema high-datom)]
            index
-           :long)))
+           :id)))
 
   (rslice [_ index high-datom low-datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -320,7 +320,7 @@
             (high-datom->indexable schema high-datom)
             (low-datom->indexable schema low-datom)]
            index
-           :long)))
+           :id)))
 
   (size-filter [_ index pred low-datom high-datom]
     (lmdb/range-filter-count lmdb
@@ -340,7 +340,7 @@
                                  (low-datom->indexable schema low-datom)
                                  (high-datom->indexable schema high-datom)]
                                 index
-                                :long)))
+                                :id)))
 
   (slice-filter [_ index pred low-datom high-datom]
     (mapv
@@ -353,7 +353,7 @@
        (low-datom->indexable schema low-datom)
        (high-datom->indexable schema high-datom)]
       index
-      :long)))
+      :id)))
 
   (rslice-filter [_ index pred high-datom low-datom]
     (mapv
@@ -366,7 +366,7 @@
        (high-datom->indexable schema high-datom)
        (low-datom->indexable schema low-datom)]
       index
-      :long))))
+      :id))))
 
 (defn- insert-data
   [^Store store ^Datom d]
@@ -378,16 +378,16 @@
                             (:db/valueType props))
         max-gt (max-gt store)]
       (if (b/giant? i)
-        [(cond-> [[:put c/eav i max-gt :eav :long]
-                  [:put c/aev i max-gt :aev :long]
-                  [:put c/ave i max-gt :ave :long]
-                  [:put c/giants max-gt d :long :datom [PutFlags/MDB_APPEND]]]
-           ref? (conj [:put c/vae i max-gt :vae :long]))
+        [(cond-> [[:put c/eav i max-gt :eav :id]
+                  [:put c/aev i max-gt :aev :id]
+                  [:put c/ave i max-gt :ave :id]
+                  [:put c/giants max-gt d :id :datom [PutFlags/MDB_APPEND]]]
+           ref? (conj [:put c/vae i max-gt :vae :id]))
          true]
-        [(cond-> [[:put c/eav i c/normal :eav :long]
-                  [:put c/aev i c/normal :aev :long]
-                  [:put c/ave i c/normal :ave :long]]
-           ref? (conj [:put c/vae i c/normal :vae :long]))
+        [(cond-> [[:put c/eav i c/normal :eav :id]
+                  [:put c/aev i c/normal :aev :id]
+                  [:put c/ave i c/normal :ave :id]]
+           ref? (conj [:put c/vae i c/normal :vae :id]))
          false])))
 
 (defn- delete-data
@@ -404,8 +404,8 @@
              [:del c/ave i :ave]]
       ref?   (conj [:del c/vae i :vae])
       giant? (conj [:del c/giants
-                    (lmdb/get-value (.-lmdb store) c/eav i :eav :long)
-                    :long]))))
+                    (lmdb/get-value (.-lmdb store) c/eav i :eav :id)
+                    :id]))))
 
 (defn open
   "Open and return the storage."
@@ -416,11 +416,11 @@
   ([dir schema]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-lmdb dir)]
-     (lmdb/open-dbi lmdb c/eav c/+max-key-size+ Long/BYTES)
-     (lmdb/open-dbi lmdb c/aev c/+max-key-size+ Long/BYTES)
-     (lmdb/open-dbi lmdb c/ave c/+max-key-size+ Long/BYTES)
-     (lmdb/open-dbi lmdb c/vae c/+max-key-size+ Long/BYTES)
-     (lmdb/open-dbi lmdb c/giants Long/BYTES)
+     (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
+     (lmdb/open-dbi lmdb c/aev c/+max-key-size+ c/+id-bytes+)
+     (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
+     (lmdb/open-dbi lmdb c/vae c/+max-key-size+ c/+id-bytes+)
+     (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (let [schema' (init-schema lmdb schema)]
        (->Store lmdb

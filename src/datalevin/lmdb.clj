@@ -19,17 +19,15 @@
 
 (defprotocol ^:no-doc IBuffer
   (put-key [this data k-type]
-    "put data in key buffer, k-type can be :long, :byte, :bytes, :data")
+    "put data in key buffer")
   (put-val [this data v-type]
-    "put data in val buffer, v-type can be :long, :byte, :bytes, :data"))
+    "put data in val buffer"))
 
 (defprotocol ^:no-doc IRange
   (put-start-key [this data k-type]
-    "put data in start-key buffer, k-type can be :long, :byte, :bytes, :data
-     or index type, :eav etc.")
+    "put data in start-key buffer.")
   (put-stop-key [this data k-type]
-    "put data in stop-key buffer, k-type can be :long, :byte, :bytes, :data
-    or index type, :eav etc."))
+    "put data in stop-key buffer."))
 
 (defprotocol ^:no-doc IRtx
   (close-rtx [this] "close the read-only transaction")
