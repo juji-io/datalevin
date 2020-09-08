@@ -74,6 +74,18 @@ Use as a Datalog store:
      "fred")
 ;; => #{["France"]}
 
+;; retract the name attribute of an entity
+(d/transact! conn [[:db/retract 1 :name "Frege"]])
+
+;; pull the entity, now the name is gone
+(d/q '[:find (pull ?e [**])
+       :in $ ?alias
+       :where
+       [?e :aka ?alias]]
+     @conn
+     "fred")
+;; => ([{:db/id 1, :aka ["foo" "fred"], :nation "France"}])
+
 ;; close DB connection
 (d/close conn)
 ```
