@@ -547,7 +547,7 @@
    (put-buffer bf x :data))
   ([bf x x-type]
    (case x-type
-     :string  (put-bytes bf (.getBytes x StandardCharsets/UTF_8))
+     :string  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8))
      :int     (put-int bf x)
      :long    (put-long bf x)
      :float   (put-float bf x)
@@ -611,7 +611,7 @@
      :keyword (get-keyword bf 0)
      :symbol  (get-symbol bf 0)
      :boolean (get-boolean bf)
-     :instant (Date. (get-long bf))
+     :instant (Date. ^long (get-long bf))
      :uuid    (get-uuid bf)
      :attr    (get-attr bf)
      :datom   (get-datom bf)

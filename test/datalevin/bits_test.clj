@@ -107,7 +107,7 @@
 (test/defspec instant-generative-test
   100
   (prop/for-all [k gen/pos-int]
-                (let [d (Date. k)]
+                (let [d (Date. ^long k)]
                   (.clear bf)
                   (sut/put-buffer bf d :instant)
                   (.flip bf)
