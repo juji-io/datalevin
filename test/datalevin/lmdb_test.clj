@@ -22,6 +22,7 @@
       (sut/open-dbi lmdb "a")
       (sut/open-dbi lmdb "b")
       (sut/open-dbi lmdb "c" Long/BYTES Long/BYTES)
+      (sut/open-dbi lmdb "d")
       (f)
       (sut/close lmdb)
       (b/delete-files dir))))
@@ -45,11 +46,13 @@
                    [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
                    [:put "b" 1 :long :long :data]
                    [:put "b" :long 1 :data :long]
-                   [:put "b" 2 3 :long :long]]))
+                   [:put "b" 2 3 :long :long]
+                   [:put "b" "ok" 42 :string :int]
+                   [:put "d" 3.14 :pi :double :keyword]]))
 
   (testing "entries"
     (is (= 6 (sut/entries lmdb "a")))
-    (is (= 9 (sut/entries lmdb "b"))))
+    (is (= 10 (sut/entries lmdb "b"))))
 
   (testing "get-value"
     (is (= 2 (sut/get-value lmdb "a" 1)))
@@ -70,7 +73,9 @@
                        ^bytes (sut/get-value lmdb "b" :bv :data :bytes)))
     (is (= :long (sut/get-value lmdb "b" 1 :long :data)))
     (is (= 1 (sut/get-value lmdb "b" :long :data :long)))
-    (is (= 3 (sut/get-value lmdb "b" 2 :long :long))))
+    (is (= 3 (sut/get-value lmdb "b" 2 :long :long)))
+    (is (= 42 (sut/get-value lmdb "b" "ok" :string :int)))
+    (is (= :pi (sut/get-value lmdb "d" 3.14 :double :keyword))))
 
   (testing "delete"
     (sut/transact lmdb [[:del "a" 1]
@@ -79,7 +84,7 @@
 
   (testing "entries-again"
     (is (= 5 (sut/entries lmdb "a")))
-    (is (= 9 (sut/entries lmdb "b"))))
+    (is (= 10 (sut/entries lmdb "b"))))
 
   (testing "non-existent dbi"
     (is (thrown-with-msg? Exception #"open-dbi" (sut/get-value lmdb "z" 1))))

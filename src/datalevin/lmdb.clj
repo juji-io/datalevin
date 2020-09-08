@@ -243,12 +243,8 @@
 
      `k-type`, `v-type` and `put-flags` are optional.
 
-    `k-type` indicates the type of `k`, and it can be one of `:data` (default),
-    `:long`, `:byte`, `:bytes`, `:datom`, `:attr` or one of the index types
-    `:eav`, `:aev`, `:ave`, or `:vae`
-
-    `v-type` indicates the type of `v` can be one of `:data` (default),
-    `:long`, `:byte`, `:bytes`, `:datom`, or `attr`
+    `k-type` indicates the data type of `k`, and `v-type` indicates the data type
+    of `v`. The allowed data types are described in [[datalevin.bits/put-buffer]]
 
     `put-flags` is a vector of [LMDB put flags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/org/lmdbjava/PutFlags.html).
 
@@ -275,8 +271,10 @@
     [db dbi-name k k-type]
     [db dbi-name k k-type v-type]
     [db dbi-name k k-type v-type ignore-key?]
-    "Get kv pair of the specified key `k`, `k-type` and `v-type` can be
-     `:data` (default), `:byte`, `:bytes`, `:attr`, `:datom` or `:long`;
+    "Get kv pair of the specified key `k`.
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
 
      If `ignore-key?` is true (default `true`), only return the value,
      otherwise return `[k v]`, where `v` is the value
@@ -309,8 +307,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data`
-     (default), `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -347,8 +345,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data`
-     (default), `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -381,8 +379,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` indicates the data type of key, and it can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
 
      Examples:
 
@@ -405,8 +403,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -441,8 +439,8 @@
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
      `-back` suffix to each of the above, e.g. `:all-back`;
 
-     `k-type` and `v-type` indicate the data type, and they can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -471,8 +469,8 @@
 
      `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
 
-     `k-type` indicates the data type of key, and it can be `:data` (default),
-     `:long`, `:byte`, `:bytes`, `:datom`, or `:attr`;
+    `k-type` indicates data type of `k` and the allowed data types are described
+    in [[datalevin.bits/read-buffer]].
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,

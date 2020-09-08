@@ -7,7 +7,7 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop])
-  (:import [java.util Arrays UUID]
+  (:import [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
            [datalevin.bits Indexable Retrieved]))
 
@@ -15,13 +15,54 @@
 
 ;; buffer read/write
 
-(deftest datom-test
-  (let [d1 (d/datom 1 :pet/name "Mr. Kitty")]
-    (.clear bf)
-    (sut/put-buffer bf d1 :datom)
-    (.flip bf)
-    (is (= d1 (nippy/thaw (nippy/freeze d1))))
-    (is (= d1 (sut/read-buffer bf :datom)))))
+(defn- bytes-size-less-than?
+  [^long limit ^bytes bs]
+  (< (alength bs) limit))
+
+(defn- string-size-less-than?
+  [^long limit ^String s]
+  (< (alength (.getBytes s)) limit))
+
+(test/defspec data-generative-test
+  100
+  (prop/for-all [k gen/any-equatable]
+                (.clear bf)
+                (sut/put-buffer bf k :data)
+                (.flip bf)
+                (= k (sut/read-buffer bf :data))))
+
+(test/defspec string-generative-test
+  100
+  (prop/for-all [k (gen/such-that (partial string-size-less-than? c/+val-bytes-wo-hdr+)
+                                  gen/string)]
+                (.clear bf)
+                (sut/put-buffer bf k :string)
+                (.flip bf)
+                (= k (sut/read-buffer bf :string))))
+
+(test/defspec int-generative-test
+  100
+  (prop/for-all [k gen/int]
+                (.clear bf)
+                (sut/put-buffer bf k :int)
+                (.flip bf)
+                (= k (sut/read-buffer bf :int))))
+
+(test/defspec long-generative-test
+  100
+  (prop/for-all [k gen/large-integer]
+                (.clear bf)
+                (sut/put-buffer bf k :long)
+                (.flip bf)
+                (= k (sut/read-buffer bf :long))))
+
+(test/defspec double-generative-test
+  100
+  (prop/for-all [k (gen/double* {:NaN? false})]
+                (.clear bf)
+                (sut/put-buffer bf k :double)
+                (.flip bf)
+                (= k (sut/read-buffer bf :double))))
 
 (test/defspec bytes-generative-test
   100
@@ -39,21 +80,54 @@
                 (.flip bf)
                 (= k (sut/read-buffer bf :byte))))
 
-(test/defspec data-generative-test
+(test/defspec keyword-generative-test
   100
-  (prop/for-all [k gen/any-equatable]
+  (prop/for-all [k gen/keyword-ns]
                 (.clear bf)
-                (sut/put-buffer bf k :data)
+                (sut/put-buffer bf k :keyword)
                 (.flip bf)
-                (= k (sut/read-buffer bf :data))))
+                (= k (sut/read-buffer bf :keyword))))
 
-(test/defspec long-generative-test
+(test/defspec symbol-generative-test
   100
-  (prop/for-all [k gen/large-integer]
+  (prop/for-all [k gen/symbol-ns]
                 (.clear bf)
-                (sut/put-buffer bf k :long)
+                (sut/put-buffer bf k :symbol)
                 (.flip bf)
-                (= k (sut/read-buffer bf :long))))
+                (= k (sut/read-buffer bf :symbol))))
+
+(test/defspec boolean-generative-test
+  100
+  (prop/for-all [k gen/boolean]
+                (.clear bf)
+                (sut/put-buffer bf k :boolean)
+                (.flip bf)
+                (= k (sut/read-buffer bf :boolean))))
+
+(test/defspec instant-generative-test
+  100
+  (prop/for-all [k gen/pos-int]
+                (let [d (Date. k)]
+                  (.clear bf)
+                  (sut/put-buffer bf d :instant)
+                  (.flip bf)
+                  (= d (sut/read-buffer bf :instant)))))
+
+(test/defspec uuid-generative-test
+  100
+  (prop/for-all [k gen/uuid]
+                (.clear bf)
+                (sut/put-buffer bf k :uuid)
+                (.flip bf)
+                (= k (sut/read-buffer bf :uuid))))
+
+(deftest datom-test
+  (let [d1 (d/datom 1 :pet/name "Mr. Kitty")]
+    (.clear bf)
+    (sut/put-buffer bf d1 :datom)
+    (.flip bf)
+    (is (= d1 (nippy/thaw (nippy/freeze d1))))
+    (is (= d1 (sut/read-buffer bf :datom)))))
 
 (test/defspec datom-generative-test
   100
@@ -98,14 +172,6 @@
            (and (< 0 r1) (= 0 r2)) 1
            (and (= 0 r1) (< 0 r2)) -1
            :else                   (recur)))))))
-
-(defn- bytes-size-less-than?
-  [^long limit ^bytes bs]
-  (< (alength bs) limit))
-
-(defn- string-size-less-than?
-  [^long limit ^String s]
-  (< (alength (.getBytes s)) limit))
 
 ;; extrema bounds
 

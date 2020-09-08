@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+### Changed
+- Expose all data types to key-value store API
+
 ## 0.3.4
 ### Fixed
 - thaw error for large values of `:data` type. [#23]
