@@ -34,11 +34,13 @@ indexing, compaction or doing any database maintenance work that compete with
 your applications for resources.
 
 By giving up the "database as a value" doctrine adopted by the alternatives,
-Datalevin is able to leverage caching aggressively, achieving significant query speed advantage.
+Datalevin is able to leverage caching aggressively, achieving significant Datalog query speed advantage.
 
-Independent from Datalog, Datalevin can also be used as a fast key-value store
+Independent from Datalog, Datalevin can be used as a fast key-value store
 for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with
 support for range queries, predicate filtering and more. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
+
+We also plan to implement necessary extensions to make Datalevin a convenient graph database and document database.
 
 ## :tada: Usage
 
@@ -47,24 +49,27 @@ Use as a Datalog store:
 ```clojure
 (require '[datalevin.core :as d])
 
-;; define a schema
+;; Define a schema. 
+;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
+;; However, attributes requiring special handling need to be defined in schema, 
+;; e.g. many cardinality, uniqueness constraint, reference type, and so on.
 (def schema {:aka  {:db/cardinality :db.cardinality/many}
              ;; :db/valueType is optional, if unspecified, the attribute will be
-             ;; treated as EDN blobs
+             ;; treated as EDN blobs, and may not be optimal for range queries
              :name {:db/valueType :db.type/string
                     :db/unique    :db.unique/identity}})
 
-;; create DB and connect to it
+;; Create DB on disk and connect to it
 (def conn (d/create-conn "/tmp/datalevin-test" schema))
 
-;; transact some data
-;; notice :nation is not defined in schema, so it will be treated as an EDN blob
+;; Transact some data
+;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
 (d/transact! conn
              [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
               {:name "Peirce", :db/id -2, :nation "france"}
               {:name "De Morgan", :db/id -3, :nation "English"}])
 
-;; query the data
+;; Query the data
 (d/q '[:find ?nation
        :in $ ?alias
        :where
@@ -74,10 +79,10 @@ Use as a Datalog store:
      "fred")
 ;; => #{["France"]}
 
-;; retract the name attribute of an entity
+;; Retract the name attribute of an entity
 (d/transact! conn [[:db/retract 1 :name "Frege"]])
 
-;; pull the entity, now the name is gone
+;; Pull the entity, now the name is gone
 (d/q '[:find (pull ?e [*])
        :in $ ?alias
        :where
@@ -86,7 +91,7 @@ Use as a Datalog store:
      "fred")
 ;; => ([{:db/id 1, :aka ["foo" "fred"], :nation "France"}])
 
-;; close DB connection
+;; Close DB connection
 (d/close conn)
 ```
 
@@ -95,19 +100,19 @@ Use as a key value store:
 (require '[datalevin.lmdb :as l])
 (import '[java.util Date])
 
-;; open a key value DB
+;; Open a key value DB on disk and get the DB handle
 (def db (l/open-lmdb "/tmp/lmdb-test"))
 
-;; define some table (dbi) names
+;; Define some table (called "dbi" in LMDB) names
 (def misc-table "misc-test-table")
 (def date-table "date-test-table")
 
-;; open the tables
+;; Open the tables
 (l/open-dbi db misc-table)
 (l/open-dbi db date-table)
 
-;; transact some data, a transaction can put data into multiple tables
-;; optionally, data type can be specified to help with range query
+;; Transact some data, a transaction can put data into multiple tables
+;; Optionally, data type can be specified to help with range query
 (l/transact db
             [[:put misc-table :datalevin "Hello, world!"]
              [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
@@ -115,30 +120,30 @@ Use as a key value store:
              [:put date-table #inst "1991-12-25" "USSR broke apart" :instant]
              [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
 
-;; get the value with the key
+;; Get the value with the key
 (l/get-value db misc-table :datalevin)
 ;; => "Hello, world!"
 (l/get-value db misc-table 42)
 ;; => {:saying "So Long, and thanks for all the fish",
 ;;     :source "The Hitchhiker's Guide to the Galaxy"}
 
-;; delete some data
+;; Delete some data
 (l/transact db [[:del misc-table 42]])
 
-;; now it's gone
+;; Now it's gone
 (l/get-value db misc-table 42)
 ;; => nil
 
-;; range query, from unix epoch time to now
+;; Range query, from unix epoch time to now
 (l/get-range db date-table [:all (Date. 0) (Date.)] :instant)
 ;; => [[#inst "1989-11-09T00:00:00.000-00:00" "The fall of the Berlin Wall"]
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
-;; close DB
+;; Close DB
 (l/close db)
 ```
 
-Refer to the [API documentation](https://juji-io.github.io/datalevin/index.html) for more details.
+Please refer to the [API documentation](https://juji-io.github.io/datalevin/index.html) for more details.
 
 ## :rocket: Status
 
@@ -172,15 +177,17 @@ In short, Datalevin is quite capable for small or medium projects right now.
 
 ## :earth_americas: Roadmap
 
-These are the short term goals that we will try to reach quickly:
+These are the goals that we will try to reach quickly:
 
 * 0.4.0 Distributed mode with raft based replication
 * 0.5.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
-* 0.6.0 Schema migration
+* 0.6.0 Automatic schema migration
 * 0.7.0 Query parity with Datascript: composite tuples and persisted transaction functions
-* 0.8.0 Materialized views and incremental maintenance
+* 0.8.0 Implement [loom](https://github.com/aysylu/loom) graph protocols
+* 0.9.0 Optional auto indexing of document fields
+* 1.0.0 Materialized views and incremental maintenance
 
-We welcome any suggestions on what to do next. Please file issues.
+We appreicate and welcome any suggestion or help. Please file issues or pull requests. 
 
 ## :floppy_disk: Differences from Datascript
 
@@ -192,7 +199,7 @@ currently a port, Datalevin differs from Datascript in more significant ways tha
 
 * Datoms in a transaction are committed together as a batch, rather than being saved by `with-datom` one at a time.
 
-* Respects `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values with unspecified type are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
+* Respects `:db/valueType`. Currently, most [Datomic® value types](https://docs.datomic.com/on-prem/schema.html#value-types) are supported, except bigint, bigdec, uri and tuple. Values of the attributes that are not defined in the schema or have unspecified types are treated as [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
 
 * Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute; The attribute and value leading index (AVE) is enabled for all datoms, so there is no need to specify `:db/index`. These are the same as Datomic® Cloud.
 
