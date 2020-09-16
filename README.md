@@ -40,7 +40,7 @@ Independent from Datalog, Datalevin can be used as a fast key-value store
 for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with
 support for range queries, predicate filtering and more. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
 
-We also plan to implement necessary extensions to make Datalevin a convenient graph database and document database.
+We also plan to implement necessary extensions to make Datalevin a convenient graph database and document database, since the indexing structure of Datalevin is already compatible with them. 
 
 ## :tada: Usage
 
@@ -180,11 +180,11 @@ In short, Datalevin is quite capable for small or medium projects right now.
 These are the goals that we will try to reach quickly:
 
 * 0.4.0 Distributed mode with raft based replication
-* 0.5.0 New query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
+* 0.5.0 New Datalog query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
 * 0.6.0 Automatic schema migration
-* 0.7.0 Query parity with Datascript: composite tuples and persisted transaction functions
+* 0.7.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
 * 0.8.0 Implement [loom](https://github.com/aysylu/loom) graph protocols
-* 0.9.0 Optional auto indexing of document fields
+* 0.9.0 Auto indexing of document fields
 * 1.0.0 Materialized views and incremental maintenance
 
 We appreicate and welcome any suggestion or help. Please file issues or pull requests. 
@@ -205,7 +205,7 @@ currently a port, Datalevin differs from Datascript in more significant ways tha
 
 * Attributes are stored in indices as integer ids, thus attributes in index access are returned in attribute creation order, not in lexicographic order (i.e. do not expect `:b` to come after `:a`). This is the same as Datomic®.
 
-* Has no features that are applicable only for in-memory DBs, such as DB as an immutable data structure, DB serialization, DB pretty print, filtered DB, etc. For now, [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the database files.
+* Has no features that are applicable only for in-memory DBs, such as DB as an immutable data structure, DB serialization, DB pretty print, etc. For now, [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the database files.
 
 This project would not have started without the existence of Datascript, we will
 continue submitting pull requests to Datascript with our improvements where they
