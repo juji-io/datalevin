@@ -3,7 +3,8 @@
    #?(:cljs [cljs.test    :as t :refer-macros [is deftest]]
       :clj  [clojure.test :as t :refer        [is deftest]])
    [datalevin.core :as d]
-   [datalevin.constants :as c])
+   [datalevin.constants :as c]
+   [datalevin.util :as u])
   (:import [java.util Date UUID]))
 
 (def schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}})
@@ -59,7 +60,7 @@
 (deftest test-recreate-conn
   (let [schema {:name          {:db/valueType :db.type/string}
                 :dt/updated-at {:db/valueType :db.type/instant}}
-        dir    (str "/tmp/datalevin-recreate-conn-test" (UUID/randomUUID))
+        dir    (u/tmp-dir (str "recreate-conn-test-" (UUID/randomUUID)))
         conn   (d/create-conn dir schema)]
     (d/transact! conn [{:db/id         -1
                         :name          "Namebo"
