@@ -187,7 +187,7 @@ These are the goals that we will try to reach quickly:
 * 0.9.0 Auto indexing of document fields
 * 1.0.0 Materialized views and incremental maintenance
 
-We appreicate and welcome any contribution or suggestion. Please file issues or pull requests. 
+We appreicate and welcome your contribution or suggestion. Please file issues or pull requests. 
 
 ## :floppy_disk: Differences from Datascript
 

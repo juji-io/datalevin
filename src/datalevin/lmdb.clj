@@ -502,7 +502,7 @@
   ([kv k-type v]
    (read-key kv k-type v false))
   ([kv k-type v rewind?]
-   (if (and (not= v c/normal) (c/index-types k-type))
+   (if (and v (not= v c/normal) (c/index-types k-type))
      (b/->Retrieved c/e0 c/overflown c/overflown)
      (b/read-buffer (if rewind?
                       (.rewind ^ByteBuffer (key kv))
