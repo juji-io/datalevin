@@ -7,7 +7,6 @@
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
            [clojure.lang IMapEntry]
-           [datalevin.bits Retrieved]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
@@ -503,7 +502,7 @@
    (read-key kv k-type v false))
   ([kv k-type v rewind?]
    (if (and v (not= v c/normal) (c/index-types k-type))
-     (b/->Retrieved c/e0 c/overflown c/overflown)
+     b/overflown-key
      (b/read-buffer (if rewind?
                       (.rewind ^ByteBuffer (key kv))
                       (key kv))
@@ -688,7 +687,7 @@
                    (put-key dbi k kt)
                    (del dbi txn))))
         (.commit txn))
-      (catch Env$MapFullException e
+      (catch Env$MapFullException _
         (up-db-size env)
         (transact this txs))
       (catch Exception e

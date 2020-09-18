@@ -159,15 +159,29 @@
                           (d/datom c/e0 :a c/vmax))))))
 
 (deftest giants-data-test
-  (let [dir    (u/tmp-dir (str "datalevin-giants-data-test-" (UUID/randomUUID)))
-        store  (sut/open dir)
-        v      (apply str (repeat 10000 (UUID/randomUUID)))
-        d      (d/datom c/e0 :a v)]
+  (let [dir   (u/tmp-dir (str "datalevin-giants-data-test-" (UUID/randomUUID)))
+        store (sut/open dir)
+        v     (apply str (repeat 10000 (UUID/randomUUID)))
+        d     (d/datom c/e0 :a v)
+        d1    (d/datom (inc c/e0) :b v)]
     (sut/load-datoms store [d])
     (is (= [d] (sut/fetch store d)))
     (is (= [d] (sut/slice store :eavt
                           (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax))))))
+                          (d/datom c/e0 :a c/vmax))))
+    (sut/close store)
+
+    (let [store' (sut/open dir)]
+      (is (sut/populated? store' :eav
+                          (d/datom c/e0 :a c/v0)
+                          (d/datom c/e0 :a c/vmax)))
+      (is (= [d] (sut/fetch store' d)))
+      (is (= [d] (sut/slice store' :eavt
+                            (d/datom c/e0 :a c/v0)
+                            (d/datom c/e0 :a c/vmax))))
+      (sut/load-datoms store' [d1])
+      (is (= 1 (sut/init-max-eid store'))))
+    ))
 
 (deftest false-value-test
   (let [d (d/datom c/e0 :a false)]

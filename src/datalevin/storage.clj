@@ -3,6 +3,7 @@
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
             [datalevin.bits :as b]
+            ;; [taoensso.timbre :as log]
             [datalevin.constants :as c]
             [datalevin.datom :as d])
   (:import [java.util UUID]
@@ -192,8 +193,8 @@
 (deftype Store [^LMDB lmdb
                 ^:volatile-mutable schema
                 ^:volatile-mutable attrs
-                ^:volatile-mutable ^long max-aid
-                ^:volatile-mutable ^long max-gt]
+                ^:volatile-mutable max-aid
+                ^:volatile-mutable max-gt]
   IStore
   (dir [_]
     (.-dir lmdb))
@@ -207,7 +208,7 @@
     max-gt)
 
   (advance-max-gt [_]
-    (set! max-gt (inc max-gt)))
+    (set! max-gt (inc ^long max-gt)))
 
   (max-aid [_]
     max-aid)
@@ -224,8 +225,10 @@
     attrs)
 
   (init-max-eid [_]
-    (or (when-let [[r _] (lmdb/get-first lmdb c/eav [:all-back] :eav :ignore)]
-          (.-e ^Retrieved r))
+    (or (when-let [[k v] (lmdb/get-first lmdb c/eav [:all-back] :eav :id)]
+          (if (= c/overflown (.-a ^Retrieved k))
+            (.-e ^Datom (lmdb/get-value lmdb c/giants v :id :datom))
+            (.-e ^Retrieved k)))
         c/e0))
 
   (swap-attr [this attr f]
@@ -235,7 +238,7 @@
   (swap-attr [_ attr f x y]
     (let [o (or (schema attr)
                 (let [m {:db/aid max-aid}]
-                  (set! max-aid (inc max-aid))
+                  (set! max-aid (inc ^long max-aid))
                   m))
           p (cond
               (and x y) (f o x y)

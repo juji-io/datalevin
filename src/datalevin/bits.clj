@@ -453,6 +453,8 @@
 
 (deftype ^:no-doc Retrieved [e a v])
 
+(def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown))
+
 (defn- indexable->retrieved
   [^Indexable i]
   (->Retrieved (.-e i) (.-a i) (.-v i)))
