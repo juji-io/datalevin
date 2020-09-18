@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.3.8
 ### Fixed
 -  Correctly handle `init-max-eid` for large values as well.
 
