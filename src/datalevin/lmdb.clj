@@ -78,16 +78,14 @@
     (set! use? false)
     (.close txn))
   (reset [this]
-    (locking this
-      (.reset txn)
-      (set! use? false)
-      this))
+    (.reset txn)
+    (set! use? false)
+    this)
   (renew [this]
-    (locking this
-      (when-not use?
-        (.renew txn)
-        (set! use? true)
-        this))))
+    (when-not use?
+      (.renew txn)
+      (set! use? true)
+      this)))
 
 (defprotocol ^:no-doc IRtxPool
   (close-pool [this] "Close all transactions in the pool")
@@ -99,22 +97,20 @@
                            ^:volatile-mutable ^long cnt]
   IRtxPool
   (close-pool [this]
-    (locking this
-      (doseq [^Rtx rtx (.values rtxs)] (close-rtx rtx))
-      (.clear rtxs)
-      (set! cnt 0)))
+    (doseq [^Rtx rtx (.values rtxs)] (close-rtx rtx))
+    (.clear rtxs)
+    (set! cnt 0))
   (new-rtx [this]
-    (locking this
-      (when (< cnt c/+use-readers+)
-        (let [rtx (->Rtx (.txnRead env)
-                         false
-                         (ByteBuffer/allocateDirect c/+max-key-size+)
-                         (ByteBuffer/allocateDirect c/+max-key-size+)
-                         (ByteBuffer/allocateDirect c/+max-key-size+))]
-          (.put rtxs cnt rtx)
-          (set! cnt (inc cnt))
-          (reset rtx)
-          (renew rtx)))))
+    (when (< cnt c/+use-readers+)
+      (let [rtx (->Rtx (.txnRead env)
+                       false
+                       (ByteBuffer/allocateDirect c/+max-key-size+)
+                       (ByteBuffer/allocateDirect c/+max-key-size+)
+                       (ByteBuffer/allocateDirect c/+max-key-size+))]
+        (.put rtxs cnt rtx)
+        (set! cnt (inc cnt))
+        (reset rtx)
+        (renew rtx))))
   (get-rtx [this]
     (locking this
       (if (zero? cnt)

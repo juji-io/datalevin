@@ -197,7 +197,7 @@
     (is (= res (sut/range-filter lmdb "c" pred [:all] :long :long)))))
 
 (deftest multi-threads-get-value-test
-  (let [ks  (shuffle (range 0 10000))
+  (let [ks  (shuffle (range 0 100000))
         vs  (map inc ks)
         txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
     (sut/transact lmdb txs)

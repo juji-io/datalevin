@@ -68,8 +68,6 @@
     (d/close conn)
 
     (let [conn2 (d/create-conn dir schema)]
-      (println @conn2)
-
       (d/transact! conn2 [{:db/id         -2
                            :name          "Another name"
                            :dt/updated-at (Date.)}])
