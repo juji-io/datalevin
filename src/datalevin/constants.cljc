@@ -91,7 +91,7 @@
 
 (def ^:const +max-dbs+          128)
 (def ^:const +max-readers+      126)
-(def ^:const +use-readers+      24)    ; leave the rest to others
+(def ^:const +use-readers+      32)    ; leave the rest to others
 (def ^:const +init-db-size+     100)   ; in megabytes
 (def ^:const +default-val-size+ 16384) ; in bytes
 
