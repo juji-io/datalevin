@@ -135,7 +135,7 @@ Use as a key value store:
 ;; => nil
 
 ;; Range query, from unix epoch time to now
-(l/get-range db date-table [:all (Date. 0) (Date.)] :instant)
+(l/get-range db date-table [:closed (Date. 0) (Date.)] :instant)
 ;; => [[#inst "1989-11-09T00:00:00.000-00:00" "The fall of the Berlin Wall"]
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
