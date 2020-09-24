@@ -805,8 +805,14 @@
         (finally (reset rtx))))))
 
 (defn open-lmdb
-  "Open an LMDB database. `dir` is a string path where the data are to be stored.
-  `size` is the initial DB size in MB. `flags` are [LMDB EnvFlags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html)."
+  "Open an LMDB database.
+  `dir` is a string path where the data are to be stored;
+  `size` is the initial DB size in MB;
+  `flags` are [LMDB EnvFlags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html);
+
+  > LMDB uses POSIX locks on files, and these locks have issues if one process opens a file multiple times. Because of this, do not mdb_env_open() a file multiple times from a single process. Instead, share the LMDB environment that has opened the file across all threads. Otherwise, if a single process opens the same environment multiple times, closing it once will remove all the locks held on it, and the other instances will be vulnerable to corruption from other processes.'
+
+  A LMDB connection is stateful and should be managed as such. Multiple connections to the same DB in the same process is not recommended. The recommendation is to use one of the Clojure state management libraries such as component, mount, integrant, or whatever to hold on to and manage the stateful connection."
   ([dir]
    (open-lmdb dir c/+init-db-size+ default-env-flags))
   ([dir size]
