@@ -387,7 +387,9 @@
 (defn create-conn
   "Creates a mutable reference (a “connection”) to a database at the given data directory and opens the database. Creates the database if it doesn't exist yet. Update the schema if one is given. Return the connection.
 
-   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], and [[close]].
+  Please note that the connection should be managed like a stateful resource. Application should hold on to the same connection rather than opening multiple connections to the same database in the same process.
+
+   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], [[close]], and [[lmdb/open-lmdb]].
 
    To access underlying DB, deref: `@conn`.
 
