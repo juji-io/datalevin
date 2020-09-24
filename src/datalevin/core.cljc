@@ -191,7 +191,7 @@
 
 ; Changing DB
 
-(defn with
+(defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
   ([db tx-data] (with db tx-data nil))
   ([db tx-data tx-meta]
@@ -204,7 +204,7 @@
                           :tx-meta   tx-meta}) tx-data)))
 
 
-(defn db-with
+(defn ^:no-doc db-with
   "Applies transaction. Return the db."
   [db tx-data]
   {:pre [(db/db? db)]}
