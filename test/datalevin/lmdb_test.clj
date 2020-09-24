@@ -10,7 +10,6 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays]
-           [org.lmdbjava Txn$BadReaderLockException]
            [datalevin.lmdb LMDB]))
 
 (def ^:dynamic ^LMDB lmdb nil)
@@ -126,7 +125,8 @@
                   (sut/close lmdb2)
                   1))]
       (is (= 1 @res)))
-    (is (thrown? Txn$BadReaderLockException (sut/get-value lmdb "a" :something)))))
+    (is (thrown-with-msg? Exception #"multiple LMDB"
+                          (sut/get-value lmdb "a" :something)))))
 
 (deftest get-first-test
   (let [ks  (shuffle (range 0 1000))

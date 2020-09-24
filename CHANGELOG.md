@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. This change
 ## WIP
 ### Changed
 - Remove unnecessary locks in read transaction
+- Improved error message and documentation for managing LMDB connection
 
 ## 0.3.8
 ### Fixed

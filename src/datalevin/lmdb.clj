@@ -5,7 +5,8 @@
             [datalevin.constants :as c]
             [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange]
+            PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange
+            Txn$BadReaderLockException]
            [clojure.lang IMapEntry]
            [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -112,15 +113,22 @@
         (reset rtx)
         (renew rtx))))
   (get-rtx [this]
-    (locking this
-      (if (zero? cnt)
-       (new-rtx this)
-       (loop [i (.getId ^Thread (Thread/currentThread))]
-         (let [^long i' (mod i cnt)
-               ^Rtx rtx (.get rtxs i')]
-           (or (renew rtx)
-               (new-rtx this)
-               (recur (long (inc i'))))))))))
+    (try
+      (locking this
+       (if (zero? cnt)
+         (new-rtx this)
+         (loop [i (.getId ^Thread (Thread/currentThread))]
+           (let [^long i' (mod i cnt)
+                 ^Rtx rtx (.get rtxs i')]
+             (or (renew rtx)
+                 (new-rtx this)
+                 (recur (long (inc i'))))))))
+      (catch Txn$BadReaderLockException _
+        (raise
+         "Please do not open multiple LMDB connections to the same DB
+           in the same process. Instead, a LMDB connection should be held onto
+           and managed like a stateful resource. Refer to the documentation of
+           `datalevin.lmdb/open-lmdb` for more details." {})))))
 
 (defprotocol ^:no-doc IKV
   (dbi-name [this] "Return string name of the dbi")
@@ -810,19 +818,38 @@
   `size` is the initial DB size in MB;
   `flags` are [LMDB EnvFlags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/index.html);
 
-  > LMDB uses POSIX locks on files, and these locks have issues if one process opens a file multiple times. Because of this, do not mdb_env_open() a file multiple times from a single process. Instead, share the LMDB environment that has opened the file across all threads. Otherwise, if a single process opens the same environment multiple times, closing it once will remove all the locks held on it, and the other instances will be vulnerable to corruption from other processes.'
+  Please note:
 
-  A LMDB connection is stateful and should be managed as such. Multiple connections to the same DB in the same process is not recommended. The recommendation is to use one of the Clojure state management libraries such as component, mount, integrant, or whatever to hold on to and manage the stateful connection."
+  > LMDB uses POSIX locks on files, and these locks have issues if one process
+  > opens a file multiple times. Because of this, do not mdb_env_open() a file
+  > multiple times from a single process. Instead, share the LMDB environment
+  > that has opened the file across all threads. Otherwise, if a single process
+  > opens the same environment multiple times, closing it once will remove all
+  > the locks held on it, and the other instances will be vulnerable to
+  > corruption from other processes.'
+
+  Therefore, a LMDB connection should be managed as a stateful resource.
+  Multiple connections to the same DB in the same process is not recommended.
+  The recommendation is to use one of the Clojure state management libraries
+  such as [component](https://github.com/stuartsierra/component),
+  [mount](https://github.com/tolitius/mount),
+  [integrant](https://github.com/weavejester/integrant), or something else
+  to hold on to and manage the connection."
   ([dir]
    (open-lmdb dir c/+init-db-size+ default-env-flags))
   ([dir size]
    (open-lmdb dir size default-env-flags))
   ([dir size flags]
-   (let [file          (b/file dir)
-         builder       (doto (Env/create)
-                         (.setMapSize (* ^long size 1024 1024))
-                         (.setMaxReaders c/+max-readers+)
-                         (.setMaxDbs c/+max-dbs+))
-         ^Env env      (.open builder file (into-array EnvFlags flags))
-         ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-     (->LMDB env dir pool (ConcurrentHashMap.)))))
+   (try
+     (let [file          (b/file dir)
+          builder       (doto (Env/create)
+                          (.setMapSize (* ^long size 1024 1024))
+                          (.setMaxReaders c/+max-readers+)
+                          (.setMaxDbs c/+max-dbs+))
+          ^Env env      (.open builder file (into-array EnvFlags flags))
+          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
+       (->LMDB env dir pool (ConcurrentHashMap.)))
+     (catch Exception e
+       (raise
+        (str "Fail to open LMDB database: " (ex-message e))
+        {:dir dir} e)))))
