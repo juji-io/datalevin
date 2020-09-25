@@ -640,8 +640,10 @@
 (defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
 (defn- new-conn
-  [dir]
-  (let [conn (create-conn dir)]
+  [dir schema]
+  (let [conn (if schema
+               (create-conn dir schema)
+               (create-conn dir))]
     (add-conn dir conn)
     conn))
 
@@ -654,11 +656,9 @@
   ([dir]
    (get-conn dir nil))
   ([dir schema]
-   (let [conn (if-let [c (get @connections dir)]
-                (if (closed? c) (new-conn dir) c)
-                (new-conn dir))]
-     (when schema (update-schema conn schema))
-     conn)))
+   (if-let [c (get @connections dir)]
+     (if (closed? c) (new-conn dir schema) c)
+     (new-conn dir schema))))
 
 (defmacro with-conn
   "Evaluate body in the context of an connection to the database.

@@ -1,12 +1,17 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+
+## WIP
+### Fixed
+- Fixed `core/get-conn` schema update
+
 ## 0.3.9
 ### Changed
 - Remove unnecessary locks in read transaction
 - Improved error message and documentation for managing LMDB connection
 ### Added
-- `core/get-conn` and `core/with-conn` 
+- `core/get-conn` and `core/with-conn`
 
 ## 0.3.8
 ### Fixed
