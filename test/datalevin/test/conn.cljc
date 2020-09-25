@@ -73,6 +73,22 @@
                            :dt/updated-at (Date.)}])
       (is (= 4 (count (d/datoms @conn2 :eavt)))))))
 
+(deftest test-get-conn
+  (let [schema {:name          {:db/valueType :db.type/string}
+                :dt/updated-at {:db/valueType :db.type/instant}}
+        dir    (u/tmp-dir (str "get-conn-test-" (UUID/randomUUID)))
+        conn   (d/get-conn dir schema)]
+    (d/transact! conn [{:db/id         -1
+                        :name          "Namebo"
+                        :dt/updated-at (Date.)}])
+    (d/close conn)
+
+    (let [conn2 (d/get-conn dir schema)]
+      (d/transact! conn2 [{:db/id         -2
+                           :name          "Another name"
+                           :dt/updated-at (Date.)}])
+      (is (= 4 (count (d/datoms @conn2 :eavt)))))))
+
 (deftest test-with-conn
   (d/with-conn [conn (u/tmp-dir (str "with-conn-test-" (UUID/randomUUID)))]
     (d/transact! conn [{:db/id      -1

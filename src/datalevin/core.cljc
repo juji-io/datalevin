@@ -370,9 +370,6 @@
           :cljs (satisfies? cljs.core/IDeref conn))
     (db/db? @conn)))
 
-(defprotocol ConnClosable
-  (close [this]))
-
 (defn conn-from-db
   "Creates a mutable reference to a given database. See [[create-conn]]."
   [db]
