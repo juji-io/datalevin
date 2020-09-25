@@ -245,7 +245,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.3.8
+Version: 0.3.9
 
 ## License
 

@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.3.9
 ### Changed
 - Remove unnecessary locks in read transaction
 - Improved error message and documentation for managing LMDB connection
