@@ -60,7 +60,7 @@ Use as a Datalog store:
                     :db/unique    :db.unique/identity}})
 
 ;; Create DB on disk and connect to it
-(def conn (d/create-conn "/tmp/datalevin-test" schema))
+(def conn (d/get-conn "/tmp/datalevin-test" schema))
 
 ;; Transact some data
 ;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
