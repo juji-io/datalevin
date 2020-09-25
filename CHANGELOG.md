@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file. This change
 ### Changed
 - Remove unnecessary locks in read transaction
 - Improved error message and documentation for managing LMDB connection
+### Added
+- `core/get-conn` and `core/with-conn` 
 
 ## 0.3.8
 ### Fixed

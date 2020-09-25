@@ -72,3 +72,10 @@
                            :name          "Another name"
                            :dt/updated-at (Date.)}])
       (is (= 4 (count (d/datoms @conn2 :eavt)))))))
+
+(deftest test-with-conn
+  (d/with-conn [conn (u/tmp-dir (str "with-conn-test-" (UUID/randomUUID)))]
+    (d/transact! conn [{:db/id      -1
+                        :name       "something"
+                        :updated-at (Date.)}])
+    (is (= 2 (count (d/datoms @conn :eav))))))

@@ -370,12 +370,13 @@
           :cljs (satisfies? cljs.core/IDeref conn))
     (db/db? @conn)))
 
+(defprotocol ConnClosable
+  (close [this]))
 
 (defn conn-from-db
   "Creates a mutable reference to a given database. See [[create-conn]]."
   [db]
   (atom db :meta { :listeners (atom {}) }))
-
 
 (defn conn-from-datoms
   "Creates an empty DB and a mutable reference to it. See [[create-conn]]."
@@ -389,7 +390,7 @@
 
   Please note that the connection should be managed like a stateful resource. Application should hold on to the same connection rather than opening multiple connections to the same database in the same process.
 
-   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], [[close]], and [[lmdb/open-lmdb]].
+   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], [[close]], [[get-conn]], and [[lmdb/open-lmdb]].
 
    To access underlying DB, deref: `@conn`.
 
@@ -636,6 +637,60 @@
                          :schema s
                          :rschema (db/rschema s))))
     (schema conn)))
+
+(defonce ^:private connections (atom {}))
+
+(defn- add-conn [dir conn] (swap! connections assoc dir conn))
+
+(defn- new-conn
+  [dir]
+  (let [conn (create-conn dir)]
+    (add-conn dir conn)
+    conn))
+
+(defn get-conn
+  "Obtain an open connection to a database. Create the database if it does not
+  exist. Reuse the same connection if a connection to the same database already
+  exists. Open the database if it is closed. Return the connection.
+
+  See also [[create-conn]] and [[with-conn]]"
+  ([dir]
+   (get-conn dir nil))
+  ([dir schema]
+   (let [conn (if-let [c (get @connections dir)]
+                (if (closed? c) (new-conn dir) c)
+                (new-conn dir))]
+     (when schema (update-schema conn schema))
+     conn)))
+
+(defmacro with-conn
+  "Evaluate body in the context of an connection to the database.
+
+  If the database does not exist, this will create it. If it is closed,
+  this will open it. However, the connection will be closed in the end of
+  this call. If a database needs to be kept open, use `create-conn` and
+  hold onto the returned connection. See also [[create-conn]] and [[get-conn]]
+
+  `spec` is a vector of an identifier of the database connection, a data path
+  string, and optionally a schema map.
+
+  Example:
+
+          (with-conn [conn \"my-data-path\"]
+             ...conn...)
+
+          (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
+                    ...conn...)
+  "
+  [spec & body]
+  `(let [dir#    ~(second spec)
+         schema# ~(second (rest spec))
+         conn#   (get-conn dir#)]
+     (when schema# (update-schema conn# schema#))
+     (try
+       (let [~(first spec) conn#] ~@body)
+       (finally
+         (close conn#)))))
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
