@@ -1,6 +1,9 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+### Fixed
+- Fixed schema update when reloading data from disk
 
 ## 0.3.10
 ### Fixed

@@ -2,7 +2,9 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-   [datalevin.core :as d]))
+   [datalevin.core :as d]
+   [datalevin.util :as u])
+  (:import [java.util UUID]))
 
 (def test-db (d/db-with (d/empty-db)
                         [{:db/id 1 :name "Petr" :age 44}
@@ -135,3 +137,20 @@
                      db [[:name "Ivan"] [:name "Oleg"] [:name "Petr"]]))
            #{[[:name "Petr"] 44 {:db/id 1 :name "Petr"}]
              [[:name "Ivan"] 25 {:db/id 2 :name "Ivan"}]}))))
+
+(deftest test-cardinality-many
+  (let [dir    (u/tmp-dir (str "datalevin-test-cardinality-" (UUID/randomUUID)))
+        conn   (d/get-conn dir {:alias {:db/cardinality :db.cardinality/many
+                                        :db/valueType   :db.type/string}})]
+    (d/transact! conn [{:db/id -1 :name "Peter" :alias ["Pete" "Pepe"]}])
+    (is (= #{"Pete" "Pepe"}
+           (set (:alias (first (d/q '[:find [(pull ?e [*]) ...]
+                                      :where [?e :name "Peter"]]
+                                    @conn))))))
+    (d/close conn)
+    (let [conn2 (d/get-conn dir)]
+      (is (= #{"Pete" "Pepe"}
+             (set (:alias (first (d/q '[:find [(pull ?e [*]) ...]
+                                        :where [?e :name "Peter"]]
+                                      @conn2))))))))
+  )

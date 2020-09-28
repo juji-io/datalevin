@@ -157,4 +157,6 @@
     (is (= (sut/schema conn) (merge schema schema-update)))
     (sut/close conn)
     (let [conn' (sut/create-conn dir)]
-      (is (= 83 (count (sut/datoms @conn' :eavt)))))))
+      (is (= 83 (count (sut/datoms @conn' :eavt))))
+      (is (= (sut/schema conn') (merge schema schema-update)))
+      (sut/close conn'))))

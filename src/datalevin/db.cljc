@@ -272,48 +272,43 @@
                            :db.type/bytes})
     (validate-schema-key a :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})))
 
+(defn- open-store
+  [dir schema]
+  {:pre [(or (nil? schema) (map? schema))]}
+  (validate-schema schema)
+  (s/open dir schema))
+
+(defn- new-db
+  [store]
+  (let [schema (s/schema store)]
+    (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
+    (map->DB
+     {:store   store
+      :schema  schema
+      :rschema (rschema (merge implicit-schema schema))
+      :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
+      :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
+      :avet    (set/sorted-set-by d/cmp-datoms-avet)
+      :vaet    (set/sorted-set-by d/cmp-datoms-vaet)
+      :max-eid (s/init-max-eid store)
+      :max-tx  tx0
+      :hash    (atom 0)})))
+
 (defn ^DB empty-db
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
   ([dir schema]
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
-   (let [store (s/open dir schema)]
-     (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
-     (map->DB
-      {:store   store
-       :schema  (s/schema store)
-       :rschema (rschema (merge implicit-schema schema))
-       :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
-       :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
-       :avet    (set/sorted-set-by d/cmp-datoms-avet)
-       :vaet    (set/sorted-set-by d/cmp-datoms-vaet)
-       :max-eid (s/init-max-eid store)
-       :max-tx  tx0
-       :hash    (atom 0)}))))
+   (new-db (open-store dir schema))))
 
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil))
   ([datoms dir] (init-db datoms dir nil))
   ([datoms dir schema]
-   (validate-schema schema)
-   (let [store   (s/open dir schema)
-         schema  (s/schema store)
-         rschema (rschema (merge implicit-schema schema))
-         _       (s/load-datoms store datoms)
-         max-eid (s/init-max-eid store)
-         max-tx  tx0]
-     (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
-     (map->DB {:store   store
-               :schema  schema
-               :rschema rschema
-               :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
-               :aevt    (set/sorted-set-by d/cmp-datoms-aevt)
-               :avet    (set/sorted-set-by d/cmp-datoms-avet)
-               :vaet    (set/sorted-set-by d/cmp-datoms-vaet)
-               :max-eid max-eid
-               :max-tx  max-tx
-               :hash    (atom 0)}))))
+   (let [store (open-store dir schema)]
+     (s/load-datoms store datoms)
+     (new-db store))))
 
 (defn db-from-reader [{:keys [schema datoms]}]
   (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))

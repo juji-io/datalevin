@@ -43,19 +43,19 @@
 
   (let [conn (d/conn-from-datoms datoms)]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= c/implicit-schema (:schema @conn))))
+    (is (= (d/schema conn) (:schema @conn))))
 
   (let [conn (d/conn-from-datoms datoms nil schema)]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= (merge schema c/implicit-schema) (:schema @conn))))
+    (is (= (d/schema conn) (:schema @conn))))
 
   (let [conn (d/conn-from-db (d/init-db datoms))]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= c/implicit-schema (:schema @conn))))
+    (is (= (d/schema conn) (:schema @conn))))
 
   (let [conn (d/conn-from-db (d/init-db datoms nil schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= (merge schema c/implicit-schema) (:schema @conn)))))
+    (is (= (d/schema conn) (:schema @conn)))))
 
 (deftest test-recreate-conn
   (let [schema {:name          {:db/valueType :db.type/string}
