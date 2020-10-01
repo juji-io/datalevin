@@ -11,6 +11,10 @@
 
 Datalevin is a simple durable Datalog database.
 
+Presentation:
+
+* [2020 London Clojurians Meetup](https://youtu.be/-5SrIUK6k5g)
+
 The rationale is to have a simple, fast and free Datalog query engine running on durable storage.  It is our observation that many developers prefer the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over any flavor of SQL, once they get to use it. Perhaps it is because Datalog is more declarative and composable than SQL, e.g. the automatic implicit joins seem to be its killer feature.
 
 Datomic® is an enterprise grade software, and its feature set may be an overkill
