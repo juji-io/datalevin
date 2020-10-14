@@ -108,12 +108,12 @@
 (defn- check-buffer-overflow
   [^long length ^long remaining]
   (when (< remaining length)
-    (u/raise (str c/buffer-overflow
-                  " trying to put "
-                  length
-                  " bytes while "
-                  remaining
-                  " remaining in the ByteBuffer.")
+    (u/raise c/buffer-overflow
+             " trying to put "
+             length
+             " bytes while "
+             remaining
+             " remaining in the ByteBuffer."
              {})))
 
 (defn- put-long

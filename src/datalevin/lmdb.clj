@@ -46,8 +46,8 @@
       (b/put-buffer kb x t)
       (.flip kb)
       (catch Exception e
-        (raise (str "Error putting read-only transaction key buffer: "
-                    (ex-message e))
+        (raise "Error putting read-only transaction key buffer: "
+               (ex-message e)
                {:value x :type t}))))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
@@ -60,8 +60,8 @@
         (b/put-buffer start-kb x t)
         (.flip start-kb)
         (catch Exception e
-          (raise (str "Error putting read-only transaction start key buffer: "
-                      (ex-message e))
+          (raise "Error putting read-only transaction start key buffer: "
+                 (ex-message e)
                  {:value x :type t})))))
   (put-stop-key [_ x t]
     (when x
@@ -70,8 +70,8 @@
         (b/put-buffer stop-kb x t)
         (.flip stop-kb)
         (catch Exception e
-          (raise (str "Error putting read-only transaction stop key buffer: "
-                      (ex-message e))
+          (raise "Error putting read-only transaction stop key buffer: "
+                 (ex-message e)
                  {:value x :type t})))))
 
   IRtx
@@ -168,8 +168,8 @@
       (b/put-buffer kb x t)
       (.flip kb)
       (catch Exception e
-        (raise (str "Error putting r/w key buffer of "
-                    (dbi-name this) ": " (ex-message e))
+        (raise "Error putting r/w key buffer of "
+               (dbi-name this) ": " (ex-message e)
                {:value x :type t :dbi (dbi-name this)}))))
   (put-val [this x t]
     (try
@@ -182,8 +182,8 @@
             (set! vb (ByteBuffer/allocateDirect size))
             (b/put-buffer vb x t)
             (.flip vb))
-          (raise (str "Error putting r/w value buffer of "
-                      (dbi-name this) ": " (ex-message e))
+          (raise "Error putting r/w value buffer of "
+                 (dbi-name this) ": " (ex-message e)
                  {:value x :type t :dbi (dbi-name this)})))))
 
   IKV
@@ -650,7 +650,7 @@
           (.drop ^Dbi (.-db dbi) txn))
         (.commit txn))
       (catch Exception e
-        (raise "Fail to clear DBI: " dbi-name (ex-message e) {}))))
+        (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
     (assert (not (closed? this)) "LMDB env is closed.")
@@ -851,5 +851,5 @@
        (->LMDB env dir pool (ConcurrentHashMap.)))
      (catch Exception e
        (raise
-        (str "Fail to open LMDB database: " (ex-message e))
-        {:dir dir} e)))))
+        "Fail to open LMDB database: " (ex-message e)
+        {:dir dir})))))
