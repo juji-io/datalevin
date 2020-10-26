@@ -181,15 +181,15 @@ In short, Datalevin is quite capable for small or medium projects right now.
 
 ## :earth_americas: Roadmap
 
-These are the goals that we will try to reach quickly:
+These are the tentative goals that we try to reach as soon as we can. We may adjust the priorities based on user needs.
 
-* 0.4.0 Distributed mode with raft based replication
-* 0.5.0 New Datalog query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
+* 0.4.0 fulltext search function
+* 0.5.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
 * 0.6.0 Automatic schema migration
-* 0.7.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
+* 0.7.0 New Datalog query engine with an optimizer, will be based on [Paula Gearon](https://dev.to/quoll)'s [Asami](https://github.com/threatgrid/asami)
 * 0.8.0 Implement [loom](https://github.com/aysylu/loom) graph protocols
 * 0.9.0 Auto indexing of document fields
-* 1.0.0 Materialized views and incremental maintenance
+* 1.0.0 Distributed mode with raft based replication
 
 We appreicate and welcome your contribution or suggestion. Please file issues or pull requests. 
 
