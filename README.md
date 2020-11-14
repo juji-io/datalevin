@@ -183,7 +183,7 @@ In short, Datalevin is quite capable for small or medium projects right now.
 
 These are the tentative goals that we try to reach as soon as we can. We may adjust the priorities based on user needs.
 
-* 0.4.0 Fulltext search 
+* 0.4.0 Fuzzy fulltext search across attributes
 * 0.5.0 Auto indexing of document fields
 * 0.6.0 Automatic schema migration
 * 0.7.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
