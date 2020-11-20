@@ -44,7 +44,7 @@ Independent from Datalog, Datalevin can be used as a fast key-value store
 for [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with
 support for range queries, predicate filtering and more. A number of optimizations are put in place. For instance, it uses a transaction pool to reuse transactions, pre-allocates read/write buffers, and so on.
 
-We also plan to implement necessary extensions to make Datalevin a convenient graph database and document database, since the indexing structure of Datalevin is already compatible with them. 
+We also plan to implement necessary extensions to make Datalevin a convenient graph database and document database, since the indexing structure of Datalevin is already compatible with them.
 
 ## :tada: Usage
 
@@ -53,9 +53,9 @@ Use as a Datalog store:
 ```clojure
 (require '[datalevin.core :as d])
 
-;; Define a schema. 
+;; Define a schema.
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
-;; However, attributes requiring special handling need to be defined in schema, 
+;; However, attributes requiring special handling need to be defined in schema,
 ;; e.g. many cardinality, uniqueness constraint, reference type, and so on.
 (def schema {:aka  {:db/cardinality :db.cardinality/many}
              ;; :db/valueType is optional, if unspecified, the attribute will be
@@ -166,11 +166,12 @@ counter-intuitive. The primary reason is that Datalevin caches more aggressively
 caching in version 0.2.8, Datalevin was only faster than Datascript for single
 clause queries due to the highly efficient reads of LMDB. With caching enabled,
 Datalevin is now faster across the board. In addition, we will soon move to a
-more efficient query implementation as the Datascript query engine is not very efficient.
+more efficient query implementation.
 
 Writes can be a few orders of magnitude slower, as expected, as Datalevin
 is writing to disk while Datascript is in memory. The bulk write speed is
-good, writing 100K datoms to disk in less than a second; the same data can also be transacted as a whole in less than 3 seconds.
+good, writing 100K datoms to disk in less than a second; the same data can also
+be transacted with all the integrity checks as a whole in less than 3 seconds.
 
 If transacting one datom or a few datoms at a time, it is much slower. Each
 transaction syncs to disk, so it is inherently slow. Because LMDB does copy on
@@ -178,20 +179,21 @@ write and never overwrites data that are being read, large write amplification
 may also occur. The advice is to write data in larger batches.
 
 In short, Datalevin is quite capable for small or medium projects right now.
+Large scale projects can be supported when distributed mode is implemented.
 
 ## :earth_americas: Roadmap
 
 These are the tentative goals that we try to reach as soon as we can. We may adjust the priorities based on user needs.
 
-* 0.4.0 Fuzzy fulltext search across attributes
-* 0.5.0 Auto indexing of document fields
-* 0.6.0 Automatic schema migration
-* 0.7.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
-* 0.8.0 New Datalog query engine with an optimizer 
-* 0.9.0 Implement [loom](https://github.com/aysylu/loom) graph protocols
+* 0.4.0 Improved Datalog query engine with a query planner
+* 0.5.0 Fuzzy fulltext search across multiple attributes
+* 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
+* 0.7.0 Fully automatic schema migration on write
+* 0.8.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols
+* 0.9.0 As a document database: auto indexing of document fields
 * 1.0.0 Distributed mode with raft based replication
 
-We appreicate and welcome your contribution or suggestion. Please file issues or pull requests. 
+We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
 
 ## :floppy_disk: Differences from Datascript
 
