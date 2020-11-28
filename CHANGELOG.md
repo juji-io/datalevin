@@ -1,6 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.3.13
+
+### Fixed
+- Fixed error when transacting different data types for an untyped attribute [#28, thx @den1k]
+
 ## 0.3.12
 ### Fixed
 - proper exception handling in `lmdb/open-lmdb`
