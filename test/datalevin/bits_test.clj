@@ -427,7 +427,7 @@
     v gen/pos-int]
    (let [v' (Date. ^long v)
          v1' (Date. ^long v1)]
-     (eav-test v e1 a1 v1
+     (eav-test v' e1 a1 v1'
               (sut/indexable e a v' :db.type/instant)
               (sut/indexable e1 a1 v1' :db.type/instant)))))
 
