@@ -1,6 +1,12 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.3.14
+
+### Fixed
+
+- Read `:db.type/instant` value as `java.util.Date`, not as `long` [#30]
+
 ## 0.3.13
 
 ### Fixed
