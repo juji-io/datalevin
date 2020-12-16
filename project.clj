@@ -10,11 +10,11 @@
                  [com.taoensso/nippy "3.0.0"]
                  [org.lmdbjava/lmdbjava "0.8.1"
                   ;; uncomment when run lein codox
-                  ;; :exclusions
-                  ;; [org.ow2.asm/asm-analysis
-                  ;;  org.ow2.asm/asm-commons
-                  ;;  org.ow2.asm/asm-tree
-                  ;;  org.ow2.asm/asm-util]
+                  :exclusions
+                  [org.ow2.asm/asm-analysis
+                   org.ow2.asm/asm-commons
+                   org.ow2.asm/asm-tree
+                   org.ow2.asm/asm-util]
                   ]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.0"]
                                   [com.taoensso/timbre "5.0.1"]]}}
