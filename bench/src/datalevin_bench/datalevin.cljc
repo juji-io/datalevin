@@ -93,8 +93,7 @@
                        :when (not= k :db/id)]
                    (d/datom id k v)))]
     (core/bench-once
-     (d/init-db (u/tmp-dir (str "datalevin-bench-init" (rand-int 10000)))
-                datoms))))
+     (d/init-db datoms (u/tmp-dir (str "datalevin-bench-init" (rand-int 10000)))))))
 
 
 (defn ^:export retract-5 []
