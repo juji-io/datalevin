@@ -418,6 +418,19 @@
              (sut/indexable e a v :db.type/ref)
              (sut/indexable e1 a1 v :db.type/ref))))
 
+(test/defspec instant-eav-generative-test
+  100
+  (prop/for-all
+   [e1 (gen/large-integer* {:min c/e0})
+    a1 gen/nat
+    v1 gen/pos-int
+    v gen/pos-int]
+   (let [v' (Date. ^long v)
+         v1' (Date. ^long v1)]
+     (eav-test v e1 a1 v1
+              (sut/indexable e a v' :db.type/instant)
+              (sut/indexable e1 a1 v1' :db.type/instant)))))
+
 (test/defspec keyword-eav-generative-test
   100
   (prop/for-all
@@ -428,8 +441,6 @@
    (eav-test v e1 a1 v1
              (sut/indexable e a v :db.type/keyword)
              (sut/indexable e1 a1 v1 :db.type/keyword))))
-
-
 
 (test/defspec keyword-aev-generative-test
   100

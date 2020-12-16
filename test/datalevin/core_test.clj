@@ -160,3 +160,19 @@
       (is (= 83 (count (sut/datoms @conn' :eavt))))
       (is (= (sut/schema conn') (merge schema schema-update)))
       (sut/close conn'))))
+
+(deftest instant-update-test
+  (let [dir (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity
+                                                  :db/valueType :db.type/string}
+                                   :foo/date {:db/valueType :db.type/instant}})
+        query '[:find ?d .
+                :where
+                [?e :foo/id "foo"]
+                [?e :foo/date ?d]]]
+    (sut/transact! conn [{:foo/id   "foo"
+                          :foo/date (java.util.Date.)}])
+    (let [d1 (sut/q query @conn)]
+      (sut/transact! conn [{:foo/id   "foo"
+                            :foo/date (java.util.Date.)}])
+      (is (not= d1 (sut/q query @conn))))))

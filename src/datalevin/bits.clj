@@ -440,7 +440,7 @@
     -63 (get-long bf)
     -11 (get-float bf)
     -10 (get-double bf)
-    -9  (get-long bf)
+    -9  (Date. ^long (get-long bf))
     -8  (get-long bf)
     -7  (get-uuid bf)
     -6  (get-string bf post-v)
