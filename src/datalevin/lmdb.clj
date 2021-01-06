@@ -13,7 +13,9 @@
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
 
-(def ^:no-doc default-env-flags [EnvFlags/MDB_NORDAHEAD])
+(def ^:no-doc default-env-flags [EnvFlags/MDB_NORDAHEAD
+                                 EnvFlags/MDB_MAPASYNC
+                                 EnvFlags/MDB_WRITEMAP])
 
 (def ^:no-doc default-dbi-flags [DbiFlags/MDB_CREATE])
 

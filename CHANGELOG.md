@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+
+### Changed
+
+- Changed default LMDB write behavior to use writable memory map and
+  asynchronous msync, significantly improved write speed for small transactions
+  (240X improvement for writing one datom at a time).
+
 ## 0.3.14
 
 ### Fixed
