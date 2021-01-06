@@ -176,8 +176,8 @@ them, Datalevin is extensively tested with property-based testing. Running the
 benchmark suite of Datascript, here is how it looks.
 
 <p align="center">
-<img src="bench/datalevin-bench-query-07-25-2020.png" alt="query benchmark" height="250"></img>
-<img src="bench/datalevin-bench-write-07-25-2020.png" alt="write benchmark" height="250"></img>
+<img src="bench/datalevin-bench-query-01-05-2021.png" alt="query benchmark" height="250"></img>
+<img src="bench/datalevin-bench-write-01-05-2021.png" alt="write benchmark" height="250"></img>
 </p>
 
 In all benchmarked queries, Datalevin is faster than Datascript. Considering
