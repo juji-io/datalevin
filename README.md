@@ -174,8 +174,10 @@ documentation](https://juji-io.github.io/datalevin/index.html) for more details.
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing.
 
-Running the benchmark suite of Datascript on a Ubuntu Linux server with an Intel
-i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
+Running the [benchmark suite adopted from
+Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
+Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it
+looks.
 
 <p align="center">
 <img src="bench/datalevin-bench-query-01-05-2021.png" alt="query benchmark" height="300"></img>
