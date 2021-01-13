@@ -208,12 +208,13 @@ Large scale projects can be supported when distributed mode is implemented.
 These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on user needs.
 
-* 0.4.0 Improved Datalog query engine with a query planner
-* 0.5.0 Fuzzy fulltext search across multiple attributes
-* 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
-* 0.7.0 Fully automatic schema migration on write
-* 0.8.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols
-* 0.9.0 As a document database: auto indexing of document fields
+* 0.4.0 Native command line tool
+* 0.5.0 Improved Datalog query engine with a query planner
+* 0.6.0 Fuzzy fulltext search across multiple attributes
+* 0.7.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
+* 0.8.0 Fully automatic schema migration on write
+* 0.9.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols
+* 0.10.0 As a document database: auto indexing of document fields
 * 1.0.0 Distributed mode with raft based replication
 
 We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
