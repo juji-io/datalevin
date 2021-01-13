@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.3.16
 ### Changed
 - Allow Java interop calls in where clauses, e.g. `[(.getTime ?date) ?timestamp]`, `[(.after ?date1 ?date2)]`, where the date variables are `:db.type/instance`. [#32]
 
