@@ -1,18 +1,18 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## 0.3.15
-
+## WIP
 ### Changed
+- Allow Java interop calls in where clauses, e.g. `[(.getTime ?date) ?timestamp]`, `[(.after ?date1 ?date2)]`, where the date variables are `:db.type/instance`. [#32]
 
+## 0.3.15
+### Changed
 - Changed default LMDB write behavior to use writable memory map and
   asynchronous msync, significantly improved write speed for small transactions
   (240X improvement for writing one datom at a time).
 
 ## 0.3.14
-
 ### Fixed
-
 - Read `:db.type/instant` value as `java.util.Date`, not as `long` [#30]
 
 ## 0.3.13

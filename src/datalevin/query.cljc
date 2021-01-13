@@ -10,8 +10,8 @@
    [datalevin.lru]
    [datalevin.impl.entity :as de]
    [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
-                                                FindColl FindRel FindScalar FindTuple PlainSymbol
-                                                RulesVar SrcVar Variable]])]
+                                               FindColl FindRel FindScalar FindTuple PlainSymbol
+                                               RulesVar SrcVar Variable]])]
    [datalevin.pull-api :as dpa]
    [datalevin.pull-parser :as dpp])
   #?(:clj (:import [datalevin.parser BindColl BindIgnore BindScalar BindTuple
@@ -527,6 +527,15 @@
         production (reduce prod-rel rels)]
     [(update context :rels #(remove (set rels) %)) production]))
 
+(defn- dot-form [f]
+  (when (and (symbol? f) (str/starts-with? (name f) "."))
+    f))
+
+(defn- make-call [f args]
+  (if (dot-form f)
+    (eval (apply list f args))
+    (apply f args)))
+
 (defn -call-fn [context rel f args]
   (let [sources     (:sources context)
         attrs       (:attrs rel)
@@ -553,7 +562,7 @@
               (let [tg (if (da/array? tuple) typed-aget get)
                     v  (tg tuple tuple-idx)]
                 (da/aset args i v))))
-          (apply f args)))
+          (make-call f args)))
       (fn [tuple]
         ;; TODO raise if not all args are bound
         (dotimes [i len]
@@ -561,7 +570,7 @@
             (let [tg (if (da/array? tuple) typed-aget get)
                   v  (tg tuple tuple-idx)]
               (da/aset static-args i v))))
-        (apply f static-args)))))
+        (make-call f static-args)))))
 
 (defn- resolve-sym [sym]
   #?(:cljs nil
@@ -569,41 +578,43 @@
             (when-some [v (resolve sym)] @v))))
 
 (defn filter-by-pred [context clause]
-  (let [[[f & args]] clause
-        pred         (or (get built-ins f)
-                         (context-resolve-val context f)
-                         (resolve-sym f)
-                         (when (nil? (rel-with-attr context f))
-                           (raise "Unknown predicate '" f " in " clause
-                                  {:error :query/where, :form clause, :var f})))
+  (let [[[f & args]]         clause
+        pred                 (or (get built-ins f)
+                                 (context-resolve-val context f)
+                                 (resolve-sym f)
+                                 (dot-form f)
+                                 (when (nil? (rel-with-attr context f))
+                                   (raise "Unknown predicate '" f " in " clause
+                                          {:error :query/where, :form clause, :var f})))
         [context production] (rel-prod-by-attrs context (filter symbol? args))
-        new-rel      (if pred
-                       (let [tuple-pred (-call-fn context production pred args)]
-                         (update production :tuples #(filter tuple-pred %)))
-                       (assoc production :tuples []))]
+        new-rel              (if pred
+                               (let [tuple-pred (-call-fn context production pred args)]
+                                 (update production :tuples #(filter tuple-pred %)))
+                               (assoc production :tuples []))]
     (update context :rels conj new-rel)))
 
 (defn bind-by-fn [context clause]
-  (let [[[f & args] out] clause
-        binding  (dp/parse-binding out)
-        fun      (or (get built-ins f)
-                     (context-resolve-val context f)
-                     (resolve-sym f)
-                     (when (nil? (rel-with-attr context f))
-                       (raise "Unknown function '" f " in " clause
-                              {:error :query/where, :form clause, :var f})))
+  (let [[[f & args] out]     clause
+        binding              (dp/parse-binding out)
+        fun                  (or (get built-ins f)
+                                 (context-resolve-val context f)
+                                 (resolve-sym f)
+                                 (dot-form f)
+                                 (when (nil? (rel-with-attr context f))
+                                   (raise "Unknown function '" f " in " clause
+                                          {:error :query/where, :form clause, :var f})))
         [context production] (rel-prod-by-attrs context (filter symbol? args))
-        new-rel  (if fun
-                   (let [tuple-fn (-call-fn context production fun args)
-                        rels     (for [tuple (:tuples production)
-                                       :let  [val (tuple-fn tuple)]
-                                       :when (not (nil? val))]
-                                   (prod-rel (Relation. (:attrs production) [tuple])
-                                             (in->rel binding val)))]
-                     (if (empty? rels)
-                       (prod-rel production (empty-rel binding))
-                       (reduce sum-rel rels)))
-                   (prod-rel (assoc production :tuples []) (empty-rel binding)))]
+        new-rel              (if fun
+                               (let [tuple-fn (-call-fn context production fun args)
+                                     rels     (for [tuple (:tuples production)
+                                                    :let  [val (tuple-fn tuple)]
+                                                    :when (not (nil? val))]
+                                                (prod-rel (Relation. (:attrs production) [tuple])
+                                                          (in->rel binding val)))]
+                                 (if (empty? rels)
+                                   (prod-rel production (empty-rel binding))
+                                   (reduce sum-rel rels)))
+                               (prod-rel (assoc production :tuples []) (empty-rel binding)))]
     (update context :rels collapse-rels new-rel)))
 
 ;;; RULES

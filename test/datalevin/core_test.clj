@@ -162,10 +162,10 @@
       (sut/close conn'))))
 
 (deftest instant-update-test
-  (let [dir (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
-        conn (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity
-                                                  :db/valueType :db.type/string}
-                                   :foo/date {:db/valueType :db.type/instant}})
+  (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
+        conn  (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity
+                                               :db/valueType :db.type/string}
+                                    :foo/date {:db/valueType :db.type/instant}})
         query '[:find ?d .
                 :where
                 [?e :foo/id "foo"]
@@ -176,3 +176,42 @@
       (sut/transact! conn [{:foo/id   "foo"
                             :foo/date (java.util.Date.)}])
       (is (not= d1 (sut/q query @conn))))))
+
+(deftest instant-compare-test
+  (let [dir  (u/tmp-dir (str "datalevin-instant-compare-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity
+                                              :db/valueType :db.type/string}
+                                   :foo/num  {:db/valueType :db.type/long}
+                                   :foo/date {:db/valueType :db.type/instant}})
+        now  (java.util.Date.)
+        t42  (java.util.Date. 42)
+        t50  (java.util.Date. 50)
+        t100 (java.util.Date. 100)]
+    (sut/transact! conn [{:foo/id   "foo"
+                          :foo/num  20
+                          :foo/date now}
+                         {:foo/id   "bar"
+                          :foo/num  30
+                          :foo/date t42}
+                         {:foo/id   "woo"
+                          :foo/num  40
+                          :foo/date t100}])
+    (is (= (sut/q
+             '[:find ?d
+               :in $ ?m
+               :where
+               [?e :foo/date ?d]
+               [(.getTime ?d) ?t]
+               [(> ?t ?m)]
+               ]
+             @conn
+             50)
+           (sut/q
+             '[:find ?d
+               :in $ ?m
+               :where
+               [?e :foo/date ?d]
+               [(.after ?d ?m)]]
+             @conn
+             t50)
+           #{[t100] [now]}))))
