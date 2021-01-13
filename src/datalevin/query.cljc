@@ -531,9 +531,22 @@
   (when (and (symbol? f) (str/starts-with? (name f) "."))
     f))
 
+(defn- dot-call [f args]
+  (let [obj   (first args)
+        oc    (.getClass ^Object obj)
+        fname (subs (name f) 1)
+        as    (rest args)
+        res   (if (zero? (count as))
+                (. (.getDeclaredMethod oc fname nil) (invoke obj nil))
+                (. (.getDeclaredMethod oc fname
+                                       (into-array Class
+                                                   (map #(.getClass ^Object %) as)))
+                   (invoke obj (into-array Object as))))]
+    (when (not= res false) res)))
+
 (defn- make-call [f args]
   (if (dot-form f)
-    (eval (apply list f args))
+    (dot-call f args)
     (apply f args)))
 
 (defn -call-fn [context rel f args]

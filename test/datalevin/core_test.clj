@@ -202,8 +202,7 @@
                :where
                [?e :foo/date ?d]
                [(.getTime ?d) ?t]
-               [(> ?t ?m)]
-               ]
+               [(> ?t ?m)]]
              @conn
              50)
            (sut/q
