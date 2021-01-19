@@ -5,9 +5,12 @@
   :url "https://github.com/juji-io/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
-  :dependencies [[org.clojure/clojure "1.10.1" :scope "provided"]
-                 [persistent-sorted-set "0.1.2"]
-                 [com.taoensso/nippy "3.1.1"]
+  :managed-dependencies [[org.clojure/clojure "1.10.1"]
+                         [persistent-sorted-set "0.1.2"]
+                         [com.taoensso/nippy "3.1.1"] ]
+  :dependencies [[org.clojure/clojure :scope "provided"]
+                 [persistent-sorted-set]
+                 [com.taoensso/nippy]
                  [org.lmdbjava/lmdbjava "0.8.1"
                   ;; uncomment when run lein codox
                   ;; :exclusions
