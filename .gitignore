@@ -6,13 +6,11 @@ pom.xml
 pom.xml.asc
 *.jar
 *.class
-<<<<<<< HEAD
 /.lein-*
 /.nrepl-port
 /.repl*
 web/out
 web/*.js
-release-js/datascript*.js
 release-js/npm-*
 web/target-cljs
 .idea
@@ -27,8 +25,9 @@ node_modules
 package-lock.json
 reading
 /lib/
-/classes/
-/target/
+/native/*/classes/
+/native/target/
+/native/.lein-*
 /checkouts/
 .lein-deps-sum
 .lein-repl-history
