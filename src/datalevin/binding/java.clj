@@ -518,21 +518,19 @@
         (finally (.reset rtx))))))
 
 (defmethod open-lmdb :java
-  ([dir]
-   (open-lmdb dir c/+init-db-size+ default-env-flags))
-  ([dir size]
-   (open-lmdb dir size default-env-flags))
-  ([dir size flags]
-   (try
-     (let [file          (b/file dir)
-           builder       (doto (Env/create)
-                           (.setMapSize (* ^long size 1024 1024))
-                           (.setMaxReaders c/+max-readers+)
-                           (.setMaxDbs c/+max-dbs+))
-           ^Env env      (.open builder file (into-array EnvFlags flags))
-           ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-       (LMDB. env dir pool (ConcurrentHashMap.)))
-     (catch Exception e
-       (raise
-         "Fail to open LMDB database: " (ex-message e)
-         {:dir dir})))))
+  [dir]
+  (try
+    (let [file          (b/file dir)
+          builder       (doto (Env/create)
+                          (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
+                          (.setMaxReaders c/+max-readers+)
+                          (.setMaxDbs c/+max-dbs+))
+          ^Env env      (.open builder
+                               file
+                               (into-array EnvFlags default-env-flags))
+          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
+      (LMDB. env dir pool (ConcurrentHashMap.)))
+    (catch Exception e
+      (raise
+        "Fail to open LMDB database: " (ex-message e)
+        {:dir dir}))))

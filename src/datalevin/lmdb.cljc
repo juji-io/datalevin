@@ -303,9 +303,7 @@
 (defmulti open-lmdb
   "Open an LMDB database, return the connection.
 
-  `dir` is a string path where the data are to be stored;
-  `size` is the initial database size in MB;
-  `flags` are [LMDB Environment Flags](http://www.lmdb.tech/doc/group__mdb__env.html);
+  `dir` is a string directory path in which the data are to be stored;
 
   Will detect the platform this code is running in, and dispatch accordingly.
 
@@ -320,13 +318,13 @@
   > corruption from other processes.'
 
   Therefore, a LMDB connection should be managed as a stateful resource.
-  Multiple connections to the same DB in the same process is not recommended.
+  Multiple connections to the same DB in the same process are not recommended.
   The recommendation is to use a mutable state management library, for
   example, in Clojure, use [component](https://github.com/stuartsierra/component),
   [mount](https://github.com/tolitius/mount),
   [integrant](https://github.com/weavejester/integrant), or something similar
   to hold on to and manage the connection. "
-  {:arglists '([dir] [dir size] [dir size flags])}
-  (fn [& _]
+  {:arglists '([dir])}
+  (fn [_]
     #?(:clj (if (ImageInfo/inImageCode) :graal :java)
        :cljs :node)))

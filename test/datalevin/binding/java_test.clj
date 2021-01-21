@@ -1,6 +1,6 @@
 (ns datalevin.binding.java-test
   (:require [datalevin.lmdb :as l]
-            [datalevin.binding.java :as sut]
+            [datalevin.binding.java]
             [datalevin.bits :as b]
             [datalevin.util :as u]
             [datalevin.constants :as c]

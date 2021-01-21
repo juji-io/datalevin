@@ -8,6 +8,7 @@
   :managed-dependencies [[org.clojure/clojure "1.10.1"]
                          [persistent-sorted-set "0.1.2"]
                          [org.graalvm.sdk/graal-sdk "21.0.0"]
+                         [org.graalvm.nativeimage/svm "21.0.0"]
                          [com.taoensso/nippy "3.1.1"] ]
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [persistent-sorted-set]
