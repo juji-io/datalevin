@@ -1,13 +1,12 @@
 (ns ^:no-doc datalevin.storage
   "storage layer of datalevin"
-  (:require [datalevin.lmdb :as lmdb]
+  (:require [datalevin.lmdb :as lmdb :refer [ILMDB]]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             ;; [taoensso.timbre :as log]
             [datalevin.constants :as c]
             [datalevin.datom :as d])
   (:import [java.util UUID]
-           [datalevin.lmdb LMDB]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]
            [org.lmdbjava PutFlags]))
@@ -190,7 +189,7 @@
 
 (declare insert-data delete-data)
 
-(deftype Store [^LMDB lmdb
+(deftype Store [lmdb
                 ^:volatile-mutable schema
                 ^:volatile-mutable attrs
                 ^:volatile-mutable max-aid
@@ -268,11 +267,11 @@
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (when-some [kv (lmdb/get-value lmdb
-                                        c/eav
-                                        (low-datom->indexable schema datom)
-                                        :eav
-                                        :id
-                                        false)]
+                                         c/eav
+                                         (low-datom->indexable schema datom)
+                                         :eav
+                                         :id
+                                         false)]
             [kv])))
 
   (populated? [_ index low-datom high-datom]
@@ -295,35 +294,35 @@
 
   (head [_ index low-datom high-datom]
     (retrieved->datom
-     lmdb attrs (lmdb/get-first lmdb
-                                (index->dbi index)
-                                [:closed
-                                 (low-datom->indexable schema low-datom)
-                                 (high-datom->indexable schema high-datom)]
-                                index
-                                :id)))
+      lmdb attrs (lmdb/get-first lmdb
+                                 (index->dbi index)
+                                 [:closed
+                                  (low-datom->indexable schema low-datom)
+                                  (high-datom->indexable schema high-datom)]
+                                 index
+                                 :id)))
 
   (slice [_ index low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/get-range
-           lmdb
-           (index->dbi index)
-           [:closed
-            (low-datom->indexable schema low-datom)
-            (high-datom->indexable schema high-datom)]
-           index
-           :id)))
+            lmdb
+            (index->dbi index)
+            [:closed
+             (low-datom->indexable schema low-datom)
+             (high-datom->indexable schema high-datom)]
+            index
+            :id)))
 
   (rslice [_ index high-datom low-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/get-range
-           lmdb
-           (index->dbi index)
-           [:closed-back
-            (high-datom->indexable schema high-datom)
-            (low-datom->indexable schema low-datom)]
-           index
-           :id)))
+            lmdb
+            (index->dbi index)
+            [:closed-back
+             (high-datom->indexable schema high-datom)
+             (low-datom->indexable schema low-datom)]
+            index
+            :id)))
 
   (size-filter [_ index pred low-datom high-datom]
     (lmdb/range-filter-count lmdb
@@ -336,7 +335,7 @@
 
   (head-filter [_ index pred low-datom high-datom]
     (retrieved->datom
-     lmdb attrs (lmdb/get-some lmdb
+      lmdb attrs (lmdb/get-some lmdb
                                 (index->dbi index)
                                 (datom-pred->kv-pred lmdb attrs index pred)
                                 [:closed
@@ -347,29 +346,29 @@
 
   (slice-filter [_ index pred low-datom high-datom]
     (mapv
-     (partial retrieved->datom lmdb attrs)
-     (lmdb/range-filter
-      lmdb
-      (index->dbi index)
-      (datom-pred->kv-pred lmdb attrs index pred)
-      [:closed
-       (low-datom->indexable schema low-datom)
-       (high-datom->indexable schema high-datom)]
-      index
-      :id)))
+      (partial retrieved->datom lmdb attrs)
+      (lmdb/range-filter
+        lmdb
+        (index->dbi index)
+        (datom-pred->kv-pred lmdb attrs index pred)
+        [:closed
+         (low-datom->indexable schema low-datom)
+         (high-datom->indexable schema high-datom)]
+        index
+        :id)))
 
   (rslice-filter [_ index pred high-datom low-datom]
     (mapv
-     (partial retrieved->datom lmdb attrs)
-     (lmdb/range-filter
-      lmdb
-      (index->dbi index)
-      (datom-pred->kv-pred lmdb attrs index pred)
-      [:closed
-       (high-datom->indexable schema high-datom)
-       (low-datom->indexable schema low-datom)]
-      index
-      :id))))
+      (partial retrieved->datom lmdb attrs)
+      (lmdb/range-filter
+        lmdb
+        (index->dbi index)
+        (datom-pred->kv-pred lmdb attrs index pred)
+        [:closed
+         (high-datom->indexable schema high-datom)
+         (low-datom->indexable schema low-datom)]
+        index
+        :id))))
 
 (defn- insert-data
   [^Store store ^Datom d]

@@ -8,10 +8,9 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [clojure.test :refer [deftest is use-fixtures]]
-            [datalevin.lmdb :as lmdb])
+            [datalevin.lmdb :as lmdb :refer [ILMDB]])
   (:import [java.util UUID]
            [datalevin.storage Store]
-           [datalevin.lmdb LMDB]
            [datalevin.datom Datom]))
 
 (def ^:dynamic ^Store store nil)
@@ -45,7 +44,7 @@
         v2  (long (rand c/emax))
         d2  (d/datom c/e0 c v2)
         s2  (assoc s1 c (merge p2 {:db/aid 3}))
-        dir (.-dir ^LMDB (.-lmdb store))]
+        dir (.-dir (.-lmdb store))]
     (sut/load-datoms store [d])
     (is (= s (sut/schema store)))
     (is (= 1 (sut/datom-count store :eav)))
@@ -77,16 +76,16 @@
                              (d/datom c/e0 a nil)
                              (d/datom c/e0 nil nil))))
     (is (= [d1 d] (sut/rslice store :eav
-                             (d/datom c/e0 b nil)
-                             (d/datom c/e0 nil nil))))
+                              (d/datom c/e0 b nil)
+                              (d/datom c/e0 nil nil))))
     (is (= 1 (sut/size-filter store :eav
                               (fn [^Datom d] (= v (.-v d)))
                               (d/datom c/e0 nil nil)
                               (d/datom c/e0 nil nil))))
     (is (= d (sut/head-filter store :eav
-                                 (fn [^Datom d] (= v (.-v d)))
-                                 (d/datom c/e0 nil nil)
-                                 (d/datom c/e0 nil nil))))
+                              (fn [^Datom d] (= v (.-v d)))
+                              (d/datom c/e0 nil nil)
+                              (d/datom c/e0 nil nil))))
     (is (= [d] (sut/slice-filter store :eav
                                  (fn [^Datom d] (= v (.-v d)))
                                  (d/datom c/e0 nil nil)
