@@ -1,5 +1,5 @@
-(ns datalevin.binding.java
-  "LMDB binding using LMDBJava"
+(ns ^:no-doc datalevin.binding.java
+  "LMDB binding for Java"
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
@@ -14,17 +14,19 @@
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
 
-(def ^:no-doc default-env-flags [EnvFlags/MDB_NORDAHEAD
-                                 EnvFlags/MDB_MAPASYNC
-                                 EnvFlags/MDB_WRITEMAP])
+(def default-env-flags [EnvFlags/MDB_NORDAHEAD
+                        EnvFlags/MDB_MAPASYNC
+                        EnvFlags/MDB_WRITEMAP])
 
-(def ^:no-doc default-dbi-flags [DbiFlags/MDB_CREATE])
+(def default-dbi-flags [DbiFlags/MDB_CREATE])
 
-(deftype ^:no-doc Rtx [^Txn txn
-                       ^:volatile-mutable ^Boolean use?
-                       ^ByteBuffer kb
-                       ^ByteBuffer start-kb
-                       ^ByteBuffer stop-kb]
+(def default-put-flags (make-array PutFlags 0))
+
+(deftype Rtx [^Txn txn
+              ^:volatile-mutable ^Boolean use?
+              ^ByteBuffer kb
+              ^ByteBuffer start-kb
+              ^ByteBuffer stop-kb]
   IBuffer
   (put-key [_ x t]
     (try
@@ -74,14 +76,14 @@
       (set! use? true)
       this)))
 
-(defprotocol ^:no-doc IRtxPool
+(defprotocol IRtxPool
   (close-pool [this] "Close all transactions in the pool")
   (new-rtx [this] "Create a new read-only transaction")
   (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
 
-(deftype ^:no-doc RtxPool [^Env env
-                           ^ConcurrentHashMap rtxs
-                           ^:volatile-mutable ^long cnt]
+(deftype RtxPool [^Env env
+                  ^ConcurrentHashMap rtxs
+                  ^:volatile-mutable ^long cnt]
   IRtxPool
   (close-pool [this]
     (doseq [^Rtx rtx (.values rtxs)] (.close-rtx rtx))
@@ -170,7 +172,7 @@
   (put [_ txn flags]
     (if flags
       (.put db txn kb vb (into-array PutFlags flags))
-      (.put db txn kb vb c/default-put-flags)))
+      (.put db txn kb vb default-put-flags)))
   (put [this txn]
     (.put this txn nil))
   (del [_ txn]

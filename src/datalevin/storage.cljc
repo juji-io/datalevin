@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.storage
-  "storage layer of datalevin"
-  (:require [datalevin.lmdb :as lmdb :refer [ILMDB]]
+  "storage layer of Datalevin"
+  (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             ;; [taoensso.timbre :as log]

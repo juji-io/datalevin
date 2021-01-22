@@ -1,13 +1,18 @@
 package datalevin.ni;
 
 import org.graalvm.nativeimage.IsolateThread;
+import org.graalvm.nativeimage.UnmanagedMemory;
+import org.graalvm.nativeimage.PinnedObject;
+import org.graalvm.nativeimage.StackValue;
 import org.graalvm.nativeimage.c.CContext;
 import org.graalvm.nativeimage.c.constant.CConstant;
-import org.graalvm.nativeimage.c.function.CFunction;
-import org.graalvm.nativeimage.c.function.CFunctionPointer;
 import org.graalvm.nativeimage.c.constant.CEnum;
 import org.graalvm.nativeimage.c.constant.CEnumLookup;
 import org.graalvm.nativeimage.c.constant.CEnumValue;
+import org.graalvm.nativeimage.c.function.CEntryPoint;
+import org.graalvm.nativeimage.c.function.CEntryPointLiteral;
+import org.graalvm.nativeimage.c.function.CFunction;
+import org.graalvm.nativeimage.c.function.CFunctionPointer;
 import org.graalvm.nativeimage.c.function.InvokeCFunctionPointer;
 import org.graalvm.nativeimage.c.type.CCharPointer;
 import org.graalvm.nativeimage.c.type.CCharPointerPointer;
@@ -18,6 +23,7 @@ import org.graalvm.nativeimage.c.type.VoidPointer;
 import org.graalvm.nativeimage.c.struct.CField;
 import org.graalvm.nativeimage.c.struct.CFieldAddress;
 import org.graalvm.nativeimage.c.struct.CStruct;
+import org.graalvm.nativeimage.c.struct.CPointerTo;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.PointerBase;
 
@@ -26,7 +32,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * GraalVM native image bindings to LMDB.
+ * Import LMDB C API and manage native memory
  */
 @CContext(LMDB.Directives.class)
 final class LMDB {
@@ -44,6 +50,35 @@ final class LMDB {
         public List<String> getLibraries() {
             return Arrays.asList("lmdb");
         }
+    }
+
+    /**
+     * LMDB environment
+     */
+    @CStruct("MDB_env")
+    interface MDB_env extends PointerBase {
+    }
+
+    @CPointerTo(MDB_env.class)
+    interface MDB_envPointer extends PointerBase {
+        MDB_env read(int index);
+        void write(MDB_env value);
+    }
+
+    public static final MDB_envPointer allocateEnvPtr() {
+        MDB_envPointer envPtr = UnmanagedMemory.malloc(8);
+        return envPtr;
+    }
+
+    public static final void freeEnvPtr(LMDB.MDB_envPointer envPtr) {
+        UnmanagedMemory.free(envPtr);
+    }
+    @CStruct("MDB_txn")
+    interface MDB_txn extends PointerBase {
+    }
+
+    @CStruct("MDB_cursor")
+    interface MDB_cursor extends PointerBase {
     }
 
     /**
@@ -254,68 +289,68 @@ final class LMDB {
      * LMDB environment functions
      */
     @CFunction("mdb_env_create")
-    static native int mdb_env_create(WordPointer envPtr);
+    static native int mdb_env_create(MDB_envPointer envPtr);
 
     @CFunction("mdb_env_open")
-    static native int mdb_env_open(Pointer env, CCharPointer path, int flags,
+    static native int mdb_env_open(MDB_env env, CCharPointer path, int flags,
                                    int mode);
 
     @CFunction("mdb_env_copy")
-    static native int mdb_env_copy(Pointer env, CCharPointer path);
+    static native int mdb_env_copy(MDB_env env, CCharPointer path);
 
     @CFunction("mdb_env_copyfd")
-    static native int mdb_env_copyfd(Pointer env, int fd);
+    static native int mdb_env_copyfd(MDB_env env, int fd);
 
     @CFunction("mdb_env_copy2")
-    static native int mdb_env_copy2(Pointer env, CCharPointer path, int flags);
+    static native int mdb_env_copy2(MDB_env env, CCharPointer path, int flags);
 
     @CFunction("mdb_env_copyfd2")
-    static native int mdb_env_copyfd2(Pointer env, int fd, int flags);
+    static native int mdb_env_copyfd2(MDB_env env, int fd, int flags);
 
     @CFunction("mdb_env_stat")
-    static native int mdb_env_stat(Pointer env, MDB_stat stat);
+    static native int mdb_env_stat(MDB_env env, MDB_stat stat);
 
     @CFunction("mdb_env_info")
-    static native int mdb_env_info(Pointer env, MDB_envinfo info);
+    static native int mdb_env_info(MDB_env env, MDB_envinfo info);
 
     @CFunction("mdb_env_sync")
-    static native int mdb_env_sync(Pointer env, int force);
+    static native int mdb_env_sync(MDB_env env, int force);
 
     @CFunction("mdb_env_close")
-    static native void mdb_env_close(Pointer env);
+    static native void mdb_env_close(MDB_env env);
 
     @CFunction("mdb_env_set_flags")
-    static native int mdb_env_set_flags(Pointer env, int flags, int onoff);
+    static native int mdb_env_set_flags(MDB_env env, int flags, int onoff);
 
     @CFunction("mdb_env_get_flags")
-    static native int mdb_env_get_flags(Pointer env, CIntPointer flags);
+    static native int mdb_env_get_flags(MDB_env env, CIntPointer flags);
 
     @CFunction("mdb_env_get_path")
-    static native int mdb_env_get_path(Pointer env, CCharPointerPointer path);
+    static native int mdb_env_get_path(MDB_env env, CCharPointerPointer path);
 
     @CFunction("mdb_env_get_fd")
-    static native int mdb_env_get_fd(Pointer env, CIntPointer fd);
+    static native int mdb_env_get_fd(MDB_env env, CIntPointer fd);
 
     @CFunction("mdb_env_set_mapsize")
-    static native int mdb_env_set_mapsize(Pointer env, long size);
+    static native int mdb_env_set_mapsize(MDB_env env, long size);
 
     @CFunction("mdb_env_set_maxreaders")
-    static native int mdb_env_set_maxreaders(Pointer env, int readers);
+    static native int mdb_env_set_maxreaders(MDB_env env, int readers);
 
     @CFunction("mdb_env_get_maxreaders")
-    static native int mdb_env_get_maxreaders(Pointer env, CIntPointer readers);
+    static native int mdb_env_get_maxreaders(MDB_env env, CIntPointer readers);
 
     @CFunction("mdb_env_set_maxdbs")
-    static native int mdb_env_set_maxdbs(Pointer env, int dbs);
+    static native int mdb_env_set_maxdbs(MDB_env env, int dbs);
 
     @CFunction("mdb_env_get_maxkeysize")
-    static native int mdb_env_get_maxkeysize(Pointer env);
+    static native int mdb_env_get_maxkeysize(MDB_env env);
 
     @CFunction("mdb_env_set_userctx")
-    static native int mdb_env_set_userctx(Pointer env, VoidPointer ctx);
+    static native int mdb_env_set_userctx(MDB_env env, VoidPointer ctx);
 
     @CFunction("mdb_env_get_userctx")
-    static native VoidPointer mdb_env_get_userctx(Pointer env);
+    static native VoidPointer mdb_env_get_userctx(MDB_env env);
 
     /**
      * A callback function for most LMDB assert() failures,
