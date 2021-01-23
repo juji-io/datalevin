@@ -64,16 +64,16 @@
 
   IRtx
   (close-rtx [_]
-    (set! use? false)
-    (.close txn))
+    (.close txn)
+    (set! use? false))
   (reset [this]
     (.reset txn)
     (set! use? false)
     this)
   (renew [this]
     (when-not use?
-      (.renew txn)
       (set! use? true)
+      (.renew txn)
       this)))
 
 (defprotocol IRtxPool
@@ -140,7 +140,7 @@
     :open-closed       (KeyRange/openClosed kb1 kb2)
     :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))
 
-(deftype ^:no-doc DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
+(deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [this x t]
     (try
