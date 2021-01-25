@@ -34,7 +34,6 @@ import org.graalvm.word.PointerBase;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.nio.ByteBuffer;
 
 /**
  * Import LMDB C API and manage native memory
@@ -43,7 +42,7 @@ import java.nio.ByteBuffer;
 public final class Lib {
 
     /**
-     * Sets up the context required for interacting with native libraries.
+     * Sets up the context required for interacting with native library.
      */
     public static final class Directives implements CContext.Directives {
         @Override
@@ -156,15 +155,6 @@ public final class Lib {
 
         @CField("mv_data")
         void set_mv_data(VoidPointer value);
-    }
-
-    public static final MDB_val allocateMDB_val() {
-        MDB_val val = UnmanagedMemory.calloc(SizeOf.get(MDB_val.class));
-        return val;
-    }
-
-    public static final void freeMDB_val(MDB_val val) {
-        UnmanagedMemory.free(val);
     }
 
     /**
@@ -591,18 +581,5 @@ public final class Lib {
 
     @CFunction("mdb_reader_check")
     public static native int mdb_reader_check(MDB_env env, CIntPointer dead);
-
-    /**
-     * Allocate ByteBuffer
-     */
-    public static final PinnedObject allocateBuffer(int size) {
-        ByteBuffer buf = ByteBuffer.wrap(new byte[size]);
-        PinnedObject pin = PinnedObject.create(buf);
-        return pin;
-    }
-
-    public static final void freeBuffer(PinnedObject pin) {
-        pin.close();
-    }
 
 }

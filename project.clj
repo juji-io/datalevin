@@ -38,6 +38,6 @@
           {#"target/classes" "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
            #".*"             "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
   :global-vars {*print-namespace-maps* false
-                ;; *unchecked-math*       :warn-on-boxed
-                ;; *warn-on-reflection*   true
+                *unchecked-math*       :warn-on-boxed
+                *warn-on-reflection*   true
                 })

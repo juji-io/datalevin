@@ -24,7 +24,7 @@
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-type] "Return a CursorIterable"))
+  (iterate-kv [this rtx range-type] "Return a Iterable given the range"))
 
 (defprotocol ILMDB
   (close [db] "Close this LMDB env")

@@ -11,12 +11,12 @@
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]
            [java.lang.annotation Retention RetentionPolicy Target ElementType]
-           [org.graalvm.nativeimage PinnedObject StackValue]
            [org.graalvm.nativeimage.c CContext]
            [org.graalvm.nativeimage.c.type CTypeConversion WordPointer
             CTypeConversion$CCharPointerHolder]
-           [datalevin.ni Lib Lib$Directives Lib$MDB_env Lib$MDB_txn
-            Lib$MDB_cursor Lib$LMDBException Lib$BadReaderLockException]
+           [datalevin.ni BufVal Lib Lib$Directives Lib$MDB_env Lib$MDB_txn
+            Lib$MDB_cursor Lib$LMDBException Lib$BadReaderLockException
+            Lib$MDB_dbiPointer]
            ))
 
 (def default-put-flags 0)
@@ -25,12 +25,13 @@
            CContext  {:value Lib$Directives}}
     Rtx [^Lib$MDB_txn txn
          ^:volatile-mutable ^Boolean use?
-         ^PinnedObject kp
-         ^PinnedObject start-kp
-         ^PinnedObject stop-kp]
+         ^BufVal kp
+         ^BufVal vp
+         ^BufVal start-kp
+         ^BufVal stop-kp]
   IBuffer
   (put-key [_ x t]
-    (let [kb ^ByteBuffer (.getObject kp)]
+    (let [kb ^ByteBuffer (.inBuf kp)]
       (try
         (.clear kb)
         (b/put-buffer kb x t)
@@ -45,7 +46,7 @@
   IRange
   (put-start-key [_ x t]
     (when x
-      (let [start-kb ^ByteBuffer (.getObject start-kp)]
+      (let [start-kb ^ByteBuffer (.inBuf start-kp)]
         (try
           (.clear start-kb)
           (b/put-buffer start-kb x t)
@@ -56,7 +57,7 @@
                    {:value x :type t}))))))
   (put-stop-key [_ x t]
     (when x
-      (let [stop-kb ^ByteBuffer (.getObject stop-kp)]
+      (let [stop-kb ^ByteBuffer (.inBuf stop-kp)]
         (try
           (.clear stop-kb)
           (b/put-buffer stop-kb x t)
@@ -69,9 +70,9 @@
   IRtx
   (close-rtx [_]
     (Lib/mdb_txn_abort txn)
-    (Lib/freeBuffer kp)
-    (Lib/freeBuffer start-kp)
-    (Lib/freeBuffer stop-kp)
+    (.close kp)
+    (.close start-kp)
+    (.close stop-kp)
     (set! use? false))
   (reset [this]
     (Lib/mdb_txn_reset txn)
@@ -106,13 +107,14 @@
             txn    ^Lib$MDB_txn (.read txnPtr)
             rtx    (->Rtx txn
                           false
-                          (Lib/allocateBuffer c/+max-key-size+)
-                          (Lib/allocateBuffer c/+max-key-size+)
-                          (Lib/allocateBuffer c/+max-key-size+))]
+                          (BufVal/create c/+max-key-size+)
+                          (BufVal/create 1)
+                          (BufVal/create c/+max-key-size+)
+                          (BufVal/create c/+max-key-size+))]
         (.put rtxs cnt rtx)
         (set! cnt (inc cnt))
-        (.reset rtx)
-        (.renew rtx))))
+        (.reset ^Rtx rtx)
+        (.renew ^Rtx rtx))))
   (get-rtx [this]
     (try
       (locking this
@@ -133,24 +135,23 @@
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    DBI [^Lib/MDB_dbiPointer dbi
+    DBI [^Lib$MDB_dbiPointer dbi
          ^String dbi-name
-         ^PinnedObject kp
-         ^:volatile-mutable ^PinnedObject vp
-         ]
+         ^BufVal kp
+         ^:volatile-mutable ^BufVal vp]
   IBuffer
   (put-key [this x t]
-    (let [^ByteBuffer kb (.getObject kp)]
+    (let [^ByteBuffer kb (.inBuf kp)]
       (try
         (.clear kb)
         (b/put-buffer kb x t)
         (.flip kb)
         (catch Exception e
           (raise "Error putting r/w key buffer of "
-                 (.dbi-name this) ": " (ex-message e)
+                 dbi-name ": " (ex-message e)
                  {:value x :type t :dbi dbi-name})))))
   (put-val [this x t]
-    (let [^ByteBuffer vb (.getObject vp)]
+    (let [^ByteBuffer vb (.inBuf vp)]
       (try
         (.clear vb)
         (b/put-buffer vb x t)
@@ -158,9 +159,9 @@
         (catch Exception e
           (if (s/includes? (ex-message e) c/buffer-overflow)
             (let [size (* 2 ^long (b/measure-size x))]
-              (Lib/freeBuffer vp)
-              (set! vp (Lib/allocateBuffer size))
-              (let [^ByteBuffer vb (.getObject vp)]
+              (.close vp)
+              (set! vp (BufVal/create size))
+              (let [^ByteBuffer vb (.inBuf vp)]
                 (b/put-buffer vb x t)
                 (.flip vb)))
             (raise "Error putting r/w value buffer of "
@@ -171,20 +172,24 @@
   (dbi-name [_]
     dbi-name)
   (put [_ txn flags]
-    (if flags
-      (Lib/mdb_put txn (.read dbi) )
-      (.put db txn kb vb flags)
-      (.put db txn kb vb default-put-flags)))
+    (Lib/checkRc
+      (if flags
+        (Lib/mdb_put txn (.read dbi) (.getVal kp) (.getVal vp) flags)
+        (Lib/mdb_put txn (.read dbi) (.getVal kp) (.getVal vp)
+                     default-put-flags))))
   (put [this txn]
     (.put this txn nil))
   (del [_ txn]
-    (.delete db txn kb))
+    (Lib/checkRc (Lib/mdb_del txn (.read dbi) (.getVal kp) (.getVal vp))))
   (get-kv [_ rtx]
-    (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
-      (.get db (.-txn ^Rtx rtx) kb)))
+    (let [^BufVal kp (.-kp ^Rtx rtx)
+          ^BufVal vp (.-vp ^Rtx rtx)]
+      (Lib/checkRc
+        (Lib/mdb_get (.-txn ^Rtx rtx) (.read dbi) (.getVal kp) (.getVal vp)))
+      (.outBuf vp)))
   (iterate-kv [this rtx range-type]
-    (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
-          ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
+    (let [^BufVal start-kp (.-start-kp ^Rtx rtx)
+          ^BufVal stop-kp  (.-stop-kp ^Rtx rtx)]
       (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
