@@ -24,7 +24,7 @@
       (.open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
       (.open-dbi lmdb "d")
       (f)
-      (.close lmdb)
+      (.close-env lmdb)
       (b/delete-files dir))))
 
 (use-fixtures :each lmdb-test-fixture)
@@ -99,7 +99,7 @@
 
   (testing "close then re-open, clear and drop"
     (let [dir (.-dir lmdb)]
-      (.close lmdb)
+      (.close-env lmdb)
       (is (.closed? lmdb))
       (let [lmdb  (l/open-lmdb dir)
             dbi-a (.open-dbi lmdb "a")]
@@ -123,7 +123,7 @@
                   (is (= 1 (.get-value lmdb "a" :something)))
                   ;; should not close this
                   ;; https://github.com/juji-io/datalevin/issues/7
-                  (.close lmdb2)
+                  (.close-env lmdb2)
                   1))]
       (is (= 1 @res)))
     (is (thrown-with-msg? Exception #"multiple LMDB"
@@ -171,11 +171,11 @@
            (.get-range lmdb "c" [:closed 10 109] :long :long true)))))
 
 (deftest get-some-test
-  (let [ks  (shuffle (range 0 100))
-        vs  (map inc ks)
-        txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)
+  (let [ks   (shuffle (range 0 100))
+        vs   (map inc ks)
+        txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
         pred (fn [kv]
-               (let [^long k (b/read-buffer (key kv) :long)]
+               (let [^long k (b/read-buffer (l/k kv) :long)]
                  (> k 15)))]
     (.transact lmdb txs)
     (is (= 17 (.get-some lmdb "c" pred [:all] :long :long true)))
@@ -186,7 +186,7 @@
         vs   (map inc ks)
         txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
         pred (fn [kv]
-               (let [^long k (b/read-buffer (key kv) :long)]
+               (let [^long k (b/read-buffer (l/k kv) :long)]
                  (< 10 k 20)))
         fks  (range 11 20)
         fvs  (map inc fks)

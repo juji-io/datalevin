@@ -3,13 +3,11 @@
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
-            [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IKV ILMDB]]
+            [datalevin.binding.scan :as scan]
+            [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IDB ILMDB]]
             [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn CursorIterable CursorIterable$KeyVal KeyRange
-            Txn$BadReaderLockException]
-           [clojure.lang IMapEntry]
-           [java.util Iterator]
+            PutFlags Txn KeyRange Txn$BadReaderLockException]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
@@ -91,11 +89,11 @@
     (set! cnt 0))
   (new-rtx [this]
     (when (< cnt c/+use-readers+)
-      (let [rtx (->Rtx (.txnRead env)
-                       false
-                       (ByteBuffer/allocateDirect c/+max-key-size+)
-                       (ByteBuffer/allocateDirect c/+max-key-size+)
-                       (ByteBuffer/allocateDirect c/+max-key-size+))]
+      (let [^Rtx rtx (->Rtx (.txnRead env)
+                            false
+                            (ByteBuffer/allocateDirect c/+max-key-size+)
+                            (ByteBuffer/allocateDirect c/+max-key-size+)
+                            (ByteBuffer/allocateDirect c/+max-key-size+))]
         (.put rtxs cnt rtx)
         (set! cnt (inc cnt))
         (.reset rtx)
@@ -166,7 +164,7 @@
                  (.dbi-name this) ": " (ex-message e)
                  {:value x :type t :dbi (.dbi-name this)})))))
 
-  IKV
+  IDB
   (dbi-name [_]
     (String. (.getName db) StandardCharsets/UTF_8))
   (put [_ txn flags]
@@ -185,147 +183,21 @@
           ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
       (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
-(defn- ^IMapEntry map-entry
-  [^CursorIterable$KeyVal kv]
-  (reify IMapEntry
-    (key [_] (.key kv))
-    (val [_] (.val kv))
-    (equals [_ o] (and (= (.key kv) (key o)) (= (.val kv) (val o))))
-    (getKey [_] (.key kv))
-    (getValue [_] (.val kv))
-    (setValue [_ _] (raise "IMapEntry is immutable" {}))
-    (hashCode [_] (hash-combine (hash (.key kv)) (hash (.val kv))))))
-
 (defn- up-db-size [^Env env]
   (.setMapSize env (* 10 (-> env .info .mapSize))))
-
-(defn- fetch-value
-  [^DBI dbi ^Rtx rtx k k-type v-type ignore-key?]
-  (.put-key rtx k k-type)
-  (when-let [^ByteBuffer bb (.get-kv dbi rtx)]
-    (if ignore-key?
-      (b/read-buffer bb v-type)
-      [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
-
-(defn- read-key
-  ([kv k-type v]
-   (read-key kv k-type v false))
-  ([kv k-type v rewind?]
-   (if (and v (not= v c/normal) (c/index-types k-type))
-     b/overflown-key
-     (b/read-buffer (if rewind?
-                      (.rewind ^ByteBuffer (key kv))
-                      (key kv))
-                    k-type))))
-
-(defn- fetch-first
-  [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
-  (.put-start-key rtx k1 k-type)
-  (.put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (.iterate-kv dbi rtx range-type)]
-    (let [^Iterator iter (.iterator iterable)]
-      (when (.hasNext iter)
-        (let [kv (map-entry (.next iter))
-              v  (when (not= v-type :ignore) (b/read-buffer (val kv) v-type))]
-          (if ignore-key?
-            (if v v true)
-            [(read-key kv k-type v) v]))))))
-
-(defn- fetch-range
-  [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type v-type ignore-key?]
-  (assert (not (and (= v-type :ignore) ignore-key?))
-          "Cannot ignore both key and value")
-  (.put-start-key rtx k1 k-type)
-  (.put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (.iterate-kv dbi rtx range-type)]
-    (loop [^Iterator iter (.iterator iterable)
-           holder         (transient [])]
-      (if (.hasNext iter)
-        (let [kv      (map-entry (.next iter))
-              v       (when (not= v-type :ignore)
-                        (b/read-buffer (val kv) v-type))
-              holder' (conj! holder
-                             (if ignore-key?
-                               v
-                               [(read-key kv k-type v) v]))]
-          (recur iter holder'))
-        (persistent! holder)))))
-
-(defn- fetch-range-count
-  [^DBI dbi ^Rtx rtx [range-type k1 k2] k-type]
-  (.put-start-key rtx k1 k-type)
-  (.put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (.iterate-kv dbi rtx range-type)]
-    (loop [^Iterator iter (.iterator iterable)
-           c              0]
-      (if (.hasNext iter)
-        (do (.next iter) (recur iter (inc c)))
-        c))))
-
-(defn- fetch-some
-  [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type v-type ignore-key?]
-  (assert (not (and (= v-type :ignore) ignore-key?))
-          "Cannot ignore both key and value")
-  (.put-start-key rtx k1 k-type)
-  (.put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (.iterate-kv dbi rtx range-type)]
-    (loop [^Iterator iter (.iterator iterable)]
-      (when (.hasNext iter)
-        (let [kv (map-entry (.next iter))]
-          (if (pred kv)
-            (let [v (when (not= v-type :ignore)
-                      (b/read-buffer (.rewind ^ByteBuffer (val kv)) v-type))]
-              (if ignore-key?
-                v
-                [(read-key kv k-type v true) v]))
-            (recur iter)))))))
-
-(defn- fetch-range-filtered
-  [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type v-type ignore-key?]
-  (assert (not (and (= v-type :ignore) ignore-key?))
-          "Cannot ignore both key and value")
-  (.put-start-key rtx k1 k-type)
-  (.put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (.iterate-kv dbi rtx range-type)]
-    (loop [^Iterator iter (.iterator iterable)
-           holder         (transient [])]
-      (if (.hasNext iter)
-        (let [kv (map-entry (.next iter))]
-          (if (pred kv)
-            (let [v       (when (not= v-type :ignore)
-                            (b/read-buffer
-                              (.rewind ^ByteBuffer (val kv)) v-type))
-                  holder' (conj! holder
-                                 (if ignore-key?
-                                   v
-                                   [(read-key kv k-type v true) v]))]
-              (recur iter holder'))
-            (recur iter holder)))
-        (persistent! holder)))))
-
-(defn- fetch-range-filtered-count
-  [^DBI dbi ^Rtx rtx pred [range-type k1 k2] k-type]
-  (.put-start-key rtx k1 k-type)
-  (.put-stop-key rtx k2 k-type)
-  (with-open [^CursorIterable iterable (.iterate-kv dbi rtx range-type)]
-    (loop [^Iterator iter (.iterator iterable)
-           c              0]
-      (if (.hasNext iter)
-        (let [kv (map-entry (.next iter))]
-          (if (pred kv)
-            (recur iter (inc c))
-            (recur iter c)))
-        c))))
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
 
-  (close [_]
+  (close-env [_]
     (close-pool pool)
     (.close env))
 
   (closed? [_]
     (.isClosed env))
+
+  (dir [_]
+    dir)
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
@@ -386,7 +258,7 @@
     (try
       (with-open [txn (.txnWrite env)]
         (doseq [[op dbi-name k & r] txs
-                :let                [dbi (.get-dbi this dbi-name)]]
+                :let                [^DBI dbi (.get-dbi this dbi-name)]]
           (case op
             :put (let [[v kt vt flags] r]
                    (.put-key dbi k kt)
@@ -412,10 +284,10 @@
     (.get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-value dbi rtx k k-type v-type ignore-key?)
+        (scan/fetch-value dbi rtx k k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-value: " (ex-message e)
                  {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
@@ -429,10 +301,10 @@
     (.get-first this dbi-name k-range k-type v-type false))
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-first dbi rtx k-range k-type v-type ignore-key?)
+        (scan/fetch-first dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-first: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -447,10 +319,10 @@
     (.get-range this dbi-name k-range k-type v-type false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range dbi rtx k-range k-type v-type ignore-key?)
+        (scan/fetch-range dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-range: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -461,10 +333,10 @@
     (.range-count this dbi-name k-range :data))
   (range-count [this dbi-name k-range k-type]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range-count dbi rtx k-range k-type)
+        (scan/fetch-range-count dbi rtx k-range k-type)
         (catch Exception e
           (raise "Fail to range-count: " (ex-message e)
                  {:dbi dbi-name :k-range k-range :k-type k-type}))
@@ -478,10 +350,10 @@
     (.get-some this dbi-name pred k-range k-type v-type false))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
+        (scan/fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-some: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -496,10 +368,10 @@
     (.range-filter this dbi-name pred k-range k-type v-type false))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
+        (scan/fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to range-filter: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -510,10 +382,10 @@
     (.range-filter-count this dbi-name pred k-range :data))
   (range-filter-count [this dbi-name pred k-range k-type]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi (.get-dbi this dbi-name)
-          rtx (get-rtx pool)]
+    (let [dbi      (.get-dbi this dbi-name)
+          ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range-filtered-count dbi rtx pred k-range k-type)
+        (scan/fetch-range-filtered-count dbi rtx pred k-range k-type)
         (catch Exception e
           (raise "Fail to range-filter-count: " (ex-message e)
                  {:dbi dbi-name :k-range k-range :k-type k-type}))

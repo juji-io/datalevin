@@ -5,8 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IKV ILMDB]]
             [clojure.string :as s])
-  (:import [clojure.lang IMapEntry]
-           [java.util Iterator]
+  (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]
@@ -31,7 +30,7 @@
          ^BufVal stop-kp]
   IBuffer
   (put-key [_ x t]
-    (let [kb ^ByteBuffer (.inBuf kp)]
+    (let [^ByteBuffer kb (.inBuf kp)]
       (try
         (.clear kb)
         (b/put-buffer kb x t)
@@ -46,7 +45,7 @@
   IRange
   (put-start-key [_ x t]
     (when x
-      (let [start-kb ^ByteBuffer (.inBuf start-kp)]
+      (let [^ByteBuffer start-kb (.inBuf start-kp)]
         (try
           (.clear start-kb)
           (b/put-buffer start-kb x t)
@@ -57,7 +56,7 @@
                    {:value x :type t}))))))
   (put-stop-key [_ x t]
     (when x
-      (let [stop-kb ^ByteBuffer (.inBuf stop-kp)]
+      (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
         (try
           (.clear stop-kb)
           (b/put-buffer stop-kb x t)
@@ -187,10 +186,10 @@
       (Lib/checkRc
         (Lib/mdb_get (.-txn ^Rtx rtx) (.read dbi) (.getVal kp) (.getVal vp)))
       (.outBuf vp)))
-  (iterate-kv [this rtx range-type]
-    (let [^BufVal start-kp (.-start-kp ^Rtx rtx)
-          ^BufVal stop-kp  (.-stop-kp ^Rtx rtx)]
-      (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
+  #_(iterate-kv [this rtx range-type]
+      (let [^BufVal start-kp (.-start-kp ^Rtx rtx)
+            ^BufVal stop-kp  (.-stop-kp ^Rtx rtx)]
+        (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}

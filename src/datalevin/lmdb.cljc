@@ -1,5 +1,6 @@
 (ns datalevin.lmdb "API for Key Value Store"
-    #?(:clj (:import [org.graalvm.nativeimage ImageInfo])))
+    (:import [org.graalvm.nativeimage ImageInfo]
+             [org.lmdbjava CursorIterable CursorIterable$KeyVal]))
 
 (defprotocol ^:no-doc IBuffer
   (put-key [this data k-type]
@@ -18,17 +19,22 @@
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
 
-(defprotocol ^:no-doc IKV
+(defprotocol ^:no-doc IDB
   (dbi-name [this] "Return string name of the dbi")
   (put [this txn] [this txn put-flags]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-type] "Return a Iterable given the range"))
+  (iterate-kv [this rtx range-type] "Return an IIterable given the range"))
+
+(defprotocol ^:no-doc IKV
+  (k [this] "key of key value pair")
+  (v [this] "value of key value pair"))
 
 (defprotocol ILMDB
-  (close [db] "Close this LMDB env")
+  (close-env [db] "Close this LMDB env")
   (closed? [db] "Return true if this LMDB env is closed")
+  (dir [db] "Return the directory path of LMDB env")
   (open-dbi
     [db dbi-name]
     [db dbi-name key-size]
@@ -204,7 +210,7 @@
     [db dbi-name pred k-range k-type v-type]
     [db dbi-name pred k-range k-type v-type ignore-key?]
     "Return the first kv pair that has logical true value of `(pred x)`,
-     where `pred` is a function, `x` is the `IMapEntry` fetched from the store,
+     where `pred` is a function, `x` is an `IKV` fetched from the store,
      with both key and value fields being a `ByteBuffer`.
 
      `pred` can use [[datalevin.bits/read-buffer]] to read the content.
@@ -325,6 +331,4 @@
   [integrant](https://github.com/weavejester/integrant), or something similar
   to hold on to and manage the connection. "
   {:arglists '([dir])}
-  (fn [_]
-    #?(:clj (if (ImageInfo/inImageCode) :graal :java)
-       :cljs :node)))
+  (fn [_] (if (ImageInfo/inImageCode) :graal :java)))

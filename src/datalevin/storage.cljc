@@ -142,8 +142,8 @@
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
   (fn [kv]
-    (let [^Retrieved k (b/read-buffer (key kv) index)
-          ^long v      (b/read-buffer (val kv) :id)
+    (let [^Retrieved k (b/read-buffer (lmdb/k kv) index)
+          ^long v      (b/read-buffer (lmdb/v kv) :id)
           ^Datom d     (retrieved->datom lmdb attrs [k v])]
       (pred d))))
 
@@ -196,9 +196,9 @@
                 ^:volatile-mutable max-gt]
   IStore
   (dir [_]
-    (.-dir lmdb))
+    (lmdb/dir lmdb))
   (close [_]
-    (lmdb/close lmdb))
+    (lmdb/close-env lmdb))
 
   (closed? [_]
     (lmdb/closed? lmdb))
