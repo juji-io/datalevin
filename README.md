@@ -302,6 +302,6 @@ Version: 0.3.17
 
 ## License
 
-Copyright © 2021 Juji Inc.
+Copyright © 2020-2021 [Juji, Inc.](https://juji.io)
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
