@@ -373,18 +373,6 @@
   (put-byte bf c/separator)
   (when-let [h (.-h x)] (put-int bf h)))
 
-(defn- put-aev
-  [bf ^Indexable x]
-  (put-int bf (.-a x))
-  (put-long bf (.-e x))
-  (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)]
-    (do (put-bytes bf bs)
-        (when (.-h x) (put-byte bf c/truncator)))
-     (put-native bf (.-v x) (.-f x)))
-  (put-byte bf c/separator)
-  (when-let [h (.-h x)] (put-int bf h)))
-
 (defn- put-ave
   [bf ^Indexable x]
   (put-int bf (.-a x))
@@ -397,11 +385,11 @@
   (put-long bf (.-e x))
   (when-let [h (.-h x)] (put-int bf h)))
 
-(defn- put-vae
+(defn- put-vea
   [bf ^Indexable x]
   (put-native bf (.-v x) (.-f x))
-  (put-int bf (.-a x))
-  (put-long bf (.-e x)))
+  (put-long bf (.-e x))
+  (put-int bf (.-a x)))
 
 (defn- sep->slash
   [^bytes bs]
@@ -463,27 +451,18 @@
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
-    :eav   (indexable->retrieved x)
-    :eavt  (indexable->retrieved x)
-    :aev   (indexable->retrieved x)
-    :aevt  (indexable->retrieved x)
-    :ave   (indexable->retrieved x)
-    :avet  (indexable->retrieved x)
-    :vae   (indexable->retrieved x)
-    :vaet  (indexable->retrieved x)
+    :eav  (indexable->retrieved x)
+    :eavt (indexable->retrieved x)
+    :ave  (indexable->retrieved x)
+    :avet (indexable->retrieved x)
+    :vea  (indexable->retrieved x)
+    :veat (indexable->retrieved x)
     x))
 
 (defn- get-eav
   [bf]
   (let [e (get-long bf)
         a (get-int bf)
-        v (get-value bf 1)]
-    (->Retrieved e a v)))
-
-(defn- get-aev
-  [bf]
-  (let [a (get-int bf)
-        e (get-long bf)
         v (get-value bf 1)]
     (->Retrieved e a v)))
 
@@ -495,11 +474,11 @@
         e (get-long bf)]
     (->Retrieved e a v)))
 
-(defn- get-vae
-  [^ByteBuffer bf]
+(defn- get-vea
+  [bf]
   (let [v (get-long bf)
-        a (get-int bf)
-        e (get-long bf)]
+        e (get-long bf)
+        a (get-int bf)]
     (->Retrieved e a v)))
 
 (defn- put-attr
@@ -555,9 +534,8 @@
     - `:datom`
     - `:attr`
     - `:eav`
-    - `:aev`
     - `:ave`
-    - `:vae`
+    - `:vea`
 
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."
@@ -592,12 +570,10 @@
      :datom   (put-datom bf x)
      :eav     (put-eav bf x)
      :eavt    (put-eav bf x)
-     :aev     (put-aev bf x)
-     :aevt    (put-aev bf x)
      :ave     (put-ave bf x)
      :avet    (put-ave bf x)
-     :vae     (put-vae bf x)
-     :vaet    (put-vae bf x)
+     :vea     (put-vea bf x)
+     :veat    (put-vea bf x)
      (put-data bf x))))
 
 (defn read-buffer
@@ -624,9 +600,8 @@
     - `:datom`
     - `:attr`
     - `:eav`
-    - `:aev`
     - `:ave`
-    - `:vae`"
+    - `:vea`"
   ([bf]
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
@@ -648,10 +623,8 @@
      :datom   (get-datom bf)
      :eav     (get-eav bf)
      :eavt    (get-eav bf)
-     :aev     (get-aev bf)
-     :aevt    (get-aev bf)
      :ave     (get-ave bf)
      :avet    (get-ave bf)
-     :vae     (get-vae bf)
-     :vaet    (get-vae bf)
+     :vea     (get-vea bf)
+     :veat    (get-vea bf)
      (get-data bf))))

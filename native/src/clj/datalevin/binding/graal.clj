@@ -3,7 +3,8 @@
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
-            [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IKV ILMDB]]
+            [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IDB IKV
+                                    ILMDB]]
             [clojure.string :as s])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -167,7 +168,7 @@
                    dbi-name ": " (ex-message e)
                    {:value x :type t :dbi dbi-name}))))))
 
-  IKV
+  IDB
   (dbi-name [_]
     dbi-name)
   (put [_ txn flags]

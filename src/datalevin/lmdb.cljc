@@ -25,11 +25,11 @@
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-type] "Return an IIterable given the range"))
+  (iterate-kv [this rtx range-type] "Return an Iterable given the range"))
 
 (defprotocol ^:no-doc IKV
-  (k [this] "key of key value pair")
-  (v [this] "value of key value pair"))
+  (k [this] "key of a key value pair")
+  (v [this] "value of a key value pair"))
 
 (defprotocol ILMDB
   (close-env [db] "Close this LMDB env")

@@ -216,13 +216,13 @@
 (defn datoms
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
-   Datoms are sorted in index sort order. Possible `index` values are: `:eavt`, `:aevt`, `:avet`, `:vaet`, or without the `t` at the end, e.g. `:eav`.
+   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
 
    Usage:
 
        ; find all datoms for entity id == 1 (any attrs and values)
        ; sort by attribute, then value
-       (datoms db :eavt 1)
+       (datoms db :eav 1)
        ; => (#datalevin/Datom [1 :friends 2]
        ;     #datalevin/Datom [1 :likes \"fries\"]
        ;     #datalevin/Datom [1 :likes \"pizza\"]
@@ -230,56 +230,41 @@
 
        ; find all datoms for entity id == 1 and attribute == :likes (any values)
        ; sorted by value
-       (datoms db :eavt 1 :likes)
+       (datoms db :eav 1 :likes)
        ; => (#datalevin/Datom [1 :likes \"fries\"]
        ;     #datalevin/Datom [1 :likes \"pizza\"])
 
        ; find all datoms for entity id == 1, attribute == :likes and value == \"pizza\"
-       (datoms db :eavt 1 :likes \"pizza\")
+       (datoms db :eav 1 :likes \"pizza\")
        ; => (#datalevin/Datom [1 :likes \"pizza\"])
 
-       ; find all datoms for attribute == :likes (any entity ids and values)
-       ; sorted by entity id, then value
-       (datoms db :aevt :likes)
-       ; => (#datalevin/Datom [1 :likes \"fries\"]
-       ;     #datalevin/Datom [1 :likes \"pizza\"]
-       ;     #datalevin/Datom [2 :likes \"candy\"]
-       ;     #datalevin/Datom [2 :likes \"pie\"]
-       ;     #datalevin/Datom [2 :likes \"pizza\"])
-
        ; find all datoms that have attribute == `:likes` and value == `\"pizza\"` (any entity id)
-       (datoms db :avet :likes \"pizza\")
+       (datoms db :ave :likes \"pizza\")
        ; => (#datalevin/Datom [1 :likes \"pizza\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])
 
        ; find all datoms sorted by entity id, then attribute, then value
-       (datoms db :eavt) ; => (...)
+       (datoms db :eav) ; => (...)
 
    Useful patterns:
 
        ; get all values of :db.cardinality/many attribute
-       (->> (datoms db :eavt eid attr) (map :v))
+       (->> (datoms db :eav eid attr) (map :v))
 
        ; lookup entity ids by attribute value
-       (->> (datoms db :avet attr value) (map :e))
-
-       ; find all entities with a specific attribute
-       (->> (datoms db :aevt attr) (map :e))
-
-       ; find “singleton” entity by its attr
-       (->> (datoms db :aevt attr) first :e)
+       (->> (datoms db :ave attr value) (map :e))
 
        ; find N entities with lowest attr value (e.g. 10 earliest posts)
-       (->> (datoms db :avet attr) (take N))
+       (->> (datoms db :ave attr) (take N))
 
        ; find N entities with highest attr value (e.g. 10 latest posts)
-       (->> (datoms db :avet attr) (reverse) (take N))
+       (->> (datoms db :ave attr) (reverse) (take N))
 
    Gotchas:
 
    - Index lookup is usually more efficient than doing a query with a single clause.
    - Resulting iterator is calculated in constant time and small constant memory overhead.
-   - Iterator supports efficient `first`, `next`, `reverse`, `seq` and is itself a sequence."
+   "
   ([db index]             {:pre [(db/db? db)]} (db/-datoms db index []))
   ([db index c1]          {:pre [(db/db? db)]} (db/-datoms db index [c1]))
   ([db index c1 c2]       {:pre [(db/db? db)]} (db/-datoms db index [c1 c2]))

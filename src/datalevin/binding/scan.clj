@@ -1,17 +1,13 @@
 (ns ^:no-doc datalevin.binding.scan
   "Index scan routines"
   (:require [datalevin.bits :as b]
-            [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
             [datalevin.binding.scan :as scan]
-            [datalevin.lmdb :as lmdb :refer [IKV]]
-            [clojure.string :as s]
-            [datalevin.lmdb :as lmdb])
+            [datalevin.lmdb :as lmdb :refer [IKV]])
   (:import [java.nio ByteBuffer]
            [java.util Iterator]
            [java.lang AutoCloseable]
-           [org.lmdbjava CursorIterable CursorIterable$KeyVal]
-           ))
+           [org.lmdbjava CursorIterable$KeyVal]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal

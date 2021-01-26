@@ -48,9 +48,8 @@
     (sut/load-datoms store [d])
     (is (= s (sut/schema store)))
     (is (= 1 (sut/datom-count store :eav)))
-    (is (= 1 (sut/datom-count store :aev)))
     (is (= 1 (sut/datom-count store :ave)))
-    (is (= 0 (sut/datom-count store :vae)))
+    (is (= 0 (sut/datom-count store :vea)))
     (is (= [d] (sut/fetch store d)))
     (is (= [d] (sut/slice store :eav d d)))
     (is (= true (sut/populated? store :eav d d)))
@@ -60,16 +59,14 @@
     (sut/load-datoms store [d1])
     (is (= s1 (sut/schema store)))
     (is (= 2 (sut/datom-count store :eav)))
-    (is (= 2 (sut/datom-count store :aev)))
     (is (= 2 (sut/datom-count store :ave)))
-    (is (= 0 (sut/datom-count store :vae)))
+    (is (= 0 (sut/datom-count store :vea)))
     (is (= [] (sut/slice store :eav d (d/datom c/e0 :non-exist v1))))
     (is (= 0 (sut/size store :eav d (d/datom c/e0 :non-exist v1))))
     (is (nil? (sut/populated? store :eav d (d/datom c/e0 :non-exist v1))))
     (is (= d (sut/head store :eav d d1)))
     (is (= 2 (sut/size store :eav d d1)))
     (is (= [d d1] (sut/slice store :eav d d1)))
-    (is (= [d d1] (sut/slice store :aev d d1)))
     (is (= [d d1] (sut/slice store :ave d d1)))
     (is (= [d1 d] (sut/rslice store :eav d1 d)))
     (is (= [d d1] (sut/slice store :eav
@@ -90,14 +87,14 @@
                                  (fn [^Datom d] (= v (.-v d)))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
-    (is (= [d1 d] (sut/rslice store :aev d1 d)))
-    (is (= [d d1] (sut/slice store :aev
+    (is (= [d1 d] (sut/rslice store :ave d1 d)))
+    (is (= [d d1] (sut/slice store :ave
                              (d/datom c/e0 a nil)
                              (d/datom c/e0 nil nil))))
-    (is (= [d1 d] (sut/rslice store :aev
+    (is (= [d1 d] (sut/rslice store :ave
                               (d/datom c/e0 b nil)
                               (d/datom c/e0 nil nil))))
-    (is (= [d] (sut/slice-filter store :aev
+    (is (= [d] (sut/slice-filter store :ave
                                  (fn [^Datom d] (= v (.-v d)))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
@@ -105,17 +102,15 @@
     (sut/load-datoms store [d2])
     (is (= s2 (sut/schema store)))
     (is (= 3 (sut/datom-count store c/eav)))
-    (is (= 3 (sut/datom-count store c/aev)))
     (is (= 3 (sut/datom-count store c/ave)))
-    (is (= 1 (sut/datom-count store c/vae)))
-    (is (= [d2] (sut/slice store :vae
+    (is (= 1 (sut/datom-count store c/vea)))
+    (is (= [d2] (sut/slice store :vea
                            (d/datom c/e0 nil v2)
                            (d/datom c/emax nil v2))))
     (sut/load-datoms store [(d/delete d)])
     (is (= 2 (sut/datom-count store c/eav)))
-    (is (= 2 (sut/datom-count store c/aev)))
     (is (= 2 (sut/datom-count store c/ave)))
-    (is (= 1 (sut/datom-count store c/vae)))
+    (is (= 1 (sut/datom-count store c/vea)))
     (sut/close store)
     (is (sut/closed? store))
     (let [store (sut/open dir)]

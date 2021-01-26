@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.storage
   "storage layer of Datalevin"
   (:require [datalevin.lmdb :as lmdb]
+            [datalevin.binding.java]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             ;; [taoensso.timbre :as log]
@@ -75,7 +76,7 @@
   (when (and (not old) new)
     ;; TODO figure out if the attr values are unique for each entity,
     ;; raise if not
-    ;; also check if ave and vae entries exist for this attr, create if not
+    ;; also check if ave and vea entries exist for this attr, create if not
     ))
 
 (defn- migrate [lmdb attr old new]
@@ -125,12 +126,10 @@
   (case index
     :eavt c/eav
     :eav  c/eav
-    :aevt c/aev
-    :aev  c/aev
     :avet c/ave
     :ave  c/ave
-    :vaet c/vae
-    :vae  c/vae))
+    :veat c/vea
+    :vea  c/vea))
 
 (defn- retrieved->datom
   [lmdb attrs [^Retrieved k ^long v :as kv]]
@@ -379,18 +378,16 @@
         i      (b/indexable (.-e d) (:db/aid props) (.-v d)
                             (:db/valueType props))
         max-gt (max-gt store)]
-      (if (b/giant? i)
-        [(cond-> [[:put c/eav i max-gt :eav :id]
-                  [:put c/aev i max-gt :aev :id]
-                  [:put c/ave i max-gt :ave :id]
-                  [:put c/giants max-gt d :id :datom [PutFlags/MDB_APPEND]]]
-           ref? (conj [:put c/vae i max-gt :vae :id]))
-         true]
-        [(cond-> [[:put c/eav i c/normal :eav :id]
-                  [:put c/aev i c/normal :aev :id]
-                  [:put c/ave i c/normal :ave :id]]
-           ref? (conj [:put c/vae i c/normal :vae :id]))
-         false])))
+    (if (b/giant? i)
+      [(cond-> [[:put c/eav i max-gt :eav :id]
+                [:put c/ave i max-gt :ave :id]
+                [:put c/giants max-gt d :id :datom [PutFlags/MDB_APPEND]]]
+         ref? (conj [:put c/vea i max-gt :vea :id]))
+       true]
+      [(cond-> [[:put c/eav i c/normal :eav :id]
+                [:put c/ave i c/normal :ave :id]]
+         ref? (conj [:put c/vea i c/normal :vea :id]))
+       false])))
 
 (defn- delete-data
   [^Store store ^Datom d]
@@ -402,9 +399,8 @@
                             (:db/valueType props))
         giant? (b/giant? i)]
     (cond-> [[:del c/eav i :eav]
-             [:del c/aev i :aev]
              [:del c/ave i :ave]]
-      ref?   (conj [:del c/vae i :vae])
+      ref?   (conj [:del c/vea i :vea])
       giant? (conj [:del c/giants
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id)
                     :id]))))
@@ -419,9 +415,8 @@
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-lmdb dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/aev c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/vae c/+max-key-size+ c/+id-bytes+)
+     (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (let [schema' (init-schema lmdb schema)]

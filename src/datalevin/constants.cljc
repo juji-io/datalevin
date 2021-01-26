@@ -67,14 +67,13 @@
 (def ^:const normal 0)
 (def ^:const gt0 1)
 
-(def ^:const index-types #{:eavt :eav :aev :aevt :ave :avet :vae :vaet})
+(def ^:const index-types #{:eavt :eav :ave :avet :vea :veat})
 
 
 ;; dbi-names
 (def ^:const eav "datalevin/eav")
-(def ^:const aev "datalevin/aev")
 (def ^:const ave "datalevin/ave")
-(def ^:const vae "datalevin/vae")
+(def ^:const vea "datalevin/vea")
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 

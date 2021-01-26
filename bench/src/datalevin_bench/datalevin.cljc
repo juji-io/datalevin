@@ -98,10 +98,10 @@
 
 (defn ^:export retract-5 []
   (let [db   (d/db-with
-              (d/empty-db (u/tmp-dir (str "datalevin-bench-retract" (rand-int 10000)))
-                          schema)
-                        core/people20k)
-        eids (->> (d/datoms db :aevt :name) (map :e) (shuffle))]
+               (d/empty-db (u/tmp-dir (str "datalevin-bench-retract" (rand-int 10000)))
+                           schema)
+               core/people20k)
+        eids (->> (d/datoms db :ave :name) (map :e) (shuffle))]
     (core/bench-once
       (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
 

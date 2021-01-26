@@ -1,6 +1,13 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+
+### Changed
+
+- [Breaking] Removed AEV index, as it is not used in query. This reduces storage and improves write speed.
+- [Breaking] Change VAE index to VEA, in preparation for new query engine. Now all indices are the same order rotated, so merge join is more likely.
+
 ## 0.3.17
 ### Changed
 - Improve Java interop call performance

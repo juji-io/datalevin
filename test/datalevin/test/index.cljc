@@ -8,20 +8,13 @@
   (let [dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db nil {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
-               (d/db-with [ [:db/add 1 :name "Petr"]
-                           [:db/add 1 :age 44]
-                           [:db/add 2 :name "Ivan"]
-                           [:db/add 2 :age 25]
-                           [:db/add 3 :name "Sergey"]
-                           [:db/add 3 :age 11] ]))]
+                 (d/db-with [ [:db/add 1 :name "Petr"]
+                             [:db/add 1 :age 44]
+                             [:db/add 2 :name "Ivan"]
+                             [:db/add 2 :age 25]
+                             [:db/add 3 :name "Sergey"]
+                             [:db/add 3 :age 11] ]))]
     (testing "Main indexes, sort order"
-      (is (= [[1 :name "Petr"]
-              [2 :name "Ivan"]
-              [3 :name "Sergey"]
-              [1 :age 44]
-              [2 :age 25]
-              [3 :age 11]]
-             (map dvec (d/datoms db :aevt))))
 
       (is (= [[1 :name "Petr"]
               [1 :age 44]

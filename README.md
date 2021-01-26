@@ -240,9 +240,10 @@ than just the difference in data durability:
   [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
   de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
 
-* Has a value leading index (VAE) for datoms with `:db.type/ref` type attribute;
+* Has a value leading index (VEA) for datoms with `:db.type/ref` type attribute;
   The attribute and value leading index (AVE) is enabled for all datoms, so
-  there is no need to specify `:db/index`. These are the same as Datomic® Cloud.
+  there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
+  have AEV index, in order to save storage and improve write speed.
 
 * Attributes are stored in indices as integer ids, thus attributes in index
   access are returned in attribute creation order, not in lexicographic order
@@ -302,6 +303,6 @@ Version: 0.3.17
 
 ## License
 
-Copyright © 2021 Juji Inc.
+Copyright © 2020-2021 [Juji, Inc.](https://juji.io)
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
