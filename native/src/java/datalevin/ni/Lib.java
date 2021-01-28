@@ -212,8 +212,8 @@ public final class Lib {
     /**
      * Cursor Get operations.
      */
-    @CEnum("Pointer_op")
-    public enum Pointer_op {
+    @CEnum("MDB_cursor_op")
+    public enum MDB_cursor_op {
         MDB_FIRST,				/**<  Position at first key/data item */
         MDB_FIRST_DUP,		/**< Position at first data item of current key.
                              Only for #MDB_DUPSORT */
@@ -250,7 +250,7 @@ public final class Lib {
         public native int getCValue();
 
         @CEnumLookup
-        public static native Pointer_op fromCValue(int value);
+        public static native MDB_cursor_op fromCValue(int value);
     }
 
     /**
@@ -508,14 +508,14 @@ public final class Lib {
     public static native int mdb_cursor_renew(MDB_txn txn, MDB_cursor cursor);
 
     @CFunction("mdb_cursor_txn")
-    public static native Pointer mdb_cursor_txn(MDB_cursor cursor);
+    public static native MDB_txn mdb_cursor_txn(MDB_cursor cursor);
 
     @CFunction("mdb_cursor_dbi")
     public static native int mdb_cursor_dbi(MDB_cursor cursor);
 
     @CFunction("mdb_cursor_get")
     public static native int mdb_cursor_get(MDB_cursor cursor, MDB_val k,
-                                            MDB_val v, Pointer_op cursorOp);
+                                            MDB_val v, MDB_cursor_op cursorOp);
 
     @CFunction("mdb_cursor_put")
     public static native int mdb_cursor_put(MDB_cursor cursor, MDB_val key,

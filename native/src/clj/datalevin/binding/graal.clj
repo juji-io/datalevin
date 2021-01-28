@@ -10,13 +10,14 @@
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]
+           [java.lang AutoCloseable]
            [java.lang.annotation Retention RetentionPolicy Target ElementType]
            [org.graalvm.nativeimage.c CContext]
            [org.graalvm.nativeimage.c.type CTypeConversion WordPointer
             CTypeConversion$CCharPointerHolder]
            [datalevin.ni BufVal Lib Lib$Directives Lib$MDB_env Lib$MDB_txn
             Lib$MDB_cursor Lib$LMDBException Lib$BadReaderLockException
-            Lib$MDB_dbiPointer]
+            Lib$MDB_dbiPointer Lib$MDB_cursor_op]
            ))
 
 (def default-put-flags 0)
@@ -31,41 +32,41 @@
          ^BufVal stop-kp]
   IBuffer
   (put-key [_ x t]
-    (let [^ByteBuffer kb (.inBuf kp)]
-      (try
+    (try
+      (let [^ByteBuffer kb (.inBuf kp)]
         (.clear kb)
         (b/put-buffer kb x t)
-        (.flip kb)
-        (catch Exception e
-          (raise "Error putting read-only transaction key buffer: "
-                 (ex-message e)
-                 {:value x :type t})))))
+        (.flip kb))
+      (catch Exception e
+        (raise "Error putting read-only transaction key buffer: "
+               (ex-message e)
+               {:value x :type t}))))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
   (put-start-key [_ x t]
-    (when x
-      (let [^ByteBuffer start-kb (.inBuf start-kp)]
-        (try
+    (try
+      (when x
+        (let [^ByteBuffer start-kb (.inBuf start-kp)]
           (.clear start-kb)
           (b/put-buffer start-kb x t)
-          (.flip start-kb)
-          (catch Exception e
-            (raise "Error putting read-only transaction start key buffer: "
-                   (ex-message e)
-                   {:value x :type t}))))))
+          (.flip start-kb)))
+      (catch Exception e
+        (raise "Error putting read-only transaction start key buffer: "
+               (ex-message e)
+               {:value x :type t}))))
   (put-stop-key [_ x t]
-    (when x
-      (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
-        (try
+    (try
+      (when x
+        (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
           (.clear stop-kb)
           (b/put-buffer stop-kb x t)
-          (.flip stop-kb)
-          (catch Exception e
-            (raise "Error putting read-only transaction stop key buffer: "
-                   (ex-message e)
-                   {:value x :type t}))))))
+          (.flip stop-kb)))
+      (catch Exception e
+        (raise "Error putting read-only transaction stop key buffer: "
+               (ex-message e)
+               {:value x :type t}))))
 
   IRtx
   (close-rtx [_]
@@ -135,7 +136,119 @@
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    DBI [^Lib$MDB_dbiPointer dbi
+    KV [^BufVal kp ^BufVal vp]
+  IKV
+  (k [this] (.outBuf kp))
+  (v [this] (.outBuf vp)))
+
+#_(defn- key-range
+    [range-type kb1 kb2]
+    (case range-type
+      :all               (KeyRange/all)
+      :all-back          (KeyRange/allBackward)
+      :at-least          (KeyRange/atLeast kb1)
+      :at-least-back     (KeyRange/atLeastBackward kb1)
+      :at-most           (KeyRange/atMost kb1)
+      :at-most-back      (KeyRange/atMostBackward kb1)
+      :closed            (KeyRange/closed kb1 kb2)
+      :closed-back       (KeyRange/closedBackward kb1 kb2)
+      :closed-open       (KeyRange/closedOpen kb1 kb2)
+      :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
+      :greater-than      (KeyRange/greaterThan kb1)
+      :greater-than-back (KeyRange/greaterThanBackward kb1)
+      :less-than         (KeyRange/lessThan kb1)
+      :less-than-back    (KeyRange/lessThanBackward kb1)
+      :open              (KeyRange/open kb1 kb2)
+      :open-back         (KeyRange/openBackward kb1 kb2)
+      :open-closed       (KeyRange/openClosed kb1 kb2)
+      :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))
+
+(defprotocol IState
+  (set-started [this] "Set the state to be started")
+  (set-ended [this] "Set the state to be ended"))
+
+(deftype ^{Retention RetentionPolicy/RUNTIME
+           CContext  {:value Lib$Directives}}
+    CursorIterable [^:volatile-mutable started?
+                    ^:volatile-mutable ended?
+                    ^Lib$MDB_cursor cursor
+                    ^int dbi
+                    ^Rtx rtx
+                    forward?
+                    start-key?
+                    include-start?
+                    stop-key?
+                    include-stop?]
+  AutoCloseable
+  (close [_] (Lib/mdb_cursor_close cursor))
+
+  IState
+  (set-started [_] (set! started? true))
+  (set-ended [_] (set! ended? true))
+
+  Iterable
+  (iterator [this]
+    (let [^Lib$MDB_val k   (.getVal ^BufVal (.-kp rtx))
+          ^Lib$MDB_val v   (.getVal ^BufVal (.-vp rtx))
+          ^Lib$MDB_val sk  (.getVal ^BufVal (.-start-kp rtx))
+          ^Lib$MDB_val ek  (.getVal ^BufVal (.-stop-kp rtx))
+          ^Lib$MDB_txn txn (.-txn rtx)]
+      ;; assuming hasNext is always called before next, hasNext will
+      ;; position the cursor, next will get the data
+      (reify
+        Iterator
+        (hasNext [this]
+          (let [has?  #(if (= % (Lib/MDB_NOTFOUND))
+                         false
+                         (do (Lib/checkRc %) true))
+                found #(if stop-key?
+                         (do (Lib/checkRc
+                               (Lib/mdb_cursor_get
+                                 cursor k v
+                                 (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
+                             (if (= 0 (Lib/mdb_cmp txn dbi k ek))
+                               (do (set-ended this)
+                                   include-stop?)
+                               true))
+                         true)]
+            (if ended?
+              false
+              (if started?
+                (if forward?
+                  (if (has? (Lib/mdb_cursor_get
+                              cursor k v (Lib$MDB_cursor_op/MDB_NEXT)))
+                    (found)
+                    false)
+                  (if (has? (Lib/mdb_cursor_get
+                              cursor k v (Lib$MDB_cursor_op/MDB_PREV)))
+                    (found)
+                    false))
+                (do
+                  (set-started this)
+                  (if start-key?
+                    (if (has? (Lib/mdb_cursor_get
+                                cursor sk v (Lib$MDB_cursor_op/MDB_SET)))
+                      (if include-start?
+                        true
+                        (if forward?
+                          (has? (Lib/mdb_cursor_get
+                                  cursor k v (Lib$MDB_cursor_op/MDB_NEXT)))
+                          (has? (Lib/mdb_cursor_get
+                                  cursor k v (Lib$MDB_cursor_op/MDB_PREV)))))
+                      false)
+                    (if forward?
+                      (has? (Lib/mdb_cursor_get
+                              cursor k v (Lib$MDB_cursor_op/MDB_FIRST)))
+                      (has? (Lib/mdb_cursor_get
+                              cursor k v (Lib$MDB_cursor_op/MDB_LAST))))))))))
+        (next [this]
+          (Lib/checkRc (Lib/mdb_cursor_get
+                         cursor k v (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
+          (->KV k v))))))
+
+(deftype ^{Retention RetentionPolicy/RUNTIME
+           CContext  {:value Lib$Directives}}
+    DBI [^int dbi
          ^String dbi-name
          ^BufVal kp
          ^:volatile-mutable ^BufVal vp]
@@ -174,18 +287,17 @@
   (put [_ txn flags]
     (Lib/checkRc
       (if flags
-        (Lib/mdb_put txn (.read dbi) (.getVal kp) (.getVal vp) flags)
-        (Lib/mdb_put txn (.read dbi) (.getVal kp) (.getVal vp)
-                     default-put-flags))))
+        (Lib/mdb_put txn dbi (.getVal kp) (.getVal vp) flags)
+        (Lib/mdb_put txn dbi (.getVal kp) (.getVal vp) default-put-flags))))
   (put [this txn]
     (.put this txn nil))
   (del [_ txn]
-    (Lib/checkRc (Lib/mdb_del txn (.read dbi) (.getVal kp) (.getVal vp))))
+    (Lib/checkRc (Lib/mdb_del txn dbi (.getVal kp) (.getVal vp))))
   (get-kv [_ rtx]
     (let [^BufVal kp (.-kp ^Rtx rtx)
           ^BufVal vp (.-vp ^Rtx rtx)]
       (Lib/checkRc
-        (Lib/mdb_get (.-txn ^Rtx rtx) (.read dbi) (.getVal kp) (.getVal vp)))
+        (Lib/mdb_get (.-txn ^Rtx rtx) dbi (.getVal kp) (.getVal vp)))
       (.outBuf vp)))
   #_(iterate-kv [this rtx range-type]
       (let [^BufVal start-kp (.-start-kp ^Rtx rtx)

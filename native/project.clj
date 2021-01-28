@@ -10,6 +10,7 @@
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
+                 [org.lmdbjava/lmdbjava]
                  ]
   :source-paths ["src/clj" "../src"]
   :java-source-paths ["src/java"]

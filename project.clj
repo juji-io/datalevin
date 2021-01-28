@@ -9,19 +9,20 @@
                          [persistent-sorted-set "0.1.2"]
                          [org.graalvm.sdk/graal-sdk "21.0.0"]
                          [org.graalvm.nativeimage/svm "21.0.0"]
-                         [com.taoensso/nippy "3.1.1"] ]
+                         [com.taoensso/nippy "3.1.1"]
+                         [org.lmdbjava/lmdbjava "0.8.1"
+                          ;; uncomment when run lein codox
+                          ;; :exclusions
+                          ;; [org.ow2.asm/asm-analysis
+                          ;;  org.ow2.asm/asm-commons
+                          ;;  org.ow2.asm/asm-tree
+                          ;;  org.ow2.asm/asm-util]
+                          ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [persistent-sorted-set]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
-                 [org.lmdbjava/lmdbjava "0.8.1"
-                  ;; uncomment when run lein codox
-                  ;; :exclusions
-                  ;; [org.ow2.asm/asm-analysis
-                  ;;  org.ow2.asm/asm-commons
-                  ;;  org.ow2.asm/asm-tree
-                  ;;  org.ow2.asm/asm-util]
-                  ]]
+                 [org.lmdbjava/lmdbjava]]
   :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.0"]
                                   [com.taoensso/timbre "5.1.0"]]}}
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
