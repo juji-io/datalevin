@@ -3,29 +3,26 @@
 set -eou pipefail
 
 app_name=datalevin
-app_ns=datalevin.native.main
 
 if [ -z "$GRAALVM_HOME" ]; then
     echo "Please set GRAALVM_HOME"
     exit 1
 fi
 
-"$GRAALVM_HOME/bin/gu" install native-image
-
 export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
 
-rm -rf classes
-mkdir classes
-clojure -J-Dclojure.compiler.direct-linking=true -e "(compile 'datalevin.native.main)"
+JAR="target/datalevin-native-0.3.17-standalone.jar"
+
+lein "do" clean, uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
-    -cp "$(clojure -Spath):classes" \
+    -jar "$JAR" \
     -H:Name=$app_name \
     -H:+ReportExceptionStackTraces \
     -H:ConfigurationFileDirectories=config \
-    --no-server \
-    --static \
+    -J-Dclojure.spec.skip-macros=true \
+    -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
     -H:+PrintClassInitialization \
     --initialize-at-build-time \
@@ -33,6 +30,6 @@ clojure -J-Dclojure.compiler.direct-linking=true -e "(compile 'datalevin.native.
     --allow-incomplete-classpath \
     --verbose \
     --no-fallback \
+    --no-server \
     "-J-Xmx8g" \
-    --native-image-info \
-    ${app_ns}
+    --native-image-info 

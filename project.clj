@@ -5,7 +5,7 @@
   :url "https://github.com/juji-io/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
-  :managed-dependencies [[org.clojure/clojure "1.10.1"]
+  :managed-dependencies [[org.clojure/clojure "1.10.2"]
                          [persistent-sorted-set "0.1.2"]
                          [org.graalvm.sdk/graal-sdk "21.0.0"]
                          [org.graalvm.nativeimage/svm "21.0.0"]
@@ -23,10 +23,12 @@
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.lmdbjava/lmdbjava]]
-  :profiles {:dev {:dependencies [[org.clojure/test.check "1.1.0"]
-                                  [com.taoensso/timbre "5.1.0"]]}}
+  :profiles {:dev     {:dependencies [[org.clojure/test.check "1.1.0"]
+                                      [com.taoensso/timbre "5.1.0"]]}
+             :uberjar {:aot :all}}
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-             "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"]
+             "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+             "-Dclojure.compiler.direct-linking=true"]
 
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username

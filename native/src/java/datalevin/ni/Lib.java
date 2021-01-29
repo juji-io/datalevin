@@ -59,9 +59,8 @@ public final class Lib {
     /**
      * LMDB environment
      */
-    @CStruct("MDB_env")
-    public interface MDB_env extends PointerBase {
-    }
+    @CStruct(value = "MDB_env", isIncomplete = true)
+    public interface MDB_env extends PointerBase {}
 
     @CPointerTo(MDB_env.class)
     public interface MDB_envPointer extends PointerBase {
@@ -81,9 +80,8 @@ public final class Lib {
     /**
      * LMDB transaction
      */
-    @CStruct("MDB_txn")
-    public interface MDB_txn extends PointerBase {
-    }
+    @CStruct(value = "MDB_txn", isIncomplete = true)
+    public interface MDB_txn extends PointerBase {}
 
     @CPointerTo(MDB_txn.class)
     public interface MDB_txnPointer extends PointerBase {
@@ -103,8 +101,7 @@ public final class Lib {
     /**
      * LMDB dbi
      */
-    public interface MDB_dbiPointer extends CIntPointer {
-    }
+    public interface MDB_dbiPointer extends CIntPointer {}
 
     public static final MDB_dbiPointer allocateDbiPtr() {
         MDB_dbiPointer dbiPtr = UnmanagedMemory.malloc(8);
@@ -118,9 +115,8 @@ public final class Lib {
     /**
      * LMDB cursor
      */
-    @CStruct("MDB_cursor")
-    public interface MDB_cursor extends PointerBase {
-    }
+    @CStruct(value = "MDB_cursor", isIncomplete = true)
+    public interface MDB_cursor extends PointerBase {}
 
     @CPointerTo(MDB_cursor.class)
     public interface MDB_cursorPointer extends PointerBase {
