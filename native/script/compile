@@ -2,7 +2,7 @@
 
 set -eou pipefail
 
-app_name=datalevin
+app_name=dtlv
 
 if [ -z "$GRAALVM_HOME" ]; then
     echo "Please set GRAALVM_HOME"
@@ -17,8 +17,7 @@ JAR="target/datalevin-native-0.3.17-standalone.jar"
 lein "do" clean, uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
-    -jar "$JAR" \
-    -H:Name=$app_name \
+    -H:Name=${app_name} \
     -H:+ReportExceptionStackTraces \
     -H:ConfigurationFileDirectories=config \
     -J-Dclojure.spec.skip-macros=true \
@@ -32,4 +31,6 @@ lein "do" clean, uberjar
     --no-fallback \
     --no-server \
     "-J-Xmx8g" \
-    --native-image-info 
+    --native-image-info \
+    -jar "$JAR" \
+    ${app_name}

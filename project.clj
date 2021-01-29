@@ -6,6 +6,7 @@
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies [[org.clojure/clojure "1.10.2"]
+                         [org.clojure/tools.cli "1.0.194"]
                          [persistent-sorted-set "0.1.2"]
                          [org.graalvm.sdk/graal-sdk "21.0.0"]
                          [org.graalvm.nativeimage/svm "21.0.0"]
@@ -25,7 +26,8 @@
                  [org.lmdbjava/lmdbjava]]
   :profiles {:dev     {:dependencies [[org.clojure/test.check "1.1.0"]
                                       [com.taoensso/timbre "5.1.0"]]}
-             :uberjar {:aot :all}}
+             :uberjar {:aot  :all
+                       :main datalevin.main}}
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "-Dclojure.compiler.direct-linking=true"]

@@ -6,6 +6,7 @@
                    :inherit [:managed-dependencies :profiles :jvm-opts
                              :deploy-repositories :global-vars]}
   :dependencies [[org.clojure/clojure :scope "provided"]
+                 [org.clojure/tools.cli]
                  [persistent-sorted-set]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
