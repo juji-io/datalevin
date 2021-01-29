@@ -188,7 +188,6 @@
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
-
   (close-env [_]
     (close-pool pool)
     (.close env))
@@ -403,7 +402,7 @@
                                file
                                (into-array EnvFlags default-env-flags))
           ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-      (LMDB. env dir pool (ConcurrentHashMap.)))
+      (->LMDB env dir pool (ConcurrentHashMap.)))
     (catch Exception e
       (raise
         "Fail to open LMDB database: " (ex-message e)

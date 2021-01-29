@@ -305,6 +305,15 @@ public final class Lib {
         long ms_entries();
     }
 
+    public static final MDB_stat allocateStat() {
+        MDB_stat stat = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_stat.class));
+        return stat;
+    }
+
+    public static final void freeStat(MDB_stat stat) {
+        UnmanagedMemory.free(stat);
+    }
+
     /**
      * Information about the environment
      */
@@ -328,6 +337,16 @@ public final class Lib {
 
         @CField("me_numreaders")
         int me_numreaders();
+    }
+
+    public static final MDB_envinfo allocateEnvinfo() {
+        MDB_envinfo info =
+            UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_envinfo.class));
+        return info;
+    }
+
+    public static final void freeEnvinfo(MDB_envinfo info) {
+        UnmanagedMemory.free(info);
     }
 
     /**
@@ -554,12 +573,23 @@ public final class Lib {
         }
     }
 
+    public static class MapFullException extends LMDBException {
+        public MapFullException(String msg) {
+            super(msg);
+        }
+    }
+
+    /**
+     * Specialize some exceptions that we care about
+     */
     public static void checkRc(int code) {
         String msg;
         if (code == MDB_SUCCESS()) {
             return;
         } else if (code == MDB_BAD_RSLOT()) {
             throw new BadReaderLockException("");
+        } else if (code == MDB_MAP_FULL()) {
+            throw new MapFullException("");
         } else {
             msg = CTypeConversion.toJavaString(mdb_strerror(code));
             throw new LMDBException(msg);
