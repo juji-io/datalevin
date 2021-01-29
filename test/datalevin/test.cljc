@@ -30,7 +30,6 @@
     datalevin.test.query-or
     datalevin.test.query-pull
     datalevin.test.query-rules
-    datalevin.test.query-v3
     datalevin.test.transact
     datalevin.test.validation
     datalevin.test.upsert

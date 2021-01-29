@@ -1,9 +1,8 @@
 (ns datascript-bench.datascript
   (:require
-    [clojure.string :as str]
-    [datascript.core :as d]
-    [datascript-bench.core :as core]
-    [datascript.query-v3 :as q3]))
+   [clojure.string :as str]
+   [datascript.core :as d]
+   [datascript-bench.core :as core]))
 
 
 #?(:cljs
