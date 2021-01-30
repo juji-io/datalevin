@@ -2,6 +2,7 @@
   "storage layer of Datalevin"
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.binding.java]
+            [datalevin.binding.graal]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             ;; [taoensso.timbre :as log]

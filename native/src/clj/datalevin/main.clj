@@ -1,6 +1,9 @@
 (ns datalevin.main
   (:require [clojure.tools.cli :refer [parse-opts]]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [datalevin.core :as d]
+            [datalevin.lmdb :as l]
+            [datalevin.binding.graal])
   (:gen-class))
 
 (def cli-opts
@@ -9,17 +12,19 @@
 (defn usage [options-summary]
   (->> ["Datalevin"
         ""
-        "Usage: dtlv [options] action"
+        "Usage: dtlv [options] <command> [args]"
         ""
         "Options:"
         options-summary
         ""
-        "Actions:"
-        "  start    Start a new server"
-        "  stop     Stop an existing server"
-        "  status   Print a server's status"
+        "Commands:"
+        "  conn  Connect to a database to work with"
+        "  copy  Copy a database, regardless of whether it is now in use"
+        "  dump  Dump the content of a database as text to standard output"
+        "  load  Load text from standard input into a database"
+        "  stat  Display status of a database"
         ""
-        "Please refer to the manual page for more information."]
+        "See 'dtlv help <command>' to read about a specific command."]
        (s/join \newline)))
 
 (defn error-msg [errors]
@@ -37,10 +42,10 @@
       {:exit-message (usage summary) :ok? true}
       errors          ; errors => exit with description of errors
       {:exit-message (error-msg errors)}
-      ;; custom validation on arguments
-      ;; (and (= 1 (count arguments))
-      ;;      (#{"start" "stop" "status"} (first arguments)))
-      ;; {:action (first arguments) :options options}
+      (#{"conn" "copy" "dump" "load" "stat" "help"} (first arguments))
+      {:command   (first arguments)
+       :options   options
+       :arguments (rest arguments)}
       :else           ; failed custom validation => exit with usage summary
       {:exit-message (usage summary)})))
 
@@ -48,11 +53,46 @@
   (println msg)
   (System/exit status))
 
+(defn- dtlv-help [options arguments]
+  )
+
+(defn- dtlv-conn [options arguments]
+  (let [schema {:aka  {:db/cardinality :db.cardinality/many}
+                :name {:db/valueType :db.type/string
+                       :db/unique    :db.unique/identity}}
+        conn   (d/create-conn "/tmp/dtlv-test" schema) ]
+    (try
+      (d/transact! conn
+                   [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
+                    {:name "Peirce", :db/id -2, :nation "france"}
+                    {:name "De Morgan", :db/id -3, :nation "English"}])
+      (prn (d/q '[:find ?nation
+                  :in $ ?alias
+                  :where
+                  [?e :aka ?alias]
+                  [?e :nation ?nation]]
+                @conn
+                "fred"))
+      (finally
+        (d/close conn)))))
+
+(defn- dtlv-copy [options arguments]
+  )
+
+(defn- dtlv-dump [options arguments]
+  )
+
+(defn- dtlv-load [options arguments]
+  )
+
 (defn -main [& args]
-  (let [{:keys [action options exit-message ok?]} (validate-args args)]
+  (let [{:keys [command options arguments exit-message ok?]}
+        (validate-args args)]
     (if exit-message
       (exit (if ok? 0 1) exit-message)
-      #_(case action
-          "start"  (server/start! options)
-          "stop"   (server/stop! options)
-          "status" (server/status! options)))))
+      (case command
+        "conn" (dtlv-conn options arguments)
+        "copy" (dtlv-copy options arguments)
+        "dump" (dtlv-dump options arguments)
+        "load" (dtlv-load options arguments)
+        "help" (dtlv-help options arguments)))))

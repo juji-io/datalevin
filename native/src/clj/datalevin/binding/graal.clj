@@ -579,7 +579,7 @@
                        0664))
         (->LMDB envPtr
                 dir
-                (->RtxPool env (ConcurrentHashMap.) 0)
+                (->RtxPool (.read env) (ConcurrentHashMap.) 0)
                 (ConcurrentHashMap.)
                 false)))
     (catch Exception e

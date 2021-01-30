@@ -1,6 +1,5 @@
 (ns datalevin.lmdb "API for Key Value Store"
-    (:import [org.graalvm.nativeimage ImageInfo]
-             [org.lmdbjava CursorIterable CursorIterable$KeyVal]))
+    (:import [org.graalvm.nativeimage ImageInfo]))
 
 (defprotocol ^:no-doc IBuffer
   (put-key [this data k-type]
