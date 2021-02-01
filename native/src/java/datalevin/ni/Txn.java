@@ -23,24 +23,21 @@ public class Txn {
      * Factory method to create a read only transaction instance
      */
     public static Txn createReadOnly(Env env) {
-
-        WordPointer ptr = UnmanagedMemory.malloc(SizeOf.get(WordPointer.class));
-        Lib.checkRc(Lib.mdb_txn_begin(env.get(),
-                                      WordFactory.nullPointer(),
-                                      Lib.MDB_RDONLY(),
-                                      ptr));
-
-        return new Txn(ptr);
+        return create(env, Lib.MDB_RDONLY());
     }
 
     /**
      * Factory method to create a read/write transaction instance
      */
     public static Txn create(Env env) {
+        return create(env, 0);
+    }
+
+    public static Txn create(Env env, int flags) {
         WordPointer ptr = UnmanagedMemory.malloc(SizeOf.get(WordPointer.class));
         Lib.checkRc(Lib.mdb_txn_begin(env.get(),
                                       WordFactory.nullPointer(),
-                                      0,
+                                      flags,
                                       ptr));
 
         return new Txn(ptr);

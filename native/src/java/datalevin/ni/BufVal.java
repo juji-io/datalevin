@@ -1,10 +1,10 @@
 package datalevin.ni;
 
 import org.graalvm.nativeimage.UnmanagedMemory;
-import org.graalvm.nativeimage.PinnedObject;
 import org.graalvm.nativeimage.c.CContext;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
+import org.graalvm.nativeimage.c.type.VoidPointer;
 
 import java.nio.ByteBuffer;
 
@@ -14,34 +14,34 @@ import java.nio.ByteBuffer;
 @CContext(Lib.Directives.class)
 public class BufVal {
 
-    private int bufSize;
-    private PinnedObject pin;
+    private int size;
+    private VoidPointer data;
     private Lib.MDB_val ptr;
 
     /**
      * constructor that allocates necessary memory
      */
     public BufVal(int size) {
-        bufSize = size;
-        ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
-        pin = PinnedObject.create(new byte[size]);
+        this.size = size;
+        this.data = UnmanagedMemory.calloc(size);
+        this.ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
         reset();
     }
 
     /**
-     * reset the MDB_val to point to the internal pinned data,
+     * reset the MDB_val to point to the internal allocated memory,
      * so that it can be used as the input for LMDB calls.
      */
     void reset() {
-        ptr.set_mv_size(bufSize);
-        ptr.set_mv_data(pin.addressOfArrayElement(0));
+        ptr.set_mv_size(size);
+        ptr.set_mv_data(data);
     }
 
     /**
      * Free memory
      */
     public void close() {
-        pin.close();
+        UnmanagedMemory.free(data);
         UnmanagedMemory.free(ptr);
     }
 
@@ -58,14 +58,14 @@ public class BufVal {
      */
     public ByteBuffer inBuf() {
         reset();
-        return ByteBuffer.wrap((byte [])pin.getObject());
+        return outBuf();
     }
 
     /**
      * Return the MDB_val pointer to be used in LMDB calls
      */
     public Lib.MDB_val getVal() {
-        return ptr;
+        return (Lib.MDB_val)ptr;
     }
 
     /**

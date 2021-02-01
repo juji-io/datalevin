@@ -103,7 +103,7 @@
     (set! cnt 0))
   (new-rtx [this]
     (when (< cnt c/+use-readers+)
-      (let [txn (Txn/create env (Lib/MDB_RDONLY))
+      (let [txn (Txn/createReadOnly env)
             rtx (->Rtx txn
                        false
                        (BufVal/create c/+max-key-size+)
@@ -191,7 +191,14 @@
           ^BufVal v  (.-vp rtx)
           ^BufVal sk (.-start-kp rtx)
           ^BufVal ek (.-stop-kp rtx)
-          ^Txn txn   (.-txn rtx)]
+          ^Txn txn   (.-txn rtx)
+          i          (.get ^Dbi dbi)
+          op-get     Lib$MDB_cursor_op/MDB_GET_CURRENT
+          op-next    Lib$MDB_cursor_op/MDB_NEXT
+          op-prev    Lib$MDB_cursor_op/MDB_PREV
+          op-set     Lib$MDB_cursor_op/MDB_SET
+          op-first   Lib$MDB_cursor_op/MDB_FIRST
+          op-last    Lib$MDB_cursor_op/MDB_LAST]
       ;; assuming hasNext is always called before next, hasNext will
       ;; position the cursor, next will get the data
       (reify
@@ -203,15 +210,10 @@
                 found #(if stop-key?
                          (do (Lib/checkRc
                                (Lib/mdb_cursor_get
-                                 (.get cursor)
-                                 (.getVal k)
-                                 (.getVal v) (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
-                             (if (= 0 (Lib/mdb_cmp (.get txn)
-                                                   (.get dbi)
-                                                   (.getVal k)
-                                                   (.getVal ek)))
-                               (do (set-ended this)
-                                   include-stop?)
+                                 (.get cursor) (.getVal k) (.getVal v) op-get))
+                             (if (= 0 (Lib/mdb_cmp
+                                        (.get txn) i (.getVal k) (.getVal ek)))
+                               (do (set-ended this) include-stop?)
                                true))
                          true)]
             (if ended?
@@ -219,35 +221,39 @@
               (if started?
                 (if forward?
                   (if (has? (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal k)
-                              (.getVal v) (Lib$MDB_cursor_op/MDB_NEXT)))
+                              (.get cursor) (.getVal k) (.getVal v) op-next))
                     (found)
                     false)
                   (if (has? (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_PREV)))
+                              (.get cursor) (.getVal k) (.getVal v) op-prev))
                     (found)
                     false))
                 (do
                   (set-started this)
                   (if start-key?
                     (if (has? (Lib/mdb_cursor_get
-                                (.get cursor) (.getVal sk) (.getVal v) (Lib$MDB_cursor_op/MDB_SET)))
+                                (.get cursor) (.getVal sk) (.getVal v) op-set))
                       (if include-start?
                         true
                         (if forward?
-                          (has? (Lib/mdb_cursor_get
-                                  (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_NEXT)))
-                          (has? (Lib/mdb_cursor_get
-                                  (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_PREV)))))
+                          (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor ) (.getVal k) (.getVal v) op-next))
+                          (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor ) (.getVal k) (.getVal v) op-prev))))
                       false)
                     (if forward?
-                      (has? (Lib/mdb_cursor_get
-                              (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_FIRST)))
-                      (has? (Lib/mdb_cursor_get
-                              (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_LAST))))))))))
+                      (has?
+                        (Lib/mdb_cursor_get
+                          (.get cursor) (.getVal k) (.getVal v) op-first))
+                      (has?
+                        (Lib/mdb_cursor_get
+                          (.get cursor) (.getVal k) (.getVal v) op-last)))))))))
         (next [this]
-          (Lib/checkRc (Lib/mdb_cursor_get
-                         (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
+          (Lib/checkRc
+            (Lib/mdb_cursor_get
+              (.get cursor) (.getVal k) (.getVal v) op-get))
           (->KV k v))))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
@@ -296,18 +302,18 @@
     (let [i (.get db)]
       (Lib/checkRc
         (if flags
-          (Lib/mdb_put txn i (.getVal kp) (.getVal vp) flags)
-          (Lib/mdb_put txn i (.getVal kp) (.getVal vp) 0)))))
+          (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) flags)
+          (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) 0)))))
 
   (del [_ txn]
-    (Lib/checkRc (Lib/mdb_del txn (.get db) (.getVal kp) (.getVal vp))))
+    (Lib/checkRc
+      (Lib/mdb_del (.get ^Txn txn) (.get db) (.getVal kp) (.getVal vp))))
 
   (get-kv [_ rtx]
     (let [^BufVal kp (.-kp ^Rtx rtx)
           ^BufVal vp (.-vp ^Rtx rtx)]
-      (Lib/checkRc
-        (Lib/mdb_get (.get ^Txn (.-txn ^Rtx rtx))
-                     (.get db) (.getVal kp) (.getVal vp)))
+      (Lib/checkRc (Lib/mdb_get (.get ^Txn (.-txn ^Rtx rtx))
+                                (.get db) (.getVal kp) (.getVal vp)))
       (.outBuf vp)))
 
   (iterate-kv [this rtx range-type]
@@ -385,10 +391,10 @@
     (let [^DBI dbi   (.get-dbi this dbi-name)
           ^Dbi db    (.-db dbi)
           ^Rtx rtx   (get-rtx pool)
-          ^Txn txn   (Txn/create env)
+          ^Txn txn   (.-txn rtx)
           ^Stat stat (Stat/create txn db)]
       (try
-        (Lib/mdb_stat txn (.get db) stat)
+        (Lib/mdb_stat (.get txn) (.get db) (.get stat))
         (let [entries (.ms_entries ^Lib$MDB_stat (.get stat))]
           (.close stat)
           entries)
