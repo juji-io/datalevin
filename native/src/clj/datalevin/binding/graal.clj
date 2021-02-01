@@ -16,20 +16,16 @@
            [org.graalvm.nativeimage.c CContext]
            [org.graalvm.nativeimage.c.type CTypeConversion WordPointer
             CTypeConversion$CCharPointerHolder]
-           [datalevin.ni BufVal Lib Lib$Directives Lib$MDB_env Lib$MDB_txn
-            Lib$MDB_cursor Lib$LMDBException Lib$BadReaderLockException
-            Lib$MDB_dbiPointer Lib$MDB_cursor_op Lib$MDB_cursorPointer
-            Lib$MDB_txnPointer Lib$MDB_envPointer Lib$MDB_envinfo
+           [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
+            Lib$Directives Lib$BadReaderLockException
+            Lib$MDB_cursor_op
+            Lib$MDB_envinfo
             Lib$MDB_stat Lib$MapFullException]
            ))
 
-(defn- mask-flags
-  [flags]
-  (reduce (fn [m flag] (bit-or ^int m ^int flag)) flags))
-
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    Rtx [^Lib$MDB_txnPointer txnPtr
+    Rtx [^Txn txn
          ^:volatile-mutable ^Boolean use?
          ^BufVal kp
          ^BufVal vp
@@ -75,20 +71,19 @@
 
   IRtx
   (close-rtx [_]
-    (Lib/mdb_txn_abort (.read txnPtr))
-    (Lib/freeTxnPtr txnPtr)
+    (.close txn)
     (.close kp)
     (.close start-kp)
     (.close stop-kp)
     (set! use? false))
   (reset [this]
-    (Lib/mdb_txn_reset (.read txnPtr))
+    (.reset txn)
     (set! use? false)
     this)
   (renew [this]
     (when-not use?
       (set! use? true)
-      (Lib/checkRc (Lib/mdb_txn_renew (.read txnPtr)))
+      (.renew txn)
       this)))
 
 (defprotocol IRtxPool
@@ -98,7 +93,7 @@
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    RtxPool [^Lib$MDB_env env
+    RtxPool [^Env env
              ^ConcurrentHashMap rtxs
              ^:volatile-mutable ^long cnt]
   IRtxPool
@@ -108,15 +103,13 @@
     (set! cnt 0))
   (new-rtx [this]
     (when (< cnt c/+use-readers+)
-      (let [txnPtr (Lib/allocateTxnPtr)
-            _      (Lib/checkRc
-                     (Lib/mdb_txn_begin env nil (Lib/MDB_RDONLY) txnPtr))
-            rtx    (->Rtx txnPtr
-                          false
-                          (BufVal/create c/+max-key-size+)
-                          (BufVal/create 1)
-                          (BufVal/create c/+max-key-size+)
-                          (BufVal/create c/+max-key-size+))]
+      (let [txn (Txn/create env (Lib/MDB_RDONLY))
+            rtx (->Rtx txn
+                       false
+                       (BufVal/create c/+max-key-size+)
+                       (BufVal/create 1)
+                       (BufVal/create c/+max-key-size+)
+                       (BufVal/create c/+max-key-size+))]
         (.put rtxs cnt rtx)
         (set! cnt (inc cnt))
         (.reset ^Rtx rtx)
@@ -176,8 +169,8 @@
            CContext  {:value Lib$Directives}}
     CursorIterable [^:volatile-mutable started?
                     ^:volatile-mutable ended?
-                    ^Lib$MDB_cursorPointer cptr
-                    ^int dbi
+                    ^Cursor cursor
+                    ^Dbi dbi
                     ^Rtx rtx
                     forward?
                     start-key?
@@ -186,8 +179,7 @@
                     include-stop?]
   AutoCloseable
   (close [_]
-    (Lib/mdb_cursor_close (.read cptr))
-    (Lib/freeCursorPtr cptr))
+    (.close cursor))
 
   IState
   (set-started [_] (set! started? true))
@@ -195,12 +187,11 @@
 
   Iterable
   (iterator [this]
-    (let [^Lib$MDB_val k         (.getVal ^BufVal (.-kp rtx))
-          ^Lib$MDB_val v         (.getVal ^BufVal (.-vp rtx))
-          ^Lib$MDB_val sk        (.getVal ^BufVal (.-start-kp rtx))
-          ^Lib$MDB_val ek        (.getVal ^BufVal (.-stop-kp rtx))
-          ^Lib$MDB_txn txn       (.read ^Lib$MDB_txnPointer (.-txnPtr rtx))
-          ^Lib$MDB_cursor cursor (.read cptr)]
+    (let [^BufVal k  (.-kp rtx)
+          ^BufVal v  (.-vp rtx)
+          ^BufVal sk (.-start-kp rtx)
+          ^BufVal ek (.-stop-kp rtx)
+          ^Txn txn   (.-txn rtx)]
       ;; assuming hasNext is always called before next, hasNext will
       ;; position the cursor, next will get the data
       (reify
@@ -212,9 +203,13 @@
                 found #(if stop-key?
                          (do (Lib/checkRc
                                (Lib/mdb_cursor_get
-                                 cursor k v
-                                 (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
-                             (if (= 0 (Lib/mdb_cmp txn dbi k ek))
+                                 (.get cursor)
+                                 (.getVal k)
+                                 (.getVal v) (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
+                             (if (= 0 (Lib/mdb_cmp (.get txn)
+                                                   (.get dbi)
+                                                   (.getVal k)
+                                                   (.getVal ek)))
                                (do (set-ended this)
                                    include-stop?)
                                true))
@@ -224,45 +219,46 @@
               (if started?
                 (if forward?
                   (if (has? (Lib/mdb_cursor_get
-                              cursor k v (Lib$MDB_cursor_op/MDB_NEXT)))
+                              (.get cursor) (.getVal k)
+                              (.getVal v) (Lib$MDB_cursor_op/MDB_NEXT)))
                     (found)
                     false)
                   (if (has? (Lib/mdb_cursor_get
-                              cursor k v (Lib$MDB_cursor_op/MDB_PREV)))
+                              (.get cursor) (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_PREV)))
                     (found)
                     false))
                 (do
                   (set-started this)
                   (if start-key?
                     (if (has? (Lib/mdb_cursor_get
-                                cursor sk v (Lib$MDB_cursor_op/MDB_SET)))
+                                (.get cursor) (.getVal sk) (.getVal v) (Lib$MDB_cursor_op/MDB_SET)))
                       (if include-start?
                         true
                         (if forward?
                           (has? (Lib/mdb_cursor_get
-                                  cursor k v (Lib$MDB_cursor_op/MDB_NEXT)))
+                                  (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_NEXT)))
                           (has? (Lib/mdb_cursor_get
-                                  cursor k v (Lib$MDB_cursor_op/MDB_PREV)))))
+                                  (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_PREV)))))
                       false)
                     (if forward?
                       (has? (Lib/mdb_cursor_get
-                              cursor k v (Lib$MDB_cursor_op/MDB_FIRST)))
+                              (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_FIRST)))
                       (has? (Lib/mdb_cursor_get
-                              cursor k v (Lib$MDB_cursor_op/MDB_LAST))))))))))
+                              (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_LAST))))))))))
         (next [this]
           (Lib/checkRc (Lib/mdb_cursor_get
-                         cursor k v (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
+                         (.get cursor)  (.getVal k) (.getVal v) (Lib$MDB_cursor_op/MDB_GET_CURRENT)))
           (->KV k v))))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    DBI [^Lib$MDB_dbiPointer dbiPtr
-         ^String dbi-name
+    DBI [^Dbi db
          ^BufVal kp
          ^:volatile-mutable ^BufVal vp]
   IBuffer
   (put-key [this x t]
-    (let [^ByteBuffer kb (.inBuf kp)]
+    (let [^ByteBuffer kb (.inBuf kp)
+          dbi-name       (.dbi-name this)]
       (try
         (.clear kb)
         (b/put-buffer kb x t)
@@ -272,7 +268,8 @@
                  dbi-name ": " (ex-message e)
                  {:value x :type t :dbi dbi-name})))))
   (put-val [this x t]
-    (let [^ByteBuffer vb (.inBuf vp)]
+    (let [^ByteBuffer vb (.inBuf vp)
+          dbi-name       (.dbi-name this)]
       (try
         (.clear vb)
         (b/put-buffer vb x t)
@@ -291,39 +288,37 @@
 
   IDB
   (dbi-name [_]
-    dbi-name)
+    (.getName db))
 
   (put [this txn]
     (.put this txn nil))
   (put [_ txn flags]
-    (let [dbi (.read dbiPtr)]
+    (let [i (.get db)]
       (Lib/checkRc
         (if flags
-          (Lib/mdb_put txn dbi (.getVal kp) (.getVal vp) flags)
-          (Lib/mdb_put txn dbi (.getVal kp) (.getVal vp) 0)))))
+          (Lib/mdb_put txn i (.getVal kp) (.getVal vp) flags)
+          (Lib/mdb_put txn i (.getVal kp) (.getVal vp) 0)))))
 
   (del [_ txn]
-    (Lib/checkRc (Lib/mdb_del txn (.read dbiPtr) (.getVal kp) (.getVal vp))))
+    (Lib/checkRc (Lib/mdb_del txn (.get db) (.getVal kp) (.getVal vp))))
 
   (get-kv [_ rtx]
     (let [^BufVal kp (.-kp ^Rtx rtx)
           ^BufVal vp (.-vp ^Rtx rtx)]
       (Lib/checkRc
-        (Lib/mdb_get (.read ^Lib$MDB_txnPointer (.-txnPtr ^Rtx rtx))
-                     (.read dbiPtr) (.getVal kp) (.getVal vp)))
+        (Lib/mdb_get (.get ^Txn (.-txn ^Rtx rtx))
+                     (.get db) (.getVal kp) (.getVal vp)))
       (.outBuf vp)))
 
   (iterate-kv [this rtx range-type]
-    (let [txn                  (.read ^Lib$MDB_txnPointer (.-txnPtr ^Rtx rtx))
-          cptr                 (Lib/allocateCursorPtr)
+    (let [txn                  (.-txn ^Rtx rtx)
           [f? sk? is? ek? ie?] (cursor-type range-type)
-          dbi                  (.read dbiPtr)]
-      (Lib/checkRc (Lib/mdb_cursor_open txn dbi cptr))
-      (->CursorIterable false false cptr dbi rtx f? sk? is? ek? ie?))))
+          cur                  (Cursor/create txn db)]
+      (->CursorIterable false false cur db rtx f? sk? is? ek? ie?))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    LMDB [^Lib$MDB_envPointer envPtr
+    LMDB [^Env env
           ^String dir
           ^RtxPool pool
           ^ConcurrentHashMap dbis
@@ -331,9 +326,8 @@
   ILMDB
   (close-env [_]
     (close-pool pool)
-    (doseq [^DBI dbi (.values dbis)] (Lib/freeDbiPtr (.-dbiPtr dbi)))
-    (Lib/mdb_env_close (.read envPtr))
-    (Lib/freeEnvPtr envPtr)
+    (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
+    (.close env)
     (set! closed? true))
 
   (closed? [_]
@@ -351,21 +345,14 @@
     (.open-dbi this dbi-name key-size val-size (Lib/MDB_CREATE)))
   (open-dbi [_ dbi-name key-size val-size flags]
     (assert (not closed?) "LMDB env is closed.")
-    (let [kp                         (BufVal/create key-size)
-          vp                         (BufVal/create val-size)
-          env                        (.read envPtr)
-          ^Lib$MDB_dbiPointer dbiPtr (Lib/allocateDbiPtr)
-          ^Lib$MDB_txnPointer txnPtr (Lib/allocateTxnPtr)
-          ]
-      (Lib/checkRc (Lib/mdb_txn_begin env nil 0 txnPtr))
-      (Lib/checkRc (Lib/mdb_dbi_open
-                     (.read txnPtr) (.get (CTypeConversion/toCString dbi-name))
-                     flags dbiPtr))
-      (Lib/mdb_txn_abort (.read txnPtr))
-      (Lib/freeTxnPtr txnPtr)
-      (let [dbi (->DBI dbiPtr dbi-name kp vp)]
-        (.put dbis dbi-name dbi)
-        dbi)))
+    (let [kp  (BufVal/create key-size)
+          vp  (BufVal/create val-size)
+          txn (Txn/create env)
+          dbi (Dbi/create env dbi-name flags)]
+      (.close txn)
+      (let [i (->DBI dbi dbi-name kp vp)]
+        (.put dbis dbi-name i)
+        i)))
 
   (get-dbi [_ dbi-name]
     (or (.get dbis dbi-name)
@@ -374,39 +361,36 @@
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Lib$MDB_txnPointer txnPtr (Lib/allocateTxnPtr)
-            ^Lib$MDB_dbiPointer dbiPtr (.-dbiPtr ^DBI (.get-dbi this dbi-name))]
-        (Lib/checkRc (Lib/mdb_txn_begin (.read envPtr) nil 0 txnPtr))
-        (Lib/checkRc (Lib/mdb_drop (.read txnPtr) (.read dbiPtr) 0))
-        (Lib/checkRc (Lib/mdb_txn_commit (.read txnPtr)))
-        (Lib/freeTxnPtr txnPtr))
+      (let [^Txn txn (Txn/create env)
+            ^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))]
+        (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0))
+        (.commit txn))
       (catch Exception e
         (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Lib$MDB_txnPointer txnPtr (Lib/allocateTxnPtr)
-            ^Lib$MDB_dbiPointer dbiPtr (.-dbiPtr ^DBI (.get-dbi this dbi-name))]
-        (Lib/checkRc (Lib/mdb_txn_begin (.read envPtr) nil 0 txnPtr))
-        (Lib/checkRc (Lib/mdb_drop (.read txnPtr) (.read dbiPtr) 1))
-        (Lib/checkRc (Lib/mdb_txn_commit (.read txnPtr)))
-        (Lib/freeTxnPtr txnPtr)
+      (let [^Txn txn (Txn/create env)
+            ^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
+            ]
+        (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
+        (.commit txn)
         (.remove dbis dbi-name))
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
   (entries [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
-    (let [^DBI dbi           (.get-dbi this dbi-name)
-          i                  (.read ^Lib$MDB_dbiPointer (.-dbiPtr dbi))
-          ^Rtx rtx           (get-rtx pool)
-          ^Lib$MDB_txn txn   (.read ^Lib$MDB_txnPointer (.-txnPtr rtx))
-          ^Lib$MDB_stat stat (Lib/allocateStat)]
+    (let [^DBI dbi   (.get-dbi this dbi-name)
+          ^Dbi db    (.-db dbi)
+          ^Rtx rtx   (get-rtx pool)
+          ^Txn txn   (Txn/create env)
+          ^Stat stat (Stat/create txn db)]
       (try
-        (Lib/mdb_stat txn i stat)
-        (let [entries (.ms_entries stat)]
-          (Lib/freeStat stat)
+        (Lib/mdb_stat txn (.get db) stat)
+        (let [entries (.ms_entries ^Lib$MDB_stat (.get stat))]
+          (.close stat)
           entries)
         (catch Exception e
           (raise "Fail to get entries: " (ex-message e)
@@ -416,29 +400,24 @@
   (transact [this txs]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Lib$MDB_txnPointer txnPtr (Lib/allocateTxnPtr)]
-        (Lib/checkRc (Lib/mdb_txn_begin (.read envPtr) nil 0 txnPtr))
-        (let [^Lib$MDB_txn txn (.read txnPtr)]
-          (doseq [[op dbi-name k & r] txs
-                  :let                [^DBI dbi (.get-dbi this dbi-name)]]
-            (case op
-              :put (let [[v kt vt flags] r]
-                     (.put-key dbi k kt)
-                     (.put-val dbi v vt)
-                     (if flags
-                       (.put dbi txn flags)
-                       (.put dbi txn)))
-              :del (let [[kt] r]
-                     (.put-key dbi k kt)
-                     (.del dbi txn))))
-          (Lib/checkRc (Lib/mdb_txn_commit txn)))
-        (Lib/freeTxnPtr txnPtr))
+      (let [^Txn txn (Txn/create env)]
+        (doseq [[op dbi-name k & r] txs
+                :let                [^DBI dbi (.get-dbi this dbi-name)]]
+          (case op
+            :put (let [[v kt vt flags] r]
+                   (.put-key dbi k kt)
+                   (.put-val dbi v vt)
+                   (if flags
+                     (.put dbi txn flags)
+                     (.put dbi txn)))
+            :del (let [[kt] r]
+                   (.put-key dbi k kt)
+                   (.del dbi txn))))
+        (.commit txn))
       (catch Lib$MapFullException _
-        (let [^Lib$MDB_envinfo info (Lib/allocateEnvinfo)
-              ^Lib$MDB_env env      (.read envPtr)]
-          (Lib/checkRc (Lib/mdb_env_info env info))
-          (Lib/checkRc (Lib/mdb_env_set_mapsize env (* 10 (.me_mapsize info))))
-          (Lib/freeEnvinfo info)
+        (let [^Info info (Info/create env)]
+          (.setMapSize env (* 10 (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+          (.close info)
           (.transact this txs)))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
@@ -563,25 +542,16 @@
   [dir]
   (try
     (b/file dir)
-    (let [^Lib$MDB_envPointer envPtr (Lib/allocateEnvPtr)]
-      (Lib/checkRc (Lib/mdb_env_create envPtr))
-      (let [^Lib$MDB_env env (.read envPtr)]
-        (Lib/checkRc (Lib/mdb_env_set_mapsize
-                       env (* ^long c/+init-db-size+ 1024 1024)))
-        (Lib/checkRc (Lib/mdb_env_set_maxreaders env c/+max-readers+))
-        (Lib/checkRc (Lib/mdb_env_set_maxdbs env c/+max-dbs+))
-        (Lib/checkRc (Lib/mdb_env_open
-                       env
-                       (.get (CTypeConversion/toCString dir))
-                       (mask-flags [(Lib/MDB_NORDAHEAD)
-                                    (Lib/MDB_MAPASYNC)
-                                    (Lib/MDB_WRITEMAP)])
-                       0664))
-        (->LMDB envPtr
-                dir
-                (->RtxPool env (ConcurrentHashMap.) 0)
-                (ConcurrentHashMap.)
-                false)))
+    (let [^Env env (Env/create
+                     dir
+                     (* ^long c/+init-db-size+ 1024 1024)
+                     c/+max-readers+
+                     c/+max-dbs+)]
+      (->LMDB env
+              dir
+              (->RtxPool env (ConcurrentHashMap.) 0)
+              (ConcurrentHashMap.)
+              false))
     (catch Exception e
       (raise
         "Fail to open LMDB database: " (ex-message e)

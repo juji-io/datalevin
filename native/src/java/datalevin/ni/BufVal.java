@@ -16,14 +16,14 @@ public class BufVal {
 
     private int bufSize;
     private PinnedObject pin;
-    private Lib.MDB_val value;
+    private Lib.MDB_val ptr;
 
     /**
      * constructor that allocates necessary memory
      */
     public BufVal(int size) {
         bufSize = size;
-        value = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
+        ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
         pin = PinnedObject.create(new byte[size]);
         reset();
     }
@@ -33,8 +33,8 @@ public class BufVal {
      * so that it can be used as the input for LMDB calls.
      */
     void reset() {
-        value.set_mv_size(bufSize);
-        value.set_mv_data(pin.addressOfArrayElement(0));
+        ptr.set_mv_size(bufSize);
+        ptr.set_mv_data(pin.addressOfArrayElement(0));
     }
 
     /**
@@ -42,15 +42,15 @@ public class BufVal {
      */
     public void close() {
         pin.close();
-        UnmanagedMemory.free(value);
+        UnmanagedMemory.free(ptr);
     }
 
     /**
      * Return a ByteBuffer for getting data out of MDB_val
      */
     public ByteBuffer outBuf() {
-        return CTypeConversion.asByteBuffer(value.get_mv_data(),
-                                            (int)value.get_mv_size());
+        return CTypeConversion.asByteBuffer(ptr.get_mv_data(),
+                                            (int)ptr.get_mv_size());
     }
 
     /**
@@ -62,10 +62,10 @@ public class BufVal {
     }
 
     /**
-     * Return the MDB_val to be used in LMDB calls
+     * Return the MDB_val pointer to be used in LMDB calls
      */
     public Lib.MDB_val getVal() {
-        return value;
+        return ptr;
     }
 
     /**

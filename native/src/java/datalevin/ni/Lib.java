@@ -36,7 +36,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Import LMDB C API and manage native memory
+ * Import LMDB Library C API
  */
 @CContext(Lib.Directives.class)
 public final class Lib {
@@ -62,76 +62,17 @@ public final class Lib {
     @CStruct(value = "MDB_env", isIncomplete = true)
     public interface MDB_env extends PointerBase {}
 
-    @CPointerTo(MDB_env.class)
-    public interface MDB_envPointer extends PointerBase {
-        MDB_env read();
-        void write(MDB_env value);
-    }
-
-    public static final MDB_envPointer allocateEnvPtr() {
-        MDB_envPointer envPtr = UnmanagedMemory.malloc(8);
-        return envPtr;
-    }
-
-    public static final void freeEnvPtr(MDB_envPointer envPtr) {
-        UnmanagedMemory.free(envPtr);
-    }
-
     /**
      * LMDB transaction
      */
     @CStruct(value = "MDB_txn", isIncomplete = true)
     public interface MDB_txn extends PointerBase {}
 
-    @CPointerTo(MDB_txn.class)
-    public interface MDB_txnPointer extends PointerBase {
-        MDB_txn read();
-        void write(MDB_txn value);
-    }
-
-    public static final MDB_txnPointer allocateTxnPtr() {
-        MDB_txnPointer txnPtr = UnmanagedMemory.malloc(8);
-        return txnPtr;
-    }
-
-    public static final void freeTxnPtr(MDB_txnPointer txnPtr) {
-        UnmanagedMemory.free(txnPtr);
-    }
-
-    /**
-     * LMDB dbi
-     */
-    public interface MDB_dbiPointer extends CIntPointer {}
-
-    public static final MDB_dbiPointer allocateDbiPtr() {
-        MDB_dbiPointer dbiPtr = UnmanagedMemory.malloc(8);
-        return dbiPtr;
-    }
-
-    public static final void freeDbiPtr(MDB_dbiPointer dbiPtr) {
-        UnmanagedMemory.free(dbiPtr);
-    }
-
     /**
      * LMDB cursor
      */
     @CStruct(value = "MDB_cursor", isIncomplete = true)
     public interface MDB_cursor extends PointerBase {}
-
-    @CPointerTo(MDB_cursor.class)
-    public interface MDB_cursorPointer extends PointerBase {
-        MDB_cursor read();
-        void write(MDB_cursor value);
-    }
-
-    public static final MDB_cursorPointer allocateCursorPtr() {
-        MDB_cursorPointer cursorPtr = UnmanagedMemory.malloc(8);
-        return cursorPtr;
-    }
-
-    public static final void freeCursorPtr(MDB_cursorPointer cursorPtr) {
-        UnmanagedMemory.free(cursorPtr);
-    }
 
     /**
      * Generic structure used for passing keys and data in and out
@@ -301,15 +242,6 @@ public final class Lib {
         long ms_entries();
     }
 
-    public static final MDB_stat allocateStat() {
-        MDB_stat stat = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_stat.class));
-        return stat;
-    }
-
-    public static final void freeStat(MDB_stat stat) {
-        UnmanagedMemory.free(stat);
-    }
-
     /**
      * Information about the environment
      */
@@ -335,15 +267,6 @@ public final class Lib {
         int me_numreaders();
     }
 
-    public static final MDB_envinfo allocateEnvinfo() {
-        MDB_envinfo info =
-            UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_envinfo.class));
-        return info;
-    }
-
-    public static final void freeEnvinfo(MDB_envinfo info) {
-        UnmanagedMemory.free(info);
-    }
 
     /**
      * General functions
@@ -360,7 +283,7 @@ public final class Lib {
      * LMDB environment functions
      */
     @CFunction("mdb_env_create")
-    public static native int mdb_env_create(MDB_envPointer envPtr);
+    public static native int mdb_env_create(WordPointer envPtr);
 
     @CFunction("mdb_env_open")
     public static native int mdb_env_open(MDB_env env, CCharPointer path,
@@ -446,7 +369,7 @@ public final class Lib {
      */
     @CFunction("mdb_txn_begin")
     public static native int mdb_txn_begin(MDB_env env, MDB_txn parentTx,
-                                           int flags, MDB_txnPointer txnPtr);
+                                           int flags, WordPointer txnPtr);
 
     @CFunction("mdb_txn_env")
     public static native Pointer mdb_txn_env(MDB_txn txn);
@@ -471,7 +394,7 @@ public final class Lib {
      */
     @CFunction("mdb_dbi_open")
     public static native int mdb_dbi_open(MDB_txn txn, CCharPointer name,
-                                          int flags, MDB_dbiPointer dbi);
+                                          int flags, CIntPointer dbi);
 
     @CFunction("mdb_stat")
     public static native int mdb_stat(MDB_txn txn, int dbi, MDB_stat stat);
@@ -514,7 +437,7 @@ public final class Lib {
      */
     @CFunction("mdb_cursor_open")
     public static native int mdb_cursor_open(MDB_txn txn, int dbi,
-                                             MDB_cursorPointer cursorPtr);
+                                             WordPointer cursorPtr);
 
     @CFunction("mdb_cursor_close")
     public static native void mdb_cursor_close(MDB_cursor cursor);
