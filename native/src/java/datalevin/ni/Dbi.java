@@ -25,7 +25,7 @@ public class Dbi {
                                      flags,
                                      ptr));
 
-        txn.close();
+        txn.commit();
     }
 
     /**

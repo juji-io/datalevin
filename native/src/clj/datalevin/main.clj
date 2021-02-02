@@ -1,6 +1,7 @@
 (ns datalevin.main
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
+            [clojure.stacktrace :as st]
             [datalevin.core :as d]
             [datalevin.lmdb :as l]
             [datalevin.binding.graal])
@@ -57,24 +58,50 @@
   )
 
 (defn- dtlv-conn [options arguments]
-  (let [schema {:aka  {:db/cardinality :db.cardinality/many}
-                :name {:db/valueType :db.type/string
-                       :db/unique    :db.unique/identity}}
-        conn   (d/create-conn "/tmp/dtlv-test" schema) ]
-    (try
-      (d/transact! conn
-                   [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
-                    {:name "Peirce", :db/id -2, :nation "france"}
-                    {:name "De Morgan", :db/id -3, :nation "English"}])
-      (prn (d/q '[:find ?nation
-                  :in $ ?alias
-                  :where
-                  [?e :aka ?alias]
-                  [?e :nation ?nation]]
-                @conn
-                "fred"))
-      (finally
-        (d/close conn)))))
+  (try
+    (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
+          misc-table "misc-test-table"]
+      (println "env opened")
+      (l/open-dbi db misc-table)
+      (println "dbi opened")
+      (l/transact db
+                  [[:put misc-table :datalevin "Hello, world!"]
+                   [:put misc-table 42
+                    {:saying "So Long, and thanks for all the fish"
+                     :source "The Hitchhiker's Guide to the Galaxy"}]])
+      (println "transacted")
+      (println (str "get :datalevin:" (l/get-value db misc-table :datalevin)))
+      (println (str "get 42:" (l/get-value db misc-table 42)))
+      (l/transact db [[:del misc-table 42]])
+      (println "deleted 42")
+      (println (str "get nothing:" (l/get-value db misc-table 42)))
+      (l/close-env db)
+      (println "closed")
+      )
+    #_(let [schema {:aka  {:db/cardinality :db.cardinality/many}
+                    :name {:db/valueType :db.type/string
+                           :db/unique    :db.unique/identity}}
+            conn   (d/create-conn "/tmp/dtlv-test" schema) ]
+
+        (println "prepare to transact")
+        (d/transact! conn
+                     [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
+                      {:name "Peirce", :db/id -2, :nation "france"}
+                      {:name "De Morgan", :db/id -3, :nation "English"}])
+        (println "transacted")
+        (prn (d/q '[:find ?nation
+                    :in $ ?alias
+                    :where
+                    [?e :aka ?alias]
+                    [?e :nation ?nation]]
+                  @conn
+                  "fred"))
+        (println "ready to close")
+        (d/close conn))
+    (catch Exception e
+      (println (str "Error: " (.getMessage e)))
+      (st/print-cause-trace e)))
+  (exit 0 "finished"))
 
 (defn- dtlv-copy [options arguments]
   )

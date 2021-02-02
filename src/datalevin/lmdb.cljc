@@ -246,7 +246,7 @@
     [db dbi-name pred k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
+     is an `IKV`, with both key and value fields being a `ByteBuffer`.
 
      `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
 

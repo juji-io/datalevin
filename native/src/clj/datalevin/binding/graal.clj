@@ -9,19 +9,14 @@
             [clojure.string :as s])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
-           [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]
            [java.lang AutoCloseable]
            [java.lang.annotation Retention RetentionPolicy]
            [org.graalvm.nativeimage.c CContext]
-           [org.graalvm.nativeimage.c.type CTypeConversion WordPointer
-            CTypeConversion$CCharPointerHolder]
            [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
             Lib$Directives Lib$BadReaderLockException
-            Lib$MDB_cursor_op
-            Lib$MDB_envinfo
-            Lib$MDB_stat Lib$MapFullException]
-           ))
+            Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
+            Lib$MapFullException]))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -139,9 +134,9 @@
   (k [this] (.outBuf kp))
   (v [this] (.outBuf vp)))
 
-(defprotocol IState
-  (set-started [this] "Set the cursor state to be started")
-  (set-ended [this] "Set the cursor state to be ended"))
+#_(defprotocol IState
+   (set-started [this] "Set the cursor state to be started")
+   (set-ended [this] "Set the cursor state to be ended"))
 
 (defn- cursor-type
   [range-type]
@@ -167,8 +162,8 @@
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    CursorIterable [^:volatile-mutable started?
-                    ^:volatile-mutable ended?
+    CursorIterable [;^:volatile-mutable started?
+                                        ;^:volatile-mutable ended?
                     ^Cursor cursor
                     ^Dbi dbi
                     ^Rtx rtx
@@ -181,13 +176,15 @@
   (close [_]
     (.close cursor))
 
-  IState
-  (set-started [_] (set! started? true))
-  (set-ended [_] (set! ended? true))
+  ;; IState
+  ;; (set-started [_] (set! started? true))
+  ;; (set-ended [_] (set! ended? true))
 
   Iterable
   (iterator [this]
-    (let [^BufVal k  (.-kp rtx)
+    (let [started?   (volatile! false)
+          ended?     (volatile! false)
+          ^BufVal k  (.-kp rtx)
           ^BufVal v  (.-vp rtx)
           ^BufVal sk (.-start-kp rtx)
           ^BufVal ek (.-stop-kp rtx)
@@ -213,12 +210,12 @@
                                  (.get cursor) (.getVal k) (.getVal v) op-get))
                              (if (= 0 (Lib/mdb_cmp
                                         (.get txn) i (.getVal k) (.getVal ek)))
-                               (do (set-ended this) include-stop?)
+                               (do (vreset! ended? true) include-stop?)
                                true))
                          true)]
-            (if ended?
+            (if @ended?
               false
-              (if started?
+              (if @started?
                 (if forward?
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-next))
@@ -229,7 +226,7 @@
                     (found)
                     false))
                 (do
-                  (set-started this)
+                  (vreset! started? true)
                   (if start-key?
                     (if (has? (Lib/mdb_cursor_get
                                 (.get cursor) (.getVal sk) (.getVal v) op-set))
@@ -311,16 +308,18 @@
 
   (get-kv [_ rtx]
     (let [^BufVal kp (.-kp ^Rtx rtx)
-          ^BufVal vp (.-vp ^Rtx rtx)]
-      (Lib/checkRc (Lib/mdb_get (.get ^Txn (.-txn ^Rtx rtx))
-                                (.get db) (.getVal kp) (.getVal vp)))
-      (.outBuf vp)))
+          ^BufVal vp (.-vp ^Rtx rtx)
+          rc         (Lib/mdb_get (.get ^Txn (.-txn ^Rtx rtx))
+                                  (.get db) (.getVal kp) (.getVal vp))]
+      (Lib/checkRc rc)
+      (when-not (= rc (Lib/MDB_NOTFOUND))
+        (.outBuf vp))))
 
   (iterate-kv [this rtx range-type]
     (let [txn                  (.-txn ^Rtx rtx)
           [f? sk? is? ek? ie?] (cursor-type range-type)
           cur                  (Cursor/create txn db)]
-      (->CursorIterable false false cur db rtx f? sk? is? ek? ie?))))
+      (->CursorIterable cur db rtx f? sk? is? ek? ie?))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -353,12 +352,10 @@
     (assert (not closed?) "LMDB env is closed.")
     (let [kp  (BufVal/create key-size)
           vp  (BufVal/create val-size)
-          txn (Txn/create env)
-          dbi (Dbi/create env dbi-name flags)]
-      (.close txn)
-      (let [i (->DBI dbi dbi-name kp vp)]
-        (.put dbis dbi-name i)
-        i)))
+          dbi (Dbi/create env dbi-name flags)
+          db  (->DBI dbi kp vp)]
+      (.put dbis dbi-name db)
+      db))
 
   (get-dbi [_ dbi-name]
     (or (.get dbis dbi-name)

@@ -499,11 +499,11 @@ public final class Lib {
     }
 
     /**
-     * Specialize some exceptions that we care about
+     * Handle some return codes that we care about
      */
     public static void checkRc(int code) {
         String msg;
-        if (code == MDB_SUCCESS()) {
+        if (code == MDB_SUCCESS() || code == MDB_NOTFOUND()) {
             return;
         } else if (code == MDB_BAD_RSLOT()) {
             throw new BadReaderLockException("");

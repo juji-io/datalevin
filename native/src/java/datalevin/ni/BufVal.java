@@ -5,8 +5,10 @@ import org.graalvm.nativeimage.c.CContext;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.VoidPointer;
+import java.nio.ByteOrder;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /**
  * Wrap LMDB MDB_val to look like a ByteBuffer at the Java side
@@ -49,8 +51,11 @@ public class BufVal {
      * Return a ByteBuffer for getting data out of MDB_val
      */
     public ByteBuffer outBuf() {
-        return CTypeConversion.asByteBuffer(ptr.get_mv_data(),
-                                            (int)ptr.get_mv_size());
+        ByteBuffer buf = CTypeConversion.asByteBuffer(ptr.get_mv_data(),
+                                                      (int)ptr.get_mv_size());
+        // Because we use LMDB native comparator
+        buf.order(ByteOrder.LITTLE_ENDIAN);
+        return buf;
     }
 
     /**

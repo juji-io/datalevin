@@ -162,8 +162,8 @@ Use as a key value store:
 ;; => [[#inst "1989-11-09T00:00:00.000-00:00" "The fall of the Berlin Wall"]
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
-;; Close DB
-(l/close db)
+;; Close key value db
+(l/close-env db)
 ```
 
 Please refer to the [API
