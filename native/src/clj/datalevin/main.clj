@@ -3,8 +3,10 @@
             [clojure.string :as s]
             [clojure.stacktrace :as st]
             [datalevin.core :as d]
+            [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [datalevin.binding.graal])
+  (:import [datalevin.ni Lib])
   (:gen-class))
 
 (def cli-opts
@@ -62,19 +64,28 @@
     (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
           misc-table "misc-test-table"]
       (println "env opened")
-      (l/open-dbi db misc-table)
+      (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
       (println "dbi opened")
       (l/transact db
-                  [[:put misc-table :datalevin "Hello, world!"]
-                   [:put misc-table 42
-                    {:saying "So Long, and thanks for all the fish"
-                     :source "The Hitchhiker's Guide to the Galaxy"}]])
+                  [[:put misc-table 1 1 :long :long]
+                   [:put misc-table 2 2 :long :long]
+                   [:put misc-table 4 4 :long :long]
+                   [:put misc-table 8 8 :long :long]
+                   [:put misc-table 16 16 :long :long]
+                   [:put misc-table 32 32 :long :long]
+                   [:put misc-table 64 64 :long :long]
+                   [:put misc-table 128 128 :long :long]
+                   [:put misc-table 256 256 :long :long]
+                   [:put misc-table 512 512 :long :long]
+                   [:put misc-table 1024 1024 :long :long]
+                   [:put misc-table 2048 2048 :long :long]
+                   [:put misc-table 4096 4096 :long :long]
+                   [:put misc-table 8192 8192 :long :long]
+                   [:put misc-table 16384 16384 :long :long]])
       (println "transacted")
-      (println (str "get :datalevin:" (l/get-value db misc-table :datalevin)))
-      (println (str "get 42:" (l/get-value db misc-table 42)))
-      (l/transact db [[:del misc-table 42]])
-      (println "deleted 42")
-      (println (str "get nothing:" (l/get-value db misc-table 42)))
+      (println (str "get range:" (l/get-range db misc-table
+                                              [:at-least 30]
+                                              :long :long)))
       (l/close-env db)
       (println "closed")
       )

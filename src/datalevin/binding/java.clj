@@ -91,9 +91,9 @@
     (when (< cnt c/+use-readers+)
       (let [^Rtx rtx (->Rtx (.txnRead env)
                             false
-                            (ByteBuffer/allocateDirect c/+max-key-size+)
-                            (ByteBuffer/allocateDirect c/+max-key-size+)
-                            (ByteBuffer/allocateDirect c/+max-key-size+))]
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+))]
         (.put rtxs cnt rtx)
         (set! cnt (inc cnt))
         (.reset rtx)
@@ -157,7 +157,7 @@
       (catch Exception e
         (if (s/includes? (ex-message e) c/buffer-overflow)
           (let [size (* 2 ^long (b/measure-size x))]
-            (set! vb (ByteBuffer/allocateDirect size))
+            (set! vb (b/allocate-buffer size))
             (b/put-buffer vb x t)
             (.flip vb))
           (raise "Error putting r/w value buffer of "
@@ -207,8 +207,8 @@
     (.open-dbi this dbi-name key-size val-size default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size flags]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [kb  (ByteBuffer/allocateDirect key-size)
-          vb  (ByteBuffer/allocateDirect val-size)
+    (let [kb  (b/allocate-buffer key-size)
+          vb  (b/allocate-buffer val-size)
           db  (.openDbi env
                         ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))

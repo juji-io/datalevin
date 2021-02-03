@@ -11,7 +11,7 @@
            [java.nio ByteBuffer]
            [datalevin.bits Indexable Retrieved]))
 
-(def ^ByteBuffer bf (ByteBuffer/allocateDirect 16384))
+(def ^ByteBuffer bf (sut/allocate-buffer 16384))
 
 ;; buffer read/write
 
@@ -154,7 +154,7 @@
 (def e 123456)
 (def a 235)
 
-(def ^ByteBuffer bf1 (ByteBuffer/allocateDirect 16384))
+(def ^ByteBuffer bf1 (sut/allocate-buffer 16384))
 
 (defn- bf-compare
   "Jave ByteBuffer compareTo is byte-wise signed comparison, not good"

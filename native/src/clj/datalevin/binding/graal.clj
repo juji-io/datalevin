@@ -134,96 +134,96 @@
   (k [this] (.outBuf kp))
   (v [this] (.outBuf vp)))
 
-#_(defprotocol IState
-   (set-started [this] "Set the cursor state to be started")
-   (set-ended [this] "Set the cursor state to be ended"))
-
 (defn- cursor-type
-  [range-type]
+  [range-type v1 v2]
   (case range-type
-    :all               [true false false false false]
-    :all-back          [false false false false false]
-    :at-least          [true true true false false]
-    :at-least-back     [false true true false false]
-    :at-most           [true false false true true]
-    :at-most-back      [false false false true true]
-    :closed            [true true true true true]
-    :closed-back       [false true true true true]
-    :closed-open       [true true true true false]
-    :closed-open-back  [false true true true false]
-    :greater-than      [true true false false false]
-    :greater-than-back [false true false false false]
-    :less-than         [true false false true false]
-    :less-than-back    [false false false true false]
-    :open              [true true false true false]
-    :open-back         [false true false true false]
-    :open-closed       [true true false true true]
-    :open-closed-back  [false true false true true]))
+    :all               [true false false false false nil nil]
+    :all-back          [false false false false false nil nil]
+    :at-least          [true true true false false v1 nil]
+    :at-most-back      [false true true false false v1 nil]
+    :at-most           [true false false true true nil v1]
+    :at-least-back     [false false false true true nil v1]
+    :closed            [true true true true true v1 v2]
+    :closed-back       [false true true true true v1 v2]
+    :closed-open       [true true true true false v1 v2]
+    :closed-open-back  [false true true true false v1 v2]
+    :greater-than      [true true false false false v1 nil]
+    :less-than-back    [false true false false false v1 nil]
+    :less-than         [true false false true false nil v1]
+    :greater-than-back [false false false true false nil v1]
+    :open              [true true false true false v1 v2]
+    :open-back         [false true false true false v1 v2]
+    :open-closed       [true true false true true v1 v2]
+    :open-closed-back  [false true false true true v1 v2]))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    CursorIterable [;^:volatile-mutable started?
-                                        ;^:volatile-mutable ended?
-                    ^Cursor cursor
+    CursorIterable [^Cursor cursor
                     ^Dbi dbi
                     ^Rtx rtx
                     forward?
                     start-key?
                     include-start?
                     stop-key?
-                    include-stop?]
+                    include-stop?
+                    ^BufVal sk
+                    ^BufVal ek]
   AutoCloseable
   (close [_]
     (.close cursor))
 
-  ;; IState
-  ;; (set-started [_] (set! started? true))
-  ;; (set-ended [_] (set! ended? true))
-
   Iterable
   (iterator [this]
-    (let [started?   (volatile! false)
-          ended?     (volatile! false)
-          ^BufVal k  (.-kp rtx)
-          ^BufVal v  (.-vp rtx)
-          ^BufVal sk (.-start-kp rtx)
-          ^BufVal ek (.-stop-kp rtx)
-          ^Txn txn   (.-txn rtx)
-          i          (.get ^Dbi dbi)
-          op-get     Lib$MDB_cursor_op/MDB_GET_CURRENT
-          op-next    Lib$MDB_cursor_op/MDB_NEXT
-          op-prev    Lib$MDB_cursor_op/MDB_PREV
-          op-set     Lib$MDB_cursor_op/MDB_SET
-          op-first   Lib$MDB_cursor_op/MDB_FIRST
-          op-last    Lib$MDB_cursor_op/MDB_LAST]
+    (let [started?     (volatile! false)
+          ended?       (volatile! false)
+          ^BufVal k    (.-kp rtx)
+          ^BufVal v    (.-vp rtx)
+          ^Txn txn     (.-txn rtx)
+          i            (.get ^Dbi dbi)
+          op-get       Lib$MDB_cursor_op/MDB_GET_CURRENT
+          op-next      Lib$MDB_cursor_op/MDB_NEXT
+          op-prev      Lib$MDB_cursor_op/MDB_PREV
+          op-set       Lib$MDB_cursor_op/MDB_SET
+          op-set-range Lib$MDB_cursor_op/MDB_SET_RANGE
+          op-first     Lib$MDB_cursor_op/MDB_FIRST
+          op-last      Lib$MDB_cursor_op/MDB_LAST]
       ;; assuming hasNext is always called before next, hasNext will
       ;; position the cursor, next will get the data
       (reify
         Iterator
         (hasNext [this]
-          (let [has?  #(if (= % (Lib/MDB_NOTFOUND))
-                         false
-                         (do (Lib/checkRc %) true))
-                found #(if stop-key?
-                         (do (Lib/checkRc
-                               (Lib/mdb_cursor_get
-                                 (.get cursor) (.getVal k) (.getVal v) op-get))
-                             (if (= 0 (Lib/mdb_cmp
-                                        (.get txn) i (.getVal k) (.getVal ek)))
-                               (do (vreset! ended? true) include-stop?)
-                               true))
-                         true)]
+          (let [has?      #(if (= ^int % (Lib/MDB_NOTFOUND))
+                             false
+                             (do (Lib/checkRc ^int %) true))
+                cmp       #(do (Lib/checkRc
+                                 (Lib/mdb_cursor_get
+                                   (.get cursor) (.getVal k) (.getVal v) op-get))
+                               (println "got the current")
+                               (Lib/mdb_cmp (.get txn) i (.getVal k) (.getVal ek)))
+                end       #(do (println "passed stop key")
+                               (vreset! ended? true)
+                               false)
+                continue? #(if stop-key?
+                             (let [r (cmp)]
+                               (if (= r 0)
+                                 (do (println "found stop key")
+                                     (vreset! ended? true)
+                                     include-stop?)
+                                 (if (> r 0)
+                                   (if forward? (end) true)
+                                   (if forward? true (end)))))
+                             true)]
             (if @ended?
               false
               (if @started?
                 (if forward?
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-next))
-                    (found)
+                    (continue?)
                     false)
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-prev))
-                    (found)
+                    (continue?)
                     false))
                 (do
                   (vreset! started? true)
@@ -239,7 +239,15 @@
                           (has?
                             (Lib/mdb_cursor_get
                               (.get cursor ) (.getVal k) (.getVal v) op-prev))))
-                      false)
+                      (if (has? (Lib/mdb_cursor_get
+                                  (.get cursor) (.getVal sk) (.getVal v)
+                                  op-set-range))
+                        (if forward?
+                          true
+                          (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor ) (.getVal k) (.getVal v) op-prev)))
+                        false))
                     (if forward?
                       (has?
                         (Lib/mdb_cursor_get
@@ -249,8 +257,7 @@
                           (.get cursor) (.getVal k) (.getVal v) op-last)))))))))
         (next [this]
           (Lib/checkRc
-            (Lib/mdb_cursor_get
-              (.get cursor) (.getVal k) (.getVal v) op-get))
+            (Lib/mdb_cursor_get (.get cursor) (.getVal k) (.getVal v) op-get))
           (->KV k v))))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
@@ -316,10 +323,12 @@
         (.outBuf vp))))
 
   (iterate-kv [this rtx range-type]
-    (let [txn                  (.-txn ^Rtx rtx)
-          [f? sk? is? ek? ie?] (cursor-type range-type)
-          cur                  (Cursor/create txn db)]
-      (->CursorIterable cur db rtx f? sk? is? ek? ie?))))
+    (let [txn                        (.-txn ^Rtx rtx)
+          v1                         (.-start-kp ^Rtx rtx)
+          v2                         (.-stop-kp ^Rtx rtx)
+          [f? sk? is? ek? ie? sk ek] (cursor-type range-type v1 v2)
+          cur                        (Cursor/create txn db)]
+      (->CursorIterable cur db rtx f? sk? is? ek? ie? sk ek))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}

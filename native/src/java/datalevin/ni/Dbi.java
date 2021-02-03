@@ -8,7 +8,7 @@ import org.graalvm.nativeimage.c.type.CIntPointer;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 
 /**
- * Wrap a MDB_dbi
+ * Wrap MDB_dbi
  */
 @CContext(Lib.Directives.class)
 public class Dbi {
@@ -24,6 +24,9 @@ public class Dbi {
                                      CTypeConversion.toCString(name).get(),
                                      flags,
                                      ptr));
+        // Lib.checkRc(Lib.mdb_set_compare(txn.get(),
+        //                                 get(),
+        //                                 BufVal.cmpCallback.getFunctionPointer()));
 
         txn.commit();
     }

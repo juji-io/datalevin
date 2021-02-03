@@ -9,6 +9,7 @@
            [java.nio.charset StandardCharsets]
            [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
+           [java.nio ByteOrder]
            [datalevin.datom Datom]))
 
 ;; files
@@ -34,10 +35,34 @@
 
 ;; byte buffer
 
+(defn ^:no-doc hexify
+  "Convert bytes to hex string"
+  [bs]
+  (let [hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F]]
+    (letfn [(hexify-byte [b]
+              (let [v (bit-and ^byte b 0xFF)]
+                [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))]
+      (apply str (mapcat hexify-byte bs)))))
+
+(defn ^:no-doc unhexify
+  "Convert hex string to byte sequence"
+  [s]
+  (letfn [(unhexify-2 [c1 c2]
+            (unchecked-byte
+              (+ (bit-shift-left (Character/digit ^char c1 16) 4)
+                 (Character/digit ^char c2 16))))]
+    (map #(apply unhexify-2 %) (partition 2 s))))
+
+(defn ^ByteBuffer allocate-buffer
+  "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
+  [size]
+  (let [bf (ByteBuffer/allocateDirect size)]
+    (.order bf ByteOrder/LITTLE_ENDIAN)))
+
 (defn- get-long
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
-  (.getLong bb))
+  (Long/reverseBytes (.getLong bb)))
 
 (defn- get-int
   "Get an int from a ByteBuffer"
@@ -117,9 +142,10 @@
              {})))
 
 (defn- put-long
-  ([^ByteBuffer bb n]
-   (check-buffer-overflow Long/BYTES (.remaining bb))
-   (.putLong bb ^long n)))
+  [^ByteBuffer bb n]
+  (check-buffer-overflow Long/BYTES (.remaining bb))
+  (.putLong bb ^long (Long/reverseBytes n))
+  )
 
 (defn- encode-float
   [x]
@@ -168,6 +194,23 @@
 
 ;; bytes
 
+(defn type-size
+  "Return the storage size (bytes) of the fixed length data type (a keyword).
+  Useful when calling `open-dbi`. E.g. return 9 for `:long` (i.e. 8 bytes plus
+  an 1 byte header). Return nil if the given data type has no fixed size."
+  [type]
+  (case type
+    :int     4
+    :long    9
+    :id      8
+    :float   5
+    :double  9
+    :byte    1
+    :boolean 2
+    :instant 9
+    :uuid    17
+    nil))
+
 (defn ^:no-doc measure-size
   "measure size of x in number of bytes"
   [x]
@@ -177,31 +220,14 @@
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
 
-(defn ^:no-doc hexify
-  "Convert bytes to hex string"
-  [bs]
-  (let [hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F]]
-    (letfn [(hexify-byte [b]
-              (let [v (bit-and ^byte b 0xFF)]
-                [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))]
-      (apply str (mapcat hexify-byte bs)))))
-
-(defn ^:no-doc unhexify
-  "Convert hex string to byte sequence"
-  [s]
-  (letfn [(unhexify-2 [c1 c2]
-            (unchecked-byte
-             (+ (bit-shift-left (Character/digit ^char c1 16) 4)
-                (Character/digit ^char c2 16))))]
-    (map #(apply unhexify-2 %) (partition 2 s))))
 
 ;; nippy
 
 (nippy/extend-freeze Datom :datalevin/datom
- [^Datom x ^DataOutput out]
- (.writeLong out (.-e x))
- (nippy/freeze-to-out! out (.-a x))
- (nippy/freeze-to-out! out (.-v x)))
+                     [^Datom x ^DataOutput out]
+                     (.writeLong out (.-e x))
+                     (nippy/freeze-to-out! out (.-a x))
+                     (nippy/freeze-to-out! out (.-v x)))
 
 (nippy/extend-thaw :datalevin/datom
  [^DataInput in]
@@ -608,7 +634,10 @@
    (case v-type
      :string  (do (get-byte bf) (get-string bf))
      :int     (get-int bf)
-     :long    (do (get-byte bf) (get-long bf))
+     :long    (do
+                (println (str "get: " (hexify (get-bytes bf))) )
+                (.rewind bf)
+                (get-byte bf) (get-long bf))
      :id      (get-long bf)
      :float   (do (get-byte bf) (get-float bf))
      :double  (do (get-byte bf) (get-double bf))
