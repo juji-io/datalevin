@@ -37,3 +37,5 @@ reading
 .cpcache/
 /codox
 .clj-kondo/
+*.o
+*.a
