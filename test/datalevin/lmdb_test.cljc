@@ -1,6 +1,5 @@
-(ns datalevin.binding.java-test
+(ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as l]
-            [datalevin.binding.java]
             [datalevin.bits :as b]
             [datalevin.util :as u]
             [datalevin.constants :as c]
@@ -10,10 +9,9 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
-  (:import [java.util UUID Arrays]
-           [datalevin.binding.java LMDB]))
+  (:import [java.util UUID Arrays]))
 
-(def ^:dynamic ^LMDB lmdb nil)
+(def ^:dynamic lmdb nil)
 
 (defn lmdb-test-fixture
   [f]

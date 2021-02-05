@@ -27,6 +27,7 @@ public class Dbi {
         // Lib.checkRc(Lib.mdb_set_compare(txn.get(),
         //                                 get(),
         //                                 BufVal.cmpCallback.getFunctionPointer()));
+        Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
 
         txn.commit();
     }

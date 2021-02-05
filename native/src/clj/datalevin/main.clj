@@ -61,6 +61,28 @@
 
 (defn- dtlv-conn [options arguments]
   (try
+    #_(let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
+            misc-table "misc-test-table"]
+        (println "env opened")
+        (l/open-dbi db misc-table)
+        (println "dbi opened")
+        (l/transact db
+                    [[:put misc-table "a" "a" :string]
+                     [:put misc-table "aa" "aa" :string]
+                     [:put misc-table "b" "b" :string]
+                     [:put misc-table "bb" "bb" :string]
+                     [:put misc-table "bc" "bc" :string]
+                     [:put misc-table "c" "c" :string]
+                     [:put misc-table "d" "d" :string]
+                     [:put misc-table "da" "da" :string]
+                     ])
+        (println "transacted")
+        (println (str "get range:" (l/get-range db misc-table
+                                                [:closed-open "b" "d"]
+                                                :string)))
+        (l/close-env db)
+        (println "closed")
+        )
     (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
           misc-table "misc-test-table"]
       (println "env opened")
@@ -84,8 +106,8 @@
                    [:put misc-table 16384 16384 :long :long]])
       (println "transacted")
       (println (str "get range:" (l/get-range db misc-table
-                                              [:at-least 30]
-                                              :long :long)))
+                                              [:less-than-back 128]
+                                              :long :long true)))
       (l/close-env db)
       (println "closed")
       )

@@ -3,14 +3,21 @@
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
-            [datalevin.binding.scan :as scan]
-            [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IDB ILMDB]]
+            [datalevin.scan :as scan]
+            [datalevin.lmdb :as lmdb
+             :refer [open-lmdb IBuffer IRange IKV IRtx IDB ILMDB]]
             [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn KeyRange Txn$BadReaderLockException]
+            PutFlags Txn KeyRange Txn$BadReaderLockException
+            CursorIterable$KeyVal]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
+
+(extend-protocol IKV
+  CursorIterable$KeyVal
+  (k [this] (.key ^CursorIterable$KeyVal this))
+  (v [this] (.val ^CursorIterable$KeyVal this)))
 
 (def default-env-flags [EnvFlags/MDB_NORDAHEAD
                         EnvFlags/MDB_MAPASYNC
@@ -39,6 +46,28 @@
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
+  (range-info [this range-type _ _]
+    (let [kb1 (.-start-kb this)
+          kb2 (.-stop-kb this)]
+      (case range-type
+        :all               (KeyRange/all)
+        :all-back          (KeyRange/allBackward)
+        :at-least          (KeyRange/atLeast kb1)
+        :at-most-back      (KeyRange/atLeastBackward kb1)
+        :at-most           (KeyRange/atMost kb1)
+        :at-least-back     (KeyRange/atMostBackward kb1)
+        :closed            (KeyRange/closed kb1 kb2)
+        :closed-back       (KeyRange/closedBackward kb1 kb2)
+        :closed-open       (KeyRange/closedOpen kb1 kb2)
+        :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
+        :greater-than      (KeyRange/greaterThan kb1)
+        :less-than-back    (KeyRange/greaterThanBackward kb1)
+        :less-than         (KeyRange/lessThan kb1)
+        :greater-than-back (KeyRange/lessThanBackward kb1)
+        :open              (KeyRange/open kb1 kb2)
+        :open-back         (KeyRange/openBackward kb1 kb2)
+        :open-closed       (KeyRange/openClosed kb1 kb2)
+        :open-closed-back  (KeyRange/openClosedBackward kb1 kb2))))
   (put-start-key [_ x t]
     (when x
       (try
@@ -116,28 +145,6 @@
            and managed like a stateful resource. Refer to the documentation of
            `datalevin.lmdb/open-lmdb` for more details." {})))))
 
-(defn- key-range
-  [range-type kb1 kb2]
-  (case range-type
-    :all               (KeyRange/all)
-    :all-back          (KeyRange/allBackward)
-    :at-least          (KeyRange/atLeast kb1)
-    :at-least-back     (KeyRange/atLeastBackward kb1)
-    :at-most           (KeyRange/atMost kb1)
-    :at-most-back      (KeyRange/atMostBackward kb1)
-    :closed            (KeyRange/closed kb1 kb2)
-    :closed-back       (KeyRange/closedBackward kb1 kb2)
-    :closed-open       (KeyRange/closedOpen kb1 kb2)
-    :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
-    :greater-than      (KeyRange/greaterThan kb1)
-    :greater-than-back (KeyRange/greaterThanBackward kb1)
-    :less-than         (KeyRange/lessThan kb1)
-    :less-than-back    (KeyRange/lessThanBackward kb1)
-    :open              (KeyRange/open kb1 kb2)
-    :open-back         (KeyRange/openBackward kb1 kb2)
-    :open-closed       (KeyRange/openClosed kb1 kb2)
-    :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))
-
 (deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [this x t]
@@ -178,10 +185,8 @@
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
-  (iterate-kv [this rtx range-type]
-    (let [^ByteBuffer start-kb (.-start-kb ^Rtx rtx)
-          ^ByteBuffer stop-kb  (.-stop-kb ^Rtx rtx)]
-      (.iterate db (.-txn ^Rtx rtx) (key-range range-type start-kb stop-kb)))))
+  (iterate-kv [_ rtx range-info]
+    (.iterate db (.-txn ^Rtx rtx) range-info)))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* 10 (-> env .info .mapSize))))

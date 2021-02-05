@@ -14,6 +14,12 @@ export PATH=$GRAALVM_HOME/bin:$PATH
 
 JAR="target/datalevin-native-0.3.17-standalone.jar"
 
+cd src/c/
+
+gcc -Wall -g -c dtlv.c -o dtlv.o
+ar rcs libdtlv.a dtlv.o
+
+cd ../../
 lein "do" clean, uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
@@ -24,6 +30,7 @@ lein "do" clean, uberjar
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
     -H:+PrintClassInitialization \
+    -H:CLibraryPath=src/c \
     --initialize-at-build-time \
     --report-unsupported-elements-at-runtime \
     --allow-incomplete-classpath \

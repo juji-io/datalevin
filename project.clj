@@ -23,7 +23,10 @@
                  [persistent-sorted-set]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
+                 [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]]
+  :source-paths ["src" "native/src/clj"]
+  :java-source-paths ["native/src/java"]
   :profiles {:dev     {:dependencies [[org.clojure/test.check "1.1.0"]
                                       [com.taoensso/timbre "5.1.0"]]}
              :uberjar {:aot  :all

@@ -1,5 +1,6 @@
 package datalevin.ni;
 
+import com.oracle.svm.core.c.ProjectHeaderFile;
 import com.oracle.svm.core.c.CGlobalData;
 import com.oracle.svm.core.c.CGlobalDataFactory;
 import org.graalvm.nativeimage.IsolateThread;
@@ -31,6 +32,7 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.PointerBase;
 
+
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -47,12 +49,16 @@ public final class Lib {
     public static final class Directives implements CContext.Directives {
         @Override
         public List<String> getHeaderFiles() {
-            return Collections.singletonList("<lmdb.h>");
+            // return Collections.singletonList("<lmdb.h>");
+            return Collections
+                .singletonList(//"<lmdb.h>",
+                               ProjectHeaderFile
+                               .resolve("datalevin.ni", "dtlv.h"));
         }
 
         @Override
         public List<String> getLibraries() {
-            return Arrays.asList("lmdb");
+            return Arrays.asList("lmdb", "dtlv");
         }
     }
 
@@ -530,5 +536,14 @@ public final class Lib {
 
     @CFunction("mdb_reader_check")
     public static native int mdb_reader_check(MDB_env env, CIntPointer dead);
+
+    /**
+     * Datalevin comparator
+     */
+    @CFunction("dtlv_cmp_memn")
+    public static native int dtlv_cmp_memn(MDB_val a, MDB_val b);
+
+    @CFunction("dtlv_set_comparator")
+    public static native int dtlv_set_comparator(MDB_txn txn, int dbi);
 
 }

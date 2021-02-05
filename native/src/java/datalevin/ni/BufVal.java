@@ -22,27 +22,42 @@ import java.nio.ByteOrder;
 @CContext(Lib.Directives.class)
 public class BufVal {
 
-    private int size;
+    private int capacity;
+    private ByteBuffer inBuf;
+
     private VoidPointer data;
     private Lib.MDB_val ptr;
 
-    /**
-     * constructor that allocates necessary memory
-     */
     public BufVal(int size) {
-        this.size = size;
-        this.data = UnmanagedMemory.calloc(size);
-        this.ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
-        reset();
+        capacity = size;
+
+        data = UnmanagedMemory.calloc(size);
+        ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
+
+        ptr.set_mv_size(size);
+        ptr.set_mv_data(data);
+        // reset();
+
+        inBuf = CTypeConversion.asByteBuffer(data, size);
+        inBuf.order(ByteOrder.BIG_ENDIAN);
     }
 
     /**
-     * reset the MDB_val to point to the internal allocated memory,
-     * so that it can be used as the input for LMDB calls.
+     * Set the  limit of internal ByteBuffer to the current position, and update
+     * the MDB_val size to be the same, so no unnecessary bytes are written
      */
-    void reset() {
-        ptr.set_mv_size(size);
-        ptr.set_mv_data(data);
+    public void flip() {
+        inBuf.flip();
+        ptr.set_mv_size(inBuf.limit());
+    }
+
+    /**
+     * Set the  limit of internal ByteBuffer to capacity, and update
+     * the MDB_val size to be the same, do it is ready to accept writes
+     */
+    public void clear() {
+        inBuf.clear();
+        ptr.set_mv_size(inBuf.limit());
     }
 
     /**
@@ -59,17 +74,17 @@ public class BufVal {
     public ByteBuffer outBuf() {
         ByteBuffer buf = CTypeConversion.asByteBuffer(ptr.get_mv_data(),
                                                       (int)ptr.get_mv_size());
-        // because we use LMDB native comparator
-        buf.order(ByteOrder.LITTLE_ENDIAN);
+        buf.order(ByteOrder.BIG_ENDIAN);
         return buf;
     }
 
     /**
-     * Return a ByteBuffer for putting data into MDB_val
+     * Reset MDB_val pointer back to internal ByteBuffer, and return it
+     * for putting data into MDB_val
      */
     public ByteBuffer inBuf() {
-        reset();
-        return outBuf();
+        ptr.set_mv_data(data);
+        return inBuf;
     }
 
     /**
@@ -89,70 +104,79 @@ public class BufVal {
     /**
      * callback method to compare data
      */
-    @CEntryPoint
-    @CEntryPointOptions(prologue =
-                        CEntryPointSetup.EnterCreateIsolatePrologue.class,
-                        epilogue =
-                        CEntryPointSetup.LeaveTearDownIsolateEpilogue.class)
-    static int compareData(IsolateThread thread, Lib.MDB_val a, Lib.MDB_val b) {
-        System.out.println("a address:" + a.rawValue());
-        System.out.println("a data address:" + a.get_mv_data().rawValue());
-        System.out.println("a size:" + a.get_mv_size());
+    // @CEntryPoint
+    // @CEntryPointOptions(prologue =
+    //                     CEntryPointSetup.EnterCreateIsolatePrologue.class,
+    //                     epilogue =
+    //                     CEntryPointSetup.LeaveTearDownIsolateEpilogue.class)
+    // static int compareData(IsolateThread thread, Lib.MDB_val a, Lib.MDB_val b) {
 
-        ByteBuffer bufA = CTypeConversion.asByteBuffer(a.get_mv_data(),
-                                                       (int)a.get_mv_size());
-        System.out.println("done asbytebuffer");
-        bufA.order(ByteOrder.BIG_ENDIAN);
-        System.out.println("done set order");
+    //     System.out.println("null address:" + WordFactory.nullPointer().rawValue());
 
-        System.out.println("b address:" + b.rawValue());
-        System.out.println("null address:" + WordFactory.nullPointer().rawValue());
-        System.out.println("b data address:" + b.get_mv_data().rawValue());
-        System.out.println("b size:" + b.get_mv_size());
+    //     System.out.println("a address:" + a.rawValue());
+    //     System.out.println("b address:" + b.rawValue());
 
-        ByteBuffer bufB = CTypeConversion.asByteBuffer(b.get_mv_data(),
-                                                       (int)b.get_mv_size());
-        System.out.println("done asbytebuffer");
-        bufB.order(ByteOrder.BIG_ENDIAN);
-        System.out.println("done set order");
+    //     if (a == b) return 0;
 
-        final int minLength = Math.min(bufA.limit(), bufB.limit());
-        System.out.println("done minlength");
+    //     if (a.rawValue() < 10) return -1;
 
-        final int minWords = minLength / Long.BYTES;
+    //     if (b.rawValue() < 10) return 1;
 
-        for (int i = 0; i < minWords * Long.BYTES; i += Long.BYTES) {
-            final long lw =  bufA.getLong(i);
-            System.out.println("done getLong");
-            final long rw = bufB.getLong(i);
-            final int diff = Long.compareUnsigned(lw, rw);
-            if (diff != 0) {
-                return diff;
-            }
-        }
+    //     System.out.println("a data address:" + a.get_mv_data().rawValue());
+    //     System.out.println("a size:" + a.get_mv_size());
+    //     System.out.println("b data address:" + b.get_mv_data().rawValue());
+    //     System.out.println("b size:" + b.get_mv_size());
 
-        for (int i = minWords * Long.BYTES; i < minLength; i++) {
-            final int lw = Byte.toUnsignedInt(bufA.get(i));
-            final int rw = Byte.toUnsignedInt(bufB.get(i));
-            final int result = Integer.compareUnsigned(lw, rw);
-            if (result != 0) {
-                return result;
-            }
-        }
+    //     ByteBuffer bufA = CTypeConversion.asByteBuffer(a.get_mv_data(),
+    //                                                    (int)a.get_mv_size());
+    //     System.out.println("done asbytebuffer");
+    //     bufA.order(ByteOrder.BIG_ENDIAN);
+    //     System.out.println("done set order");
 
-        return bufA.capacity() - bufB.capacity();
-    }
+
+    //     ByteBuffer bufB = CTypeConversion.asByteBuffer(b.get_mv_data(),
+    //                                                    (int)b.get_mv_size());
+    //     System.out.println("done asbytebuffer");
+    //     bufB.order(ByteOrder.BIG_ENDIAN);
+    //     System.out.println("done set order");
+
+    //     final int minLength = Math.min(bufA.limit(), bufB.limit());
+    //     System.out.println("done minlength");
+
+    //     final int minWords = minLength / Long.BYTES;
+
+    //     for (int i = 0; i < minWords * Long.BYTES; i += Long.BYTES) {
+    //         final long lw =  bufA.getLong(i);
+    //         System.out.println("done getLong");
+    //         final long rw = bufB.getLong(i);
+    //         final int diff = Long.compareUnsigned(lw, rw);
+    //         if (diff != 0) {
+    //             return diff;
+    //         }
+    //     }
+
+    //     for (int i = minWords * Long.BYTES; i < minLength; i++) {
+    //         final int lw = Byte.toUnsignedInt(bufA.get(i));
+    //         final int rw = Byte.toUnsignedInt(bufB.get(i));
+    //         final int result = Integer.compareUnsigned(lw, rw);
+    //         if (result != 0) {
+    //             return result;
+    //         }
+    //     }
+
+    //     return bufA.capacity() - bufB.capacity();
+    // }
 
     /**
      * hold the pointer to compareData function
      */
-    public static final CEntryPointLiteral<Lib.MDB_cmp_func> cmpCallback =
-        CEntryPointLiteral.create(BufVal.class,
-                                  "compareData",
-                                  new Class[]{
-                                      IsolateThread.class,
-                                      Lib.MDB_val.class,
-                                      Lib.MDB_val.class
-                                  });
+    // public static final CEntryPointLiteral<Lib.MDB_cmp_func> cmpCallback =
+    //     CEntryPointLiteral.create(BufVal.class,
+    //                               "compareData",
+    //                               new Class[]{
+    //                                   IsolateThread.class,
+    //                                   Lib.MDB_val.class,
+    //                                   Lib.MDB_val.class
+    //                               });
 
 }

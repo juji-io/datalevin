@@ -3,9 +3,8 @@
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
-            [datalevin.binding.scan :as scan]
-            [datalevin.lmdb :refer [open-lmdb IBuffer IRange IRtx IDB IKV
-                                    ILMDB]]
+            [datalevin.lmdb :as lmdb
+             :refer [open-lmdb IBuffer IRange IRtx IDB IKV ILMDB]]
             [clojure.string :as s])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -26,13 +25,14 @@
          ^BufVal vp
          ^BufVal start-kp
          ^BufVal stop-kp]
+
   IBuffer
   (put-key [_ x t]
     (try
       (let [^ByteBuffer kb (.inBuf kp)]
-        (.clear kb)
+        (.clear ^BufVal kp)
         (b/put-buffer kb x t)
-        (.flip kb))
+        (.flip ^BufVal kp))
       (catch Exception e
         (raise "Error putting read-only transaction key buffer: "
                (ex-message e)
@@ -41,13 +41,49 @@
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
+  (range-info [this range-type k1 k2]
+    (let [chk1 #(if k1
+                  %1
+                  (raise "Missing start/end key for range type " %2 {}))
+          chk2 #(if (and k1 k2)
+                  %1
+                  (raise "Missing start/end key for range type " %2 {}))
+          v1   (.-start-kp this)
+          v2   (.-stop-kp this)]
+      (case range-type
+        :all               [true false false false false nil nil]
+        :all-back          [false false false false false nil nil]
+        :at-least          (chk1 [true true true false false v1 nil] :at-least)
+        :at-most-back      (chk1 [false true true false false v1 nil]
+                                 :at-most-back)
+        :at-most           (chk1 [true false false true true nil v1] :at-most)
+        :at-least-back     (chk1 [false false false true true nil v1]
+                                 :at-least-back)
+        :closed            (chk2 [true true true true true v1 v2] :closed)
+        :closed-back       (chk2 [false true true true true v1 v2] :closed-back)
+        :closed-open       (chk2 [true true true true false v1 v2] :closed-open)
+        :closed-open-back  (chk2 [false true true true false v1 v2]
+                                 :closed-open-back)
+        :greater-than      (chk1 [true true false false false v1 nil]
+                                 :greater-than)
+        :less-than-back    (chk1 [false true false false false v1 nil]
+                                 :less-than-back)
+        :less-than         (chk1 [true false false true false nil v1] :less-than)
+        :greater-than-back (chk1 [false false false true false nil v1]
+                                 :greater-than-back)
+        :open              (chk2 [true true false true false v1 v2] :open)
+        :open-back         (chk2 [false true false true false v1 v2] :open-back)
+        :open-closed       (chk2 [true true false true true v1 v2] :open-closed)
+        :open-closed-back  (chk2 [false true false true true v1 v2]
+                                 :open-closed-back)
+        (raise "Unknown range type" range-type {}))))
   (put-start-key [_ x t]
     (try
       (when x
         (let [^ByteBuffer start-kb (.inBuf start-kp)]
-          (.clear start-kb)
+          (.clear ^BufVal start-kp)
           (b/put-buffer start-kb x t)
-          (.flip start-kb)))
+          (.flip ^BufVal start-kp)))
       (catch Exception e
         (raise "Error putting read-only transaction start key buffer: "
                (ex-message e)
@@ -56,9 +92,9 @@
     (try
       (when x
         (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
-          (.clear stop-kb)
+          (.clear ^BufVal stop-kp)
           (b/put-buffer stop-kb x t)
-          (.flip stop-kb)))
+          (.flip ^BufVal stop-kp)))
       (catch Exception e
         (raise "Error putting read-only transaction stop key buffer: "
                (ex-message e)
@@ -134,27 +170,7 @@
   (k [this] (.outBuf kp))
   (v [this] (.outBuf vp)))
 
-(defn- cursor-type
-  [range-type v1 v2]
-  (case range-type
-    :all               [true false false false false nil nil]
-    :all-back          [false false false false false nil nil]
-    :at-least          [true true true false false v1 nil]
-    :at-most-back      [false true true false false v1 nil]
-    :at-most           [true false false true true nil v1]
-    :at-least-back     [false false false true true nil v1]
-    :closed            [true true true true true v1 v2]
-    :closed-back       [false true true true true v1 v2]
-    :closed-open       [true true true true false v1 v2]
-    :closed-open-back  [false true true true false v1 v2]
-    :greater-than      [true true false false false v1 nil]
-    :less-than-back    [false true false false false v1 nil]
-    :less-than         [true false false true false nil v1]
-    :greater-than-back [false false false true false nil v1]
-    :open              [true true false true false v1 v2]
-    :open-back         [false true false true false v1 v2]
-    :open-closed       [true true false true true v1 v2]
-    :open-closed-back  [false true false true true v1 v2]))
+
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -183,7 +199,6 @@
           op-get       Lib$MDB_cursor_op/MDB_GET_CURRENT
           op-next      Lib$MDB_cursor_op/MDB_NEXT
           op-prev      Lib$MDB_cursor_op/MDB_PREV
-          op-set       Lib$MDB_cursor_op/MDB_SET
           op-set-range Lib$MDB_cursor_op/MDB_SET_RANGE
           op-first     Lib$MDB_cursor_op/MDB_FIRST
           op-last      Lib$MDB_cursor_op/MDB_LAST]
@@ -195,22 +210,23 @@
           (let [has?      #(if (= ^int % (Lib/MDB_NOTFOUND))
                              false
                              (do (Lib/checkRc ^int %) true))
-                cmp       #(do (Lib/checkRc
-                                 (Lib/mdb_cursor_get
-                                   (.get cursor) (.getVal k) (.getVal v) op-get))
-                               (println "got the current")
-                               (Lib/mdb_cmp (.get txn) i (.getVal k) (.getVal ek)))
-                end       #(do (println "passed stop key")
-                               (vreset! ended? true)
-                               false)
+                cmp       #(do
+                             (Lib/checkRc
+                               (Lib/mdb_cursor_get
+                                 (.get cursor) (.getVal k) (.getVal v) op-get))
+                             (Lib/mdb_cmp (.get txn) i (.getVal k)
+                                          (.getVal ^BufVal %)))
+                end       #(do (vreset! ended? true) false)
                 continue? #(if stop-key?
-                             (let [r (cmp)]
+                             (let [^int r (cmp ek)]
                                (if (= r 0)
-                                 (do (println "found stop key")
+                                 (do (println "at ek")
                                      (vreset! ended? true)
                                      include-stop?)
                                  (if (> r 0)
-                                   (if forward? (end) true)
+                                   (do
+                                     (println "beyond ek")
+                                     (if forward? (end) true))
                                    (if forward? true (end)))))
                              true)]
             (if @ended?
@@ -219,35 +235,40 @@
                 (if forward?
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-next))
-                    (continue?)
+                    (do (println "has next, check continue ") (continue?))
                     false)
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-prev))
-                    (continue?)
+                    (do (println "has prev, check continue ") (continue?))
                     false))
                 (do
                   (vreset! started? true)
                   (if start-key?
                     (if (has? (Lib/mdb_cursor_get
-                                (.get cursor) (.getVal sk) (.getVal v) op-set))
-                      (if include-start?
-                        true
-                        (if forward?
-                          (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor ) (.getVal k) (.getVal v) op-next))
-                          (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor ) (.getVal k) (.getVal v) op-prev))))
-                      (if (has? (Lib/mdb_cursor_get
-                                  (.get cursor) (.getVal sk) (.getVal v)
-                                  op-set-range))
-                        (if forward?
-                          true
-                          (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor ) (.getVal k) (.getVal v) op-prev)))
-                        false))
+                                (.get cursor) (.getVal sk) (.getVal v)
+                                op-set-range))
+                      (do
+                        (println "start position")
+                        (if (= (cmp sk) 0)
+                          (do
+                            (println "at sk")
+                            (if include-start?
+                              (do (println "include sk") true)
+                              (if forward?
+                                (has?
+                                  (Lib/mdb_cursor_get
+                                    (.get cursor ) (.getVal k) (.getVal v) op-next))
+                                (has?
+                                  (Lib/mdb_cursor_get
+                                    (.get cursor ) (.getVal k) (.getVal v) op-prev)))))
+                          (do
+                            (println "beyond sk")
+                            (if forward?
+                              true
+                              (has?
+                                (Lib/mdb_cursor_get
+                                  (.get cursor ) (.getVal k) (.getVal v) op-prev))))))
+                      (do (println "no sk") false))
                     (if forward?
                       (has?
                         (Lib/mdb_cursor_get
@@ -270,9 +291,9 @@
     (let [^ByteBuffer kb (.inBuf kp)
           dbi-name       (.dbi-name this)]
       (try
-        (.clear kb)
+        (.clear ^BufVal kp)
         (b/put-buffer kb x t)
-        (.flip kb)
+        (.flip ^BufVal kp)
         (catch Exception e
           (raise "Error putting r/w key buffer of "
                  dbi-name ": " (ex-message e)
@@ -281,9 +302,9 @@
     (let [^ByteBuffer vb (.inBuf vp)
           dbi-name       (.dbi-name this)]
       (try
-        (.clear vb)
+        (.clear ^BufVal vp)
         (b/put-buffer vb x t)
-        (.flip vb)
+        (.flip ^BufVal vp)
         (catch Exception e
           (if (s/includes? (ex-message e) c/buffer-overflow)
             (let [size (* 2 ^long (b/measure-size x))]
@@ -291,7 +312,7 @@
               (set! vp (BufVal/create size))
               (let [^ByteBuffer vb (.inBuf vp)]
                 (b/put-buffer vb x t)
-                (.flip vb)))
+                (.flip ^BufVal vp)))
             (raise "Error putting r/w value buffer of "
                    dbi-name ": " (ex-message e)
                    {:value x :type t :dbi dbi-name}))))))
@@ -322,13 +343,11 @@
       (when-not (= rc (Lib/MDB_NOTFOUND))
         (.outBuf vp))))
 
-  (iterate-kv [this rtx range-type]
-    (let [txn                        (.-txn ^Rtx rtx)
-          v1                         (.-start-kp ^Rtx rtx)
-          v2                         (.-stop-kp ^Rtx rtx)
-          [f? sk? is? ek? ie? sk ek] (cursor-type range-type v1 v2)
-          cur                        (Cursor/create txn db)]
+  (iterate-kv [this rtx [f? sk? is? ek? ie? sk ek]]
+    (let [txn (.-txn ^Rtx rtx)
+          cur (Cursor/create txn db)]
       (->CursorIterable cur db rtx f? sk? is? ek? ie? sk ek))))
+
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -445,7 +464,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-value dbi rtx k k-type v-type ignore-key?)
+        (fetch-value dbi rtx k k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-value: " (ex-message e)
                  {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
@@ -462,7 +481,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-first dbi rtx k-range k-type v-type ignore-key?)
+        (fetch-first dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-first: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -480,7 +499,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-range dbi rtx k-range k-type v-type ignore-key?)
+        (fetch-range dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-range: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -494,7 +513,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-range-count dbi rtx k-range k-type)
+        (fetch-range-count dbi rtx k-range k-type)
         (catch Exception e
           (raise "Fail to range-count: " (ex-message e)
                  {:dbi dbi-name :k-range k-range :k-type k-type}))
@@ -511,7 +530,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
+        (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-some: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -529,7 +548,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
+        (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to range-filter: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -543,7 +562,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (scan/fetch-range-filtered-count dbi rtx pred k-range k-type)
+        (fetch-range-filtered-count dbi rtx pred k-range k-type)
         (catch Exception e
           (raise "Fail to range-filter-count: " (ex-message e)
                  {:dbi dbi-name :k-range k-range :k-type k-type}))

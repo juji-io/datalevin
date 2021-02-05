@@ -2,16 +2,14 @@
     (:import [org.graalvm.nativeimage ImageInfo]))
 
 (defprotocol ^:no-doc IBuffer
-  (put-key [this data k-type]
-    "put data in key buffer")
-  (put-val [this data v-type]
-    "put data in val buffer"))
+  (put-key [this data k-type] "put data in key buffer")
+  (put-val [this data v-type] "put data in val buffer"))
 
 (defprotocol ^:no-doc IRange
-  (put-start-key [this data k-type]
-    "put data in start-key buffer.")
-  (put-stop-key [this data k-type]
-    "put data in stop-key buffer."))
+  (range-info [this range-type k1 k2]
+    "return necessary range information for iterators")
+  (put-start-key [this data k-type] "put data in start-key buffer.")
+  (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
 (defprotocol ^:no-doc IRtx
   (close-rtx [this] "close the read-only transaction")
@@ -24,7 +22,7 @@
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-type] "Return an Iterable given the range"))
+  (iterate-kv [this rtx range-info] "Return an Iterable given the range"))
 
 (defprotocol ^:no-doc IKV
   (k [this] "key of a key value pair")

@@ -56,13 +56,12 @@
 (defn ^ByteBuffer allocate-buffer
   "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
   [size]
-  (let [bf (ByteBuffer/allocateDirect size)]
-    (.order bf ByteOrder/LITTLE_ENDIAN)))
+  (ByteBuffer/allocateDirect size))
 
 (defn- get-long
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
-  (Long/reverseBytes (.getLong bb)))
+  (.getLong bb))
 
 (defn- get-int
   "Get an int from a ByteBuffer"
@@ -144,8 +143,7 @@
 (defn- put-long
   [^ByteBuffer bb n]
   (check-buffer-overflow Long/BYTES (.remaining bb))
-  (.putLong bb ^long (Long/reverseBytes n))
-  )
+  (.putLong bb ^long n))
 
 (defn- encode-float
   [x]
@@ -634,10 +632,7 @@
    (case v-type
      :string  (do (get-byte bf) (get-string bf))
      :int     (get-int bf)
-     :long    (do
-                (println (str "get: " (hexify (get-bytes bf))) )
-                (.rewind bf)
-                (get-byte bf) (get-long bf))
+     :long    (do (get-byte bf) (get-long bf))
      :id      (get-long bf)
      :float   (do (get-byte bf) (get-float bf))
      :double  (do (get-byte bf) (get-double bf))
