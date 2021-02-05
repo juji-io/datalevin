@@ -3,6 +3,7 @@
 set -eou pipefail
 
 app_name=dtlv
+test_name=dtlv-test
 
 if [ -z "$GRAALVM_HOME" ]; then
     echo "Please set GRAALVM_HOME"
@@ -12,18 +13,42 @@ fi
 export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
 
-JAR="target/datalevin-native-0.3.17-standalone.jar"
+MAIN_JAR="target/main.uberjar.jar"
+TEST_JAR="target/test.uberjar.jar"
 
 cd src/c/
-
 gcc -Wall -g -c dtlv.c -o dtlv.o
 ar rcs libdtlv.a dtlv.o
 
 cd ../../
-lein "do" clean, uberjar
+# lein clean
+# lein with-profile main uberjar
+
+# "$GRAALVM_HOME/bin/native-image" \
+#     -H:Name=${app_name} \
+#     -H:+ReportExceptionStackTraces \
+#     -H:ConfigurationFileDirectories=config \
+#     -J-Dclojure.spec.skip-macros=true \
+#     -J-Dclojure.compiler.direct-linking=true \
+#     -H:Log=registerResource:verbose \
+#     -H:+PrintClassInitialization \
+#     -H:CLibraryPath=src/c \
+#     --initialize-at-build-time \
+#     --report-unsupported-elements-at-runtime \
+#     --allow-incomplete-classpath \
+#     --verbose \
+#     --no-fallback \
+#     --no-server \
+#     "-J-Xmx8g" \
+#     --native-image-info \
+#     -jar "$MAIN_JAR" \
+#     ${app_name}
+
+lein clean
+lein with-profile native-test uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
-    -H:Name=${app_name} \
+    -H:Name=${test_name} \
     -H:+ReportExceptionStackTraces \
     -H:ConfigurationFileDirectories=config \
     -J-Dclojure.spec.skip-macros=true \
@@ -39,5 +64,5 @@ lein "do" clean, uberjar
     --no-server \
     "-J-Xmx8g" \
     --native-image-info \
-    -jar "$JAR" \
-    ${app_name}
+    -jar "$TEST_JAR" \
+    ${test_name}

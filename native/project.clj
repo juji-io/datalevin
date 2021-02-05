@@ -10,8 +10,11 @@
                  [persistent-sorted-set]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
-                 [org.graalvm.nativeimage/svm]]
-  :source-paths ["src/clj" "../src"]
+                 [org.graalvm.nativeimage/svm]
+                 [org.lmdbjava/lmdbjava]
+                 [org.clojure/test.check "1.1.0"]
+                 ]
+  :source-paths ["src/clj" "../src" "../test"]
   :java-source-paths ["src/java"]
   :plugins [[lein-parent "0.3.8"]]
   )

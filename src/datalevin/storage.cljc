@@ -1,8 +1,6 @@
 (ns ^:no-doc datalevin.storage
   "storage layer of Datalevin"
   (:require [datalevin.lmdb :as lmdb]
-            ;; [datalevin.binding.java]
-            ;; [datalevin.binding.graal]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             ;; [taoensso.timbre :as log]
@@ -10,8 +8,11 @@
             [datalevin.datom :as d])
   (:import [java.util UUID]
            [datalevin.datom Datom]
-           [datalevin.bits Retrieved]
-           [org.lmdbjava PutFlags]))
+           [datalevin.bits Retrieved]))
+
+(if (u/graal?)
+  (require '[datalevin.binding.graal])
+  (require '[datalevin.binding.java]))
 
 (defn- transact-schema
   [lmdb schema]
@@ -148,7 +149,7 @@
       (pred d))))
 
 (defprotocol IStore
-  (dir [db] "Return the data file directory")
+  (dir [this] "Return the data file directory")
   (close [this] "Close storage")
   (closed? [this] "Return true if the storage is closed")
   (max-gt [this])
@@ -195,7 +196,7 @@
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore
-  (dir [_]
+  (dir [this]
     (lmdb/dir lmdb))
   (close [_]
     (lmdb/close-env lmdb))
@@ -382,7 +383,7 @@
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
                 [:put c/ave i max-gt :ave :id]
-                [:put c/giants max-gt d :id :datom [PutFlags/MDB_APPEND]]]
+                [:put c/giants max-gt d :id :datom true]]
          ref? (conj [:put c/vea i max-gt :vea :id]))
        true]
       [(cond-> [[:put c/eav i c/normal :eav :id]

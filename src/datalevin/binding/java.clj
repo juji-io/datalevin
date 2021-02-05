@@ -174,9 +174,9 @@
   IDB
   (dbi-name [_]
     (String. (.getName db) StandardCharsets/UTF_8))
-  (put [_ txn flags]
-    (if flags
-      (.put db txn kb vb (into-array PutFlags flags))
+  (put [_ txn append?]
+    (if append?
+      (.put db txn kb vb (into-array [PutFlags/MDB_APPEND]))
       (.put db txn kb vb default-put-flags)))
   (put [this txn]
     (.put this txn nil))

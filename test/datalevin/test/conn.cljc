@@ -7,10 +7,6 @@
    [datalevin.util :as u])
   (:import [java.util Date UUID]))
 
-(def schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}})
-(def datoms #{(d/datom 1 :age  17)
-              (d/datom 1 :name "Ivan")})
-
 (deftest test-close
   (let [conn (d/create-conn)]
     (is (not (d/closed? conn)))
@@ -35,25 +31,40 @@
     (is (= c/implicit-schema (:schema @conn)))))
 
 (deftest test-ways-to-create-conn-2
-  (let [conn (d/create-conn nil schema)]
+  (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
+        conn   (d/create-conn nil schema)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= (:schema @conn) (merge schema c/implicit-schema)))))
 
 (deftest test-ways-to-create-conn-3
 
-  (let [conn (d/conn-from-datoms datoms)]
+  (let [datoms #{(d/datom 1 :age  17)
+                 (d/datom 1 :name "Ivan")}
+
+        conn (d/conn-from-datoms datoms)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (:schema @conn))))
 
-  (let [conn (d/conn-from-datoms datoms nil schema)]
+  (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
+        datoms #{(d/datom 1 :age  17)
+                 (d/datom 1 :name "Ivan")}
+
+        conn (d/conn-from-datoms datoms nil schema)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (:schema @conn))))
 
-  (let [conn (d/conn-from-db (d/init-db datoms))]
+  (let [datoms #{(d/datom 1 :age  17)
+                 (d/datom 1 :name "Ivan")}
+
+        conn (d/conn-from-db (d/init-db datoms))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (:schema @conn))))
 
-  (let [conn (d/conn-from-db (d/init-db datoms nil schema))]
+  (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
+        datoms #{(d/datom 1 :age  17)
+                 (d/datom 1 :name "Ivan")}
+
+        conn (d/conn-from-db (d/init-db datoms nil schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (:schema @conn)))))
 

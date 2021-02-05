@@ -11,6 +11,7 @@
                          [org.graalvm.sdk/graal-sdk "21.0.0"]
                          [org.graalvm.nativeimage/svm "21.0.0"]
                          [com.taoensso/nippy "3.1.1"]
+                         [org.clojure/test.check "1.1.0"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -24,13 +25,21 @@
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
-                 [org.lmdbjava/lmdbjava]]
-  :source-paths ["src" "native/src/clj"]
+                 [org.lmdbjava/lmdbjava]
+                 [org.clojure/test.check "1.1.0"]
+                 ]
+  :source-paths ["src" "native/src/clj" "test"]
   :java-source-paths ["native/src/java"]
-  :profiles {:dev     {:dependencies [[org.clojure/test.check "1.1.0"]
-                                      [com.taoensso/timbre "5.1.0"]]}
-             :uberjar {:aot  :all
-                       :main datalevin.main}}
+  :profiles {:dev         {:dependencies [[org.clojure/test.check "1.1.0"]
+                                          [com.taoensso/timbre "5.1.0"]]}
+             :main        {:aot          :all
+                           :main         datalevin.main
+                           :uberjar-name "main.uberjar.jar"}
+             :native-test {:aot          :all
+                           :source-paths ["test"]
+                           :main         datalevin.test
+                           :uberjar-name "test.uberjar.jar"
+                           :dependencies [[org.clojure/test.check "1.1.0"]]}}
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "-Dclojure.compiler.direct-linking=true"]

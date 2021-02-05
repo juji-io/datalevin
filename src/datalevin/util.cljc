@@ -1,15 +1,14 @@
 (ns ^:no-doc datalevin.util
   (:require [clojure.walk]
-            [taoensso.nippy :as nippy]
             [clojure.string :as s])
   #?(:clj
-     (:import [java.io File]
-              [java.lang System]))
+     (:import [java.lang System]
+              [org.graalvm.nativeimage ImageInfo]))
   (:refer-clojure :exclude [seqable?]))
 
 (def  +separator+
   #?(:clj  java.io.File/separator
-     ;;this is faulty, since we could in node.js
+     ;;this is faulty, since we could be in node.js
      ;;on windows...but it will work for now!
      :cljs "/"))
 
@@ -87,6 +86,10 @@
      https://groups.google.com/d/msg/clojurescript/iBY5HaQda4A/w1lAQi9_AwsJ"
      [then else]
      (if (cljs-env? &env) then else)))
+
+#?(:clj
+   (defn graal? []
+     (ImageInfo/inImageCode)))
 
 #?(:clj
    (defn- get-sig [method]

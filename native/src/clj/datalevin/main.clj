@@ -6,7 +6,6 @@
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [datalevin.binding.graal])
-  (:import [datalevin.ni Lib])
   (:gen-class))
 
 (def cli-opts

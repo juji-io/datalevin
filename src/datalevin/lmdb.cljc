@@ -1,5 +1,5 @@
 (ns datalevin.lmdb "API for Key Value Store"
-    (:import [org.graalvm.nativeimage ImageInfo]))
+    (:require [datalevin.util :as u]))
 
 (defprotocol ^:no-doc IBuffer
   (put-key [this data k-type] "put data in key buffer")
@@ -18,7 +18,7 @@
 
 (defprotocol ^:no-doc IDB
   (dbi-name [this] "Return string name of the dbi")
-  (put [this txn] [this txn put-flags]
+  (put [this txn] [this txn append?]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
@@ -49,18 +49,18 @@
   (transact [db txs]
     "Update DB, insert or delete key value pairs.
 
-     `txs` is a seq of `[op dbi-name k v k-type v-type put-flags]`
+     `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
      when `op` is `:put`, for insertion of a key value pair `k` and `v`;
      or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
      `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
 
-     `k-type`, `v-type` and `put-flags` are optional.
+     `k-type`, `v-type` and `append?` are optional.
 
     `k-type` indicates the data type of `k`, and `v-type` indicates the data type
     of `v`. The allowed data types are described in [[datalevin.bits/put-buffer]]
 
-    `put-flags` is a vector of [LMDB put flags](https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/org/lmdbjava/PutFlags.html).
+    Set `append?` to true when the data is sorted to gain better write performance.
 
     Example:
 
@@ -328,4 +328,4 @@
   [integrant](https://github.com/weavejester/integrant), or something similar
   to hold on to and manage the connection. "
   {:arglists '([dir])}
-  (fn [_] (if (ImageInfo/inImageCode) :graal :java)))
+  (fn [_] (if (u/graal?) :graal :java)))

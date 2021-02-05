@@ -6,44 +6,47 @@
    [datalevin.util :as u])
   (:import [java.util UUID]))
 
-(def test-db (d/db-with (d/empty-db)
-                        [{:db/id 1 :name "Petr" :age 44}
-                         {:db/id 2 :name "Ivan" :age 25}
-                         {:db/id 3 :name "Oleg" :age 11}]))
-
 (deftest test-basics
-  (are [find res] (= (set (d/q {:find find
-                                :where '[[?e :age ?a]
-                                         [(>= ?a 18)]]}
-                               test-db))
-                     res)
-    '[(pull ?e [:name])]
-    #{[{:name "Ivan"}] [{:name "Petr"}]}
+  (let [test-db (d/db-with (d/empty-db)
+                           [{:db/id 1 :name "Petr" :age 44}
+                            {:db/id 2 :name "Ivan" :age 25}
+                            {:db/id 3 :name "Oleg" :age 11}])]
+    (are [find res] (= (set (d/q {:find find
+                                  :where '[[?e :age ?a]
+                                           [(>= ?a 18)]]}
+                                 test-db))
+                       res)
+      '[(pull ?e [:name])]
+      #{[{:name "Ivan"}] [{:name "Petr"}]}
 
-    '[(pull ?e [*])]
-    #{[{:db/id 2 :age 25 :name "Ivan"}] [{:db/id 1 :age 44 :name "Petr"}]}
+      '[(pull ?e [*])]
+      #{[{:db/id 2 :age 25 :name "Ivan"}] [{:db/id 1 :age 44 :name "Petr"}]}
 
-    '[?e (pull ?e [:name])]
-    #{[2 {:name "Ivan"}] [1 {:name "Petr"}]}
+      '[?e (pull ?e [:name])]
+      #{[2 {:name "Ivan"}] [1 {:name "Petr"}]}
 
-    '[?e ?a (pull ?e [:name])]
-    #{[2 25 {:name "Ivan"}] [1 44 {:name "Petr"}]}
+      '[?e ?a (pull ?e [:name])]
+      #{[2 25 {:name "Ivan"}] [1 44 {:name "Petr"}]}
 
-    '[?e (pull ?e [:name]) ?a]
-    #{[2 {:name "Ivan"} 25] [1 {:name "Petr"} 44]}))
+      '[?e (pull ?e [:name]) ?a]
+      #{[2 {:name "Ivan"} 25] [1 {:name "Petr"} 44]})))
 
 (deftest test-var-pattern
-  (are [find pattern res] (= (set (d/q {:find find
-                                        :in   '[$ ?pattern]
-                                        :where '[[?e :age ?a]
-                                                 [(>= ?a 18)]]}
-                                       test-db pattern))
-                             res)
-    '[(pull ?e ?pattern)] [:name]
-    #{[{:name "Ivan"}] [{:name "Petr"}]}
+  (let [test-db (d/db-with (d/empty-db)
+                           [{:db/id 1 :name "Petr" :age 44}
+                            {:db/id 2 :name "Ivan" :age 25}
+                            {:db/id 3 :name "Oleg" :age 11}])]
+    (are [find pattern res] (= (set (d/q {:find find
+                                          :in   '[$ ?pattern]
+                                          :where '[[?e :age ?a]
+                                                   [(>= ?a 18)]]}
+                                         test-db pattern))
+                               res)
+      '[(pull ?e ?pattern)] [:name]
+      #{[{:name "Ivan"}] [{:name "Petr"}]}
 
-    '[?e ?a ?pattern (pull ?e ?pattern)] [:name]
-    #{[2 25 [:name] {:name "Ivan"}] [1 44 [:name] {:name "Petr"}]}))
+      '[?e ?a ?pattern (pull ?e ?pattern)] [:name]
+      #{[2 25 [:name] {:name "Ivan"}] [1 44 [:name] {:name "Petr"}]})))
 
 ;; not supported
 #_(deftest test-multi-pattern
@@ -80,38 +83,45 @@
              #{[1 {:name "Petr"}]})))))
 
 (deftest test-find-spec
-  (is (= (d/q '[:find (pull ?e [:name]) .
-                :where [?e :age 25]]
-              test-db)
-         {:name "Ivan"}))
+  (let [test-db (d/db-with (d/empty-db)
+                           [{:db/id 1 :name "Petr" :age 44}
+                            {:db/id 2 :name "Ivan" :age 25}
+                            {:db/id 3 :name "Oleg" :age 11}])]
+    (is (= (d/q '[:find (pull ?e [:name]) .
+                  :where [?e :age 25]]
+                test-db)
+           {:name "Ivan"}))
+    (is (= (set (d/q '[:find [(pull ?e [:name]) ...]
+                       :where [?e :age ?a]]
+                     test-db))
+           #{{:name "Ivan"} {:name "Petr"} {:name "Oleg"}}))
 
-  (is (= (set (d/q '[:find [(pull ?e [:name]) ...]
-                     :where [?e :age ?a]]
-                   test-db))
-         #{{:name "Ivan"} {:name "Petr"} {:name "Oleg"}}))
+    (is (= (set (d/q '[:find [(pull ?e [*]) ...]
+                       :where [?e :age ?a]]
+                     test-db))
+           #{{:db/id 3, :name "Oleg", :age 11} {:db/id 2, :name "Ivan", :age 25}
+             {:db/id 1, :name "Petr", :age 44}}))
 
-  (is (= (set (d/q '[:find [(pull ?e [*]) ...]
-                     :where [?e :age ?a]]
-                   test-db))
-         #{{:db/id 3, :name "Oleg", :age 11} {:db/id 2, :name "Ivan", :age 25}
-           {:db/id 1, :name "Petr", :age 44}}))
-
-  (is (= (d/q '[:find [?e (pull ?e [:name])]
-                :where [?e :age 25]]
-              test-db)
-         [2 {:name "Ivan"}])))
+    (is (= (d/q '[:find [?e (pull ?e [:name])]
+                  :where [?e :age 25]]
+                test-db)
+           [2 {:name "Ivan"}]))))
 
 (deftest test-find-spec-input
-  (is (= (d/q '[:find (pull ?e ?p) .
-                :in $ ?p
-                :where [(ground 2) ?e]]
-              test-db [:name])
-         {:name "Ivan"}))
-  (is (= (d/q '[:find (pull ?e p) .
-                :in $ p
-                :where [(ground 2) ?e]]
-              test-db [:name])
-         {:name "Ivan"})))
+  (let [test-db (d/db-with (d/empty-db)
+                           [{:db/id 1 :name "Petr" :age 44}
+                            {:db/id 2 :name "Ivan" :age 25}
+                            {:db/id 3 :name "Oleg" :age 11}])]
+    (is (= (d/q '[:find (pull ?e ?p) .
+                  :in $ ?p
+                  :where [(ground 2) ?e]]
+                test-db [:name])
+           {:name "Ivan"}))
+    (is (= (d/q '[:find (pull ?e p) .
+                  :in $ p
+                  :where [(ground 2) ?e]]
+                test-db [:name])
+           {:name "Ivan"}))))
 
 (deftest test-aggregates
   (let [db (d/db-with (d/empty-db nil {:value {:db/cardinality :db.cardinality/many}})
@@ -139,9 +149,9 @@
              [[:name "Ivan"] 25 {:db/id 2 :name "Ivan"}]}))))
 
 (deftest test-cardinality-many
-  (let [dir    (u/tmp-dir (str "datalevin-test-cardinality-" (UUID/randomUUID)))
-        conn   (d/get-conn dir {:alias {:db/cardinality :db.cardinality/many
-                                        :db/valueType   :db.type/string}})]
+  (let [dir  (u/tmp-dir (str "datalevin-test-cardinality-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:alias {:db/cardinality :db.cardinality/many
+                                      :db/valueType   :db.type/string}})]
     (d/transact! conn [{:db/id -1 :name "Peter" :alias ["Pete" "Pepe"]}])
     (is (= #{"Pete" "Pepe"}
            (set (:alias (first (d/q '[:find [(pull ?e [*]) ...]

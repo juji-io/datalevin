@@ -3,6 +3,7 @@
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise]]
             [datalevin.constants :as c]
+            [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
              :refer [open-lmdb IBuffer IRange IRtx IDB IKV ILMDB]]
             [clojure.string :as s])
@@ -323,11 +324,11 @@
 
   (put [this txn]
     (.put this txn nil))
-  (put [_ txn flags]
+  (put [_ txn append?]
     (let [i (.get db)]
       (Lib/checkRc
-        (if flags
-          (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) flags)
+        (if append?
+          (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) (Lib/MDB_APPEND))
           (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) 0)))))
 
   (del [_ txn]
@@ -464,7 +465,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-value dbi rtx k k-type v-type ignore-key?)
+        (scan/fetch-value dbi rtx k k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-value: " (ex-message e)
                  {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
@@ -481,7 +482,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-first dbi rtx k-range k-type v-type ignore-key?)
+        (scan/fetch-first dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-first: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -499,7 +500,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range dbi rtx k-range k-type v-type ignore-key?)
+        (scan/fetch-range dbi rtx k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-range: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -513,7 +514,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range-count dbi rtx k-range k-type)
+        (scan/fetch-range-count dbi rtx k-range k-type)
         (catch Exception e
           (raise "Fail to range-count: " (ex-message e)
                  {:dbi dbi-name :k-range k-range :k-type k-type}))
@@ -530,7 +531,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
+        (scan/fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to get-some: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -548,7 +549,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
+        (scan/fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
         (catch Exception e
           (raise "Fail to range-filter: " (ex-message e)
                  {:dbi    dbi-name :k-range k-range
@@ -562,7 +563,7 @@
     (let [dbi      (.get-dbi this dbi-name)
           ^Rtx rtx (get-rtx pool)]
       (try
-        (fetch-range-filtered-count dbi rtx pred k-range k-type)
+        (scan/fetch-range-filtered-count dbi rtx pred k-range k-type)
         (catch Exception e
           (raise "Fail to range-filter-count: " (ex-message e)
                  {:dbi dbi-name :k-range k-range :k-type k-type}))
