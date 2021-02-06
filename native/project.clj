@@ -5,16 +5,17 @@
   :parent-project {:path    "../project.clj"
                    :inherit [:managed-dependencies :profiles :jvm-opts
                              :deploy-repositories :global-vars]}
-  :dependencies [[org.clojure/clojure :scope "provided"]
+  :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
                  [persistent-sorted-set]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]
-                 [org.clojure/test.check "1.1.0"]
+                 [org.clojure/test.check]
                  ]
   :source-paths ["src/clj" "../src" "../test"]
   :java-source-paths ["src/java"]
+  :test-paths ["../test"]
   :plugins [[lein-parent "0.3.8"]]
   )

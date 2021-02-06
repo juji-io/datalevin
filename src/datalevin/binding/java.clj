@@ -20,8 +20,9 @@
   (v [this] (.val ^CursorIterable$KeyVal this)))
 
 (def default-env-flags [EnvFlags/MDB_NORDAHEAD
-                        EnvFlags/MDB_MAPASYNC
-                        EnvFlags/MDB_WRITEMAP])
+                        ;; EnvFlags/MDB_MAPASYNC
+                        ;; EnvFlags/MDB_WRITEMAP
+                        ])
 
 (def default-dbi-flags [DbiFlags/MDB_CREATE])
 

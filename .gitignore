@@ -39,3 +39,4 @@ reading
 .clj-kondo/
 *.o
 *.a
+native/reports/

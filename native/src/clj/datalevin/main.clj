@@ -60,6 +60,31 @@
 
 (defn- dtlv-conn [options arguments]
   (try
+    (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-keyword-test")
+          misc-table "misc-test-table"]
+      (println "env opened")
+      (l/open-dbi db misc-table)
+      (println "dbi opened")
+      (l/transact db
+                  [[:put misc-table :a "a" :keyword]
+                   [:put misc-table :aa "aa" :keyword]
+                   [:put misc-table :b "b" :keyword]
+                   [:put misc-table :bb "bb" :keyword]
+                   [:put misc-table :bc "bc" :keyword]
+                   [:put misc-table :c "c" :keyword]
+                   [:put misc-table :d "d" :keyword]
+                   [:put misc-table :da "da" :keyword]
+                   ])
+      (println "transacted")
+      (println (str "get range:" (l/get-range db misc-table
+                                              [:closed-open :b :non-exist]
+                                              :keyword)))
+      (println (str "get non-exist:" (l/get-value db misc-table
+                                                  :non-exist
+                                                  :keyword)))
+      (l/close-env db)
+      (println "closed")
+      )
     #_(let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
             misc-table "misc-test-table"]
         (println "env opened")
@@ -82,34 +107,34 @@
         (l/close-env db)
         (println "closed")
         )
-    (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
-          misc-table "misc-test-table"]
-      (println "env opened")
-      (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
-      (println "dbi opened")
-      (l/transact db
-                  [[:put misc-table 1 1 :long :long]
-                   [:put misc-table 2 2 :long :long]
-                   [:put misc-table 4 4 :long :long]
-                   [:put misc-table 8 8 :long :long]
-                   [:put misc-table 16 16 :long :long]
-                   [:put misc-table 32 32 :long :long]
-                   [:put misc-table 64 64 :long :long]
-                   [:put misc-table 128 128 :long :long]
-                   [:put misc-table 256 256 :long :long]
-                   [:put misc-table 512 512 :long :long]
-                   [:put misc-table 1024 1024 :long :long]
-                   [:put misc-table 2048 2048 :long :long]
-                   [:put misc-table 4096 4096 :long :long]
-                   [:put misc-table 8192 8192 :long :long]
-                   [:put misc-table 16384 16384 :long :long]])
-      (println "transacted")
-      (println (str "get range:" (l/get-range db misc-table
-                                              [:less-than-back 128]
-                                              :long :long true)))
-      (l/close-env db)
-      (println "closed")
-      )
+    #_(let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
+            misc-table "misc-test-table"]
+        (println "env opened")
+        (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
+        (println "dbi opened")
+        (l/transact db
+                    [[:put misc-table 1 1 :long :long]
+                     [:put misc-table 2 2 :long :long]
+                     [:put misc-table 4 4 :long :long]
+                     [:put misc-table 8 8 :long :long]
+                     [:put misc-table 16 16 :long :long]
+                     [:put misc-table 32 32 :long :long]
+                     [:put misc-table 64 64 :long :long]
+                     [:put misc-table 128 128 :long :long]
+                     [:put misc-table 256 256 :long :long]
+                     [:put misc-table 512 512 :long :long]
+                     [:put misc-table 1024 1024 :long :long]
+                     [:put misc-table 2048 2048 :long :long]
+                     [:put misc-table 4096 4096 :long :long]
+                     [:put misc-table 8192 8192 :long :long]
+                     [:put misc-table 16384 16384 :long :long]])
+        (println "transacted")
+        (println (str "get range:" (l/get-range db misc-table
+                                                [:less-than-back 128]
+                                                :long :long true)))
+        (l/close-env db)
+        (println "closed")
+        )
     #_(let [schema {:aka  {:db/cardinality :db.cardinality/many}
                     :name {:db/valueType :db.type/string
                            :db/unique    :db.unique/identity}}

@@ -221,13 +221,10 @@
                 continue? #(if stop-key?
                              (let [^int r (cmp ek)]
                                (if (= r 0)
-                                 (do (println "at ek")
-                                     (vreset! ended? true)
+                                 (do (vreset! ended? true)
                                      include-stop?)
                                  (if (> r 0)
-                                   (do
-                                     (println "beyond ek")
-                                     (if forward? (end) true))
+                                   (if forward? (end) true)
                                    (if forward? true (end)))))
                              true)]
             (if @ended?
@@ -236,11 +233,11 @@
                 (if forward?
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-next))
-                    (do (println "has next, check continue ") (continue?))
+                    (continue?)
                     false)
                   (if (has? (Lib/mdb_cursor_get
                               (.get cursor) (.getVal k) (.getVal v) op-prev))
-                    (do (println "has prev, check continue ") (continue?))
+                    (continue?)
                     false))
                 (do
                   (vreset! started? true)
@@ -248,28 +245,22 @@
                     (if (has? (Lib/mdb_cursor_get
                                 (.get cursor) (.getVal sk) (.getVal v)
                                 op-set-range))
-                      (do
-                        (println "start position")
-                        (if (= (cmp sk) 0)
-                          (do
-                            (println "at sk")
-                            (if include-start?
-                              (do (println "include sk") true)
-                              (if forward?
-                                (has?
-                                  (Lib/mdb_cursor_get
-                                    (.get cursor ) (.getVal k) (.getVal v) op-next))
-                                (has?
-                                  (Lib/mdb_cursor_get
-                                    (.get cursor ) (.getVal k) (.getVal v) op-prev)))))
-                          (do
-                            (println "beyond sk")
-                            (if forward?
-                              true
-                              (has?
-                                (Lib/mdb_cursor_get
-                                  (.get cursor ) (.getVal k) (.getVal v) op-prev))))))
-                      (do (println "no sk") false))
+                      (if (= (cmp sk) 0)
+                        (if include-start?
+                          true
+                          (if forward?
+                            (has?
+                              (Lib/mdb_cursor_get
+                                (.get cursor ) (.getVal k) (.getVal v) op-next))
+                            (has?
+                              (Lib/mdb_cursor_get
+                                (.get cursor ) (.getVal k) (.getVal v) op-prev))))
+                        (if forward?
+                          true
+                          (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor ) (.getVal k) (.getVal v) op-prev))))
+                      false)
                     (if forward?
                       (has?
                         (Lib/mdb_cursor_get
@@ -359,10 +350,11 @@
           ^:volatile-mutable closed?]
   ILMDB
   (close-env [_]
-    (close-pool pool)
-    (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
-    (.close env)
-    (set! closed? true))
+    (when-not closed?
+      (close-pool pool)
+      (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
+      (.close env)
+      (set! closed? true)))
 
   (closed? [_]
     closed?)

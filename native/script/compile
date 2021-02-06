@@ -21,36 +21,13 @@ gcc -Wall -g -c dtlv.c -o dtlv.o
 ar rcs libdtlv.a dtlv.o
 
 cd ../../
-# lein clean
-# lein with-profile main uberjar
-
-# "$GRAALVM_HOME/bin/native-image" \
-#     -H:Name=${app_name} \
-#     -H:+ReportExceptionStackTraces \
-#     -H:ConfigurationFileDirectories=config \
-#     -J-Dclojure.spec.skip-macros=true \
-#     -J-Dclojure.compiler.direct-linking=true \
-#     -H:Log=registerResource:verbose \
-#     -H:+PrintClassInitialization \
-#     -H:CLibraryPath=src/c \
-#     --initialize-at-build-time \
-#     --report-unsupported-elements-at-runtime \
-#     --allow-incomplete-classpath \
-#     --verbose \
-#     --no-fallback \
-#     --no-server \
-#     "-J-Xmx8g" \
-#     --native-image-info \
-#     -jar "$MAIN_JAR" \
-#     ${app_name}
-
 lein clean
-lein with-profile native-test uberjar
+lein uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
-    -H:Name=${test_name} \
+    -H:Name=${app_name} \
     -H:+ReportExceptionStackTraces \
-    -H:ConfigurationFileDirectories=config \
+    -H:ConfigurationFileDirectories=main-config \
     -J-Dclojure.spec.skip-macros=true \
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
@@ -64,5 +41,27 @@ lein with-profile native-test uberjar
     --no-server \
     "-J-Xmx8g" \
     --native-image-info \
-    -jar "$TEST_JAR" \
-    ${test_name}
+    -jar "$MAIN_JAR" \
+    ${app_name}
+
+# lein with-profile test-uberjar uberjar
+
+# "$GRAALVM_HOME/bin/native-image" \
+#     -H:Name=${test_name} \
+#     -H:+ReportExceptionStackTraces \
+#     -H:ConfigurationFileDirectories=test-config \
+#     -J-Dclojure.spec.skip-macros=true \
+#     -J-Dclojure.compiler.direct-linking=true \
+#     -H:Log=registerResource:verbose \
+#     -H:+PrintClassInitialization \
+#     -H:CLibraryPath=src/c \
+#     --initialize-at-build-time \
+#     --report-unsupported-elements-at-runtime \
+#     --allow-incomplete-classpath \
+#     --verbose \
+#     --no-fallback \
+#     --no-server \
+#     "-J-Xmx8g" \
+#     --native-image-info \
+#     -jar "$TEST_JAR" \
+#     ${test_name}

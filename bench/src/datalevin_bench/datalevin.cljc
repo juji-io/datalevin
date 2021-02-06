@@ -1,8 +1,8 @@
 (ns datalevin-bench.datalevin
   (:require
-    [datalevin.core :as d]
-    [datalevin.util :as u]
-    [datalevin-bench.core :as core]))
+   [datalevin.core :as d]
+   [datalevin.util :as u]
+   [datalevin-bench.core :as core]))
 
 
 #?(:cljs
