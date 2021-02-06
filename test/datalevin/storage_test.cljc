@@ -5,11 +5,13 @@
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test.check.generators :as gen]
+            [clojure.test.check.random :as r]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [clojure.test :refer [deftest is]]
             [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
+           [java.lang ThreadLocal]
            [datalevin.storage Store]
            [datalevin.datom Datom]))
 
@@ -160,7 +162,6 @@
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
     (sut/close store)
-    (b/delete-files dir)
     (let [store' (sut/open dir)]
       (is (sut/populated? store' :eav
                           (d/datom c/e0 :a c/v0)
@@ -216,11 +217,12 @@
   (prop/for-all
     [v gen/any-printable-equatable
      a gen/keyword-ns
-     e gen/large-integer]
+     e (gen/large-integer* {:min 0})]
     (let [d     (d/datom e a v)
           dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-          store (sut/open dir)]
-      (sut/load-datoms store [d])
-      (is (= [d] (sut/fetch store d)))
+          store (sut/open dir)
+          _     (sut/load-datoms store [d])
+          r     (sut/fetch store d)]
       (sut/close store)
-      (b/delete-files dir))))
+      (b/delete-files dir)
+      (is (= [d] r)))))

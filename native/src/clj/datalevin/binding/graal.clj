@@ -203,8 +203,6 @@
           op-set-range Lib$MDB_cursor_op/MDB_SET_RANGE
           op-first     Lib$MDB_cursor_op/MDB_FIRST
           op-last      Lib$MDB_cursor_op/MDB_LAST]
-      ;; assuming hasNext is always called before next, hasNext will
-      ;; position the cursor, next will get the data
       (reify
         Iterator
         (hasNext [this]
@@ -245,29 +243,39 @@
                     (if (has? (Lib/mdb_cursor_get
                                 (.get cursor) (.getVal sk) (.getVal v)
                                 op-set-range))
-                      (if (= (cmp sk) 0)
-                        (if include-start?
-                          true
+                      (if (continue?)
+                        (if (= (cmp sk) 0)
+                          (if include-start?
+                            true
+                            (if forward?
+                              (has?
+                                (Lib/mdb_cursor_get
+                                  (.get cursor ) (.getVal k) (.getVal v) op-next))
+                              (has?
+                                (Lib/mdb_cursor_get
+                                  (.get cursor ) (.getVal k) (.getVal v) op-prev))))
                           (if forward?
-                            (has?
-                              (Lib/mdb_cursor_get
-                                (.get cursor ) (.getVal k) (.getVal v) op-next))
+                            true
                             (has?
                               (Lib/mdb_cursor_get
                                 (.get cursor ) (.getVal k) (.getVal v) op-prev))))
-                        (if forward?
-                          true
-                          (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor ) (.getVal k) (.getVal v) op-prev))))
-                      false)
+                        false)
+                      (if forward?
+                        false
+                        (has?
+                          (Lib/mdb_cursor_get
+                            (.get cursor) (.getVal k) (.getVal v) op-last))))
                     (if forward?
-                      (has?
-                        (Lib/mdb_cursor_get
-                          (.get cursor) (.getVal k) (.getVal v) op-first))
-                      (has?
-                        (Lib/mdb_cursor_get
-                          (.get cursor) (.getVal k) (.getVal v) op-last)))))))))
+                      (if (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal k) (.getVal v) op-first))
+                        (continue?)
+                        false)
+                      (if (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal k) (.getVal v) op-last))
+                        (continue?)
+                        false))))))))
         (next [this]
           (Lib/checkRc
             (Lib/mdb_cursor_get (.get cursor) (.getVal k) (.getVal v) op-get))

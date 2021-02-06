@@ -77,7 +77,7 @@
                    ])
       (println "transacted")
       (println (str "get range:" (l/get-range db misc-table
-                                              [:closed-open :b :non-exist]
+                                              [:closed-open :d :a]
                                               :keyword)))
       (println (str "get non-exist:" (l/get-value db misc-table
                                                   :non-exist

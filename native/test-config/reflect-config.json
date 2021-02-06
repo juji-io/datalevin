@@ -1777,6 +1777,41 @@
         "allDeclaredFields" : true,
         "allPublicClasses" : true
     },
-    {"name": "java.lang.reflect.AccessibleObject",
-     "methods" : [{"name":"canAccess"}]}
+    {
+        "name":"net.jpountz.lz4.LZ4JavaSafeSafeDecompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"net.jpountz.lz4.LZ4JavaSafeFastDecompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"net.jpountz.lz4.LZ4HCJavaSafeCompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name": "java.lang.reflect.AccessibleObject",
+        "methods" : [{"name":"canAccess"}]
+    }
 ]
