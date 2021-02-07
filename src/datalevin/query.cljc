@@ -16,7 +16,8 @@
    [datalevin.pull-parser :as dpp])
   #?(:clj (:import [datalevin.parser BindColl BindIgnore BindScalar BindTuple
                     Constant FindColl FindRel FindScalar FindTuple PlainSymbol
-                    RulesVar SrcVar Variable])))
+                    RulesVar SrcVar Variable]
+                   [java.lang Long])))
 
 ;; ----------------------------------------------------------------------------
 
@@ -147,22 +148,22 @@
             (sum-rel a)
             (sum-rel b))))))
 
-(defn prod-rel
+(defn ^Relation prod-rel
   ([] (Relation. {} [(da/make-array 0)]))
   ([rel1 rel2]
-    (let [attrs1 (keys (:attrs rel1))
-          attrs2 (keys (:attrs rel2))
-          idxs1  (to-array (map (:attrs rel1) attrs1))
-          idxs2  (to-array (map (:attrs rel2) attrs2))]
-      (Relation.
-        (zipmap (concat attrs1 attrs2) (range))
-        (persistent!
-          (reduce
-            (fn [acc t1]
-              (reduce (fn [acc t2]
-                        (conj! acc (join-tuples t1 idxs1 t2 idxs2)))
-                      acc (:tuples rel2)))
-            (transient []) (:tuples rel1)))))))
+   (let [attrs1 (keys (:attrs rel1))
+         attrs2 (keys (:attrs rel2))
+         idxs1  (to-array (map (:attrs rel1) attrs1))
+         idxs2  (to-array (map (:attrs rel2) attrs2))]
+     (Relation.
+       (zipmap (concat attrs1 attrs2) (range))
+       (persistent!
+         (reduce
+           (fn [acc t1]
+             (reduce (fn [acc t2]
+                       (conj! acc (join-tuples t1 idxs1 t2 idxs2)))
+                     acc (:tuples rel2)))
+           (transient []) (:tuples rel1)))))))
 
 ;; built-ins
 
@@ -290,13 +291,13 @@
     (dp/parse-rules rules) ;; validation
     (group-by ffirst rules)))
 
-(defn empty-rel [binding]
+(defn ^Relation empty-rel [binding]
   (let [vars (->> (dp/collect-vars-distinct binding)
-               (map :symbol))]
+                  (map :symbol))]
     (Relation. (zipmap vars (range)) [])))
 
 (defprotocol IBinding
-  (in->rel [binding value]))
+  ^Relation (in->rel [binding value]))
 
 (extend-protocol IBinding
   BindIgnore
@@ -305,33 +306,34 @@
 
   BindScalar
   (in->rel [binding value]
-    (Relation. {(get-in binding [:variable :symbol]) 0} [(into-array [value])]))
+    (Relation. {(get-in binding [:variable :symbol]) 0}
+               [(into-array Object [value])]))
 
   BindColl
   (in->rel [binding coll]
     (cond
       (not (u/seqable? coll))
-        (raise "Cannot bind value " coll " to collection " (dp/source binding)
-               {:error :query/binding, :value coll, :binding (dp/source binding)})
+      (raise "Cannot bind value " coll " to collection " (dp/source binding)
+             {:error :query/binding, :value coll, :binding (dp/source binding)})
       (empty? coll)
-        (empty-rel binding)
+      (empty-rel binding)
       :else
-        (->> coll
-          (map #(in->rel (:binding binding) %))
-          (reduce sum-rel))))
+      (->> coll
+           (map #(in->rel (:binding binding) %))
+           (reduce sum-rel))))
 
   BindTuple
   (in->rel [binding coll]
     (cond
       (not (u/seqable? coll))
-        (raise "Cannot bind value " coll " to tuple " (dp/source binding)
-               {:error :query/binding, :value coll, :binding (dp/source binding)})
+      (raise "Cannot bind value " coll " to tuple " (dp/source binding)
+             {:error :query/binding, :value coll, :binding (dp/source binding)})
       (< (count coll) (count (:bindings binding)))
-        (raise "Not enough elements in a collection " coll " to bind tuple " (dp/source binding)
-               {:error :query/binding, :value coll, :binding (dp/source binding)})
+      (raise "Not enough elements in a collection " coll " to bind tuple " (dp/source binding)
+             {:error :query/binding, :value coll, :binding (dp/source binding)})
       :else
-        (reduce prod-rel
-          (map #(in->rel %1 %2) (:bindings binding) coll)))))
+      (reduce prod-rel
+              (map #(in->rel %1 %2) (:bindings binding) coll)))))
 
 (defn resolve-in [context [binding value]]
   (cond

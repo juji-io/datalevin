@@ -229,7 +229,7 @@
               {:a [1 2 3 4]
                :b [5 6 7]
                :c [3]}
-              #(vector (reduce min %) (reduce max %)))
+              (fn [v] [(reduce min v) (reduce max v)]))
          #{[:a 1 4] [:b 5 7]}))
 
   (is (= (d/q '[:find  ?k ?x

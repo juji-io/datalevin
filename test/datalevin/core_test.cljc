@@ -2,7 +2,8 @@
   (:require [datalevin.core :as sut]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest]])
-  (:import [java.util UUID]))
+  (:import [java.util UUID]
+           [java.lang Thread]))
 
 (deftest basic-ops-test
   (let [schema
@@ -172,6 +173,7 @@
                 [?e :foo/date ?d]]]
     (sut/transact! conn [{:foo/id   "foo"
                           :foo/date (java.util.Date.)}])
+    (Thread/sleep 100)
     (let [d1 (sut/q query @conn)]
       (sut/transact! conn [{:foo/id   "foo"
                             :foo/date (java.util.Date.)}])

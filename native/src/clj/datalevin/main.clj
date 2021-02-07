@@ -5,6 +5,7 @@
             [datalevin.core :as d]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
+            [datalevin.datom :as dt]
             [datalevin.binding.graal])
   (:gen-class))
 
@@ -60,31 +61,31 @@
 
 (defn- dtlv-conn [options arguments]
   (try
-    (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-keyword-test")
-          misc-table "misc-test-table"]
-      (println "env opened")
-      (l/open-dbi db misc-table)
-      (println "dbi opened")
-      (l/transact db
-                  [[:put misc-table :a "a" :keyword]
-                   [:put misc-table :aa "aa" :keyword]
-                   [:put misc-table :b "b" :keyword]
-                   [:put misc-table :bb "bb" :keyword]
-                   [:put misc-table :bc "bc" :keyword]
-                   [:put misc-table :c "c" :keyword]
-                   [:put misc-table :d "d" :keyword]
-                   [:put misc-table :da "da" :keyword]
-                   ])
-      (println "transacted")
-      (println (str "get range:" (l/get-range db misc-table
-                                              [:closed-open :d :a]
-                                              :keyword)))
-      (println (str "get non-exist:" (l/get-value db misc-table
-                                                  :non-exist
-                                                  :keyword)))
-      (l/close-env db)
-      (println "closed")
-      )
+    #_(let [db         (l/open-lmdb "/tmp/dtlv-lmdb-keyword-test")
+            misc-table "misc-test-table"]
+        (println "env opened")
+        (l/open-dbi db misc-table)
+        (println "dbi opened")
+        (l/transact db
+                    [[:put misc-table :a "a" :keyword]
+                     [:put misc-table :aa "aa" :keyword]
+                     [:put misc-table :b "b" :keyword]
+                     [:put misc-table :bb "bb" :keyword]
+                     [:put misc-table :bc "bc" :keyword]
+                     [:put misc-table :c "c" :keyword]
+                     [:put misc-table :d "d" :keyword]
+                     [:put misc-table :da "da" :keyword]
+                     ])
+        (println "transacted")
+        (println (str "get range:" (l/get-range db misc-table
+                                                [:closed-open :d :a]
+                                                :keyword)))
+        (println (str "get non-exist:" (l/get-value db misc-table
+                                                    :non-exist
+                                                    :keyword)))
+        (l/close-env db)
+        (println "closed")
+        )
     #_(let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
             misc-table "misc-test-table"]
         (println "env opened")
@@ -107,34 +108,147 @@
         (l/close-env db)
         (println "closed")
         )
-    #_(let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
-            misc-table "misc-test-table"]
-        (println "env opened")
-        (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
-        (println "dbi opened")
-        (l/transact db
-                    [[:put misc-table 1 1 :long :long]
-                     [:put misc-table 2 2 :long :long]
-                     [:put misc-table 4 4 :long :long]
-                     [:put misc-table 8 8 :long :long]
-                     [:put misc-table 16 16 :long :long]
-                     [:put misc-table 32 32 :long :long]
-                     [:put misc-table 64 64 :long :long]
-                     [:put misc-table 128 128 :long :long]
-                     [:put misc-table 256 256 :long :long]
-                     [:put misc-table 512 512 :long :long]
-                     [:put misc-table 1024 1024 :long :long]
-                     [:put misc-table 2048 2048 :long :long]
-                     [:put misc-table 4096 4096 :long :long]
-                     [:put misc-table 8192 8192 :long :long]
-                     [:put misc-table 16384 16384 :long :long]])
-        (println "transacted")
-        (println (str "get range:" (l/get-range db misc-table
-                                                [:less-than-back 128]
+    (let [db         (l/open-lmdb "/tmp/dtlv-lmdb-test")
+          misc-table "misc-test-table"]
+      (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
+      (l/transact db
+                  [[:put misc-table 1 1 :long :long]
+                   [:put misc-table 2 2 :long :long]
+                   [:put misc-table 4 4 :long :long]
+                   [:put misc-table 8 8 :long :long]
+                   [:put misc-table 16 16 :long :long]
+                   [:put misc-table 32 32 :long :long]
+                   [:put misc-table 64 64 :long :long]
+                   [:put misc-table 128 128 :long :long]
+                   [:put misc-table 256 256 :long :long]
+                   [:put misc-table 512 512 :long :long]
+                   [:put misc-table 1024 1024 :long :long]
+                   [:put misc-table 2048 2048 :long :long]
+                   [:put misc-table 4096 4096 :long :long]
+                   [:put misc-table 8192 8192 :long :long]
+                   [:put misc-table 16384 16384 :long :long]])
+      (println (str "all:" (l/get-range db misc-table [:all] :long :long true)))
+      (println (str "all-back:" (l/get-range db misc-table [:all-back]
+                                             :long :long true)))
+      (println (str "at-least 1000:" (l/get-range db misc-table [:at-least 1000]
+                                                  :long :long true)))
+      (println (str "at-least 1024:" (l/get-range db misc-table [:at-least 1024]
+                                                  :long :long true)))
+      (println (str "at-most-back 16:" (l/get-range db misc-table [:at-most-back 16]
+                                                    :long :long true)))
+      (println (str "at-most-back 17:" (l/get-range db misc-table [:at-most-back 17]
+                                                    :long :long true)))
+      (println (str "at-most 16:" (l/get-range db misc-table [:at-most 16]
+                                               :long :long true)))
+      (println (str "at-most 17:" (l/get-range db misc-table [:at-most 17]
+                                               :long :long true)))
+      (println (str "at-least-back 2048:" (l/get-range db misc-table
+                                                       [:at-least-back 2048]
+                                                       :long :long true)))
+      (println (str "at-least-back 2000:" (l/get-range db misc-table
+                                                       [:at-least-back 2000]
+                                                       :long :long true)))
+      (println (str "closed 2 2:" (l/get-range db misc-table [:closed 2 2]
+                                               :long :long true)))
+      (println (str "closed 2 1:" (l/get-range db misc-table [:closed 2 1]
+                                               :long :long true)))
+      (println (str "closed 2 32:" (l/get-range db misc-table [:closed 2 32]
                                                 :long :long true)))
-        (l/close-env db)
-        (println "closed")
-        )
+      (println (str "closed 3 30:" (l/get-range db misc-table [:closed 3 30]
+                                                :long :long true)))
+      (println (str "closed 0 40:" (l/get-range db misc-table [:closed 0 40]
+                                                :long :long true)))
+      (println (str "closed-back 2 32:" (l/get-range db misc-table
+                                                     [:closed-back 2 32]
+                                                     :long :long true)))
+      (println (str "closed-back 32 2:" (l/get-range db misc-table [:closed-back 32 2]
+                                                     :long :long true)))
+      (println (str "closed-back 30 3:" (l/get-range db misc-table [:closed-back 30 3]
+                                                     :long :long true)))
+      (println (str "closed-back 40 0:" (l/get-range db misc-table [:closed-back 40 0]
+                                                     :long :long true)))
+      (println (str "closed-open 2 32:" (l/get-range db misc-table [:closed-open 2 32]
+                                                     :long :long true)))
+      (println (str "closed-open 3 30:" (l/get-range db misc-table [:closed-open 3 30]
+                                                     :long :long true)))
+      (println (str "closed-open 0 40:" (l/get-range db misc-table [:closed-open 0 40]
+                                                     :long :long true)))
+      (println (str "closed-open-back 2 32:" (l/get-range db misc-table
+                                                          [:closed-open-back 2 32]
+                                                          :long :long true)))
+      (println (str "closed-open-back 32 2:" (l/get-range db misc-table
+                                                          [:closed-open-back 32 2]
+                                                          :long :long true)))
+      (println (str "closed-open-back 30 3:" (l/get-range db misc-table
+                                                          [:closed-open-back 30 3]
+                                                          :long :long true)))
+      (println (str "closed-open-back 40 0:" (l/get-range db misc-table
+                                                          [:closed-open-back 40 0]
+                                                          :long :long true)))
+      (println (str "greater-than 2048:" (l/get-range db misc-table
+                                                      [:greater-than 2048]
+                                                      :long :long true)))
+      (println (str "greater-than 2000:" (l/get-range db misc-table
+                                                      [:greater-than 2000]
+                                                      :long :long true)))
+      (println (str "less-than-back 16:" (l/get-range db misc-table
+                                                      [:less-than-back 16]
+                                                      :long :long true)))
+      (println (str "less-than-back 17:" (l/get-range db misc-table
+                                                      [:less-than-back 17]
+                                                      :long :long true)))
+      (println (str "less-than 16:" (l/get-range db misc-table
+                                                 [:less-than 16]
+                                                 :long :long true)))
+      (println (str "less-than 17:" (l/get-range db misc-table
+                                                 [:less-than 17]
+                                                 :long :long true)))
+      (println (str "greater-than-back 2048:" (l/get-range db misc-table
+                                                           [:greater-than-back 2048]
+                                                           :long :long true)))
+      (println (str "greater-than-back 2000:" (l/get-range db misc-table
+                                                           [:greater-than-back 2000]
+                                                           :long :long true)))
+      (println (str "open 2 2:" (l/get-range db misc-table [:open 2 2]
+                                             :long :long true)))
+      (println (str "open 2 1:" (l/get-range db misc-table [:open 2 1]
+                                             :long :long true)))
+      (println (str "open 2 32:" (l/get-range db misc-table [:open 2 32]
+                                              :long :long true)))
+      (println (str "open 3 30:" (l/get-range db misc-table [:open 3 30]
+                                              :long :long true)))
+      (println (str "open 0 40:" (l/get-range db misc-table [:open 0 40]
+                                              :long :long true)))
+      (println (str "open-back 2 2:" (l/get-range db misc-table [:open-back 2 2]
+                                                  :long :long true)))
+      (println (str "open-back 2 1:" (l/get-range db misc-table [:open-back 2 1]
+                                                  :long :long true)))
+      (println (str "open-back 32 2:" (l/get-range db misc-table [:open-back 32 2]
+                                                   :long :long true)))
+      (println (str "open-back 30 3:" (l/get-range db misc-table [:open-back 30 3]
+                                                   :long :long true)))
+      (println (str "open-back 40 0:" (l/get-range db misc-table [:open-back 40 0]
+                                                   :long :long true)))
+      (println (str "open-closed 2 32:" (l/get-range db misc-table [:open-closed 2 32]
+                                                     :long :long true)))
+      (println (str "open-closed 3 30:" (l/get-range db misc-table [:open-closed 3 30]
+                                                     :long :long true)))
+      (println (str "open-closed 0 40:" (l/get-range db misc-table [:open-closed 0 40]
+                                                     :long :long true)))
+      (println (str "open-closed-back 2 32:" (l/get-range db misc-table
+                                                          [:open-closed-back 2 32]
+                                                          :long :long true)))
+      (println (str "open-closed-back 32 2:" (l/get-range db misc-table
+                                                          [:open-closed-back 32 2]
+                                                          :long :long true)))
+      (println (str "open-closed-back 30 3:" (l/get-range db misc-table
+                                                          [:open-closed-back 30 3]
+                                                          :long :long true)))
+      (println (str "open-closed-back 40 0:" (l/get-range db misc-table
+                                                          [:open-closed-back 40 0]
+                                                          :long :long true)))
+      (l/close-env db)
+      )
     #_(let [schema {:aka  {:db/cardinality :db.cardinality/many}
                     :name {:db/valueType :db.type/string
                            :db/unique    :db.unique/identity}}

@@ -1522,7 +1522,15 @@
         "name":"java.util.Comparator"
     },
     {
-        "name":"java.util.Date"
+        "name":"java.util.Date",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
     },
     {
         "name":"java.util.GregorianCalendar"
@@ -1801,6 +1809,105 @@
     },
     {
         "name":"net.jpountz.lz4.LZ4HCJavaSafeCompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ljava.util.Date;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Lclojure.lang.Keyword;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Lclojure.core$range;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ldatalevin.test.query_aggregates$sort_reverse;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ljava.util.regex.Pattern;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Lclojure.lang.PersistentHashMap;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Lclojure.lang.PersistentHashMap;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Lclojure.lang.PersistentVector;",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Lclojure.core$even_QMARK_;",
         "allDeclaredConstructors" : true,
         "allPublicConstructors" : true,
         "allDeclaredMethods" : true,

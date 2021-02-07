@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-lmdb IBuffer IRange IRtx IDB IKV ILMDB]]
+             :refer [open-lmdb IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
             [clojure.string :as s])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -105,6 +105,7 @@
   (close-rtx [_]
     (.close txn)
     (.close kp)
+    (.close vp)
     (.close start-kp)
     (.close stop-kp)
     (set! use? false))
@@ -117,11 +118,6 @@
       (set! use? true)
       (.renew txn)
       this)))
-
-(defprotocol IRtxPool
-  (close-pool [this] "Close all transactions in the pool")
-  (new-rtx [this] "Create a new read-only transaction")
-  (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -150,12 +146,12 @@
     (try
       (locking this
         (if (zero? cnt)
-          (new-rtx this)
+          (.new-rtx this)
           (loop [i (.getId ^Thread (Thread/currentThread))]
             (let [^long i' (mod i cnt)
                   ^Rtx rtx (.get rtxs i')]
               (or (.renew rtx)
-                  (new-rtx this)
+                  (.new-rtx this)
                   (recur (long (inc i'))))))))
       (catch Lib$BadReaderLockException _
         (raise
@@ -170,8 +166,6 @@
   IKV
   (k [this] (.outBuf kp))
   (v [this] (.outBuf vp)))
-
-
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -201,84 +195,65 @@
           op-next      Lib$MDB_cursor_op/MDB_NEXT
           op-prev      Lib$MDB_cursor_op/MDB_PREV
           op-set-range Lib$MDB_cursor_op/MDB_SET_RANGE
+          op-set       Lib$MDB_cursor_op/MDB_SET
           op-first     Lib$MDB_cursor_op/MDB_FIRST
-          op-last      Lib$MDB_cursor_op/MDB_LAST]
+          op-last      Lib$MDB_cursor_op/MDB_LAST
+          get-cur      #(Lib/checkRc
+                          (Lib/mdb_cursor_get
+                            (.get cursor) (.getVal k) (.getVal v) op-get))]
       (reify
         Iterator
         (hasNext [this]
           (let [has?      #(if (= ^int % (Lib/MDB_NOTFOUND))
                              false
                              (do (Lib/checkRc ^int %) true))
-                cmp       #(do
-                             (Lib/checkRc
-                               (Lib/mdb_cursor_get
-                                 (.get cursor) (.getVal k) (.getVal v) op-get))
-                             (Lib/mdb_cmp (.get txn) i (.getVal k)
-                                          (.getVal ^BufVal %)))
                 end       #(do (vreset! ended? true) false)
                 continue? #(if stop-key?
-                             (let [^int r (cmp ek)]
+                             (let [_ (get-cur)
+                                   r (Lib/mdb_cmp (.get txn) i (.getVal k)
+                                                  (.getVal ek))]
                                (if (= r 0)
                                  (do (vreset! ended? true)
                                      include-stop?)
                                  (if (> r 0)
                                    (if forward? (end) true)
                                    (if forward? true (end)))))
-                             true)]
+                             true)
+                check     #(if (has?
+                                 (Lib/mdb_cursor_get
+                                   (.get cursor) (.getVal k) (.getVal v) %))
+                             (continue?)
+                             false)]
             (if @ended?
               false
               (if @started?
                 (if forward?
-                  (if (has? (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal k) (.getVal v) op-next))
-                    (continue?)
-                    false)
-                  (if (has? (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal k) (.getVal v) op-prev))
-                    (continue?)
-                    false))
+                  (check op-next)
+                  (check op-prev))
                 (do
                   (vreset! started? true)
                   (if start-key?
                     (if (has? (Lib/mdb_cursor_get
-                                (.get cursor) (.getVal sk) (.getVal v)
-                                op-set-range))
-                      (if (continue?)
-                        (if (= (cmp sk) 0)
-                          (if include-start?
-                            true
-                            (if forward?
-                              (has?
-                                (Lib/mdb_cursor_get
-                                  (.get cursor ) (.getVal k) (.getVal v) op-next))
-                              (has?
-                                (Lib/mdb_cursor_get
-                                  (.get cursor ) (.getVal k) (.getVal v) op-prev))))
-                          (if forward?
-                            true
-                            (has?
-                              (Lib/mdb_cursor_get
-                                (.get cursor ) (.getVal k) (.getVal v) op-prev))))
-                        false)
-                      (if forward?
-                        false
-                        (has?
-                          (Lib/mdb_cursor_get
-                            (.get cursor) (.getVal k) (.getVal v) op-last))))
+                                (.get cursor) (.getVal sk) (.getVal v) op-set))
+                      (if include-start?
+                        (continue?)
+                        (if forward?
+                          (check op-next)
+                          (check op-prev)))
+                      (if (has? (Lib/mdb_cursor_get
+                                  (.get cursor) (.getVal sk) (.getVal v)
+                                  op-set-range))
+                        (if forward?
+                          (continue?)
+                          (check op-prev))
+                        (if forward?
+                          false
+                          (check op-last))))
                     (if forward?
-                      (if (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal k) (.getVal v) op-first))
-                        (continue?)
-                        false)
-                      (if (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal k) (.getVal v) op-last))
-                        (continue?)
-                        false))))))))
+                      (check op-first)
+                      (check op-last))))))))
         (next [this]
-          (Lib/checkRc
-            (Lib/mdb_cursor_get (.get cursor) (.getVal k) (.getVal v) op-get))
+          (get-cur)
           (->KV k v))))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
@@ -348,7 +323,6 @@
           cur (Cursor/create txn db)]
       (->CursorIterable cur db rtx f? sk? is? ek? ie? sk ek))))
 
-
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
     LMDB [^Env env
@@ -359,7 +333,7 @@
   ILMDB
   (close-env [_]
     (when-not closed?
-      (close-pool pool)
+      (.close-pool pool)
       (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
       (.close env)
       (set! closed? true)))
@@ -416,7 +390,7 @@
     (assert (not closed?) "LMDB env is closed.")
     (let [^DBI dbi   (.get-dbi this dbi-name)
           ^Dbi db    (.-db dbi)
-          ^Rtx rtx   (get-rtx pool)
+          ^Rtx rtx   (.get-rtx pool)
           ^Txn txn   (.-txn rtx)
           ^Stat stat (Stat/create txn db)]
       (try
@@ -428,6 +402,9 @@
           (raise "Fail to get entries: " (ex-message e)
                  {:dbi dbi-name}))
         (finally (.reset rtx)))))
+
+  (get-txn [this]
+    (.get-rtx pool))
 
   (transact [this txs]
     (assert (not closed?) "LMDB env is closed.")
@@ -461,15 +438,7 @@
   (get-value [this dbi-name k k-type v-type]
     (.get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-value dbi rtx k k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-value: " (ex-message e)
-                 {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-value this dbi-name k k-type v-type ignore-key?))
 
   (get-first [this dbi-name k-range]
     (.get-first this dbi-name k-range :data :data false))
@@ -478,16 +447,7 @@
   (get-first [this dbi-name k-range k-type v-type]
     (.get-first this dbi-name k-range k-type v-type false))
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-first dbi rtx k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-first: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-first this dbi-name k-range k-type v-type ignore-key?))
 
   (get-range [this dbi-name k-range]
     (.get-range this dbi-name k-range :data :data false))
@@ -496,29 +456,12 @@
   (get-range [this dbi-name k-range k-type v-type]
     (.get-range this dbi-name k-range k-type v-type false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range dbi rtx k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-range: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
   (range-count [this dbi-name k-range k-type]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range-count dbi rtx k-range k-type)
-        (catch Exception e
-          (raise "Fail to range-count: " (ex-message e)
-                 {:dbi dbi-name :k-range k-range :k-type k-type}))
-        (finally (.reset rtx)))))
+    (scan/range-count this dbi-name k-range k-type))
 
   (get-some [this dbi-name pred k-range]
     (.get-some this dbi-name pred k-range :data :data false))
@@ -527,16 +470,7 @@
   (get-some [this dbi-name pred k-range k-type v-type]
     (.get-some this dbi-name pred k-range k-type v-type false))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-some: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?))
 
   (range-filter [this dbi-name pred k-range]
     (.range-filter this dbi-name pred k-range :data :data false))
@@ -545,30 +479,12 @@
   (range-filter [this dbi-name pred k-range k-type v-type]
     (.range-filter this dbi-name pred k-range k-type v-type false))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to range-filter: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?))
 
   (range-filter-count [this dbi-name pred k-range]
     (.range-filter-count this dbi-name pred k-range :data))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range-filtered-count dbi rtx pred k-range k-type)
-        (catch Exception e
-          (raise "Fail to range-filter-count: " (ex-message e)
-                 {:dbi dbi-name :k-range k-range :k-type k-type}))
-        (finally (.reset rtx)))))
-  )
+    (scan/range-filter-count this dbi-name pred k-range k-type)))
 
 (defmethod open-lmdb :graal
   [dir]

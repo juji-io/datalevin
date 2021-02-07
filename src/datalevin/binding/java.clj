@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-lmdb IBuffer IRange IKV IRtx IDB ILMDB]]
+             :refer [open-lmdb IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
             [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn KeyRange Txn$BadReaderLockException
@@ -104,11 +104,6 @@
       (.renew txn)
       this)))
 
-(defprotocol IRtxPool
-  (close-pool [this] "Close all transactions in the pool")
-  (new-rtx [this] "Create a new read-only transaction")
-  (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
-
 (deftype RtxPool [^Env env
                   ^ConcurrentHashMap rtxs
                   ^:volatile-mutable ^long cnt]
@@ -132,12 +127,12 @@
     (try
       (locking this
         (if (zero? cnt)
-          (new-rtx this)
+          (.new-rtx this)
           (loop [i (.getId ^Thread (Thread/currentThread))]
             (let [^long i' (mod i cnt)
                   ^Rtx rtx (.get rtxs i')]
               (or (.renew rtx)
-                  (new-rtx this)
+                  (.new-rtx this)
                   (recur (long (inc i'))))))))
       (catch Txn$BadReaderLockException _
         (raise
@@ -195,7 +190,7 @@
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
   (close-env [_]
-    (close-pool pool)
+    (.close-pool pool)
     (.close env))
 
   (closed? [_]
@@ -250,13 +245,16 @@
   (entries [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (let [^DBI dbi (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
+          ^Rtx rtx (.get-rtx pool)]
       (try
         (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))
         (catch Exception e
           (raise "Fail to get entries: " (ex-message e)
                  {:dbi dbi-name}))
         (finally (.reset rtx)))))
+
+  (get-txn [this]
+    (.get-rtx pool))
 
   (transact [this txs]
     (assert (not (.closed? this)) "LMDB env is closed.")
@@ -288,15 +286,7 @@
   (get-value [this dbi-name k k-type v-type]
     (.get-value this dbi-name k k-type v-type true))
   (get-value [this dbi-name k k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-value dbi rtx k k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-value: " (ex-message e)
-                 {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-value this dbi-name k k-type v-type ignore-key?))
 
   (get-first [this dbi-name k-range]
     (.get-first this dbi-name k-range :data :data false))
@@ -305,16 +295,7 @@
   (get-first [this dbi-name k-range k-type v-type]
     (.get-first this dbi-name k-range k-type v-type false))
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-first dbi rtx k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-first: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-first this dbi-name k-range k-type v-type ignore-key?))
 
   (get-range [this dbi-name k-range]
     (.get-range this dbi-name k-range :data :data false))
@@ -323,29 +304,12 @@
   (get-range [this dbi-name k-range k-type v-type]
     (.get-range this dbi-name k-range k-type v-type false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range dbi rtx k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-range: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
   (range-count [this dbi-name k-range k-type]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range-count dbi rtx k-range k-type)
-        (catch Exception e
-          (raise "Fail to range-count: " (ex-message e)
-                 {:dbi dbi-name :k-range k-range :k-type k-type}))
-        (finally (.reset rtx)))))
+    (scan/range-count this dbi-name k-range k-type))
 
   (get-some [this dbi-name pred k-range]
     (.get-some this dbi-name pred k-range :data :data false))
@@ -354,16 +318,7 @@
   (get-some [this dbi-name pred k-range k-type v-type]
     (.get-some this dbi-name pred k-range k-type v-type false))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to get-some: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?))
 
   (range-filter [this dbi-name pred k-range]
     (.range-filter this dbi-name pred k-range :data :data false))
@@ -372,29 +327,12 @@
   (range-filter [this dbi-name pred k-range k-type v-type]
     (.range-filter this dbi-name pred k-range k-type v-type false))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
-        (catch Exception e
-          (raise "Fail to range-filter: " (ex-message e)
-                 {:dbi    dbi-name :k-range k-range
-                  :k-type k-type   :v-type  v-type}))
-        (finally (.reset rtx)))))
+    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?))
 
   (range-filter-count [this dbi-name pred k-range]
     (.range-filter-count this dbi-name pred k-range :data))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [dbi      (.get-dbi this dbi-name)
-          ^Rtx rtx (get-rtx pool)]
-      (try
-        (scan/fetch-range-filtered-count dbi rtx pred k-range k-type)
-        (catch Exception e
-          (raise "Fail to range-filter-count: " (ex-message e)
-                 {:dbi dbi-name :k-range k-range :k-type k-type}))
-        (finally (.reset rtx))))))
+    (scan/range-filter-count this dbi-name pred k-range k-type)))
 
 (defmethod open-lmdb :java
   [dir]
