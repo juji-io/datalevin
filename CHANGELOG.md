@@ -2,11 +2,18 @@
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
 ## WIP
-
 ### Changed
+- [Breaking] Removed AEV index, as it is not used in query. This reduces storage
+  and improves write speed.
+- [Breaking] Change VAE index to VEA, in preparation for new query engine. Now
+  all indices have the same order, just rotated, so merge join is more likely.
 
-- [Breaking] Removed AEV index, as it is not used in query. This reduces storage and improves write speed.
-- [Breaking] Change VAE index to VEA, in preparation for new query engine. Now all indices are the same order rotated, so merge join is more likely.
+### Added
+- GraalVM native image specific LMDB wrapper. This wrapper allocates buffer
+  memory in C and uses our own C comparator instead of doing these work in Java,
+  which should be faster.
+- Native Datalevin as a shared C library based on the above [#6]
+- Native command line shell
 
 ## 0.3.17
 ### Changed
