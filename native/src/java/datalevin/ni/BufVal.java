@@ -1,17 +1,10 @@
 package datalevin.ni;
 
-import org.graalvm.word.WordFactory;
 import org.graalvm.nativeimage.UnmanagedMemory;
-import org.graalvm.nativeimage.IsolateThread;
 import org.graalvm.nativeimage.c.CContext;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.VoidPointer;
-import org.graalvm.nativeimage.c.function.CEntryPointLiteral;
-import org.graalvm.nativeimage.c.function.CEntryPoint;
-import com.oracle.svm.core.c.function.CEntryPointOptions;
-import com.oracle.svm.core.c.function.CEntryPointSetup;
-
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -22,14 +15,12 @@ import java.nio.ByteOrder;
 @CContext(Lib.Directives.class)
 public class BufVal {
 
-    private int capacity;
     private ByteBuffer inBuf;
 
     private VoidPointer data;
     private Lib.MDB_val ptr;
 
     public BufVal(int size) {
-        capacity = size;
 
         data = UnmanagedMemory.calloc(size);
         ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
