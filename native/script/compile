@@ -27,7 +27,7 @@ lein uberjar
  "$GRAALVM_HOME/bin/native-image" \
      -H:Name=${app_name} \
      -H:+ReportExceptionStackTraces \
-     -H:ConfigurationFileDirectories=main-config \
+     -H:ConfigurationFileDirectories=config \
      -J-Dclojure.spec.skip-macros=true \
      -J-Dclojure.compiler.direct-linking=true \
      -H:Log=registerResource:verbose \
@@ -49,7 +49,7 @@ lein with-profile test-uberjar uberjar
 "$GRAALVM_HOME/bin/native-image" \
     -H:Name=${test_name} \
     -H:+ReportExceptionStackTraces \
-    -H:ConfigurationFileDirectories=test-config \
+    -H:ConfigurationFileDirectories=config \
     -J-Dclojure.spec.skip-macros=true \
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \

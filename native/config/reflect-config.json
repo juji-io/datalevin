@@ -1,0 +1,83 @@
+[
+    {
+        "name":"java.lang.Thread",
+        "methods":[{"name":"<init>","parameterTypes":["java.lang.ThreadGroup","java.lang.Runnable","java.lang.String","long","boolean"] }]
+    },
+    {
+        "name":"java.lang.reflect.Method",
+        "methods":[
+            {"name":"canAccess","parameterTypes":["java.lang.Object"] },
+            {"name":"isDefault","parameterTypes":[] }
+        ]
+    },
+    {
+        "name":"java.util.Date",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"sun.security.provider.NativePRNG",
+        "methods":[{"name":"<init>","parameterTypes":[] }]
+    },
+    {
+        "name":"sun.security.provider.SHA",
+        "methods":[{"name":"<init>","parameterTypes":[] }]
+    },
+    {
+        "name":"net.jpountz.lz4.LZ4JavaSafeCompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"net.jpountz.lz4.LZ4JavaSafeSafeDecompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"net.jpountz.lz4.LZ4JavaSafeFastDecompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"net.jpountz.lz4.LZ4HCJavaSafeCompressor",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ljava.util.Date;",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name": "java.lang.reflect.AccessibleObject",
+        "methods" : [{"name":"canAccess"}]
+    }
+]
