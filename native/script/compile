@@ -22,27 +22,27 @@ ar rcs libdtlv.a dtlv.o
 
 cd ../../
 lein clean
-# lein uberjar
+lein uberjar
 
-# "$GRAALVM_HOME/bin/native-image" \
-#     -H:Name=${app_name} \
-#     -H:+ReportExceptionStackTraces \
-#     -H:ConfigurationFileDirectories=main-config \
-#     -J-Dclojure.spec.skip-macros=true \
-#     -J-Dclojure.compiler.direct-linking=true \
-#     -H:Log=registerResource:verbose \
-#     -H:+PrintClassInitialization \
-#     -H:CLibraryPath=src/c \
-#     --initialize-at-build-time \
-#     --report-unsupported-elements-at-runtime \
-#     --allow-incomplete-classpath \
-#     --verbose \
-#     --no-fallback \
-#     --no-server \
-#     "-J-Xmx8g" \
-#     --native-image-info \
-#     -jar "$MAIN_JAR" \
-#     ${app_name}
+ "$GRAALVM_HOME/bin/native-image" \
+     -H:Name=${app_name} \
+     -H:+ReportExceptionStackTraces \
+     -H:ConfigurationFileDirectories=main-config \
+     -J-Dclojure.spec.skip-macros=true \
+     -J-Dclojure.compiler.direct-linking=true \
+     -H:Log=registerResource:verbose \
+     -H:+PrintClassInitialization \
+     -H:CLibraryPath=src/c \
+     --initialize-at-build-time \
+     --report-unsupported-elements-at-runtime \
+     --allow-incomplete-classpath \
+     --verbose \
+     --no-fallback \
+     --no-server \
+     "-J-Xmx8g" \
+     --native-image-info \
+     -jar "$MAIN_JAR" \
+     ${app_name}
 
 lein with-profile test-uberjar uberjar
 
