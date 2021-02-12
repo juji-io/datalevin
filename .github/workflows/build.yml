@@ -1,0 +1,49 @@
+name: build datalevin native
+
+on:
+  push:
+    branches: [ main. master, ghaction ]
+  pull_request:
+    branches: [ main, master, ghaction ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        gu-binary: [gu, gu.cmd]
+        exclude:
+          - os: ubuntu-latest
+            gu-binary: gu.cmd
+          - os: macos-latest
+            gu-binary: gu.cmd
+          - os: windows-latest
+            gu-binary: gu
+        
+    steps:
+      - uses: actions/checkout@v2 
+
+      - name: Setup Graalvm
+        uses: DeLaGuardo/setup-graalvm@master
+        with:
+          graalvm-version: '21.0.0.java11'
+
+
+      - name: Install Native Image
+        run: |
+          gu install native-image
+
+
+      - name: Install LMDB
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: brew install lmdb leiningen
+          linux: sudo apt install liblmdb-dev
+
+
+      - name: Build datalevin
+        run: |
+          gu install native-image
+          cd native
+          bash script/compile
