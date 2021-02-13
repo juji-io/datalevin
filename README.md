@@ -47,23 +47,28 @@ well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB).
 Therefore, it is fine to store documents in Datalevin.
 
 Datalevin uses cover index and has no write-ahead log, so once the data are
-written, they are indexed. In the standalone mode, there are no separate
-processes or threads for indexing, compaction or doing any database maintenance
-work that compete with your applications for resources.
-
-By giving up the "database as a value" doctrine adopted by the alternatives,
-Datalevin is able to leverage caching aggressively, achieving significant
-Datalog query speed advantage.
+written, they are indexed. There are no separate processes or threads for
+indexing, compaction or doing any database maintenance work that compete with
+your applications for resources. Since Datalog is simply a more ergonomic query
+language than SQL, Datalevin can serves the role of an easier-to-use and
+more lightweight relational database (RDBMS), e.g. where SQLite is called for.
 
 Independent from Datalog, Datalevin can be used as a fast key-value store for
 [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with support
-for range queries, predicate filtering and more. A number of optimizations are
-put in place. For instance, it uses a transaction pool to reuse transactions,
-pre-allocates read/write buffers, and so on.
+for range queries, predicate filtering and more. For example, one can use this
+feature in situations where something like Redis is called for.
 
-We also plan to implement necessary extensions to make Datalevin a convenient
-graph database and document database, since the indexing structure of Datalevin
-is already compatible with them.
+Our goal is to simplify data storage and access by supporting diverse use cases
+and paradigms, because maximal flexibility is the core strength of a Datalog
+store. Datalevin may not be the fastest or most scalable solution for one
+particular use case, but it would surely support the most number of them in a
+coherent and elegant manner.
+
+Using one data store for different use cases simplifies and reduces the cost of
+software development, deployment and maintenance. Therefore, we plan to
+implement necessary extensions to make Datalevin also a search engine, a
+production rule engine, a graph database, and a document database, since the
+storage and index structure of Datalevin is already compatible with all of them.
 
 ## :tada: Usage
 
@@ -206,15 +211,17 @@ Large scale projects can be supported when distributed mode is implemented.
 ## :earth_americas: Roadmap
 
 These are the tentative goals that we try to reach as soon as we can. We may
-adjust the priorities based on user needs.
+adjust the priorities based on feedback.
 
-* 0.4.0 Native command line tool
-* 0.5.0 Improved Datalog query engine with a query planner
-* 0.6.0 Fuzzy fulltext search across multiple attributes
-* 0.7.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
-* 0.8.0 Fully automatic schema migration on write
-* 0.9.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols
-* 0.10.0 As a document database: auto indexing of document fields
+* 0.4.0 Native command line tool and native shared library, so Datalevin can be used in scripting and in
+  languages other than Clojure.
+* 0.5.0 A new Datalog query engine with improved performance.
+* 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
+* 0.7.0 Fully automatic schema migration on write
+* 0.8.0 As a product rule engine: implementing Rete/UL algorithm
+* 0.9.0 As a search engine: fuzzy fulltext search across multiple attributes.
+* 0.10.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols
+* 0.11.0 As a document database: auto indexing of document fields
 * 1.0.0 Distributed mode with raft based replication
 
 We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
