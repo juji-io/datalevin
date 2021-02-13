@@ -3,5 +3,5 @@
 
 set -eou pipefail
 
-java -agentlib:native-image-agent=config-merge-dir=main-config -jar target/main.uberjar.jar
+java -agentlib:native-image-agent=config-merge-dir=config -jar target/main.uberjar.jar
 
