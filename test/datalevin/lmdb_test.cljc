@@ -43,6 +43,8 @@
                    [:put "d" 3.14 :pi :double :keyword]]))
 
     (testing "entries"
+      (is (= 4 (:entries (l/stat lmdb))))
+      (is (= 6 (:entries (l/stat lmdb "a"))))
       (is (= 6 (l/entries lmdb "a")))
       (is (= 10 (l/entries lmdb "b"))))
 

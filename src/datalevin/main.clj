@@ -1,8 +1,10 @@
 (ns datalevin.main
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
+            [clojure.pprint :as p]
             [clojure.stacktrace :as st]
             [datalevin.core :as d]
+            [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [datalevin.datom :as dt]
@@ -10,7 +12,10 @@
   (:gen-class))
 
 (def cli-opts
-  [["-h" "--help"]])
+  [["-h" "--help"]
+   ["-d" "--dir PATH" "Path to the data directory"]
+   ["-i" "--dbi NAME" "Name of the sub-database"]
+   ])
 
 (defn usage [options-summary]
   (->> ["Datalevin"
@@ -95,6 +100,17 @@
 (defn- dtlv-load [options arguments]
   )
 
+(defn- dtlv-stat [{:keys [dir dbi]}]
+  (try
+    (let [lmdb (l/open-lmdb dir)]
+      (p/pprint (if dbi
+                  (.stat lmdb dbi)
+                  (.stat lmdb))))
+    (catch Exception e
+      (raise
+        "Fail to show statistics: " (ex-message e)
+        {:dir dir :dbi dbi}))))
+
 (defn -main [& args]
   (let [{:keys [command options arguments exit-message ok?]}
         (validate-args args)]
@@ -105,4 +121,5 @@
         "copy" (dtlv-copy options arguments)
         "dump" (dtlv-dump options arguments)
         "load" (dtlv-load options arguments)
+        "stat" (dtlv-stat options)
         "help" (dtlv-help options arguments)))))

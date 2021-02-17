@@ -19,12 +19,22 @@ public class Stat {
         Lib.checkRc(Lib.mdb_stat(txn.get(), dbi.get(), stat));
     }
 
+    public Stat(Env env) {
+        stat = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_stat.class));
+        Lib.checkRc(Lib.mdb_env_stat(env.get(), stat));
+    }
+
     /**
-     * Factory method to create an instance
+     * Factory methods to create an instance
      */
     public static Stat create(Txn txn, Dbi dbi) {
         return new Stat(txn, dbi);
     }
+
+    public static Stat create(Env env) {
+        return new Stat(env);
+    }
+
 
     /**
      * Close env and free memory

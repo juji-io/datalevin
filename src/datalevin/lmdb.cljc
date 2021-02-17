@@ -49,9 +49,19 @@
     "Clear data in the DBI (i.e. sub-db), then delete it")
   (get-dbi [db dbi-name]
     "Lookup open DBI (i.e. sub-db) by name, throw if it's not open")
+  (stat
+    [db]
+    [db dbi-name]
+    "Return the statitics of a LMDB env or a DBI (i.e. sub-db) in a map:
+     * `:psize` is the size of database page
+     * `:depth` is the depth of the B-tree
+     * `:branch-pages` is the number of internal pages
+     * `:leaf-pages` is the number of leaf pages
+     * `:overflow-pages` is the number of overflow-pages
+     * `:entries` is the number of data entries")
   (entries [db dbi-name]
     "Get the number of data entries in a DBI (i.e. sub-db)")
-  (get-txn [db] "Start a transaction")
+  (get-txn [db] "Obtain a read-only transaction")
   (transact [db txs]
     "Update DB, insert or delete key value pairs.
 

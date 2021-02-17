@@ -140,6 +140,14 @@
            and managed like a stateful resource. Refer to the documentation of
            `datalevin.lmdb/open-lmdb` for more details." {})))))
 
+(defn- stat-map [^Stat stat]
+  {:psize          (.-pageSize stat)
+   :depth          (.-depth stat)
+   :branch-pages   (.-branchPages stat)
+   :leaf-pages     (.-leafPages stat)
+   :overflow-pages (.-overflowPages stat)
+   :entries        (.-entries stat)})
+
 (deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [this x t]
@@ -240,6 +248,24 @@
         (.commit txn))
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+
+  (stat [this]
+    (assert (not (.closed? this)) "LMDB env is closed.")
+    (try
+      (stat-map (.stat env))
+      (catch Exception e
+        (raise "Fail to get statistics: " (ex-message e) {}))))
+  (stat [this dbi-name]
+    (assert (not (.closed? this)) "LMDB env is closed.")
+    (let [^Rtx rtx (.get-rtx pool)]
+      (try
+        (let [^DBI dbi (.get-dbi this dbi-name)
+              ^Dbi db  (.-db dbi)
+              ^Txn txn (.-txn rtx)]
+          (stat-map (.stat db txn)))
+        (catch Exception e
+          (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
+        (finally (.reset rtx)))))
 
   (entries [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")

@@ -323,6 +323,14 @@
           cur (Cursor/create txn db)]
       (->CursorIterable cur db rtx f? sk? is? ek? ie? sk ek))))
 
+(defn- stat-map [^Stat stat]
+  {:psize          (.ms_psize ^Lib$MDB_stat (.get stat))
+   :depth          (.ms_depth ^Lib$MDB_stat (.get stat))
+   :branch-pages   (.ms_branch_pages ^Lib$MDB_stat (.get stat))
+   :leaf-pages     (.ms_leaf_pages ^Lib$MDB_stat (.get stat))
+   :overflow-pages (.ms_overflow_pages ^Lib$MDB_stat (.get stat))
+   :entries        (.ms_entries ^Lib$MDB_stat (.get stat))})
+
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
     LMDB [^Env env
@@ -386,21 +394,44 @@
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
-  (entries [this dbi-name]
+  (stat [this]
     (assert (not closed?) "LMDB env is closed.")
-    (let [^DBI dbi   (.get-dbi this dbi-name)
-          ^Dbi db    (.-db dbi)
-          ^Rtx rtx   (.get-rtx pool)
-          ^Txn txn   (.-txn rtx)
-          ^Stat stat (Stat/create txn db)]
+    (try
+      (let [stat ^Stat (Stat/create env)
+            m    (stat-map stat)]
+        (.close stat)
+        m)
+      (catch Exception e
+        (raise "Fail to get statistics: " (ex-message e) {}))))
+  (stat [this dbi-name]
+    (assert (not closed?) "LMDB env is closed.")
+    (let [^Rtx rtx (.get-rtx pool)]
       (try
-        (Lib/mdb_stat (.get txn) (.get db) (.get stat))
-        (let [entries (.ms_entries ^Lib$MDB_stat (.get stat))]
+        (let [^DBI dbi   (.get-dbi this dbi-name)
+              ^Dbi db    (.-db dbi)
+              ^Txn txn   (.-txn rtx)
+              ^Stat stat (Stat/create txn db)
+              m          (stat-map stat)]
           (.close stat)
-          entries)
+          m)
         (catch Exception e
           (raise "Fail to get entries: " (ex-message e)
                  {:dbi dbi-name}))
+        (finally (.reset rtx)))))
+
+  (entries [this dbi-name]
+    (assert (not closed?) "LMDB env is closed.")
+    (let [^Rtx rtx (.get-rtx pool)]
+      (try
+        (let [^DBI dbi   (.get-dbi this dbi-name)
+              ^Dbi db    (.-db dbi)
+              ^Txn txn   (.-txn rtx)
+              ^Stat stat (Stat/create txn db)
+              entries    (.ms_entries ^Lib$MDB_stat (.get stat))]
+          (.close stat)
+          entries)
+        (catch Exception e
+          (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
         (finally (.reset rtx)))))
 
   (get-txn [this]
