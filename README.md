@@ -285,8 +285,11 @@ are applicable to Datascript.
 * There's no network interface as of now, but this may change.
 
 * Currently only supports Clojure on JVM, but adding support for other
-  Clojure-hosting runtime is possible in the future, since bindings for LMDB
-  exist in almost all major languages and available on most platforms.
+  Clojure-hosting runtime is possible, since bindings for LMDB
+  exist in almost all major languages and available on most platforms. However,
+  in this cose base, I would prefer other languages to work with GraalVM
+  compiled native library when it is available, so I only need to maintain one
+  language binding.
 
 ## :shopping: Alternatives
 
