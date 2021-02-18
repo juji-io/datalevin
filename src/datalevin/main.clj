@@ -61,7 +61,7 @@
   (println msg)
   (System/exit status))
 
-(defn- dtlv-help [options arguments]
+(defn- dtlv-help [arguments]
   )
 
 (defn- dtlv-conn [options arguments]
@@ -101,15 +101,10 @@
   )
 
 (defn- dtlv-stat [{:keys [dir dbi]}]
-  (try
-    (let [lmdb (l/open-lmdb dir)]
-      (p/pprint (if dbi
-                  (.stat lmdb dbi)
-                  (.stat lmdb))))
-    (catch Exception e
-      (raise
-        "Fail to show statistics: " (ex-message e)
-        {:dir dir :dbi dbi}))))
+  (let [lmdb (l/open-lmdb dir)]
+    (p/pprint (if dbi
+                (.stat lmdb dbi)
+                (.stat lmdb)))))
 
 (defn -main [& args]
   (let [{:keys [command options arguments exit-message ok?]}
@@ -122,4 +117,4 @@
         "dump" (dtlv-dump options arguments)
         "load" (dtlv-load options arguments)
         "stat" (dtlv-stat options)
-        "help" (dtlv-help options arguments)))))
+        "help" (dtlv-help arguments)))))

@@ -21,6 +21,17 @@
         "name":"sun.security.provider.NativePRNG",
         "methods":[{"name":"<init>","parameterTypes":[] }]
     },
+    { 
+      "name":"datalevin.binding.graal.LMDB",
+      "allDeclaredConstructors" : true,
+      "allPublicConstructors" : true,
+      "allDeclaredMethods" : true,
+      "allPublicMethods" : true,
+      "allDeclaredClasses" : true,
+      "allPublicFields" : true,
+      "allDeclaredFields" : true,
+      "allPublicClasses" : true
+    },
     {
         "name":"sun.security.provider.SHA",
         "methods":[{"name":"<init>","parameterTypes":[] }]

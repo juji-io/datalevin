@@ -52,7 +52,8 @@
   (stat
     [db]
     [db dbi-name]
-    "Return the statitics of a LMDB env or a DBI (i.e. sub-db) in a map:
+    "Return the statitics of the unnamed top level database or a named DBI
+     (i.e. sub-database) as a map:
      * `:psize` is the size of database page
      * `:depth` is the depth of the B-tree
      * `:branch-pages` is the number of internal pages
