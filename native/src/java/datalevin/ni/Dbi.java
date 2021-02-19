@@ -47,7 +47,7 @@ public class Dbi {
      * Return the MDB_dbi integer to be used in LMDB calls
      */
     public int get() {
-        return ptr.read();
+        return (int)ptr.read();
     }
 
     public String getName() {

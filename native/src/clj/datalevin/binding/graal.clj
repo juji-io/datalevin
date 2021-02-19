@@ -415,7 +415,7 @@
           (.close stat)
           m)
         (catch Exception e
-          (raise "Fail to get entries: " (ex-message e)
+          (raise "Fail to get statistics: " (ex-message e)
                  {:dbi dbi-name}))
         (finally (.reset rtx)))))
 

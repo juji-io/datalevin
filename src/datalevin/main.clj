@@ -103,8 +103,10 @@
 (defn- dtlv-stat [{:keys [dir dbi]}]
   (let [lmdb (l/open-lmdb dir)]
     (p/pprint (if dbi
-                (.stat lmdb dbi)
-                (.stat lmdb)))))
+                (do (l/open-dbi lmdb dbi)
+                    (l/stat lmdb dbi))
+                (l/stat lmdb)))
+    (l/close-env lmdb)))
 
 (defn -main [& args]
   (let [{:keys [command options arguments exit-message ok?]}
