@@ -60,7 +60,7 @@ feature in situations where something like Redis is called for.
 
 Our goal is to simplify data storage and access by supporting diverse use cases
 and paradigms, because maximal flexibility is the core strength of a Datalog
-store. Datalevin may not be the fastest or most scalable solution for one
+store. Datalevin may not be the fastest or the most scalable solution for one
 particular use case, but it would surely support the most number of them in a
 coherent and elegant manner.
 
