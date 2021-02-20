@@ -16,10 +16,9 @@
 (def cli-opts
   [["-a" "--all" "Include all of the sub-databases"]
    ["-c" "--compact" "Compact while copying."]
-   ["-d" "--dir  PATH" "Path to the database directory"]
+   ["-d" "--dir PATH" "Path to the database directory"]
    ["-D" "--delete" "Delete the sub-database, not just empty it"]
    ["-f" "--file PATH" "Path to the specified file"]
-   ["-k" "--keyvalue" "Execute key-value store operations"]
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
    ["-t" "--text" "Load data from a simple text format: paired lines of text"]
@@ -106,31 +105,32 @@
   "
   Command exec - Execute database transaction or query.
 
-  Required option:
-      -d --dir PATH   Path to the database directory
-  Optional option:
-      -D --delete     Delete the sub-database, not just empty it.
-  Optional argument:
-      Name(s) of the sub-database(s), otherwise, the main database is operated on
+  Required argument:
+      The code to be executed as a string.
 
   Examples:
-      dtlv -d /data/companydb -D drop sales")
+      dtlv exec (def conn (open-lmdb '/data/companydb')) \\
+                (transact! conn [{:name \"Dataleinv\" :db/id -1}])")
+
+(defn- show-version []
+  (str "Datalevin (version: " version ")"))
 
 (defn usage [options-summary]
   (->> [""
-        (str "Datalevin (version: " version ")")
+        (show-version)
         ""
         "Usage: dtlv [options] <command> [args]"
         ""
+        "Commands:"
+        "  exec  Execute database transactions or queries"
+        "  copy  Copy a database, regardless of whether it is now in use"
+        "  drop  Drop or clear a database"
+        "  dump  Dump the content of a database to standard output"
+        "  load  Load data from standard input into a database"
+        "  stat  Display statistics of database"
+        ""
         "Options:"
         options-summary
-        ""
-        "Commands:"
-        "  conn  Connect to a database to work with"
-        "  copy  Copy a database, regardless of whether it is now in use"
-        "  dump  Dump the content of a database as text to standard output"
-        "  load  Load text from standard input into a database"
-        "  stat  Display status of a database"
         ""
         "See 'dtlv help <command>' to read about a specific command."]
        (s/join \newline)))
@@ -146,6 +146,8 @@
   [args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-opts)]
     (cond
+      (:version options)
+      {:exit-message (show-version) :ok? true}
       (:help options) ; help => exit OK with usage summary
       {:exit-message (usage summary) :ok? true}
       errors          ; errors => exit with description of errors
@@ -166,6 +168,11 @@
   (if (seq arguments)
     (let [command (s/lower-case (first arguments))]
       (exit 0 (case command
+                "exec" exec-help
+                "copy" copy-help
+                "drop" drop-help
+                "dump" dump-help
+                "load" load-help
                 "stat" stat-help
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
@@ -203,9 +210,10 @@
 (defn- dtlv-load [options arguments]
   )
 
-(defn- dtlv-stat [{:keys [dir dbi]}]
+(defn- dtlv-stat [{:keys [dir]} arguments]
   (assert dir (str "Missing data directory path.\n" stat-help))
-  (let [lmdb (l/open-lmdb dir)]
+  (let [dbi  (first arguments)
+        lmdb (l/open-lmdb dir)]
     (p/pprint (if dbi
                 (do (l/open-dbi lmdb dbi)
                     (l/stat lmdb dbi))
@@ -226,5 +234,5 @@
         "drop" (dtlv-drop options arguments)
         "dump" (dtlv-dump options arguments)
         "load" (dtlv-load options arguments)
-        "stat" (dtlv-stat options)
+        "stat" (dtlv-stat options arguments)
         "help" (dtlv-help arguments summary)))))
