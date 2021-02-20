@@ -11,14 +11,114 @@
             [datalevin.binding.graal])
   (:gen-class))
 
+(def version "0.4.0")
+
 (def cli-opts
-  [["-h" "--help"]
-   ["-d" "--dir PATH" "Path to the data directory"]
-   ["-i" "--dbi NAME" "Name of the sub-database"]
-   ])
+  [["-a" "--all" "Include all of the sub-databases"]
+   ["-c" "--compact" "Compact while copying."]
+   ["-d" "--dir  PATH" "Path to the database directory"]
+   ["-D" "--delete" "Delete the sub-database, not just empty it"]
+   ["-f" "--file PATH" "Path to the specified file"]
+   ["-k" "--keyvalue" "Execute key-value store operations"]
+   ["-h" "--help" "Show usage"]
+   ["-l" "--list" "List the names of sub-databases instead of the content"]
+   ["-t" "--text" "Load data from a simple text format: paired lines of text"]
+   ["-V" "--version" "Show Datalevin version and exit"]])
+
+(def stat-help
+  "
+  Command stat - show statistics of the main database or a sub-database.
+
+  Required option:
+      -d --dir PATH   Path to the database directory
+  Optional arguments:
+      name(s) of sub-database(s)
+
+  Examples:
+      dtlv -d /data/companydb stat sales
+      dtlv -d /data/companydb stat sales products")
+
+(def dump-help
+  "
+  Command dump - dump the content of the database or a sub-database.
+
+  Required option:
+      -d --dir PATH  Path to the database directory
+  Optional options:
+      -a --all        All of the sub-databases
+      -f --file PATH  Write to the specified file instead of the standard output
+      -l --list       List the names of sub-databases instead of the content
+  Optional arguments:
+      name(s) of sub-database(s)
+
+  Examples:
+      dtlv -d /data/companydb -a dump
+      dtlv -d /data/companydb -l dump
+      dtlv -d /data/companydb -f ~/sales-data dump sales")
+
+(def load-help
+  "
+  Command load - load data into the database or a sub-database.
+
+  Required option:
+      -d --dir  PATH  Path to the database directory
+  Optional option:
+      -f --file PATH  Load from the specified file instead of the standard input
+      -t --text       Input is a simple text format: paired lines text, where
+                      the first line is the key, the second the value
+  Optional argument:
+      Name of the sub-database to load the data into
+
+  Examples:
+      dtlv -d /data/companydb -f ~/sales-data load sales")
+
+(def copy-help
+  "
+  Command copy - Copy the database. This can be done regardless of whether it is
+  currently in use.
+
+  Required option:
+      -d --dir PATH   Path to the database directory
+  Optional option:
+      -c --compact    Compact while copying. Only pages in use will be copied.
+  Optional argument:
+      Path of the destination directory if specified, otherwise, the copy is
+      written to the standard output.
+
+  Examples:
+      dtlv -d /data/companydb -c copy /backup/companydb-2021-02-14")
+
+(def drop-help
+  "
+  Command drop - Drop or clear the content of sub-database(s).
+
+  Required option:
+      -d --dir PATH   Path to the database directory
+  Optional option:
+      -D --delete     Delete the sub-database, not just empty it.
+  Optional argument:
+      Name(s) of the sub-database(s), otherwise, the main database is operated on
+
+  Examples:
+      dtlv -d /data/companydb -D drop sales")
+
+(def exec-help
+  "
+  Command exec - Execute database transaction or query.
+
+  Required option:
+      -d --dir PATH   Path to the database directory
+  Optional option:
+      -D --delete     Delete the sub-database, not just empty it.
+  Optional argument:
+      Name(s) of the sub-database(s), otherwise, the main database is operated on
+
+  Examples:
+      dtlv -d /data/companydb -D drop sales")
 
 (defn usage [options-summary]
-  (->> ["Datalevin"
+  (->> [""
+        (str "Datalevin (version: " version ")")
         ""
         "Usage: dtlv [options] <command> [args]"
         ""
@@ -53,7 +153,8 @@
       (#{"conn" "copy" "dump" "load" "stat" "help"} (first arguments))
       {:command   (first arguments)
        :options   options
-       :arguments (rest arguments)}
+       :arguments (rest arguments)
+       :summary   summary}
       :else           ; failed custom validation => exit with usage summary
       {:exit-message (usage summary)})))
 
@@ -61,22 +162,25 @@
   (println msg)
   (System/exit status))
 
-(defn- dtlv-help [arguments]
-  )
+(defn- dtlv-help [arguments summary]
+  (if (seq arguments)
+    (let [command (s/lower-case (first arguments))]
+      (exit 0 (case command
+                "stat" stat-help
+                (str "Unknown command: " command))))
+    (exit 0 (usage summary))))
 
-(defn- dtlv-conn [options arguments]
+(defn- dtlv-exec [options arguments]
   (try
     (let [schema {:aka  {:db/cardinality :db.cardinality/many}
                   :name {:db/valueType :db.type/string
                          :db/unique    :db.unique/identity}}
           conn   (d/create-conn "/tmp/dtlv-test" schema) ]
 
-      (println "prepare to transact")
       (d/transact! conn
                    [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
                     {:name "Peirce", :db/id -2, :nation "france"}
                     {:name "De Morgan", :db/id -3, :nation "English"}])
-      (println "transacted")
       (prn (d/q '[:find ?nation
                   :in $ ?alias
                   :where
@@ -84,7 +188,6 @@
                   [?e :nation ?nation]]
                 @conn
                 "fred"))
-      (println "ready to close")
       (d/close conn))
     (catch Exception e
       (println (str "Error: " (.getMessage e)))
@@ -101,22 +204,27 @@
   )
 
 (defn- dtlv-stat [{:keys [dir dbi]}]
+  (assert dir (str "Missing data directory path.\n" stat-help))
   (let [lmdb (l/open-lmdb dir)]
     (p/pprint (if dbi
                 (do (l/open-dbi lmdb dbi)
                     (l/stat lmdb dbi))
                 (l/stat lmdb)))
-    (l/close-env lmdb)))
+    (l/close-lmdb lmdb)))
+
+(defn- dtlv-drop [options arguments]
+  )
 
 (defn -main [& args]
-  (let [{:keys [command options arguments exit-message ok?]}
+  (let [{:keys [command options arguments summary exit-message ok?]}
         (validate-args args)]
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (case command
-        "conn" (dtlv-conn options arguments)
+        "exec" (dtlv-exec options arguments)
         "copy" (dtlv-copy options arguments)
+        "drop" (dtlv-drop options arguments)
         "dump" (dtlv-dump options arguments)
         "load" (dtlv-load options arguments)
         "stat" (dtlv-stat options)
-        "help" (dtlv-help arguments)))))
+        "help" (dtlv-help arguments summary)))))

@@ -339,7 +339,7 @@
           ^ConcurrentHashMap dbis
           ^:volatile-mutable closed?]
   ILMDB
-  (close-env [_]
+  (close-lmdb [_]
     (when-not closed?
       (.close-pool pool)
       (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))

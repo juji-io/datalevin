@@ -196,7 +196,7 @@
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
-  (close-env [_]
+  (close-lmdb [_]
     (.close-pool pool)
     (.close env))
 

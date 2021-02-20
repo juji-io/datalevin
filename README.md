@@ -168,7 +168,7 @@ Use as a key value store:
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
 ;; Close key value db
-(l/close-env db)
+(l/close-lmdb db)
 ```
 
 Please refer to the [API

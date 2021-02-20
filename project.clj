@@ -21,13 +21,13 @@
                           ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
+                 [org.clojure/tools.cli "1.0.194"]
                  [persistent-sorted-set]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]
-                 [org.clojure/test.check]
-                 ]
+                 [org.clojure/test.check]]
   :source-paths ["src" "native/src/clj" "test"]
   :java-source-paths ["native/src/java"]
   :profiles {:uberjar      {:aot          :all
@@ -52,5 +52,4 @@
            #".*"             "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
   :global-vars {*print-namespace-maps* false
                 *unchecked-math*       :warn-on-boxed
-                *warn-on-reflection*   true
-                })
+                *warn-on-reflection*   true})

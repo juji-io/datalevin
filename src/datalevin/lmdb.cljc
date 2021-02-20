@@ -34,7 +34,7 @@
   (v [this] "value of a key value pair"))
 
 (defprotocol ILMDB
-  (close-env [db] "Close this LMDB env")
+  (close-lmdb [db] "Close this LMDB env")
   (closed? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi

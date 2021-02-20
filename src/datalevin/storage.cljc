@@ -199,7 +199,7 @@
   (dir [this]
     (lmdb/dir lmdb))
   (close [_]
-    (lmdb/close-env lmdb))
+    (lmdb/close-lmdb lmdb))
 
   (closed? [_]
     (lmdb/closed? lmdb))

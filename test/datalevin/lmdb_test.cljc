@@ -93,7 +93,7 @@
 
     (testing "close then re-open, clear and drop"
       (let [dir (l/dir lmdb)]
-        (l/close-env lmdb)
+        (l/close-lmdb lmdb)
         (is (l/closed? lmdb))
         (let [lmdb  (l/open-lmdb dir)
               dbi-a (l/open-dbi lmdb "a")]
@@ -103,7 +103,7 @@
           (is (nil? (l/get-value lmdb "a" :datalevin)))
           (l/drop-dbi lmdb "a")
           (is (thrown-with-msg? Exception #"open-dbi" (l/get-value lmdb "a" 1)))
-          (l/close-env lmdb))))
+          (l/close-lmdb lmdb))))
     (b/delete-files dir)))
 
 (deftest reentry-test
@@ -121,12 +121,12 @@
                   (is (= 1 (l/get-value lmdb "a" :something)))
                   ;; should not close this
                   ;; https://github.com/juji-io/datalevin/issues/7
-                  (l/close-env lmdb2)
+                  (l/close-lmdb lmdb2)
                   1))]
       (is (= 1 @res)))
     (is (thrown-with-msg? Exception #"multiple LMDB"
                           (l/get-value lmdb "a" :something)))
-    (l/close-env lmdb)
+    (l/close-lmdb lmdb)
     (b/delete-files dir)))
 
 (deftest get-first-test
@@ -150,7 +150,7 @@
                         [:put "a" 0x11 3 :byte]])
       (is (= 3 (l/get-first lmdb "a" [:all] :byte :data true)))
       (is (= 1 (l/get-first lmdb "a" [:all-back] :byte :data true))))
-    (l/close-env lmdb)
+    (l/close-lmdb lmdb)
     (b/delete-files dir)))
 
 (deftest get-range-no-gap-test
@@ -180,7 +180,7 @@
              (l/get-range lmdb "c" [:closed 10 109] :long :long)))
       (is (= (->> res (drop 10) (take 100) (map second))
              (l/get-range lmdb "c" [:closed 10 109] :long :long true))))
-    (l/close-env lmdb)
+    (l/close-lmdb lmdb)
     (b/delete-files dir)))
 
 (deftest get-range-gap-test
@@ -304,7 +304,7 @@
     (is (= [32 16 8 4 2 1] (l/get-range db misc-table
                                         [:open-closed-back 40 0]
                                         :long :long true)))
-    (l/close-env db)
+    (l/close-lmdb db)
     (b/delete-files dir)))
 
 (deftest get-some-test
@@ -320,7 +320,7 @@
       (l/transact lmdb txs)
       (is (= 17 (l/get-some lmdb "c" pred [:all] :long :long true)))
       (is (= [16 17] (l/get-some lmdb "c" pred [:all] :long :long))))
-    (l/close-env lmdb)
+    (l/close-lmdb lmdb)
     (b/delete-files dir)))
 
 (deftest range-filter-test
@@ -341,7 +341,7 @@
       (is (= fvs (l/range-filter lmdb "c" pred [:all] :long :long true)))
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
       (is (= res (l/range-filter lmdb "c" pred [:all] :long :long))))
-    (l/close-env lmdb)
+    (l/close-lmdb lmdb)
     (b/delete-files dir)))
 
 (deftest multi-threads-get-value-test
@@ -353,7 +353,7 @@
           txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
       (l/transact lmdb txs)
       (is (= vs (pmap #(l/get-value lmdb "a" % :long :long) ks))))
-    (l/close-env lmdb)
+    (l/close-lmdb lmdb)
     (b/delete-files dir)))
 
 ;; generative tests
@@ -372,7 +372,7 @@
                       put-ok (= d (l/get-value lmdb "a" k :long :datom))
                       _      (l/transact lmdb [[:del "a" k :long]])
                       del-ok (nil? (l/get-value lmdb "a" k :long))]
-                  (l/close-env lmdb)
+                  (l/close-lmdb lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -394,7 +394,7 @@
                       put-ok (= v (l/get-value lmdb "a" k))
                       _      (l/transact lmdb [[:del "a" k]])
                       del-ok (nil? (l/get-value lmdb "a" k))]
-                  (l/close-env lmdb)
+                  (l/close-lmdb lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -412,7 +412,7 @@
                                               lmdb "a" k :bytes :bytes))
                       _      (l/transact lmdb [[:del "a" k :bytes]])
                       del-ok (nil? (l/get-value lmdb "a" k :bytes))]
-                  (l/close-env lmdb)
+                  (l/close-lmdb lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -427,6 +427,6 @@
                       put-ok (= v ^long (l/get-value lmdb "a" k :long :long))
                       _      (l/transact lmdb [[:del "a" k :long]])
                       del-ok (nil? (l/get-value lmdb "a" k)) ]
-                  (l/close-env lmdb)
+                  (l/close-lmdb lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
