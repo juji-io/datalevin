@@ -16,8 +16,8 @@
 
 (defn- transact-schema
   [lmdb schema]
-  (lmdb/transact lmdb (for [[attr props] schema]
-                        [:put c/schema attr props :attr :data])))
+  (lmdb/transact-kv lmdb (for [[attr props] schema]
+                           [:put c/schema attr props :attr :data])))
 
 (defn- load-schema
   [lmdb]
@@ -199,7 +199,7 @@
   (dir [this]
     (lmdb/dir lmdb))
   (close [_]
-    (lmdb/close-lmdb lmdb))
+    (lmdb/close-kv lmdb))
 
   (closed? [_]
     (lmdb/closed? lmdb))
@@ -263,7 +263,7 @@
                            (reduce conj-fn holder data))
                          (reduce conj-fn holder (delete-data this datom)))))
             data   (persistent! (reduce add-fn (transient []) datoms))]
-        (lmdb/transact lmdb data))))
+        (lmdb/transact-kv lmdb data))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -415,7 +415,7 @@
    (open dir nil))
   ([dir schema]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
-         lmdb (lmdb/open-lmdb dir)]
+         lmdb (lmdb/open-kv dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)

@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-lmdb IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
+             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
             [clojure.string :as s])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -158,7 +158,7 @@
           "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
-           `datalevin.lmdb/open-lmdb` for more details." {})))))
+           `datalevin.lmdb/open-kv` for more details." {})))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -339,7 +339,7 @@
           ^ConcurrentHashMap dbis
           ^:volatile-mutable closed?]
   ILMDB
-  (close-lmdb [_]
+  (close-kv [_]
     (when-not closed?
       (.close-pool pool)
       (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
@@ -437,7 +437,7 @@
   (get-txn [this]
     (.get-rtx pool))
 
-  (transact [this txs]
+  (transact-kv [this txs]
     (assert (not closed?) "LMDB env is closed.")
     (try
       (let [^Txn txn (Txn/create env)]
@@ -458,7 +458,7 @@
         (let [^Info info (Info/create env)]
           (.setMapSize env (* 10 (.me_mapsize ^Lib$MDB_envinfo (.get info))))
           (.close info)
-          (.transact this txs)))
+          (.transact-kv this txs)))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
 
@@ -517,7 +517,7 @@
   (range-filter-count [this dbi-name pred k-range k-type]
     (scan/range-filter-count this dbi-name pred k-range k-type)))
 
-(defmethod open-lmdb :graal
+(defmethod open-kv :graal
   [dir]
   (try
     (b/file dir)

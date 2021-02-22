@@ -378,7 +378,7 @@
   multiple connections to the same database in the same process.
 
   Connections are lightweight in-memory structures (~atoms).  See also
-  [[transact!]], [[db]], [[close]], [[get-conn]], and [[lmdb/open-lmdb]].
+  [[transact!]], [[db]], [[close]], [[get-conn]], and [[lmdb/open-kv]].
 
   To access underlying DB, deref: `@conn`.
 

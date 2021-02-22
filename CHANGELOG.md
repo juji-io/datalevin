@@ -7,13 +7,16 @@ All notable changes to this project will be documented in this file. This change
   and improves write speed.
 - [Breaking] Change VAE index to VEA, in preparation for new query engine. Now
   all indices have the same order, just rotated, so merge join is more likely.
+- [Breaking] Change `open-lmdb` and `close-lmdb` to `open-kv` and `close-kv`,
+  `lmdb/transact` to `lmdb/transact-kv`, so they are consistent, easier to
+  remember, and distinct from functions in `datalevin.core`.
 
 ### Added
 - GraalVM native image specific LMDB wrapper. This wrapper allocates buffer
   memory in C and uses our own C comparator instead of doing these work in Java,
-  which should be faster.
+  so it is faster.
 - Native Datalevin as a shared C library based on the above [#6]
-- Native command line shell
+- Native command line shell, dtlv
 
 ## 0.3.17
 ### Changed

@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-lmdb IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
+             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
             [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn KeyRange Txn$BadReaderLockException
@@ -138,7 +138,7 @@
           "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
-           `datalevin.lmdb/open-lmdb` for more details." {})))))
+           `datalevin.lmdb/open-kv` for more details." {})))))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.-pageSize stat)
@@ -196,7 +196,7 @@
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
-  (close-lmdb [_]
+  (close-kv [_]
     (.close-pool pool)
     (.close env))
 
@@ -281,7 +281,7 @@
   (get-txn [this]
     (.get-rtx pool))
 
-  (transact [this txs]
+  (transact-kv [this txs]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (try
       (with-open [txn (.txnWrite env)]
@@ -300,7 +300,7 @@
         (.commit txn))
       (catch Env$MapFullException _
         (up-db-size env)
-        (.transact this txs))
+        (.transact-kv this txs))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
 
@@ -359,7 +359,7 @@
   (range-filter-count [this dbi-name pred k-range k-type]
     (scan/range-filter-count this dbi-name pred k-range k-type)))
 
-(defmethod open-lmdb :java
+(defmethod open-kv :java
   [dir]
   (try
     (let [file          (b/file dir)

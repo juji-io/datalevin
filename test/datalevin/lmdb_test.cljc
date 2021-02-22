@@ -16,14 +16,14 @@
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "b")
     (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
     (l/open-dbi lmdb "d")
 
-    (testing "transact"
-      (l/transact lmdb
+    (testing "transact-kv"
+      (l/transact-kv lmdb
                   [[:put "a" 1 2]
                    [:put "a" 'a 1]
                    [:put "a" 5 {}]
@@ -72,7 +72,7 @@
       (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword))))
 
     (testing "delete"
-      (l/transact lmdb [[:del "a" 1]
+      (l/transact-kv lmdb [[:del "a" 1]
                         [:del "a" :non-exist]])
       (is (nil? (l/get-value lmdb "a" 1))))
 
@@ -84,18 +84,18 @@
       (is (thrown-with-msg? Exception #"open-dbi" (l/get-value lmdb "z" 1))))
 
     (testing "handle val overflow automatically"
-      (l/transact lmdb [[:put "c" 1 (range 100000)]])
+      (l/transact-kv lmdb [[:put "c" 1 (range 100000)]])
       (is (= (range 100000) (l/get-value lmdb "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown-with-msg? Exception #"BufferOverflow"
-                            (l/transact lmdb [[:put "a" (range 1000) 1]]))))
+                            (l/transact-kv lmdb [[:put "a" (range 1000) 1]]))))
 
     (testing "close then re-open, clear and drop"
       (let [dir (l/dir lmdb)]
-        (l/close-lmdb lmdb)
+        (l/close-kv lmdb)
         (is (l/closed? lmdb))
-        (let [lmdb  (l/open-lmdb dir)
+        (let [lmdb  (l/open-kv dir)
               dbi-a (l/open-dbi lmdb "a")]
           (is (= "a" (l/dbi-name dbi-a)))
           (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
@@ -103,41 +103,41 @@
           (is (nil? (l/get-value lmdb "a" :datalevin)))
           (l/drop-dbi lmdb "a")
           (is (thrown-with-msg? Exception #"open-dbi" (l/get-value lmdb "a" 1)))
-          (l/close-lmdb lmdb))))
+          (l/close-kv lmdb))))
     (b/delete-files dir)))
 
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
-    (l/transact lmdb [[:put "a" :old 1]])
+    (l/transact-kv lmdb [[:put "a" :old 1]])
     (is (= 1 (l/get-value lmdb "a" :old)))
     (let [res (future
-                (let [lmdb2 (l/open-lmdb dir)]
+                (let [lmdb2 (l/open-kv dir)]
                   (l/open-dbi lmdb2 "a")
                   (is (= 1 (l/get-value lmdb2 "a" :old)))
-                  (l/transact lmdb2 [[:put "a" :something 1]])
+                  (l/transact-kv lmdb2 [[:put "a" :something 1]])
                   (is (= 1 (l/get-value lmdb2 "a" :something)))
                   (is (= 1 (l/get-value lmdb "a" :something)))
                   ;; should not close this
                   ;; https://github.com/juji-io/datalevin/issues/7
-                  (l/close-lmdb lmdb2)
+                  (l/close-kv lmdb2)
                   1))]
       (is (= 1 @res)))
     (is (thrown-with-msg? Exception #"multiple LMDB"
                           (l/get-value lmdb "a" :something)))
-    (l/close-lmdb lmdb)
+    (l/close-kv lmdb)
     (b/delete-files dir)))
 
 (deftest get-first-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
     (let [ks  (shuffle (range 0 1000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)]
-      (l/transact lmdb txs)
+      (l/transact-kv lmdb txs)
       (is (= [0 1] (l/get-first lmdb "c" [:all] :long :long)))
       (is (= [0 nil] (l/get-first lmdb "c" [:all] :long :ignore)))
       (is (= [999 1000] (l/get-first lmdb "c" [:all-back] :long :long)))
@@ -145,17 +145,17 @@
       (is (= [10 11] (l/get-first lmdb "c" [:greater-than 9] :long :long)))
       (is (= true (l/get-first lmdb "c" [:greater-than 9] :long :ignore true)))
       (is (nil? (l/get-first lmdb "c" [:greater-than 1000] :long :ignore)))
-      (l/transact lmdb [[:put "a" 0xff 1 :byte]
+      (l/transact-kv lmdb [[:put "a" 0xff 1 :byte]
                         [:put "a" 0xee 2 :byte]
                         [:put "a" 0x11 3 :byte]])
       (is (= 3 (l/get-first lmdb "a" [:all] :byte :data true)))
       (is (= 1 (l/get-first lmdb "a" [:all-back] :byte :data true))))
-    (l/close-lmdb lmdb)
+    (l/close-kv lmdb)
     (b/delete-files dir)))
 
 (deftest get-range-no-gap-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
     (let [ks   (shuffle (range 0 1000))
           vs   (map inc ks)
@@ -163,7 +163,7 @@
           res  (sort-by first (map (fn [k v] [k v]) ks vs))
           rres (reverse res)
           rc   (count res)]
-      (l/transact lmdb txs)
+      (l/transact-kv lmdb txs)
       (is (= res (l/get-range lmdb "c" [:all] :long :long)))
       (is (= rc (l/range-count lmdb "c" [:all] :long)))
       (is (= rres (l/get-range lmdb "c" [:all-back] :long :long)))
@@ -180,15 +180,15 @@
              (l/get-range lmdb "c" [:closed 10 109] :long :long)))
       (is (= (->> res (drop 10) (take 100) (map second))
              (l/get-range lmdb "c" [:closed 10 109] :long :long true))))
-    (l/close-lmdb lmdb)
+    (l/close-kv lmdb)
     (b/delete-files dir)))
 
 (deftest get-range-gap-test
   (let [dir        (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        db         (l/open-lmdb dir)
+        db         (l/open-kv dir)
         misc-table "misc-test-table"]
     (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
-    (l/transact db
+    (l/transact-kv db
                 [[:put misc-table 1 1 :long :long]
                  [:put misc-table 2 2 :long :long]
                  [:put misc-table 4 4 :long :long]
@@ -304,12 +304,12 @@
     (is (= [32 16 8 4 2 1] (l/get-range db misc-table
                                         [:open-closed-back 40 0]
                                         :long :long true)))
-    (l/close-lmdb db)
+    (l/close-kv db)
     (b/delete-files dir)))
 
 (deftest get-some-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
@@ -317,15 +317,15 @@
           pred (fn [kv]
                  (let [^long k (b/read-buffer (l/k kv) :long)]
                    (> k 15)))]
-      (l/transact lmdb txs)
+      (l/transact-kv lmdb txs)
       (is (= 17 (l/get-some lmdb "c" pred [:all] :long :long true)))
       (is (= [16 17] (l/get-some lmdb "c" pred [:all] :long :long))))
-    (l/close-lmdb lmdb)
+    (l/close-kv lmdb)
     (b/delete-files dir)))
 
 (deftest range-filter-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
@@ -337,23 +337,23 @@
           fvs  (map inc fks)
           res  (map (fn [k v] [k v]) fks fvs)
           rc   (count res)]
-      (l/transact lmdb txs)
+      (l/transact-kv lmdb txs)
       (is (= fvs (l/range-filter lmdb "c" pred [:all] :long :long true)))
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
       (is (= res (l/range-filter lmdb "c" pred [:all] :long :long))))
-    (l/close-lmdb lmdb)
+    (l/close-kv lmdb)
     (b/delete-files dir)))
 
 (deftest multi-threads-get-value-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
     (let [ks  (shuffle (range 0 100000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
-      (l/transact lmdb txs)
+      (l/transact-kv lmdb txs)
       (is (= vs (pmap #(l/get-value lmdb "a" % :long :long) ks))))
-    (l/close-lmdb lmdb)
+    (l/close-kv lmdb)
     (b/delete-files dir)))
 
 ;; generative tests
@@ -365,14 +365,14 @@
                  a gen/keyword-ns
                  v gen/any-equatable]
                 (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-lmdb dir)
+                      lmdb   (l/open-kv dir)
                       _      (l/open-dbi lmdb "a")
                       d      (d/datom e a v e)
-                      _      (l/transact lmdb [[:put "a" k d :long :datom]])
+                      _      (l/transact-kv lmdb [[:put "a" k d :long :datom]])
                       put-ok (= d (l/get-value lmdb "a" k :long :datom))
-                      _      (l/transact lmdb [[:del "a" k :long]])
+                      _      (l/transact-kv lmdb [[:del "a" k :long]])
                       del-ok (nil? (l/get-value lmdb "a" k :long))]
-                  (l/close-lmdb lmdb)
+                  (l/close-kv lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -388,13 +388,13 @@
                  v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
                                   gen/any-equatable)]
                 (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-lmdb dir)
+                      lmdb   (l/open-kv dir)
                       _      (l/open-dbi lmdb "a")
-                      _      (l/transact lmdb [[:put "a" k v]])
+                      _      (l/transact-kv lmdb [[:put "a" k v]])
                       put-ok (= v (l/get-value lmdb "a" k))
-                      _      (l/transact lmdb [[:del "a" k]])
+                      _      (l/transact-kv lmdb [[:del "a" k]])
                       del-ok (nil? (l/get-value lmdb "a" k))]
-                  (l/close-lmdb lmdb)
+                  (l/close-kv lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -403,16 +403,16 @@
   (prop/for-all [^bytes k (gen/not-empty gen/bytes)
                  ^bytes v (gen/not-empty gen/bytes)]
                 (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-lmdb dir)
+                      lmdb   (l/open-kv dir)
                       _      (l/open-dbi lmdb "a")
-                      _      (l/transact lmdb [[:put "a" k v :bytes :bytes]])
+                      _      (l/transact-kv lmdb [[:put "a" k v :bytes :bytes]])
                       put-ok (Arrays/equals v
                                             ^bytes
                                             (l/get-value
                                               lmdb "a" k :bytes :bytes))
-                      _      (l/transact lmdb [[:del "a" k :bytes]])
+                      _      (l/transact-kv lmdb [[:del "a" k :bytes]])
                       del-ok (nil? (l/get-value lmdb "a" k :bytes))]
-                  (l/close-lmdb lmdb)
+                  (l/close-kv lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))
 
@@ -421,12 +421,12 @@
   (prop/for-all [^long k gen/large-integer
                  ^long v gen/large-integer]
                 (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-lmdb dir)
+                      lmdb   (l/open-kv dir)
                       _      (l/open-dbi lmdb "a")
-                      _      (l/transact lmdb [[:put "a" k v :long :long]])
+                      _      (l/transact-kv lmdb [[:put "a" k v :long :long]])
                       put-ok (= v ^long (l/get-value lmdb "a" k :long :long))
-                      _      (l/transact lmdb [[:del "a" k :long]])
+                      _      (l/transact-kv lmdb [[:del "a" k :long]])
                       del-ok (nil? (l/get-value lmdb "a" k)) ]
-                  (l/close-lmdb lmdb)
+                  (l/close-kv lmdb)
                   (b/delete-files dir)
                   (is (and put-ok del-ok)))))

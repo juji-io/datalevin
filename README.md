@@ -129,7 +129,7 @@ Use as a key value store:
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
-(def db (l/open-lmdb "/tmp/lmdb-test"))
+(def db (l/open-kv "/tmp/lmdb-test"))
 
 ;; Define some table (called "dbi" in LMDB) names
 (def misc-table "misc-test-table")
@@ -141,12 +141,13 @@ Use as a key value store:
 
 ;; Transact some data, a transaction can put data into multiple tables
 ;; Optionally, data type can be specified to help with range query
-(l/transact db
-            [[:put misc-table :datalevin "Hello, world!"]
-             [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
-                                  :source "The Hitchhiker's Guide to the Galaxy"}]
-             [:put date-table #inst "1991-12-25" "USSR broke apart" :instant]
-             [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
+(l/transact-kv
+  db
+  [[:put misc-table :datalevin "Hello, world!"]
+   [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
+                       :source "The Hitchhiker's Guide to the Galaxy"}]
+   [:put date-table #inst "1991-12-25" "USSR broke apart" :instant]
+   [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
 
 ;; Get the value with the key
 (l/get-value db misc-table :datalevin)
@@ -156,7 +157,7 @@ Use as a key value store:
 ;;     :source "The Hitchhiker's Guide to the Galaxy"}
 
 ;; Delete some data
-(l/transact db [[:del misc-table 42]])
+(l/transact-kv db [[:del misc-table 42]])
 
 ;; Now it's gone
 (l/get-value db misc-table 42)
@@ -168,7 +169,7 @@ Use as a key value store:
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
 ;; Close key value db
-(l/close-lmdb db)
+(l/close-kv db)
 ```
 
 Please refer to the [API

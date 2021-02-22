@@ -34,7 +34,7 @@
   (v [this] "value of a key value pair"))
 
 (defprotocol ILMDB
-  (close-lmdb [db] "Close this LMDB env")
+  (close-kv [db] "Close this LMDB env")
   (closed? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
@@ -63,7 +63,7 @@
   (entries [db dbi-name]
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-txn [db])
-  (transact [db txs]
+  (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.
 
      `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
@@ -81,7 +81,8 @@
 
     Example:
 
-            (transact lmdb
+            (transact-kv
+                      lmdb
                       [ [:put \"a\" 1 2]
                         [:put \"a\" 'a 1]
                         [:put \"a\" 5 {}]
@@ -320,7 +321,7 @@
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"))
 
-(defmulti open-lmdb
+(defmulti open-kv
   "Open an LMDB database, return the connection.
 
   `dir` is a string directory path in which the data are to be stored;

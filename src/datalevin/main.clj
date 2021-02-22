@@ -2,6 +2,7 @@
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
             [clojure.pprint :as p]
+            [clojure.walk :as w]
             [clojure.stacktrace :as st]
             [sci.core :as sci]
             [datalevin.core :as d]
@@ -191,12 +192,59 @@
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
 
-(defn- dtlv-exec [options arguments]
-  #_(try
+(def user-facing-ns #{'datalevin.core 'datalevin.lmdb})
 
-      (catch Exception e
-        (println (str "Execution error: " (.getMessage e)))
-        (st/print-cause-trace e)))
+(defn- user-facing? [v]
+  (let [m (meta v)]
+    (and (:doc m)
+         (if-let [p (:protocol m)]
+           (and (not (:no-doc (meta p)))
+                (not (:no-doc m)))
+           (not (:no-doc m))))))
+
+(defn- user-facing-map [var-map]
+  (select-keys var-map
+               (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))
+
+(defn- user-facing-vars []
+  (reduce
+    (fn [m ns]
+      (assoc m ns (user-facing-map (ns-publics ns))))
+    {}
+    user-facing-ns))
+
+(defn- resolve-var [s]
+  (when (symbol? s)
+    (some #(ns-resolve % s) user-facing-ns)))
+
+(defn- qualify-fn [x]
+  (if (list? x)
+    (let [[f & args] x]
+      (if-let [var (resolve-var f)]
+        (apply list (symbol var) args)
+        x))
+    x))
+
+(defn- eval-fn [ctx form]
+  (sci/eval-form ctx (if (coll? form)
+                       (w/postwalk qualify-fn form)
+                       form)))
+
+(def sci-opts {:namespaces (user-facing-vars)})
+
+(defn- dtlv-exec [options arguments]
+  (try
+    (let [reader (sci/reader (s/join arguments))
+          ctx    (sci/init sci-opts)]
+      (sci/with-bindings {sci/ns @sci/ns}
+        (loop []
+          (let [next-form (sci/parse-next ctx reader)]
+            (when-not (= ::sci/eof next-form)
+              (prn (eval-fn ctx next-form))
+              (recur))))))
+    (catch Throwable e
+      (st/print-cause-trace e)
+      (exit 1 (str "Execution error: " (.getMessage e)))))
   (exit 0))
 
 (defn- dtlv-copy [options arguments]
@@ -211,12 +259,12 @@
 (defn- dtlv-stat [{:keys [dir]} arguments]
   (assert dir (str "Missing data directory path.\n" stat-help))
   (let [dbi  (first arguments)
-        lmdb (l/open-lmdb dir)]
+        lmdb (l/open-kv dir)]
     (p/pprint (if dbi
                 (do (l/open-dbi lmdb dbi)
                     (l/stat lmdb dbi))
                 (l/stat lmdb)))
-    (l/close-lmdb lmdb))
+    (l/close-kv lmdb))
   (exit 0))
 
 (defn- dtlv-drop [options arguments]
@@ -231,45 +279,21 @@
   (binding [*out* *err*] (println (ex-message e)))
   (sci/set! last-error e))
 
-(def user-facing-ns #{'datalevin.core 'datalevin.lmdb})
-
-(defn- user-facing? [v]
-  (let [m (meta v)]
-    (and (:doc m)
-         (if-let [p (:protocol m)]
-           (and (not (:no-doc (meta p)))
-                (not (:no-doc m)))
-           (not (:no-doc m))))))
-(user-facing? datalevin.lmdb/get-txn)
-
-(defn- user-facing-map [var-map]
-  (select-keys var-map
-               (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))
-
-(defn- user-facing-vars []
-  (reduce
-    (fn [m ns]
-      (assoc m ns (user-facing-map (ns-publics ns))))
-    {}
-    user-facing-ns))
-
-(defn- doc [s]
-  (when-let [f (some #(ns-resolve % s) user-facing-ns)]
-    (println (:doc (meta f)))))
+(defn- doc [s] (when-let [f (resolve-var s)] (println (:doc (meta f)))))
 
 (defn- repl-help []
-  (println "")
-  (println "Call function just like in code, i.e. (<function> <args>)")
   (println "")
   (println "The following Datalevin functions are available:")
   (println "")
   (doseq [ns user-facing-ns]
-    (print (str "* Functions in " ns ": "))
+    (print (str "* In " ns ": "))
     (doseq [f (sort-by name (keys (user-facing-map (ns-publics ns))))]
       (print (name f))
       (print " "))
     (println "")
     (println ""))
+  (println "Call function just like in code, i.e. (<function> <args>)")
+  (println "")
   (println "Type (doc <function>) to read documentation of the function"))
 
 (defn- dtlv-repl [options]
@@ -278,9 +302,8 @@
   (let [reader     (sci/reader *in*)
         last-error (sci/new-dynamic-var '*e nil
                                         {:ns (sci/create-ns 'clojure.core)})
-        ctx        (sci/init {:namespaces
-                              (merge (user-facing-vars)
-                                     {'clojure.core {'*e last-error}})})]
+        ctx        (sci/init (update sci-opts :namespaces
+                                     merge {'clojure.core {'*e last-error}}))]
     (sci/with-bindings {sci/ns     @sci/ns
                         last-error @last-error}
       (loop []
@@ -292,18 +315,19 @@
           (cond
             (= next-form '(exit)) (exit)
             (= next-form '(help)) (do (repl-help) (recur))
-            (= ((comp name first) next-form) "doc")
+
+            (and (list? next-form) (= ((comp name first) next-form) "doc"))
             (do (doc (first (next next-form))) (recur))
-            :else
-            (when-not (= ::sci/eof next-form)
-              (when-not (= ::err next-form)
-                (let [res (try (sci/eval-form ctx next-form)
-                               (catch Throwable e
-                                 (handle-error ctx last-error e)
-                                 ::err))]
-                  (when-not (= ::err res)
-                    (prn res))))
-              (recur))))))))
+
+            :else (when-not (= ::sci/eof next-form)
+                    (when-not (= ::err next-form)
+                      (let [res (try (eval-fn ctx next-form)
+                                     (catch Throwable e
+                                       (handle-error ctx last-error e)
+                                       ::err))]
+                        (when-not (= ::err res)
+                          (prn res))))
+                    (recur))))))))
 
 (defn -main [& args]
   (let [{:keys [command options arguments summary exit-message ok?]}
