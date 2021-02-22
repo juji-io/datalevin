@@ -7,7 +7,7 @@
 
 ## :hear_no_evil: What and why
 
-> I love Datalog, why hasn't everyone use this already?
+> I love Datalog, why hasn't everyone used this already?
 
 Datalevin is a simple durable Datalog database.
 
