@@ -33,7 +33,7 @@
           (.mkdir f)
           f))))
 
-;; byte buffer
+;; byte <-> text
 
 (defn ^:no-doc hexify
   "Convert bytes to hex string"
@@ -52,6 +52,8 @@
               (+ (bit-shift-left (Character/digit ^char c1 16) 4)
                  (Character/digit ^char c2 16))))]
     (map #(apply unhexify-2 %) (partition 2 s))))
+
+;; byte buffer
 
 (defn ^ByteBuffer allocate-buffer
   "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"

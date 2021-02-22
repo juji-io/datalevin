@@ -62,7 +62,7 @@
      * `:entries` is the number of data entries")
   (entries [db dbi-name]
     "Get the number of data entries in a DBI (i.e. sub-db)")
-  (get-txn [db] "Obtain a read-only transaction")
+  (get-txn [db])
   (transact [db txs]
     "Update DB, insert or delete key value pairs.
 

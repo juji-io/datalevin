@@ -2,25 +2,26 @@
   "API for Datalog store"
   (:refer-clojure :exclude [filter])
   (:require
-    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-    [datalevin.db :as db]
-    [datalevin.datom :as dd]
-    [datalevin.storage :as s]
-    [datalevin.pull-api :as dp]
-    [datalevin.query :as dq]
-    [datalevin.impl.entity :as de])
+   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   [datalevin.db :as db]
+   [datalevin.datom :as dd]
+   [datalevin.storage :as s]
+   [datalevin.pull-api :as dp]
+   [datalevin.query :as dq]
+   [datalevin.impl.entity :as de])
   #?(:clj
-    (:import
+     (:import
       [datalevin.impl.entity Entity]
       [datalevin.storage Store]
       [datalevin.db DB]
       [java.util UUID])))
 
 
-; Entities
+;; Entities
 
 (def ^{:arglists '([db eid])
-       :doc "Retrieves an entity by its id from database. Entities are lazy map-like structures to navigate Datalevin database content.
+       :doc      "Retrieves an entity by its id from database. Entities are lazy
+             map-like structures to navigate Datalevin database content.
 
              For `eid` pass entity id or lookup attr:
 
@@ -368,15 +369,20 @@
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to a database at the given data directory and opens the database. Creates the database if it doesn't exist yet. Update the schema if one is given. Return the connection.
+  "Creates a mutable reference (a “connection”) to a database at the given
+  data directory and opens the database. Creates the database if it doesn't
+  exist yet. Update the schema if one is given. Return the connection.
 
-  Please note that the connection should be managed like a stateful resource. Application should hold on to the same connection rather than opening multiple connections to the same database in the same process.
+  Please note that the connection should be managed like a stateful resource.
+  Application should hold on to the same connection rather than opening
+  multiple connections to the same database in the same process.
 
-   Connections are lightweight in-memory structures (~atoms).  See also [[transact!]], [[db]], [[close]], [[get-conn]], and [[lmdb/open-lmdb]].
+  Connections are lightweight in-memory structures (~atoms).  See also
+  [[transact!]], [[db]], [[close]], [[get-conn]], and [[lmdb/open-lmdb]].
 
-   To access underlying DB, deref: `@conn`.
+  To access underlying DB, deref: `@conn`.
 
-   Usage:
+  Usage:
 
              (create-conn)
 
@@ -400,9 +406,10 @@
 
 
 (defn transact!
-  "Applies transaction the underlying database value and atomically updates connection reference to point to the result of that transaction, new db value.
+  "Applies transaction the underlying database value and atomically updates
+  connection reference to point to the result of that transaction, new db value.
 
-   Returns transaction report, a map:
+  Returns transaction report, a map:
 
        { :db-before ...       ; db value before transaction
          :db-after  ...       ; db value after transaction
@@ -486,15 +493,16 @@
                        {:db/add 296 :friend -1]])"
   ([conn tx-data] (transact! conn tx-data nil))
   ([conn tx-data tx-meta]
-    {:pre [(conn? conn)]}
-    (let [report (-transact! conn tx-data tx-meta)]
-      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
-        (callback report))
-      report)))
+   {:pre [(conn? conn)]}
+   (let [report (-transact! conn tx-data tx-meta)]
+     (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
+       (callback report))
+     report)))
 
 
 (defn reset-conn!
-  "Forces underlying `conn` value to become `db`. Will generate a tx-report that will remove everything from old value and insert everything from the new one."
+  "Forces underlying `conn` value to become `db`. Will generate a tx-report that
+  will remove everything from old value and insert everything from the new one."
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
     (let [report (db/map->TxReport
@@ -516,17 +524,19 @@
 
 
 (defn listen!
-  "Listen for changes on the given connection. Whenever a transaction is applied to the database via [[transact!]], the callback is called
-   with the transaction report. `key` is any opaque unique value.
+  "Listen for changes on the given connection. Whenever a transaction is applied
+  to the database via [[transact!]], the callback is called with the transaction
+  report. `key` is any opaque unique value.
 
-   Idempotent. Calling [[listen!]] with the same key twice will override old callback with the new value.
+  Idempotent. Calling [[listen!]] with the same key twice will override old
+  callback with the new value.
 
    Returns the key under which this listener is registered. See also [[unlisten!]]."
   ([conn callback] (listen! conn (rand) callback))
   ([conn key callback]
-     {:pre [(conn? conn) (atom? (:listeners (meta conn)))]}
-     (swap! (:listeners (meta conn)) assoc key callback)
-     key))
+   {:pre [(conn? conn) (atom? (:listeners (meta conn)))]}
+   (swap! (:listeners (meta conn)) assoc key callback)
+   key))
 
 
 (defn unlisten!
@@ -736,15 +746,15 @@
         :else   s))))
 
 
-(defn squuid
+(defn ^:no-doc squuid
   "Generates a UUID that grow with time. Such UUIDs will always go to the end  of the index and that will minimize insertions in the middle.
 
    Consist of 64 bits of current UNIX timestamp (in seconds) and 64 random bits (2^64 different unique values per second)."
   ([]
-    (squuid #?(:clj  (System/currentTimeMillis)
-               :cljs (.getTime (js/Date.)))))
+   (squuid #?(:clj  (System/currentTimeMillis)
+              :cljs (.getTime (js/Date.)))))
   ([^long msec]
-  #?(:clj
+   #?(:clj
       (let [uuid     (UUID/randomUUID)
             time     (int (/ msec 1000))
             high     (.getMostSignificantBits uuid)
@@ -752,19 +762,19 @@
             new-high (bit-or (bit-and high 0x00000000FFFFFFFF)
                              (bit-shift-left time 32)) ]
         (UUID. new-high low))
-     :cljs
-       (uuid
-         (str
-               (-> (int (/ msec 1000))
-                   (to-hex-string 8))
-           "-" (-> (rand-bits 16) (to-hex-string 4))
-           "-" (-> (rand-bits 16) (bit-and 0x0FFF) (bit-or 0x4000) (to-hex-string 4))
-           "-" (-> (rand-bits 16) (bit-and 0x3FFF) (bit-or 0x8000) (to-hex-string 4))
-           "-" (-> (rand-bits 16) (to-hex-string 4))
-               (-> (rand-bits 16) (to-hex-string 4))
-               (-> (rand-bits 16) (to-hex-string 4)))))))
+      :cljs
+      (uuid
+        (str
+          (-> (int (/ msec 1000))
+              (to-hex-string 8))
+          "-" (-> (rand-bits 16) (to-hex-string 4))
+          "-" (-> (rand-bits 16) (bit-and 0x0FFF) (bit-or 0x4000) (to-hex-string 4))
+          "-" (-> (rand-bits 16) (bit-and 0x3FFF) (bit-or 0x8000) (to-hex-string 4))
+          "-" (-> (rand-bits 16) (to-hex-string 4))
+          (-> (rand-bits 16) (to-hex-string 4))
+          (-> (rand-bits 16) (to-hex-string 4)))))))
 
-(defn squuid-time-millis
+(defn ^:no-doc squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
   [uuid]
   #?(:clj (-> (.getMostSignificantBits ^UUID uuid)

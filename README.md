@@ -177,7 +177,8 @@ documentation](https://juji-io.github.io/datalevin/index.html) for more details.
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
-them, Datalevin is extensively tested with property-based testing.
+them, Datalevin is extensively tested with property-based testing, and is used
+in production at [Juji](https://juji.io).
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu

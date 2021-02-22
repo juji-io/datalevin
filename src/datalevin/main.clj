@@ -3,26 +3,22 @@
             [clojure.string :as s]
             [clojure.pprint :as p]
             [clojure.stacktrace :as st]
+            [sci.core :as sci]
             [datalevin.core :as d]
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
-            [datalevin.datom :as dt]
             [datalevin.binding.graal])
   (:gen-class))
 
 (def version "0.4.0")
 
-(def cli-opts
-  [["-a" "--all" "Include all of the sub-databases"]
-   ["-c" "--compact" "Compact while copying."]
-   ["-d" "--dir PATH" "Path to the database directory"]
-   ["-D" "--delete" "Delete the sub-database, not just empty it"]
-   ["-f" "--file PATH" "Path to the specified file"]
-   ["-h" "--help" "Show usage"]
-   ["-l" "--list" "List the names of sub-databases instead of the content"]
-   ["-t" "--text" "Load data from a simple text format: paired lines of text"]
-   ["-V" "--version" "Show Datalevin version and exit"]])
+(def version-str
+  (str
+    "
+  Datalevin (version: " version ")"))
+
+(def commands #{"exec" "copy" "drop" "dump" "load" "stat" "help"})
 
 (def stat-help
   "
@@ -34,7 +30,7 @@
       name(s) of sub-database(s)
 
   Examples:
-      dtlv -d /data/companydb stat sales
+      dtlv -d /data/companydb stat
       dtlv -d /data/companydb stat sales products")
 
 (def dump-help
@@ -103,23 +99,25 @@
 
 (def exec-help
   "
-  Command exec - Execute database transaction or query.
+  Command exec - Execute database transactions or queries.
 
   Required argument:
-      The code to be executed as a string.
+      The code to be executed.
 
   Examples:
-      dtlv exec (def conn (open-lmdb '/data/companydb')) \\
-                (transact! conn [{:name \"Dataleinv\" :db/id -1}])")
+      dtlv exec (def conn (get-conn '/data/companydb')) \\
+                (transact! conn [{:name \"Datalevin\"}])")
 
-(defn- show-version []
-  (str "Datalevin (version: " version ")"))
+(def repl-header
+  "
+  Type (help) to see available functions. Clojure core functions are also available.
+  Type (exit) to exit.
+  ")
 
-(defn usage [options-summary]
-  (->> [""
-        (show-version)
+(defn- usage [options-summary]
+  (->> [version-str
         ""
-        "Usage: dtlv [options] <command> [args]"
+        "Usage: dtlv [options] [command] [arguments]"
         ""
         "Commands:"
         "  exec  Execute database transactions or queries"
@@ -132,37 +130,53 @@
         "Options:"
         options-summary
         ""
+        "Omit the command to enter the interactive shell."
         "See 'dtlv help <command>' to read about a specific command."]
        (s/join \newline)))
 
-(defn error-msg [errors]
+(defn- error-msg [errors]
   (str "The following errors occurred while parsing your command:\n\n"
        (s/join \newline errors)))
 
-(defn validate-args
+(def cli-opts
+  [["-a" "--all" "Include all of the sub-databases"]
+   ["-c" "--compact" "Compact while copying."]
+   ["-d" "--dir PATH" "Path to the database directory"]
+   ["-D" "--delete" "Delete the sub-database, not just empty it"]
+   ["-f" "--file PATH" "Path to the specified file"]
+   ["-h" "--help" "Show usage"]
+   ["-l" "--list" "List the names of sub-databases instead of the content"]
+   ["-t" "--text" "Load data from a simple text format: paired lines of text"]
+   ["-V" "--version" "Show Datalevin version and exit"]])
+
+(defn- validate-args
   "Validate command line arguments. Either return a map indicating the program
   should exit (with a error message, and optional ok status), or a map
   indicating the action the program should take and the options provided."
   [args]
-  (let [{:keys [options arguments errors summary]} (parse-opts args cli-opts)]
+  (let [{:keys [options arguments errors summary]} (parse-opts args cli-opts)
+        command                                    (first arguments)]
     (cond
-      (:version options)
-      {:exit-message (show-version) :ok? true}
-      (:help options) ; help => exit OK with usage summary
-      {:exit-message (usage summary) :ok? true}
-      errors          ; errors => exit with description of errors
-      {:exit-message (error-msg errors)}
-      (#{"conn" "copy" "dump" "load" "stat" "help"} (first arguments))
-      {:command   (first arguments)
-       :options   options
-       :arguments (rest arguments)
-       :summary   summary}
-      :else           ; failed custom validation => exit with usage summary
-      {:exit-message (usage summary)})))
+      (:version options) {:exit-message version-str :ok? true}
+      (:help options)    {:exit-message (usage summary) :ok? true}
+      errors             {:exit-message (str (error-msg errors)
+                                             \newline
+                                             (usage summary))}
+      (commands command) {:command   command
+                          :options   options
+                          :arguments (rest arguments)
+                          :summary   summary}
+      (nil? command)     {:command "repl" :options options}
+      :else              {:exit-message (usage summary)})))
 
-(defn exit [status msg]
-  (println msg)
-  (System/exit status))
+(defn- exit
+  ([]
+   (exit 0))
+  ([status]
+   (System/exit status))
+  ([status msg]
+   (println msg)
+   (System/exit status)))
 
 (defn- dtlv-help [arguments summary]
   (if (seq arguments)
@@ -178,28 +192,12 @@
     (exit 0 (usage summary))))
 
 (defn- dtlv-exec [options arguments]
-  (try
-    (let [schema {:aka  {:db/cardinality :db.cardinality/many}
-                  :name {:db/valueType :db.type/string
-                         :db/unique    :db.unique/identity}}
-          conn   (d/create-conn "/tmp/dtlv-test" schema) ]
+  #_(try
 
-      (d/transact! conn
-                   [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
-                    {:name "Peirce", :db/id -2, :nation "france"}
-                    {:name "De Morgan", :db/id -3, :nation "English"}])
-      (prn (d/q '[:find ?nation
-                  :in $ ?alias
-                  :where
-                  [?e :aka ?alias]
-                  [?e :nation ?nation]]
-                @conn
-                "fred"))
-      (d/close conn))
-    (catch Exception e
-      (println (str "Error: " (.getMessage e)))
-      (st/print-cause-trace e)))
-  (exit 0 "finished"))
+      (catch Exception e
+        (println (str "Execution error: " (.getMessage e)))
+        (st/print-cause-trace e)))
+  (exit 0))
 
 (defn- dtlv-copy [options arguments]
   )
@@ -218,10 +216,94 @@
                 (do (l/open-dbi lmdb dbi)
                     (l/stat lmdb dbi))
                 (l/stat lmdb)))
-    (l/close-lmdb lmdb)))
+    (l/close-lmdb lmdb))
+  (exit 0))
 
 (defn- dtlv-drop [options arguments]
   )
+
+(defn- prompt [ctx]
+  (let [ns-name (sci/eval-string* ctx "(ns-name *ns*)")]
+    (print (str ns-name "> "))
+    (flush)))
+
+(defn- handle-error [_ctx last-error e]
+  (binding [*out* *err*] (println (ex-message e)))
+  (sci/set! last-error e))
+
+(def user-facing-ns #{'datalevin.core 'datalevin.lmdb})
+
+(defn- user-facing? [v]
+  (let [m (meta v)]
+    (and (:doc m)
+         (if-let [p (:protocol m)]
+           (and (not (:no-doc (meta p)))
+                (not (:no-doc m)))
+           (not (:no-doc m))))))
+(user-facing? datalevin.lmdb/get-txn)
+
+(defn- user-facing-map [var-map]
+  (select-keys var-map
+               (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))
+
+(defn- user-facing-vars []
+  (reduce
+    (fn [m ns]
+      (assoc m ns (user-facing-map (ns-publics ns))))
+    {}
+    user-facing-ns))
+
+(defn- doc [s]
+  (when-let [f (some #(ns-resolve % s) user-facing-ns)]
+    (println (:doc (meta f)))))
+
+(defn- repl-help []
+  (println "")
+  (println "Call function just like in code, i.e. (<function> <args>)")
+  (println "")
+  (println "The following Datalevin functions are available:")
+  (println "")
+  (doseq [ns user-facing-ns]
+    (print (str "* Functions in " ns ": "))
+    (doseq [f (sort-by name (keys (user-facing-map (ns-publics ns))))]
+      (print (name f))
+      (print " "))
+    (println "")
+    (println ""))
+  (println "Type (doc <function>) to read documentation of the function"))
+
+(defn- dtlv-repl [options]
+  (println version-str)
+  (println repl-header)
+  (let [reader     (sci/reader *in*)
+        last-error (sci/new-dynamic-var '*e nil
+                                        {:ns (sci/create-ns 'clojure.core)})
+        ctx        (sci/init {:namespaces
+                              (merge (user-facing-vars)
+                                     {'clojure.core {'*e last-error}})})]
+    (sci/with-bindings {sci/ns     @sci/ns
+                        last-error @last-error}
+      (loop []
+        (prompt ctx)
+        (let [next-form (try (sci/parse-next ctx reader)
+                             (catch Throwable e
+                               (handle-error ctx last-error e)
+                               ::err))]
+          (cond
+            (= next-form '(exit)) (exit)
+            (= next-form '(help)) (do (repl-help) (recur))
+            (= ((comp name first) next-form) "doc")
+            (do (doc (first (next next-form))) (recur))
+            :else
+            (when-not (= ::sci/eof next-form)
+              (when-not (= ::err next-form)
+                (let [res (try (sci/eval-form ctx next-form)
+                               (catch Throwable e
+                                 (handle-error ctx last-error e)
+                                 ::err))]
+                  (when-not (= ::err res)
+                    (prn res))))
+              (recur))))))))
 
 (defn -main [& args]
   (let [{:keys [command options arguments summary exit-message ok?]}
@@ -229,6 +311,7 @@
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (case command
+        "repl" (dtlv-repl options)
         "exec" (dtlv-exec options arguments)
         "copy" (dtlv-copy options arguments)
         "drop" (dtlv-drop options arguments)

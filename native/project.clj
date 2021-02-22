@@ -8,6 +8,7 @@
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
                  [persistent-sorted-set]
+                 [borkdude/sci]
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]

@@ -7,11 +7,12 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies [[org.clojure/clojure "1.10.2"]
                          [org.clojure/tools.cli "1.0.194"]
-                         [persistent-sorted-set "0.1.2"]
+                         [org.clojure/test.check "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.0.0"]
                          [org.graalvm.nativeimage/svm "21.0.0"]
+                         [borkdude/sci "0.2.3"]
                          [com.taoensso/nippy "3.1.1"]
-                         [org.clojure/test.check "1.1.0"]
+                         [persistent-sorted-set "0.1.2"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -21,10 +22,10 @@
                           ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
-                 [org.clojure/tools.cli "1.0.194"]
+                 [org.clojure/tools.cli]
                  [persistent-sorted-set]
+                 [borkdude/sci]
                  [com.taoensso/nippy]
-                 [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]
                  [org.clojure/test.check]]
