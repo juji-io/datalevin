@@ -1,12 +1,40 @@
 (ns ^:no-doc datalevin.util
   (:require [clojure.walk]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [clojure.java.io :as io])
   #?(:clj
      (:import [java.lang System]
+              [java.io File]
               [org.graalvm.nativeimage ImageInfo]))
   (:refer-clojure :exclude [seqable?]))
 
-(def  +separator+
+;; files
+
+(defn delete-files
+  "Recursively delete "
+  [& fs]
+  (when-let [f (first fs)]
+    (if-let [cs (seq (.listFiles (io/file f)))]
+      (recur (concat cs fs))
+      (do (io/delete-file f)
+          (recur (rest fs))))))
+
+(defn file
+  "Return directory path as File, create it if missing"
+  [path]
+  (let [^File f (io/file path)]
+    (if (.exists f)
+      f
+      (do (io/make-parents path)
+          (.mkdir f)
+          f))))
+
+(defn empty-dir?
+  "test if the given File is an empty directory"
+  [^File file]
+  (and (.isDirectory file) (-> file .list empty?)))
+
+(def +separator+
   #?(:clj  java.io.File/separator
      ;;this is faulty, since we could be in node.js
      ;;on windows...but it will work for now!

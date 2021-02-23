@@ -74,12 +74,11 @@
   currently in use.
 
   Required option:
-      -d --dir PATH   Path to the database directory
+      -d --dir PATH   Path to the source database directory
   Optional option:
       -c --compact    Compact while copying. Only pages in use will be copied.
-  Optional argument:
-      Path of the destination directory if specified, otherwise, the copy is
-      written to the standard output.
+  Required argument:
+      Path to the destination directory.
 
   Examples:
       dtlv -d /data/companydb -c copy /backup/companydb-2021-02-14")
@@ -232,7 +231,7 @@
 
 (def sci-opts {:namespaces (user-facing-vars)})
 
-(defn- dtlv-exec [options arguments]
+(defn- dtlv-exec [arguments]
   (try
     (let [reader (sci/reader (s/join arguments))
           ctx    (sci/init sci-opts)]
@@ -247,8 +246,20 @@
       (exit 1 (str "Execution error: " (.getMessage e)))))
   (exit 0))
 
-(defn- dtlv-copy [options arguments]
-  )
+(defn- dtlv-copy [{:keys [dir compact]} arguments]
+  (assert dir (str "Missing source data directory path.\n" stat-help))
+  (assert (seq arguments)
+          (str "Missing destination data directory path.\n" stat-help))
+  (try
+    (let [lmdb (l/open-kv dir)]
+      (println "Opened database, copying...")
+      (l/copy lmdb (first arguments) compact)
+      (l/close-kv lmdb)
+      (println "Copied database."))
+    (catch Throwable e
+      (st/print-cause-trace e)
+      (exit 1 (str "Execution error: " (.getMessage e)))))
+  (exit 0))
 
 (defn- dtlv-dump [options arguments]
   )
@@ -296,7 +307,7 @@
   (println "")
   (println "Type (doc <function>) to read documentation of the function"))
 
-(defn- dtlv-repl [options]
+(defn- dtlv-repl []
   (println version-str)
   (println repl-header)
   (let [reader     (sci/reader *in*)
@@ -335,8 +346,8 @@
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (case command
-        "repl" (dtlv-repl options)
-        "exec" (dtlv-exec options arguments)
+        "repl" (dtlv-repl)
+        "exec" (dtlv-exec arguments)
         "copy" (dtlv-copy options arguments)
         "drop" (dtlv-drop options arguments)
         "dump" (dtlv-dump options arguments)

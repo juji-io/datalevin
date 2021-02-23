@@ -1,7 +1,7 @@
 (ns datalevin.binding.graal
   "LMDB binding for GraalVM native image"
   (:require [datalevin.bits :as b]
-            [datalevin.util :refer [raise]]
+            [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
@@ -394,6 +394,14 @@
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
+  (copy [this dest]
+    (.copy this dest false))
+  (copy [this dest compact?]
+    (assert (not (.closed? this)) "LMDB env is closed.")
+    (if (-> dest u/file u/empty-dir?)
+      (.copy env dest (if compact? true false))
+      (raise "Destination directory is not empty.")))
+
   (stat [this]
     (assert (not closed?) "LMDB env is closed.")
     (try
@@ -520,7 +528,7 @@
 (defmethod open-kv :graal
   [dir]
   (try
-    (b/file dir)
+    (u/file dir)
     (let [^Env env (Env/create
                      dir
                      (* ^long c/+init-db-size+ 1024 1024)

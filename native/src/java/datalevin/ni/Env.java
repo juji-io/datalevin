@@ -61,4 +61,11 @@ public class Env {
         Lib.checkRc(Lib.mdb_env_set_mapsize(get(), size));
     }
 
+    public void copy(String dest, boolean compact) {
+        int flag = compact ? Lib.MDB_CP_COMPACT() : 0;
+        Lib.checkRc(Lib.mdb_env_copy2(get(),
+                                      CTypeConversion.toCString(dest).get(),
+                                      flag));
+    }
+
 }

@@ -1,37 +1,14 @@
 (ns datalevin.bits
   "Handle binary encoding, byte buffers, etc."
-  (:require [clojure.java.io :as io]
-            [datalevin.datom :as d]
+  (:require [datalevin.datom :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
-  (:import [java.io File DataInput DataOutput]
+  (:import [java.io DataInput DataOutput]
            [java.nio.charset StandardCharsets]
            [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
-           [java.nio ByteOrder]
            [datalevin.datom Datom]))
-
-;; files
-
-(defn ^:no-doc delete-files
-  "Recursively delete "
-  [& fs]
-  (when-let [f (first fs)]
-    (if-let [cs (seq (.listFiles (io/file f)))]
-      (recur (concat cs fs))
-      (do (io/delete-file f)
-          (recur (rest fs))))))
-
-(defn ^:no-doc file
-  "Return path as File, create it if missing"
-  [path]
-  (let [^File f (io/file path)]
-    (if (.exists f)
-      f
-      (do (io/make-parents path)
-          (.mkdir f)
-          f))))
 
 ;; byte <-> text
 

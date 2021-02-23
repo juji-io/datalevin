@@ -1,14 +1,14 @@
 (ns ^:no-doc datalevin.binding.java
   "LMDB binding for Java"
   (:require [datalevin.bits :as b]
-            [datalevin.util :refer [raise]]
+            [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
              :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
             [clojure.string :as s])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn KeyRange Txn$BadReaderLockException
+            PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio.charset StandardCharsets]
@@ -179,7 +179,7 @@
     (String. (.getName db) StandardCharsets/UTF_8))
   (put [_ txn append?]
     (if append?
-      (.put db txn kb vb (into-array [PutFlags/MDB_APPEND]))
+      (.put db txn kb vb (into-array PutFlags [PutFlags/MDB_APPEND]))
       (.put db txn kb vb default-put-flags)))
   (put [this txn]
     (.put this txn nil))
@@ -248,6 +248,17 @@
         (.commit txn))
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+
+  (copy [this dest]
+    (.copy this dest false))
+  (copy [this dest compact?]
+    (assert (not (.closed? this)) "LMDB env is closed.")
+    (let [d (u/file dest)]
+      (if (u/empty-dir? d)
+        (.copy env d (if compact?
+                       (into-array CopyFlags [CopyFlags/MDB_CP_COMPACT])
+                       (make-array CopyFlags 0)))
+        (raise "Destination directory is not empty."))))
 
   (stat [this]
     (assert (not (.closed? this)) "LMDB env is closed.")
@@ -362,7 +373,7 @@
 (defmethod open-kv :java
   [dir]
   (try
-    (let [file          (b/file dir)
+    (let [file          (u/file dir)
           builder       (doto (Env/create)
                           (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
                           (.setMaxReaders c/+max-readers+)

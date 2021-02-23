@@ -49,6 +49,11 @@
     "Clear data in the DBI (i.e. sub-db), then delete it")
   (get-dbi [db dbi-name]
     "Lookup open DBI (i.e. sub-db) by name, throw if it's not open")
+  (copy
+    [db dest]
+    [db dest compact?]
+    "Copy the database to a destination directory path, optionally compact
+     while copying, default not compact. ")
   (stat
     [db]
     [db dbi-name]
