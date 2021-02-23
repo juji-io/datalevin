@@ -231,21 +231,21 @@
   (clear-dbi [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (try
-      (with-open [txn (.txnWrite env)]
-        (let [^DBI dbi (.get-dbi this dbi-name)]
-          (.drop ^Dbi (.-db dbi) txn))
-        (.commit txn))
+      (let [^DBI dbi (or (.get dbis dbi-name) (.open-dbi this dbi-name))]
+        (with-open [txn (.txnWrite env)]
+          (.drop ^Dbi (.-db dbi) txn)
+          (.commit txn)))
       (catch Exception e
         (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (try
-      (with-open [txn (.txnWrite env)]
-        (let [^DBI dbi (.get-dbi this dbi-name)]
+      (let [^DBI dbi (or (.get dbis dbi-name) (.open-dbi this dbi-name))]
+        (with-open [txn (.txnWrite env)]
           (.drop ^Dbi (.-db dbi) txn true)
-          (.remove dbis dbi-name))
-        (.commit txn))
+          (.commit txn))
+        (.remove dbis dbi-name))
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 

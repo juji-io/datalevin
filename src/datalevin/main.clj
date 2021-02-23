@@ -91,8 +91,8 @@
       -d --dir PATH   Path to the database directory
   Optional option:
       -D --delete     Delete the sub-database, not just empty it.
-  Optional argument:
-      Name(s) of the sub-database(s), otherwise, the main database is operated on
+  Required argument:
+      Name(s) of the sub-database(s)
 
   Examples:
       dtlv -d /data/companydb -D drop sales")
@@ -135,8 +135,8 @@
        (s/join \newline)))
 
 (defn- error-msg [errors]
-  (str "The following errors occurred while parsing your command:\n\n"
-       (s/join \newline errors)))
+  (s/join \newline ["The following errors occurred while parsing your command:"
+                    (s/join \newline errors)]))
 
 (def cli-opts
   [["-a" "--all" "Include all of the sub-databases"]
@@ -232,6 +232,7 @@
 (def sci-opts {:namespaces (user-facing-vars)})
 
 (defn- dtlv-exec [arguments]
+  (assert (seq arguments) (s/join \newline ["Missing code." exec-help]))
   (try
     (let [reader (sci/reader (s/join arguments))
           ctx    (sci/init sci-opts)]
@@ -247,9 +248,11 @@
   (exit 0))
 
 (defn- dtlv-copy [{:keys [dir compact]} arguments]
-  (assert dir (str "Missing source data directory path.\n" stat-help))
+  (assert dir (s/join \newline
+                      ["Missing source data directory path." copy-help]))
   (assert (seq arguments)
-          (str "Missing destination data directory path.\n" stat-help))
+          (s/join \newline
+                  ["Missing destination data directory path." copy-help]))
   (try
     (let [lmdb (l/open-kv dir)]
       (println "Opened database, copying...")
@@ -258,7 +261,26 @@
       (println "Copied database."))
     (catch Throwable e
       (st/print-cause-trace e)
-      (exit 1 (str "Execution error: " (.getMessage e)))))
+      (exit 1 (str "Copy error: " (.getMessage e)))))
+  (exit 0))
+
+(defn- dtlv-drop [{:keys [dir delete]} arguments]
+  (assert dir (s/join \newline ["Missing data directory path." drop-help]))
+  (assert (seq arguments)
+          (s/join \newline ["Missing sub-database name." drop-help]))
+  (try
+    (let [lmdb (l/open-kv dir)]
+      (if delete
+        (doseq [dbi arguments]
+          (l/drop-dbi lmdb dbi)
+          (println (str "Dropped " dbi)))
+        (doseq [dbi arguments]
+          (l/clear-dbi lmdb dbi)
+          (println (str "Cleared " dbi))))
+      (l/close-kv lmdb))
+    (catch Throwable e
+      (st/print-cause-trace e)
+      (exit 1 (str "Drop error: " (.getMessage e)))))
   (exit 0))
 
 (defn- dtlv-dump [options arguments]
@@ -277,9 +299,6 @@
                 (l/stat lmdb)))
     (l/close-kv lmdb))
   (exit 0))
-
-(defn- dtlv-drop [options arguments]
-  )
 
 (defn- prompt [ctx]
   (let [ns-name (sci/eval-string* ctx "(ns-name *ns*)")]
