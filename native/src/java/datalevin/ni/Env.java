@@ -7,6 +7,8 @@ import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.WordPointer;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 
+import java.util.List;
+
 /**
  * Wrap a MDB_env pointer pointer
  */

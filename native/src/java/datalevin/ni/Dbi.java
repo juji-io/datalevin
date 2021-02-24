@@ -29,11 +29,28 @@ public class Dbi {
         txn.commit();
     }
 
+    public Dbi(Env env, int flags) {
+        this.name = null;
+        this.ptr = UnmanagedMemory.calloc(SizeOf.get(CIntPointer.class));
+        Txn txn = Txn.create(env);
+        Lib.checkRc(Lib.mdb_dbi_open(txn.get(),
+                                     WordFactory.nullPointer(),
+                                     flags,
+                                     ptr));
+        Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+
+        txn.commit();
+    }
+
     /**
      * Factory method to create an instance
      */
     public static Dbi create(Env env, String name, int flags) {
         return new Dbi(env, name, flags);
+    }
+
+    public static Dbi create(Env env, int flags) {
+        return new Dbi(env, flags);
     }
 
     /**

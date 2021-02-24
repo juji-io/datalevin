@@ -11,7 +11,6 @@
             PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
            [java.util.concurrent ConcurrentHashMap]
-           [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]))
 
 (extend-protocol IKV
@@ -176,7 +175,7 @@
 
   IDB
   (dbi-name [_]
-    (String. (.getName db) StandardCharsets/UTF_8))
+    (b/ba->str (.getName db)))
   (put [_ txn append?]
     (if append?
       (.put db txn kb vb (into-array PutFlags [PutFlags/MDB_APPEND]))
@@ -248,6 +247,13 @@
         (.remove dbis dbi-name))
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+
+  (list-dbis [this]
+    (assert (not (.closed? this)) "LMDB env is closed.")
+    (try
+      (mapv b/ba->str (.getDbiNames env))
+      (catch Exception e
+        (raise "Fail to list DBIs: " (ex-message e) {}))))
 
   (copy [this dest]
     (.copy this dest false))

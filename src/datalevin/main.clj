@@ -23,15 +23,18 @@
 
 (def stat-help
   "
-  Command stat - show statistics of the main database or a sub-database.
+  Command stat - show statistics of the main database or sub-database(s).
 
   Required option:
       -d --dir PATH   Path to the database directory
+  Optional options:
+      -a --all        All of the sub-databases
   Optional arguments:
       name(s) of sub-database(s)
 
   Examples:
       dtlv -d /data/companydb stat
+      dtlv -d /data/companydb -a stat
       dtlv -d /data/companydb stat sales products")
 
 (def dump-help
@@ -289,15 +292,23 @@
 (defn- dtlv-load [options arguments]
   )
 
-(defn- dtlv-stat [{:keys [dir]} arguments]
-  (assert dir (str "Missing data directory path.\n" stat-help))
-  (let [dbi  (first arguments)
-        lmdb (l/open-kv dir)]
-    (p/pprint (if dbi
-                (do (l/open-dbi lmdb dbi)
-                    (l/stat lmdb dbi))
-                (l/stat lmdb)))
-    (l/close-kv lmdb))
+;; TODO show reader info and free list info as well
+(defn- dtlv-stat [{:keys [dir all]} arguments]
+  (assert dir (s/join \newline ["Missing data directory path." stat-help]))
+  (try
+    (let [lmdb (l/open-kv dir)
+          dbis (if all (l/list-dbis lmdb) arguments)]
+      (if (seq dbis)
+        (p/pprint (cond-> []
+                    all  (conj {"Main DB" (l/stat lmdb)})
+                    true (into (for [dbi  dbis
+                                     :let [_ (l/open-dbi lmdb dbi)]]
+                                 {dbi (l/stat lmdb dbi)}))))
+        (p/pprint {"Main DB" (l/stat lmdb)}))
+      (l/close-kv lmdb))
+    (catch Throwable e
+      (st/print-cause-trace e)
+      (exit 1 (str "Stat error: " (.getMessage e)))))
   (exit 0))
 
 (defn- prompt [ctx]

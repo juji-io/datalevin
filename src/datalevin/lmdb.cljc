@@ -47,8 +47,8 @@
     "Clear data in the DBI (i.e sub-db), but leave it open")
   (drop-dbi [db dbi-name]
     "Clear data in the DBI (i.e. sub-db), then delete it")
-  (get-dbi [db dbi-name]
-    "Lookup open DBI (i.e. sub-db) by name, throw if it's not open")
+  (get-dbi [db dbi-name])
+  (list-dbis [db] "List the names of the sub-databases")
   (copy
     [db dest]
     [db dest compact?]

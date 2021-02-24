@@ -6,7 +6,8 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
              :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [datalevin.lmdb :as l])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer]
@@ -375,8 +376,9 @@
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Txn txn (Txn/create env)
-            ^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))]
+      (let [^Dbi dbi (.-db (or ^DBI (.get dbis dbi-name)
+                               ^DBI (.open-dbi this dbi-name)))
+            ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0))
         (.commit txn))
       (catch Exception e
@@ -385,14 +387,34 @@
   (drop-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Txn txn (Txn/create env)
-            ^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
-            ]
+      (let [^Dbi dbi (.-db (or ^DBI (.get dbis dbi-name)
+                               ^DBI (.open-dbi this dbi-name)))
+            ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)
         (.remove dbis dbi-name))
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+
+  (list-dbis [this]
+    (assert (not (.closed? this)) "LMDB env is closed.")
+    (let [^Rtx rtx (.get-rtx pool)]
+      (try
+        (let [^Dbi main      (Dbi/create env 0)
+              ^Cursor cursor (Cursor/create (.-txn rtx) main)]
+          (with-open [^AutoCloseable iterable (->CursorIterable
+                                                cursor main rtx true false false
+                                                false false nil nil)]
+            (loop [^Iterator iter (.iterator ^Iterable iterable)
+                   holder         (transient [])]
+              (if (.hasNext iter)
+                (let [kv      (.next iter)
+                      holder' (conj! holder (-> kv l/k b/get-bytes b/ba->str))]
+                  (recur iter holder'))
+                (persistent! holder)))))
+        (catch Exception e
+          (raise "Fail to list DBIs: " (ex-message e) {}))
+        (finally (.reset rtx)))))
 
   (copy [this dest]
     (.copy this dest false))

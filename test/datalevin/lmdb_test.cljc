@@ -22,25 +22,28 @@
     (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
     (l/open-dbi lmdb "d")
 
+    (testing "list dbis"
+      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis lmdb)))))
+
     (testing "transact-kv"
       (l/transact-kv lmdb
-                  [[:put "a" 1 2]
-                   [:put "a" 'a 1]
-                   [:put "a" 5 {}]
-                   [:put "a" :annunaki/enki true :attr :data]
-                   [:put "a" :datalevin ["hello" "world"]]
-                   [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-                   [:put "b" 2 3]
-                   [:put "b" (byte 0x01) #{1 2} :byte :data]
-                   [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
-                   [:put "b" [-1 -235254457N] 5]
-                   [:put "b" :a 4]
-                   [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-                   [:put "b" 1 :long :long :data]
-                   [:put "b" :long 1 :data :long]
-                   [:put "b" 2 3 :long :long]
-                   [:put "b" "ok" 42 :string :int]
-                   [:put "d" 3.14 :pi :double :keyword]]))
+                     [[:put "a" 1 2]
+                      [:put "a" 'a 1]
+                      [:put "a" 5 {}]
+                      [:put "a" :annunaki/enki true :attr :data]
+                      [:put "a" :datalevin ["hello" "world"]]
+                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                      [:put "b" 2 3]
+                      [:put "b" (byte 0x01) #{1 2} :byte :data]
+                      [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
+                      [:put "b" [-1 -235254457N] 5]
+                      [:put "b" :a 4]
+                      [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                      [:put "b" 1 :long :long :data]
+                      [:put "b" :long 1 :data :long]
+                      [:put "b" 2 3 :long :long]
+                      [:put "b" "ok" 42 :string :int]
+                      [:put "d" 3.14 :pi :double :keyword]]))
 
     (testing "entries"
       (is (= 4 (:entries (l/stat lmdb))))
@@ -73,7 +76,7 @@
 
     (testing "delete"
       (l/transact-kv lmdb [[:del "a" 1]
-                        [:del "a" :non-exist]])
+                           [:del "a" :non-exist]])
       (is (nil? (l/get-value lmdb "a" 1))))
 
     (testing "entries-again"

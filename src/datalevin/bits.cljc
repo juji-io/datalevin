@@ -8,6 +8,8 @@
            [java.nio.charset StandardCharsets]
            [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
+           [java.lang String]
+           [java.nio.charset StandardCharsets]
            [datalevin.datom Datom]))
 
 ;; byte <-> text
@@ -29,6 +31,11 @@
               (+ (bit-shift-left (Character/digit ^char c1 16) 4)
                  (Character/digit ^char c2 16))))]
     (map #(apply unhexify-2 %) (partition 2 s))))
+
+(defn ba->str
+  "Convert a byte array to string"
+  [^bytes ba]
+  (String. ba StandardCharsets/UTF_8))
 
 ;; byte buffer
 
@@ -52,7 +59,7 @@
   [^ByteBuffer bb]
   (.get bb))
 
-(defn- get-bytes
+(defn get-bytes
   "Copy content from a ByteBuffer to a byte array, useful for
    e.g. read txn result, as buffer content is gone when txn is done"
   ([^ByteBuffer bb]
