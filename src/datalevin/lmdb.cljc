@@ -38,16 +38,17 @@
   (closed? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
+    [db]
     [db dbi-name]
     [db dbi-name key-size]
     [db dbi-name key-size val-size]
     [db dbi-name key-size val-size flags]
-    "Open a named DBI (i.e. sub-db) in the LMDB env")
+    "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env")
   (clear-dbi [db dbi-name]
     "Clear data in the DBI (i.e sub-db), but leave it open")
   (drop-dbi [db dbi-name]
     "Clear data in the DBI (i.e. sub-db), then delete it")
-  (get-dbi [db dbi-name])
+  (get-dbi [db dbi-name] [db dbi-name create?])
   (list-dbis [db] "List the names of the sub-databases")
   (copy
     [db dest]
@@ -185,7 +186,9 @@
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
      The allowed data types are described in [[datalevin.bits/read-buffer]].
 
-     Only the value will be returned if `ignore-key?` is `true`;
+     Only the value will be returned if `ignore-key?` is `true`,
+     default is `false`;
+
      If value is to be ignored, put `:ignore` as `v-type`
 
      Examples:

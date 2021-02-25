@@ -6,7 +6,8 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
              :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [datalevin.lmdb :as l])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
@@ -23,6 +24,7 @@
                         EnvFlags/MDB_WRITEMAP])
 
 (def default-dbi-flags [DbiFlags/MDB_CREATE])
+(def read-dbi-flags (make-array DbiFlags 0))
 
 (def default-put-flags (make-array PutFlags 0))
 
@@ -175,7 +177,7 @@
 
   IDB
   (dbi-name [_]
-    (b/ba->str (.getName db)))
+    (b/text-ba->str (.getName db)))
   (put [_ txn append?]
     (if append?
       (.put db txn kb vb (into-array PutFlags [PutFlags/MDB_APPEND]))
@@ -223,14 +225,20 @@
       (.put dbis dbi-name dbi)
       dbi))
 
-  (get-dbi [_ dbi-name]
+  (get-dbi [this dbi-name]
+    (.get-dbi this dbi-name true))
+  (get-dbi [this dbi-name create?]
     (or (.get dbis dbi-name)
-        (raise "`open-dbi` was not called for " dbi-name {})))
+        (if create?
+          (.open-dbi this dbi-name)
+          (or (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
+                         read-dbi-flags)
+              (raise "DBI " dbi-name " does not exist." {})))))
 
   (clear-dbi [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (try
-      (let [^DBI dbi (or (.get dbis dbi-name) (.open-dbi this dbi-name))]
+      (let [^DBI dbi (.get-dbi this dbi-name )]
         (with-open [txn (.txnWrite env)]
           (.drop ^Dbi (.-db dbi) txn)
           (.commit txn)))
@@ -240,7 +248,7 @@
   (drop-dbi [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (try
-      (let [^DBI dbi (or (.get dbis dbi-name) (.open-dbi this dbi-name))]
+      (let [^DBI dbi (.get-dbi this dbi-name)]
         (with-open [txn (.txnWrite env)]
           (.drop ^Dbi (.-db dbi) txn true)
           (.commit txn))
@@ -251,7 +259,7 @@
   (list-dbis [this]
     (assert (not (.closed? this)) "LMDB env is closed.")
     (try
-      (mapv b/ba->str (.getDbiNames env))
+      (mapv b/text-ba->str (.getDbiNames env))
       (catch Exception e
         (raise "Fail to list DBIs: " (ex-message e) {}))))
 
@@ -276,7 +284,7 @@
     (assert (not (.closed? this)) "LMDB env is closed.")
     (let [^Rtx rtx (.get-rtx pool)]
       (try
-        (let [^DBI dbi (.get-dbi this dbi-name)
+        (let [^DBI dbi (.get-dbi this dbi-name false)
               ^Dbi db  (.-db dbi)
               ^Txn txn (.-txn rtx)]
           (stat-map (.stat db txn)))
@@ -286,7 +294,7 @@
 
   (entries [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [^DBI dbi (.get-dbi this dbi-name)
+    (let [^DBI dbi (.get-dbi this dbi-name false)
           ^Rtx rtx (.get-rtx pool)]
       (try
         (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))

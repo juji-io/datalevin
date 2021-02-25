@@ -6,13 +6,13 @@
             [taoensso.nippy :as nippy])
   (:import [java.io DataInput DataOutput]
            [java.nio.charset StandardCharsets]
-           [java.util Arrays UUID Date]
+           [java.util Arrays UUID Date Base64]
            [java.nio ByteBuffer]
-           [java.lang String]
+           [java.lang String Character]
            [java.nio.charset StandardCharsets]
            [datalevin.datom Datom]))
 
-;; byte <-> text
+;; bytes <-> text
 
 (def ^:no-doc hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
 
@@ -39,10 +39,20 @@
   [s]
   (map #(apply unhexify-2c %) (partition 2 s)))
 
-(defn ba->str
-  "Convert a byte array to string"
+(defn text-ba->str
+  "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
   (String. ba StandardCharsets/UTF_8))
+
+(defn binary-ba->str
+  "Convert a byte array to string using base64"
+  [^bytes ba]
+  (.encodeToString (Base64/getEncoder) ba))
+
+(defn binary-str->ba
+  "Convert a base64 encoded string back to a byte array"
+  [^String s]
+  (.decode (Base64/getDecoder) s))
 
 ;; byte buffer
 
@@ -124,7 +134,6 @@
 
 (defn- put-long
   [^ByteBuffer bb n]
-  ;;(check-buffer-overflow Long/BYTES (.remaining bb))
   (.putLong bb ^long n))
 
 (defn- encode-float
@@ -137,7 +146,6 @@
 
 (defn- put-float
   [^ByteBuffer bb x]
-  ;;(check-buffer-overflow Float/BYTES (.remaining bb))
   (.putInt bb (encode-float x)))
 
 (defn- encode-double
@@ -150,23 +158,19 @@
 
 (defn- put-double
   [^ByteBuffer bb x]
-  ;;(check-buffer-overflow Double/BYTES (.remaining bb))
   (.putLong bb (encode-double x)))
 
 (defn- put-int
   [^ByteBuffer bb n]
-  ;;(check-buffer-overflow Integer/BYTES (.remaining bb))
   (.putInt bb ^int (int n)))
 
 (defn put-bytes
   "Put bytes into a bytebuffer"
   [^ByteBuffer bb ^bytes bs]
-  ;;(check-buffer-overflow (alength bs) (.remaining bb))
   (.put bb bs))
 
 (defn- put-byte
   [^ByteBuffer bb b]
-  ;;(check-buffer-overflow 1 (.remaining bb))
   (.put bb ^byte (unchecked-byte b)))
 
 (defn- put-data
@@ -581,6 +585,7 @@
      :avet    (put-ave bf x)
      :vea     (put-vea bf x)
      :veat    (put-vea bf x)
+     :raw     (put-bytes bf x)
      (put-data bf x))))
 
 (defn read-buffer
@@ -634,4 +639,5 @@
      :avet    (get-ave bf)
      :vea     (get-vea bf)
      :veat    (get-vea bf)
+     :raw     (get-bytes bf)
      (get-data bf))))

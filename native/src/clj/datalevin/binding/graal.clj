@@ -368,15 +368,20 @@
       (.put dbis dbi-name db)
       db))
 
-  (get-dbi [_ dbi-name]
+  (get-dbi [this dbi-name]
+    (.get-dbi this dbi-name true))
+  (get-dbi [this dbi-name create?]
     (or (.get dbis dbi-name)
-        (raise "`open-dbi` was not called for " dbi-name {})))
+        (if create?
+          (.open-dbi this dbi-name)
+          (or (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
+                         read-dbi-flags)
+              (raise "DBI " dbi-name " does not exist." {})))))
 
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Dbi dbi (.-db (or ^DBI (.get dbis dbi-name)
-                               ^DBI (.open-dbi this dbi-name)))
+      (let [^Dbi dbi (.-db (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0))
         (.commit txn))
@@ -386,8 +391,7 @@
   (drop-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Dbi dbi (.-db (or ^DBI (.get dbis dbi-name)
-                               ^DBI (.open-dbi this dbi-name)))
+      (let [^Dbi dbi (.-db (.-get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)
@@ -409,7 +413,7 @@
               (if (.hasNext iter)
                 (let [kv      (.next iter)
                       holder' (conj! holder
-                                     (-> kv lmdb/k b/get-bytes b/ba->str))]
+                                     (-> kv lmdb/k b/get-bytes b/text-ba->str))]
                   (recur iter holder'))
                 (persistent! holder)))))
         (catch Exception e
@@ -437,7 +441,7 @@
     (assert (not closed?) "LMDB env is closed.")
     (let [^Rtx rtx (.get-rtx pool)]
       (try
-        (let [^DBI dbi   (.get-dbi this dbi-name)
+        (let [^DBI dbi   (.get-dbi this dbi-name false)
               ^Dbi db    (.-db dbi)
               ^Txn txn   (.-txn rtx)
               ^Stat stat (Stat/create txn db)
@@ -453,7 +457,7 @@
     (assert (not closed?) "LMDB env is closed.")
     (let [^Rtx rtx (.get-rtx pool)]
       (try
-        (let [^DBI dbi   (.get-dbi this dbi-name)
+        (let [^DBI dbi   (.get-dbi this dbi-name false)
               ^Dbi db    (.-db dbi)
               ^Txn txn   (.-txn rtx)
               ^Stat stat (Stat/create txn db)

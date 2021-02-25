@@ -12,8 +12,7 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays]
-           [java.lang Long]
-           [java.nio BufferOverflowException]))
+           [java.lang Long]))
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
@@ -85,7 +84,7 @@
       (is (= 10 (l/entries lmdb "b"))))
 
     (testing "non-existent dbi"
-      (is (thrown-with-msg? Exception #"open-dbi" (l/get-value lmdb "z" 1))))
+      (is (thrown? Exception (l/get-value lmdb "z" 1))))
 
     (testing "handle val overflow automatically"
       (l/transact-kv lmdb [[:put "c" 1 (range 100000)]])
@@ -105,7 +104,7 @@
           (l/clear-dbi lmdb "a")
           (is (nil? (l/get-value lmdb "a" :datalevin)))
           (l/drop-dbi lmdb "a")
-          (is (thrown-with-msg? Exception #"open-dbi" (l/get-value lmdb "a" 1)))
+          (is (thrown? Exception (l/get-value lmdb "a" 1)))
           (l/close-kv lmdb))))
     (u/delete-files dir)))
 

@@ -11,6 +11,15 @@
            [java.nio ByteBuffer]
            [datalevin.bits Indexable Retrieved]))
 
+;; bytes <-> text
+
+(test/defspec bytes<->str-test
+  100
+  (prop/for-all [^bytes k (gen/not-empty gen/bytes)]
+                (Arrays/equals k
+                               ^bytes (sut/binary-str->ba
+                                        (sut/binary-ba->str k)))))
+
 ;; buffer read/write
 
 (defn- bytes-size-less-than?

@@ -137,7 +137,7 @@
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
   (assert (not (l/closed? lmdb)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi lmdb dbi-name)
+  (let [dbi (l/get-dbi lmdb dbi-name false)
         rtx (l/get-txn lmdb)]
     (try
       (fetch-value dbi rtx k k-type v-type ignore-key?)
@@ -149,7 +149,7 @@
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]
   (assert (not (l/closed? lmdb)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi lmdb dbi-name)
+  (let [dbi (l/get-dbi lmdb dbi-name false)
         rtx (l/get-txn lmdb)]
     (try
       (fetch-first dbi rtx k-range k-type v-type ignore-key?)
@@ -162,7 +162,7 @@
 (defn get-range
   [this dbi-name k-range k-type v-type ignore-key?]
   (assert (not (l/closed? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name)
+  (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
       (fetch-range dbi rtx k-range k-type v-type ignore-key?)
@@ -175,7 +175,7 @@
 (defn range-count
   [this dbi-name k-range k-type]
   (assert (not (l/closed? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name)
+  (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
       (fetch-range-count dbi rtx k-range k-type)
@@ -187,7 +187,7 @@
 (defn get-some
   [this dbi-name pred k-range k-type v-type ignore-key?]
   (assert (not (l/closed? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name)
+  (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
       (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
@@ -200,7 +200,7 @@
 (defn range-filter
   [this dbi-name pred k-range k-type v-type ignore-key?]
   (assert (not (l/closed? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name)
+  (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
       (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
@@ -213,7 +213,7 @@
 (defn range-filter-count
   [this dbi-name pred k-range k-type]
   (assert (not (l/closed? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name)
+  (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
       (fetch-range-filtered-count dbi rtx pred k-range k-type)

@@ -2,6 +2,7 @@
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
             [clojure.pprint :as p]
+            [clojure.java.io :as io]
             [clojure.walk :as w]
             [clojure.stacktrace :as st]
             [sci.core :as sci]
@@ -9,7 +10,10 @@
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
-            [datalevin.binding.graal])
+            [datalevin.binding.graal]
+            [datalevin.binding.java :as j]
+            [datalevin.constants :as c]
+            [datalevin.util :as u])
   (:gen-class))
 
 (def version "0.4.0")
@@ -70,7 +74,8 @@
       Name of the sub-database to load the data into
 
   Examples:
-      dtlv -d /data/companydb -f ~/sales-data load sales")
+      dtlv -d /data/companydb -f ~/sales-data load sales
+      dtlv -d /data/companydb -f ~/sales-data -g load")
 
 (def copy-help
   "
@@ -287,8 +292,27 @@
       (exit 1 (str "Drop error: " (.getMessage e)))))
   (exit 0))
 
-(defn- dtlv-dump [options arguments]
-  )
+(defn- dump-dbi [lmdb dbi]
+  (let [i (l/get-dbi lmdb dbi false)
+        n (l/entries lmdb dbi)]
+    (p/pprint {:dbi dbi :entries n})
+    (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
+      (p/pprint [(b/binary-ba->str k) (b/binary-ba->str v)]))))
+
+(defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
+  (assert dir (s/join \newline ["Missing data directory path." dump-help]))
+  (try
+    (let [f    (when file (io/writer file))
+          lmdb (l/open-kv dir)]
+      (binding [*out* (if f f  *out*)]
+        (cond
+          list            (p/pprint (set (l/list-dbis lmdb)))
+          (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))))
+      (l/close-kv lmdb)
+      (when f (.close f)))
+    (catch Throwable e
+      (st/print-cause-trace e)
+      (exit 1 (str "Dump error: " (.getMessage e))))))
 
 (defn- dtlv-load [options arguments]
   )
