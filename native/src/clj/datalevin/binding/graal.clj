@@ -374,14 +374,12 @@
     (or (.get dbis dbi-name)
         (if create?
           (.open-dbi this dbi-name)
-          (or (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-                         read-dbi-flags)
-              (raise "DBI " dbi-name " does not exist." {})))))
+          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+ 0))))
 
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Dbi dbi (.-db (.get-dbi this dbi-name))
+      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0))
         (.commit txn))
@@ -391,7 +389,7 @@
   (drop-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Dbi dbi (.-db (.-get-dbi this dbi-name))
+      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)

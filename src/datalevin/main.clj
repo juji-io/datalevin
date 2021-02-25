@@ -293,11 +293,15 @@
   (exit 0))
 
 (defn- dump-dbi [lmdb dbi]
-  (let [i (l/get-dbi lmdb dbi false)
-        n (l/entries lmdb dbi)]
+  (let [n (l/entries lmdb dbi)]
     (p/pprint {:dbi dbi :entries n})
     (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
       (p/pprint [(b/binary-ba->str k) (b/binary-ba->str v)]))))
+
+(defn- dump-all [lmdb]
+  (let [dbis (set (l/list-dbis lmdb))]
+    (p/pprint dbis)
+    (doseq [dbi dbis] (dump-dbi lmdb dbi))))
 
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))
@@ -307,6 +311,7 @@
       (binding [*out* (if f f  *out*)]
         (cond
           list            (p/pprint (set (l/list-dbis lmdb)))
+          all             (dump-all lmdb)
           (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))))
       (l/close-kv lmdb)
       (when f (.close f)))

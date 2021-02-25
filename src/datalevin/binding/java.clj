@@ -231,9 +231,8 @@
     (or (.get dbis dbi-name)
         (if create?
           (.open-dbi this dbi-name)
-          (or (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-                         read-dbi-flags)
-              (raise "DBI " dbi-name " does not exist." {})))))
+          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
+                     read-dbi-flags))))
 
   (clear-dbi [this dbi-name]
     (assert (not (.closed? this)) "LMDB env is closed.")
