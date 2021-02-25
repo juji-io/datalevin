@@ -42,18 +42,20 @@
   Command dump - dump the content of the database or a sub-database.
 
   Required option:
-      -d --dir PATH  Path to the database directory
+      -d --dir PATH   Path to the database directory
   Optional options:
       -a --all        All of the sub-databases
       -f --file PATH  Write to the specified file instead of the standard output
+      -g --datalog    Dump as a Datalog database
       -l --list       List the names of sub-databases instead of the content
   Optional arguments:
       name(s) of sub-database(s)
 
   Examples:
-      dtlv -d /data/companydb -a dump
       dtlv -d /data/companydb -l dump
-      dtlv -d /data/companydb -f ~/sales-data dump sales")
+      dtlv -d /data/companydb -g dump
+      dtlv -d /data/companydb -f ~/sales-data dump sales
+      dtlv -d /data/companydb -f ~/company-data -a dump")
 
 (def load-help
   "
@@ -63,8 +65,7 @@
       -d --dir  PATH  Path to the database directory
   Optional option:
       -f --file PATH  Load from the specified file instead of the standard input
-      -t --text       Input is a simple text format: paired lines text, where
-                      the first line is the key, the second the value
+      -g --datalog    Load a Datalog database
   Optional argument:
       Name of the sub-database to load the data into
 

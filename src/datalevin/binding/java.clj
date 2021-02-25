@@ -11,7 +11,7 @@
             PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
            [java.util.concurrent ConcurrentHashMap]
-           [java.nio ByteBuffer]))
+           [java.nio ByteBuffer BufferOverflowException]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal
@@ -163,15 +163,15 @@
       (.clear vb)
       (b/put-buffer vb x t)
       (.flip vb)
+      (catch BufferOverflowException _
+        (let [size (* 2 ^long (b/measure-size x))]
+          (set! vb (b/allocate-buffer size))
+          (b/put-buffer vb x t)
+          (.flip vb)))
       (catch Exception e
-        (if (s/includes? (ex-message e) c/buffer-overflow)
-          (let [size (* 2 ^long (b/measure-size x))]
-            (set! vb (b/allocate-buffer size))
-            (b/put-buffer vb x t)
-            (.flip vb))
-          (raise "Error putting r/w value buffer of "
-                 (.dbi-name this) ": " (ex-message e)
-                 {:value x :type t :dbi (.dbi-name this)})))))
+        (raise "Error putting r/w value buffer of "
+               (.dbi-name this) ": " (ex-message e)
+               {:value x :type t :dbi (.dbi-name this)}))))
 
   IDB
   (dbi-name [_]

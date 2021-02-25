@@ -14,23 +14,30 @@
 
 ;; byte <-> text
 
+(def ^:no-doc hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
+
+(defn ^:no-doc hexify-byte
+  "Convert a byte to a hex pair"
+  [b]
+  (let [v (bit-and ^byte b 0xFF)]
+    [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))
+
 (defn ^:no-doc hexify
   "Convert bytes to hex string"
   [bs]
-  (let [hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F]]
-    (letfn [(hexify-byte [b]
-              (let [v (bit-and ^byte b 0xFF)]
-                [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))]
-      (apply str (mapcat hexify-byte bs)))))
+  (apply str (mapcat hexify-byte bs)))
+
+(defn ^:no-doc unhexify-2c
+  "Convert two hex characters to a byte"
+  [c1 c2]
+  (unchecked-byte
+    (+ (bit-shift-left (Character/digit ^char c1 16) 4)
+       (Character/digit ^char c2 16))))
 
 (defn ^:no-doc unhexify
   "Convert hex string to byte sequence"
   [s]
-  (letfn [(unhexify-2 [c1 c2]
-            (unchecked-byte
-              (+ (bit-shift-left (Character/digit ^char c1 16) 4)
-                 (Character/digit ^char c2 16))))]
-    (map #(apply unhexify-2 %) (partition 2 s))))
+  (map #(apply unhexify-2c %) (partition 2 s)))
 
 (defn ba->str
   "Convert a byte array to string"
@@ -115,20 +122,9 @@
     1 false
     (u/raise "Illegal value in buffer, expecting a boolean" {})))
 
-(defn- check-buffer-overflow
-  [^long length ^long remaining]
-  (when (< remaining length)
-    (u/raise c/buffer-overflow
-             " trying to put "
-             length
-             " bytes while "
-             remaining
-             " remaining in the ByteBuffer."
-             {})))
-
 (defn- put-long
   [^ByteBuffer bb n]
-  (check-buffer-overflow Long/BYTES (.remaining bb))
+  ;;(check-buffer-overflow Long/BYTES (.remaining bb))
   (.putLong bb ^long n))
 
 (defn- encode-float
@@ -141,7 +137,7 @@
 
 (defn- put-float
   [^ByteBuffer bb x]
-  (check-buffer-overflow Float/BYTES (.remaining bb))
+  ;;(check-buffer-overflow Float/BYTES (.remaining bb))
   (.putInt bb (encode-float x)))
 
 (defn- encode-double
@@ -154,22 +150,23 @@
 
 (defn- put-double
   [^ByteBuffer bb x]
-  (check-buffer-overflow Double/BYTES (.remaining bb))
+  ;;(check-buffer-overflow Double/BYTES (.remaining bb))
   (.putLong bb (encode-double x)))
 
 (defn- put-int
   [^ByteBuffer bb n]
-  (check-buffer-overflow Integer/BYTES (.remaining bb))
+  ;;(check-buffer-overflow Integer/BYTES (.remaining bb))
   (.putInt bb ^int (int n)))
 
-(defn- put-bytes
+(defn put-bytes
+  "Put bytes into a bytebuffer"
   [^ByteBuffer bb ^bytes bs]
-  (check-buffer-overflow (alength bs) (.remaining bb))
+  ;;(check-buffer-overflow (alength bs) (.remaining bb))
   (.put bb bs))
 
 (defn- put-byte
   [^ByteBuffer bb b]
-  (check-buffer-overflow 1 (.remaining bb))
+  ;;(check-buffer-overflow 1 (.remaining bb))
   (.put bb ^byte (unchecked-byte b)))
 
 (defn- put-data

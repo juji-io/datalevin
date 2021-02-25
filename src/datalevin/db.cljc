@@ -256,17 +256,7 @@
                          :key       :db/isComponent}))))
     (validate-schema-key a :db/unique (:db/unique kv) #{:db.unique/value :db.unique/identity})
     (validate-schema-key a :db/valueType (:db/valueType kv)
-                         #{:db.type/keyword
-                           :db.type/symbol
-                           :db.type/string
-                           :db.type/boolean
-                           :db.type/long
-                           :db.type/double
-                           :db.type/float
-                           :db.type/ref
-                           :db.type/instant
-                           :db.type/uuid
-                           :db.type/bytes})
+                         c/datalog-value-types)
     (validate-schema-key a :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})))
 
 (defn- open-store

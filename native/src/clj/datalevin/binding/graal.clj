@@ -6,11 +6,10 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
              :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
-            [clojure.string :as s]
-            [datalevin.lmdb :as l])
+            [clojure.string :as s])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
-           [java.nio ByteBuffer]
+           [java.nio ByteBuffer BufferOverflowException]
            [java.lang AutoCloseable]
            [java.lang.annotation Retention RetentionPolicy]
            [org.graalvm.nativeimage.c CContext]
@@ -281,17 +280,17 @@
         (.clear ^BufVal vp)
         (b/put-buffer vb x t)
         (.flip ^BufVal vp)
+        (catch BufferOverflowException _
+          (let [size (* 2 ^long (b/measure-size x))]
+            (.close vp)
+            (set! vp (BufVal/create size))
+            (let [^ByteBuffer vb (.inBuf vp)]
+              (b/put-buffer vb x t)
+              (.flip ^BufVal vp))))
         (catch Exception e
-          (if (s/includes? (ex-message e) c/buffer-overflow)
-            (let [size (* 2 ^long (b/measure-size x))]
-              (.close vp)
-              (set! vp (BufVal/create size))
-              (let [^ByteBuffer vb (.inBuf vp)]
-                (b/put-buffer vb x t)
-                (.flip ^BufVal vp)))
-            (raise "Error putting r/w value buffer of "
-                   dbi-name ": " (ex-message e)
-                   {:value x :type t :dbi dbi-name}))))))
+          (raise "Error putting r/w value buffer of "
+                 dbi-name ": " (ex-message e)
+                 {:value x :type t :dbi dbi-name})))))
 
   IDB
   (dbi-name [_]
@@ -409,7 +408,8 @@
                    holder         (transient [])]
               (if (.hasNext iter)
                 (let [kv      (.next iter)
-                      holder' (conj! holder (-> kv l/k b/get-bytes b/ba->str))]
+                      holder' (conj! holder
+                                     (-> kv lmdb/k b/get-bytes b/ba->str))]
                   (recur iter holder'))
                 (persistent! holder)))))
         (catch Exception e

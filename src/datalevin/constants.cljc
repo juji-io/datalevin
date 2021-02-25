@@ -32,6 +32,10 @@
 
 (def ^:const +id-bytes+ Long/BYTES)
 
+(def ^:const lmdb-data-types #{:data :string :int :long :id :float :double
+                               :byte :bytes :keyword :boolean :instant :uuid
+                               :datom :attr :eav :ave :vea})
+
 ;; value headers
 (def ^:const type-long-neg (unchecked-byte 0xC0))
 (def ^:const type-long-pos (unchecked-byte 0xC1))
@@ -77,7 +81,12 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 
-(def ^:const buffer-overflow "BufferOverflow:")
+(def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
+                                   :db.type/string :db.type/boolean
+                                   :db.type/long :db.type/double
+                                   :db.type/float :db.type/ref
+                                   :db.type/instant :db.type/uuid
+                                   :db.type/bytes})
 
 ;;-------------------------------------------------------------
 
