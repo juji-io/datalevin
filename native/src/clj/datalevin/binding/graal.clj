@@ -453,10 +453,10 @@
 
   (entries [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
-    (let [^Rtx rtx (.get-rtx pool)]
+    (let [^DBI dbi (.get-dbi this dbi-name false)
+          ^Rtx rtx (.get-rtx pool)]
       (try
-        (let [^DBI dbi   (.get-dbi this dbi-name false)
-              ^Dbi db    (.-db dbi)
+        (let [^Dbi db    (.-db dbi)
               ^Txn txn   (.-txn rtx)
               ^Stat stat (Stat/create txn db)
               entries    (.ms_entries ^Lib$MDB_stat (.get stat))]

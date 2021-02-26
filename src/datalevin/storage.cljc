@@ -255,15 +255,22 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [add-fn (fn [holder datom]
-                     (let [conj-fn (fn [h d] (conj! h d))]
-                       (if (d/datom-added datom)
-                         (let [[data giant?] (insert-data this datom)]
-                           (when giant? (advance-max-gt this))
-                           (reduce conj-fn holder data))
-                         (reduce conj-fn holder (delete-data this datom)))))
-            data   (persistent! (reduce add-fn (transient []) datoms))]
-        (lmdb/transact-kv lmdb data))))
+      (let [add-fn   (fn [holder datom]
+                       (let [conj-fn (fn [h d] (conj! h d))]
+                         (if (d/datom-added datom)
+                           (let [[data giant?] (insert-data this datom)]
+                             (when giant? (advance-max-gt this))
+                             (reduce conj-fn holder data))
+                           (reduce conj-fn holder (delete-data this datom)))))
+            batch-fn (fn [batch]
+                       (lmdb/transact-kv
+                         lmdb
+                         (persistent! (reduce add-fn (transient []) batch))))]
+        (doseq [batch (partition c/+tx-datom-batch-size+
+                                 c/+tx-datom-batch-size+
+                                 nil
+                                 datoms)]
+          (batch-fn batch)))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)

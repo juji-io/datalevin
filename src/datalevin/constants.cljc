@@ -100,6 +100,9 @@
 (def ^:const +init-db-size+     100)   ; in megabytes
 (def ^:const +default-val-size+ 16384) ; in bytes
 
+;; storage
+
+(def ^:const +tx-datom-batch-size+ 100000)
 
 ;; query
 
