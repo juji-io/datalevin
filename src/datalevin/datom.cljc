@@ -157,9 +157,8 @@
 
 #?(:clj
    (defmethod print-method Datom [^Datom d, ^java.io.Writer w]
-     (.write w (str "#datalevin/Datom "))
      (binding [*out* w]
-       (pr [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)]))))
+       (pr [(.-e d) (.-a d) (.-v d)]))))
 
 ;; ----------------------------------------------------------------------------
 ;; datom cmp macros/funcs

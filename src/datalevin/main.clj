@@ -153,9 +153,9 @@
    ["-d" "--dir PATH" "Path to the database directory"]
    ["-D" "--delete" "Delete the sub-database, not just empty it"]
    ["-f" "--file PATH" "Path to the specified file"]
+   ["-g" "--datalog" "Dump/load as a Datalog database"]
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
-   ["-t" "--text" "Load data from a simple text format: paired lines of text"]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
 (defn- validate-args
@@ -303,18 +303,27 @@
     (p/pprint dbis)
     (doseq [dbi dbis] (dump-dbi lmdb dbi))))
 
+(defn- dump-datalog [dir]
+  (let [conn (d/create-conn dir)]
+    (p/pprint (d/schema conn))
+    (doseq [datom (d/datoms @conn :eav)]
+      (p/pprint datom))))
+
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))
   (try
     (let [f    (when file (io/writer file))
           lmdb (l/open-kv dir)]
-      (binding [*out* (if f f  *out*)]
+      (binding [*out* (or f *out*)]
         (cond
           list            (p/pprint (set (l/list-dbis lmdb)))
+          datalog         (dump-datalog dir)
           all             (dump-all lmdb)
-          (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))))
+          (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))
+          :else           (println dump-help)))
       (l/close-kv lmdb)
-      (when f (.close f)))
+      (when f (.close f))
+      (exit 0))
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Dump error: " (.getMessage e))))))

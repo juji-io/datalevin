@@ -108,7 +108,7 @@ Use as a Datalog store:
                     :db/unique    :db.unique/identity}})
 
 ;; Create DB on disk and connect to it
-(def conn (d/get-conn "/tmp/datalevin-test" schema))
+(def conn (d/get-conn "/var/datalevin/mydb" schema))
 
 ;; Transact some data
 ;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
@@ -149,7 +149,7 @@ Use as a key value store:
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
-(def db (l/open-kv "/tmp/lmdb-test"))
+(def db (l/open-kv "/var/datalevin/mykvdb"))
 
 ;; Define some table (called "dbi" in LMDB) names
 (def misc-table "misc-test-table")
