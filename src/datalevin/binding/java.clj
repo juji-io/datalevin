@@ -310,7 +310,9 @@
     (try
       (with-open [txn (.txnWrite env)]
         (doseq [[op dbi-name k & r] txs
-                :let                [^DBI dbi (.get-dbi this dbi-name)]]
+                :let                [^DBI dbi (or (.get dbis dbi-name)
+                                                  (raise dbi-name
+                                                         " is not open" {}))]]
           (case op
             :put (let [[v kt vt flags] r]
                    (.put-key dbi k kt)

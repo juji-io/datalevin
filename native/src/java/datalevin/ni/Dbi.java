@@ -28,7 +28,7 @@ public class Dbi {
             Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
         } catch(Exception e) {
             txn.close();
-            throw(e);
+            throw e;
         }
 
         txn.commit();
@@ -44,10 +44,9 @@ public class Dbi {
                                         flags,
                                         ptr));
             Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
-
         } catch(Exception e) {
             txn.close();
-            throw(e);
+            throw e;
         }
 
         txn.commit();

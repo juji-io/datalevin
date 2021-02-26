@@ -70,6 +70,26 @@ implement necessary extensions to make Datalevin also a search engine, a
 production rule engine, a graph database, and a document database, since the
 storage and index structure of Datalevin is already compatible with all of them.
 
+## :truck: Installation
+
+Datalevin is a Clojure library, simply add it to your project as a dependency
+and start using it!
+
+If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
+`deps.edn`, declare the dependency on Datalevin:
+
+```Clojure
+{:deps
+ {datalevin/datalevin {:mvn/version "0.3.17"}}}
+```
+
+If you use [Leiningen](https://leiningen.org/) build tool, add this to the
+`:dependencies` section of your `project.clj` file:
+
+```Clojure
+[datalevin "0.3.17"]
+```
+
 ## :tada: Usage
 
 Use as a Datalog store:
