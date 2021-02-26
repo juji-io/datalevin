@@ -106,7 +106,8 @@
           (l/drop-dbi lmdb "a")
           (is (thrown? Exception (l/get-value lmdb "a" 1)))
           (l/close-kv lmdb))))
-    (u/delete-files dir)))
+    (u/delete-files dir)
+    ))
 
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))

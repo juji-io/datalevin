@@ -399,10 +399,10 @@
 
   (list-dbis [this]
     (assert (not (.closed? this)) "LMDB env is closed.")
-    (let [^Rtx rtx (.get-rtx pool)]
+    (let [^Dbi main (Dbi/create env 0)
+          ^Rtx rtx  (.get-rtx pool)]
       (try
-        (let [^Dbi main      (Dbi/create env 0)
-              ^Cursor cursor (Cursor/create (.-txn rtx) main)]
+        (let [^Cursor cursor (Cursor/create (.-txn rtx) main)]
           (with-open [^AutoCloseable iterable (->CursorIterable
                                                 cursor main rtx true false false
                                                 false false nil nil)]
@@ -471,10 +471,12 @@
 
   (transact-kv [this txs]
     (assert (not closed?) "LMDB env is closed.")
-    (try
-      (let [^Txn txn (Txn/create env)]
+    (let [^Txn txn (Txn/create env)]
+      (try
         (doseq [[op dbi-name k & r] txs
-                :let                [^DBI dbi (.get-dbi this dbi-name)]]
+                :let                [^DBI dbi (or (.get dbis dbi-name)
+                                                  (raise dbi-name
+                                                         " is not open" {}))]]
           (case op
             :put (let [[v kt vt flags] r]
                    (.put-key dbi k kt)
@@ -485,14 +487,16 @@
             :del (let [[kt] r]
                    (.put-key dbi k kt)
                    (.del dbi txn))))
-        (.commit txn))
-      (catch Lib$MapFullException _
-        (let [^Info info (Info/create env)]
-          (.setMapSize env (* 10 (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-          (.close info)
-          (.transact-kv this txs)))
-      (catch Exception e
-        (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
+        (.commit txn)
+        (catch Lib$MapFullException _
+          (.close txn)
+          (let [^Info info (Info/create env)]
+            (.setMapSize env (* 10 (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+            (.close info)
+            (.transact-kv this txs)))
+        (catch Exception e
+          (.close txn)
+          (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs})))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))

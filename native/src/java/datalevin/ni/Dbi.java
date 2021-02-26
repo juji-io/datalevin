@@ -20,11 +20,16 @@ public class Dbi {
         this.name = name;
         this.ptr = UnmanagedMemory.calloc(SizeOf.get(CIntPointer.class));
         Txn txn = Txn.create(env);
-        Lib.checkRc(Lib.mdb_dbi_open(txn.get(),
-                                     CTypeConversion.toCString(name).get(),
-                                     flags,
-                                     ptr));
-        Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+        try {
+            Lib.checkRc(Lib.mdb_dbi_open(txn.get(),
+                                         CTypeConversion.toCString(name).get(),
+                                         flags,
+                                         ptr));
+            Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+        } catch(Exception e) {
+            txn.close();
+            throw(e);
+        }
 
         txn.commit();
     }
@@ -33,11 +38,17 @@ public class Dbi {
         this.name = null;
         this.ptr = UnmanagedMemory.calloc(SizeOf.get(CIntPointer.class));
         Txn txn = Txn.create(env);
-        Lib.checkRc(Lib.mdb_dbi_open(txn.get(),
-                                     WordFactory.nullPointer(),
-                                     flags,
-                                     ptr));
-        Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+        try {
+            Lib.checkRc(Lib.mdb_dbi_open(txn.get(),
+                                        WordFactory.nullPointer(),
+                                        flags,
+                                        ptr));
+            Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+
+        } catch(Exception e) {
+            txn.close();
+            throw(e);
+        }
 
         txn.commit();
     }
