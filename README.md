@@ -97,7 +97,7 @@ Use as a Datalog store:
 ```clojure
 (require '[datalevin.core :as d])
 
-;; Define a schema.
+;; Define an optional schema.
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
 ;; However, attributes requiring special handling need to be defined in schema,
 ;; e.g. many cardinality, uniqueness constraint, reference type, and so on.

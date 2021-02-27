@@ -1,9 +1,11 @@
 (ns datalevin.main
+  "Command line tool"
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
             [clojure.pprint :as p]
             [clojure.java.io :as io]
             [clojure.walk :as w]
+            [clojure.edn :as edn]
             [clojure.stacktrace :as st]
             [sci.core :as sci]
             [datalevin.core :as d]
@@ -14,6 +16,8 @@
             [datalevin.binding.java :as j]
             [datalevin.constants :as c]
             [datalevin.util :as u])
+  (:import [java.io PushbackReader IOException]
+           [java.lang RuntimeException])
   (:gen-class))
 
 (def version "0.4.0")
@@ -43,17 +47,17 @@
 
 (def dump-help
   "
-  Command dump - dump the content of the database or a sub-database.
+  Command dump - dump the content of the database or sub-database(s).
 
   Required option:
-      -d --dir PATH   Path to the database directory
+      -d --dir PATH   Path to the source database directory
   Optional options:
       -a --all        All of the sub-databases
-      -f --file PATH  Write to the specified file instead of the standard output
+      -f --file PATH  Write to the specified target file instead of stdout
       -g --datalog    Dump as a Datalog database
       -l --list       List the names of sub-databases instead of the content
   Optional arguments:
-      name(s) of sub-database(s)
+      Name(s) of sub-database(s)
 
   Examples:
       dtlv -d /data/companydb -l dump
@@ -66,15 +70,16 @@
   Command load - load data into the database or a sub-database.
 
   Required option:
-      -d --dir  PATH  Path to the database directory
+      -d --dir  PATH  Path to the target database directory
   Optional option:
-      -f --file PATH  Load from the specified file instead of the standard input
+      -f --file PATH  Load from the specified source file instead of stdin
       -g --datalog    Load a Datalog database
   Optional argument:
-      Name of the sub-database to load the data into
+      Name of the single sub-database to load the data into, useful when loading
+      data into a sub-database with a name different from the original name
 
   Examples:
-      dtlv -d /data/companydb -f ~/sales-data load sales
+      dtlv -d /data/companydb -f ~/sales-data load new-sales
       dtlv -d /data/companydb -f ~/sales-data -g load")
 
 (def copy-help
@@ -328,8 +333,44 @@
       (st/print-cause-trace e)
       (exit 1 (str "Dump error: " (.getMessage e))))))
 
-(defn- dtlv-load [options arguments]
+(defn- load-datalog [dir in]
+  (try
+    (with-open [^PushbackReader r in]
+      (let [read-form #(edn/read {:eof ::EOF} r)
+            schema    (read-form)
+            datoms    (->> (repeatedly read-form)
+                           (take-while #(not= ::EOF %))
+                           (map #(apply d/datom %)))]
+        (d/init-db datoms dir schema)))
+    (catch IOException e
+      (raise "IO error while loading Datalog data: " (ex-message e) {}))
+    (catch RuntimeException e
+      (raise "Parse error while loading Datalog data: " (ex-message e) {}))
+    (catch Exception e
+      (raise "Error loading Datalog data: " (ex-message e) {}))))
+
+(defn- load-dbi [lmdb dbi in]
   )
+
+(defn- load-all [lmdb in]
+  )
+
+(defn- dtlv-load [{:keys [dir file datalog]} arguments]
+  (assert dir (s/join \newline ["Missing data directory path." load-help]))
+  (try
+    (let [f    (when file (PushbackReader. (io/reader file)))
+          in   (or f *in*)
+          lmdb (l/open-kv dir)]
+      (cond
+        datalog         (load-datalog dir in)
+        (seq arguments) (load-dbi lmdb (first arguments) in)
+        :else           (load-all lmdb in))
+      (l/close-kv lmdb)
+      (when f (.close f))
+      (exit 0))
+    (catch Throwable e
+      (st/print-cause-trace e)
+      (exit 1 (str "Dump error: " (.getMessage e))))))
 
 ;; TODO show reader info and free list info as well
 (defn- dtlv-stat [{:keys [dir all]} arguments]
