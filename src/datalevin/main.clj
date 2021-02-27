@@ -303,7 +303,6 @@
 
 (defn- dump-all [lmdb]
   (let [dbis (set (l/list-dbis lmdb))]
-    (p/pprint dbis)
     (doseq [dbi dbis] (dump-dbi lmdb dbi))))
 
 (defn- dump-datalog [dir]
@@ -347,6 +346,9 @@
     (catch Exception e
       (raise "Error loading Datalog data: " (ex-message e) {}))))
 
+(defn- load-kv [dbi [k v]]
+  [:put dbi (b/binary-str->ba k) (b/binary-str->ba v) :raw :raw])
+
 (defn- load-dbi [lmdb dbi in]
   (try
     (with-open [^PushbackReader r in]
@@ -354,12 +356,9 @@
             {:keys [entries]} (read-form)]
         (l/open-dbi lmdb dbi)
         (l/transact-kv lmdb (->> (repeatedly read-form)
+                                 (take-while #(not= ::EOF %))
                                  (take entries)
-                                 (map (fn [[k v]]
-                                        [:put dbi
-                                         (b/binary-str->ba k)
-                                         (b/binary-str->ba v)
-                                         :raw :raw]))))))
+                                 (map (partial load-kv dbi))))))
     (catch IOException e
       (raise "IO error while loading raw data: " (ex-message e) {}))
     (catch RuntimeException e
@@ -368,7 +367,30 @@
       (raise "Error loading raw data: " (ex-message e) {}))))
 
 (defn- load-all [lmdb in]
-  )
+  (try
+    (with-open [^PushbackReader r in]
+      (let [read-form #(edn/read {:eof ::EOF} r)
+            load-dbi  (fn [[ms vs]]
+                        (doseq [{:keys [dbi]} (butlast ms)]
+                          (l/open-dbi lmdb dbi))
+                        (let [{:keys [dbi entries]} (last ms)]
+                          (l/open-dbi lmdb dbi)
+                          (->> vs
+                               (take entries)
+                               (map (partial load-kv dbi)))))]
+        (l/transact-kv lmdb (->> (repeatedly read-form)
+                                 (take-while #(not= ::EOF %))
+                                 (partition-by map?)
+                                 (partition 2 2 nil)
+                                 (mapcat load-dbi)))))
+    (catch IOException e
+      (raise "IO error while loading raw data: " (ex-message e) {}))
+    (catch RuntimeException e
+      (raise "Parse error while loading raw data: " (ex-message e) {}))
+    (catch Exception e
+      (raise "Error loading raw data: " (ex-message e) {}))))
+
+(partition 2 2 nil (partition-by odd? (take-while #(not= % 100) [1 2 4 4 3 5 2 4 4 100])))
 
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." load-help]))
