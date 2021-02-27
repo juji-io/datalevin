@@ -13,9 +13,7 @@
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [datalevin.binding.graal]
-            [datalevin.binding.java :as j]
-            [datalevin.constants :as c]
-            [datalevin.util :as u])
+            [datalevin.binding.java])
   (:import [java.io PushbackReader IOException]
            [java.lang RuntimeException])
   (:gen-class))
@@ -350,7 +348,24 @@
       (raise "Error loading Datalog data: " (ex-message e) {}))))
 
 (defn- load-dbi [lmdb dbi in]
-  )
+  (try
+    (with-open [^PushbackReader r in]
+      (let [read-form         #(edn/read {:eof ::EOF} r)
+            {:keys [entries]} (read-form)]
+        (l/open-dbi lmdb dbi)
+        (l/transact-kv lmdb (->> (repeatedly read-form)
+                                 (take entries)
+                                 (map (fn [[k v]]
+                                        [:put dbi
+                                         (b/binary-str->ba k)
+                                         (b/binary-str->ba v)
+                                         :raw :raw]))))))
+    (catch IOException e
+      (raise "IO error while loading raw data: " (ex-message e) {}))
+    (catch RuntimeException e
+      (raise "Parse error while loading raw data: " (ex-message e) {}))
+    (catch Exception e
+      (raise "Error loading raw data: " (ex-message e) {}))))
 
 (defn- load-all [lmdb in]
   )
