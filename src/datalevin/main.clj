@@ -390,8 +390,6 @@
     (catch Exception e
       (raise "Error loading raw data: " (ex-message e) {}))))
 
-(partition 2 2 nil (partition-by odd? (take-while #(not= % 100) [1 2 4 4 3 5 2 4 4 100])))
-
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." load-help]))
   (try
@@ -407,7 +405,7 @@
       (exit 0))
     (catch Throwable e
       (st/print-cause-trace e)
-      (exit 1 (str "Dump error: " (.getMessage e))))))
+      (exit 1 (str "Load error: " (.getMessage e))))))
 
 ;; TODO show reader info and free list info as well
 (defn- dtlv-stat [{:keys [dir all]} arguments]
