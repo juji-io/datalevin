@@ -66,7 +66,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          path: dtlv
+          path: native/dtlv
           name: datalevin-${{ steps.get_version.outputs.VERSION }}-linux-amd64.zip
 
   macos:
@@ -107,6 +107,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          path: dtlv
+          path: native/dtlv
           name: datalevin-${{ steps.get_version.outputs.VERSION }}-macos-amd64.zip
 
