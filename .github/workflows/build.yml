@@ -22,7 +22,8 @@ jobs:
         id: get_version
         run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
 
-      - uses: actions/upload-artifact@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
         with:
           name: jar
           path: target/datalevin-${{ steps.get_version.outputs.VERSION }}-standalone.jar
