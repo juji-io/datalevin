@@ -2,25 +2,74 @@ name: build datalevin native
 
 on:
   push:
-    branches: [ main. master, ghaction ]
-  pull_request:
-    branches: [ main, master, ghaction ]
+    tags: 
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        gu-binary: [gu, gu.cmd]
-        exclude:
-          - os: ubuntu-latest
-            gu-binary: gu.cmd
-          - os: macos-latest
-            gu-binary: gu.cmd
-          - os: windows-latest
-            gu-binary: gu
-        
+  jvm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2 
+
+      - name: Run tests
+        run: |
+          lein test
+
+      - name: Build uberjar
+        run: |
+          lein uberjar
+
+      - name: Get version
+        id: get_version
+        run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: jar
+          path: target/datalevin-${{ steps.get_version.outputs.VERSION }}-standalone.jar
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2 
+
+      - name: Setup Graalvm
+        uses: DeLaGuardo/setup-graalvm@master
+        with:
+          graalvm-version: '21.0.0.java11'
+
+
+      - name: Install Native Image
+        run: |
+          gu install native-image
+
+      - name: Install LMDB
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          linux: sudo apt install liblmdb-dev
+
+
+      - name: Build datalevin
+        run: |
+          gu install native-image
+          cd native
+          bash script/compile
+
+      - name: Run native tests
+        run: |
+          native/dtlv-test
+
+      - name: Get version
+        id: get_version
+        run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          path: dtlv
+          name: datalevin-${{ steps.get_version.outputs.VERSION }}-linux-amd64.zip
+
+  macos:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2 
 
@@ -39,11 +88,24 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           macos: brew install lmdb leiningen
-          linux: sudo apt install liblmdb-dev
-
 
       - name: Build datalevin
         run: |
           gu install native-image
           cd native
           bash script/compile
+
+      - name: Run native tests
+        run: |
+          native/dtlv-test
+
+      - name: Get version
+        id: get_version
+        run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          path: dtlv
+          name: datalevin-${{ steps.get_version.outputs.VERSION }}-macos-amd64.zip
+

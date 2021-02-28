@@ -36,10 +36,13 @@
 
 (defn update-version []
   (println "\n\n[ Updating version number ]\n")
-  (let [old-v (current-version)]
+  (let [old-v    (current-version)
+        old->new #(str/replace % old-v new-v)]
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
-    (update-file "project.clj"  #(str/replace % old-v new-v))
-    (update-file "README.md"    #(str/replace % old-v new-v))))
+    (update-file "project.clj" old->new)
+    (update-file "src/datalevin/main.clj" old->new)
+    (update-file "native/project.clj"  old->new)
+    (update-file "README.md" old->new)))
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
