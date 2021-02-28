@@ -82,14 +82,14 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.4.1"}}}
+ {datalevin/datalevin {:mvn/version "0.4.2"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.4.1"]
+[datalevin "0.4.2"]
 ```
 
 ### Native image and command line tool
@@ -250,7 +250,7 @@ Large scale projects can be supported when distributed mode is implemented.
 These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
-* 0.4.1 Native image and native command line tool. [Done 2021/02/27]
+* 0.4.2 Native image and native command line tool. [Done 2021/02/27]
 * 0.5.0 A new Datalog query engine with improved performance.
 * 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions.
 * 0.7.0 Fully automatic schema migration on write.
@@ -342,7 +342,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.4.1
+Version: 0.4.2
 
 ## License
 
