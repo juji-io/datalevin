@@ -3,16 +3,13 @@
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
             [datalevin.bits :as b]
-            ;; [taoensso.timbre :as log]
+            [datalevin.binding.graal]
+            [datalevin.binding.java]
             [datalevin.constants :as c]
             [datalevin.datom :as d])
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
-
-(if (u/graal?)
-  (require '[datalevin.binding.graal])
-  (require '[datalevin.binding.java]))
 
 (defn- transact-schema
   [lmdb schema]
