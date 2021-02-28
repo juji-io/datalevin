@@ -1,8 +1,9 @@
 name: build datalevin native
 
 on:
-  push:
-    tags: 
+  release:
+    types: 
+      - created
 
 jobs:
   jvm:
