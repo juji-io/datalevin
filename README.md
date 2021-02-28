@@ -72,6 +72,8 @@ storage and index structure of Datalevin is already compatible with all of them.
 
 ## :truck: Installation
 
+### Clojure library
+
 Datalevin is a Clojure library, simply add it to your project as a dependency
 and start using it!
 
@@ -80,19 +82,31 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.3.17"}}}
+ {datalevin/datalevin {:mvn/version "0.4.0"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.3.17"]
+[datalevin "0.4.0"]
 ```
 
-## :tada: Usage
+### Native image and command line tool
 
-Use as a Datalog store:
+Datalevin supports compilation into a GraalVM native image. Native Datalevin should have
+better performance, for the native image version does not incur JNI
+overhead and uses a comparator written in C, see [blog
+post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
+
+The release contains a command line tool called `dtlv` that is built with
+Datalevin native image. It can be used to work with Datalevin database files in shell
+scripting, for the purposes of database backup, data import, export,
+query/transaction execution, database compaction, and so on.
+
+## :tada: Library Usage
+
+### Use as a Datalog store
 
 ```clojure
 (require '[datalevin.core :as d])
@@ -143,7 +157,7 @@ Use as a Datalog store:
 (d/close conn)
 ```
 
-Use as a key value store:
+### Use as a key value store
 ```clojure
 (require '[datalevin.lmdb :as l])
 (import '[java.util Date])
@@ -191,6 +205,7 @@ Use as a key value store:
 ;; Close key value db
 (l/close-kv db)
 ```
+### API doc
 
 Please refer to the [API
 documentation](https://juji-io.github.io/datalevin/index.html) for more details.
@@ -198,7 +213,7 @@ documentation](https://juji-io.github.io/datalevin/index.html) for more details.
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
-them, Datalevin is extensively tested with property-based testing, and is used
+them, Datalevin is extensively tested with property-based testing. It is also used
 in production at [Juji](https://juji.io).
 
 Running the [benchmark suite adopted from
@@ -235,16 +250,15 @@ Large scale projects can be supported when distributed mode is implemented.
 These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
-* 0.4.0 Native command line tool and native shared library, so Datalevin can be used in scripting and in
-  languages other than Clojure.
+* 0.4.0 Native image and native command line tool. [Done 2021/02/27]
 * 0.5.0 A new Datalog query engine with improved performance.
-* 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions
-* 0.7.0 Fully automatic schema migration on write
-* 0.8.0 As a product rule engine: implementing Rete/UL algorithm
+* 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions.
+* 0.7.0 Fully automatic schema migration on write.
+* 0.8.0 As a product rule engine: implementing Rete/UL algorithm.
 * 0.9.0 As a search engine: fuzzy fulltext search across multiple attributes.
-* 0.10.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols
-* 0.11.0 As a document database: auto indexing of document fields
-* 1.0.0 Distributed mode with raft based replication
+* 0.10.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 0.11.0 As a document database: auto indexing of document fields.
+* 1.0.0 Distributed mode with raft based replication.
 
 We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
 
@@ -279,9 +293,7 @@ than just the difference in data durability:
   (i.e. do not expect `:b` to come after `:a`). This is the same as Datomic®.
 
 * Has no features that are applicable only for in-memory DBs, such as DB as an
-  immutable data structure, DB serialization, DB pretty print, etc. For now,
-  [LMDB tools](http://www.lmdb.tech/doc/tools.html) can be used to work with the
-  database files.
+  immutable data structure, DB pretty print, etc.
 
 This project would not have started without the existence of Datascript, we will
 continue submitting pull requests to Datascript with our improvements where they
@@ -330,7 +342,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.3.17
+Version: 0.4.0
 
 ## License
 
