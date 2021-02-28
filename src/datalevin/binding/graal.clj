@@ -346,7 +346,7 @@
       (.close env)
       (set! closed? true)))
 
-  (closed? [_]
+  (closed-kv? [_]
     closed?)
 
   (dir [_]
@@ -398,7 +398,7 @@
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
   (list-dbis [this]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not closed?) "LMDB env is closed.")
     (let [^Dbi main (Dbi/create env 0)
           ^Rtx rtx  (.get-rtx pool)]
       (try
@@ -421,7 +421,7 @@
   (copy [this dest]
     (.copy this dest false))
   (copy [this dest compact?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not closed?) "LMDB env is closed.")
     (if (-> dest u/file u/empty-dir?)
       (.copy env dest (if compact? true false))
       (raise "Destination directory is not empty.")))

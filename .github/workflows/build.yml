@@ -1,9 +1,9 @@
-name: build datalevin native
+name: Build Datalevin Binaries
 
 on:
   release:
     types: 
-      - created
+      - published
 
 jobs:
   jvm:
@@ -19,11 +19,20 @@ jobs:
         run: |
           lein uberjar
 
+      - name: Get version
+        id: get_version
+        run: echo ::set-output name=version::${{ github.event.release.tag_name }}
+
+      - name: Get upload_url
+        run: echo ::set-output name=upload_url::https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets{?name,label}
+        id: release
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-release-asset@v1
         with:
-          name: jar
-          path: target/main.uberjar.jar
+          asset_name: datalevin-${{ steps.get_version.outputs.version }}-standalone.jar
+          asset_path: target/main.uberjar.jar
+          upload_url: ${{ steps.release.outputs.upload_url }}
 
   linux:
     runs-on: ubuntu-latest
@@ -35,7 +44,6 @@ jobs:
         with:
           graalvm-version: '21.0.0.java11'
 
-
       - name: Install Native Image
         run: |
           gu install native-image
@@ -44,7 +52,6 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           linux: sudo apt install liblmdb-dev
-
 
       - name: Build datalevin
         run: |
@@ -58,13 +65,19 @@ jobs:
 
       - name: Get version
         id: get_version
-        run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
+        run: echo ::set-output name=version::${{ github.event.release.tag_name }}
+
+      - name: Get upload_url
+        run: echo ::set-output name=upload_url::https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets{?name,label}
+        id: release
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-release-asset@v1
         with:
-          path: native/dtlv
-          name: datalevin-${{ steps.get_version.outputs.VERSION }}-linux-amd64.zip
+          asset_name: datalevin-${{ steps.get_version.outputs.version }}-linux-amd64.zip
+          asset_path: native/dtlv
+          asset_content_type: application/zip
+          upload_url: ${{ steps.release.outputs.upload_url }}
 
   macos:
     runs-on: macos-latest
@@ -76,11 +89,9 @@ jobs:
         with:
           graalvm-version: '21.0.0.java11'
 
-
       - name: Install Native Image
         run: |
           gu install native-image
-
 
       - name: Install LMDB
         uses: knicknic/os-specific-run@v1.0.3
@@ -99,11 +110,17 @@ jobs:
 
       - name: Get version
         id: get_version
-        run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
+        run: echo ::set-output name=version::${{ github.event.release.tag_name }}
+
+      - name: Get upload_url
+        run: echo ::set-output name=upload_url::https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets{?name,label}
+        id: release
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-release-asset@v1
         with:
-          path: native/dtlv
-          name: datalevin-${{ steps.get_version.outputs.VERSION }}-macos-amd64.zip
+          asset_name: datalevin-${{ steps.get_version.outputs.version }}-macos-amd64.zip
+          asset_path: native/dtlv
+          asset_content_type: application/zip
+          upload_url: ${{ steps.release.outputs.upload_url }}
 

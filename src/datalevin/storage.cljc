@@ -199,7 +199,7 @@
     (lmdb/close-kv lmdb))
 
   (closed? [_]
-    (lmdb/closed? lmdb))
+    (lmdb/closed-kv? lmdb))
 
   (max-gt [_]
     max-gt)

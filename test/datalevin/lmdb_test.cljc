@@ -96,7 +96,7 @@
     (testing "close then re-open, clear and drop"
       (let [dir (l/dir lmdb)]
         (l/close-kv lmdb)
-        (is (l/closed? lmdb))
+        (is (l/closed-kv? lmdb))
         (let [lmdb  (l/open-kv dir)
               dbi-a (l/open-dbi lmdb "a")]
           (is (= "a" (l/dbi-name dbi-a)))

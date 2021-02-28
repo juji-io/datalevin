@@ -1,11 +1,14 @@
 (ns datalevin.core
-  "API for Datalog store"
+  "API for Datalevin"
   (:refer-clojure :exclude [filter])
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
+   [datalevin.lmdb :as l]
+   [datalevin.binding.graal]
+   [datalevin.binding.java]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
    [datalevin.impl.entity :as de])
@@ -15,7 +18,6 @@
       [datalevin.storage Store]
       [datalevin.db DB]
       [java.util UUID])))
-
 
 ;; Entities
 
@@ -72,7 +74,7 @@
 
 
 (def ^{:arglists '([db eid])
-       :doc "Given lookup ref `[unique-attr value]`, returns numberic entity id.
+       :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.
 
              If entity does not exist, returns `nil`.
 
@@ -88,7 +90,7 @@
 
 
 (def ^{:arglists '([e])
-       :doc "Forces all entity attributes to be eagerly fetched and cached. Only usable for debug output.
+       :doc      "Forces all entity attributes to be eagerly fetched and cached. Only usable for debug output.
 
              Usage:
 
@@ -99,10 +101,10 @@
   touch de/touch)
 
 
-; Pull
+;; Pull API
 
 (def ^{:arglists '([db selector eid])
-       :doc "Fetches data from database using recursive declarative description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
+       :doc      "Fetches data from database using recursive declarative description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
              Unlike [[entity]], returns plain Clojure map (not lazy).
 
@@ -117,7 +119,7 @@
 
 
 (def ^{:arglists '([db selector eids])
-       :doc "Same as [[pull]], but accepts sequence of ids and returns sequence of maps.
+       :doc      "Same as [[pull]], but accepts sequence of ids and returns sequence of maps.
 
              Usage:
 
@@ -129,11 +131,11 @@
   pull-many dp/pull-many)
 
 
-; Query
+;; Query
 
 (def
   ^{:arglists '([query & inputs])
-    :doc "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+    :doc      "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
 
           Usage:
 
@@ -146,10 +148,10 @@
   q dq/q)
 
 
-; Creating DB
+;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema])
-       :doc "Open database at the given data directory. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
+       :doc      "Open database at the given data directory. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
              Usage:
 
@@ -164,12 +166,12 @@
 
 
 (def ^{:arglists '([x])
-       :doc "Returns `true` if the given value is an database, `false` otherwise."}
+       :doc      "Returns `true` if the given value is an database, `false` otherwise."}
   db? db/db?)
 
 
 (def ^{:arglists '([e a v] [e a v tx] [e a v tx added])
-       :doc "Low-level fn to create raw datoms.
+       :doc      "Low-level fn to create raw datoms.
 
              Optionally with transaction id (number) and `added` flag (`true` for addition, `false` for retraction).
 
@@ -178,19 +180,19 @@
 
 
 (def ^{:arglists '([x])
-       :doc "Returns `true` if the given value is a datom, `false` otherwise."}
+       :doc      "Returns `true` if the given value is a datom, `false` otherwise."}
   datom? dd/datom?)
 
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
-       :doc "Low-level fn for creating database quickly from a trusted sequence of datoms.
+       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms.
 
              Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
              See also [[datom]]."}
   init-db db/init-db)
 
-; Changing DB
+;; Changing DB
 
 (defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
@@ -198,11 +200,11 @@
   ([db tx-data tx-meta]
    {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
-                         {:db-before db
-                          :db-after  db
-                          :tx-data   []
-                          :tempids   {}
-                          :tx-meta   tx-meta}) tx-data)))
+                          {:db-before db
+                           :db-after  db
+                           :tx-data   []
+                           :tempids   {}
+                           :tx-meta   tx-meta}) tx-data)))
 
 
 (defn ^:no-doc db-with
@@ -212,7 +214,7 @@
   (:db-after (with db tx-data)))
 
 
-; Index lookups
+;; Index lookups
 
 (defn datoms
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
@@ -354,7 +356,7 @@
   [conn]
   (and #?(:clj  (instance? clojure.lang.IDeref conn)
           :cljs (satisfies? cljs.core/IDeref conn))
-    (db/db? @conn)))
+       (db/db? @conn)))
 
 (defn conn-from-db
   "Creates a mutable reference to a given database. See [[create-conn]]."
@@ -378,7 +380,7 @@
   multiple connections to the same database in the same process.
 
   Connections are lightweight in-memory structures (~atoms).  See also
-  [[transact!]], [[db]], [[close]], [[get-conn]], and [[lmdb/open-kv]].
+  [[transact!]], [[db]], [[close]], [[get-conn]], and [[open-kv]].
 
   To access underlying DB, deref: `@conn`.
 
@@ -394,6 +396,18 @@
   ([dir] (conn-from-db (empty-db dir)))
   ([dir schema] (conn-from-db (empty-db dir schema))))
 
+(defn close
+  "Close the connection"
+  [conn]
+  (s/close ^Store (.-store ^DB @conn))
+  (reset! conn nil))
+
+(defn closed?
+  "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
+  [conn]
+  (or (nil? conn)
+      (nil? @conn)
+      (s/closed? ^Store (.-store ^DB @conn))))
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
@@ -505,17 +519,17 @@
   will remove everything from old value and insert everything from the new one."
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
-    (let [report (db/map->TxReport
+   (let [report (db/map->TxReport
                   { :db-before @conn
-                    :db-after  db
-                    :tx-data   (concat
-                                 (map #(assoc % :added false) (datoms @conn :eavt))
-                                 (datoms db :eavt))
-                    :tx-meta   tx-meta})]
-      (reset! conn db)
-      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
-        (callback report))
-      db)))
+                   :db-after   db
+                   :tx-data    (concat
+                                (map #(assoc % :added false) (datoms @conn :eavt))
+                                (datoms db :eavt))
+                   :tx-meta    tx-meta})]
+     (reset! conn db)
+     (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
+       (callback report))
+     db)))
 
 
 (defn- atom? [a]
@@ -546,7 +560,7 @@
   (swap! (:listeners (meta conn)) dissoc key))
 
 
-; Data Readers
+;; Data Readers
 
 (def ^{:doc "Data readers for EDN readers. If `data_readers.clj` do not work, you can always do
 
@@ -570,13 +584,13 @@
 
    Exists for Datomic API compatibility. Prefer using negative integers directly if possible."
   ([part]
-    (if (= part :db.part/tx)
-      :db/current-tx
-      (swap! last-tempid dec)))
+   (if (= part :db.part/tx)
+     :db/current-tx
+     (swap! last-tempid dec)))
   ([part x]
-    (if (= part :db.part/tx)
-      :db/current-tx
-      x)))
+   (if (= part :db.part/tx)
+     :db/current-tx
+     x)))
 
 
 (defn resolve-tempid
@@ -595,18 +609,7 @@
   {:pre [(conn? conn)]}
   @conn)
 
-(defn close
-  "Close the connection"
-  [conn]
-  (s/close ^Store (.-store ^DB @conn))
-  (reset! conn nil))
-
-(defn closed?
-  "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
-  [conn]
-  (or (nil? conn)
-      (nil? @conn)
-      (s/closed? ^Store (.-store ^DB @conn))))
+;; schema
 
 (defn schema
   "Return the schema"
@@ -690,24 +693,24 @@
    Exists for Datomic API compatibility. Prefer using [[transact!]] if possible."
   ([conn tx-data] (transact conn tx-data nil))
   ([conn tx-data tx-meta]
-    {:pre [(conn? conn)]}
-    (let [res (transact! conn tx-data tx-meta)]
-      #?(:cljs
-         (reify
-           IDeref
-           (-deref [_] res)
-           IDerefWithTimeout
-           (-deref-with-timeout [_ _ _] res)
-           IPending
-           (-realized? [_] true))
-         :clj
-         (reify
-           clojure.lang.IDeref
-           (deref [_] res)
-           clojure.lang.IBlockingDeref
-           (deref [_ _ _] res)
-           clojure.lang.IPending
-           (isRealized [_] true))))))
+   {:pre [(conn? conn)]}
+   (let [res (transact! conn tx-data tx-meta)]
+     #?(:cljs
+        (reify
+          IDeref
+          (-deref [_] res)
+          IDerefWithTimeout
+          (-deref-with-timeout [_ _ _] res)
+          IPending
+          (-realized? [_] true))
+        :clj
+        (reify
+          clojure.lang.IDeref
+          (deref [_] res)
+          clojure.lang.IBlockingDeref
+          (deref [_ _ _] res)
+          clojure.lang.IPending
+          (isRealized [_] true))))))
 
 
 ;; ersatz future without proper blocking
@@ -729,22 +732,21 @@
   "Calls [[transact!]] on a future thread pool, returning immediately."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta]
-    {:pre [(conn? conn)]}
-    (future-call #(transact! conn tx-data tx-meta))))
+   {:pre [(conn? conn)]}
+   (future-call #(transact! conn tx-data tx-meta))))
 
 
 (defn- rand-bits [^long pow]
   (rand-int (bit-shift-left 1 pow)))
 
 #?(:cljs
-  (defn- to-hex-string [n l]
-    (let [s (.toString n 16)
-          c (count s)]
-      (cond
-        (> c l) (subs s 0 l)
-        (< c l) (str (apply str (repeat (- l c) "0")) s)
-        :else   s))))
-
+   (defn- to-hex-string [n l]
+     (let [s (.toString n 16)
+           c (count s)]
+       (cond
+         (> c l) (subs s 0 l)
+         (< c l) (str (apply str (repeat (- l c) "0")) s)
+         :else   s))))
 
 (defn ^:no-doc squuid
   "Generates a UUID that grow with time. Such UUIDs will always go to the end  of the index and that will minimize insertions in the middle.
@@ -783,3 +785,351 @@
      :cljs (-> (subs (str uuid) 0 8)
                (js/parseInt 16)
                (* 1000))))
+
+;; key value store API
+
+(def ^{:arglists '([dir])
+       :doc      "Open a LMDB key-value database, return the connection.
+
+  `dir` is a string directory path in which the data are to be stored;
+
+  Will detect the platform this code is running in, and dispatch accordingly.
+
+  Please note:
+
+  > LMDB uses POSIX locks on files, and these locks have issues if one process
+  > opens a file multiple times. Because of this, do not mdb_env_open() a file
+  > multiple times from a single process. Instead, share the LMDB environment
+  > that has opened the file across all threads. Otherwise, if a single process
+  > opens the same environment multiple times, closing it once will remove all
+  > the locks held on it, and the other instances will be vulnerable to
+  > corruption from other processes.'
+
+  Therefore, a LMDB connection should be managed as a stateful resource.
+  Multiple connections to the same DB in the same process are not recommended.
+  The recommendation is to use a mutable state management library, for
+  example, in Clojure, use [component](https://github.com/stuartsierra/component),
+  [mount](https://github.com/tolitius/mount),
+  [integrant](https://github.com/weavejester/integrant), or something similar
+  to hold on to and manage the connection. "}
+  open-kv l/open-kv)
+
+(def ^{:arglists '([db])
+       :doc      "Close this LMDB env"}
+  close-kv l/close-kv)
+
+(def ^{:arglists '([db])
+       :doc      "Return true if this LMDB env is closed"}
+  closed-kv? l/closed-kv?)
+
+(def ^{:arglists '([db])
+       :doc      "Return the directory path of LMDB env"}
+  dir l/dir)
+
+(def ^{:arglists '([db]
+                   [db dbi-name]
+                   [db dbi-name key-size]
+                   [db dbi-name key-size val-size]
+                   [db dbi-name key-size val-size flags])
+       :doc      "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env"}
+  open-dbi l/open-dbi)
+
+(def ^{:arglists '([db dbi-name])
+       :doc      "Clear data in the DBI (i.e sub-db), but leave it open"}
+  clear-dbi l/clear-dbi)
+
+(def ^{:arglists '([db dbi-name])
+       :doc      "Clear data in the DBI (i.e. sub-db), then delete it"}
+  drop-dbi l/drop-dbi)
+
+(def ^{:arglists '([db])
+       :doc      "List the names of the sub-databases"}
+  list-dbis l/list-dbis)
+
+(def ^{:arglists '([db dest] [db dest compact?])
+       :doc      "Copy the database to a destination directory path, optionally compact
+     while copying, default not compact. "}
+  copy l/copy)
+
+(def ^{:arglists '([db] [db dbi-name])
+       :doc      "Return the statitics of the unnamed top level database or a named DBI
+     (i.e. sub-database) as a map:
+     * `:psize` is the size of database page
+     * `:depth` is the depth of the B-tree
+     * `:branch-pages` is the number of internal pages
+     * `:leaf-pages` is the number of leaf pages
+     * `:overflow-pages` is the number of overflow-pages
+     * `:entries` is the number of data entries"}
+  stat l/stat)
+
+(def ^{:arglists '([db dbi-name])
+       :doc      "Get the number of data entries in a DBI (i.e. sub-db)"}
+  entries l/entries)
+
+(def ^{:arglists '([db txs])
+       :doc      "Update DB, insert or delete key value pairs.
+
+     `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
+     when `op` is `:put`, for insertion of a key value pair `k` and `v`;
+     or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
+
+     `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
+
+     `k-type`, `v-type` and `append?` are optional.
+
+    `k-type` indicates the data type of `k`, and `v-type` indicates the data type
+    of `v`. The allowed data types are described in [[datalevin.bits/put-buffer]]
+
+    Set `append?` to true when the data is sorted to gain better write performance.
+
+    Example:
+
+            (transact-kv
+                      lmdb
+                      [ [:put \"a\" 1 2]
+                        [:put \"a\" 'a 1]
+                        [:put \"a\" 5 {}]
+                        [:put \"a\" :annunaki/enki true :attr :data]
+                        [:put \"a\" :datalevin [\"hello\" \"world\"]]
+                        [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                        [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+                        [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+                        [:put \"a\" [-1 -235254457N] 5]
+                        [:put \"a\" :a 4]
+                        [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                        [:put \"a\" :long 1 :data :long]
+                        [:put \"a\" 2 3 :long :long]
+                        [:del \"a\" 1]
+                        [:del \"a\" :non-exist] ])"}
+  transact-kv l/transact-kv)
+
+(def ^{:arglists '([db dbi-name k]
+                   [db dbi-name k k-type]
+                   [db dbi-name k k-type v-type]
+                   [db dbi-name k k-type v-type ignore-key?])
+       :doc      "Get kv pair of the specified key `k`.
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
+
+     If `ignore-key?` is true (default `true`), only return the value,
+     otherwise return `[k v]`, where `v` is the value
+
+     Examples:
+
+              (get-value lmdb \"a\" 1)
+              ;;==> 2
+
+              ;; specify data types
+              (get-value lmdb \"a\" :annunaki/enki :attr :data)
+              ;;==> true
+
+              ;; return key value pair
+              (get-value lmdb \"a\" 1 :data :data false)
+              ;;==> [1 2]
+
+              ;; key doesn't exist
+              (get-value lmdb \"a\" 2)
+              ;;==> nil "}
+  get-value l/get-value)
+
+(def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type]
+                   [db dbi-name k-range k-type v-type]
+                   [db dbi-name k-range k-type v-type ignore-key?])
+       :doc      "Return the first kv pair in the specified key range;
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     If both key and value are ignored, return true if found an entry, otherwise
+     return nil.
+
+     Examples:
+
+
+              (get-first lmdb \"c\" [:all] :long :long)
+              ;;==> [0 1]
+
+              ;; ignore value
+              (get-first lmdb \"c\" [:all-back] :long :ignore)
+              ;;==> [999 nil]
+
+              ;; ignore key
+              (get-first lmdb \"a\" [:greater-than 9] :long :data true)
+              ;;==> {:some :data}
+
+              ;; ignore both, this is like testing if the range is empty
+              (get-first lmdb \"a\" [:greater-than 5] :long :ignore true)
+              ;;==> true"}
+  get-first l/get-first)
+
+(def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type]
+                   [db dbi-name k-range k-type v-type]
+                   [db dbi-name k-range k-type v-type ignore-key?])
+       :doc      "Return a seq of kv pairs in the specified key range;
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`,
+     default is `false`;
+
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+
+              (get-range lmdb \"c\" [:at-least 9] :long :long)
+              ;;==> [[10 11] [11 15] [13 14]]
+
+              ;; ignore value
+              (get-range lmdb \"c\" [:all-back] :long :ignore)
+              ;;==> [[999 nil] [998 nil]]
+
+              ;; ignore keys, only return values
+              (get-range lmdb \"a\" [:closed 9 11] :long :long true)
+              ;;==> [10 11 12]
+
+              ;; out of range
+              (get-range lmdb \"c\" [:greater-than 1500] :long :ignore)
+              ;;==> [] "}
+  get-range l/get-range)
+
+(def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type])
+       :doc      "Return the number of kv pairs in the specified key range, does not process
+     the kv pairs.
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
+
+     Examples:
+
+
+              (range-count lmdb \"c\" [:at-least 9] :long)
+              ;;==> 10 "}
+  range-count l/range-count)
+
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type]
+                   [db dbi-name pred k-range k-type v-type]
+                   [db dbi-name pred k-range k-type v-type ignore-key?])
+       :doc      "Return the first kv pair that has logical true value of `(pred x)`,
+     where `pred` is a function, `x` is an `IKV` fetched from the store,
+     with both key and value fields being a `ByteBuffer`.
+
+     `pred` can use [[datalevin.bits/read-buffer]] to read the content.
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+              (require ' [datalevin.bits :as b])
+
+              (def pred (fn [kv]
+                         (let [^long k (b/read-buffer (key kv) :long)]
+                          (> k 15)))
+
+              (get-some lmdb \"c\" pred [:less-than 20] :long :long)
+              ;;==> [16 2]
+
+              ;; ignore key
+              (get-some lmdb \"c\" pred [:greater-than 9] :long :data true)
+              ;;==> 16 "}
+  get-some l/get-some)
+
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type]
+                   [db dbi-name pred k-range k-type v-type]
+                   [db dbi-name pred k-range k-type v-type ignore-key?])
+       :doc      "Return a seq of kv pair in the specified key range, for only those
+     return true value for `(pred x)`, where `pred` is a function, and `x`
+     is an `IKV`, with both key and value fields being a `ByteBuffer`.
+
+     `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[datalevin.bits/read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`;
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     Examples:
+
+              (require ' [datalevin.bits :as b])
+
+              (def pred (fn [kv]
+                         (let [^long k (b/read-buffer (key kv) :long)]
+                          (> k 15)))
+
+              (range-filter lmdb \"a\" pred [:less-than 20] :long :long)
+              ;;==> [[16 2] [17 3]]
+
+              ;; ignore key
+              (range-filter lmdb \"a\" pred [:greater-than 9] :long :data true)
+              ;;==> [16 17] "}
+  range-filter l/range-filter)
+
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type])
+       :doc      "Return the number of kv pairs in the specified key range, for only those
+     return true value for `(pred x)`, where `pred` is a function, and `x`
+     is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
+     Does not process the kv pairs.
+
+     `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
+
+    `k-type` indicates data type of `k` and the allowed data types are described
+    in [[datalevin.bits/read-buffer]].
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     Examples:
+
+
+              (require ' [datalevin.bits :as b])
+
+              (def pred (fn [kv]
+                         (let [^long k (b/read-buffer (key kv) :long)]
+                          (> k 15)))
+
+              (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
+              ;;==> 3"}
+  range-filter-count l/range-filter-count)

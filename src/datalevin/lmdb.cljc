@@ -1,4 +1,4 @@
-(ns datalevin.lmdb "API for Key Value Store"
+(ns ^:no-doc datalevin.lmdb "API for Key Value Store"
     (:require [datalevin.util :as u]))
 
 (defprotocol ^:no-doc IBuffer
@@ -35,7 +35,7 @@
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
-  (closed? [db] "Return true if this LMDB env is closed")
+  (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
     [db]
@@ -330,28 +330,4 @@
               ;;==> 3"))
 
 (defmulti open-kv
-  "Open an LMDB database, return the connection.
-
-  `dir` is a string directory path in which the data are to be stored;
-
-  Will detect the platform this code is running in, and dispatch accordingly.
-
-  Please note:
-
-  > LMDB uses POSIX locks on files, and these locks have issues if one process
-  > opens a file multiple times. Because of this, do not mdb_env_open() a file
-  > multiple times from a single process. Instead, share the LMDB environment
-  > that has opened the file across all threads. Otherwise, if a single process
-  > opens the same environment multiple times, closing it once will remove all
-  > the locks held on it, and the other instances will be vulnerable to
-  > corruption from other processes.'
-
-  Therefore, a LMDB connection should be managed as a stateful resource.
-  Multiple connections to the same DB in the same process are not recommended.
-  The recommendation is to use a mutable state management library, for
-  example, in Clojure, use [component](https://github.com/stuartsierra/component),
-  [mount](https://github.com/tolitius/mount),
-  [integrant](https://github.com/weavejester/integrant), or something similar
-  to hold on to and manage the connection. "
-  {:arglists '([dir])}
   (fn [_] (if (u/graal?) :graal :java)))

@@ -136,7 +136,7 @@
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
-  (assert (not (l/closed? lmdb)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
   (let [dbi (l/get-dbi lmdb dbi-name false)
         rtx (l/get-txn lmdb)]
     (try
@@ -148,7 +148,7 @@
 
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]
-  (assert (not (l/closed? lmdb)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
   (let [dbi (l/get-dbi lmdb dbi-name false)
         rtx (l/get-txn lmdb)]
     (try
@@ -161,7 +161,7 @@
 
 (defn get-range
   [this dbi-name k-range k-type v-type ignore-key?]
-  (assert (not (l/closed? this)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
   (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
@@ -174,7 +174,7 @@
 
 (defn range-count
   [this dbi-name k-range k-type]
-  (assert (not (l/closed? this)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
   (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
@@ -186,7 +186,7 @@
 
 (defn get-some
   [this dbi-name pred k-range k-type v-type ignore-key?]
-  (assert (not (l/closed? this)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
   (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
@@ -199,7 +199,7 @@
 
 (defn range-filter
   [this dbi-name pred k-range k-type v-type ignore-key?]
-  (assert (not (l/closed? this)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
   (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try
@@ -212,7 +212,7 @@
 
 (defn range-filter-count
   [this dbi-name pred k-range k-type]
-  (assert (not (l/closed? this)) "LMDB env is closed.")
+  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
   (let [dbi (l/get-dbi this dbi-name false)
         rtx (l/get-txn this)]
     (try

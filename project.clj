@@ -47,6 +47,7 @@
                                     :sign-releases false}]]
   :plugins [[lein-codox "0.10.7"]]
   :codox {:output-path "codox"
+          :namespaces  [datalevin.core]
           :metadata    {:doc/format :markdown}
           :source-uri
           {#"target/classes" "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"

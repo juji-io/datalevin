@@ -203,7 +203,7 @@
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
 
-(def user-facing-ns #{'datalevin.core 'datalevin.lmdb})
+(def user-facing-ns #{'datalevin.core})
 
 (defn- user-facing? [v]
   (let [m (meta v)]

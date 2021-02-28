@@ -201,7 +201,7 @@
     (.close-pool pool)
     (.close env))
 
-  (closed? [_]
+  (closed-kv? [_]
     (.isClosed env))
 
   (dir [_]
@@ -215,7 +215,7 @@
   (open-dbi [this dbi-name key-size val-size]
     (.open-dbi this dbi-name key-size val-size default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size flags]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env
@@ -235,7 +235,7 @@
                      read-dbi-flags))))
 
   (clear-dbi [this dbi-name]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (let [^DBI dbi (.get-dbi this dbi-name )]
         (with-open [txn (.txnWrite env)]
@@ -245,7 +245,7 @@
         (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (let [^DBI dbi (.get-dbi this dbi-name)]
         (with-open [txn (.txnWrite env)]
@@ -256,7 +256,7 @@
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
   (list-dbis [this]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (mapv b/text-ba->str (.getDbiNames env))
       (catch Exception e
@@ -265,7 +265,7 @@
   (copy [this dest]
     (.copy this dest false))
   (copy [this dest compact?]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
         (.copy env d (if compact?
@@ -274,13 +274,13 @@
         (raise "Destination directory is not empty."))))
 
   (stat [this]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (stat-map (.stat env))
       (catch Exception e
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [^Rtx rtx (.get-rtx pool)]
       (try
         (let [^DBI dbi (.get-dbi this dbi-name false)
@@ -292,7 +292,7 @@
         (finally (.reset rtx)))))
 
   (entries [this dbi-name]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [^DBI dbi (.get-dbi this dbi-name false)
           ^Rtx rtx (.get-rtx pool)]
       (try
@@ -306,7 +306,7 @@
     (.get-rtx pool))
 
   (transact-kv [this txs]
-    (assert (not (.closed? this)) "LMDB env is closed.")
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (with-open [txn (.txnWrite env)]
         (doseq [[op dbi-name k & r] txs
