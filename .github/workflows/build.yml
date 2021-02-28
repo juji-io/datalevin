@@ -19,15 +19,11 @@ jobs:
         run: |
           lein uberjar
 
-      - name: Get version
-        id: get_version
-        run: echo ::set-output name=VERSION::${{ github.event.release.tag_name }}
-
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
           name: jar
-          path: target/datalevin-${{ steps.get_version.outputs.VERSION }}-standalone.jar
+          path: target/main.uberjar.jar
 
   linux:
     runs-on: ubuntu-latest
