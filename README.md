@@ -159,23 +159,23 @@ query/transaction execution, database compaction, and so on.
 
 ### Use as a key value store
 ```clojure
-(require '[datalevin.lmdb :as l])
+(require '[datalevin.core :as d])
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
-(def db (l/open-kv "/var/datalevin/mykvdb"))
+(def db (d/open-kv "/var/datalevin/mykvdb"))
 
 ;; Define some table (called "dbi" in LMDB) names
 (def misc-table "misc-test-table")
 (def date-table "date-test-table")
 
 ;; Open the tables
-(l/open-dbi db misc-table)
-(l/open-dbi db date-table)
+(d/open-dbi db misc-table)
+(d/open-dbi db date-table)
 
 ;; Transact some data, a transaction can put data into multiple tables
 ;; Optionally, data type can be specified to help with range query
-(l/transact-kv
+(d/transact-kv
   db
   [[:put misc-table :datalevin "Hello, world!"]
    [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
@@ -184,26 +184,26 @@ query/transaction execution, database compaction, and so on.
    [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
 
 ;; Get the value with the key
-(l/get-value db misc-table :datalevin)
+(d/get-value db misc-table :datalevin)
 ;; => "Hello, world!"
-(l/get-value db misc-table 42)
+(d/get-value db misc-table 42)
 ;; => {:saying "So Long, and thanks for all the fish",
 ;;     :source "The Hitchhiker's Guide to the Galaxy"}
 
 ;; Delete some data
-(l/transact-kv db [[:del misc-table 42]])
+(d/transact-kv db [[:del misc-table 42]])
 
 ;; Now it's gone
-(l/get-value db misc-table 42)
+(d/get-value db misc-table 42)
 ;; => nil
 
 ;; Range query, from unix epoch time to now
-(l/get-range db date-table [:closed (Date. 0) (Date.)] :instant)
+(d/get-range db date-table [:closed (Date. 0) (Date.)] :instant)
 ;; => [[#inst "1989-11-09T00:00:00.000-00:00" "The fall of the Berlin Wall"]
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
 ;; Close key value db
-(l/close-kv db)
+(d/close-kv db)
 ```
 ### API doc
 

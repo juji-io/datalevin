@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## WIP
+### Changed
+- [Breaking] Consonidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
+
 ## 0.4.0
 ### Changed
 - [Breaking] Removed AEV index, as it is not used in query. This reduces storage
@@ -15,8 +19,7 @@ All notable changes to this project will be documented in this file. This change
 - GraalVM native image specific LMDB wrapper. This wrapper allocates buffer
   memory in C and uses our own C comparator instead of doing these work in Java,
   so it is faster.
-- Native Datalevin as a shared C library based on the above [#6]
-- Native command line shell, dtlv
+- Native command line shell, `dtlv`
 
 ## 0.3.17
 ### Changed
