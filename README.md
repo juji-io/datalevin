@@ -82,14 +82,14 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.4.8"}}}
+ {datalevin/datalevin {:mvn/version "0.4.9"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.4.8"]
+[datalevin "0.4.9"]
 ```
 
 ### Native image and command line tool
@@ -342,7 +342,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.4.8
+Version: 0.4.9
 
 ## License
 
