@@ -50,6 +50,7 @@ jobs:
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: native/config/reflect-config.json
+          overwrite: true
 
       - name: Upload binary
         uses: shogo82148/actions-upload-release-asset@v1
