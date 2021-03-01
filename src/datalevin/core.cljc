@@ -563,11 +563,7 @@
 
 ;; Data Readers
 
-(def ^{:doc "Data readers for EDN readers. If `data_readers.clj` do not work, you can always do
-
-             ```
-             (clojure.edn/read-string {:readers data-readers} \"...\")
-             ```"}
+(def ^{:no-doc true}
   data-readers {'datalevin/Datom dd/datom-from-reader
                 'datalevin/DB    db/db-from-reader})
 
@@ -816,15 +812,15 @@
   open-kv l/open-kv)
 
 (def ^{:arglists '([db])
-       :doc      "Close this LMDB env"}
+       :doc      "Close this key-value store"}
   close-kv l/close-kv)
 
 (def ^{:arglists '([db])
-       :doc      "Return true if this LMDB env is closed"}
+       :doc      "Return true if this key-value store is closed"}
   closed-kv? l/closed-kv?)
 
 (def ^{:arglists '([db])
-       :doc      "Return the directory path of LMDB env"}
+       :doc      "Return the directory path of the key-value store"}
   dir l/dir)
 
 (def ^{:arglists '([db]
@@ -832,29 +828,27 @@
                    [db dbi-name key-size]
                    [db dbi-name key-size val-size]
                    [db dbi-name key-size val-size flags])
-       :doc      "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env"}
+       :doc      "Open a named DBI (i.e. sub-db) or unamed main DBI in the key-value store"}
   open-dbi l/open-dbi)
 
 (def ^{:arglists '([db dbi-name])
-       :doc      "Clear data in the DBI (i.e sub-db), but leave it open"}
+       :doc      "Clear data in the DBI (i.e sub-database) of the key-value store, but leave it open"}
   clear-dbi l/clear-dbi)
 
 (def ^{:arglists '([db dbi-name])
-       :doc      "Clear data in the DBI (i.e. sub-db), then delete it"}
+       :doc      "Clear data in the DBI (i.e. sub-database) of the key-value store, then delete it"}
   drop-dbi l/drop-dbi)
 
 (def ^{:arglists '([db])
-       :doc      "List the names of the sub-databases"}
+       :doc      "List the names of the sub-databases in the key-value store"}
   list-dbis l/list-dbis)
 
 (def ^{:arglists '([db dest] [db dest compact?])
-       :doc      "Copy the database to a destination directory path, optionally compact
-     while copying, default not compact. "}
+       :doc      "Copy the database to a destination directory path, optionally compact while copying, default not compact. "}
   copy l/copy)
 
 (def ^{:arglists '([db] [db dbi-name])
-       :doc      "Return the statitics of the unnamed top level database or a named DBI
-     (i.e. sub-database) as a map:
+       :doc      "Return the statitics of the unnamed top level database or a named DBI (i.e. sub-database) of the key-value store as a map:
      * `:psize` is the size of database page
      * `:depth` is the depth of the B-tree
      * `:branch-pages` is the number of internal pages
@@ -864,11 +858,11 @@
   stat l/stat)
 
 (def ^{:arglists '([db dbi-name])
-       :doc      "Get the number of data entries in a DBI (i.e. sub-db)"}
+       :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries l/entries)
 
 (def ^{:arglists '([db txs])
-       :doc      "Update DB, insert or delete key value pairs.
+       :doc      "Update DB, insert or delete key value pairs in the key-value store.
 
      `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
      when `op` is `:put`, for insertion of a key value pair `k` and `v`;
@@ -879,7 +873,7 @@
      `k-type`, `v-type` and `append?` are optional.
 
     `k-type` indicates the data type of `k`, and `v-type` indicates the data type
-    of `v`. The allowed data types are described in [[datalevin.bits/put-buffer]]
+    of `v`. The allowed data types are described in [[put-buffer]]
 
     Set `append?` to true when the data is sorted to gain better write performance.
 
@@ -908,10 +902,10 @@
                    [db dbi-name k k-type]
                    [db dbi-name k k-type v-type]
                    [db dbi-name k k-type v-type ignore-key?])
-       :doc      "Get kv pair of the specified key `k`.
+       :doc      "Get kv pair of the specified key `k` in the key-value store.
 
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[datalevin.bits/read-buffer]].
+     The allowed data types are described in [[read-buffer]].
 
      If `ignore-key?` is true (default `true`), only return the value,
      otherwise return `[k v]`, where `v` is the value
@@ -938,7 +932,7 @@
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
                    [db dbi-name k-range k-type v-type ignore-key?])
-       :doc      "Return the first kv pair in the specified key range;
+       :doc      "Return the first kv pair in the specified key range in the key-value store;
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -946,7 +940,7 @@
      `-back` suffix to each of the above, e.g. `:all-back`;
 
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[datalevin.bits/read-buffer]].
+     The allowed data types are described in [[read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
@@ -977,7 +971,7 @@
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
                    [db dbi-name k-range k-type v-type ignore-key?])
-       :doc      "Return a seq of kv pairs in the specified key range;
+       :doc      "Return a seq of kv pairs in the specified key range in the key-value store;
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -985,7 +979,7 @@
      `-back` suffix to each of the above, e.g. `:all-back`;
 
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[datalevin.bits/read-buffer]].
+     The allowed data types are described in [[read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`,
      default is `false`;
@@ -1013,8 +1007,7 @@
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type])
-       :doc      "Return the number of kv pairs in the specified key range, does not process
-     the kv pairs.
+       :doc      "Return the number of kv pairs in the specified key range in the key-value store, does not process the kv pairs.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1022,7 +1015,7 @@
      `-back` suffix to each of the above, e.g. `:all-back`;
 
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[datalevin.bits/read-buffer]].
+     The allowed data types are described in [[read-buffer]].
 
      Examples:
 
@@ -1035,11 +1028,11 @@
                    [db dbi-name pred k-range k-type]
                    [db dbi-name pred k-range k-type v-type]
                    [db dbi-name pred k-range k-type v-type ignore-key?])
-       :doc      "Return the first kv pair that has logical true value of `(pred x)`,
+       :doc      "Return the first kv pair that has logical true value of `(pred x)` in the key-value store,
      where `pred` is a function, `x` is an `IKV` fetched from the store,
      with both key and value fields being a `ByteBuffer`.
 
-     `pred` can use [[datalevin.bits/read-buffer]] to read the content.
+     `pred` can use [[read-buffer]] to read the content.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1047,17 +1040,15 @@
      `-back` suffix to each of the above, e.g. `:all-back`;
 
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[datalevin.bits/read-buffer]].
+     The allowed data types are described in [[read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
 
      Examples:
 
-              (require ' [datalevin.bits :as b])
-
               (def pred (fn [kv]
-                         (let [^long k (b/read-buffer (key kv) :long)]
+                         (let [^long k (read-buffer (key kv) :long)]
                           (> k 15)))
 
               (get-some lmdb \"c\" pred [:less-than 20] :long :long)
@@ -1072,11 +1063,11 @@
                    [db dbi-name pred k-range k-type]
                    [db dbi-name pred k-range k-type v-type]
                    [db dbi-name pred k-range k-type v-type ignore-key?])
-       :doc      "Return a seq of kv pair in the specified key range, for only those
+       :doc      "Return a seq of kv pair in the specified key range in the key-value store, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
      is an `IKV`, with both key and value fields being a `ByteBuffer`.
 
-     `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
+     `pred` can use [[read-buffer]] to read the buffer content.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1084,17 +1075,15 @@
      `-back` suffix to each of the above, e.g. `:all-back`;
 
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[datalevin.bits/read-buffer]].
+     The allowed data types are described in [[read-buffer]].
 
      Only the value will be returned if `ignore-key?` is `true`;
      If value is to be ignored, put `:ignore` as `v-type`
 
      Examples:
 
-              (require ' [datalevin.bits :as b])
-
               (def pred (fn [kv]
-                         (let [^long k (b/read-buffer (key kv) :long)]
+                         (let [^long k (read-buffer (key kv) :long)]
                           (> k 15)))
 
               (range-filter lmdb \"a\" pred [:less-than 20] :long :long)
@@ -1107,15 +1096,15 @@
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type])
-       :doc      "Return the number of kv pairs in the specified key range, for only those
+       :doc      "Return the number of kv pairs in the specified key range in the key-value store, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
      is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
      Does not process the kv pairs.
 
-     `pred` can use [[datalevin.bits/read-buffer]] to read the buffer content.
+     `pred` can use [[read-buffer]] to read the buffer content.
 
     `k-type` indicates data type of `k` and the allowed data types are described
-    in [[datalevin.bits/read-buffer]].
+    in [[read-buffer]].
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1125,10 +1114,8 @@
      Examples:
 
 
-              (require ' [datalevin.bits :as b])
-
               (def pred (fn [kv]
-                         (let [^long k (b/read-buffer (key kv) :long)]
+                         (let [^long k (read-buffer (key kv) :long)]
                           (> k 15)))
 
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
