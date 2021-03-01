@@ -1,52 +1,17 @@
-name: Build Datalevin Binaries
+name: Build Datalevin Binary
 
 on:
   release:
     types:
-      - published
+      - created
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
 
-      - name: Setup Graalvm
-        uses: DeLaGuardo/setup-graalvm@master
-        with:
-          graalvm-version: '21.0.0.java11'
-
-      - name: Install Native Image
-        run: |
-          gu install native-image
-
-      - name: Install LMDB
-        uses: knicknic/os-specific-run@v1.0.3
-        with:
-          linux: sudo apt install liblmdb-dev
-
-      - name: Build datalevin
-        run: |
-          gu install native-image
-          cd native
-          bash script/compile
-
-      - name: Run native tests
-        run: |
-          native/dtlv-test
-
-      - name: Upload artifact
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.BUILD_SECRET }}
-        with:
-          asset_name: datalevin-${{ github.event.release.tag_name }}-linux-amd64
-          asset_path: native/dtlv
-          asset_content_type: binary/octet-stream
-          upload_url: ${{ github.event.release.upload_url }}
-
-  macos:
-    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2
 
@@ -63,8 +28,9 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           macos: brew install lmdb leiningen
+          linux: sudo apt install liblmdb-dev
 
-      - name: Build datalevin
+      - name: Build native Datalevin
         run: |
           gu install native-image
           cd native
@@ -74,12 +40,13 @@ jobs:
         run: |
           native/dtlv-test
 
+      - name: Zip the binary
+        id: zip_asset
+        run: |
+          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip native/dtlv
+
       - name: Upload artifact
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.BUILD_SECRET }}
+        uses: shogo82148/actions-upload-release-asset@v1
         with:
-          asset_name: datalevin-${{ github.event.release.tag_name }}-macos-amd64
-          asset_path: native/dtlv
-          asset_content_type: binary/octet-stream
           upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
