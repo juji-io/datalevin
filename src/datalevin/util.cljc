@@ -11,7 +11,7 @@
 ;; files
 
 (defn delete-files
-  "Recursively delete "
+  "Recursively delete file"
   [& fs]
   (when-let [f (first fs)]
     (if-let [cs (seq (.listFiles (io/file f)))]
