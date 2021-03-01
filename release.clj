@@ -53,6 +53,8 @@
   (sh "git" "add"
       "CHANGELOG.md"
       "project.clj"
+      "src/datalevin/main.clj"
+      "native/project.clj"
       "README.md")
 
   (sh "git" "commit" "-m" (str "Version " new-v))
