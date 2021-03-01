@@ -82,14 +82,14 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.4.11"}}}
+ {datalevin/datalevin {:mvn/version "0.4.12"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.4.11"]
+[datalevin "0.4.12"]
 ```
 
 ### Native image and command line tool
@@ -108,13 +108,13 @@ Download the pre-built binary for amd64 platform (for now, you need to install
 LMDB first: `brew install lmdb` on MacOS, `sudo apt liblmdb-dev` on
 Ubuntu/Debian, until #38 is resolved):
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.11/dtlv-0.4.11-macos-latest-amd64.zip)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.11/dtlv-0.4.11-macos-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.12/dtlv-0.4.12-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.12/dtlv-0.4.12-macos-latest-amd64.zip)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.4.11)
+  Datalevin (version: 0.4.12)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -383,7 +383,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.4.11
+Version: 0.4.12
 
 ## License
 
