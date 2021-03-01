@@ -104,12 +104,13 @@ native image. It can be used to work with Datalevin databases in
 shell scripting, e.g. database backup/compaction, data import/export,
 query/transaction execution, and so on.
 
-Download the pre-built binary for amd64 platform:
+Download the pre-built binary for amd64 platform (for now, you need to install
+LMDB first: `brew install lmdb` on MacOS, `sudo apt liblmdb-dev` on Ubuntu/Debian):
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.10/dtlv-0.4.10-macos-latest-amd64.zip)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.10/dtlv-0.4.10-macos-latest-amd64.zip)
 
-Put it on your path and execute `dtlv help`:
+Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
   Datalevin (version: 0.4.10)
