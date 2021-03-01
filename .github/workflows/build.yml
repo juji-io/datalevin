@@ -2,42 +2,14 @@ name: Build Datalevin Binaries
 
 on:
   release:
-    types: 
+    types:
       - published
 
 jobs:
-  jvm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2 
-
-      - name: Run tests
-        run: |
-          lein test
-
-      - name: Build uberjar
-        run: |
-          lein uberjar
-
-      - name: Get version
-        id: get_version
-        run: echo ::set-output name=version::${{ github.event.release.tag_name }}
-
-      - name: Get upload_url
-        run: echo ::set-output name=upload_url::https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets{?name,label}
-        id: release
-
-      - name: Upload artifact
-        uses: actions/upload-release-asset@v1
-        with:
-          asset_name: datalevin-${{ steps.get_version.outputs.version }}-standalone.jar
-          asset_path: target/main.uberjar.jar
-          upload_url: ${{ steps.release.outputs.upload_url }}
-
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2 
+      - uses: actions/checkout@v2
 
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
@@ -63,26 +35,18 @@ jobs:
         run: |
           native/dtlv-test
 
-      - name: Get version
-        id: get_version
-        run: echo ::set-output name=version::${{ github.event.release.tag_name }}
-
-      - name: Get upload_url
-        run: echo ::set-output name=upload_url::https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets{?name,label}
-        id: release
-
       - name: Upload artifact
         uses: actions/upload-release-asset@v1
         with:
-          asset_name: datalevin-${{ steps.get_version.outputs.version }}-linux-amd64.zip
+          asset_name: datalevin-${{ github.event.release.tag_name }}-linux-amd64.zip
           asset_path: native/dtlv
           asset_content_type: application/zip
-          upload_url: ${{ steps.release.outputs.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
 
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2 
+      - uses: actions/checkout@v2
 
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
@@ -108,19 +72,10 @@ jobs:
         run: |
           native/dtlv-test
 
-      - name: Get version
-        id: get_version
-        run: echo ::set-output name=version::${{ github.event.release.tag_name }}
-
-      - name: Get upload_url
-        run: echo ::set-output name=upload_url::https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(jq --raw-output '.release.id' $GITHUB_EVENT_PATH)/assets{?name,label}
-        id: release
-
       - name: Upload artifact
         uses: actions/upload-release-asset@v1
         with:
-          asset_name: datalevin-${{ steps.get_version.outputs.version }}-macos-amd64.zip
+          asset_name: datalevin-${{ github.event.release.tag_name }}-macos-amd64.zip
           asset_path: native/dtlv
           asset_content_type: application/zip
-          upload_url: ${{ steps.release.outputs.upload_url }}
-
+          upload_url: ${{ github.event.release.upload_url }}
