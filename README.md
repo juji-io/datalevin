@@ -11,10 +11,6 @@
 
 Datalevin is a simple durable Datalog database.
 
-Presentation:
-
-* [2020 London Clojurians Meetup](https://youtu.be/-5SrIUK6k5g)
-
 The rationale is to have a simple, fast and free Datalog query engine running on
 durable storage.  It is our observation that many developers prefer the flavor
 of Datalog popularized by [Datomic®](https://www.datomic.com) over any flavor of
@@ -69,6 +65,10 @@ software development, deployment and maintenance. Therefore, we plan to
 implement necessary extensions to make Datalevin also a search engine, a
 production rule engine, a graph database, and a document database, since the
 storage and index structure of Datalevin is already compatible with all of them.
+
+Presentation:
+
+* [2020 London Clojurians Meetup](https://youtu.be/-5SrIUK6k5g)
 
 ## :truck: Installation
 
@@ -250,7 +250,7 @@ Large scale projects can be supported when distributed mode is implemented.
 These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
-* 0.4.4 Native image and native command line tool. [Done 2021/02/27]
+* 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 A new Datalog query engine with improved performance.
 * 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions.
 * 0.7.0 Fully automatic schema migration on write.
