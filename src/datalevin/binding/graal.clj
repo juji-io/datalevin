@@ -5,8 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
-            [clojure.string :as s])
+             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]

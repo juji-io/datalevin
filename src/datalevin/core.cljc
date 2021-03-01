@@ -1,5 +1,5 @@
 (ns datalevin.core
-  "API for Datalevin"
+  "API for Datalevin database"
   (:refer-clojure :exclude [filter])
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
@@ -11,7 +11,8 @@
    [datalevin.binding.java]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
-   [datalevin.impl.entity :as de])
+   [datalevin.impl.entity :as de]
+   [datalevin.bits :as b])
   #?(:clj
      (:import
       [datalevin.impl.entity Entity]
@@ -1133,3 +1134,64 @@
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}
   range-filter-count l/range-filter-count)
+
+;; byte buffer
+
+(def ^{:arglists '([bf x] [bf x x-type])
+       :doc      "Put the given type of data `x` in buffer `bf`. `x-type` can be
+    one of the following data types:
+
+    - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
+    - `:string`, UTF-8 string
+    - `:int`, 32 bits integer
+    - `:long`, 64 bits integer
+    - `:id`, 64 bits integer, not prefixed with a type header
+    - `:float`, 32 bits IEEE754 floating point number
+    - `:double`, 64 bits IEEE754 floating point number
+    - `:byte`, single byte
+    - `:bytes`, byte array
+    - `:keyword`, EDN keyword
+    - `:symbol`, EDN symbol
+    - `:boolean`, `true` or `false`
+    - `:instant`, timestamp, same as `java.util.Date`
+    - `:uuid`, UUID, same as `java.util.UUID`
+
+  or one of the following Datalog specific data types
+
+    - `:datom`
+    - `:attr`
+    - `:eav`
+    - `:ave`
+    - `:vea`
+
+  If the value is to be put in a LMDB key buffer, it must be less than
+  511 bytes."}
+  put-buffer b/put-buffer)
+
+(def ^{:arglists '([bf] [bf v-type])
+       :doc      "Get the given type of data from buffer `bf`, `v-type` can be
+one of the following data types:
+
+    - `:data` (default), arbitrary EDN data
+    - `:string`, UTF-8 string
+    - `:int`, 32 bits integer
+    - `:long`, 64 bits integer
+    - `:id`, 64 bits integer, not prefixed with a type header
+    - `:float`, 32 bits IEEE754 floating point number
+    - `:double`, 64 bits IEEE754 floating point number
+    - `:byte`, single byte
+    - `:bytes`, an byte array
+    - `:keyword`, EDN keyword
+    - `:symbol`, EDN symbol
+    - `:boolean`, `true` or `false`
+    - `:instant`, timestamp, same as `java.util.Date`
+    - `:uuid`, UUID, same as `java.util.UUID`
+
+  or one of the following Datalog specific data types
+
+    - `:datom`
+    - `:attr`
+    - `:eav`
+    - `:ave`
+    - `:vea`"}
+  read-buffer b/read-buffer)

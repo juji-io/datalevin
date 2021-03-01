@@ -5,9 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
-            [clojure.string :as s]
-            [datalevin.lmdb :as l])
+             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
