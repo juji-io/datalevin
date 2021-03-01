@@ -40,9 +40,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BUILD_SECRET }}
         with:
-          asset_name: datalevin-${{ github.event.release.tag_name }}-linux-amd64.zip
+          asset_name: datalevin-${{ github.event.release.tag_name }}-linux-amd64
           asset_path: native/dtlv
-          asset_content_type: application/zip
+          asset_content_type: binary/octet-stream
           upload_url: ${{ github.event.release.upload_url }}
 
   macos:
@@ -79,7 +79,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BUILD_SECRET }}
         with:
-          asset_name: datalevin-${{ github.event.release.tag_name }}-macos-amd64.zip
+          asset_name: datalevin-${{ github.event.release.tag_name }}-macos-amd64
           asset_path: native/dtlv
-          asset_content_type: application/zip
+          asset_content_type: binary/octet-stream
           upload_url: ${{ github.event.release.upload_url }}
