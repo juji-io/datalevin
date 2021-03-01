@@ -441,14 +441,19 @@
   (println "")
   (println "The following Datalevin functions are available:")
   (println "")
-  (doseq [ns user-facing-ns]
-    (print (str "* In " ns ": "))
-    (doseq [f (sort-by name (keys (user-facing-map (ns-publics ns))))]
-      (print (name f))
-      (print " "))
-    (println "")
-    (println ""))
-  (println "Call function just like in code, i.e. (<function> <args>)")
+  (doseq [ns   user-facing-ns
+          :let [fs (->> ns
+                        ns-publics
+                        user-facing-map
+                        keys
+                        (sort-by name)
+                        (partition 4 4 nil))]]
+    (doseq [f4 fs]
+      (doseq [f f4]
+        (printf "%-20s" (name f)))
+      (println "")))
+  (println "")
+  (println "Call function just like in code: (<function> <args>)")
   (println "")
   (println "Type (doc <function>) to read documentation of the function"))
 
@@ -469,8 +474,8 @@
                                (handle-error ctx last-error e)
                                ::err))]
           (cond
-            (= next-form '(exit)) (exit)
-            (= next-form '(help)) (do (repl-help) (recur))
+            (#{'(exit) '(quit)} next-form ) (exit)
+            (= next-form '(help))           (do (repl-help) (recur))
 
             (and (list? next-form) (= ((comp name first) next-form) "doc"))
             (do (doc (first (next next-form))) (recur))

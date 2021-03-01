@@ -41,9 +41,15 @@ jobs:
           native/dtlv-test
 
       - name: Zip binary
-        id: zip_asset
         run: |
-          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip native/dtlv
+          cd native
+          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip dtlv
+
+      - name: Upload binary
+        uses: shogo82148/actions-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
 
       - name: Upload reflect-config.json
         uses: shogo82148/actions-upload-release-asset@v1
@@ -51,9 +57,3 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: native/config/reflect-config.json
           overwrite: true
-
-      - name: Upload binary
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
