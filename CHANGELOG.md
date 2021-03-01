@@ -1,7 +1,7 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## WIP
+## 0.4.4
 ### Changed
 - [Breaking] Consonidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
 
