@@ -94,15 +94,54 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 
 ### Native image and command line tool
 
-Datalevin supports compilation into a GraalVM native image. Native Datalevin should have
+Datalevin supports compilation into a GraalVM native image, which should have
 better performance, for the native image version does not incur JNI
 overhead and uses a comparator written in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
-The release contains a command line tool called `dtlv` that is built with
-Datalevin native image. It can be used to work with Datalevin database files in shell
-scripting, for the purposes of database backup, data import, export,
-query/transaction execution, database compaction, and so on.
+The release contains a command line tool called `dtlv` that is built as a
+native image. It can be used to work with Datalevin databases in
+shell scripting, e.g. database backup/compaction, data import/export,
+query/transaction execution, and so on.
+
+Download the pre-built binary for amd64 platform:
+
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.9/dtlv-0.4.9-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.9/dtlv-0.4.9-macos-latest-amd64.zip)
+
+Put it on your path and execute `dtlv help`:
+
+```console
+  Datalevin (version: 0.4.9)
+
+Usage: dtlv [options] [command] [arguments]
+
+Commands:
+  exec  Execute database transactions or queries
+  copy  Copy a database, regardless of whether it is now in use
+  drop  Drop or clear a database
+  dump  Dump the content of a database to standard output
+  load  Load data from standard input into a database
+  stat  Display statistics of database
+
+Options:
+  -a, --all        Include all of the sub-databases
+  -c, --compact    Compact while copying.
+  -d, --dir PATH   Path to the database directory
+  -D, --delete     Delete the sub-database, not just empty it
+  -f, --file PATH  Path to the specified file
+  -g, --datalog    Dump/load as a Datalog database
+  -h, --help       Show usage
+  -l, --list       List the names of sub-databases instead of the content
+  -V, --version    Show Datalevin version and exit
+
+Type 'dtlv help <command>' to read about a specific command.
+
+Omit any command to enter an interactive shell.
+```
+
+See [note](https://github.com/juji-io/datalevin/tree/master/native) on
+depending on Datalevin while compiling your application into native image.
 
 ## :tada: Library Usage
 

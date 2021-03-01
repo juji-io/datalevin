@@ -142,8 +142,10 @@
         "Options:"
         options-summary
         ""
-        "Omit the command to enter the interactive shell."
-        "See 'dtlv help <command>' to read about a specific command."]
+        "Type 'dtlv help <command>' to read about a specific command."
+        ""
+        "Omit any command to enter an interactive shell."
+        ]
        (s/join \newline)))
 
 (defn- error-msg [errors]
@@ -152,7 +154,7 @@
 
 (def cli-opts
   [["-a" "--all" "Include all of the sub-databases"]
-   ["-c" "--compact" "Compact while copying."]
+   ["-c" "--compact" "Compact while copying"]
    ["-d" "--dir PATH" "Path to the database directory"]
    ["-D" "--delete" "Delete the sub-database, not just empty it"]
    ["-f" "--file PATH" "Path to the specified file"]
