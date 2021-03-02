@@ -247,7 +247,7 @@ If your application depends on Datalevin and want to compile to GraalVM native i
 ;; Close key value db
 (d/close-kv db)
 ```
-### API doc
+## :green_book: Documentation
 
 Please refer to the [API
 documentation](https://juji-io.github.io/datalevin/index.html) for more details.
