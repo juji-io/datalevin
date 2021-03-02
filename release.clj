@@ -41,7 +41,8 @@
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
     (update-file "src/datalevin/main.clj" old->new)
-    (update-file "native/project.clj"  old->new)
+    (update-file "native/project.clj"  old->new) 
+    (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
 (defn run-tests []
@@ -55,6 +56,7 @@
       "project.clj"
       "src/datalevin/main.clj"
       "native/project.clj"
+      "native/README.md"
       "README.md")
 
   (sh "git" "commit" "-m" (str "Version " new-v))
