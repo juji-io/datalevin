@@ -12,7 +12,7 @@ Datalevin can be compiled as a GraalVM native image.
 If the compilation is successful, two binaries will appear in this directory:
 `dtlv ` and `dtlv-test`. The former is the Datalevin command line shell, and the latter runs all the Datalevin tests in native mode.
 
-## Depending on Datalevin while Compiling to Native Image
+## Compiling Datalevin Dependency to Native Image
 
 If your Clojure application depends on Datalevin, and you want to compile your
 application into GraalVM native image, you need to integrate the following steps in your
