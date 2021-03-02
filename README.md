@@ -143,9 +143,9 @@ Type 'dtlv help <command>' to read about a specific command.
 Omit any command to enter an interactive shell.
 ```
 
-See [note](https://github.com/juji-io/datalevin/tree/master/native) on
-depending on Datalevin while compiling your application into native image.
+Launch `dtlv` in `rlwrap` to get a better REPL experience, i.e. `rlwrap dtlv`.
 
+If your application depends on Datalevin and want to compile to GraalVM native image, read this [note](https://github.com/juji-io/datalevin/tree/master/native). 
 ## :tada: Library Usage
 
 ### Use as a Datalog store
