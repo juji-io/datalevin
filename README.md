@@ -51,8 +51,9 @@ more lightweight relational database (RDBMS), e.g. where SQLite is called for.
 
 Independent from Datalog, Datalevin can be used as a fast key-value store for
 [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with support
-for range queries, predicate filtering and more. For example, one can use this
-feature in situations where something like Redis is called for.
+for range queries, predicate filtering and more. The native EDN data capability
+of Datalevin should be beneficial for Clojure programs. One can use this feature
+in situations where something like Redis is called for, for instance.
 
 Our goal is to simplify data storage and access by supporting diverse use cases
 and paradigms, because maximal flexibility is the core strength of a Datalog
