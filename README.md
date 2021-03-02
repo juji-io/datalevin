@@ -106,7 +106,7 @@ shell scripting, e.g. database backup/compaction, data import/export,
 query/transaction execution, and so on.
 
 Download the pre-built binary for amd64 platform (for now, you need to install
-LMDB first: `brew install lmdb` on MacOS, `sudo apt liblmdb-dev` on
+LMDB first: `brew install lmdb` on MacOS, `sudo apt install liblmdb-dev` on
 Ubuntu/Debian, until #38 is resolved):
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.12/dtlv-0.4.12-macos-latest-amd64.zip)
