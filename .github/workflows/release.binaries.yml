@@ -1,4 +1,4 @@
-name: Build Datalevin Binary
+name: Release Datalevin Binary
 
 on:
   release:
