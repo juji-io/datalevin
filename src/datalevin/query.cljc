@@ -15,7 +15,7 @@
    [datalevin.pull-api :as dpa]
    [datalevin.pull-parser :as dpp])
   #?(:clj (:import [datalevin.parser BindColl BindIgnore BindScalar BindTuple
-                    Constant FindColl FindRel FindScalar FindTuple PlainSymbol
+                    Constant Pull FindColl FindRel FindScalar FindTuple PlainSymbol
                     RulesVar SrcVar Variable]
                    [java.lang Long])))
 

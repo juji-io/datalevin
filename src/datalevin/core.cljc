@@ -9,6 +9,8 @@
    [datalevin.lmdb :as l]
    [datalevin.binding.graal]
    [datalevin.binding.java]
+   [datalevin.parser :as p]
+   [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
    [datalevin.impl.entity :as de]

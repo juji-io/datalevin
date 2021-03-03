@@ -190,3 +190,6 @@
 #?(:clj
    (defmacro case-tree [qs vs]
      (-case-tree qs vs)))
+
+(defn sym-name-eqs [sym str]
+  (and (symbol? sym) (= (name sym) str)))

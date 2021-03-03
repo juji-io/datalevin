@@ -162,5 +162,29 @@
       (is (= #{"Pete" "Pepe"}
              (set (:alias (first (d/q '[:find [(pull ?e [*]) ...]
                                         :where [?e :name "Peter"]]
-                                      @conn2))))))))
-  )
+                                      @conn2)))))))))
+
+(deftest test-readme
+  (let [dir  (u/tmp-dir (str "datalevin-test-readme-" (UUID/randomUUID)))
+        conn (d/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
+                              :name {:db/valueType :db.type/string
+                                     :db/unique    :db.unique/identity}})]
+    (d/transact! conn [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
+                       {:name "Peirce", :db/id -2, :nation "france"}
+                       {:name "De Morgan", :db/id -3, :nation "English"}])
+    (is (= #{["France"]}
+           (d/q '[:find ?nation
+                  :in $ ?alias
+                  :where
+                  [?e :aka ?alias]
+                  [?e :nation ?nation]]
+                @conn
+                "fred")))
+    (d/transact! conn [[:db/retract 1 :name "Frege"]])
+    (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
+           (d/q '[:find (pull ?e [*])
+                  :in $ ?alias
+                  :where
+                  [?e :aka ?alias]]
+                @conn
+                "fred")))))

@@ -108,7 +108,7 @@
 
 
 (defn parse-placeholder [form]
-  (when (= '_ form)
+  (when (u/sym-name-eqs form "_")
     (Placeholder.)))
 
 (defn parse-variable [form]
@@ -127,7 +127,7 @@
     (SrcVar. form)))
 
 (defn parse-rules-var [form]
-  (when (= '% form)
+  (when (u/sym-name-eqs form "%")
     (RulesVar.)))
 
 (defn parse-constant [form]
@@ -199,7 +199,7 @@
 (deftrecord BindColl   [binding])
 
 (defn parse-bind-ignore [form]
-  (when (= '_ form)
+  (when (u/sym-name-eqs form "_")
     (with-source (BindIgnore.) form)))
 
 (defn parse-bind-scalar [form]
@@ -261,10 +261,10 @@
   (-find-vars [this] [(.-symbol this)]))
 
 (deftrecord Aggregate [fn args]
-  IFindVars (-find-vars [_] (-find-vars (last args))))
+  IFindVars (-find-vars [this] (-find-vars (last (.-args this)))))
 
 (deftrecord Pull [source variable pattern]
-  IFindVars (-find-vars [_] (-find-vars variable)))
+  IFindVars (-find-vars [this] (-find-vars (.-variable this))))
 
 (defprotocol IFindElements
   (find-elements [this]))
@@ -302,11 +302,11 @@
 
 (defn parse-aggregate-custom [form]
   (when (and (sequential? form)
-             (= (first form) 'aggregate))
+             (u/sym-name-eqs (first form) "aggregate"))
     (if (>= (count form) 3)
       (let [[_ fn & args] form
-            fn*   (parse-variable fn)
-            args* (parse-seq parse-fn-arg args)]
+            fn*           (parse-variable fn)
+            args*         (parse-seq parse-fn-arg args)]
         (if (and fn* args*)
           (Aggregate. fn* args*)
           (raise "Cannot parse custom aggregate call, expect ['aggregate' variable fn-arg+]"
@@ -316,7 +316,7 @@
 
 (defn parse-pull-expr [form]
   (when (and (sequential? form)
-             (= (first form) 'pull))
+             (u/sym-name-eqs (first form) "pull"))
     (if (<= 3 (count form) 4)
       (let [long?         (= (count form) 4)
             src           (if long? (nth form 1) '$)
@@ -329,7 +329,7 @@
         (if (and src* var* pattern*)
           (Pull. src* var* pattern*)
           (raise "Cannot parse pull expression, expect ['pull' src-var? variable (constant | variable | plain-symbol)]"
-             {:error :parser/find, :fragment form})))
+                 {:error :parser/find, :fragment form})))
       (raise "Cannot parse pull expression, expect ['pull' src-var? variable (constant | variable | plain-symbol)]"
              {:error :parser/find, :fragment form}))))
 
@@ -533,7 +533,7 @@
 (defn parse-not [form]
   (when-let [[source* next-form] (take-source form)]
     (let [[sym & clauses] next-form]
-      (when (= 'not sym)
+      (when (u/sym-name-eqs sym "not")
         (if-let [clauses* (parse-clauses clauses)]
           (-> (Not. source* (collect-vars-distinct clauses*) clauses*)
               (with-source form)
@@ -544,7 +544,7 @@
 (defn parse-not-join [form]
   (when-let [[source* next-form] (take-source form)]
     (let [[sym vars & clauses] next-form]
-      (when (= 'not-join sym)
+      (when (u/sym-name-eqs sym "not-join")
         (let [vars*    (parse-seq parse-variable vars)
               clauses* (parse-clauses clauses)]
           (if (and vars* clauses*)
@@ -562,7 +562,7 @@
 
 (defn parse-and [form]
   (when (and (sequential? form)
-             (= 'and (first form)))
+             (u/sym-name-eqs (first form) "and"))
     (let [clauses* (parse-clauses (next form))]
       (if (not-empty clauses*)
         (And. clauses*)
@@ -572,7 +572,7 @@
 (defn parse-or [form]
   (when-let [[source* next-form] (take-source form)]
     (let [[sym & clauses] next-form]
-      (when (= 'or sym)
+      (when (u/sym-name-eqs sym "or")
         (if-let [clauses* (parse-seq (some-fn parse-and parse-clause) clauses)]
           (-> (Or. source* (RuleVars. nil (collect-vars-distinct clauses*)) clauses*)
               (with-source form)
@@ -583,7 +583,7 @@
 (defn parse-or-join [form]
   (when-let [[source* next-form] (take-source form)]
     (let [[sym vars & clauses] next-form]
-      (when (= 'or-join sym)
+      (when (u/sym-name-eqs sym "or-join")
         (let [vars*    (parse-rule-vars vars)
               clauses* (parse-seq (some-fn parse-and parse-clause) clauses)]
           (if (and vars* clauses*)
@@ -735,26 +735,26 @@
   (when-some [return-map (:qreturn-map q)]
     (when (instance? FindScalar (:qfind q))
       (raise (:type return-map) " does not work with single-scalar :find"
-        {:error :parser/query, :form form}))
+             {:error :parser/query, :form form}))
     (when (instance? FindColl (:qfind q))
       (raise (:type return-map) " does not work with collection :find"
-        {:error :parser/query, :form form})))
+             {:error :parser/query, :form form})))
 
   (when-some [return-symbols (:symbols (:qreturn-map q))]
     (let [find-elements (find-elements (:qfind q))]
       (when-not (= (count return-symbols) (count find-elements))
         (raise "Count of " (:type (:qreturn-map q)) " must match count of :find"
-          {:error      :parser/query
-           :return-map (cons (:type (:qreturn-map q)) return-symbols)
-           :find       find-elements
-           :form       form}))))
+               {:error      :parser/query
+                :return-map (cons (:type (:qreturn-map q)) return-symbols)
+                :find       find-elements
+                :form       form}))))
 
   (when (< 1 (->> [(:keys form-map) (:syms form-map) (:strs form-map)]
-               (filter some?)
-               (count)))
+                  (filter some?)
+                  (count)))
     (raise "Only one of :keys/:syms/:strs must be present"
-      {:error :parser/query, :form form}))
-  
+           {:error :parser/query, :form form}))
+
   (let [in-vars    (collect-vars (:qin q))
         in-sources (collect #(instance? SrcVar %) (:qin q))
         in-rules   (collect #(instance? RulesVar %) (:qin q))]
@@ -784,21 +784,21 @@
              {:error :parser/query, :form form}))))
 
 (defn parse-query [q]
-  (let [qm  (cond
-              (map? q) q
-              (sequential? q) (query->map q)
-              :else (raise "Query should be a vector or a map"
-                           {:error :parser/query, :form q}))
+  (let [qm     (cond
+                 (map? q)        q
+                 (sequential? q) (query->map q)
+                 :else           (raise "Query should be a vector or a map"
+                                        {:error :parser/query, :form q}))
         qwhere (parse-where (:where qm []))
-        res (map->Query
-              {:qfind  (parse-find (:find qm))
-               :qwith  (when-let [with (:with qm)]
-                         (parse-with with)) 
-               :qreturn-map (or (parse-return-map :keys (:keys qm))
-                              (parse-return-map :syms (:syms qm))
-                              (parse-return-map :strs (:strs qm)))
-               :qin    (parse-in 
-                         (or (:in qm) (default-in qwhere)))
-               :qwhere qwhere})]
+        res    (map->Query
+                 {:qfind       (parse-find (:find qm))
+                  :qwith       (when-let [with (:with qm)]
+                                 (parse-with with))
+                  :qreturn-map (or (parse-return-map :keys (:keys qm))
+                                   (parse-return-map :syms (:syms qm))
+                                   (parse-return-map :strs (:strs qm)))
+                  :qin         (parse-in
+                                 (or (:in qm) (default-in qwhere)))
+                  :qwhere      qwhere})]
     (validate-query res q qm)
     res))

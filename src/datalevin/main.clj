@@ -8,6 +8,7 @@
             [clojure.edn :as edn]
             [clojure.stacktrace :as st]
             [sci.core :as sci]
+            [sci.impl.vars :as vars]
             [datalevin.core :as d]
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
@@ -25,7 +26,7 @@
     "
   Datalevin (version: " version ")"))
 
-(def commands #{"exec" "copy" "drop" "dump" "load" "stat" "help"})
+(def commands #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl"})
 
 (def stat-help
   "
@@ -132,11 +133,13 @@
         "Usage: dtlv [options] [command] [arguments]"
         ""
         "Commands:"
-        "  exec  Execute database transactions or queries"
         "  copy  Copy a database, regardless of whether it is now in use"
         "  drop  Drop or clear a database"
         "  dump  Dump the content of a database to standard output"
+        "  exec  Execute database transactions or queries"
+        "  help  Show help messages"
         "  load  Load data from standard input into a database"
+        "  repl  Enter an interactive shell"
         "  stat  Display statistics of database"
         ""
         "Options:"
@@ -144,7 +147,6 @@
         ""
         "Type 'dtlv help <command>' to read about a specific command."
         ""
-        "Omit any command to enter an interactive shell."
         ]
        (s/join \newline)))
 
@@ -180,7 +182,7 @@
                           :options   options
                           :arguments (rest arguments)
                           :summary   summary}
-      (nil? command)     {:command "repl" :options options}
+      (nil? command)     {:command "repl"}
       :else              {:exit-message (usage summary)})))
 
 (defn- exit
@@ -215,14 +217,24 @@
                 (not (:no-doc m)))
            (not (:no-doc m))))))
 
-(defn- user-facing-map [var-map]
-  (select-keys var-map
-               (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))
+(defn- user-facing-map [ns var-map]
+  (let [sci-ns (vars/->SciNamespace ns nil)]
+    (reduce
+      (fn [m [k v]]
+        (assoc m k (vars/->SciVar v
+                                  (symbol v)
+                                  (assoc (meta v)
+                                         :sci.impl/built-in true
+                                         :ns sci-ns)
+                                  false)))
+      {}
+      (select-keys var-map
+                   (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
 
 (defn- user-facing-vars []
   (reduce
     (fn [m ns]
-      (assoc m ns (user-facing-map (ns-publics ns))))
+      (assoc m ns (user-facing-map ns (ns-publics ns))))
     {}
     user-facing-ns))
 

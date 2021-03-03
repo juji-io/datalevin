@@ -145,7 +145,7 @@ Omit any command to enter an interactive shell.
 
 Launch `dtlv` in `rlwrap` to get a better REPL experience, i.e. `rlwrap dtlv`.
 
-If your application depends on Datalevin and want to compile to GraalVM native image, read this [note](https://github.com/juji-io/datalevin/tree/master/native). 
+If your application depends on Datalevin and want to compile to GraalVM native image, read this [note](https://github.com/juji-io/datalevin/tree/master/native).
 ## :tada: Library Usage
 
 ### Use as a Datalog store
@@ -163,8 +163,8 @@ If your application depends on Datalevin and want to compile to GraalVM native i
              :name {:db/valueType :db.type/string
                     :db/unique    :db.unique/identity}})
 
-;; Create DB on disk and connect to it
-(def conn (d/get-conn "/var/datalevin/mydb" schema))
+;; Create DB on disk and connect to it, assume write permission to create given dir
+(def conn (d/get-conn "/data/datalevin/mydb" schema))
 
 ;; Transact some data
 ;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
@@ -205,7 +205,7 @@ If your application depends on Datalevin and want to compile to GraalVM native i
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
-(def db (d/open-kv "/var/datalevin/mykvdb"))
+(def db (d/open-kv "/data/datalevin/mykvdb"))
 
 ;; Define some table (called "dbi" in LMDB) names
 (def misc-table "misc-test-table")
