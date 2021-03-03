@@ -120,11 +120,13 @@ Unzip, put it on your path, and execute `dtlv help`:
 Usage: dtlv [options] [command] [arguments]
 
 Commands:
-  exec  Execute database transactions or queries
   copy  Copy a database, regardless of whether it is now in use
   drop  Drop or clear a database
   dump  Dump the content of a database to standard output
+  exec  Execute database transactions or queries
+  help  Show help messages
   load  Load data from standard input into a database
+  repl  Enter an interactive shell
   stat  Display statistics of database
 
 Options:
@@ -140,12 +142,12 @@ Options:
 
 Type 'dtlv help <command>' to read about a specific command.
 
-Omit any command to enter an interactive shell.
 ```
 
 Launch `dtlv` in `rlwrap` to get a better REPL experience, i.e. `rlwrap dtlv`.
 
 If your application depends on Datalevin and want to compile to GraalVM native image, read this [note](https://github.com/juji-io/datalevin/tree/master/native).
+
 ## :tada: Library Usage
 
 ### Use as a Datalog store
