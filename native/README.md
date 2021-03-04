@@ -14,12 +14,12 @@ If the compilation is successful, two binaries will appear in this directory:
 ## Compiling Datalevin Dependency to Native Image
 
 If your Clojure application depends on Datalevin, and you want to compile your
-application into GraalVM native image, you need to integrate the following steps in your
-native image build:
+application into a GraalVM native image, you need to integrate the following steps in your
+native image build script:
 
 1. Merge [Datalevin's reflect-config.json](https://github.com/juji-io/datalevin/releases/download/0.4.16/reflect-config.json) into yours.
-2. [Download our C source and build]() and add to your [CLibraryPath]()
+2. Download [our C source tree](https://github.com/juji-io/datalevin/tree/master/native/src/c), [run `make`]() in it, and add the path to your [CLibraryPath]()
 
-Native Datalevin contains GraalVM specific code, therefore it is not enough for us to bundle the built
-native library, because you need our header file to build a native image. Since you need to download our header file anyway,
-you might as well download the source tree and build it yourself. It is less error prone.
+Step 2 is necessary becaue native Datalevin contains GraalVM specific code. It is not enough for us to bundle the built
+native library, because building native image requires our header file. Since you need to download our header file anyway,
+you might as well download the C source tree and replicate what we do to build native Datalevin.
