@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.4.16
+## Changed
+- Native image now bundle liblmdb
+
 ## 0.4.13
 ### Fixed
 - Handle list form in query properly in command line shell [#42]
