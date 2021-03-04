@@ -2,6 +2,8 @@
 
 set -eou pipefail
 
+alias lein='lein.ps1'
+
 app_name=dtlv
 test_name=dtlv-test
 
