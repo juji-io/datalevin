@@ -13,7 +13,10 @@ jobs:
         os: [macos-latest, ubuntu-latest]
 
     steps:
+      - name: Checkout repository and submodules
       - uses: actions/checkout@v2
+        with: 
+          submodules: recursive
 
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
