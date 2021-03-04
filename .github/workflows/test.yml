@@ -1,0 +1,47 @@
+name: Test workflow
+
+on: push
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        gu-binary: [gu, gu.cmd]
+        exclude:
+          - os: ubuntu-latest
+            gu-binary: gu.cmd
+          - os: macos-latest
+            gu-binary: gu.cmd
+          - os: windows-latest
+            gu-binary: gu
+
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v2
+        with: 
+          submodules: recursive
+
+      - name: Setup Graalvm
+        uses: DeLaGuardo/setup-graalvm@master
+        with:
+          graalvm-version: '21.0.0.java11'
+
+      - name: Install Native Image
+        run: |
+          ${{ matrix.gu-binary }} install native-image
+
+      - name: Setup Leiningen
+        uses: DeLaGuardo/setup-clojure@master
+
+      - name: Build Native Datalevin
+        run: |
+          gu install native-image
+          cd native
+          bash script/compile
+
+      - name: Run Native Tests
+        run: |
+          native/dtlv-test
+
