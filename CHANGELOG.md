@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.17
 ## Improved
 - Minor improvement on the command line tool
 
