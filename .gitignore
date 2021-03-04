@@ -39,6 +39,7 @@ reading
 .clj-kondo/
 *.o
 *.a
+native/*.zip
 native/dtlv
 native/dtlv-test
 native/reports/
