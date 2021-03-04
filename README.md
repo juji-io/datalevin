@@ -107,7 +107,7 @@ query/transaction execution, and so on.
 
 Download the pre-built binary for amd64 platform:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.16/dtlv-0.4.16-macos-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.16/dtlv-0.4.16-ubuntu-latest-amd64.zip)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.16/dtlv-0.4.16-macos-latest-amd64.zip)
 
 Unzip, put it on your path, and execute `dtlv help`:
