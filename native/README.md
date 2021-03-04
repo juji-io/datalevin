@@ -22,4 +22,4 @@ native image build script:
 
 Step 2 is necessary becaue native Datalevin contains GraalVM specific code. It is not enough for us to bundle the built
 native library, because building native image requires our header file. Since you need to download our header file anyway,
-you might as well download the C source tree and replicate what we do to build native Datalevin.
+you might as well download the C source tree and replicate what we did.
