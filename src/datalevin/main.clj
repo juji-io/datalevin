@@ -115,11 +115,68 @@
   Command exec - Execute database transactions or queries.
 
   Required argument:
-      The code to be executed.
+      The code to be executed. The code needs to be wrapped in single quotes,
+      so that the shell passes them through to Datalevin. Replace ' in query
+      with (quote ...). Escape \" with \\.
 
   Examples:
-      dtlv exec (def conn (get-conn '/data/companydb')) \\
-                (transact! conn [{:name \"Datalevin\"}])")
+      dtlv exec '(def conn (get-conn \"/data/companydb\")) \\
+                 (transact! conn [{:name \"Datalevin\"}]) \\
+                 (q (quote [:find ?e ?n :where [?e :name ?n]]) @conn) \\
+                 (close conn)'")
+
+(def user-facing-ns #{'datalevin.core})
+
+(defn- user-facing? [v]
+  (let [m (meta v)]
+    (and (:doc m)
+         (if-let [p (:protocol m)]
+           (and (not (:no-doc (meta p)))
+                (not (:no-doc m)))
+           (not (:no-doc m))))))
+
+(defn- user-facing-map [ns var-map]
+  (let [sci-ns (vars/->SciNamespace ns nil)]
+    (reduce
+      (fn [m [k v]]
+        (assoc m k (vars/->SciVar v
+                                  (symbol v)
+                                  (assoc (meta v)
+                                         :sci.impl/built-in true
+                                         :ns sci-ns)
+                                  false)))
+      {}
+      (select-keys var-map
+                   (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
+
+(defn- user-facing-vars []
+  (reduce
+    (fn [m ns]
+      (assoc m ns (user-facing-map ns (ns-publics ns))))
+    {}
+    user-facing-ns))
+
+
+(defn- repl-help []
+  (println "")
+  (println "The following Datalevin functions are available:")
+  (println "")
+  (doseq [ns   user-facing-ns
+          :let [fs (->> ns
+                        ns-publics
+                        (user-facing-map ns)
+                        keys
+                        (sort-by name)
+                        (partition 4 4 nil))]]
+    (doseq [f4 fs]
+      (doseq [f f4]
+        (printf "%-20s" (name f)))
+      (println "")))
+  (println "")
+  (println "Call function just like in code: (<function> <args>)")
+  (println "")
+  (println "Type (doc <function>) to read documentation of the function")
+  "")
 
 (def repl-header
   "
@@ -165,7 +222,7 @@
    ["-l" "--list" "List the names of sub-databases instead of the content"]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
-(defn- validate-args
+(defn validate-args
   "Validate command line arguments. Either return a map indicating the program
   should exit (with a error message, and optional ok status), or a map
   indicating the action the program should take and the options provided."
@@ -198,6 +255,7 @@
   (if (seq arguments)
     (let [command (s/lower-case (first arguments))]
       (exit 0 (case command
+                "repl" (repl-help)
                 "exec" exec-help
                 "copy" copy-help
                 "drop" drop-help
@@ -206,37 +264,6 @@
                 "stat" stat-help
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
-
-(def user-facing-ns #{'datalevin.core})
-
-(defn- user-facing? [v]
-  (let [m (meta v)]
-    (and (:doc m)
-         (if-let [p (:protocol m)]
-           (and (not (:no-doc (meta p)))
-                (not (:no-doc m)))
-           (not (:no-doc m))))))
-
-(defn- user-facing-map [ns var-map]
-  (let [sci-ns (vars/->SciNamespace ns nil)]
-    (reduce
-      (fn [m [k v]]
-        (assoc m k (vars/->SciVar v
-                                  (symbol v)
-                                  (assoc (meta v)
-                                         :sci.impl/built-in true
-                                         :ns sci-ns)
-                                  false)))
-      {}
-      (select-keys var-map
-                   (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
-
-(defn- user-facing-vars []
-  (reduce
-    (fn [m ns]
-      (assoc m ns (user-facing-map ns (ns-publics ns))))
-    {}
-    user-facing-ns))
 
 (defn- resolve-var [s]
   (when (symbol? s)
@@ -257,21 +284,31 @@
 
 (def sci-opts {:namespaces (user-facing-vars)})
 
+(defn exec [arguments]
+  (let [reader (sci/reader (s/join arguments))
+        ctx    (sci/init sci-opts)]
+    (sci/with-bindings {sci/ns @sci/ns}
+      (loop []
+        (let [next-form (sci/parse-next ctx reader)]
+          (when-not (= ::sci/eof next-form)
+            (prn (eval-fn ctx next-form))
+            (recur)))))))
+
 (defn- dtlv-exec [arguments]
   (assert (seq arguments) (s/join \newline ["Missing code." exec-help]))
   (try
-    (let [reader (sci/reader (s/join arguments))
-          ctx    (sci/init sci-opts)]
-      (sci/with-bindings {sci/ns @sci/ns}
-        (loop []
-          (let [next-form (sci/parse-next ctx reader)]
-            (when-not (= ::sci/eof next-form)
-              (prn (eval-fn ctx next-form))
-              (recur))))))
+    (exec arguments)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Execution error: " (.getMessage e)))))
   (exit 0))
+
+(defn copy [dir arguments compact]
+  (let [lmdb (l/open-kv dir)]
+    (println "Opened database, copying...")
+    (l/copy lmdb (first arguments) compact)
+    (l/close-kv lmdb)
+    (println "Copied database.")))
 
 (defn- dtlv-copy [{:keys [dir compact]} arguments]
   (assert dir (s/join \newline
@@ -280,30 +317,29 @@
           (s/join \newline
                   ["Missing destination data directory path." copy-help]))
   (try
-    (let [lmdb (l/open-kv dir)]
-      (println "Opened database, copying...")
-      (l/copy lmdb (first arguments) compact)
-      (l/close-kv lmdb)
-      (println "Copied database."))
+    (copy dir arguments compact)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Copy error: " (.getMessage e)))))
   (exit 0))
+
+(defn drop [dir arguments delete]
+  (let [lmdb (l/open-kv dir)]
+    (if delete
+      (doseq [dbi arguments]
+        (l/drop-dbi lmdb dbi)
+        (println (str "Dropped " dbi)))
+      (doseq [dbi arguments]
+        (l/clear-dbi lmdb dbi)
+        (println (str "Cleared " dbi))))
+    (l/close-kv lmdb)))
 
 (defn- dtlv-drop [{:keys [dir delete]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." drop-help]))
   (assert (seq arguments)
           (s/join \newline ["Missing sub-database name." drop-help]))
   (try
-    (let [lmdb (l/open-kv dir)]
-      (if delete
-        (doseq [dbi arguments]
-          (l/drop-dbi lmdb dbi)
-          (println (str "Dropped " dbi)))
-        (doseq [dbi arguments]
-          (l/clear-dbi lmdb dbi)
-          (println (str "Cleared " dbi))))
-      (l/close-kv lmdb))
+    (drop dir arguments delete)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Drop error: " (.getMessage e)))))
@@ -325,24 +361,27 @@
     (doseq [datom (d/datoms @conn :eav)]
       (p/pprint datom))))
 
+(defn dump [file dir list datalog all arguments]
+  (let [f    (when file (io/writer file))
+        lmdb (l/open-kv dir)]
+    (binding [*out* (or f *out*)]
+      (cond
+        list            (p/pprint (set (l/list-dbis lmdb)))
+        datalog         (dump-datalog dir)
+        all             (dump-all lmdb)
+        (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))
+        :else           (println dump-help)))
+    (l/close-kv lmdb)
+    (when f (.close f))))
+
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))
   (try
-    (let [f    (when file (io/writer file))
-          lmdb (l/open-kv dir)]
-      (binding [*out* (or f *out*)]
-        (cond
-          list            (p/pprint (set (l/list-dbis lmdb)))
-          datalog         (dump-datalog dir)
-          all             (dump-all lmdb)
-          (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))
-          :else           (println dump-help)))
-      (l/close-kv lmdb)
-      (when f (.close f))
-      (exit 0))
+    (dump file dir list datalog all arguments)
     (catch Throwable e
       (st/print-cause-trace e)
-      (exit 1 (str "Dump error: " (.getMessage e))))))
+      (exit 1 (str "Dump error: " (.getMessage e)))))
+  (exit 0))
 
 (defn- load-datalog [dir in]
   (try
@@ -450,26 +489,6 @@
   (sci/set! last-error e))
 
 (defn- doc [s] (when-let [f (resolve-var s)] (println (:doc (meta f)))))
-
-(defn- repl-help []
-  (println "")
-  (println "The following Datalevin functions are available:")
-  (println "")
-  (doseq [ns   user-facing-ns
-          :let [fs (->> ns
-                        ns-publics
-                        user-facing-map
-                        keys
-                        (sort-by name)
-                        (partition 4 4 nil))]]
-    (doseq [f4 fs]
-      (doseq [f f4]
-        (printf "%-20s" (name f)))
-      (println "")))
-  (println "")
-  (println "Call function just like in code: (<function> <args>)")
-  (println "")
-  (println "Type (doc <function>) to read documentation of the function"))
 
 (defn- dtlv-repl []
   (println version-str)
