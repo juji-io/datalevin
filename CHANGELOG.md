@@ -1,9 +1,12 @@
 # Change Log
-All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
+
+## WIP
+## Improved
+- Minor improvement on the command line tool
 
 ## 0.4.16
 ## Changed
-- Native image now bundle liblmdb
+- Native image now bundles LMDB
 
 ## 0.4.13
 ### Fixed
