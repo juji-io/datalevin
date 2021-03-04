@@ -5,8 +5,8 @@ libraries := $(lib_lmdb) $(lib_dtlv)
 .PHONY: all $(libraries)
 all: $(libraries)
 
-$(libraries): 
-		$(MAKE) --directory=$@ $(TARGET)
+$(lib_lmdb):
+		$(MAKE) --directory=$@ liblmdb.a
 
 $(lib_dtlv): $(lib_lmdb)
-
+		$(MAKE) --directory=$@

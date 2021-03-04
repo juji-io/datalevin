@@ -49,11 +49,9 @@ public final class Lib {
     public static final class Directives implements CContext.Directives {
         @Override
         public List<String> getHeaderFiles() {
-            // return Collections.singletonList("<lmdb.h>");
             return Collections
-                .singletonList(//"<lmdb.h>",
-                               ProjectHeaderFile
-                               .resolve("datalevin.ni", "dtlv.h"));
+                .singletonList(ProjectHeaderFile.resolve("datalevin.ni",
+                                                         "dtlv.h"));
         }
 
         @Override
