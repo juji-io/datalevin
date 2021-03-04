@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.19
+## Improved
+- Provide Datalevin C source as a zip to help compiling native Datalevin dependency
+
 ## 0.4.17
 ## Improved
 - Minor improvement on the command line tool
@@ -14,7 +18,7 @@
 
 ## 0.4.4
 ### Changed
-- [Breaking] Consonidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
+- Consonidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
 
 ## 0.4.0
 ### Changed

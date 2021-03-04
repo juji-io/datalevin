@@ -1,5 +1,6 @@
 (ns datalevin.main
   "Command line tool"
+  (:refer-clojure :exclude [drop])
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
             [clojure.pprint :as p]

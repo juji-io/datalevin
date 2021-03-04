@@ -1,6 +1,5 @@
 (ns datalevin.core
   "API for Datalevin database"
-  (:refer-clojure :exclude [filter])
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.db :as db]
@@ -9,18 +8,16 @@
    [datalevin.lmdb :as l]
    [datalevin.binding.graal]
    [datalevin.binding.java]
-   [datalevin.parser :as p]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
    [datalevin.impl.entity :as de]
    [datalevin.bits :as b])
-  #?(:clj
-     (:import
-      [datalevin.impl.entity Entity]
-      [datalevin.storage Store]
-      [datalevin.db DB]
-      [java.util UUID])))
+  (:import
+   [datalevin.impl.entity Entity]
+   [datalevin.storage Store]
+   [datalevin.db DB]
+   [java.util UUID]))
 
 ;; Entities
 
