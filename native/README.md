@@ -18,7 +18,7 @@ application into a GraalVM native image, you need to integrate the following ste
 native image build script:
 
 1. Merge [Datalevin's reflect-config.json](https://github.com/juji-io/datalevin/releases/download/0.4.16/reflect-config.json) into yours.
-2. Download [our C source tree](https://github.com/juji-io/datalevin/tree/master/native/src/c), [run `make`]() in it, and add the path to your [CLibraryPath]()
+2. Download [our C source tree](https://github.com/juji-io/datalevin/tree/master/native/src/c), [run `make`](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L19) in it, and add the path to your [CLibraryPath](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L34)
 
 Step 2 is necessary becaue native Datalevin contains GraalVM specific code. It is not enough for us to bundle the built
 native library, because building native image requires our header file. Since you need to download our header file anyway,
