@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <string.h>
-#include <lmdb.h>
 #include "dtlv.h"
 
 int dtlv_cmp_memn(const MDB_val *a, const MDB_val *b)
