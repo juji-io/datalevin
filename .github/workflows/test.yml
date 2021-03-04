@@ -39,7 +39,6 @@ jobs:
 
       - name: Build Native Datalevin
         run: |
-          gu install native-image
           cd native
           bash script/compile
 
