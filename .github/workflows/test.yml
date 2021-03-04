@@ -34,6 +34,8 @@ jobs:
 
       - name: Setup Leiningen
         uses: DeLaGuardo/setup-clojure@master
+        with:
+          lein: 2.9.5
 
       - name: Build Native Datalevin
         run: |
