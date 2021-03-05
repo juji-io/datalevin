@@ -22,8 +22,8 @@ cd src/c
 make
 
 case $(uname | tr '[:upper:]' '[:lower:]') in
-  msys*)
-    export LEIN='powershell lein.ps1'
+  windowsnt*)
+    export LEIN='lein.bat'
     ;;
   *)
     export LEIN='lein'
