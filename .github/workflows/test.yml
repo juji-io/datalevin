@@ -48,9 +48,11 @@ jobs:
           bash script/compile-libs
 
       - name: Build Native Datalevin
-        run: |
-          cd native
-          bash script/compile-main
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: bash script/compile-main
+          linux: bash script/compile-main
+          windows: bash script/compile-main-win
 
       - name: Build Test Uberjar
         run: |
@@ -58,9 +60,11 @@ jobs:
           lein with-profile test-uberjar uberjar
 
       - name: Build Native Datalevin Tests
-        run: |
-          cd native
-          bash script/compile-test
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: bash script/compile-test
+          linux: bash script/compile-test
+          windows: bash script/compile-test-win
 
       - name: Run Native Tests
         run: |
