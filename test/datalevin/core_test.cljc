@@ -177,7 +177,8 @@
     (let [d1 (sut/q query @conn)]
       (sut/transact! conn [{:foo/id   "foo"
                             :foo/date (java.util.Date.)}])
-      (is (not= d1 (sut/q query @conn))))))
+      (is (not= d1 (sut/q query @conn))))
+    (sut/close conn)))
 
 (deftest instant-compare-test
   (let [dir  (u/tmp-dir (str "datalevin-instant-compare-test-" (UUID/randomUUID)))
@@ -215,4 +216,23 @@
                [(.after ?d ?m)]]
              @conn
              t50)
-           #{[t100] [now]}))))
+           #{[t100] [now]}))
+    (sut/close conn)))
+
+(deftest other-language-test
+  (let [schema {:bug {:db/valueType :db.type/string}}
+        dir    (u/tmp-dir (str "datalevin-other-lang-test-" (UUID/randomUUID)))
+        conn   (sut/get-conn dir schema)]
+    (sut/transact! conn [{:german "Ümläüt"}])
+    (is (= '([{:db/id 1 :german "Ümläüt"}])
+           (sut/q '[:find (pull ?e [*])
+                    :where
+                    [?e :german]]
+                  @conn)))
+    (sut/transact! conn [{:chinese "您好"}])
+    (is (= '([{:db/id 2 :chinese "您好"}])
+           (sut/q '[:find (pull ?e [*])
+                    :where
+                    [?e :chinese]]
+                  @conn)))
+    (sut/close conn)))

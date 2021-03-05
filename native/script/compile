@@ -11,7 +11,7 @@ if [ -z "$GRAALVM_HOME" ]; then
 fi
 
 export JAVA_HOME=$GRAALVM_HOME
-export PATH=$GRAALVM_HOME/bin:$LEIN_HOME/bin:$PATH
+export PATH=$GRAALVM_HOME/bin:$PATH
 
 MAIN_JAR="target/main.uberjar.jar"
 TEST_JAR="target/test.uberjar.jar"
