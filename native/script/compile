@@ -2,8 +2,6 @@
 
 set -eou pipefail
 
-alias lein='lein.ps1'
-
 app_name=dtlv
 test_name=dtlv-test
 
@@ -13,7 +11,7 @@ if [ -z "$GRAALVM_HOME" ]; then
 fi
 
 export JAVA_HOME=$GRAALVM_HOME
-export PATH=$GRAALVM_HOME/bin:$PATH
+export PATH=$GRAALVM_HOME/bin:$LEIN_HOME/bin:$PATH
 
 MAIN_JAR="target/main.uberjar.jar"
 TEST_JAR="target/test.uberjar.jar"
@@ -21,18 +19,10 @@ TEST_JAR="target/test.uberjar.jar"
 cd src/c
 make
 
-case $(uname | tr '[:upper:]' '[:lower:]') in
-  windowsnt*)
-    export LEIN='lein.bat'
-    ;;
-  *)
-    export LEIN='lein'
-    ;;
-esac
-
 cd ../../
-${LEIN} clean
-${LEIN} uberjar
+
+lein clean
+lein uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
     -H:Name=${app_name} \
