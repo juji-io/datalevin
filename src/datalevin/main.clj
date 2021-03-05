@@ -20,7 +20,7 @@
            [java.lang RuntimeException])
   (:gen-class))
 
-(def version "0.4.19")
+(def version "0.4.20")
 
 (def version-str
   (str

@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.20
 ## Improved
 - Improve dtlv REPL (doc f) display
 
