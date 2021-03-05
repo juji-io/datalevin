@@ -11,7 +11,7 @@ MAIN_JAR="target\main.uberjar.jar"
 
 cd native
 
-"$GRAALVM_HOME\bin\native-image" \
+"$GRAALVM_HOME\bin\native-image.cmd" \
     -H:Name=${app_name} \
     -H:+ReportExceptionStackTraces \
     -H:ConfigurationFileDirectories=config \
