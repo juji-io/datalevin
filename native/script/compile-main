@@ -9,11 +9,6 @@ export PATH=$GRAALVM_HOME/bin:$PATH
 
 MAIN_JAR="target/main.uberjar.jar"
 
-cd src/c
-make
-
-cd ../../
-
 "$GRAALVM_HOME/bin/native-image" \
     -H:Name=${app_name} \
     -H:+ReportExceptionStackTraces \

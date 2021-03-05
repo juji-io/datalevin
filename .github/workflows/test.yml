@@ -39,7 +39,13 @@ jobs:
 
       - name: Build Main Uberjar
         run: |
+          cd native
           lein uberjar
+
+      - name: Build Libs
+        run: |
+          cd native
+          bash script/compile-libs
 
       - name: Build Native Datalevin
         run: |
@@ -48,6 +54,7 @@ jobs:
 
       - name: Build Test Uberjar
         run: |
+          cd native
           lein with-profile test-uberjar uberjar
 
       - name: Build Native Datalevin Tests
