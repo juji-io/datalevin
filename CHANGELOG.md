@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+## Improved
+- Improve dtlv REPL (doc f) display
+
 ## 0.4.19
 ## Improved
 - Provide Datalevin C source as a zip to help compiling native Datalevin dependency

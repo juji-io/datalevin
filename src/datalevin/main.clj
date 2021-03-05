@@ -489,7 +489,13 @@
   (binding [*out* *err*] (println (ex-message e)))
   (sci/set! last-error e))
 
-(defn- doc [s] (when-let [f (resolve-var s)] (println (:doc (meta f)))))
+(defn- doc [s]
+  (when-let [f (resolve-var s)]
+    (let [m (meta f)]
+      (println " -------------------------")
+      (println (str (ns-name (:ns m)) "/" (:name m)))
+      (println (:arglists m))
+      (println (:doc m)))))
 
 (defn- dtlv-repl []
   (println version-str)
