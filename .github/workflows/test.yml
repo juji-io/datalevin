@@ -50,9 +50,9 @@ jobs:
       - name: Build Native Datalevin
         uses: knicknic/os-specific-run@v1.0.3
         with:
-          macos: bash script/compile-main
-          linux: bash script/compile-main
-          windows: bash script/compile-main-win
+          macos: bash native/script/compile-main
+          linux: bash native/script/compile-main
+          windows: bash native/script/compile-main-win
 
       - name: Build Test Uberjar
         run: |
@@ -62,9 +62,9 @@ jobs:
       - name: Build Native Datalevin Tests
         uses: knicknic/os-specific-run@v1.0.3
         with:
-          macos: bash script/compile-test
-          linux: bash script/compile-test
-          windows: bash script/compile-test-win
+          macos: bash native/script/compile-test
+          linux: bash native/script/compile-test
+          windows: bash native/script/compile-test-win
 
       - name: Run Native Tests
         run: |
