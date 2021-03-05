@@ -5,7 +5,7 @@
   :url "https://github.com/juji-io/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
-  :managed-dependencies [[org.clojure/clojure "1.10.2"]
+  :managed-dependencies [[org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.0.0.2"]

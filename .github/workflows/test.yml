@@ -1,21 +1,13 @@
-name: Test workflow
+name: Test windows
 
 on: push
 
 jobs:
-  build:
+  windows-build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        gu-binary: [gu, gu.cmd]
-        exclude:
-          - os: ubuntu-latest
-            gu-binary: gu.cmd
-          - os: macos-latest
-            gu-binary: gu.cmd
-          - os: windows-latest
-            gu-binary: gu
+        os: [windows-latest]
 
     steps:
       - name: Checkout repository and submodules
@@ -30,7 +22,11 @@ jobs:
 
       - name: Install Native Image
         run: |
-          ${{ matrix.gu-binary }} install native-image
+          gu.cmd install native-image
+
+      - name: Setup Visual Studio 2017 Build Tools
+        run: |
+          choco install visualstudio2017-workload-vctools
 
       - name: Setup Leiningen
         uses: DeLaGuardo/setup-clojure@master
@@ -48,11 +44,10 @@ jobs:
           bash script/compile-libs
 
       - name: Build Native Datalevin
-        uses: knicknic/os-specific-run@v1.0.3
-        with:
-          macos: bash native/script/compile-main
-          linux: bash native/script/compile-main
-          windows: bash native/script/compile-main-win
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+          native/script/compile-main-win
 
       - name: Build Test Uberjar
         run: |
@@ -60,11 +55,10 @@ jobs:
           lein with-profile test-uberjar uberjar
 
       - name: Build Native Datalevin Tests
-        uses: knicknic/os-specific-run@v1.0.3
-        with:
-          macos: bash native/script/compile-test
-          linux: bash native/script/compile-test
-          windows: bash native/script/compile-test-win
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+          native/script/compile-main-win
 
       - name: Run Native Tests
         run: |
