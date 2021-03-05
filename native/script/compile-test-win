@@ -9,8 +9,6 @@ export PATH=$GRAALVM_HOME\bin:$PATH
 
 TEST_JAR="target\test.uberjar.jar"
 
-cd native
-
 "$GRAALVM_HOME\bin\native-image.cmd" \
     -H:Name=${test_name} \
     -H:+ReportExceptionStackTraces \
