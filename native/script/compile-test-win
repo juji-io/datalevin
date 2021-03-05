@@ -19,7 +19,7 @@ cd native
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
     -H:+PrintClassInitialization \
-    -H:CLibraryPath=src\c \
+    -H:CLibraryPath=src/c \
     --initialize-at-build-time \
     --report-unsupported-elements-at-runtime \
     --allow-incomplete-classpath \
