@@ -37,6 +37,9 @@ jobs:
         with:
           lein: 2.9.5
 
+      - name: Test Leiningen
+        run: lein -v
+
       - name: Build Native Datalevin
         run: |
           cd native
