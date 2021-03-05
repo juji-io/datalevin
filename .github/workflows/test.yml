@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [windows-2016]
 
     steps:
       - name: Checkout repository and submodules
@@ -25,9 +25,9 @@ jobs:
         run: |
           gu.cmd install native-image
 
-      - name: Setup Visual Studio 2019 Build Tools
+      - name: Setup Visual Studio 2017 Build Tools
         run: |
-          choco install visualstudio2019-workload-vctools
+          choco install visualstudio2017-workload-vctools
 
       - name: Setup Leiningen
         uses: DeLaGuardo/setup-clojure@master
@@ -47,7 +47,7 @@ jobs:
       - name: Build Native Datalevin
         shell: cmd
         run: |
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
           native/script/compile-main-win
 
       - name: Build Test Uberjar
@@ -58,7 +58,7 @@ jobs:
       - name: Build Native Datalevin Tests
         shell: cmd
         run: |
-          call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
           native/script/compile-main-win
 
       - name: Run Native Tests
