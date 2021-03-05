@@ -21,9 +21,17 @@ TEST_JAR="target/test.uberjar.jar"
 cd src/c
 make
 
+case $(uname | tr '[:upper:]' '[:lower:]') in
+  msys*)
+    export LEIN='powershell lein.ps1'
+    ;;
+  *)
+    export LEIN='lein'
+esac
+
 cd ../../
-lein clean
-lein uberjar
+${LEIN} clean
+${LEIN} uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
     -H:Name=${app_name} \
