@@ -27,6 +27,7 @@ case $(uname | tr '[:upper:]' '[:lower:]') in
     ;;
   *)
     export LEIN='lein'
+    ;;
 esac
 
 cd ../../
