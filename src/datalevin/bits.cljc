@@ -5,11 +5,9 @@
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
   (:import [java.io DataInput DataOutput]
-           [java.nio.charset StandardCharsets]
            [java.util Arrays UUID Date Base64]
            [java.nio ByteBuffer]
            [java.lang String Character]
-           [java.nio.charset StandardCharsets]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -42,7 +40,7 @@
 (defn text-ba->str
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
-  (String. ba StandardCharsets/UTF_8))
+  (String. ba))
 
 (defn binary-ba->str
   "Convert a byte array to string using base64"
@@ -244,7 +242,7 @@
 
 (defn- string-bytes
   [^String v]
-  (wrap-extrema v c/min-bytes c/max-bytes (.getBytes v StandardCharsets/UTF_8)))
+  (wrap-extrema v c/min-bytes c/max-bytes (.getBytes v)))
 
 (defn- key-sym-bytes
   [x]
@@ -527,7 +525,7 @@
   ([bf x x-type]
    (case x-type
      :string  (do (put-byte bf (raw-header x :string))
-                  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
+                  (put-bytes bf (.getBytes ^String x)))
      :int     (put-int bf x)
      :long    (do (put-byte bf (raw-header x :long))
                   (put-long bf x))
