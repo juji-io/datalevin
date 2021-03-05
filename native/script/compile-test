@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -eou pipefail
+
+test_name=dtlv-test
+
+export JAVA_HOME=$GRAALVM_HOME
+export PATH=$GRAALVM_HOME/bin:$PATH
+
+TEST_JAR="target/test.uberjar.jar"
+
+"$GRAALVM_HOME/bin/native-image" \
+    -H:Name=${test_name} \
+    -H:+ReportExceptionStackTraces \
+    -H:ConfigurationFileDirectories=config \
+    -J-Dclojure.spec.skip-macros=true \
+    -J-Dclojure.compiler.direct-linking=true \
+    -H:Log=registerResource:verbose \
+    -H:+PrintClassInitialization \
+    -H:CLibraryPath=src/c \
+    --initialize-at-build-time \
+    --report-unsupported-elements-at-runtime \
+    --allow-incomplete-classpath \
+    --verbose \
+    --no-fallback \
+    --no-server \
+    "-J-Xmx8g" \
+    --native-image-info \
+    -jar "$TEST_JAR" \
+    ${test_name}

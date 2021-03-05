@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Checkout repository and submodules
         uses: actions/checkout@v2
-        with: 
+        with:
           submodules: recursive
 
       - name: Setup Graalvm
@@ -35,17 +35,26 @@ jobs:
       - name: Setup Leiningen
         uses: DeLaGuardo/setup-clojure@master
         with:
-          lein: 2.9.5
+          lein: latest
 
-      - name: Test Leiningen
-        run: lein -v
+      - name: Build Main Uberjar
+        run: |
+          lein uberjar
 
       - name: Build Native Datalevin
         run: |
           cd native
-          bash script/compile
+          bash script/compile-main
+
+      - name: Build Test Uberjar
+        run: |
+          lein with-profile test-uberjar uberjar
+
+      - name: Build Native Datalevin Tests
+        run: |
+          cd native
+          bash script/compile-test
 
       - name: Run Native Tests
         run: |
           native/dtlv-test
-
