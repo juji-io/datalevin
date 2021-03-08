@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.4.21
+## Changed
+- Compile to Java 8 bytecode instead of 11 to have wider compatibility
+- Use UTF-8 throughout for character encoding
+
 ## 0.4.20
 ## Improved
 - Improve dtlv REPL (doc f) display

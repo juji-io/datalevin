@@ -1,10 +1,10 @@
-(def version "0.4.20")
+(def version "0.4.21")
 
 (defproject datalevin-native version
-  :description "Datalevin running in GraalVM native image, and it can also run as a command line tool for Datalevin"
+  :description "Datalevin GraalVM native image and command line tool"
   :parent-project {:path    "../project.clj"
                    :inherit [:managed-dependencies :profiles :jvm-opts
-                             :deploy-repositories :global-vars]}
+                             :deploy-repositories :global-vars :javac-options]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
                  [persistent-sorted-set]

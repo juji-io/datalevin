@@ -1,4 +1,4 @@
-(def version "0.4.20")
+(def version "0.4.21")
 
 (defproject datalevin version
   :description "A simple, fast and durable Datalog database"
@@ -40,6 +40,7 @@
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "-Dclojure.compiler.direct-linking=true"]
+  :javac-options ["--release" "8"]
 
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
