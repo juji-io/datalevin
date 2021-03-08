@@ -7,6 +7,7 @@
   (:import [java.io DataInput DataOutput]
            [java.util Arrays UUID Date Base64]
            [java.nio ByteBuffer]
+           [java.nio.charset StandardCharsets]
            [java.lang String Character]
            [datalevin.datom Datom]))
 
@@ -40,7 +41,7 @@
 (defn text-ba->str
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
-  (String. ba))
+  (String. ba StandardCharsets/UTF_8))
 
 (defn binary-ba->str
   "Convert a byte array to string using base64"
@@ -242,7 +243,7 @@
 
 (defn- string-bytes
   [^String v]
-  (wrap-extrema v c/min-bytes c/max-bytes (.getBytes v)))
+  (wrap-extrema v c/min-bytes c/max-bytes (.getBytes v StandardCharsets/UTF_8)))
 
 (defn- key-sym-bytes
   [x]
@@ -411,14 +412,14 @@
 
 (defn- get-string
   ([^ByteBuffer bf]
-   (String. ^bytes (get-bytes bf)))
+   (String. ^bytes (get-bytes bf) StandardCharsets/UTF_8))
   ([^ByteBuffer bf ^long post-v]
-   (String. ^bytes (get-bytes-val bf post-v))))
+   (String. ^bytes (get-bytes-val bf post-v) StandardCharsets/UTF_8)))
 
 (defn- get-key-sym-str
   [^ByteBuffer bf ^long post-v]
   (let [^bytes ba (sep->slash (get-bytes-val bf post-v))
-        s         (String. ^bytes ba)]
+        s         (String. ^bytes ba StandardCharsets/UTF_8)]
     (if (= (aget ba 0) c/slash) (subs s 1) s)))
 
 (defn- get-keyword
@@ -502,7 +503,7 @@
 (defn- get-attr
   [bf]
   (let [^bytes bs (get-bytes bf)]
-    (-> bs String. keyword)))
+    (keyword (String. bs StandardCharsets/UTF_8))))
 
 (defn- raw-header
   [v t]
@@ -525,7 +526,7 @@
   ([bf x x-type]
    (case x-type
      :string  (do (put-byte bf (raw-header x :string))
-                  (put-bytes bf (.getBytes ^String x)))
+                  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
      :int     (put-int bf x)
      :long    (do (put-byte bf (raw-header x :long))
                   (put-long bf x))

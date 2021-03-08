@@ -7,7 +7,10 @@ app_name=dtlv
 export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME\bin:$PATH
 
-MAIN_JAR="target\main.uberjar.jar"
+PWD=`pwd`
+
+MAIN_JAR="${PWD}\target\main.uberjar.jar"
+CPATH="${PWD}\src\c"
 
 "$GRAALVM_HOME\bin\native-image.cmd" \
     -H:Name=${app_name} \
@@ -17,7 +20,7 @@ MAIN_JAR="target\main.uberjar.jar"
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
     -H:+PrintClassInitialization \
-    -H:CLibraryPath=src/c \
+    -H:CLibraryPath="$CPATH" \
     --initialize-at-build-time \
     --report-unsupported-elements-at-runtime \
     --allow-incomplete-classpath \
