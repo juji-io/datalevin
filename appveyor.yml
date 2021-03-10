@@ -34,6 +34,8 @@ build_script:
 
     choco install make
 
+    choco install mingw
+
 - cmd: >-
     call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat"
 
