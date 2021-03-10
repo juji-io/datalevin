@@ -21,12 +21,14 @@ make -f Makefile.win
 cd %PWD%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
+  "-jar" "target/main.uberjar.jar" ^
   "-H:Name=dtlv" ^
   "-H:+ReportExceptionStackTraces" ^
   "-H:ConfigurationFileDirectories=config" ^
   "-J-Dclojure.spec.skip-macros=true" ^
   "-J-Dclojure.compiler.direct-linking=true" ^
   "-H:CLibraryPath=%CPATH%" ^
+  "-H:NativeLinkerOption=-static-libgcc" ^
   "--initialize-at-build-time"  ^
   "-H:Log=registerResource:" ^
   "--report-unsupported-elements-at-runtime" ^
@@ -35,7 +37,7 @@ call %GRAALVM_HOME%\bin\native-image.cmd ^
   "--native-image-info" ^
   "--verbose" ^
   "-J-Xmx6g" ^
-  "-jar" "target/main.uberjar.jar" ^
+  dtlv
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
