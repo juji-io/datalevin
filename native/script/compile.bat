@@ -14,7 +14,7 @@ set PWD=%cd%
 set MAIN_JAR=%PWD%\target\main.uberjar.jar
 set CPATH=%PWD%\src\c
 
-call lein do clean, uberjar
+call lein.bat do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 cd %CPATH%
