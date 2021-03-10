@@ -52,7 +52,7 @@ artifacts:
 deploy:
   provider: GitHub
   auth_token:
-    secure: e730ca8a84badbadf39e26e5f573b4fbf4674846
+    secure: QIiuupmpAl2Y5kxVyFJTSDRIj/uKyXXE3PzARE//JY44zXEJ7vbqvhcftKq/dFdf
   artifact: /.*\.zip/
   force_update: true
   on:
