@@ -28,7 +28,6 @@ call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-J-Dclojure.spec.skip-macros=true" ^
   "-J-Dclojure.compiler.direct-linking=true" ^
   "-H:CLibraryPath=%CPATH%" ^
-  "-H:NativeLinkerOption=-static-libgcc" ^
   "--initialize-at-build-time"  ^
   "-H:Log=registerResource:" ^
   "--report-unsupported-elements-at-runtime" ^
