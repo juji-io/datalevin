@@ -29,6 +29,8 @@ cmake .. ^
     -DBUILD_SHARED_LIBS=off
 nmake install
 
+cd %PWD%
+
 call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-jar" "target/main.uberjar.jar" ^
   "-H:Name=dtlv" ^
