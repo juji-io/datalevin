@@ -4,6 +4,9 @@ version: "v-{build}"
 
 image: Visual Studio 2017
 
+configuration:
+- Release
+
 clone_folder: C:\projects\datalevin
 
 environment:
@@ -33,8 +36,6 @@ build_script:
 
 
     choco install make
-
-    choco install mingw
 
     choco install visualstudio2017-workload-vctools
 
