@@ -15,7 +15,7 @@ set CPATH=%PWD%\src\c
 call ..\lein.bat do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-cd %CPATH%\lmdb\libraries\liblmdb
+cd %CPATH%
 
 mkdir build
 cd build
@@ -28,11 +28,6 @@ cmake .. ^
     -DBUILD_TEST=off ^
     -DBUILD_SHARED_LIBS=off
 nmake install
-
-cd %CPATH%
-make -f Makefile.win
-
-cd %PWD%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-jar" "target/main.uberjar.jar" ^
