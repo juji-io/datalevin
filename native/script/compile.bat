@@ -19,7 +19,10 @@ cd %CPATH%\lmdb\libraries\liblmdb
 
 mkdir build
 cd build
-cmake .. -G "NMake Makefiles" -DCMAKE_BUILD_TYPE:STRING=RELEASE ^
+
+cmake .. ^
+    -G "NMake Makefiles" ^
+    -DCMAKE_BUILD_TYPE:STRING=RELEASE ^
     -DCMAKE_INSTALL_PREFIX=%CPATH% ^
     -DCLOSE_WARNING=on ^
     -DBUILD_TEST=off ^
