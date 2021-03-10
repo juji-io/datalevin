@@ -47,7 +47,7 @@ build_script:
 
 artifacts:
 - path: native\dtlv-windows-amd64.zip
-  name: dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
+  name: dtlv-$env:APPVEYOR_REPO_TAG_NAME-windows-amd64.zip
 
 deploy:
   provider: GitHub
