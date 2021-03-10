@@ -1,4 +1,3 @@
-@echo off
 
 if "%GRAALVM_HOME%"=="" (
     echo Please set GRAALVM_HOME
@@ -11,7 +10,6 @@ set PATH=%GRAALVM_HOME%\bin;%PATH%
 call %GRAALVM_HOME%\bin\gu.cmd install native-image
 
 set PWD=%cd%
-set MAIN_JAR=%PWD%\target\main.uberjar.jar
 set CPATH=%PWD%\src\c
 
 call ..\lein.bat do clean, uberjar
@@ -23,7 +21,6 @@ make
 cd %PWD%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
-  "-jar %MAIN_JAR%" ^
   "-H:Name=dtlv" ^
   "-H:+ReportExceptionStackTraces" ^
   "-H:ConfigurationFileDirectories=config" ^
@@ -37,7 +34,8 @@ call %GRAALVM_HOME%\bin\native-image.cmd ^
   "--no-fallback" ^
   "--native-image-info" ^
   "--verbose" ^
-  "-J-Xmx6g"
+  "-J-Xmx6g" ^
+  "-jar" "target/main.uberjar.jar" ^
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 

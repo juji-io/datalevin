@@ -31,6 +31,9 @@ build_script:
 
     call lein.bat self-install
 
+
+    choco install make
+
 - cmd: >-
     call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat"
 
