@@ -16,7 +16,7 @@ call ..\lein.bat do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 cd %CPATH%
-make
+make -f Makefile.win
 
 cd %PWD%
 
