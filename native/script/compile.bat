@@ -28,7 +28,7 @@ nmake install
 
 cd %PWD%
 
-call ..\lein.bat with-profile test-uberjar clean, uberjar
+call ..\lein.bat with-profile test-uberjar do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
