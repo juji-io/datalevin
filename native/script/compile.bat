@@ -52,7 +52,7 @@ call %GRAALVM_HOME%\bin\native-image.cmd ^
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-start /wait dtlv-test.exe
+.\dtlv-test
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
