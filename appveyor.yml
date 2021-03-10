@@ -9,11 +9,6 @@ clone_folder: C:\projects\datalevin
 environment:
   GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-21.0.0
 
-cache:
-  - C:\ProgramData\chocolatey\lib -> project.clj, appveyor.yml
-  - '%USERPROFILE%\.m2 -> project.clj'
-  - 'graalvm -> appveyor.yml'
-
 clone_script:
 - ps: >-
     if(-not $env:APPVEYOR_PULL_REQUEST_NUMBER) {
@@ -32,6 +27,7 @@ clone_script:
 build_script:
 - cmd: >-
     powershell -Command "(New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein.bat', 'lein.bat')"
+
 
     call lein.bat self-install
 
