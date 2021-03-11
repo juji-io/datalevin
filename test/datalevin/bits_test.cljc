@@ -9,6 +9,7 @@
             [clojure.test.check.properties :as prop])
   (:import [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
+           [java.nio.charset StandardCharsets]
            [datalevin.bits Indexable Retrieved]))
 
 ;; bytes <-> text
@@ -28,7 +29,7 @@
 
 (defn- string-size-less-than?
   [^long limit ^String s]
-  (< (alength (.getBytes s)) limit))
+  (< (alength (.getBytes s StandardCharsets/UTF_8)) limit))
 
 (test/defspec data-generative-test
   100
