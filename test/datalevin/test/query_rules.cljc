@@ -165,8 +165,8 @@
 ;; https://github.com/tonsky/datascript/issues/218
 (deftest test-false-arguments
   (let [db    (d/db-with (d/empty-db)
-                [[:db/add 1 :attr true]
-                 [:db/add 2 :attr false]])
+                         [[:db/add 1 :attr true]
+                          [:db/add 2 :attr false]])
         rules '[[(is ?id ?val)
                  [?id :attr ?val]]]]
     (is (= (d/q '[:find ?id :in $ %
@@ -175,5 +175,6 @@
            #{[1]}))
     ;; TODO figure out why this fails
     #_(is (= (d/q '[:find ?id :in $ %
-                  :where (is ?id false)] db rules)
-           #{[2]}))))
+                    :where (is ?id false)] db rules)
+             #{[2]}))
+    (d/close-db db)))

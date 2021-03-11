@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+## Added
+- Compile to native on Windows
+- `close-db` convenience function to close a Datalog db
+
 ## 0.4.21
 ## Changed
 - Compile to Java 8 bytecode instead of 11 to have wider compatibility

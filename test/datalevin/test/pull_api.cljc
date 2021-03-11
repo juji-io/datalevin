@@ -68,7 +68,8 @@
 
     (is (= [{:name "Petr"} {:name "Elizabeth"}
             {:name "Eunan"} {:name "Rebecca"}]
-           (d/pull-many test-db '[:name] [1 5 7 9])))))
+           (d/pull-many test-db '[:name] [1 5 7 9])))
+    (d/close-db test-db)))
 
 (deftest test-pull-reverse-attr-spec
   (let [test-db (d/init-db test-datoms nil test-schema)]
@@ -89,7 +90,8 @@
              (d/pull test-db '[:name {:_father [:name]}] 3)))
 
       (is (= {:name "Petr" :_father [{:name "David"} {:name "Thomas"}]}
-             (d/pull test-db '[:name {:_father [:name]}] 1))))))
+             (d/pull test-db '[:name {:_father [:name]}] 1))))
+    (d/close-db test-db)))
 
 (deftest test-pull-component-attr
   (let [test-db (d/init-db test-datoms nil test-schema)
@@ -136,7 +138,9 @@
              (d/pull test-db [:name {:_part [:name]}] 11))))
 
     (testing "Like explicit recursion, expansion will not allow loops"
-      (is (= rpart (d/pull recdb '[:name :part] 10))))))
+      (is (= rpart (d/pull recdb '[:name :part] 10))))
+    (d/close-db test-db)
+    (d/close-db recdb)))
 
 (deftest test-pull-wildcard
   (let [test-db (d/init-db test-datoms nil test-schema)]
@@ -145,7 +149,8 @@
            (d/pull test-db '[*] 1)))
 
     (is (= {:db/id 2 :name "David" :_child [{:db/id 1}] :father {:db/id 1}}
-           (d/pull test-db '[* :_child] 2)))))
+           (d/pull test-db '[* :_child] 2)))
+    (d/close-db test-db)))
 
 (deftest test-pull-limit
   (let [db (d/init-db
@@ -176,7 +181,8 @@
     (testing "Limits can be used as map specification keys"
       (is (= {:name   "Lucy"
               :friend [{:name "Elizabeth"} {:name "Matthew"}]}
-             (d/pull db '[:name {(limit :friend 2) [:name]}] 4))))))
+             (d/pull db '[:name {(limit :friend 2) [:name]}] 4))))
+    (d/close-db db)))
 
 (deftest test-pull-default
   (let [test-db (d/init-db test-datoms nil test-schema)]
@@ -187,17 +193,20 @@
       (is (= {:foo "bar"}
              (d/pull test-db '[(default :foo "bar")] 1)))
       (is (= {:foo "bar"}
-             (d/pull test-db '[[:foo :default "bar"]] 1))))))
+             (d/pull test-db '[[:foo :default "bar"]] 1))))
+    (d/close-db test-db)))
 
 (deftest test-pull-as
   (let [test-db (d/init-db test-datoms nil test-schema)]
     (is (= {"Name" "Petr", :alias ["Devil" "Tupen"]}
-           (d/pull test-db '[[:name :as "Name"] [:aka :as :alias]] 1)))))
+           (d/pull test-db '[[:name :as "Name"] [:aka :as :alias]] 1)))
+    (d/close-db test-db)))
 
 (deftest test-pull-attr-with-opts
   (let [test-db (d/init-db test-datoms nil test-schema)]
     (is (= {"Name" "Nothing"}
-           (d/pull test-db '[[:x :as "Name" :default "Nothing"]] 1)))))
+           (d/pull test-db '[[:x :as "Name" :default "Nothing"]] 1)))
+    (d/close-db test-db)))
 
 (deftest test-pull-map
   (let [test-db (d/init-db test-datoms nil test-schema)]
@@ -224,7 +233,8 @@
                (d/pull test-db '[:name {:part [:name]}] 10)))
 
         (is (= parts
-               (d/pull test-db '[:name {:part 1}] 10)))))))
+               (d/pull test-db '[:name {:part 1}] 10)))))
+    (d/close-db test-db)))
 
 (deftest test-pull-recursion
   (let [test-db (d/init-db test-datoms nil test-schema)
@@ -285,7 +295,8 @@
       (testing "Cycles are handled by returning only the :db/id of entities which have been seen before"
         (is (= (update-in friends (take 8 (cycle [:friend 0]))
                           assoc :friend [{:db/id 4 :name "Lucy" :friend [{:db/id 5}]}])
-               (d/pull db '[:db/id :name {:friend ...}] 4)))))))
+               (d/pull db '[:db/id :name {:friend ...}] 4)))))
+    (d/close-db test-db)))
 
 (deftest test-dual-recursion
   (let [empty (d/empty-db nil {:part { :db/valueType :db.type/ref }
@@ -309,7 +320,8 @@
                     :part  {:db/id 3,
                             :part  {:db/id 1,
                                     :spec  {:db/id 2},
-                                    :part  {:db/id 2}}}}}))))
+                                    :part  {:db/id 2}}}}}))
+    (d/close-db db)))
 
 (deftest test-deep-recursion
   (let [start  100
@@ -330,4 +342,5 @@
                     (repeat (dec (- depth start)))
                     (into [] cat))]
     (is (= (str "Person-" (dec depth))
-           (:name (get-in pulled path))))))
+           (:name (get-in pulled path))))
+    (d/close-db db)))

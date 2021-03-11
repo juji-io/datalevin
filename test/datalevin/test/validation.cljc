@@ -30,7 +30,8 @@
     (is (thrown-with-msg? Throwable #"Unknown operation" (d/db-with db [["aaa" :name "Ivan"]])))
     (is (thrown-with-msg? Throwable #"Bad entity type at" (d/db-with db [:db/add "aaa" :name "Ivan"])))
     (is (thrown-with-msg? Throwable #"Tempids are allowed in :db/add only" (d/db-with db [[:db/retract -1 :name "Ivan"]])))
-    (is (thrown-with-msg? Throwable #"Bad transaction data" (d/db-with db {:profile "aaa"})))))
+    (is (thrown-with-msg? Throwable #"Bad transaction data" (d/db-with db {:profile "aaa"})))
+    (d/close-db db)))
 
 (deftest test-unique
   (let [db (d/db-with (d/empty-db nil {:name { :db/unique :db.unique/value }})
@@ -40,4 +41,5 @@
       [[:db/add 3 :name "Ivan"]]
       [{:db/add 3 :name "Petr"}])
     (d/db-with db [[:db/add 3 :name "Igor"]])
-    (d/db-with db [[:db/add 3 :nick "Ivan"]])))
+    (d/db-with db [[:db/add 3 :nick "Ivan"]])
+    (d/close-db db)))

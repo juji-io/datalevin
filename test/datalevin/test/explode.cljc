@@ -34,7 +34,8 @@
                #{["ok"]}))
         (is (= (d/q '[:find  ?v
                       :where [1 :aka ?v]] @conn)
-               #{["Devil"] ["Tupen"]}))))))
+               #{["Devil"] ["Tupen"]}))
+        (d/close conn)))))
 
 (deftest test-explode-ref
   (let [db0 (d/empty-db nil { :children { :db/valueType  :db.type/ref
@@ -56,7 +57,8 @@
              #{["Petr"] ["Evgeny"]})))
 
     (is (thrown-msg? "Bad attribute :_parent: reverse attribute name requires {:db/valueType :db.type/ref} in schema"
-                     (d/db-with db0 [{:name "Sergey" :_parent 1}])))))
+                     (d/db-with db0 [{:name "Sergey" :_parent 1}])))
+    (d/close-db db0)))
 
 (deftest test-explode-nested-maps-1
   (let [schema { :profile { :db/valueType :db.type/ref }}
@@ -65,7 +67,8 @@
                             :where [?e ?a ?v]]
                           (d/db-with db tx)) res)
       [ {:db/id 5 :name "Ivan" :profile {:db/id 7 :email "@2"}} ]
-      #{ [5 :name "Ivan"] [5 :profile 7] [7 :email "@2"] })))
+      #{ [5 :name "Ivan"] [5 :profile 7] [7 :email "@2"] })
+    (d/close-db db)))
 
 (deftest test-explode-nested-maps-2
   (let [schema { :profile { :db/valueType :db.type/ref }}
@@ -75,7 +78,8 @@
                           (d/db-with db tx)) res)
 
       [ {:name "Ivan" :profile {:email "@2"}} ]
-      #{ [1 :name "Ivan"] [1 :profile 2] [2 :email "@2"] })))
+      #{ [1 :name "Ivan"] [1 :profile 2] [2 :email "@2"] })
+    (d/close-db db)))
 
 (deftest test-explode-nested-maps-3
   (let [schema { :profile { :db/valueType :db.type/ref }}
@@ -85,7 +89,8 @@
                           (d/db-with db tx)) res)
 
       [ {:profile {:email "@2"}} ] ;; issue #59
-      #{ [1 :profile 2] [2 :email "@2"] })))
+      #{ [1 :profile 2] [2 :email "@2"] })
+    (d/close-db db)))
 
 (deftest test-explode-nested-maps-4
   (let [schema { :profile { :db/valueType :db.type/ref }}
@@ -95,7 +100,8 @@
                           (d/db-with db tx)) res)
 
       [ {:email "@2" :_profile {:name "Ivan"}} ]
-      #{ [1 :email "@2"] [2 :name "Ivan"] [2 :profile 1] })))
+      #{ [1 :email "@2"] [2 :name "Ivan"] [2 :profile 1] })
+    (d/close-db db)))
 
 (deftest test-explode-nested-maps-5
   (testing "multi-valued"
@@ -109,7 +115,8 @@
         #{ [5 :name "Ivan"] [5 :profile 7] [7 :email "@2"] }
 
         [ {:db/id 5 :name "Ivan" :profile [{:db/id 7 :email "@2"} {:db/id 8 :email "@3"}]} ]
-        #{ [5 :name "Ivan"] [5 :profile 7] [7 :email "@2"] [5 :profile 8] [8 :email "@3"] }))))
+        #{ [5 :name "Ivan"] [5 :profile 7] [7 :email "@2"] [5 :profile 8] [8 :email "@3"] })
+      (d/close-db db))))
 
 (deftest test-explode-nested-maps-6
   (testing "multi-valued"
@@ -124,7 +131,8 @@
         #{ [1 :name "Ivan"] [1 :profile 2] [2 :email "@2"] }
 
         [ {:name "Ivan" :profile [{:email "@2"} {:email "@3"}]} ]
-        #{ [1 :name "Ivan"] [1 :profile 2] [2 :email "@2"] [1 :profile 3] [3 :email "@3"] }))))
+        #{ [1 :name "Ivan"] [1 :profile 2] [2 :email "@2"] [1 :profile 3] [3 :email "@3"] })
+      (d/close-db db))))
 
 (deftest test-explode-nested-maps-7
   (testing "multi-valued"
@@ -139,8 +147,8 @@
         #{ [1 :email "@2"] [2 :name "Ivan"] [2 :profile 1] }
 
         [ {:email "@2" :_profile [{:name "Ivan"} {:name "Petr"} ]} ]
-        #{ [1 :email "@2"] [2 :name "Ivan"] [2 :profile 1] [3 :name "Petr"] [3 :profile 1] }
-        ))))
+        #{ [1 :email "@2"] [2 :name "Ivan"] [2 :profile 1] [3 :name "Petr"] [3 :profile 1] })
+      (d/close-db db))))
 
 (deftest test-circular-refs
   (let [schema {:comp {:db/valueType   :db.type/ref
@@ -150,7 +158,8 @@
                           [{:db/id 1, :comp [{:name "C"}]}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ])))
+            [ 2 :name "C"] ]))
+    (d/close-db db))
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many}}
@@ -158,7 +167,8 @@
                           [{:db/id 1, :comp [{:name "C"}]}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ])))
+            [ 2 :name "C"] ]))
+    (d/close-db db))
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/isComponent true}}
@@ -166,11 +176,13 @@
                           [{:db/id 1, :comp {:name "C"}}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ])))
+            [ 2 :name "C"] ]))
+    (d/close-db db))
 
   (let [schema {:comp {:db/valueType :db.type/ref}}
         db     (d/db-with (d/empty-db nil schema)
                           [{:db/id 1, :comp {:name "C"}}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
            [ [ 1 :comp 2  ]
-            [ 2 :name "C"] ]))))
+            [ 2 :name "C"] ]))
+    (d/close-db db)))

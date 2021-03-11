@@ -46,5 +46,5 @@
              [3]))
       (is (= (d/q '[:find (count ?name) .
                     :where [_ :name ?name]] test-db)
-             3))))
-  )
+             3)))
+    (d/close-db test-db)))

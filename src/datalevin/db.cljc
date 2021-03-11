@@ -296,6 +296,9 @@
      (s/load-datoms store datoms)
      (new-db store))))
 
+(defn close-db [^DB db]
+  (s/close ^Store (.-store db)))
+
 (defn db-from-reader [{:keys [schema datoms]}]
   (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))
 

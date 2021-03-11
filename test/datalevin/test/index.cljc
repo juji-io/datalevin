@@ -43,7 +43,8 @@
       (is (= [ [3 :age 11]
               [2 :age 25]
               [1 :age 44] ]
-             (map dvec (d/datoms db :avet :age)))))))
+             (map dvec (d/datoms db :avet :age)))))
+    (d/close-db db)))
 
 ;; should not expect attribute in lexicographic order
 ;; attributes are in order of creation
@@ -51,12 +52,12 @@
   (let [dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db nil {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
-               (d/db-with [[:db/add 1 :name "Petr"]
-                           [:db/add 1 :age 44]
-                           [:db/add 2 :name "Ivan"]
-                           [:db/add 2 :age 25]
-                           [:db/add 3 :name "Sergey"]
-                           [:db/add 3 :age 11]]))]
+                 (d/db-with [[:db/add 1 :name "Petr"]
+                             [:db/add 1 :age 44]
+                             [:db/add 2 :name "Ivan"]
+                             [:db/add 2 :age 25]
+                             [:db/add 3 :name "Sergey"]
+                             [:db/add 3 :age 11]]))]
 
     (testing "Non-termination"
       (is (= (map dvec (d/seek-datoms db :avet :age 10))
@@ -79,19 +80,20 @@
               [3 :name "Sergey"]
               [3 :age 11]
               [2 :age 25]
-              [1 :age 44]])))))
+              [1 :age 44]])))
+    (d/close-db db)))
 
 ;; should not expect attributes in lexicographic order
 (deftest test-rseek-datoms
   (let [dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db nil {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
-               (d/db-with [[:db/add 1 :name "Petr"]
-                           [:db/add 1 :age 44]
-                           [:db/add 2 :name "Ivan"]
-                           [:db/add 2 :age 25]
-                           [:db/add 3 :name "Sergey"]
-                           [:db/add 3 :age 11]]))]
+                 (d/db-with [[:db/add 1 :name "Petr"]
+                             [:db/add 1 :age 44]
+                             [:db/add 2 :name "Ivan"]
+                             [:db/add 2 :age 25]
+                             [:db/add 3 :name "Sergey"]
+                             [:db/add 3 :age 11]]))]
 
     (testing "Non-termination"
       (is (= (map dvec (d/rseek-datoms db :avet :name "Petr"))
@@ -112,18 +114,19 @@
               [3 :age 11]
               [3 :name "Sergey"]
               [1 :name "Petr"]
-              [2 :name "Ivan"]])))))
+              [2 :name "Ivan"]])))
+    (d/close-db db)))
 
 (deftest test-index-range
   (let [dvec #(vector (:e %) (:a %) (:v %))
         db   (d/db-with
-              (d/empty-db nil {:name {:db/valueType :db.type/string}
-                               :age  {:db/valueType :db.type/long}})
-              [ { :db/id 1 :name "Ivan" :age 15 }
-               { :db/id 2 :name "Oleg" :age 20 }
-               { :db/id 3 :name "Sergey" :age 7 }
-               { :db/id 4 :name "Pavel" :age 45 }
-               { :db/id 5 :name "Petr" :age 20 } ])]
+               (d/empty-db nil {:name {:db/valueType :db.type/string}
+                                :age  {:db/valueType :db.type/long}})
+               [ { :db/id 1 :name "Ivan" :age 15 }
+                { :db/id 2 :name "Oleg" :age 20 }
+                { :db/id 3 :name "Sergey" :age 7 }
+                { :db/id 4 :name "Pavel" :age 45 }
+                { :db/id 5 :name "Petr" :age 20 } ])]
     (is (= (map dvec (d/index-range db :name "Pe" "S"))
            [ [5 :name "Petr"] ]))
     (is (= (map dvec (d/index-range db :name "O" "Sergey"))
@@ -159,4 +162,5 @@
             [1 :age 15]
             [2 :age 20]
             [5 :age 20]
-            [4 :age 45] ]))))
+            [4 :age 45] ]))
+    (d/close-db db)))

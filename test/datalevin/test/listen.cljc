@@ -37,4 +37,4 @@
             (dd/datom 4 :name "Evgeny" (+ tx0 3) false)]))
     (is (= (:tx-meta (second @reports))
            nil))
-    ))
+    (d/close conn)))

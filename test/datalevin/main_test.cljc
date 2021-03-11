@@ -46,12 +46,12 @@
         dbi "a"]
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
-    (d/close-kv db)
     (sut/copy src [dst] true)
     (let [db-copied (d/open-kv dst)]
       (d/open-dbi db-copied dbi)
       (is (= (d/get-value db-copied dbi "Hello") "Datalevin"))
-      (d/close-kv db-copied))))
+      (d/close-kv db-copied))
+    (d/close-kv db)))
 
 (deftest drop-test
   (let [dir (u/tmp-dir (str "datalevin-drop-test-" (UUID/randomUUID)))

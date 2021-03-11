@@ -193,7 +193,7 @@
                     :where [(ground ?in) _]]
                   [])
              #{})))
-    ))
+    (d/close-db db)))
 
 
 (deftest test-predicates
@@ -250,7 +250,8 @@
                     :where [?e :age ?a]
                     [(?pred $ ?e 10)]]
                   db pred)
-             #{[1] [3]})))))
+             #{[1] [3]})))
+    (d/close-db db)))
 
 
 (deftest test-exceptions

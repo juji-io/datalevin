@@ -23,7 +23,8 @@
     (are [eid msg] (thrown-msg? msg (d/entity db eid))
       [:name]     "Lookup ref should contain 2 elements: [:name]"
       [:name 1 2] "Lookup ref should contain 2 elements: [:name 1 2]"
-      [:age 10]   "Lookup ref attribute should be marked as :db/unique: [:age 10]")))
+      [:age 10]   "Lookup ref attribute should be marked as :db/unique: [:age 10]")
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-1
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -43,7 +44,8 @@
       "Nothing found for entity id [:name \"Oleg\"]"
 
       [[:db/add [:name "Oleg"] :age 10]]
-      "Nothing found for entity id [:name \"Oleg\"]")))
+      "Nothing found for entity id [:name \"Oleg\"]")
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-2
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -62,7 +64,8 @@
       {:db/id 1 :name "Ivan" :friend {:db/id 2}}
 
       [{:db/id 2 :_friend [:name "Ivan"]}]
-      {:db/id 1 :name "Ivan" :friend {:db/id 2}})))
+      {:db/id 1 :name "Ivan" :friend {:db/id 2}})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-3
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -73,7 +76,8 @@
       ;; lookup refs are resolved at intermediate DB value
       [[:db/add 3 :name "Oleg"]
        [:db/add 1 :friend [:name "Oleg"]]]
-      {:db/id 1 :name "Ivan" :friend {:db/id 3}})))
+      {:db/id 1 :name "Ivan" :friend {:db/id 3}})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-4
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -83,7 +87,8 @@
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
       ;; CAS
       [[:db.fn/cas [:name "Ivan"] :name "Ivan" "Oleg"]]
-      {:db/id 1 :name "Oleg"})))
+      {:db/id 1 :name "Oleg"})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-5
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -94,7 +99,8 @@
 
       [[:db/add 1 :friend 1]
        [:db.fn/cas 1 :friend [:name "Ivan"] 2]]
-      {:db/id 1 :name "Ivan" :friend {:db/id 2}})))
+      {:db/id 1 :name "Ivan" :friend {:db/id 2}})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-6
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -105,7 +111,8 @@
 
       [[:db/add 1 :friend 1]
        [:db.fn/cas 1 :friend 1 [:name "Petr"]]]
-      {:db/id 1 :name "Ivan" :friend {:db/id 2}})))
+      {:db/id 1 :name "Ivan" :friend {:db/id 2}})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-7
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -121,7 +128,8 @@
 
       [[:db/add 1 :friend 2]
        [:db/retract 1 :friend [:name "Petr"]]]
-      {:db/id 1 :name "Ivan"})))
+      {:db/id 1 :name "Ivan"})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-8
   (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
@@ -135,7 +143,8 @@
       {:db/id 1 :name "Ivan"}
 
       [[:db.fn/retractEntity [:name "Ivan"]]]
-      {:db/id 1})))
+      {:db/id 1})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-multi-1
   (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
@@ -152,7 +161,8 @@
 
       [[:db/add 1 :friends [:name "Petr"]]
        [:db/add 1 :friends [:name "Oleg"]]]
-      {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}})))
+      {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-multi-2
   (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
@@ -178,7 +188,8 @@
       {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}}
 
       [{:db/id 1 :friends [[:name "Petr"] 3]}]
-      {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}})))
+      {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}})
+    (d/close-db db)))
 
 (deftest test-lookup-refs-transact-multi-3
   (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
@@ -198,8 +209,8 @@
       {:db/id 1 :name "Ivan" :friends #{{:db/id 2}}}
 
       [{:db/id 2 :_friends [[:name "Ivan"] [:name "Oleg"]]}]
-      {:db/id 1 :name "Ivan" :friends #{{:db/id 2}}}
-      )))
+      {:db/id 1 :name "Ivan" :friends #{{:db/id 2}}})
+    (d/close-db db)))
 
 (deftest lookup-refs-index-access
   (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
@@ -246,7 +257,7 @@
 
       :friends [:name "Petr"] [:name "Oleg"]
       [[1 :friends 2] [1 :friends 3] [2 :friends 3]])
-    ))
+    (d/close-db db)))
 
 (deftest test-lookup-refs-query
   (let [schema {:name   { :db/unique :db.unique/identity }
@@ -330,4 +341,4 @@
                             db)))
 
       )
-    ))
+    (d/close-db db)))

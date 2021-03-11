@@ -40,7 +40,8 @@
                         [?eid1 :g ?g1]
                         [?eid1 :h ?h1]
                         [?eid2 :e ?e1]]
-                      db)))))
+                      db)))
+    (d/close-db db)))
 
 (deftest test-joins
   (let [db (-> (d/empty-db)
@@ -66,7 +67,8 @@
                   [?e2 :name ?n]] db)
            #{[1 1 "Ivan"]
              [3 3 "Ivan"]
-             [3 2 "Petr"]}))))
+             [3 2 "Petr"]}))
+    (d/close-db db)))
 
 
 (deftest test-q-many
@@ -85,7 +87,8 @@
            #{["Ivan" "Ivan"]
              ["Petr" "Petr"]
              ["Ivan" "Petr"]
-             ["Petr" "Ivan"]}))))
+             ["Petr" "Ivan"]}))
+    (d/close-db db)))
 
 
 (deftest test-q-coll
@@ -146,7 +149,8 @@
       (is (= (d/q '[:find ?a ?b
                     :in   ?a ?b]
                   10 20)
-             #{[10 20]})))))
+             #{[10 20]})))
+    (d/close-db db)))
 
 (deftest test-bindings
   (let [db (-> (d/empty-db)
@@ -213,7 +217,7 @@
       (is (thrown-with-msg? ExceptionInfo #"Not enough elements in a collection \[:a\] to bind tuple \[\?a \?b\]"
                             (d/q '[:find ?a ?b :in [?a ?b]] [:a]))))
 
-    ))
+    (d/close-db db)))
 
 (deftest test-nested-bindings
   (is (= (d/q '[:find  ?k ?v
@@ -251,7 +255,6 @@
               "X")
          #{["abcX"] ["aXb"]})))
 
-
 (deftest test-some-strings
   (let [conn (d/create-conn nil {:id   {:db/valueType :db.type/long}
                                  :text {:db/valueType :db.type/string}})]
@@ -261,4 +264,5 @@
            (d/q '[:find (pull ?e [*])
                   :where
                   [?e :id 3]]
-                @conn)))))
+                @conn)))
+    (d/close conn)))

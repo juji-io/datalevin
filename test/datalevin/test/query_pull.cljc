@@ -29,7 +29,8 @@
       #{[2 25 {:name "Ivan"}] [1 44 {:name "Petr"}]}
 
       '[?e (pull ?e [:name]) ?a]
-      #{[2 {:name "Ivan"} 25] [1 {:name "Petr"} 44]})))
+      #{[2 {:name "Ivan"} 25] [1 {:name "Petr"} 44]})
+    (d/close-db test-db)))
 
 (deftest test-var-pattern
   (let [test-db (d/db-with (d/empty-db)
@@ -46,7 +47,8 @@
       #{[{:name "Ivan"}] [{:name "Petr"}]}
 
       '[?e ?a ?pattern (pull ?e ?pattern)] [:name]
-      #{[2 25 [:name] {:name "Ivan"}] [1 44 [:name] {:name "Petr"}]})))
+      #{[2 25 [:name] {:name "Ivan"}] [1 44 [:name] {:name "Petr"}]})
+    (d/close-db test-db)))
 
 ;; not supported
 #_(deftest test-multi-pattern
@@ -80,7 +82,9 @@
                          :in $1 $
                          :where [$ ?e :age 25]]
                        db1 db2))
-             #{[1 {:name "Petr"}]})))))
+             #{[1 {:name "Petr"}]})))
+    (d/close-db db1)
+    (d/close-db db2)))
 
 (deftest test-find-spec
   (let [test-db (d/db-with (d/empty-db)
@@ -105,7 +109,8 @@
     (is (= (d/q '[:find [?e (pull ?e [:name])]
                   :where [?e :age 25]]
                 test-db)
-           [2 {:name "Ivan"}]))))
+           [2 {:name "Ivan"}]))
+    (d/close-db test-db)))
 
 (deftest test-find-spec-input
   (let [test-db (d/db-with (d/empty-db)
@@ -121,7 +126,8 @@
                   :in $ p
                   :where [(ground 2) ?e]]
                 test-db [:name])
-           {:name "Ivan"}))))
+           {:name "Ivan"}))
+    (d/close-db test-db)))
 
 (deftest test-aggregates
   (let [db (d/db-with (d/empty-db nil {:value {:db/cardinality :db.cardinality/many}})
@@ -133,7 +139,8 @@
                      db))
            #{[1 {:name "Petr"} 10 40]
              [2 {:name "Ivan"} 14 16]
-             [3 {:name "Oleg"} 1 1]}))))
+             [3 {:name "Oleg"} 1 1]}))
+    (d/close-db db)))
 
 (deftest test-lookup-refs
   (let [db (d/db-with (d/empty-db nil {:name { :db/unique :db.unique/identity }})
@@ -146,7 +153,8 @@
                        [(>= ?a 18)]]
                      db [[:name "Ivan"] [:name "Oleg"] [:name "Petr"]]))
            #{[[:name "Petr"] 44 {:db/id 1 :name "Petr"}]
-             [[:name "Ivan"] 25 {:db/id 2 :name "Ivan"}]}))))
+             [[:name "Ivan"] 25 {:db/id 2 :name "Ivan"}]}))
+    (d/close-db db)))
 
 (deftest test-cardinality-many
   (let [dir  (u/tmp-dir (str "datalevin-test-cardinality-" (UUID/randomUUID)))
@@ -162,7 +170,8 @@
       (is (= #{"Pete" "Pepe"}
              (set (:alias (first (d/q '[:find [(pull ?e [*]) ...]
                                         :where [?e :name "Peter"]]
-                                      @conn2)))))))))
+                                      @conn2))))))
+      (d/close conn2))))
 
 (deftest test-readme
   (let [dir  (u/tmp-dir (str "datalevin-test-readme-" (UUID/randomUUID)))
@@ -187,4 +196,5 @@
                   :where
                   [?e :aka ?alias]]
                 @conn
-                "fred")))))
+                "fred")))
+    (d/close conn)))

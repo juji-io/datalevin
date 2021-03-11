@@ -409,6 +409,10 @@
       (nil? @conn)
       (s/closed? ^Store (.-store ^DB @conn))))
 
+(def ^{:arglists '([db])
+       :doc      "Close the Datalog database"}
+  close-db db/close-db)
+
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
   (let [report (atom nil)]

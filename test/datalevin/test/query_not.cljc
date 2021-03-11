@@ -89,11 +89,11 @@
 
 (deftest test-default-source
   (let [db1 (d/db-with (d/empty-db)
-             [ [:db/add 1 :name "Ivan" ]
-               [:db/add 2 :name "Oleg"] ])
+                       [ [:db/add 1 :name "Ivan" ]
+                        [:db/add 2 :name "Oleg"] ])
         db2 (d/db-with (d/empty-db)
-             [ [:db/add 1 :age 10 ]
-               [:db/add 2 :age 20] ])]
+                       [ [:db/add 1 :age 10 ]
+                        [:db/add 2 :age 20] ])]
     (are [q res] (= (set (d/q (concat '[:find [?e ...]
                                         :in   $ $2
                                         :where]
@@ -128,7 +128,9 @@
       ;; can override nested NOT source
       [[?e :name]
        ($2 not ($ not [?e :name "Ivan"]))]
-      #{1})))
+      #{1})
+    (d/close-db db1)
+    (d/close-db db2)))
 
 
 (deftest test-impl-edge-cases

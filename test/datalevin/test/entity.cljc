@@ -36,17 +36,18 @@
     (is (= (pr-str (let [e (d/entity db 1)] (:unknown e) e)) "{:db/id 1}"))
     ;; read back in to account for unordered-ness
     (is (= (edn/read-string (pr-str (let [e (d/entity db 1)] (:name e) e)))
-           (edn/read-string "{:name \"Ivan\", :db/id 1}")))))
+           (edn/read-string "{:name \"Ivan\", :db/id 1}")))
+    (d/close-db db)))
 
 (deftest test-entity-refs
   (let [db (-> (d/empty-db nil {:father   {:db/valueType :db.type/ref}
                                 :children {:db/valueType   :db.type/ref
                                            :db/cardinality :db.cardinality/many}})
                (d/db-with
-                [{:db/id 1, :children [10]}
-                 {:db/id 10, :father 1, :children [100 101]}
-                 {:db/id 100, :father 10}
-                 {:db/id 101, :father 10}]))
+                 [{:db/id 1, :children [10]}
+                  {:db/id 10, :father 1, :children [100 101]}
+                  {:db/id 100, :father 10}
+                  {:db/id 101, :father 10}]))
         e  #(d/entity db %)]
 
     (is (= (:children (e 1))   #{(e 10)}))
@@ -75,7 +76,8 @@
       (is (= (:_children (e 10)) #{(e 1)}))
       (is (= (:_father   (e 10)) #{(e 100) (e 101)}))
       (is (= (-> (e 100) :_children first :_children) #{(e 1)}))
-      )))
+      )
+    (d/close-db db)))
 
 (deftest test-entity-misses
   (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
@@ -87,4 +89,5 @@
     (is (nil? (d/entity db [:name "Petr"])))
     (is (= 777 (:db/id (d/entity db 777))))
     (is (thrown-msg? "Lookup ref attribute should be marked as :db/unique: [:not-an-attr 777]"
-                     (d/entity db [:not-an-attr 777])))))
+                     (d/entity db [:not-an-attr 777])))
+    (d/close-db db)))

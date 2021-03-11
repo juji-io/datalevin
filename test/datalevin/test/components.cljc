@@ -18,11 +18,11 @@
                    (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
   (let [db      (d/db-with
-                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
-                                            :db/isComponent true}})
-                 [{:db/id 1 :name "Ivan" :profile 3}
-                  {:db/id 3 :email "@3"}
-                  {:db/id 4 :email "@4"}])
+                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                             :db/isComponent true}})
+                  [{:db/id 1 :name "Ivan" :profile 3}
+                   {:db/id 3 :email "@3"}
+                   {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
         touched #(visible (d/touch %))]
 
@@ -49,7 +49,9 @@
     (testing "retractAttribute"
       (let [db (d/db-with db [[:db.fn/retractAttribute 1 :profile]])]
         (is (= (d/q '[:find ?a ?v :where [3 ?a ?v]] db)
-               #{}))))))
+               #{}))))
+    (d/close-db db)))
+
 
 (deftest test-components-2
   (is (thrown-msg? "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"
@@ -58,26 +60,27 @@
                    (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
   (let [db      (d/db-with
-                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
-                                            :db/isComponent true}})
-                 [{:db/id 1 :name "Ivan" :profile 3}
-                  {:db/id 3 :email "@3"}
-                  {:db/id 4 :email "@4"}])
+                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                             :db/isComponent true}})
+                  [{:db/id 1 :name "Ivan" :profile 3}
+                   {:db/id 3 :email "@3"}
+                   {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
         _       #(visible (d/touch %))]
 
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
-             {:db/id 1})))))
+             {:db/id 1})))
+    (d/close-db db)))
 
 (deftest test-components-multival-1
   (let [db      (d/db-with
-                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
-                                            :db/cardinality :db.cardinality/many
-                                            :db/isComponent true}})
-                 [{:db/id 1 :name "Ivan" :profile [3 4]}
-                  {:db/id 3 :email "@3"}
-                  {:db/id 4 :email "@4"}])
+                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                             :db/cardinality :db.cardinality/many
+                                             :db/isComponent true}})
+                  [{:db/id 1 :name "Ivan" :profile [3 4]}
+                   {:db/id 3 :email "@3"}
+                   {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
         touched #(visible (d/touch %))]
 
@@ -96,19 +99,21 @@
     (testing "retractAttribute"
       (let [db (d/db-with db [[:db.fn/retractAttribute 1 :profile]])]
         (is (= (d/q '[:find ?a ?v :in $ [?e ...] :where [?e ?a ?v]] db [3 4])
-               #{}))))))
+               #{}))))
+    (d/close-db db)))
 
 (deftest test-components-multival-2
   (let [db      (d/db-with
-                 (d/empty-db nil {:profile {:db/valueType   :db.type/ref
-                                            :db/cardinality :db.cardinality/many
-                                            :db/isComponent true}})
-                 [{:db/id 1 :name "Ivan" :profile [3 4]}
-                  {:db/id 3 :email "@3"}
-                  {:db/id 4 :email "@4"}])
+                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+                                             :db/cardinality :db.cardinality/many
+                                             :db/isComponent true}})
+                  [{:db/id 1 :name "Ivan" :profile [3 4]}
+                   {:db/id 3 :email "@3"}
+                   {:db/id 4 :email "@4"}])
         visible #(edn/read-string (pr-str %))
         _       #(visible (d/touch %))]
 
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
-             {:db/id 1})))))
+             {:db/id 1})))
+    (d/close-db db)))

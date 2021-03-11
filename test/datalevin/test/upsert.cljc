@@ -67,7 +67,7 @@
                {:name "Ivan" :email "@1" :age 36}))
         (is (= (tempids tx)
                {-1 1}))))
-    ))
+    (d/close-db db)))
 
 (deftest test-upsert-2
   (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
@@ -127,7 +127,7 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {3 3}))))
-    ))
+    (d/close-db db)))
 
 (deftest test-upsert-3
   (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
@@ -146,7 +146,7 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {-1 3}))))
-    ))
+    (d/close-db db)))
 
 (deftest test-upsert-4
   (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
@@ -181,7 +181,7 @@
                {:name "Ivan" :email "@1" :slugs #{"ivan1" "ivan2"}}))
         (is (thrown-with-msg? Throwable #"Conflicting upserts:"
                               (d/with (:db-after tx) [{:slugs ["ivan1" "petr1"]}])))))
-    ))
+    (d/close-db db)))
 
 
 (deftest test-redefining-ids
@@ -192,14 +192,16 @@
     (is (= #{[1 :age 36] [1 :name "Ivan"]}
            (tdc/all-datoms (:db-after tx))))
     (is (= {-1 1, :db/current-tx (+ tx0 2)}
-           (:tempids tx))))
+           (:tempids tx)))
+    (d/close-db db))
 
   (let [db (-> (d/empty-db nil {:name { :db/unique :db.unique/identity }})
                (d/db-with [{:db/id -1 :name "Ivan"}
                            {:db/id -2 :name "Oleg"}]))]
     (is (thrown-with-msg? Throwable #"Conflicting upsert: -1 resolves both to 1 and 2"
                           (d/with db [{:db/id -1 :name "Ivan" :age 35}
-                                      {:db/id -1 :name "Oleg" :age 36}])))))
+                                      {:db/id -1 :name "Oleg" :age 36}])))
+    (d/close-db db)))
 
 ;; https://github.com/tonsky/datascript/issues/285
 (deftest test-retries-order
@@ -209,7 +211,8 @@
                            [:db/add -1 :name "Bob"]
                            [:db/add -2 :name "Bob"]]))]
     (is (= {:db/id 1, :name "Bob", :likes "Pizza", :age 42}
-           (tdc/entity-map db 1))))
+           (tdc/entity-map db 1)))
+    (d/close-db db))
 
   (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
                (d/db-with [[:db/add -1 :age 42]
@@ -217,7 +220,8 @@
                            [:db/add -2 :name "Bob"]
                            [:db/add -1 :name "Bob"]]))]
     (is (= {:db/id 2, :name "Bob", :likes "Pizza", :age 42}
-           (tdc/entity-map db 2)))))
+           (tdc/entity-map db 2)))
+    (d/close-db db)))
 
 (deftest test-vector-upsert
   (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
@@ -229,7 +233,8 @@
 
       [[:db/add -1 :age 12]
        [:db/add -1 :name "Ivan"]]
-      #{[1 :age 12] [1 :name "Ivan"]}))
+      #{[1 :age 12] [1 :name "Ivan"]})
+    (d/close-db db))
 
   (let [db (-> (d/empty-db nil {:name { :db/unique :db.unique/identity }})
                (d/db-with [[:db/add -1 :name "Ivan"]
@@ -238,4 +243,5 @@
                           (d/with db [[:db/add -1 :name "Ivan"]
                                       [:db/add -1 :age 35]
                                       [:db/add -1 :name "Oleg"]
-                                      [:db/add -1 :age 36]])))))
+                                      [:db/add -1 :age 36]])))
+    (d/close-db db)))
