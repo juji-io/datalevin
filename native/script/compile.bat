@@ -79,6 +79,3 @@ call %GRAALVM_HOME%\bin\native-image.cmd ^
   dtlv
 
 if %errorlevel% neq 0 exit /b %errorlevel%
-
-echo Creating zip archive
-jar -cMf dtlv-windows-amd64.zip dtlv.exe
