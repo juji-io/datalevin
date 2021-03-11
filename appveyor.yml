@@ -57,7 +57,7 @@ after_build:
     7z a dtlv-%APPVEYOR_REPO_TAG_NAME%-windows-amd64.zip %APPVEYOR_BUILD_FOLDER%\native\dtlv.exe
 
 artifacts:
-- path: dtlv-$env:APPVEYOR_REPO_TAG_NAME-windows-amd64.zip
+  - path: dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
 
 deploy:
   provider: GitHub
