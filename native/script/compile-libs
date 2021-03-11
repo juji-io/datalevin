@@ -1,6 +1,0 @@
-#!/bin/bash
-
-set -eou pipefail
-
-cd src/c
-make
