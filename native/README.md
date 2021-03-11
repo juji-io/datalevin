@@ -13,26 +13,25 @@ steps in your native image build script:
    into yours.
 2. Download [Datalevin's C
    source](https://github.com/juji-io/datalevin/releases/download/0.4.25/datalevin-c-source-0.4.25.zip),
-   unzip, [run
-   `make`](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L19)
-   in it, and add the path to your
+   unzip, run [`make`](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L19) (or [`cmake`](https://github.com/juji-io/datalevin/blob/869f4099cf12eb4a21a7518630088d8e9f3bb324/native/script/compile.bat#L20) on Windows) in it, and add the path to your
    [CLibraryPath](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L34).
 
 
 Step 2 is necessary because native Datalevin contains GraalVM specific code, and
-compiling these requires C header files. It is easier and less
-error prone to download our C source and replicate how Datalevin compiles native
-image.
+compiling them requires our C header files. It is easier and less error prone to
+download our C source tree and replicate how Datalevin compiles native image.
 
 For CI/CD, you may want to consult our simple [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)
 (for Linux/MacOS) and
 [Appveoyor](https://github.com/juji-io/datalevin/blob/master/appveyor.yml) (for
-Windows) yaml config files. Below are what they do:
+Windows) yaml config files. Below are descriptions of what they do:
 
 ## Build Native Datalevin
 
-Assuming that you can build JVM Datalevin already, i.e. you have [JDK](https://openjdk.java.net/) and [lein](https://leiningen.org/), here are the steps to build native Datalevin on your platform.
+Assuming that you can build JVM Datalevin already, i.e. you have
+[JDK](https://openjdk.java.net/) and [lein](https://leiningen.org/), here are
+the steps to build native Datalevin on your platform.
 
 ### Linux/MacOS
 
@@ -40,12 +39,13 @@ Assuming that you can build JVM Datalevin already, i.e. you have [JDK](https://o
 2. [Intsall GraalVM native image](https://www.graalvm.org/reference-manual/native-image/)
 3. Run `script/compile`.
 
-This requires essential Unix build tools, i.e. `gcc`, `make`, and so on. E.g.
+This requires essential Unix build tools, i.e. `gcc`, `make`, and so on. I.e.
 you need [Xcode Command Line Tools](https://developer.apple.com/xcode/) on
-MacOS; `sudo apt-get install build-essential` on Debian/Ubuntu, .
+MacOS; `sudo apt-get install build-essential` on Debian/Ubuntu, for example.
 
 If the compilation is successful, two binaries will appear in this directory:
-`dtlv ` and `dtlv-test`. The former is the Datalevin command line shell, and the latter runs all the Datalevin tests in native mode.
+`dtlv ` and `dtlv-test`. The former is the Datalevin command line shell, and the
+latter runs all the Datalevin tests in native mode.
 
 ### Windows
 
