@@ -1,7 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dtlv.h"
+
+#ifdef _WIN32
 #include "unistd.h"
+#endif
 
 int dtlv_cmp_memn(const MDB_val *a, const MDB_val *b)
 {

@@ -2,7 +2,7 @@
 
 ## WIP
 ## Added
-- Compile to native on Windows
+- Compile to native on Windows and handle Windows path correctly
 - `close-db` convenience function to close a Datalog db
 
 ## 0.4.21

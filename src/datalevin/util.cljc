@@ -41,17 +41,18 @@
      :cljs "/"))
 
 (def +tmp+
-  (let [path #?(:clj (System/getProperty "java.io.tmpdir")
-               :default "/tmp/")]
-    (if-not (s/ends-with? path +separator+)
-      (str path +separator+)
-      path)))
+  (s/escape (let [path #?(:clj (System/getProperty "java.io.tmpdir")
+                          :default "/tmp/")]
+              (if-not (s/ends-with? path +separator+)
+                (str path +separator+)
+                path))
+            char-escape-string))
 
 (defn tmp-dir
   "Given a directory name as a string, returns an platform
    neutral temporary directory path."
   ([] +tmp+)
-  ([dir] (str +tmp+ dir)))
+  ([dir] (str +tmp+ (s/escape dir char-escape-string))))
 
 ;; ----------------------------------------------------------------------------
 
