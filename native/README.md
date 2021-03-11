@@ -17,15 +17,17 @@ steps in your native image build script:
    [CLibraryPath](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L34).
 
 
-Step 2 is necessary because native Datalevin contains GraalVM specific code, and
-compiling them requires our C header files. It is easier and less error prone to
-download our C source tree and replicate how Datalevin compiles native image.
+Step 2 is necessary because native Datalevin contains [GraalVM specific
+code](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/),
+and compiling them requires our C header files. It is easier and less error
+prone to download our C source tree and replicate how Datalevin compiles native
+image.
 
 For CI/CD, you may want to consult our simple [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)
 (for Linux/MacOS) and
 [Appveoyor](https://github.com/juji-io/datalevin/blob/master/appveyor.yml) (for
-Windows) yaml config files. Below are descriptions of what they do:
+Windows) yaml config files. Below are some descriptions of what they do:
 
 ## Build Native Datalevin
 
