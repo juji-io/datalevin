@@ -9,10 +9,10 @@ application into a GraalVM native image, you need to integrate the following
 steps in your native image build script:
 
 1. Merge [Datalevin's
-   reflect-config.json](https://github.com/juji-io/datalevin/releases/download/0.4.23/reflect-config.json)
+   reflect-config.json](https://github.com/juji-io/datalevin/releases/download/0.4.24/reflect-config.json)
    into yours.
 2. Download [Datalevin's C
-   source](https://github.com/juji-io/datalevin/releases/download/0.4.23/datalevin-c-source-0.4.23.zip),
+   source](https://github.com/juji-io/datalevin/releases/download/0.4.24/datalevin-c-source-0.4.24.zip),
    unzip, [run
    `make`](https://github.com/juji-io/datalevin/blob/25acc097b07ca48626b628849a2c937d755b980c/native/script/compile#L19)
    in it, and add the path to your
