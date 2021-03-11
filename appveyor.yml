@@ -2,6 +2,12 @@
 
 version: "v-{build}"
 
+branches:
+  only:
+    - master
+
+skip_non_tags: true
+
 image: Visual Studio 2019
 
 configuration:
