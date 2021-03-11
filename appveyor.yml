@@ -51,10 +51,10 @@ build_script:
 
     call script\compile.bat
 
-    7z a dtlv-%APPVEYOR_REPO_TAG_NAME%-windows-amd64.zip %APPVEYOR_BUILD_FOLDER%\native\dtlv.exe
+    7z a dtlv-%APPVEYOR_REPO_TAG_NAME%-windows-amd64.zip dtlv.exe
 
 artifacts:
-  - path: dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
+  - path: native\dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
 
 deploy:
   provider: GitHub
