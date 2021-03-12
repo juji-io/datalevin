@@ -93,19 +93,43 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 [datalevin "0.4.25"]
 ```
 
-### Native image and command line tool
+### Native command line tool
 
-Datalevin supports compilation into a GraalVM native image, which should have
-better performance, for the native image version does not incur JNI
+Datalevin supports compilation into [GraalVM native
+image](https://www.graalvm.org/reference-manual/native-image/), which should
+have better performance, for the native image version does not incur JNI
 overhead and uses a comparator written in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
-The release contains a command line tool called `dtlv` that is built as a
-native image. It can be used to work with Datalevin databases in
-shell scripting, e.g. database backup/compaction, data import/export,
-query/transaction execution, and so on.
+A native command line tool is built to work with Datalevin databases in shell
+scripting, e.g. database backup/compaction, data import/export,
+query/transaction execution, and so on. Here is how to get it:
 
-Download the pre-built binary for amd64 platform:
+#### MacOS and Linux
+
+Install using [homebrew](https://brew.sh/)
+
+```console
+brew install huahaiy/brew/datalevin
+```
+
+#### Windows
+
+Install using [scoop](https://scoop.sh/)
+
+```console
+# Note: if you get an error you might need to change the execution policy (i.e. enable Powershell) with
+# Set-ExecutionPolicy RemoteSigned -scope CurrentUser
+Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://get.scoop.sh')
+
+scoop bucket add scoop-clojure https://github.com/littleli/scoop-clojure
+scoop bucket add extras
+scoop install datalevin
+```
+
+#### Direct Download
+
+Or download the binary from github:
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.25/dtlv-0.4.25-ubuntu-latest-amd64.zip)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.25/dtlv-0.4.25-macos-latest-amd64.zip)
