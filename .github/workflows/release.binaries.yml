@@ -1,4 +1,4 @@
-name: Release Datalevin Native Assets
+name: Build
 
 on:
   release:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Checkout repository and submodules
         uses: actions/checkout@v2
-        with: 
+        with:
           submodules: recursive
 
       - name: Setup Graalvm
@@ -72,4 +72,3 @@ jobs:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: native/config/reflect-config.json
           overwrite: true
-
