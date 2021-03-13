@@ -3,6 +3,9 @@
 <p align="center"> 🧘 Simple, fast and durable Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
+<img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg" alt="datalevin linux/macos build status"></img>
+<img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img>
+
 </p>
 
 ## :hear_no_evil: What and why

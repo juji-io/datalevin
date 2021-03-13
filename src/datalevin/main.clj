@@ -14,6 +14,7 @@
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
+            [pod.huahaiy.datalevin :as pod]
             [datalevin.binding.graal]
             [datalevin.binding.java])
   (:import [java.io PushbackReader IOException]
