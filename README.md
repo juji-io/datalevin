@@ -207,7 +207,7 @@ If your application depends on Datalevin and want to compile to GraalVM native i
        :where
        [?e :aka ?alias]
        [?e :nation ?nation]]
-     @conn
+     (d/db conn)
      "fred")
 ;; => #{["France"]}
 
@@ -219,7 +219,7 @@ If your application depends on Datalevin and want to compile to GraalVM native i
        :in $ ?alias
        :where
        [?e :aka ?alias]]
-     @conn
+     (d/db conn)
      "fred")
 ;; => ([{:db/id 1, :aka ["foo" "fred"], :nation "France"}])
 
@@ -390,9 +390,7 @@ are applicable to Datascript.
 
 * Currently only supports Clojure on JVM, but adding support for other
   Clojure-hosting runtime is possible, since bindings for LMDB
-  exist in almost all major languages and available on most platforms. However,
-  I would prefer other languages to work with GraalVM compiled native library
-  when it is available, so I only need to maintain one language binding.
+  exist in almost all major languages and available on most platforms.
 
 ## :shopping: Alternatives
 

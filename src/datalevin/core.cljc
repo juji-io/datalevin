@@ -623,7 +623,7 @@ given. Return reference to the database.
 (defn db
   "Returns the underlying database value from a connection.
 
-   Exists for Datomic API compatibility. Prefer using `@conn` directly if possible."
+   Exists for Datomic API compatibility. "
   [conn]
   {:pre [(conn? conn)]}
   @conn)

@@ -3,7 +3,8 @@
   (:require [bencode.core :as bencode]
             [datalevin.core :as d]
             [clojure.edn :as edn]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [clojure.string :as s])
   (:import [java.io PushbackInputStream]
            [java.nio.charset StandardCharsets])
   (:gen-class))
@@ -39,15 +40,20 @@
 
 (defn- transact! [])
 
+(defn- db [])
+
 (defn- q [])
 
+(def exposed-vars
+  {'get-conn  get-conn
+   'close     close
+   'transact! transact!
+   'db        db
+   'q         q})
+
 (def lookup
-  (let [m {'get-conn  get-conn
-           'close     close
-           'transact! transact!
-           'q         q}]
-    (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys m))
-            (vals m))))
+  (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
+          (vals exposed-vars)))
 
 (defn run []
   (loop []
@@ -60,10 +66,9 @@
           (case op
             :describe (do (write {"format"     "edn"
                                   "namespaces" [{"name" "pod.huahaiy.datalevin"
-                                                 "vars" [{"name" "get-conn"}
-                                                         {"name" "close"}
-                                                         {"name" "transact!"}
-                                                         {"name" "q"}]}]
+                                                 "vars"
+                                                 (mapv (fn [v] {"name" (name v)})
+                                                       exposed-vars)}]
                                   "id"         id})
                           (recur))
             :invoke   (do (try
