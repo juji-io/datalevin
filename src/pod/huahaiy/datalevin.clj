@@ -1,14 +1,16 @@
 (ns pod.huahaiy.datalevin
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
-            [datalevin.core :as dtlv]
+            [datalevin.core :as d]
             [clojure.edn :as edn]
             [clojure.java.io :as io])
   (:import [java.io PushbackInputStream]
            [java.nio.charset StandardCharsets])
   (:gen-class))
 
-(def debug? false)
+(def pod-ns "pod.huahaiy.datalevin")
+
+(def debug? true)
 (defn debug [& args]
   (when debug?
     (binding [*out* (io/writer "/tmp/debug.log" :append true)]
@@ -26,14 +28,28 @@
 (defn read []
   (bencode/read-bencode stdin))
 
-(def lookup
-  {'pod.borkdude.clj-kondo/merge-configs clj-kondo/merge-configs
-   'pod.borkdude.clj-kondo/print*        (fn [& args]
-                                           (with-out-str
-                                             (apply clj-kondo/print! args)))
-   'pod.borkdude.clj-kondo/run!          clj-kondo/run!})
+(def dl-conns (atom {}))
+(def dl-dbs (atom {}))
 
-(defn run-pod []
+(def kv-dbs (atom {}))
+
+(defn- get-conn [])
+
+(defn- close [])
+
+(defn- transact! [])
+
+(defn- q [])
+
+(def lookup
+  (let [m {'get-conn  get-conn
+           'close     close
+           'transact! transact!
+           'q         q}]
+    (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys m))
+            (vals m))))
+
+(defn run []
   (loop []
     (let [message (try (read)
                        (catch java.io.EOFException _
@@ -44,14 +60,10 @@
           (case op
             :describe (do (write {"format"     "edn"
                                   "namespaces" [{"name" "pod.huahaiy.datalevin"
-                                                 "vars" [{"name" "merge-configs"}
-                                                         {"name" "print*"}
-                                                         {"name" "print!"
-                                                          "code" "
-(defn print! [run-output]
-  (print (print* run-output))
-  (flush))"}
-                                                         {"name" "run!"}]}]
+                                                 "vars" [{"name" "get-conn"}
+                                                         {"name" "close"}
+                                                         {"name" "transact!"}
+                                                         {"name" "q"}]}]
                                   "id"         id})
                           (recur))
             :invoke   (do (try

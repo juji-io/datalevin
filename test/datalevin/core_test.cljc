@@ -220,9 +220,8 @@
     (sut/close conn)))
 
 (deftest other-language-test
-  (let [schema {:bug {:db/valueType :db.type/string}}
-        dir    (u/tmp-dir (str "datalevin-other-lang-test-" (UUID/randomUUID)))
-        conn   (sut/get-conn dir schema)]
+  (let [dir  (u/tmp-dir (str "datalevin-other-lang-test-" (UUID/randomUUID)))
+        conn (sut/get-conn dir)]
     (sut/transact! conn [{:german "Ümläüt"}])
     (is (= '([{:db/id 1 :german "Ümläüt"}])
            (sut/q '[:find (pull ?e [*])

@@ -22,8 +22,10 @@
 ;; Entities
 
 (def ^{:arglists '([db eid])
-       :doc      "Retrieves an entity by its id from database. Entities are lazy
-             map-like structures to navigate Datalevin database content.
+       :doc      "Retrieves an entity by its id from Datalog database. Entities
+are lazy map-like structures to navigate Datalevin database content.
+
+             `db` is a Datalog database.
 
              For `eid` pass entity id or lookup attr:
 
@@ -34,7 +36,8 @@
 
                  (entity db 100500) ; => nil
 
-             Creating an entity by id is very cheap, almost no-op, as attr access is on-demand:
+             Creating an entity by id is very cheap, almost no-op, as attr access
+is on-demand:
 
                  (entity db 1) ; => {:db/id 1}
 
@@ -52,45 +55,57 @@
                  (:ref (entity db 1)) ; => {:db/id 2}
                  (:ns/ref (entity db 1)) ; => {:db/id 2}
 
-             References can be walked backwards by prepending `_` to name part of an attribute:
+             References can be walked backwards by prepending `_` to name part
+of an attribute:
 
                  (:_ref (entity db 2)) ; => [{:db/id 1}]
                  (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
 
-             Reverse reference lookup returns sequence of entities unless attribute is marked as `:db/component`:
+             Reverse reference lookup returns sequence of entities unless
+attribute is marked as `:db/component`:
 
                  (:_component-ref (entity db 2)) ; => {:db/id 1}
 
              Entity gotchas:
 
-             - Entities print as map, but are not exactly maps (they have compatible get interface though).
+             - Entities print as map, but are not exactly maps (they have
+compatible get interface though).
              - Entities retain reference to the database.
              - You can’t change database through entities, only read.
-             - Creating an entity by id is very cheap, almost no-op (attributes are looked up on demand).
-             - Comparing entities just compares their ids. Be careful when comparing entities taken from differenct dbs or from different versions of the same db.
-             - Accessed entity attributes are cached on entity itself (except backward references).
-             - When printing, only cached attributes (the ones you have accessed before) are printed. See [[touch]]."}
+             - Creating an entity by id is very cheap, almost no-op
+(attributes are looked up on demand).
+             - Comparing entities just compares their ids. Be careful when
+comparing entities taken from differenct dbs or from different versions of the
+same db.
+             - Accessed entity attributes are cached on entity itself (except
+backward references).
+             - When printing, only cached attributes (the ones you have accessed
+before) are printed. See [[touch]]."}
   entity de/entity)
 
 
 (def ^{:arglists '([db eid])
        :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.
 
+             `db` is a Datalog database.
+
              If entity does not exist, returns `nil`.
 
-             For numeric `eid` returns `eid` itself (does not check for entity existence in that case)."}
+             For numeric `eid` returns `eid` itself (does not check for entity
+existence in that case)."}
   entid db/entid)
 
 
 (defn entity-db
-  "Returns a db that entity was created from."
+  "Returns a Datalog db that entity was created from."
   [^Entity entity]
   {:pre [(de/entity? entity)]}
   (.-db entity))
 
 
 (def ^{:arglists '([e])
-       :doc      "Forces all entity attributes to be eagerly fetched and cached. Only usable for debug output.
+       :doc      "Forces all entity attributes to be eagerly fetched and cached.
+Only usable for debug output.
 
              Usage:
 
@@ -104,7 +119,8 @@
 ;; Pull API
 
 (def ^{:arglists '([db selector eid])
-       :doc      "Fetches data from database using recursive declarative description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
+       :doc      "Fetches data from Datalog database using recursive declarative
+description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
              Unlike [[entity]], returns plain Clojure map (not lazy).
 
@@ -119,7 +135,8 @@
 
 
 (def ^{:arglists '([db selector eids])
-       :doc      "Same as [[pull]], but accepts sequence of ids and returns sequence of maps.
+       :doc      "Same as [[pull]], but accepts sequence of ids and returns
+sequence of maps.
 
              Usage:
 
@@ -151,7 +168,9 @@
 ;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema])
-       :doc      "Open database at the given data directory. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
+       :doc      "Open Datalog database at the given data directory. Creates an
+empty database there if it does not exist yet. Update the schema if one is
+given. Return reference to the database.
 
              Usage:
 
@@ -166,7 +185,8 @@
 
 
 (def ^{:arglists '([x])
-       :doc      "Returns `true` if the given value is an database, `false` otherwise."}
+       :doc      "Returns `true` if the given value is a Datalog database,
+`false` otherwise."}
   db? db/db?)
 
 
@@ -177,7 +197,6 @@
 
              See also [[init-db]]."}
   datom dd/datom)
-
 
 (def ^{:arglists '([x])
        :doc      "Returns `true` if the given value is a datom, `false` otherwise."}
@@ -786,7 +805,17 @@
                (js/parseInt 16)
                (* 1000))))
 
+;; -------------------------------------
+
 ;; key value store API
+
+(def ^{:arglists '([kv])
+       :doc      "key of a key value pair"}
+  k l/k)
+
+(def ^{:arglists '([kv])
+       :doc      "value of a key value pair"}
+  v l/v)
 
 (def ^{:arglists '([dir])
        :doc      "Open a LMDB key-value database, return the connection.
@@ -1051,8 +1080,8 @@
      Examples:
 
               (def pred (fn [kv]
-                         (let [^long k (read-buffer (key kv) :long)]
-                          (> k 15)))
+                         (let [^long lk (read-buffer (k kv) :long)]
+                          (> lk 15)))
 
               (get-some lmdb \"c\" pred [:less-than 20] :long :long)
               ;;==> [16 2]
@@ -1086,8 +1115,8 @@
      Examples:
 
               (def pred (fn [kv]
-                         (let [^long k (read-buffer (key kv) :long)]
-                          (> k 15)))
+                         (let [^long lk (read-buffer (k kv) :long)]
+                          (> lk 15)))
 
               (range-filter lmdb \"a\" pred [:less-than 20] :long :long)
               ;;==> [[16 2] [17 3]]
@@ -1118,8 +1147,8 @@
 
 
               (def pred (fn [kv]
-                         (let [^long k (read-buffer (key kv) :long)]
-                          (> k 15)))
+                         (let [^long lk (read-buffer (k kv) :long)]
+                          (> lk 15)))
 
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}

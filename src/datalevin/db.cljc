@@ -48,6 +48,11 @@
 
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
+#?(:clj
+   (defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
+     (binding [*out* w]
+       (pr {:datoms-transacted (count (:tx-data rp))}))))
+
 (defn db-transient [db]
   (-> db
       (assoc :eavt (set/sorted-set-by d/cmp-datoms-eavt))

@@ -2,27 +2,27 @@
   "API for Key Value Store"
   (:require [datalevin.util :as u]))
 
-(defprotocol ^:no-doc IBuffer
+(defprotocol IBuffer
   (put-key [this data k-type] "put data in key buffer")
   (put-val [this data v-type] "put data in val buffer"))
 
-(defprotocol ^:no-doc IRange
+(defprotocol IRange
   (range-info [this range-type k1 k2]
     "return necessary range information for iterators")
   (put-start-key [this data k-type] "put data in start-key buffer.")
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
-(defprotocol ^:no-doc IRtx
+(defprotocol IRtx
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
 
-(defprotocol ^:no-doc IRtxPool
+(defprotocol IRtxPool
   (close-pool [this] "Close all read-only transactions in the pool")
   (new-rtx [this] "Create a new read-only transaction")
   (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
 
-(defprotocol ^:no-doc IDB
+(defprotocol IDB
   (dbi-name [this] "Return string name of the dbi")
   (put [this txn] [this txn append?]
     "Put kv pair given in `put-key` and `put-val` of dbi")
@@ -30,7 +30,7 @@
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
   (iterate-kv [this rtx range-info] "Return an Iterable given the range"))
 
-(defprotocol ^:no-doc IKV
+(defprotocol IKV
   (k [this] "key of a key value pair")
   (v [this] "value of a key value pair"))
 

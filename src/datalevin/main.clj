@@ -1,13 +1,13 @@
 (ns datalevin.main
-  "Command line tool"
-  (:refer-clojure :exclude [drop])
+  "Database management commands"
+  (:refer-clojure :exclude [drop load])
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
             [clojure.pprint :as p]
             [clojure.java.io :as io]
-            [clojure.walk :as w]
             [clojure.edn :as edn]
             [clojure.stacktrace :as st]
+            [clojure.walk :as w]
             [sci.core :as sci]
             [sci.impl.vars :as vars]
             [datalevin.core :as d]
@@ -21,16 +21,17 @@
            [java.lang RuntimeException])
   (:gen-class))
 
-(def version "0.4.25")
+(def ^:private version "0.4.25")
 
-(def version-str
+(def ^:private version-str
   (str
     "
   Datalevin (version: " version ")"))
 
-(def commands #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl"})
+(def ^:private commands
+  #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl"})
 
-(def stat-help
+(def ^:private stat-help
   "
   Command stat - show statistics of the main database or sub-database(s).
 
@@ -46,7 +47,7 @@
       dtlv -d /data/companydb -a stat
       dtlv -d /data/companydb stat sales products")
 
-(def dump-help
+(def ^:private dump-help
   "
   Command dump - dump the content of the database or sub-database(s).
 
@@ -66,7 +67,7 @@
       dtlv -d /data/companydb -f ~/sales-data dump sales
       dtlv -d /data/companydb -f ~/company-data -a dump")
 
-(def load-help
+(def ^:private load-help
   "
   Command load - load data into the database or a sub-database.
 
@@ -83,7 +84,7 @@
       dtlv -d /data/companydb -f ~/sales-data load new-sales
       dtlv -d /data/companydb -f ~/sales-data -g load")
 
-(def copy-help
+(def ^:private copy-help
   "
   Command copy - Copy the database. This can be done regardless of whether it is
   currently in use.
@@ -98,7 +99,7 @@
   Examples:
       dtlv -d /data/companydb -c copy /backup/companydb-2021-02-14")
 
-(def drop-help
+(def ^:private drop-help
   "
   Command drop - Drop or clear the content of sub-database(s).
 
@@ -112,7 +113,7 @@
   Examples:
       dtlv -d /data/companydb -D drop sales")
 
-(def exec-help
+(def ^:private exec-help
   "
   Command exec - Execute database transactions or queries.
 
@@ -127,7 +128,7 @@
                  (q (quote [:find ?e ?n :where [?e :name ?n]]) @conn) \\
                  (close conn)'")
 
-(def user-facing-ns #{'datalevin.core})
+(def ^:private user-facing-ns #{'datalevin.core})
 
 (defn- user-facing? [v]
   (let [m (meta v)]
@@ -158,6 +159,24 @@
     {}
     user-facing-ns))
 
+(defn- resolve-var [s]
+  (when (symbol? s)
+    (some #(ns-resolve % s) user-facing-ns)))
+
+(defn- qualify-fn [x]
+  (if (list? x)
+    (let [[f & args] x]
+      (if-let [var (resolve-var f)]
+        (apply list (symbol var) args)
+        x))
+    x))
+
+(defn- eval-fn [ctx form]
+  (sci/eval-form ctx (if (coll? form)
+                       (w/postwalk qualify-fn form)
+                       form)))
+
+(def ^:private sci-opts {:namespaces (user-facing-vars)})
 
 (defn- repl-help []
   (println "")
@@ -180,7 +199,7 @@
   (println "Type (doc <function>) to read documentation of the function")
   "")
 
-(def repl-header
+(def ^:private repl-header
   "
   Type (help) to see available functions. Clojure core functions are also available.
   Type (exit) to exit.
@@ -213,7 +232,7 @@
   (s/join \newline ["The following errors occurred while parsing your command:"
                     (s/join \newline errors)]))
 
-(def cli-opts
+(def ^:private cli-opts
   [["-a" "--all" "Include all of the sub-databases"]
    ["-c" "--compact" "Compact while copying"]
    ["-d" "--dir PATH" "Path to the database directory"]
@@ -224,14 +243,18 @@
    ["-l" "--list" "List the names of sub-databases instead of the content"]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
-(defn validate-args
+(defn ^:no-doc validate-args
   "Validate command line arguments. Either return a map indicating the program
   should exit (with a error message, and optional ok status), or a map
   indicating the action the program should take and the options provided."
   [args]
-  (let [{:keys [options arguments errors summary]} (parse-opts args cli-opts)
-        command                                    (first arguments)]
+  (let [{:keys [options arguments errors summary]}
+        (parse-opts args cli-opts)
+
+        command (first arguments)
+        pod?    (= "true" (System/getenv "BABASHKA_POD"))]
     (cond
+      pod?               {:command "pod"}
       (:version options) {:exit-message version-str :ok? true}
       (:help options)    {:exit-message (usage summary) :ok? true}
       errors             {:exit-message (str (error-msg errors)
@@ -267,27 +290,11 @@
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
 
-(defn- resolve-var [s]
-  (when (symbol? s)
-    (some #(ns-resolve % s) user-facing-ns)))
-
-(defn- qualify-fn [x]
-  (if (list? x)
-    (let [[f & args] x]
-      (if-let [var (resolve-var f)]
-        (apply list (symbol var) args)
-        x))
-    x))
-
-(defn- eval-fn [ctx form]
-  (sci/eval-form ctx (if (coll? form)
-                       (w/postwalk qualify-fn form)
-                       form)))
-
-(def sci-opts {:namespaces (user-facing-vars)})
-
-(defn exec [arguments]
-  (let [reader (sci/reader (s/join arguments))
+(defn exec
+  "Execute code and return results. `code` is a string. Acceptable code includes
+  Datalevin functions and Clojure core functions."
+  [code]
+  (let [reader (sci/reader code)
         ctx    (sci/init sci-opts)]
     (sci/with-bindings {sci/ns @sci/ns}
       (loop []
@@ -299,16 +306,20 @@
 (defn- dtlv-exec [arguments]
   (assert (seq arguments) (s/join \newline ["Missing code." exec-help]))
   (try
-    (exec arguments)
+    (exec (s/join arguments))
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Execution error: " (.getMessage e)))))
   (exit 0))
 
-(defn copy [dir arguments compact]
-  (let [lmdb (l/open-kv dir)]
+(defn copy
+  "Copy a database. `src-dir` is the source data directory path. `dest-dir` is
+  the destination data directory path. Will compact while copying if
+  `compact?` is true."
+  [src-dir dest-dir compact?]
+  (let [lmdb (l/open-kv src-dir)]
     (println "Opened database, copying...")
-    (l/copy lmdb (first arguments) compact)
+    (l/copy lmdb dest-dir compact?)
     (l/close-kv lmdb)
     (println "Copied database.")))
 
@@ -319,19 +330,23 @@
           (s/join \newline
                   ["Missing destination data directory path." copy-help]))
   (try
-    (copy dir arguments compact)
+    (copy dir (first arguments) compact)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Copy error: " (.getMessage e)))))
   (exit 0))
 
-(defn drop [dir arguments delete]
+(defn drop
+  "Drop (when `delete` is true) or clear (when `delete` is false) the list of
+  sub-database(s) named by `dbis` from the database at the data directory path
+  `dir`."
+  [dir dbis delete]
   (let [lmdb (l/open-kv dir)]
     (if delete
-      (doseq [dbi arguments]
+      (doseq [dbi dbis]
         (l/drop-dbi lmdb dbi)
         (println (str "Dropped " dbi)))
-      (doseq [dbi arguments]
+      (doseq [dbi dbis]
         (l/clear-dbi lmdb dbi)
         (println (str "Cleared " dbi))))
     (l/close-kv lmdb)))
@@ -363,23 +378,39 @@
     (doseq [datom (d/datoms @conn :eav)]
       (p/pprint datom))))
 
-(defn dump [file dir list datalog all arguments]
-  (let [f    (when file (io/writer file))
-        lmdb (l/open-kv dir)]
+(defn dump
+  "Dump database content. `src-dir` is the database directory path.
+
+  The content will be written to `dest-file` if given, or to stdout.
+
+  If `list?` is true, will list the names of the sub-databases only, not the
+  content.
+
+  If `datalog?` is true, will dump the whole database as a Datalog store,
+  including the schema and all the datoms.
+
+  If `all?` is true, will dump raw data of all the sub-databases.
+
+  If `dbis` is not empty, will dump raw data of only the named sub-databases."
+  [src-dir dest-file dbis list? datalog? all?]
+  (let [f    (when dest-file (io/writer dest-file))
+        lmdb (l/open-kv src-dir)]
     (binding [*out* (or f *out*)]
       (cond
-        list            (p/pprint (set (l/list-dbis lmdb)))
-        datalog         (dump-datalog dir)
-        all             (dump-all lmdb)
-        (seq arguments) (doseq [dbi arguments] (dump-dbi lmdb dbi))
-        :else           (println dump-help)))
+        list?      (p/pprint (set (l/list-dbis lmdb)))
+        datalog?   (dump-datalog src-dir)
+        all?       (dump-all lmdb)
+        (seq dbis) (doseq [dbi dbis] (dump-dbi lmdb dbi))
+        :else      (println dump-help)))
     (l/close-kv lmdb)
-    (when f (.close f))))
+    (when f
+      (.flush f)
+      (.close f))))
 
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))
   (try
-    (dump file dir list datalog all arguments)
+    (dump dir file arguments list datalog all)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Dump error: " (.getMessage e)))))
@@ -445,22 +476,33 @@
     (catch Exception e
       (raise "Error loading raw data: " (ex-message e) {}))))
 
+(defn load
+  "Load content into the database at data directory path `dir`,
+  from `src-file` if given, or from stdin.
+
+  If `datalog?` is true, the content are schema and datoms, otherwise they are
+  raw data.
+
+  Will load raw data into the named sub-database `dbi` if given. "
+  [dir src-file dbi datalog?]
+  (let [f    (when src-file (PushbackReader. (io/reader src-file)))
+        in   (or f *in*)
+        lmdb (l/open-kv dir)]
+    (cond
+      datalog? (load-datalog dir in)
+      dbi      (load-dbi lmdb dbi in)
+      :else    (load-all lmdb in))
+    (l/close-kv lmdb)
+    (when f (.close f))))
+
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." load-help]))
   (try
-    (let [f    (when file (PushbackReader. (io/reader file)))
-          in   (or f *in*)
-          lmdb (l/open-kv dir)]
-      (cond
-        datalog         (load-datalog dir in)
-        (seq arguments) (load-dbi lmdb (first arguments) in)
-        :else           (load-all lmdb in))
-      (l/close-kv lmdb)
-      (when f (.close f))
-      (exit 0))
+    (load dir file (first arguments) datalog)
     (catch Throwable e
       (st/print-cause-trace e)
-      (exit 1 (str "Load error: " (.getMessage e))))))
+      (exit 1 (str "Load error: " (.getMessage e)))))
+  (exit 0))
 
 ;; TODO show reader info and free list info as well
 (defn- dtlv-stat [{:keys [dir all]} arguments]
@@ -537,6 +579,7 @@
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (case command
+        "pod"  (pod/run)
         "repl" (dtlv-repl)
         "exec" (dtlv-exec arguments)
         "copy" (dtlv-copy options arguments)
