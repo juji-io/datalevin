@@ -39,7 +39,7 @@ lein uberjar
     --verbose \
     --no-fallback \
     --no-server \
-    "-J-Xmx8g" \
+    "-J-Xmx4g" \
     --native-image-info \
     -jar "$MAIN_JAR" \
     ${app_name}
@@ -61,7 +61,7 @@ lein with-profile test-uberjar uberjar
     --verbose \
     --no-fallback \
     --no-server \
-    "-J-Xmx8g" \
+    "-J-Xmx4g" \
     --native-image-info \
     -jar "$TEST_JAR" \
     ${test_name}
