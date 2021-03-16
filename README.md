@@ -172,9 +172,37 @@ Type 'dtlv help <command>' to read about a specific command.
 
 Launch `dtlv` in `rlwrap` to get a better REPL experience, i.e. `rlwrap dtlv`.
 
+### Babashka pod
+
+`dtlv` program can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
+
+```console
+$ rlwrap bb
+Babashka v0.2.13 REPL.
+Use :repl/quit or :repl/exit to quit the REPL.
+Clojure rocks, Bash reaches.
+
+user=> (require '[babashka.pods :as pods])
+nil
+user=> (pods/load-pod "./dtlv")
+#:pod{:id "pod.huahaiy.datalevin"}
+user=> (require '[pod.huahaiy.datalevin :as d])
+nil
+user=> (def conn (d/get-conn "/tmp/bb-test"))
+#'user/conn
+user=> (d/transact! conn [{:name "hello"}])
+{:datoms-transacted 1}
+user=> (d/q '[:find ?n :where [_ :name ?n]] (d/db conn))
+#{["hello"]}
+user=> (d/close conn)
+nil
+```
+
 If your application depends on Datalevin and want to compile to GraalVM native image, read this [note](https://github.com/juji-io/datalevin/tree/master/native).
 
 ## :tada: Library Usage
+
+Datalevin is aimed to be a versatile database.
 
 ### Use as a Datalog store
 
