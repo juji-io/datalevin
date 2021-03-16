@@ -21,7 +21,7 @@
            [java.lang RuntimeException])
   (:gen-class))
 
-(def ^:private version "0.4.25")
+(def ^:private version "0.4.26")
 
 (def ^:private version-str
   (str

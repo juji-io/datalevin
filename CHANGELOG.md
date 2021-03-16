@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.26
+## Added
+- Native Datalevin can now work as a Babashka pod
+
 ## 0.4.23
 ## Added
 - Compile to native on Windows and handle Windows path correctly
