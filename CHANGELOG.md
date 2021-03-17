@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.27
 - Exposed more functions to Babashka pod
 
 ## 0.4.26
