@@ -1,5 +1,8 @@
 # Change Log
 
+## WIP
+- Exposed more functions to Babashka pod
+
 ## 0.4.26
 ## Added
 - Native Datalevin can now work as a Babashka pod
