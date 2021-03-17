@@ -18,7 +18,8 @@
             [datalevin.binding.graal]
             [datalevin.binding.java])
   (:import [java.io PushbackReader IOException]
-           [java.lang RuntimeException])
+           [java.lang RuntimeException]
+           [datalevin.datom Datom])
   (:gen-class))
 
 (def ^:private version "0.4.26")
@@ -375,7 +376,7 @@
 (defn- dump-datalog [dir]
   (let [conn (d/create-conn dir)]
     (p/pprint (d/schema conn))
-    (doseq [datom (d/datoms @conn :eav)]
+    (doseq [^Datom datom (d/datoms @conn :eav)]
       (p/pprint datom))))
 
 (defn dump

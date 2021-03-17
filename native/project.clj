@@ -4,7 +4,8 @@
   :description "Datalevin GraalVM native image and command line tool"
   :parent-project {:path    "../project.clj"
                    :inherit [:managed-dependencies :profiles :jvm-opts
-                             :deploy-repositories :global-vars :javac-options]}
+                             :deploy-repositories :global-vars :javac-options
+                             :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
                  [persistent-sorted-set]
@@ -16,6 +17,7 @@
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]
+                 [babashka/babashka.pods]
                  [org.clojure/test.check]]
   :source-paths ["src/clj" "../src" "../test"]
   :java-source-paths ["src/java"]

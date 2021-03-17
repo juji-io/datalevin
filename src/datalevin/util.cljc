@@ -121,6 +121,10 @@
      (ImageInfo/inImageCode)))
 
 #?(:clj
+   (defn windows? []
+     (s/starts-with? (System/getProperty "os.name") "Windows")))
+
+#?(:clj
    (defn- get-sig [method]
      ;; expects something like '(method-symbol [arg arg arg] ...)
      ;; if the thing matches, returns [fully-qualified-symbol arity], otherwise nil

@@ -4,7 +4,7 @@
       :clj  [clojure.test :as t :refer        [is deftest testing]])
    [datalevin.core :as d]))
 
-(def ^:private test-schema
+(def test-schema
   {:aka    { :db/cardinality :db.cardinality/many }
    :child  { :db/cardinality :db.cardinality/many
             :db/valueType    :db.type/ref }

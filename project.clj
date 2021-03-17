@@ -14,6 +14,7 @@
                          [org.graalvm.sdk/graal-sdk "21.0.0.2"]
                          [org.graalvm.nativeimage/svm "21.0.0.2"]
                          [borkdude/sci "0.2.4"]
+                         [babashka/babashka.pods "0.0.1-SNAPSHOT"]
                          [com.taoensso/nippy "3.1.1"]
                          [persistent-sorted-set "0.1.2"]
                          [org.lmdbjava/lmdbjava "0.8.1"
@@ -26,23 +27,27 @@
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [org.clojure/tools.cli]
-                 [persistent-sorted-set]
                  [borkdude/sci]
                  [com.cognitect/transit-clj]
                  [cheshire/cheshire]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
+                 [persistent-sorted-set]
                  [org.graalvm.nativeimage/svm]
-                 [org.lmdbjava/lmdbjava]
-                 [org.clojure/test.check]]
+                 [org.lmdbjava/lmdbjava]]
   :source-paths ["src" "native/src/clj" "test"]
   :java-source-paths ["native/src/java"]
-  :profiles {:uberjar      {:aot          :all
+  :profiles {:uberjar      {:aot          [#"^datalevin.*"
+                                           pod.huahaiy.datalevin],
                             :main         datalevin.main
                             :uberjar-name "main.uberjar.jar"}
-             :test-uberjar {:aot          :all
-                            :main         datalevin.test
-                            :uberjar-name "test.uberjar.jar"}}
+             :test-uberjar {:main         datalevin.test
+                            :aot          [#"^datalevin.*"]
+                            :uberjar-name "test.uberjar.jar"}
+             :dev          {:dependencies
+                            [[org.clojure/test.check]
+                             [babashka/babashka.pods]]}}
+  :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "-Dclojure.compiler.direct-linking=true"]

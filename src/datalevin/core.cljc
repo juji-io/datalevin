@@ -211,6 +211,10 @@ given. Return reference to the database.
              See also [[datom]]."}
   init-db db/init-db)
 
+(def ^{:arglists '([db])
+       :doc      "Close the Datalog database"}
+  close-db db/close-db)
+
 ;; Changing DB
 
 (defn ^:no-doc with
@@ -427,10 +431,6 @@ given. Return reference to the database.
   (or (nil? conn)
       (nil? @conn)
       (s/closed? ^Store (.-store ^DB @conn))))
-
-(def ^{:arglists '([db])
-       :doc      "Close the Datalog database"}
-  close-db db/close-db)
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}

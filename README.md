@@ -184,7 +184,7 @@ Clojure rocks, Bash reaches.
 
 user=> (require '[babashka.pods :as pods])
 nil
-user=> (pods/load-pod "./dtlv")
+user=> (pods/load-pod "dtlv")
 #:pod{:id "pod.huahaiy.datalevin"}
 user=> (require '[pod.huahaiy.datalevin :as d])
 nil
