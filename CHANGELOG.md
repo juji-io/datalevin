@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.28
 ### Added
 - Datafy/nav for entity [Thanks @den1k]
 - Some datom convenience functions, e.g. `datom-eav`, `datom-e`, etc.
