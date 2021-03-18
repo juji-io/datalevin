@@ -328,6 +328,9 @@
 
 (deftype ^:no-doc Indexable [e a v f b h])
 
+(defn pr-idexable [^Indexable i]
+  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-h i)])
+
 (defn ^:no-doc indexable
   "Turn datom parts into a form that is suitable for putting in indices,
   where aid is the integer id of an attribute, vt is its :db/valueType"

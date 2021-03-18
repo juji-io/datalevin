@@ -157,6 +157,7 @@
 
 #?(:clj
    (defmethod print-method Datom [^Datom d, ^java.io.Writer w]
+     (.write w (str "#datalevin/Datom "))
      (binding [*out* w]
        (pr [(.-e d) (.-a d) (.-v d)]))))
 
@@ -255,3 +256,11 @@
     (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
     (cmp-attr-quick (.-a d1) (.-a d2))
     (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+
+(defn datom-e [^Datom d] (.-e d))
+
+(defn datom-a [^Datom d] (.-a d))
+
+(defn datom-v [^Datom d] (.-v d))
+
+(defn datom-eav [^Datom d] [(.-e d) (.-a d) (.-v d)])

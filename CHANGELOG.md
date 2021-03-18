@@ -1,6 +1,14 @@
 # Change Log
 
+## WIP
+### Added
+- Datafy/nav for entity [Thanks @den1k]
+- Some datom convenience functions, e.g. `datom-eav`, `datom-e`, etc.
+### Changed
+- Talk to Babashka pods client in transit+json
+
 ## 0.4.27
+## Added
 - Exposed more functions to Babashka pod
 
 ## 0.4.26

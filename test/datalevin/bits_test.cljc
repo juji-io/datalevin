@@ -6,7 +6,8 @@
             [clojure.test :refer [deftest is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop])
+            [clojure.test.check.properties :as prop]
+            [datalevin.bits :as b])
   (:import [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
@@ -206,7 +207,13 @@
     (.clear bf1)
     (sut/put-buffer bf1 dmin :eav)
     (.flip bf1)
-    (is (>= (bf-compare bf bf1) 0))
+    (is (>= (bf-compare bf bf1) 0)
+        (do
+          (.rewind bf)
+          (.rewind bf1)
+          (str "v: " v
+               " d: " (b/hexify (b/get-bytes bf))
+               " dmin: " (b/hexify (b/get-bytes bf1)))))
     (.clear bf1)
     (sut/put-buffer bf1 dmax :eav)
     (.flip bf1)
@@ -218,7 +225,13 @@
     (.clear bf1)
     (sut/put-buffer bf1 dmin :ave)
     (.flip bf1)
-    (is (>=(bf-compare bf bf1) 0))
+    (is (>=(bf-compare bf bf1) 0)
+        (do
+          (.rewind bf)
+          (.rewind bf1)
+          (str "v: " v
+               " d: " (b/hexify (b/get-bytes bf))
+               " dmin: " (b/hexify (b/get-bytes bf1)))))
     (.clear bf1)
     (sut/put-buffer bf1 dmax :ave)
     (.flip bf1)
@@ -237,21 +250,23 @@
 (test/defspec symbol-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/symbol-ns]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/symbol)
-                 (sut/indexable e a c/v0 :db.type/symbol)
-                 (sut/indexable e a c/vmax :db.type/symbol))))
+    [v  gen/symbol-ns]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/symbol)
+                  (sut/indexable e a c/v0 :db.type/symbol)
+                  (sut/indexable e a c/vmax :db.type/symbol))))
 
+;; null character "^@" is a special case
 (test/defspec string-extrema-generative-test
   100
   (prop/for-all
-   [v  (gen/such-that (partial string-size-less-than? c/+val-bytes-wo-hdr+)
-                      gen/string)]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/string)
-                 (sut/indexable e a c/v0 :db.type/string)
-                 (sut/indexable e a c/vmax :db.type/string))))
+    [v  (gen/such-that #(and (string-size-less-than? c/+val-bytes-wo-hdr+ %)
+                             (not= "^@" %))
+                       gen/string)]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/string)
+                  (sut/indexable e a c/v0 :db.type/string)
+                  (sut/indexable e a c/vmax :db.type/string))))
 
 (test/defspec boolean-extrema-generative-test
   5

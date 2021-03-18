@@ -9,12 +9,10 @@
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
                          [com.cognitect/transit-clj "1.0.324"]
-                         [cheshire/cheshire "5.10.0"]
                          [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.0.0.2"]
                          [org.graalvm.nativeimage/svm "21.0.0.2"]
                          [borkdude/sci "0.2.4"]
-                         [babashka/babashka.pods "0.0.1-SNAPSHOT"]
                          [com.taoensso/nippy "3.1.1"]
                          [persistent-sorted-set "0.1.2"]
                          [org.lmdbjava/lmdbjava "0.8.1"
@@ -29,7 +27,6 @@
                  [org.clojure/tools.cli]
                  [borkdude/sci]
                  [com.cognitect/transit-clj]
-                 [cheshire/cheshire]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
                  [persistent-sorted-set]
@@ -46,7 +43,7 @@
                             :uberjar-name "test.uberjar.jar"}
              :dev          {:dependencies
                             [[org.clojure/test.check]
-                             [babashka/babashka.pods]]}}
+                             [babashka/babashka.pods "0.0.1"]]}}
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"

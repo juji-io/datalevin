@@ -2,12 +2,14 @@
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
             [datalevin.core :as d]
-            [clojure.edn :as edn]
+            [datalevin.datom :as dd]
+            [cognitect.transit :as transit]
             [clojure.java.io :as io]
-            [clojure.walk :as w]
-            [datalevin.util :as u])
+            [clojure.walk :as w])
   (:import [java.io PushbackInputStream]
            [java.nio.charset StandardCharsets]
+           [datalevin.datom Datom]
+           [datalevin.db TxReport]
            [java.util UUID])
   (:gen-class))
 
@@ -72,18 +74,13 @@
   (when-let [d (get @dl-dbs db)]
     (d/db? d)))
 
-(defn- ->datom [x]
-  (if (d/datom? x)
-    x
-    (apply d/datom x)))
-
 (defn init-db
   ([datoms]
    (init-db datoms nil nil))
   ([datoms dir]
    (init-db datoms dir nil))
   ([datoms dir schema]
-   (let [db (d/init-db (map ->datom datoms) dir schema)
+   (let [db (d/init-db (map #(apply dd/datom %) datoms) dir schema)
          id (UUID/randomUUID)]
      (swap! dl-dbs assoc id db)
      {::db id})))
@@ -94,42 +91,53 @@
 
 (defn datoms
   ([{:keys [::db]} index]
-   (when-let [d (get @dl-dbs db)] (d/datoms d index)))
+   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/datoms d index))))
   ([{:keys [::db]} index c1]
-   (when-let [d (get @dl-dbs db)] (d/datoms d index c1)))
+   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/datoms d index c1))))
   ([{:keys [::db]} index c1 c2]
-   (when-let [d (get @dl-dbs db)] (d/datoms d index c1 c2)))
+   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/datoms d index c1 c2))))
   ([{:keys [::db]} index c1 c2 c3]
-   (when-let [d (get @dl-dbs db)] (d/datoms d index c1 c2 c3)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/datoms d index c1 c2 c3))))
   ([{:keys [::db]} index c1 c2 c3 c4]
-   (when-let [d (get @dl-dbs db)] (d/datoms d index c1 c2 c3 c4))))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/datoms d index c1 c2 c3 c4)))))
 
 (defn seek-datoms
   ([{:keys [::db]} index]
-   (when-let [d (get @dl-dbs db)] (d/seek-datoms d index)))
+   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/seek-datoms d index))))
   ([{:keys [::db]} index c1]
-   (when-let [d (get @dl-dbs db)] (d/seek-datoms d index c1)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/seek-datoms d index c1))))
   ([{:keys [::db]} index c1 c2]
-   (when-let [d (get @dl-dbs db)] (d/seek-datoms d index c1 c2)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/seek-datoms d index c1 c2))))
   ([{:keys [::db]} index c1 c2 c3]
-   (when-let [d (get @dl-dbs db)] (d/seek-datoms d index c1 c2 c3)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/seek-datoms d index c1 c2 c3))))
   ([{:keys [::db]} index c1 c2 c3 c4]
-   (when-let [d (get @dl-dbs db)] (d/seek-datoms d index c1 c2 c3 c4))))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/seek-datoms d index c1 c2 c3 c4)))))
 
 (defn rseek-datoms
   ([{:keys [::db]} index]
-   (when-let [d (get @dl-dbs db)] (d/rseek-datoms d index)))
+   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/rseek-datoms d index))))
   ([{:keys [::db]} index c1]
-   (when-let [d (get @dl-dbs db)] (d/rseek-datoms d index c1)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/rseek-datoms d index c1))))
   ([{:keys [::db]} index c1 c2]
-   (when-let [d (get @dl-dbs db)] (d/rseek-datoms d index c1 c2)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/rseek-datoms d index c1 c2))))
   ([{:keys [::db]} index c1 c2 c3]
-   (when-let [d (get @dl-dbs db)] (d/rseek-datoms d index c1 c2 c3)))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3))))
   ([{:keys [::db]} index c1 c2 c3 c4]
-   (when-let [d (get @dl-dbs db)] (d/rseek-datoms d index c1 c2 c3 c4))))
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3 c4)))))
 
 (defn index-range [{:keys [::db]} attr start end]
-  (when-let [d (get @dl-dbs db)] (d/index-range d attr start end)))
+  (when-let [d (get @dl-dbs db)]
+    (map dd/datom-eav (d/index-range d attr start end))))
 
 (defn conn? [{:keys [::conn]}]
   (when-let [c (get @dl-conns conn)] (d/conn? c)))
@@ -159,7 +167,8 @@
    (transact! conn tx-data nil))
   ([{:keys [::conn]} tx-data tx-meta]
    (when-let [c (get @dl-conns conn)]
-     (d/transact! c tx-data tx-meta))))
+     (let [rp (d/transact! c tx-data tx-meta)]
+       {:datoms-transacted (count (:tx-data rp))}))))
 
 (defn db [{:keys [::conn]}]
   (when-let [c (get @dl-conns conn)]
@@ -380,6 +389,16 @@
   (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
           (vals exposed-vars)))
 
+(defn read-transit [^String v]
+  (transit/read
+    (transit/reader
+      (java.io.ByteArrayInputStream. (.getBytes v "utf-8")) :json)))
+
+(defn write-transit [v]
+  (let [baos (java.io.ByteArrayOutputStream.)]
+    (transit/write (transit/writer baos :json) v)
+    (.toString baos "utf-8")))
+
 (defn run []
   (loop []
     (let [message (try (read)
@@ -389,7 +408,7 @@
         (let [op (-> message (get "op") read-string keyword)
               id (or (some-> message (get "id") read-string) "unknown")]
           (case op
-            :describe (do (write {"format"     "edn"
+            :describe (do (write {"format"     "transit+json"
                                   "namespaces" [{"name" "pod.huahaiy.datalevin"
                                                  "vars"
                                                  (mapv (fn [k] {"name" (name k)})
@@ -402,11 +421,11 @@
                           (let [var  (-> (get message "var")
                                          read-string
                                          symbol)
-                                args (->> (get message "args")
-                                          read-string
-                                          edn/read-string)]
+                                args (-> (get message "args")
+                                         read-string
+                                         read-transit)]
                             (if-let [f (lookup var)]
-                              (let [value (pr-str (apply f args))
+                              (let [value (write-transit (apply f args))
                                     reply {"value"  value
                                            "id"     id
                                            "status" ["done"]}]
@@ -416,15 +435,16 @@
                             (binding [*out* *err*]
                               (println e))
                             (let [reply {"ex-message" (.getMessage e)
-                                         "ex-data"    (pr-str
+                                         "ex-data"    (write-transit
                                                         (assoc (ex-data e)
-                                                               :type (class e)))
+                                                               :type
+                                                               (str (class e))))
                                          "id"         id
                                          "status"     ["done" "error"]}]
                               (write reply))))
                         (recur))
-            :shutdown (do (doseq [conn @dl-conns] (d/close conn))
-                          (doseq [db @kv-dbs] (d/close-kv db))
+            :shutdown (do (doseq [conn (vals @dl-conns)] (d/close conn))
+                          (doseq [db (vals @kv-dbs)] (d/close-kv db))
                           (System/exit 0))
             (do
               (write {"err" (str "unknown op:" (name op))})

@@ -202,6 +202,17 @@ given. Return reference to the database.
        :doc      "Returns `true` if the given value is a datom, `false` otherwise."}
   datom? dd/datom?)
 
+(def ^{:arglists '([d])
+       :doc      "Return the entity id of a datom"}
+  datom-e dd/datom-e)
+
+(def ^{:arglists '([d])
+       :doc      "Return the attribute id of a datom"}
+  datom-a dd/datom-a)
+
+(def ^{:arglists '([d])
+       :doc      "Return the value id of a datom"}
+  datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
        :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms.
@@ -423,7 +434,8 @@ given. Return reference to the database.
   "Close the connection"
   [conn]
   (s/close ^Store (.-store ^DB @conn))
-  (reset! conn nil))
+  (reset! conn nil)
+  nil)
 
 (defn closed?
   "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
@@ -810,11 +822,11 @@ given. Return reference to the database.
 ;; key value store API
 
 (def ^{:arglists '([kv])
-       :doc      "key of a key value pair"}
+       :doc      "Key of a key value pair"}
   k l/k)
 
 (def ^{:arglists '([kv])
-       :doc      "value of a key value pair"}
+       :doc      "Value of a key value pair"}
   v l/v)
 
 (def ^{:arglists '([dir])

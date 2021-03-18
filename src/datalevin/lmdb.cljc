@@ -1,5 +1,5 @@
-(ns ^:no-doc datalevin.lmdb
-  "API for Key Value Store"
+(ns datalevin.lmdb
+  "API for LMDB Key Value Store"
   (:require [datalevin.util :as u]))
 
 (defprotocol IBuffer
@@ -31,8 +31,8 @@
   (iterate-kv [this rtx range-info] "Return an Iterable given the range"))
 
 (defprotocol IKV
-  (k [this] "key of a key value pair")
-  (v [this] "value of a key value pair"))
+  (k [this] "Key of a key value pair")
+  (v [this] "Value of a key value pair"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
