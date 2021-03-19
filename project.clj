@@ -15,6 +15,7 @@
                          [borkdude/sci "0.2.4"]
                          [com.taoensso/nippy "3.1.1"]
                          [persistent-sorted-set "0.1.2"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.3"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -30,6 +31,7 @@
                  [nrepl/bencode]
                  [com.taoensso/nippy]
                  [persistent-sorted-set]
+                 [org.roaringbitmap/RoaringBitmap]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]]
   :source-paths ["src" "native/src/clj" "test"]

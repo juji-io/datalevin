@@ -15,6 +15,7 @@
                  [com.taoensso/nippy]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
+                 [org.roaringbitmap/RoaringBitmap]
                  [org.lmdbjava/lmdbjava]
                  [org.clojure/test.check]]
   :source-paths ["src/clj" "../src" "../test"]
