@@ -185,7 +185,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare handle-batch)
+(declare load-batch)
 
 (deftype Store [lmdb
                 ^:volatile-mutable schema
@@ -256,7 +256,7 @@
                                c/+tx-datom-batch-size+
                                nil
                                datoms)]
-        (handle-batch this batch))))
+        (load-batch this batch))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -411,14 +411,18 @@
 (defn- handle-entities [holder batch]
   holder)
 
-(defn- handle-batch [^Store store batch]
-  (let [holder (transient [])]
-    (lmdb/transact-kv
-      (.-lmdb store)
-      (persistent!
-        (reduce (partial handle-datom store)
-                (handle-entities holder batch)
-                batch)))))
+(defn- cmp-ea [^Datom d1 ^Datom d2]
+  (d/combine-cmp
+    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (d/cmp-attr-quick (.-a d1) (.-a d2))))
+
+(defn- load-batch [^Store store batch]
+  (let [batch  (sort cmp-ea batch)
+        holder (transient [])]
+    (lmdb/transact-kv (.-lmdb store)
+                      (persistent! (reduce (partial handle-datom store)
+                                           (handle-entities holder batch)
+                                           batch)))))
 
 (defn open
   "Open and return the storage."
