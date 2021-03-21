@@ -9,6 +9,7 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
+           [org.roaringbitmap RoaringBitmap]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -207,6 +208,9 @@
 
 ;; nippy
 
+;; TODO PR to nippy to work with bf directly
+;; https://github.com/ptaoussanis/nippy/issues/140
+
 (nippy/extend-freeze Datom :datalevin/datom
                      [^Datom x ^DataOutput out]
                      (.writeLong out (.-e x))
@@ -214,19 +218,25 @@
                      (nippy/freeze-to-out! out (.-v x)))
 
 (nippy/extend-thaw :datalevin/datom
- [^DataInput in]
- (d/datom (.readLong in)
-          (nippy/thaw-from-in! in)
-          (nippy/thaw-from-in! in)
-          c/tx0))
+                   [^DataInput in]
+                   (d/datom (.readLong in)
+                            (nippy/thaw-from-in! in)
+                            (nippy/thaw-from-in! in)))
 
-;; datom
+(nippy/extend-freeze RoaringBitmap :datalevin/bitmap
+                     [^RoaringBitmap x ^DataOutput out]
+                     (.serialize x out))
 
-(defn- put-datom
-  [bf ^Datom x]
+(nippy/extend-thaw :datalevin/bitmap
+                   [^DataInput in]
+                   (doto (RoaringBitmap.)
+                     (.deserialize in)))
+
+(defn- put-nippy
+  [bf x]
   (put-bytes bf (nippy/freeze x)))
 
-(defn- get-datom
+(defn- get-nippy
   [bb]
   (nippy/thaw (get-bytes bb)))
 
@@ -552,7 +562,8 @@
      :uuid    (do (put-byte bf (raw-header x :uuid))
                   (put-uuid bf x))
      :attr    (put-attr bf x)
-     :datom   (put-datom bf x)
+     :datom   (put-nippy bf x)
+     :bitmap  (put-nippy bf x)
      :eav     (put-eav bf x)
      :eavt    (put-eav bf x)
      :ave     (put-ave bf x)
@@ -581,7 +592,8 @@
      :instant (do (get-byte bf) (Date. ^long (get-long bf)))
      :uuid    (do (get-byte bf) (get-uuid bf))
      :attr    (get-attr bf)
-     :datom   (get-datom bf)
+     :datom   (get-nippy bf)
+     :bitmap  (get-nippy bf)
      :eav     (get-eav bf)
      :eavt    (get-eav bf)
      :ave     (get-ave bf)

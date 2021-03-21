@@ -6,11 +6,11 @@
             [clojure.test :refer [deftest is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop]
-            [datalevin.bits :as b])
+            [clojure.test.check.properties :as prop])
   (:import [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
+           [org.roaringbitmap RoaringBitmap]
            [datalevin.bits Indexable Retrieved]))
 
 ;; bytes <-> text
@@ -207,13 +207,7 @@
     (.clear bf1)
     (sut/put-buffer bf1 dmin :eav)
     (.flip bf1)
-    (is (>= (bf-compare bf bf1) 0)
-        (do
-          (.rewind bf)
-          (.rewind bf1)
-          (str "v: " v
-               " d: " (b/hexify (b/get-bytes bf))
-               " dmin: " (b/hexify (b/get-bytes bf1)))))
+    (is (>= (bf-compare bf bf1) 0))
     (.clear bf1)
     (sut/put-buffer bf1 dmax :eav)
     (.flip bf1)
@@ -225,13 +219,7 @@
     (.clear bf1)
     (sut/put-buffer bf1 dmin :ave)
     (.flip bf1)
-    (is (>=(bf-compare bf bf1) 0)
-        (do
-          (.rewind bf)
-          (.rewind bf1)
-          (str "v: " v
-               " d: " (b/hexify (b/get-bytes bf))
-               " dmin: " (b/hexify (b/get-bytes bf1)))))
+    (is (>=(bf-compare bf bf1) 0))
     (.clear bf1)
     (sut/put-buffer bf1 dmax :ave)
     (.flip bf1)
@@ -667,3 +655,12 @@
       (is (= e (.-e r)))
       (is (= a (.-a r)))
       (is (= v (.-v r))))))
+
+(deftest bitmap-roundtrip-test
+  (let [rr (RoaringBitmap/bitmapOf (int-array [1 2 3 1000]))
+        bf (sut/allocate-buffer 16384)]
+    (is (= 1000 (.select rr 3)))
+    (sut/put-buffer bf rr :bitmap)
+    (.flip bf)
+    (let [^RoaringBitmap rr1 (sut/read-buffer bf :bitmap)]
+      (is (.equals rr rr1)))))

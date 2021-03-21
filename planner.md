@@ -63,8 +63,9 @@ way, we can quickly identify the entity classes relevant to a query or a
 transaction through fast bitmap intersections.
 
 An additional "classes" LMDB DBI will be used. The keys will be class ids, and
-the values are the corresponding entities represented by a bitmap of
-entity ids. This allows us to quickly find relevant entities once entity classes
+the values are a map with the following keys: `:attrs` is a bitmap of the
+defining attributes of the entity class; `:entities` is a bitmap of the entity
+ids in the class. This allows us to quickly find relevant entities once entity classes
 are identified in the query.
 
 Unlike previous work in the literature, our definition of entity class is firm

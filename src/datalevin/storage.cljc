@@ -185,7 +185,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare insert-data delete-data)
+(declare handle-batch)
 
 (deftype Store [lmdb
                 ^:volatile-mutable schema
@@ -252,22 +252,11 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [add-fn   (fn [holder datom]
-                       (let [conj-fn (fn [h d] (conj! h d))]
-                         (if (d/datom-added datom)
-                           (let [[data giant?] (insert-data this datom)]
-                             (when giant? (advance-max-gt this))
-                             (reduce conj-fn holder data))
-                           (reduce conj-fn holder (delete-data this datom)))))
-            batch-fn (fn [batch]
-                       (lmdb/transact-kv
-                         lmdb
-                         (persistent! (reduce add-fn (transient []) batch))))]
-        (doseq [batch (partition c/+tx-datom-batch-size+
-                                 c/+tx-datom-batch-size+
-                                 nil
-                                 datoms)]
-          (batch-fn batch)))))
+      (doseq [batch (partition c/+tx-datom-batch-size+
+                               c/+tx-datom-batch-size+
+                               nil
+                               datoms)]
+        (handle-batch this batch))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -410,6 +399,26 @@
       giant? (conj [:del c/giants
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id)
                     :id]))))
+
+(defn- handle-datom [store holder datom]
+  (let [conj-fn (fn [h d] (conj! h d))]
+    (if (d/datom-added datom)
+      (let [[data giant?] (insert-data store datom)]
+        (when giant? (advance-max-gt store))
+        (reduce conj-fn holder data))
+      (reduce conj-fn holder (delete-data store datom)))))
+
+(defn- handle-entities [holder batch]
+  holder)
+
+(defn- handle-batch [^Store store batch]
+  (let [holder (transient [])]
+    (lmdb/transact-kv
+      (.-lmdb store)
+      (persistent!
+        (reduce (partial handle-datom store)
+                (handle-entities holder batch)
+                batch)))))
 
 (defn open
   "Open and return the storage."
