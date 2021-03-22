@@ -57,16 +57,26 @@ by namespace unique to that entity class. We assign auto increment integer
 id for each entity class, and represent the mapping from attributes to entity
 class with bitmaps.
 
-Specifically, each attribute schema entry has a `:db/classes` key pointing to a
-bitmap of entity class ids that include the attribute in their definitions. This
-way, we can quickly identify the entity classes relevant to a query or a
-transaction through fast bitmap intersections.
+Specifically, an additional "classes" LMDB DBI will be used. The keys will be
+bitmaps of the AIDs of the defining attributes of the entity classes, and the
+values are vectors with the following elements: auto increment id of entity
+class; bitmap of the entity ids in the class. This allows us to
+quickly identified relevant entity classes in the query and find relevant
+entities associated with them.
 
-An additional "classes" LMDB DBI will be used. The keys will be class ids, and
-the values are a map with the following keys: `:attrs` is a bitmap of the
-defining attributes of the entity class; `:entities` is a bitmap of the entity
-ids in the class. This allows us to quickly find relevant entities once entity classes
-are identified in the query.
+Considering the LMDB key size limit of 511 bytes, we will use 510 bytes for
+storing actual bitmaps. For the compressed bitmap that we are using, at the worst
+case, it takes 16 bits to represents a 32 bits integer (i.e. an AID), so this
+accounts for 510*2*8=8160 attributes. The extra byte will give us 256*8160=2097152
+attributes, which should be sufficient.
+
+For use cases that produces huge number of attributes, e.g.
+[numbered attributes](https://github.com/tonsky/datascript/issues/351#issuecomment-654738949), such attributes should be excluded from entity classes consideration. One may
+also want to exclude some common attributes that appear in too many entity classes to
+be useful for narrowing down entities. For such attributes that do not contribute to
+the defintion of entity classes, user can include them in a
+`:exclude-attributes-from-class` option, which is a vector of regex of
+attributes names, as part of the option map given when openning the DB.
 
 Unlike previous work in the literature, our definition of entity class is firm
 (i.e. one class is defined by one unique set of attributes), but the class
@@ -81,9 +91,6 @@ not to precisely match query constraints, some false positives are acceptable,
 as long as there is no false negative. In this sense, entity class works like a
 free bloom filter without any hashing.
 
-For common attributes that should not contribute to the defintion of entity
-classes, user can mark such attributes under a `:common-attributes` key, as part
-of the option map given when openning the DB.
 
 ### Class links
 

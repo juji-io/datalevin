@@ -1187,14 +1187,6 @@ given. Return reference to the database.
     - `:instant`, timestamp, same as `java.util.Date`
     - `:uuid`, UUID, same as `java.util.UUID`
 
-  or one of the following Datalog specific data types
-
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:ave`
-    - `:vea`
-
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."}
   put-buffer b/put-buffer)
@@ -1216,13 +1208,5 @@ one of the following data types:
     - `:symbol`, EDN symbol
     - `:boolean`, `true` or `false`
     - `:instant`, timestamp, same as `java.util.Date`
-    - `:uuid`, UUID, same as `java.util.UUID`
-
-  or one of the following Datalog specific data types
-
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:ave`
-    - `:vea`"}
+    - `:uuid`, UUID, same as `java.util.UUID`"}
   read-buffer b/read-buffer)

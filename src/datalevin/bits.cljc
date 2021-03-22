@@ -518,6 +518,15 @@
   (let [^bytes bs (get-bytes bf)]
     (keyword (String. bs StandardCharsets/UTF_8))))
 
+(defn- get-link
+  [bf]
+  [(get-int bf) (get-int bf)])
+
+(defn- put-link
+  [bf [v-class e-class]]
+  (put-int bf v-class)
+  (put-int bf e-class))
+
 (defn- raw-header
   [v t]
   (case t
@@ -534,6 +543,17 @@
     nil))
 
 (defn put-buffer
+  "In addition to the user facing data types, x-type can be one of the
+  following internal data types:
+
+    - `:datom`
+    - `:attr`
+    - `:eav`
+    - `:ave`
+    - `:vea`
+    - `:bitmap`
+    - `:link`
+  "
   ([bf x]
    (put-buffer bf x :data))
   ([bf x x-type]
@@ -564,6 +584,7 @@
      :attr    (put-attr bf x)
      :datom   (put-nippy bf x)
      :bitmap  (put-nippy bf x)
+     :link    (put-link bf x)
      :eav     (put-eav bf x)
      :eavt    (put-eav bf x)
      :ave     (put-ave bf x)
@@ -574,6 +595,17 @@
      (put-data bf x))))
 
 (defn read-buffer
+  "In addition to the user facing data types, v-type can be one of the
+  following internal data types:
+
+    - `:datom`
+    - `:attr`
+    - `:eav`
+    - `:ave`
+    - `:vea`
+    - `:bitmap`
+    - `:link`
+  "
   ([bf]
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
@@ -594,6 +626,7 @@
      :attr    (get-attr bf)
      :datom   (get-nippy bf)
      :bitmap  (get-nippy bf)
+     :link    (get-link bf)
      :eav     (get-eav bf)
      :eavt    (get-eav bf)
      :ave     (get-ave bf)

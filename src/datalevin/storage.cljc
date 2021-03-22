@@ -408,8 +408,9 @@
         (reduce conj-fn holder data))
       (reduce conj-fn holder (delete-data store datom)))))
 
-(defn- handle-entities [holder batch]
-  holder)
+(defn- init-meta-data [^Store store holder batch]
+  (let []
+    holder))
 
 (defn- cmp-ea [^Datom d1 ^Datom d2]
   (d/combine-cmp
@@ -420,9 +421,10 @@
   (let [batch  (sort cmp-ea batch)
         holder (transient [])]
     (lmdb/transact-kv (.-lmdb store)
-                      (persistent! (reduce (partial handle-datom store)
-                                           (handle-entities holder batch)
-                                           batch)))))
+                      (persistent!
+                        (reduce (partial handle-datom store)
+                                (init-meta-data store holder batch)
+                                batch)))))
 
 (defn open
   "Open and return the storage."
@@ -438,6 +440,8 @@
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/classes c/+short-id-bytes+)
+     (lmdb/open-dbi lmdb c/links (* c/+short-id-bytes+ 2))
      (let [schema' (init-schema lmdb schema)]
        (->Store lmdb
                 schema'

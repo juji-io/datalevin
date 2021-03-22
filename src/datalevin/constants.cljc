@@ -31,6 +31,7 @@
 (def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
 
 (def ^:const +id-bytes+ Long/BYTES)
+(def ^:const +short-id-bytes+ Integer/BYTES)
 
 (def ^:const lmdb-data-types #{:data :string :int :long :id :float :double
                                :byte :bytes :keyword :boolean :instant :uuid
@@ -80,6 +81,8 @@
 (def ^:const vea "datalevin/vea")
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
+(def ^:const classes "datalevin/classes")
+(def ^:const links "datalevin/links")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean
