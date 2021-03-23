@@ -57,6 +57,13 @@
         (inc ^long gt))
       c/gt0))
 
+(defn- init-max-cls
+  [lmdb]
+  (or (when-let [cls (-> (lmdb/get-first lmdb c/classes [:all-back] :int :ignore)
+                         first)]
+        (inc ^int cls))
+      0))
+
 (defn- migrate-cardinality
   [lmdb attr old new]
   (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
@@ -151,6 +158,8 @@
   (closed? [this] "Return true if the storage is closed")
   (max-gt [this])
   (advance-max-gt [this])
+  (max-cls [this])
+  (advance-max-cls [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (set-schema [this new-schema]
@@ -191,10 +200,12 @@
                 ^:volatile-mutable schema
                 ^:volatile-mutable attrs
                 ^:volatile-mutable max-aid
-                ^:volatile-mutable max-gt]
+                ^:volatile-mutable max-gt
+                ^:volatile-mutable max-cls]
   IStore
   (dir [this]
     (lmdb/dir lmdb))
+
   (close [_]
     (lmdb/close-kv lmdb))
 
@@ -206,6 +217,12 @@
 
   (advance-max-gt [_]
     (set! max-gt (inc ^long max-gt)))
+
+  (max-cls [_]
+    max-cls)
+
+  (advance-max-cls [_]
+    (set! max-cls (inc ^int max-cls)))
 
   (max-aid [_]
     max-aid)
@@ -242,6 +259,7 @@
               x         (f o x)
               :else     (f o))]
       (migrate lmdb attr o p)
+      ;; TODO remove this tx, return tx-data instead
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
       (set! attrs (assoc attrs (:db/aid p) attr))
@@ -447,4 +465,5 @@
                 schema'
                 (init-attrs schema')
                 (init-max-aid lmdb)
-                (init-max-gt lmdb))))))
+                (init-max-gt lmdb)
+                (init-max-cls lmdb))))))

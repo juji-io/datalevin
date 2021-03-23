@@ -252,4 +252,4 @@
                                          [16 :part 17]
                                          [18 :name  "Part A.B.A.B"]
                                          [16 :part 18]])]
-    (sort cmp-ea )))
+    (sort cmp-ea datoms)))
