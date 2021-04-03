@@ -382,10 +382,11 @@
         index
         :id))))
 
-(defn- insert-data
+(defn- insert-datom
   [^Store store ^Datom d]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
+                   ;; TODO move this swap into init-meta-data
                    (swap-attr store attr identity))
         ref?   (= :db.type/ref (:db/valueType props))
         i      (b/indexable (.-e d) (:db/aid props) (.-v d)
@@ -402,7 +403,7 @@
          ref? (conj [:put c/vea i c/normal :vea :id]))
        false])))
 
-(defn- delete-data
+(defn- delete-datom
   [^Store store ^Datom d]
   (let [props  ((schema store) (.-a d))
         ref?   (= :db.type/ref (:db/valueType props))
@@ -421,10 +422,10 @@
 (defn- handle-datom [store holder datom]
   (let [conj-fn (fn [h d] (conj! h d))]
     (if (d/datom-added datom)
-      (let [[data giant?] (insert-data store datom)]
+      (let [[data giant?] (insert-datom store datom)]
         (when giant? (advance-max-gt store))
         (reduce conj-fn holder data))
-      (reduce conj-fn holder (delete-data store datom)))))
+      (reduce conj-fn holder (delete-datom store datom)))))
 
 (defn- init-meta-data [^Store store holder batch]
   (let []
