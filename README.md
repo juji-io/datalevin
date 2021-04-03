@@ -350,13 +350,14 @@ adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 A new Datalog query engine with improved performance.
-* 0.6.0 Datalog query parity with Datascript: composite tuples and persisted transaction functions.
-* 0.7.0 Fully automatic schema migration on write.
-* 0.8.0 As a product rule engine: implementing Rete/UL algorithm.
-* 0.9.0 As a search engine: fuzzy fulltext search across multiple attributes.
-* 0.10.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
-* 0.11.0 As a document database: auto indexing of document fields.
-* 1.0.0 Distributed mode with raft based replication.
+* 0.6.0 Persisted transaction functions.
+* 0.7.0 Composite tuples.
+* 0.8.0 Fully automatic schema migration on write.
+* 1.0.0 Native networked server mode.
+* 2.0.0 As a search engine: fuzzy fulltext search across multiple attributes.
+* 3.0.0 As a product rule engine: implementing Rete/UL algorithm.
+* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 5.0.0 Distributed mode with raft based replication.
 
 We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
 
