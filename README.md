@@ -443,6 +443,6 @@ Version: 0.4.28
 
 ## License
 
-Copyright © 2020-2021 [Juji, Inc.](https://juji.io)
+Copyright © 2020-2021 [Juji, Inc.](https://juji.io). Contact us if commercial support is needed for Datalevin. 
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
