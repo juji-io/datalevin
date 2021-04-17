@@ -420,16 +420,21 @@
                     :id]))))
 
 (defn- handle-datom [store holder datom]
-  (let [conj-fn (fn [h d] (conj! h d))]
-    (if (d/datom-added datom)
-      (let [[data giant?] (insert-datom store datom)]
-        (when giant? (advance-max-gt store))
-        (reduce conj-fn holder data))
-      (reduce conj-fn holder (delete-datom store datom)))))
+  (if (d/datom-added datom)
+    (let [[data giant?] (insert-datom store datom)]
+      (when giant? (advance-max-gt store))
+      (reduce conj! holder data))
+    (reduce conj! holder (delete-datom store datom))))
 
-(defn- init-meta-data [^Store store holder batch]
-  (let []
-    holder))
+(defn- transact-meta-data [^Store store batch]
+  #_(loop [cur-ent nil attrs #{} remain batch]
+      (if-let [^Datom datom (first remain)]
+        (let [ent  (.-e datom)
+              attr (.-a datom)]
+          (if (= cur-ent ent)
+
+            )))
+      ))
 
 (defn- cmp-ea [^Datom d1 ^Datom d2]
   (d/combine-cmp
@@ -437,12 +442,12 @@
     (d/cmp-attr-quick (.-a d1) (.-a d2))))
 
 (defn- load-batch [^Store store batch]
-  (let [batch  (sort cmp-ea batch)
-        holder (transient [])]
+  (let [batch (sort cmp-ea batch)]
+    (transact-meta-data store batch)
     (lmdb/transact-kv (.-lmdb store)
                       (persistent!
                         (reduce (partial handle-datom store)
-                                (init-meta-data store holder batch)
+                                (transient [])
                                 batch)))))
 
 (defn open
