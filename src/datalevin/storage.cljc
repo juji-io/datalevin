@@ -153,9 +153,6 @@
       (pred d))))
 
 (defprotocol IStore
-  (dir [this] "Return the data file directory")
-  (close [this] "Close storage")
-  (closed? [this] "Return true if the storage is closed")
   (max-gt [this])
   (advance-max-gt [this])
   (max-cls [this])
@@ -166,52 +163,16 @@
     "Update the schema of open storage, return updated schema")
   (attrs [this] "Return the aid -> attr map")
   (init-max-eid [this] "Initialize and return the max entity id")
-  (datom-count [this index] "Return the number of datoms in the index")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
-    "Update an attribute, f is similar to that of swap!")
-  (load-datoms [this datoms] "Load datams into storage")
-  (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
-  (populated? [this index low-datom high-datom]
-    "Return true if there exists at least one datom in the given boundary (inclusive)")
-  (size [this index low-datom high-datom]
-    "Return the number of datoms within the given range (inclusive)")
-  (head [this index low-datom high-datom]
-    "Return the first datom within the given range (inclusive)")
-  (slice [this index low-datom high-datom]
-    "Return a range of datoms within the given range (inclusive).")
-  (rslice [this index high-datom low-datom]
-    "Return a range of datoms in reverse within the given range (inclusive)")
-  (size-filter [this index pred low-datom high-datom]
-    "Return the number of datoms within the given range (inclusive) that
-    return true for (pred x), where x is the datom")
-  (head-filter [this index pred low-datom high-datom]
-    "Return the first datom within the given range (inclusive) that
-    return true for (pred x), where x is the datom")
-  (slice-filter [this index pred low-datom high-datom]
-    "Return a range of datoms within the given range (inclusive) that
-    return true for (pred x), where x is the datom")
-  (rslice-filter [this index pred high-datom low-datom]
-    "Return a range of datoms in reverse for the given range (inclusive)
-    that return true for (pred x), where x is the datom"))
-
-(declare load-batch)
+    "Update an attribute, f is similar to that of swap!"))
 
 (deftype Store [lmdb
-                ^:volatile-mutable schema
-                ^:volatile-mutable attrs
+                ^:volatile-mutable schema    ; attr -> props
+                ^:volatile-mutable attrs     ; aid -> attr
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cls]
   IStore
-  (dir [this]
-    (lmdb/dir lmdb))
-
-  (close [_]
-    (lmdb/close-kv lmdb))
-
-  (closed? [_]
-    (lmdb/closed-kv? lmdb))
-
   (max-gt [_]
     max-gt)
 
@@ -263,131 +224,32 @@
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
       (set! attrs (assoc attrs (:db/aid p) attr))
-      p))
+      p)))
 
-  (datom-count [_ index]
-    (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
+(defn dir
+  "Return the data file directory"
+  [^Store store]
+  (lmdb/dir (.-lmdb store)))
 
-  (load-datoms [this datoms]
-    (locking this
-      (doseq [batch (partition c/+tx-datom-batch-size+
-                               c/+tx-datom-batch-size+
-                               nil
-                               datoms)]
-        (load-batch this batch))))
+(defn close
+  "Close storage"
+  [^Store store]
+  (lmdb/close-kv (.-lmdb store)))
 
-  (fetch [this datom]
-    (mapv (partial retrieved->datom lmdb attrs)
-          (when-some [kv (lmdb/get-value lmdb
-                                         c/eav
-                                         (low-datom->indexable schema datom)
-                                         :eav
-                                         :id
-                                         false)]
-            [kv])))
+(defn closed?
+  "Return true if the storage is closed"
+  [^Store store]
+  (lmdb/closed-kv? (.-lmdb store)))
 
-  (populated? [_ index low-datom high-datom]
-    (lmdb/get-first lmdb
-                    (index->dbi index)
-                    [:closed
-                     (low-datom->indexable schema low-datom)
-                     (high-datom->indexable schema high-datom)]
-                    index
-                    :ignore
-                    true))
-
-  (size [_ index low-datom high-datom]
-    (lmdb/range-count lmdb
-                      (index->dbi index)
-                      [:closed
-                       (low-datom->indexable schema low-datom)
-                       (high-datom->indexable schema high-datom)]
-                      index))
-
-  (head [_ index low-datom high-datom]
-    (retrieved->datom
-      lmdb attrs (lmdb/get-first lmdb
-                                 (index->dbi index)
-                                 [:closed
-                                  (low-datom->indexable schema low-datom)
-                                  (high-datom->indexable schema high-datom)]
-                                 index
-                                 :id)))
-
-  (slice [_ index low-datom high-datom]
-    (mapv (partial retrieved->datom lmdb attrs)
-          (lmdb/get-range
-            lmdb
-            (index->dbi index)
-            [:closed
-             (low-datom->indexable schema low-datom)
-             (high-datom->indexable schema high-datom)]
-            index
-            :id)))
-
-  (rslice [_ index high-datom low-datom]
-    (mapv (partial retrieved->datom lmdb attrs)
-          (lmdb/get-range
-            lmdb
-            (index->dbi index)
-            [:closed-back
-             (high-datom->indexable schema high-datom)
-             (low-datom->indexable schema low-datom)]
-            index
-            :id)))
-
-  (size-filter [_ index pred low-datom high-datom]
-    (lmdb/range-filter-count lmdb
-                             (index->dbi index)
-                             (datom-pred->kv-pred lmdb attrs index pred)
-                             [:closed
-                              (low-datom->indexable schema low-datom)
-                              (high-datom->indexable schema high-datom)]
-                             index))
-
-  (head-filter [_ index pred low-datom high-datom]
-    (retrieved->datom
-      lmdb attrs (lmdb/get-some lmdb
-                                (index->dbi index)
-                                (datom-pred->kv-pred lmdb attrs index pred)
-                                [:closed
-                                 (low-datom->indexable schema low-datom)
-                                 (high-datom->indexable schema high-datom)]
-                                index
-                                :id)))
-
-  (slice-filter [_ index pred low-datom high-datom]
-    (mapv
-      (partial retrieved->datom lmdb attrs)
-      (lmdb/range-filter
-        lmdb
-        (index->dbi index)
-        (datom-pred->kv-pred lmdb attrs index pred)
-        [:closed
-         (low-datom->indexable schema low-datom)
-         (high-datom->indexable schema high-datom)]
-        index
-        :id)))
-
-  (rslice-filter [_ index pred high-datom low-datom]
-    (mapv
-      (partial retrieved->datom lmdb attrs)
-      (lmdb/range-filter
-        lmdb
-        (index->dbi index)
-        (datom-pred->kv-pred lmdb attrs index pred)
-        [:closed
-         (high-datom->indexable schema high-datom)
-         (low-datom->indexable schema low-datom)]
-        index
-        :id))))
+(defn datom-count
+  "Return the number of datoms in the store"
+  [^Store store index]
+  (lmdb/entries (.-lmdb store)
+                (if (string? index) index (index->dbi index))))
 
 (defn- insert-datom
   [^Store store ^Datom d]
-  (let [attr   (.-a d)
-        props  (or ((schema store) attr)
-                   ;; TODO move this swap into init-meta-data
-                   (swap-attr store attr identity))
+  (let [props  ((schema store) (.-a d))
         ref?   (= :db.type/ref (:db/valueType props))
         i      (b/indexable (.-e d) (:db/aid props) (.-v d)
                             (:db/valueType props))
@@ -419,36 +281,233 @@
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id)
                     :id]))))
 
-(defn- handle-datom [store holder datom]
+(defn- handle-datom
+  [store holder datom]
   (if (d/datom-added datom)
     (let [[data giant?] (insert-datom store datom)]
       (when giant? (advance-max-gt store))
       (reduce conj! holder data))
     (reduce conj! holder (delete-datom store datom))))
 
-(defn- transact-meta-data [^Store store batch]
-  #_(loop [cur-ent nil attrs #{} remain batch]
-      (if-let [^Datom datom (first remain)]
-        (let [ent  (.-e datom)
-              attr (.-a datom)]
-          (if (= cur-ent ent)
+(defn entity-attrs
+  "Return the set of attributes of an entity"
+  [^Store store eid]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)
+        datom  (d/datom eid nil nil)]
+    (into #{}
+          (comp (map first)
+             (map attrs))
+          (lmdb/get-range lmdb
+                          c/eav
+                          [:closed
+                           (low-datom->indexable schema datom)
+                           (high-datom->indexable schema datom)]
+                          :eav-a
+                          :ignore))))
 
-            )))
-      ))
+(defn- entity-meta-data
+  [store cur-eid add-attrs del-attrs]
+  (let [old-attrs (entity-attrs store cur-eid)]))
 
-(defn- cmp-ea [^Datom d1 ^Datom d2]
-  (d/combine-cmp
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
-    (d/cmp-attr-quick (.-a d1) (.-a d2))))
+(defn- transact-meta-data
+  [store batch]
+  (loop [cur-eid nil add-attrs #{} del-attrs #{} remain batch]
+    (if-let [^Datom datom (first remain)]
+      (let [eid  (.-e datom)
+            attr (.-a datom)
+            add? (d/datom-added datom)
+            add  #(if add? (conj add-attrs attr) add-attrs)
+            del  #(if-not add? (conj del-attrs attr) del-attrs)
+            rr   (rest remain)]
+        (or ((schema store) attr) (swap-attr store attr identity))
+        (if (= cur-eid eid)
+          (recur cur-eid (add) (del) rr)
+          (if cur-eid
+            (do (entity-meta-data store cur-eid add-attrs del-attrs)
+                (recur eid #{} #{} rr))
+            (recur eid (add) (del) rr))))
+      (entity-meta-data store cur-eid add-attrs del-attrs))))
 
-(defn- load-batch [^Store store batch]
-  (let [batch (sort cmp-ea batch)]
+(defn- load-batch
+  [^Store store batch]
+  (let [batch (sort-by d/datom-e batch)]
     (transact-meta-data store batch)
     (lmdb/transact-kv (.-lmdb store)
                       (persistent!
                         (reduce (partial handle-datom store)
                                 (transient [])
                                 batch)))))
+
+(defn load-datoms
+  "Load datams into storage"
+  [store datoms]
+  (locking store
+    (doseq [batch (partition c/+tx-datom-batch-size+
+                             c/+tx-datom-batch-size+
+                             nil
+                             datoms)]
+      (load-batch store batch))))
+
+(defn fetch
+  "Return [datom] if it exists in store, otherwise '()"
+  [^Store store datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (when-some [kv (lmdb/get-value lmdb
+                                         c/eav
+                                         (low-datom->indexable schema datom)
+                                         :eav
+                                         :id
+                                         false)]
+            [kv]))))
+
+(defn populated?
+  "Return true if there exists at least one datom in the given boundary
+  (inclusive)"
+  [^Store store index low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)]
+    (lmdb/get-first lmdb
+                    (index->dbi index)
+                    [:closed
+                     (low-datom->indexable schema low-datom)
+                     (high-datom->indexable schema high-datom)]
+                    index
+                    :ignore
+                    true)))
+
+(defn size
+  "Return the number of datoms within the given range (inclusive)"
+  [^Store store index low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)]
+    (lmdb/range-count lmdb
+                      (index->dbi index)
+                      [:closed
+                       (low-datom->indexable schema low-datom)
+                       (high-datom->indexable schema high-datom)]
+                      index)))
+
+(defn head
+  "Return the first datom within the given range (inclusive)"
+  [^Store store index low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (retrieved->datom
+      lmdb attrs (lmdb/get-first lmdb
+                                 (index->dbi index)
+                                 [:closed
+                                  (low-datom->indexable schema low-datom)
+                                  (high-datom->indexable schema high-datom)]
+                                 index
+                                 :id))))
+
+(defn slice
+  "Return a range of datoms within the given range (inclusive)."
+  [^Store store index low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/get-range
+            lmdb
+            (index->dbi index)
+            [:closed
+             (low-datom->indexable schema low-datom)
+             (high-datom->indexable schema high-datom)]
+            index
+            :id))))
+
+(defn rslice
+  "Return a range of datoms in reverse within the given range (inclusive)"
+  [^Store store index high-datom low-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/get-range
+            lmdb
+            (index->dbi index)
+            [:closed-back
+             (high-datom->indexable schema high-datom)
+             (low-datom->indexable schema low-datom)]
+            index
+            :id))))
+
+(defn size-filter
+  "Return the number of datoms within the given range (inclusive) that
+    return true for (pred x), where x is the datom"
+  [^Store store index pred low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (lmdb/range-filter-count lmdb
+                             (index->dbi index)
+                             (datom-pred->kv-pred lmdb attrs index pred)
+                             [:closed
+                              (low-datom->indexable schema low-datom)
+                              (high-datom->indexable schema high-datom)]
+                             index)))
+
+(defn head-filter
+  "Return the first datom within the given range (inclusive) that
+    return true for (pred x), where x is the datom"
+  [^Store store index pred low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (retrieved->datom
+      lmdb attrs (lmdb/get-some lmdb
+                                (index->dbi index)
+                                (datom-pred->kv-pred lmdb attrs index pred)
+                                [:closed
+                                 (low-datom->indexable schema low-datom)
+                                 (high-datom->indexable schema high-datom)]
+                                index
+                                :id))))
+
+(defn slice-filter
+  "Return a range of datoms within the given range (inclusive) that
+    return true for (pred x), where x is the datom"
+  [^Store store index pred low-datom high-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (mapv
+      (partial retrieved->datom lmdb attrs)
+      (lmdb/range-filter
+        lmdb
+        (index->dbi index)
+        (datom-pred->kv-pred lmdb attrs index pred)
+        [:closed
+         (low-datom->indexable schema low-datom)
+         (high-datom->indexable schema high-datom)]
+        index
+        :id))))
+
+(defn rslice-filter
+  "Return a range of datoms in reverse for the given range (inclusive)
+    that return true for (pred x), where x is the datom"
+  [^Store store index pred high-datom low-datom]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        attrs  (attrs store)]
+    (mapv
+      (partial retrieved->datom lmdb attrs)
+      (lmdb/range-filter
+        lmdb
+        (index->dbi index)
+        (datom-pred->kv-pred lmdb attrs index pred)
+        [:closed
+         (high-datom->indexable schema high-datom)
+         (low-datom->indexable schema low-datom)]
+        index
+        :id))))
 
 (defn open
   "Open and return the storage."

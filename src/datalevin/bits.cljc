@@ -489,6 +489,11 @@
         v (get-value bf 1)]
     (->Retrieved e a v)))
 
+(defn- get-eav-a
+  [bf]
+  (get-long bf)
+  (get-int bf))
+
 (defn- get-ave
   [bf]
   (let [a (get-int bf)
@@ -549,6 +554,7 @@
     - `:datom`
     - `:attr`
     - `:eav`
+    - `:eav-a`
     - `:ave`
     - `:vea`
     - `:bitmap`
@@ -586,6 +592,7 @@
      :bitmap  (put-nippy bf x)
      :link    (put-link bf x)
      :eav     (put-eav bf x)
+     :eav-a   (put-eav bf x)
      :eavt    (put-eav bf x)
      :ave     (put-ave bf x)
      :avet    (put-ave bf x)
@@ -601,11 +608,11 @@
     - `:datom`
     - `:attr`
     - `:eav`
+    - `:eav-a`
     - `:ave`
     - `:vea`
     - `:bitmap`
-    - `:link`
-  "
+    - `:link`"
   ([bf]
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
@@ -628,6 +635,7 @@
      :bitmap  (get-nippy bf)
      :link    (get-link bf)
      :eav     (get-eav bf)
+     :eav-a   (get-eav-a bf)
      :eavt    (get-eav bf)
      :ave     (get-ave bf)
      :avet    (get-ave bf)

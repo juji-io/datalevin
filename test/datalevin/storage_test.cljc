@@ -251,5 +251,11 @@
                                          [17 :name  "Part A.B.A.A"]
                                          [16 :part 17]
                                          [18 :name  "Part A.B.A.B"]
-                                         [16 :part 18]])]
+                                         [16 :part 18]])
+        dir    (u/tmp-dir (str "datalevin-extract-entity-test-"
+                               (UUID/randomUUID)))
+        store  (sut/open dir)]
+    (sut/load-datoms store datoms)
+    (is (= #{} (sut/entity-attrs store 20)))
+    (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     ))
