@@ -58,13 +58,6 @@
         (inc ^long gt))
       c/gt0))
 
-(defn- init-max-cls
-  [lmdb]
-  (or (when-let [cls (-> (lmdb/get-first lmdb c/classes [:all-back] :int :ignore)
-                         first)]
-        (inc ^int cls))
-      0))
-
 (defn- migrate-cardinality
   [lmdb attr old new]
   (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
@@ -95,38 +88,23 @@
       :db/unique      (migrate-unique lmdb attr v' v)
       :pass-through)))
 
-(defn- low-datom->indexable
-  [schema ^Datom d]
-  (let [e (.-e d)]
+(defn- datom->indexable
+  [schema ^Datom d high?]
+  (let [e  (.-e d)
+        am (if high? c/amax c/a0)
+        vm (if high? c/vmax c/v0)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-some [v (.-v d)]
           (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
+          (b/indexable e (:db/aid p) vm (:db/valueType p)))
         (b/indexable e c/a0 c/v0 nil))
       (if-some [v (.-v d)]
         (if (integer? v)
-          (b/indexable e c/a0 v :db.type/ref)
+          (b/indexable e am v :db.type/ref)
           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
                    {:v v}))
-        (b/indexable e c/a0 c/v0 :db.type/sysMin)))))
-
-(defn- high-datom->indexable
-  [schema ^Datom d]
-  (let [e (.-e d)]
-    (if-let [a (.-a d)]
-      (if-let [p (schema a)]
-        (if-some [v (.-v d)]
-          (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
-        ;; same as low-datom-indexable to get [] fast
-        (b/indexable e c/a0 c/v0 nil))
-      (if-some [v (.-v d)]
-        (if (integer? v)
-          (b/indexable e c/amax v :db.type/ref)
-          (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
-                   {:v v}))
-        (b/indexable e c/amax c/vmax :db.type/sysMax)))))
+        (b/indexable e am vm :db.type/sysMin)))))
 
 (defn- index->dbi
   [index]
@@ -156,8 +134,6 @@
 (defprotocol IStore
   (max-gt [this])
   (advance-max-gt [this])
-  (max-cls [this])
-  (advance-max-cls [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (set-schema [this new-schema]
@@ -171,20 +147,13 @@
                 ^:volatile-mutable schema    ; attr -> props
                 ^:volatile-mutable attrs     ; aid -> attr
                 ^:volatile-mutable max-aid
-                ^:volatile-mutable max-gt
-                ^:volatile-mutable max-cls]
+                ^:volatile-mutable max-gt]
   IStore
   (max-gt [_]
     max-gt)
 
   (advance-max-gt [_]
     (set! max-gt (inc ^long max-gt)))
-
-  (max-cls [_]
-    max-cls)
-
-  (advance-max-cls [_]
-    (set! max-cls (inc ^int max-cls)))
 
   (max-aid [_]
     max-aid)
@@ -303,8 +272,8 @@
           (lmdb/get-range lmdb
                           c/eav
                           [:closed
-                           (low-datom->indexable schema datom)
-                           (high-datom->indexable schema datom)]
+                           (datom->indexable schema datom false)
+                           (datom->indexable schema datom true)]
                           :eav-a
                           :ignore))))
 
@@ -324,7 +293,7 @@
                     (seq del-attrs) (del-attr del-attrs schema)
                     (seq add-attrs) (set/union add-attrs)
                     )]
-    ))
+    data))
 
 (defn- transact-meta-data
   [^Store store batch]
@@ -381,7 +350,7 @@
     (mapv (partial retrieved->datom lmdb attrs)
           (when-some [kv (lmdb/get-value lmdb
                                          c/eav
-                                         (low-datom->indexable schema datom)
+                                         (datom->indexable schema datom false)
                                          :eav
                                          :id
                                          false)]
@@ -396,8 +365,8 @@
     (lmdb/get-first lmdb
                     (index->dbi index)
                     [:closed
-                     (low-datom->indexable schema low-datom)
-                     (high-datom->indexable schema high-datom)]
+                     (datom->indexable schema low-datom false)
+                     (datom->indexable schema high-datom true)]
                     index
                     :ignore
                     true)))
@@ -410,8 +379,8 @@
     (lmdb/range-count lmdb
                       (index->dbi index)
                       [:closed
-                       (low-datom->indexable schema low-datom)
-                       (high-datom->indexable schema high-datom)]
+                       (datom->indexable schema low-datom false)
+                       (datom->indexable schema high-datom true)]
                       index)))
 
 (defn head
@@ -424,8 +393,8 @@
       lmdb attrs (lmdb/get-first lmdb
                                  (index->dbi index)
                                  [:closed
-                                  (low-datom->indexable schema low-datom)
-                                  (high-datom->indexable schema high-datom)]
+                                  (datom->indexable schema low-datom false)
+                                  (datom->indexable schema high-datom true)]
                                  index
                                  :id))))
 
@@ -440,8 +409,8 @@
             lmdb
             (index->dbi index)
             [:closed
-             (low-datom->indexable schema low-datom)
-             (high-datom->indexable schema high-datom)]
+             (datom->indexable schema low-datom false)
+             (datom->indexable schema high-datom true)]
             index
             :id))))
 
@@ -456,8 +425,8 @@
             lmdb
             (index->dbi index)
             [:closed-back
-             (high-datom->indexable schema high-datom)
-             (low-datom->indexable schema low-datom)]
+             (datom->indexable schema high-datom true)
+             (datom->indexable schema low-datom false)]
             index
             :id))))
 
@@ -472,8 +441,8 @@
                              (index->dbi index)
                              (datom-pred->kv-pred lmdb attrs index pred)
                              [:closed
-                              (low-datom->indexable schema low-datom)
-                              (high-datom->indexable schema high-datom)]
+                              (datom->indexable schema low-datom false)
+                              (datom->indexable schema high-datom true)]
                              index)))
 
 (defn head-filter
@@ -488,8 +457,8 @@
                                 (index->dbi index)
                                 (datom-pred->kv-pred lmdb attrs index pred)
                                 [:closed
-                                 (low-datom->indexable schema low-datom)
-                                 (high-datom->indexable schema high-datom)]
+                                 (datom->indexable schema low-datom false)
+                                 (datom->indexable schema high-datom true)]
                                 index
                                 :id))))
 
@@ -507,8 +476,8 @@
         (index->dbi index)
         (datom-pred->kv-pred lmdb attrs index pred)
         [:closed
-         (low-datom->indexable schema low-datom)
-         (high-datom->indexable schema high-datom)]
+         (datom->indexable schema low-datom false)
+         (datom->indexable schema high-datom true)]
         index
         :id))))
 
@@ -526,8 +495,8 @@
         (index->dbi index)
         (datom-pred->kv-pred lmdb attrs index pred)
         [:closed
-         (high-datom->indexable schema high-datom)
-         (low-datom->indexable schema low-datom)]
+         (datom->indexable schema high-datom true)
+         (datom->indexable schema low-datom false)]
         index
         :id))))
 
@@ -546,11 +515,9 @@
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (lmdb/open-dbi lmdb c/classes c/+short-id-bytes+)
-     (lmdb/open-dbi lmdb c/links (* c/+short-id-bytes+ 2))
      (let [schema' (init-schema lmdb schema)]
        (->Store lmdb
                 schema'
                 (init-attrs schema')
                 (init-max-aid lmdb)
-                (init-max-gt lmdb)
-                (init-max-cls lmdb))))))
+                (init-max-gt lmdb))))))
