@@ -358,6 +358,8 @@
     (l/close-kv lmdb)
     ))
 
+(deftest bitmap-test)
+
 ;; generative tests
 
 (test/defspec datom-ops-generative-test

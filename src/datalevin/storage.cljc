@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.storage
   "storage layer of Datalevin"
-  (:require [datalevin.lmdb :as lmdb]
+  (:require [clojure.set :as set]
+            [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.binding.graal]
@@ -307,28 +308,49 @@
                           :eav-a
                           :ignore))))
 
+(defn- del-attr
+  [old-attrs del-attrs schema]
+  (reduce (fn [s a]
+            (if (= (:db/cardinality (schema a)) :db.cardinality/many)
+              s
+              (set/difference s #{a})))
+          old-attrs
+          del-attrs))
+
 (defn- entity-meta-data
-  [store cur-eid add-attrs del-attrs]
-  (let [old-attrs (entity-attrs store cur-eid)]))
+  [data ^Store store cur-eid add-attrs del-attrs]
+  (let [schema    (schema store)
+        new-attrs (cond-> (entity-attrs store cur-eid)
+                    (seq del-attrs) (del-attr del-attrs schema)
+                    (seq add-attrs) (set/union add-attrs)
+                    )]
+    ))
 
 (defn- transact-meta-data
-  [store batch]
-  (loop [cur-eid nil add-attrs #{} del-attrs #{} remain batch]
-    (if-let [^Datom datom (first remain)]
-      (let [eid  (.-e datom)
-            attr (.-a datom)
-            add? (d/datom-added datom)
-            add  #(if add? (conj add-attrs attr) add-attrs)
-            del  #(if-not add? (conj del-attrs attr) del-attrs)
-            rr   (rest remain)]
-        (or ((schema store) attr) (swap-attr store attr identity))
-        (if (= cur-eid eid)
-          (recur cur-eid (add) (del) rr)
-          (if cur-eid
-            (do (entity-meta-data store cur-eid add-attrs del-attrs)
-                (recur eid #{} #{} rr))
-            (recur eid (add) (del) rr))))
-      (entity-meta-data store cur-eid add-attrs del-attrs))))
+  [^Store store batch]
+  (lmdb/transact-kv
+    (.-lmdb store)
+    (persistent!
+      (loop [data      (transient [])
+             cur-eid   nil
+             add-attrs #{}
+             del-attrs #{}
+             remain    batch]
+        (if-let [^Datom datom (first remain)]
+          (let [eid  (.-e datom)
+                attr (.-a datom)
+                add? (d/datom-added datom)
+                add  #(if add? (conj add-attrs attr) add-attrs)
+                del  #(if-not add? (conj del-attrs attr) del-attrs)
+                rr   (rest remain)]
+            (or ((schema store) attr) (swap-attr store attr identity))
+            (if (= cur-eid eid)
+              (recur data cur-eid (add) (del) rr)
+              (if cur-eid
+                (recur (entity-meta-data data store cur-eid add-attrs del-attrs)
+                       eid #{} #{} rr)
+                (recur data eid (add) (del) rr))))
+          (entity-meta-data data store cur-eid add-attrs del-attrs))))))
 
 (defn- load-batch
   [^Store store batch]

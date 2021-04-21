@@ -53,33 +53,14 @@ a class of entities.
 In Datomic-like stores, the set of attributes for a class of entities are often unique.
 There might be overlapping attributes between entity classes, but many
 attributes are used by only one class of entities, and these are often prefixed
-by namespace unique to that entity class. We assign auto increment integer
-id for each entity class, and represent the mapping from attributes to entity
-class with bitmaps.
+by namespace unique to that entity class.
 
-Specifically, each attribute schema entry has a `:db/classes` key pointing to a
-bitmap of entity class ids that include the attribute in their definitions. This
-way, we can quickly identify the entity classes relevant to a query or a
-transaction through fast bitmap intersections.
-
-An additional "classes" LMDB DBI will be used. The keys will be entity class
-ids, and the values are vectors with the following elements: a bitmap of the
-AIDs of the defining attributes of the class, and a bitmap of the entity ids in
-the class. This allows us to quickly identified relevant entity classes in the
-query and find relevant entities associated with them.
-
-Unlike previous work in the literature, our definition of entity class is firm
-(i.e. one class is defined by one unique set of attributes), but the class
-membership is flexible.  As attributes are added to or removed from an entity
-during its lifetime in the database, the entity may find itself belonging to
-multiple related entity classes at the same time. We accept the slight
-overhead of matching more entities than necessary during query, because the cost
-of always maintaining accurate entity class membership for all entities is
-rather high, for that requires a constant maintenance of a mapping from entity
-to its class.  Since the purpose of entity class is only to pre-filter entities,
-not to precisely match query constraints, some false positives are acceptable,
-as long as there is no false negative. In this sense, entity class works like a
-free bloom filter without any hashing.
+An additional "classes" LMDB DBI will be used to store entity classes. The key
+is a bitmap of attribute ids (AIDs) that define the class. The value is a map
+containing information related to the class. One key of the map is `:eids`, its
+value is a bitmap of the entity ids in the class. This allows us to quickly
+identified relevant entity classes in the query and find relevant entities
+associated with them.
 
 For use cases that produces huge number of attributes, e.g. [numbered
 attributes](https://github.com/tonsky/datascript/issues/351#issuecomment-654738949),
@@ -99,17 +80,13 @@ Similar to extended characteristic sets [7] or foreign key relation in
 relational DB, this concept captures the long range relationship in data.  We
 will leverage such declaration and store the resulting graph.
 
-Specifically, a "links" LMDB DBI will be used, the keys are the pair of the
-entity class ids of the referring entity class (class of E) and the referred
-entity class (class of V), the values are bitmaps of entity ids of
+Specifically, we add a `:links` key to the aforementioned value map of `classes`
+DBI, which would be source of class link. The value is a map of AIDs bitmap of
+the target class link, with corresponding value of bitmap of entity ids of
 referred entities (V), so that we can look up the link triples quickly in the
-"VEA" LMDB DBI, which contains link triples only.
-
-In addition, the schema map has a built-in key `:db/graph`, and its value stores
-the adjacency list of the class link graph of the data, i.e. a map of links to
-the set of their adjacent links. This graph structure captures the overall structure
-of the data. We will use this graph to pre-filter entities for those complex
-queries spanning multiple related entity classes.
+"VEA" LMDB DBI, which contains link triples only. The links also form a graph that
+captures the overall structure of the data. We will use this graph to pre-filter
+entities for those complex queries spanning multiple related entity classes.
 
 ## Optimizations
 
