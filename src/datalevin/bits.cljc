@@ -9,7 +9,8 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
-           [org.roaringbitmap RoaringBitmap]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
+            RoaringBitmapWriter$Wizard]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -53,6 +54,17 @@
   "Convert a base64 encoded string back to a byte array"
   [^String s]
   (.decode (Base64/getDecoder) s))
+
+;; bitmap
+
+(defn ints->bitmap
+  "Turn a sorted integer collection to a roaringbitmap"
+  [ints]
+  (let [^RoaringBitmapWriter writer (-> (RoaringBitmapWriter/writer)
+                                        (.initialCapacity (count ints))
+                                        (.get))]
+    (doseq [i ints] (.add writer i))
+    (.get writer)))
 
 ;; byte buffer
 

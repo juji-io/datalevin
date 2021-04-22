@@ -288,11 +288,13 @@
 
 (defn- entity-meta-data
   [data ^Store store cur-eid add-attrs del-attrs]
-  (let [schema    (schema store)
-        new-attrs (cond-> (entity-attrs store cur-eid)
-                    (seq del-attrs) (del-attr del-attrs schema)
-                    (seq add-attrs) (set/union add-attrs)
-                    )]
+  (let [schema   (schema store)
+        src-aids (-> (map #(-> % schema :db/aid)
+                          (cond-> (entity-attrs store cur-eid)
+                            (seq del-attrs) (del-attr del-attrs schema)
+                            (seq add-attrs) (set/union add-attrs)))
+                     sort
+                     b/ints->bitmap)]
     data))
 
 (defn- transact-meta-data
@@ -309,16 +311,16 @@
           (let [eid  (.-e datom)
                 attr (.-a datom)
                 add? (d/datom-added datom)
-                add  #(if add? (conj add-attrs attr) add-attrs)
-                del  #(if-not add? (conj del-attrs attr) del-attrs)
+                add  #(if add? (conj % attr) %)
+                del  #(if-not add? (conj % attr) %)
                 rr   (rest remain)]
             (or ((schema store) attr) (swap-attr store attr identity))
             (if (= cur-eid eid)
-              (recur data cur-eid (add) (del) rr)
+              (recur data cur-eid (add add-attrs) (del del-attrs) rr)
               (if cur-eid
                 (recur (entity-meta-data data store cur-eid add-attrs del-attrs)
-                       eid #{} #{} rr)
-                (recur data eid (add) (del) rr))))
+                       eid (add #{}) (del #{}) rr)
+                (recur data eid (add add-attrs) (del del-attrs) rr))))
           (entity-meta-data data store cur-eid add-attrs del-attrs))))))
 
 (defn- load-batch
