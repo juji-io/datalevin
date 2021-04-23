@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.29
 ### Fixed
 - Correct handling of rule clauses in dtlv
 - Documentation clarification that we do not support "db as a value"

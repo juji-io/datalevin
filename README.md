@@ -3,7 +3,7 @@
 <p align="center"> 🧘 Simple, fast and durable Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.4.28" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.4.29" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -86,14 +86,14 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.4.28"}}}
+ {datalevin/datalevin {:mvn/version "0.4.29"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.4.28"]
+[datalevin "0.4.29"]
 ```
 
 ### Native command line tool
@@ -134,14 +134,14 @@ scoop install datalevin
 
 Or download the binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.28/dtlv-0.4.28-ubuntu-latest-amd64.zip)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.28/dtlv-0.4.28-macos-latest-amd64.zip)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.4.28/dtlv-0.4.28-windows-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.29/dtlv-0.4.29-ubuntu-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.29/dtlv-0.4.29-macos-latest-amd64.zip)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.4.29/dtlv-0.4.29-windows-amd64.zip)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.4.28)
+  Datalevin (version: 0.4.29)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -439,7 +439,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
-Version: 0.4.28
+Version: 0.4.29
 
 ## License
 
