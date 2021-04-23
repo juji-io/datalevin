@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.4.29
+### Fixed
+- Correct handling of rule clauses in dtlv
+- Documentation clarification that we do not support "db as a value"
+
 ## 0.4.28
 ### Added
 - Datafy/nav for entity [Thanks @den1k]

@@ -455,13 +455,12 @@ given. Return reference to the database.
 
 
 (defn transact!
-  "Applies transaction the underlying database value and atomically updates
-  connection reference to point to the result of that transaction, new db value.
+  "Applies transaction to the underlying database.
 
   Returns transaction report, a map:
 
-       { :db-before ...       ; db value before transaction
-         :db-after  ...       ; db value after transaction
+       { :db-before ...
+         :db-after  ...
          :tx-data   [...]     ; plain datoms that were added/retracted from db-before
          :tempids   {...}     ; map of tempid from tx-data => assigned entid in db-after
          :tx-meta   tx-meta } ; the exact value you passed as `tx-meta`
@@ -633,9 +632,9 @@ given. Return reference to the database.
 
 
 (defn db
-  "Returns the underlying database value from a connection.
+  "Returns the underlying database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
 
-   Exists for Datomic API compatibility. "
+  Exists for Datomic API compatibility. "
   [conn]
   {:pre [(conn? conn)]}
   @conn)
@@ -647,14 +646,14 @@ given. Return reference to the database.
   [conn]
   (s/schema ^Store (.-store ^DB @conn)))
 
-(defn update-schema
+  (defn update-schema
   "Update the schema of an open connection. `schema-update` is a map from
   attribute keywords to maps of corresponding properties. Return the updated
   schema.
 
   Example:
 
-          (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
+  (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
   [conn schema-update]
   (let [^DB db (db conn)
         s      (s/set-schema ^Store (.-store db) schema-update)]
@@ -664,11 +663,11 @@ given. Return reference to the database.
                          :rschema (db/rschema s))))
     (schema conn)))
 
-(defonce ^:private connections (atom {}))
+  (defonce ^:private connections (atom {}))
 
-(defn- add-conn [dir conn] (swap! connections assoc dir conn))
+  (defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
-(defn- new-conn
+  (defn- new-conn
   [dir schema]
   (let [conn (if schema
                (create-conn dir schema)
@@ -676,7 +675,7 @@ given. Return reference to the database.
     (add-conn dir conn)
     conn))
 
-(defn get-conn
+  (defn get-conn
   "Obtain an open connection to a database. Create the database if it does not
   exist. Reuse the same connection if a connection to the same database already
   exists. Open the database if it is closed. Return the connection.
@@ -702,11 +701,11 @@ given. Return reference to the database.
 
   Example:
 
-          (with-conn [conn \"my-data-path\"]
-             ...conn...)
+  (with-conn [conn \"my-data-path\"]
+    ...conn...)
 
-          (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
-                    ...conn...)
+  (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
+    ...conn...)
   "
   [spec & body]
   `(let [dir#    ~(second spec)
@@ -721,7 +720,7 @@ given. Return reference to the database.
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
 
-   Exists for Datomic API compatibility. Prefer using [[transact!]] if possible."
+  Exists for Datomic API compatibility. Prefer using [[transact!]] if possible."
   ([conn tx-data] (transact conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
@@ -782,7 +781,7 @@ given. Return reference to the database.
 (defn ^:no-doc squuid
   "Generates a UUID that grow with time. Such UUIDs will always go to the end  of the index and that will minimize insertions in the middle.
 
-   Consist of 64 bits of current UNIX timestamp (in seconds) and 64 random bits (2^64 different unique values per second)."
+  Consist of 64 bits of current UNIX timestamp (in seconds) and 64 random bits (2^64 different unique values per second)."
   ([]
    (squuid #?(:clj  (System/currentTimeMillis)
               :cljs (.getTime (js/Date.)))))
@@ -893,12 +892,12 @@ given. Return reference to the database.
 
 (def ^{:arglists '([db] [db dbi-name])
        :doc      "Return the statitics of the unnamed top level database or a named DBI (i.e. sub-database) of the key-value store as a map:
-     * `:psize` is the size of database page
-     * `:depth` is the depth of the B-tree
-     * `:branch-pages` is the number of internal pages
-     * `:leaf-pages` is the number of leaf pages
-     * `:overflow-pages` is the number of overflow-pages
-     * `:entries` is the number of data entries"}
+  * `:psize` is the size of database page
+  * `:depth` is the depth of the B-tree
+  * `:branch-pages` is the number of internal pages
+  * `:leaf-pages` is the number of leaf pages
+  * `:overflow-pages` is the number of overflow-pages
+  * `:entries` is the number of data entries"}
   stat l/stat)
 
 (def ^{:arglists '([db dbi-name])
@@ -908,38 +907,38 @@ given. Return reference to the database.
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
 
-     `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
-     when `op` is `:put`, for insertion of a key value pair `k` and `v`;
-     or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
+  `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
+  when `op` is `:put`, for insertion of a key value pair `k` and `v`;
+  or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
-     `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
+  `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
 
-     `k-type`, `v-type` and `append?` are optional.
+  `k-type`, `v-type` and `append?` are optional.
 
-    `k-type` indicates the data type of `k`, and `v-type` indicates the data type
-    of `v`. The allowed data types are described in [[put-buffer]]
+  `k-type` indicates the data type of `k`, and `v-type` indicates the data type
+  of `v`. The allowed data types are described in [[put-buffer]]
 
-    Set `append?` to true when the data is sorted to gain better write performance.
+  Set `append?` to true when the data is sorted to gain better write performance.
 
-    Example:
+  Example:
 
-            (transact-kv
-                      lmdb
-                      [ [:put \"a\" 1 2]
-                        [:put \"a\" 'a 1]
-                        [:put \"a\" 5 {}]
-                        [:put \"a\" :annunaki/enki true :attr :data]
-                        [:put \"a\" :datalevin [\"hello\" \"world\"]]
-                        [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-                        [:put \"a\" (byte 0x01) #{1 2} :byte :data]
-                        [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
-                        [:put \"a\" [-1 -235254457N] 5]
-                        [:put \"a\" :a 4]
-                        [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-                        [:put \"a\" :long 1 :data :long]
-                        [:put \"a\" 2 3 :long :long]
-                        [:del \"a\" 1]
-                        [:del \"a\" :non-exist] ])"}
+  (transact-kv
+    lmdb
+    [ [:put \"a\" 1 2]
+     [:put \"a\" 'a 1]
+     [:put \"a\" 5 {}]
+     [:put \"a\" :annunaki/enki true :attr :data]
+     [:put \"a\" :datalevin [\"hello\" \"world\"]]
+     [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+     [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+     [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+     [:put \"a\" [-1 -235254457N] 5]
+     [:put \"a\" :a 4]
+     [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+     [:put \"a\" :long 1 :data :long]
+     [:put \"a\" 2 3 :long :long]
+     [:del \"a\" 1]
+     [:del \"a\" :non-exist] ])"}
   transact-kv l/transact-kv)
 
 (def ^{:arglists '([db dbi-name k]
@@ -948,28 +947,28 @@ given. Return reference to the database.
                    [db dbi-name k k-type v-type ignore-key?])
        :doc      "Get kv pair of the specified key `k` in the key-value store.
 
-    `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[read-buffer]].
+  `k-type` and `v-type` are data types of `k` and `v`, respectively.
+  The allowed data types are described in [[read-buffer]].
 
-     If `ignore-key?` is true (default `true`), only return the value,
-     otherwise return `[k v]`, where `v` is the value
+  If `ignore-key?` is true (default `true`), only return the value,
+  otherwise return `[k v]`, where `v` is the value
 
-     Examples:
+  Examples:
 
-              (get-value lmdb \"a\" 1)
-              ;;==> 2
+  (get-value lmdb \"a\" 1)
+  ;;==> 2
 
-              ;; specify data types
-              (get-value lmdb \"a\" :annunaki/enki :attr :data)
-              ;;==> true
+  ;; specify data types
+  (get-value lmdb \"a\" :annunaki/enki :attr :data)
+  ;;==> true
 
-              ;; return key value pair
-              (get-value lmdb \"a\" 1 :data :data false)
-              ;;==> [1 2]
+  ;; return key value pair
+  (get-value lmdb \"a\" 1 :data :data false)
+  ;;==> [1 2]
 
-              ;; key doesn't exist
-              (get-value lmdb \"a\" 2)
-              ;;==> nil "}
+  ;; key doesn't exist
+  (get-value lmdb \"a\" 2)
+  ;;==> nil "}
   get-value l/get-value)
 
 (def ^{:arglists '([db dbi-name k-range]
