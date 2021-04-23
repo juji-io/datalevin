@@ -632,7 +632,7 @@ given. Return reference to the database.
 
 
 (defn db
-  "Returns the underlying database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object."
+  "Returns the underlying database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
 
   Exists for Datomic API compatibility. "
   [conn]

@@ -634,6 +634,8 @@
 
 ;;; RULES
 
+(def rule-head #{'_ 'or 'or-join 'and 'not 'not-join})
+
 (defn rule? [context clause]
   (u/cond+
     (not (sequential? clause))
@@ -649,7 +651,7 @@
     (free-var? head)
     false
 
-    (contains? #{'_ 'or 'or-join 'and 'not 'not-join} head)
+    (contains? rule-head head)
     false
 
     (not (contains? (:rules context) head))

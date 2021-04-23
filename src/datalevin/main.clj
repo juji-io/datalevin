@@ -11,6 +11,7 @@
             [sci.core :as sci]
             [sci.impl.vars :as vars]
             [datalevin.core :as d]
+            [datalevin.query :as q]
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
@@ -167,7 +168,7 @@
 (defn- qualify-fn [x]
   (if (list? x)
     (let [[f & args] x]
-      (if-let [var (resolve-var f)]
+      (if-let [var (when-not (q/rule-head f) (resolve-var f))]
         (apply list (symbol var) args)
         x))
     x))
