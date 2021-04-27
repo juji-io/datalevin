@@ -31,7 +31,6 @@
 (def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
 
 (def ^:const +id-bytes+ Long/BYTES)
-(def ^:const +short-id-bytes+ Integer/BYTES)
 
 (def ^:const lmdb-data-types #{:data :string :int :long :id :float :double
                                :byte :bytes :keyword :boolean :instant :uuid

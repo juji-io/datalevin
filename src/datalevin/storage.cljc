@@ -48,6 +48,15 @@
       (transact-schema lmdb (update-schema lmdb now schema))))
   (load-schema lmdb))
 
+(defn- load-classes
+  [lmdb]
+  (into {} (lmdb/get-range lmdb c/classes [:all] :bitmap :data)))
+
+(defn- transact-classes
+  [lmdb classes]
+  (lmdb/transact-kv lmdb (for [[bm props] classes]
+                           [:put c/classes bm props :bitmap :data])))
+
 (defn- init-attrs [schema]
   (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
 
@@ -135,16 +144,20 @@
   (max-gt [this])
   (advance-max-gt [this])
   (max-aid [this])
+  (init-max-eid [this] "Initialize and return the max entity id")
+  (classes [this] "Return the classes map")
+  (set-classes [this new-classes]
+    "Update the classes, return updated classes")
   (schema [this] "Return the schema map")
   (set-schema [this new-schema]
     "Update the schema of open storage, return updated schema")
   (attrs [this] "Return the aid -> attr map")
-  (init-max-eid [this] "Initialize and return the max entity id")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!"))
 
 (deftype Store [lmdb
                 ^:volatile-mutable schema    ; attr -> props
+                ^:volatile-mutable classes   ; attr-bitmap -> class-props
                 ^:volatile-mutable attrs     ; aid -> attr
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
@@ -165,6 +178,14 @@
     (set! schema (init-schema lmdb new-schema))
     (set! attrs (init-attrs schema))
     schema)
+
+  (classes [_]
+    classes)
+
+  (set-classes [_ new-classes]
+    (transact-classes lmdb new-classes)
+    (set! classes (merge classes new-classes))
+    classes)
 
   (attrs [_]
     attrs)
@@ -286,16 +307,23 @@
           old-attrs
           del-attrs))
 
+(defn- attr->aid
+  [schema attr]
+  (some-> attr schema :db/aid))
+
 (defn- entity-meta-data
   [data ^Store store cur-eid add-attrs del-attrs]
-  (let [schema   (schema store)
-        src-aids (-> (map #(-> % schema :db/aid)
-                          (cond-> (entity-attrs store cur-eid)
-                            (seq del-attrs) (del-attr del-attrs schema)
-                            (seq add-attrs) (set/union add-attrs)))
-                     sort
-                     b/ints->bitmap)]
-    data))
+  (let [schema    (schema store)
+        old-attrs (entity-attrs store cur-eid)
+        new-attrs (cond-> old-attrs
+                    (seq del-attrs) (del-attr del-attrs schema)
+                    (seq add-attrs) (set/union add-attrs))]
+    (if (= new-attrs old-attrs)
+      data
+      (let [src-aids (-> (map (partial attr->aid schema) new-attrs)
+                         sort
+                         b/ints->bitmap)]
+        data))))
 
 (defn- transact-meta-data
   [^Store store batch]
@@ -516,10 +544,11 @@
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/classes c/+short-id-bytes+)
+     (lmdb/open-dbi lmdb c/classes c/+max-key-size+)
      (let [schema' (init-schema lmdb schema)]
        (->Store lmdb
                 schema'
+                (load-classes lmdb)
                 (init-attrs schema')
                 (init-max-aid lmdb)
                 (init-max-gt lmdb))))))
