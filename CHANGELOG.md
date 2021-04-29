@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.30
 ### Fixed
 - Transaction of multiple instances of bytes [#52, Thanks @den1k]
 - More reflection config in dtlv
