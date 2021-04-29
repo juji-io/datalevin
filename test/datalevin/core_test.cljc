@@ -246,7 +246,7 @@
                       :foo-bytes     {:db/valueType :db.type/bytes}})
         ^bytes bs  (.getBytes "foooo")
         ^bytes bs1 (.getBytes "foooo")
-        ^bytes bs2 (.getBytes (str (range 1000)))]
+        ^bytes bs2 (.getBytes (str (range 50000)))]
     (sut/transact! conn [{:foo-bytes bs}])
     (sut/transact! conn [{:entity-things [{:foo-bytes bs1}]}])
     (sut/transact! conn [{:foo-bytes bs2}])
