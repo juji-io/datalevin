@@ -3,6 +3,8 @@
 ## WIP
 ### Fixed
 - Transaction of multiple instances of bytes [#52, Thanks @den1k]
+- More reflection config in dtlv
+- Benchmark deps
 
 ## 0.4.29
 ### Fixed
