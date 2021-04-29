@@ -76,7 +76,13 @@
            (cond
              (= "latest" version)
              (str "{:paths [\"src\" \"../src\" \"../target/classes\" \"../native/target/classes\"]"
-                  "    :deps {datalevin {:local/root \"..\"} org.clojure/clojure             {:mvn/version \"1.10.3\"} }}")
+                  ":deps {datalevin {:local/root \"..\"} 
+                  org.clojure/clojure   {:mvn/version \"1.10.3\"} 
+                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"} 
+                  com.taoensso/nippy    {:mvn/version \"3.1.1\"} 
+                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.2\"} 
+                  org.graalvm.nativeimage/svm {:mvn/version \"21.0.0.2\"}
+                  }}")
 
              (re-matches #"\d+\.\d+\.\d+" version)
              (str "{:paths [\"src\"]"
@@ -128,7 +134,7 @@
 (def default-versions
   [;; ["latest" "datomic"]
    ;; ["0.18.13" "datascript"]
-   ["latest" "datascript"]
+   ;; ["latest" "datascript"]
    ["latest" "datalevin"]])
 
 
