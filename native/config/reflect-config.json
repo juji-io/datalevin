@@ -1,5 +1,19 @@
 [
     {
+        "name":"java.lang.String",
+        "allPublicMethods":true
+    },
+    {
+        "name":"java.lang.Byte",
+        "allPublicConstructors":true,
+        "allPublicMethods":true
+    },
+    {
+        "name":"byte[]",
+        "allDeclaredMethods":true,
+        "allPublicMethods":true
+    },
+    {
         "name":"java.lang.Thread",
         "methods":[{"name":"<init>","parameterTypes":["java.lang.ThreadGroup","java.lang.Runnable","java.lang.String","long","boolean"] }]
     },
@@ -9,6 +23,10 @@
             {"name":"canAccess","parameterTypes":["java.lang.Object"] },
             {"name":"isDefault","parameterTypes":[] }
         ]
+    },
+    {
+        "name": "java.lang.reflect.AccessibleObject",
+        "methods" : [{"name":"canAccess"}]
     },
     {
         "name":"java.util.Date",
