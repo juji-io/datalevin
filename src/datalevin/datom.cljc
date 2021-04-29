@@ -4,7 +4,9 @@
     [datalevin.constants :refer [tx0]]
     [datalevin.util :refer [combine-hashes]])
   #?(:cljs
-     (:require-macros [datalevin.util :refer [combine-cmp]])))
+     (:require-macros [datalevin.util :refer [combine-cmp]]))
+  #?(:clj
+     (:import (java.util Arrays))))
 
 (declare hash-datom equiv-datom seq-datom nth-datom assoc-datom val-at-datom)
 
@@ -191,11 +193,12 @@
     ;; are not of the same type, so we use `=`.
     ;; since `a` and `b` are of identical type
     ;; `coll?` check only one.
-    (if (coll? a)
-      (if (= a b)
-        0
-        1)
-      (compare a b))
+    (cond
+      (coll? a) (if (= a b)
+                  0
+                  1)
+      #?@(:clj [(bytes? a) (Arrays/compare ^bytes a ^bytes b)])
+      :else (compare a b))
     -1))
 
 (def nil-cmp (nil-check-cmp-fn compare))
