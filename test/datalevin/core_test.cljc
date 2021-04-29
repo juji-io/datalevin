@@ -2,7 +2,8 @@
   (:require [datalevin.core :as sut]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest]])
-  (:import [java.util UUID]
+  (:import [java.util UUID Arrays]
+           [java.nio.charset StandardCharsets]
            [java.lang Thread]))
 
 (deftest basic-ops-test
@@ -234,4 +235,27 @@
                     :where
                     [?e :chinese]]
                   @conn)))
+    (sut/close conn)))
+
+(deftest bytes-test
+  (let [dir        (u/tmp-dir (str "datalevin-bytes-test-" (UUID/randomUUID)))
+        conn       (sut/create-conn
+                     dir
+                     {:entity-things {:db/valueType   :db.type/ref
+                                      :db/cardinality :db.cardinality/many}
+                      :foo-bytes     {:db/valueType :db.type/bytes}})
+        ^bytes bs  (.getBytes "foooo")
+        ^bytes bs1 (.getBytes "foooo")]
+    (sut/transact! conn [{:foo-bytes bs}])
+    (sut/transact! conn [{:entity-things [{:foo-bytes bs1}]}])
+    (sut/transact! conn [{:entity-things
+                          [{:foo-bytes bs}
+                           {:foo-bytes bs1}]}])
+    (let [res (sut/q '[:find ?b
+                       :where
+                       [_ :foo-bytes ?b]]
+                     @conn)]
+      (is (= 4 (count res)))
+      (is (bytes? (ffirst res)))
+      (is (Arrays/equals bs ^bytes (ffirst res))))
     (sut/close conn)))
