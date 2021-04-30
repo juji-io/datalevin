@@ -9,7 +9,8 @@
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
                          [babashka/babashka.pods "0.0.1"]
-                         [com.cognitect/transit-clj "1.0.324"]
+                         [com.cognitect/transit-clj "1.0.324"
+                          :exclusions [com.fasterxml.jackson.core/jackson-core]]
                          [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.0.0.2"]
                          [org.graalvm.nativeimage/svm "21.0.0.2"]
