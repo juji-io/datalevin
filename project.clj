@@ -8,6 +8,7 @@
   :managed-dependencies [[org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
+                         [babashka/babashka.pods "0.0.1"]
                          [com.cognitect/transit-clj "1.0.324"]
                          [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.0.0.2"]
@@ -43,7 +44,7 @@
                             :uberjar-name "test.uberjar.jar"}
              :dev          {:dependencies
                             [[org.clojure/test.check]
-                             [babashka/babashka.pods "0.0.1"]]}}
+                             [babashka/babashka.pods]]}}
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
