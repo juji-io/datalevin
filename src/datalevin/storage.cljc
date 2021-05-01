@@ -399,17 +399,15 @@
   [^Store store ^Datom d]
   (let [props  ((schema store) (.-a d))
         ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d)
-                            (:db/aid props)
-                            (.-v d)
+        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
                             (:db/valueType props))
-        giant? (b/giant? i)]
+        giant? (b/giant? i)
+        gt     (when giant?
+                 (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
-      ref?   (conj [:del c/vea i :vea])
-      giant? (conj [:del c/giants
-                    (lmdb/get-value (.-lmdb store) c/eav i :eav :id)
-                    :id]))))
+      ref? (conj [:del c/vea i :vea])
+      gt   (conj [:del c/giants gt :id]))))
 
 (defn open
   "Open and return the storage."

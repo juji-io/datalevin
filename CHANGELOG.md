@@ -3,6 +3,8 @@
 ## WIP
 ## Improved
 - More robust dependency management
+### Fixed
+- Replacing giant values [#56]
 
 ## 0.4.30
 ### Fixed

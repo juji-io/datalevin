@@ -246,7 +246,7 @@
                       :foo-bytes     {:db/valueType :db.type/bytes}})
         ^bytes bs  (.getBytes "foooo")
         ^bytes bs1 (.getBytes "foooo")
-        ^bytes bs2 (.getBytes (str (range 50000)))]
+        ^bytes bs2 (.getBytes ^String (apply str (range 50000)))]
     (sut/transact! conn [{:foo-bytes bs}])
     (sut/transact! conn [{:entity-things [{:foo-bytes bs1}]}])
     (sut/transact! conn [{:foo-bytes bs2}])
@@ -264,3 +264,29 @@
       (is (Arrays/equals bs1 ^bytes (first (second res))))
       (is (Arrays/equals bs2 ^bytes (first (nth res 2)))))
     (sut/close conn)))
+
+(deftest id-large-bytes-test
+  (let [dir        (u/tmp-dir (str "datalevin-bytes-test-" (UUID/randomUUID)))
+        ^bytes bs  (.getBytes ^String (apply str (range 1000)))
+        ^bytes bs1 (.getBytes ^String (apply str (range 1000)))
+        db         (-> (sut/empty-db
+                         dir
+                         {:id    {:db/valueType :db.type/string
+                                  :db/unique    :db.unique/identity}
+                          :bytes {:db/valueType :db.type/bytes}})
+                       (sut/db-with
+                         [{:id    "foo"
+                           :bytes bs}])
+                       (sut/db-with
+                         [{:id    "foo"
+                           :bytes bs1}]))]
+    (let [res (sort-by second
+                       (sut/q '[:find ?b ?e
+                                :where
+                                [?e :bytes ?b]]
+                              db))]
+      (is (= 2 (count res)))
+      (is (bytes? (ffirst res)))
+      (is (Arrays/equals bs ^bytes (ffirst res)))
+      (is (Arrays/equals bs1 ^bytes (first (second res)))))
+    (sut/close-db db)))
