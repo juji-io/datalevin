@@ -23,7 +23,7 @@
            [datalevin.datom Datom])
   (:gen-class))
 
-(def ^:private version "0.4.30")
+(def ^:private version "0.4.31")
 
 (def ^:private version-str
   (str

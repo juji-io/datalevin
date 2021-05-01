@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.31
 ## Improved
 - More robust dependency management
 ### Fixed
