@@ -1,10 +1,10 @@
-(def version "0.4.29")
+(def version "0.4.31")
 
 (defproject datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
   :parent-project {:path    "../project.clj"
                    :inherit [:managed-dependencies :profiles :jvm-opts
-                             :deploy-repositories :global-vars :javac-options
+                             :deploy-repositories :global-vars
                              :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
@@ -17,9 +17,11 @@
                  [org.graalvm.nativeimage/svm]
                  [org.roaringbitmap/RoaringBitmap]
                  [org.lmdbjava/lmdbjava]
-                 [org.clojure/test.check]]
+                 [org.clojure/test.check]
+                 [babashka/babashka.pods]]
   :source-paths ["src/clj" "../src" "../test"]
   :java-source-paths ["src/java"]
+  :javac-options ["--release" "11"]
   :test-paths ["../test"]
   :plugins [[lein-parent "0.3.8"]]
   )

@@ -1,5 +1,17 @@
 # Change Log
 
+## 0.4.31
+## Improved
+- More robust dependency management
+### Fixed
+- Replacing giant values [#56]
+
+## 0.4.30
+### Fixed
+- Transaction of multiple instances of bytes [#52, Thanks @den1k]
+- More reflection config in dtlv
+- Benchmark deps
+
 ## 0.4.29
 ### Fixed
 - Correct handling of rule clauses in dtlv
@@ -52,15 +64,15 @@
 
 ## 0.4.4
 ### Changed
-- Consonidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
+- Consolidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
 
 ## 0.4.0
 ### Changed
-- [Breaking] Removed AEV index, as it is not used in query. This reduces storage
+- [**Breaking**] Removed AEV index, as it is not used in query. This reduces storage
   and improves write speed.
-- [Breaking] Change VAE index to VEA, in preparation for new query engine. Now
+- [**Breaking**] Change VAE index to VEA, in preparation for new query engine. Now
   all indices have the same order, just rotated, so merge join is more likely.
-- [Breaking] Change `open-lmdb` and `close-lmdb` to `open-kv` and `close-kv`,
+- [**Breaking**] Change `open-lmdb` and `close-lmdb` to `open-kv` and `close-kv`,
   `lmdb/transact` to `lmdb/transact-kv`, so they are consistent, easier to
   remember, and distinct from functions in `datalevin.core`.
 

@@ -398,7 +398,7 @@ given. Return reference to the database.
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
-  "Creates an empty DB and a mutable reference to it. See [[create-conn]]."
+  "Create a mutable reference to a database with the given datoms added to it."
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
   ([datoms dir schema] (conn-from-db (init-db datoms dir schema))))

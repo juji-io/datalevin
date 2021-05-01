@@ -462,3 +462,17 @@
         dts2 (d/datoms db :eavt)]
     (is (= dts1 dts2))
     (d/close-db db)))
+
+#?(:clj
+   (deftest test-transact-bytes
+     "requires comparing byte-arrays"
+     (let [schema      {:bytes {:db/valueType :db.type/bytes}}
+           byte-arrays (mapv #(.getBytes ^String %) ["foo" "bar" "foo"])]
+       (testing "equal bytes"
+         (let [db   (d/empty-db nil schema)
+               ents (mapv (fn [ba] {:bytes ba}) byte-arrays)]
+           (is (every? true?
+                       (map #(zero? (java.util.Arrays/compare ^bytes %1 ^bytes %2))
+                            byte-arrays
+                            (map :v (:tx-data (d/with db ents)))))))))))
+

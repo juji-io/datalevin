@@ -1,4 +1,4 @@
-(def version "0.4.29")
+(def version "0.4.31")
 
 (defproject datalevin version
   :description "A simple, fast and durable Datalog database"
@@ -8,7 +8,9 @@
   :managed-dependencies [[org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
-                         [com.cognitect/transit-clj "1.0.324"]
+                         [babashka/babashka.pods "0.0.1"]
+                         [com.cognitect/transit-clj "1.0.324"
+                          :exclusions [com.fasterxml.jackson.core/jackson-core]]
                          [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.0.0.2"]
                          [org.graalvm.nativeimage/svm "21.0.0.2"]
@@ -45,7 +47,7 @@
                             :uberjar-name "test.uberjar.jar"}
              :dev          {:dependencies
                             [[org.clojure/test.check]
-                             [babashka/babashka.pods "0.0.1"]]}}
+                             [babashka/babashka.pods]]}}
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
