@@ -417,7 +417,7 @@ are applicable to Datascript.
 
 * There's no network interface as of now, but this may change.
 
-* Currently only supports Clojure on JVM, but adding support for other
+* Currently only supports Clojure on JVM 9 or the above, but adding support for other
   Clojure-hosting runtime is possible, since bindings for LMDB
   exist in almost all major languages and available on most platforms.
 
