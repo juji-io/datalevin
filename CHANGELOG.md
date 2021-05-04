@@ -4,7 +4,7 @@
 ## Improved
 - More robust dependency management
 ### Fixed
-- Replacing giant values [#56]
+- Replacing giant values, this requires Java 11 [#56]
 
 ## 0.4.30
 ### Fixed
