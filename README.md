@@ -417,7 +417,7 @@ are applicable to Datascript.
 
 * There's no network interface as of now, but this may change.
 
-* Currently only supports Clojure on JVM 9 or the above, but adding support for other
+* Currently supports Clojure on JVM 11 or the above, but adding support for other
   Clojure-hosting runtime is possible, since bindings for LMDB
   exist in almost all major languages and available on most platforms.
 
@@ -443,6 +443,6 @@ Version: 0.4.31
 
 ## License
 
-Copyright © 2020-2021 [Juji, Inc.](https://juji.io). Contact us if commercial support is needed for Datalevin. 
+Copyright © 2020-2021 [Juji, Inc.](https://juji.io). Contact us if commercial support is needed for Datalevin.
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).

@@ -50,7 +50,7 @@
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "-Dclojure.compiler.direct-linking=true"]
-  :javac-options ["--release" "8"]
+  :javac-options ["--release" "11"]
 
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
