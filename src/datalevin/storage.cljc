@@ -317,7 +317,7 @@
   (->> attrs
        (map (partial attr->aid schema))
        sort
-       b/ints->bitmap))
+       b/bitmap))
 
 (defn- entity-class
   [new-cls ^Store store cur-eid add-attrs del-attrs]
@@ -326,13 +326,19 @@
         new-attrs (cond-> old-attrs
                     (seq del-attrs) (del-attr del-attrs schema)
                     (seq add-attrs) (set/union add-attrs))]
-    new-cls
-    #_(if (= new-attrs old-attrs)
-        new-cls
-        (let [old-aids (attrs->aids schema old-attrs)
-              new-aids (attrs->aids schema new-attrs)]
-          (if-let [props (get (classes store) aids)]
-            new-cls)))))
+    (if (= new-attrs old-attrs)
+      new-cls
+      (let [old-aids  (attrs->aids schema old-attrs)
+            new-aids  (attrs->aids schema new-attrs)
+            classes   (classes store)
+            old-props (get classes old-aids)
+            new-props (get classes new-aids)]
+        (cond-> new-cls
+          ;; old-props (assoc! old-aids (update old-props :eids
+          ;;                                    #(b/bitmap-del % cur-eid)))
+          true      (assoc! new-aids (update new-props :eids
+                                             (fnil #(b/bitmap-add % cur-eid)
+                                                   (b/bitmap)))))))))
 
 (defn- collect-classes
   [^Store store batch]

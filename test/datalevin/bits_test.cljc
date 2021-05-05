@@ -658,11 +658,15 @@
 
 (deftest bitmap-roundtrip-test
   (let [rr  (RoaringBitmap/bitmapOf (int-array [1 2 3 1000]))
-        rr1 (sut/ints->bitmap [1 2 3 1000])
+        rr1 (sut/bitmap [1 2 3 1000])
         bf  (sut/allocate-buffer 16384)]
     (is (= rr rr1))
     (is (= 1000 (.select rr 3)))
     (sut/put-buffer bf rr :bitmap)
     (.flip bf)
     (let [^RoaringBitmap rr1 (sut/read-buffer bf :bitmap)]
-      (is (.equals rr rr1)))))
+      (is (.equals rr rr1)))
+    (sut/bitmap-add rr 4)
+    (is (= 4 (.select rr 3)))
+    (sut/bitmap-del rr 4)
+    (is (= 1000 (.select rr 3)))))

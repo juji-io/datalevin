@@ -57,14 +57,26 @@
 
 ;; bitmap
 
-(defn ints->bitmap
-  "Turn a sorted integer collection to a roaringbitmap"
-  [ints]
-  (let [^RoaringBitmapWriter writer (-> (RoaringBitmapWriter/writer)
-                                        (.initialCapacity (count ints))
-                                        (.get))]
-    (doseq [i ints] (.add writer i))
-    (.get writer)))
+(defn bitmap
+  "Create a roaringbitmap. Expect a sorted integer collection"
+  ([]
+   (RoaringBitmap.))
+  ([ints]
+   (let [^RoaringBitmapWriter writer (-> (RoaringBitmapWriter/writer)
+                                         (.initialCapacity (count ints))
+                                         (.get))]
+     (doseq [i ints] (.add writer i))
+     (.get writer))))
+
+(defn bitmap-del
+  "Delete an int from the bitmap"
+  [^RoaringBitmap bm i]
+  (.remove bm ^int i))
+
+(defn bitmap-add
+  "Add an int from the bitmap"
+  [^RoaringBitmap bm i]
+  (.add bm ^int i))
 
 ;; byte buffer
 
