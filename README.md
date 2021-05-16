@@ -178,7 +178,7 @@ Launch `dtlv` in `rlwrap` to get a better REPL experience, i.e. `rlwrap dtlv`.
 
 ```console
 $ rlwrap bb
-Babashka v0.2.13 REPL.
+Babashka v0.4.0 REPL.
 Use :repl/quit or :repl/exit to quit the REPL.
 Clojure rocks, Bash reaches.
 
@@ -438,8 +438,6 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
 * If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
-
-Version: 0.4.34
 
 ## License
 
