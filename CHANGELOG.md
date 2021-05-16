@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.32
 ## Improved
 - Remove GraalVM and dtlv specific deps from JVM library jar
 - Update deps
