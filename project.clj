@@ -12,9 +12,9 @@
                          [com.cognitect/transit-clj "1.0.324"
                           :exclusions [com.fasterxml.jackson.core/jackson-core]]
                          [nrepl/bencode "1.1.0"]
-                         [org.graalvm.sdk/graal-sdk "21.0.0.2"]
-                         [org.graalvm.nativeimage/svm "21.0.0.2"]
-                         [borkdude/sci "0.2.4"]
+                         [org.graalvm.sdk/graal-sdk "21.1.0"]
+                         [org.graalvm.nativeimage/svm "21.1.0"]
+                         [borkdude/sci "0.2.5"]
                          [com.taoensso/nippy "3.1.1"]
                          [persistent-sorted-set "0.1.2"]
                          [org.lmdbjava/lmdbjava "0.8.1"
@@ -26,26 +26,28 @@
                           ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
-                 [org.clojure/tools.cli]
-                 [borkdude/sci]
-                 [com.cognitect/transit-clj]
-                 [nrepl/bencode]
                  [com.taoensso/nippy]
                  [persistent-sorted-set]
-                 [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]]
-  :source-paths ["src" "native/src/clj" "test"]
-  :java-source-paths ["native/src/java"]
-  :profiles {:uberjar      {:aot          [#"^datalevin.*"
+  :source-paths ["src"]
+  :profiles {:uberjar      {:main         datalevin.main
+                            :aot          [#"^datalevin.*"
                                            pod.huahaiy.datalevin],
-                            :main         datalevin.main
                             :uberjar-name "main.uberjar.jar"}
              :test-uberjar {:main         datalevin.test
                             :aot          [#"^datalevin.*"]
                             :uberjar-name "test.uberjar.jar"}
-             :dev          {:dependencies
+             :dev          {:source-paths      ["src" "native/src/clj" "test"]
+                            :java-source-paths ["native/src/java"]
+                            :dependencies
                             [[org.clojure/test.check]
-                             [babashka/babashka.pods]]}}
+                             [babashka/babashka.pods]
+                             [org.graalvm.nativeimage/svm]
+                             [org.clojure/tools.cli]
+                             [borkdude/sci]
+                             [com.cognitect/transit-clj]
+                             [nrepl/bencode]]}}
+  :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"

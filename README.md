@@ -220,7 +220,7 @@ Datalevin is aimed to be a versatile database.
                     :db/unique    :db.unique/identity}})
 
 ;; Create DB on disk and connect to it, assume write permission to create given dir
-(def conn (d/get-conn "/data/datalevin/mydb" schema))
+(def conn (d/get-conn "/tmp/datalevin/mydb" schema))
 
 ;; Transact some data
 ;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
@@ -261,7 +261,7 @@ Datalevin is aimed to be a versatile database.
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
-(def db (d/open-kv "/data/datalevin/mykvdb"))
+(def db (d/open-kv "/tmp/datalevin/mykvdb"))
 
 ;; Define some table (called "dbi" in LMDB) names
 (def misc-table "misc-test-table")

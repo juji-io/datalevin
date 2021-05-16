@@ -4,8 +4,7 @@
             [clojure.java.io :as io])
   #?(:clj
      (:import [java.lang System]
-              [java.io File]
-              [org.graalvm.nativeimage ImageInfo]))
+              [java.io File]))
   (:refer-clojure :exclude [seqable?]))
 
 ;; files
@@ -118,7 +117,7 @@
 
 #?(:clj
    (defn graal? []
-     (ImageInfo/inImageCode)))
+     (System/getProperty "org.graalvm.nativeimage.kind")))
 
 #?(:clj
    (defn windows? []

@@ -8,11 +8,11 @@
                              :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
-                 [persistent-sorted-set]
                  [borkdude/sci]
                  [com.cognitect/transit-clj]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
+                 [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]

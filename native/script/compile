@@ -16,6 +16,8 @@ export PATH=$GRAALVM_HOME/bin:$PATH
 MAIN_JAR="target/main.uberjar.jar"
 TEST_JAR="target/test.uberjar.jar"
 
+NATIVE=`pwd`
+
 cd src/c
 make
 
@@ -32,7 +34,7 @@ lein uberjar
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
     -H:+PrintClassInitialization \
-    -H:CLibraryPath=src/c \
+    -H:CLibraryPath=${NATIVE}/src/c \
     --initialize-at-build-time \
     --report-unsupported-elements-at-runtime \
     --allow-incomplete-classpath \
@@ -54,7 +56,7 @@ lein with-profile test-uberjar uberjar
     -J-Dclojure.compiler.direct-linking=true \
     -H:Log=registerResource:verbose \
     -H:+PrintClassInitialization \
-    -H:CLibraryPath=src/c \
+    -H:CLibraryPath=${NATIVE}/src/c \
     --initialize-at-build-time \
     --report-unsupported-elements-at-runtime \
     --allow-incomplete-classpath \

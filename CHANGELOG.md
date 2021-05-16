@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+## Improved
+- Remove GraalVM and dtlv specific deps from JVM library jar
+- Update deps
+
 ## 0.4.31
 ## Improved
 - More robust dependency management

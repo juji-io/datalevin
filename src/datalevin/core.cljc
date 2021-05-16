@@ -2,12 +2,11 @@
   "API for Datalevin database"
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   [datalevin.util :as u]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
    [datalevin.lmdb :as l]
-   [datalevin.binding.graal]
-   [datalevin.binding.java]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
@@ -18,6 +17,10 @@
    [datalevin.storage Store]
    [datalevin.db DB]
    [java.util UUID]))
+
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
 
 ;; Entities
 
