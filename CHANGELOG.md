@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+## Fixed
+- Native uses the same version of LMDB as JVM, #58
+
 ## 0.4.32
 ## Improved
 - Remove GraalVM and dtlv specific deps from JVM library jar
