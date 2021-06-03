@@ -3,7 +3,7 @@
 <p align="center"> 🧘 Simple, fast and durable Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.4.34" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.4.35" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -86,14 +86,14 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.4.34"}}}
+ {datalevin/datalevin {:mvn/version "0.4.35"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.4.34"]
+[datalevin "0.4.35"]
 ```
 
 ### Native command line tool
@@ -134,14 +134,14 @@ scoop install datalevin
 
 Or download the binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.34/dtlv-0.4.34-ubuntu-latest-amd64.zip)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.34/dtlv-0.4.34-macos-latest-amd64.zip)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.4.34/dtlv-0.4.34-windows-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.4.35/dtlv-0.4.35-ubuntu-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.4.35/dtlv-0.4.35-macos-latest-amd64.zip)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.4.35/dtlv-0.4.35-windows-amd64.zip)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.4.34)
+  Datalevin (version: 0.4.35)
 
 Usage: dtlv [options] [command] [arguments]
 

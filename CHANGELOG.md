@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.35
 ## Fixed
 - Native uses the same version of LMDB as JVM, #58
 
