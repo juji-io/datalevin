@@ -51,6 +51,7 @@
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+             "--illegal-access=permit"
              "-Dclojure.compiler.direct-linking=true"]
   :javac-options ["--release" "11"]
 
