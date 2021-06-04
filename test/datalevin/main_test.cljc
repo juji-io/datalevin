@@ -88,9 +88,7 @@
     (let [db-load (d/open-kv dest-dir)]
       (d/open-dbi db-load "b")
       (is (= "Datalevin" (d/get-value db-load "b" "Hello")))
-      (d/close-kv db-load))
-    (u/delete-files src-dir)
-    (u/delete-files dest-dir)))
+      (d/close-kv db-load))))
 
 (deftest dump-load-datalog-test
   (let [src-dir  (u/tmp-dir (str "datalevin-dump-dl-" (UUID/randomUUID)))

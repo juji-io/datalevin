@@ -119,7 +119,7 @@
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
         (is (= s4 (sut/schema store)))))
     (sut/close store)
-    (u/delete-files dir)))
+    ))
 
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
@@ -199,7 +199,7 @@
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
       (sut/close store))
-    (u/delete-files dir)))
+    ))
 
 (deftest false-value-test
   (let [d     (d/datom c/e0 :a false)
