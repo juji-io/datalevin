@@ -103,9 +103,7 @@
       (is (= "Datalevin" (d/q '[:find ?v .
                                 :where [_ :hello ?v]]
                               @conn-load)))
-      (d/close conn-load))
-    (u/delete-files src-dir)
-    (u/delete-files dest-dir)))
+      (d/close conn-load))))
 
 (deftest query-clause-test
   (let [dir  (u/tmp-dir (str "datalevin-query-clause-" (UUID/randomUUID)))
