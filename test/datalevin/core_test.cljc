@@ -28,7 +28,7 @@
         {:regions/region  {:db/valueType :db.type/string :db/aid 12}
          :regions/country {:db/valueType :db.type/string :db/aid 13}}
 
-        dir (u/tmp-dir (str "datalevin-core-test-" (UUID/randomUUID)))
+        dir  (u/tmp-dir (str "datalevin-core-test-" (UUID/randomUUID)))
         conn (sut/create-conn dir schema)
         txs
         [{:juji.data/synonyms      ["company" "customer"],
@@ -161,7 +161,8 @@
     (let [conn' (sut/create-conn dir)]
       (is (= 83 (count (sut/datoms @conn' :eavt))))
       (is (= (sut/schema conn') (merge schema schema-update)))
-      (sut/close conn'))))
+      (sut/close conn'))
+    (u/delete-files dir)))
 
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
@@ -179,7 +180,8 @@
       (sut/transact! conn [{:foo/id   "foo"
                             :foo/date (java.util.Date.)}])
       (is (not= d1 (sut/q query @conn))))
-    (sut/close conn)))
+    (sut/close conn)
+    (u/delete-files dir)))
 
 (deftest instant-compare-test
   (let [dir  (u/tmp-dir (str "datalevin-instant-compare-test-" (UUID/randomUUID)))
@@ -218,7 +220,8 @@
              @conn
              t50)
            #{[t100] [now]}))
-    (sut/close conn)))
+    (sut/close conn)
+    (u/delete-files dir)))
 
 (deftest other-language-test
   (let [dir  (u/tmp-dir (str "datalevin-other-lang-test-" (UUID/randomUUID)))
@@ -235,7 +238,8 @@
                     :where
                     [?e :chinese]]
                   @conn)))
-    (sut/close conn)))
+    (sut/close conn)
+    (u/delete-files dir)))
 
 (deftest bytes-test
   (let [dir        (u/tmp-dir (str "datalevin-bytes-test-" (UUID/randomUUID)))
@@ -263,7 +267,8 @@
       (is (Arrays/equals bs ^bytes (ffirst res)))
       (is (Arrays/equals bs1 ^bytes (first (second res))))
       (is (Arrays/equals bs2 ^bytes (first (nth res 2)))))
-    (sut/close conn)))
+    (sut/close conn)
+    (u/delete-files dir)))
 
 (deftest id-large-bytes-test
   (let [dir        (u/tmp-dir (str "datalevin-bytes-test-" (UUID/randomUUID)))
@@ -289,4 +294,5 @@
       (is (bytes? (ffirst res)))
       (is (Arrays/equals bs ^bytes (ffirst res)))
       (is (Arrays/equals bs1 ^bytes (first (second res)))))
-    (sut/close-db db)))
+    (sut/close-db db)
+    (u/delete-files dir)))

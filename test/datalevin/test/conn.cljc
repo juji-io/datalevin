@@ -90,7 +90,8 @@
                            :name          "Another name"
                            :dt/updated-at (Date.)}])
       (is (= 4 (count (d/datoms @conn2 :eavt))))
-      (d/close conn2))))
+      (d/close conn2))
+    (u/delete-files dir)))
 
 (deftest test-get-conn
   (let [schema {:name          {:db/valueType :db.type/string}
@@ -107,11 +108,14 @@
                            :name          "Another name"
                            :dt/updated-at (Date.)}])
       (is (= 4 (count (d/datoms @conn2 :eavt))))
-      (d/close conn2))))
+      (d/close conn2))
+    (u/delete-files dir)))
 
 (deftest test-with-conn
-  (d/with-conn [conn (u/tmp-dir (str "with-conn-test-" (UUID/randomUUID)))]
-    (d/transact! conn [{:db/id      -1
-                        :name       "something"
-                        :updated-at (Date.)}])
-    (is (= 2 (count (d/datoms @conn :eav))))))
+  (let [dir (u/tmp-dir (str "with-conn-test-" (UUID/randomUUID)))]
+    (d/with-conn [conn dir]
+      (d/transact! conn [{:db/id      -1
+                          :name       "something"
+                          :updated-at (Date.)}])
+      (is (= 2 (count (d/datoms @conn :eav)))))
+    (u/delete-files dir)))

@@ -118,7 +118,8 @@
         (is (= s3 (sut/schema store)))
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
         (is (= s4 (sut/schema store)))))
-    (sut/close store)))
+    (sut/close store)
+    (u/delete-files dir)))
 
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
@@ -130,7 +131,8 @@
     (is (sut/closed? store))
     (let [store (sut/open dir s)]
       (is (= s1 (sut/schema store)))
-      (sut/close store))))
+      (sut/close store))
+    (u/delete-files dir)))
 
 (deftest giants-string-test
   (let [schema {:a {:db/valueType :db.type/string}}
@@ -143,7 +145,8 @@
     (is (= [d] (sut/slice store :eavt
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
-    (sut/close store)))
+    (sut/close store)
+    (u/delete-files dir)))
 
 (deftest giants-data-test
   (let [dir   (u/tmp-dir (str "datalevin-giants-data-test-" (UUID/randomUUID)))
@@ -168,7 +171,8 @@
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store'))))
+      (sut/close store'))
+    (u/delete-files dir)))
 
 (deftest normal-data-test
   (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
@@ -194,7 +198,8 @@
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store))))
+      (sut/close store))
+    (u/delete-files dir)))
 
 (deftest false-value-test
   (let [d     (d/datom c/e0 :a false)
@@ -202,7 +207,8 @@
         store (sut/open dir)]
     (sut/load-datoms store [d])
     (is (= [d] (sut/fetch store d)))
-    (sut/close store)))
+    (sut/close store)
+    (u/delete-files dir)))
 
 (test/defspec random-data-test
   100

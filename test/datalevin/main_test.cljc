@@ -37,7 +37,8 @@
                   "(q (quote [:find ?e ?n :where [?e :name ?n]]) @conn)"
                   "(close conn)")
         res  (with-out-str (sut/exec code))]
-    (is (s/includes? res "#{[1 \"Datalevin\"]}"))))
+    (is (s/includes? res "#{[1 \"Datalevin\"]}"))
+    (u/delete-files dir)))
 
 (deftest copy-test
   (let [src (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
@@ -51,7 +52,9 @@
       (d/open-dbi db-copied dbi)
       (is (= (d/get-value db-copied dbi "Hello") "Datalevin"))
       (d/close-kv db-copied))
-    (d/close-kv db)))
+    (d/close-kv db)
+    (u/delete-files src)
+    (u/delete-files dst)))
 
 (deftest drop-test
   (let [dir (u/tmp-dir (str "datalevin-drop-test-" (UUID/randomUUID)))
@@ -68,7 +71,8 @@
     (sut/drop dir [dbi] true)
     (let [db-droped (d/open-kv dir)]
       (is (empty? (d/list-dbis db-droped)))
-      (d/close-kv db-droped))))
+      (d/close-kv db-droped))
+    (u/delete-files dir)))
 
 (deftest dump-load-raw-test
   (let [src-dir  (u/tmp-dir (str "datalevin-dump-raw-" (UUID/randomUUID)))
@@ -84,7 +88,9 @@
     (let [db-load (d/open-kv dest-dir)]
       (d/open-dbi db-load "b")
       (is (= "Datalevin" (d/get-value db-load "b" "Hello")))
-      (d/close-kv db-load))))
+      (d/close-kv db-load))
+    (u/delete-files src-dir)
+    (u/delete-files dest-dir)))
 
 (deftest dump-load-datalog-test
   (let [src-dir  (u/tmp-dir (str "datalevin-dump-dl-" (UUID/randomUUID)))
@@ -99,7 +105,9 @@
       (is (= "Datalevin" (d/q '[:find ?v .
                                 :where [_ :hello ?v]]
                               @conn-load)))
-      (d/close conn-load))))
+      (d/close conn-load))
+    (u/delete-files src-dir)
+    (u/delete-files dest-dir)))
 
 (deftest query-clause-test
   (let [dir  (u/tmp-dir (str "datalevin-query-clause-" (UUID/randomUUID)))
@@ -111,4 +119,5 @@
                   "(close conn)")
         res  (with-out-str (sut/exec code))]
     (is (or (s/includes? res "#{[1] [2]}")
-            (s/includes? res "#{[2] [1]}")))))
+            (s/includes? res "#{[2] [1]}")))
+    (u/delete-files dir)))
