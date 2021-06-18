@@ -197,3 +197,20 @@
 
 (defn sym-name-eqs [sym str]
   (and (symbol? sym) (= (name sym) str)))
+
+(defn ensure-vec [x]
+  (cond
+    (vector? x) x
+    (nil? x) []
+    (sequential? x) (vec x)
+    :else [x]))
+
+(defn memoize-1 [f]
+  "Like clojure.core/memoize but only caches the last invocation.
+  Effectively dedupes invocations with same args."
+  (let [cache (atom {})]
+    (fn [& args]
+      (or (get @cache args)
+          (let [ret (apply f args)]
+            (reset! cache {args ret})
+            ret)))))

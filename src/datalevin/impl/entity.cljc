@@ -1,9 +1,12 @@
 (ns ^:no-doc datalevin.impl.entity
   (:refer-clojure :exclude [keys get])
   (:require [#?(:cljs cljs.core :clj clojure.core) :as c]
-            [datalevin.db :as db]))
+            [datalevin.db :as db]
+            [datalevin.util :as u]
+            [clojure.set :as set]
+            #?(:clj [potemkin.collections])))
 
-(declare entity ->Entity equiv-entity lookup-entity touch)
+(declare entity ->Entity equiv-entity lookup-entity touch entity->txs)
 
 (defn- entid [db eid]
   (when (or (number? eid)
@@ -14,7 +17,7 @@
 (defn entity [db eid]
   {:pre [(db/db? db)]}
   (when-let [e (entid db eid)]
-    (->Entity db e (volatile! false) (volatile! {}))))
+    (->Entity db e (volatile! false) (volatile! {}) {} {})))
 
 (defn- entity-attr [db a datoms]
   (if (db/multival? db a)
@@ -34,127 +37,216 @@
 
 #?(:cljs
    (defn- multival->js [val]
-     (when val (to-array val))))
+          (when val (to-array val))))
 
 #?(:cljs
    (defn- js-seq [e]
-     (touch e)
-     (for [[a v] @(.-cache e)]
-       (if (db/multival? (.-db e) a)
-         [a (multival->js v)]
-         [a v]))))
+          (touch e)
+          (for [[a v] @(.-cache e)]
+               (if (db/multival? (.-db e) a)
+                 [a (multival->js v)]
+                 [a v]))))
 
-(deftype Entity [db eid touched cache]
-  #?@(:cljs
-      [Object
-       (toString [this]
-                 (pr-str* this))
-       (equiv [this other]
-              (equiv-entity this other))
+#?(:cljs
+   (deftype Entity [db eid touched cache]
+            Object
+            (toString [this]
+                      (pr-str* this))
+            (equiv [this other]
+                   (equiv-entity this other))
 
-       ;; js/map interface
-       (keys [this]
-             (es6-iterator (c/keys this)))
-       (entries [this]
-                (es6-entries-iterator (js-seq this)))
-       (values [this]
-               (es6-iterator (map second (js-seq this))))
-       (has [this attr]
-            (not (nil? (.get this attr))))
-       (get [this attr]
-            (if (= attr ":db/id")
-              eid
-              (if (db/reverse-ref? attr)
-                (-> (-lookup-backwards db eid (db/reverse-ref attr) nil)
-                    multival->js)
-                (cond-> (lookup-entity this attr)
-                  (db/multival? db attr) multival->js))))
-       (forEach [this f]
-                (doseq [[a v] (js-seq this)]
-                  (f v a this)))
-       (forEach [this f use-as-this]
-                (doseq [[a v] (js-seq this)]
-                  (.call f use-as-this v a this)))
+            ;; js/map interface
+            (keys [this]
+                  (es6-iterator (c/keys this)))
+            (entries [this]
+                     (es6-entries-iterator (js-seq this)))
+            (values [this]
+                    (es6-iterator (map second (js-seq this))))
+            (has [this attr]
+                 (not (nil? (.get this attr))))
+            (get [this attr]
+                 (if (= attr ":db/id")
+                   eid
+                   (if (db/reverse-ref? attr)
+                     (-> (-lookup-backwards db eid (db/reverse-ref attr) nil)
+                         multival->js)
+                     (cond-> (lookup-entity this attr)
+                             (db/multival? db attr) multival->js))))
+            (forEach [this f]
+                     (doseq [[a v] (js-seq this)]
+                            (f v a this)))
+            (forEach [this f use-as-this]
+                     (doseq [[a v] (js-seq this)]
+                            (.call f use-as-this v a this)))
 
-       ;; js fallbacks
-       (key_set   [this] (to-array (c/keys this)))
-       (entry_set [this] (to-array (map to-array (js-seq this))))
-       (value_set [this] (to-array (map second (js-seq this))))
+            ;; js fallbacks
+            (key_set [this] (to-array (c/keys this)))
+            (entry_set [this] (to-array (map to-array (js-seq this))))
+            (value_set [this] (to-array (map second (js-seq this))))
 
-       IEquiv
-       (-equiv [this o] (equiv-entity this o))
+            IEquiv
+            (-equiv [this o] (equiv-entity this o))
 
-       IHash
-       (-hash [_]
-              (hash eid)) ;; db?
+            IHash
+            (-hash [_]
+                   (hash eid))                              ;; db?
 
-       ISeqable
-       (-seq [this]
-             (touch this)
-             (seq @cache))
+            ISeqable
+            (-seq [this]
+                  (touch this)
+                  (seq @cache))
 
-       ICounted
-       (-count [this]
-               (touch this)
-               (count @cache))
+            ICounted
+            (-count [this]
+                    (touch this)
+                    (count @cache))
 
-       ILookup
-       (-lookup [this attr]           (lookup-entity this attr nil))
-       (-lookup [this attr not-found] (lookup-entity this attr not-found))
+            ILookup
+            (-lookup [this attr] (lookup-entity this attr nil))
+            (-lookup [this attr not-found] (lookup-entity this attr not-found))
 
-       IAssociative
-       (-contains-key? [this k]
-                       (not= ::nf (lookup-entity this k ::nf)))
+            IAssociative
+            (-contains-key? [this k]
+                            (not= ::nf (lookup-entity this k ::nf)))
 
-       IFn
-       (-invoke [this k]
-                (lookup-entity this k))
-       (-invoke [this k not-found]
-                (lookup-entity this k not-found))
+            IFn
+            (-invoke [this k]
+                     (lookup-entity this k))
+            (-invoke [this k not-found]
+                     (lookup-entity this k not-found))
 
-       IPrintWithWriter
-       (-pr-writer [_ writer opts]
-                   (-pr-writer (assoc @cache :db/id eid) writer opts))]
+            IPrintWithWriter
+            (-pr-writer [_ writer opts]
+                        (-pr-writer (assoc @cache :db/id eid) writer opts))))
 
-      :clj
-      [Object
-       (toString [e]      (pr-str (assoc @cache :db/id eid)))
-       (hashCode [e]      (hash eid)) ; db?
-       (equals [e o]      (equiv-entity e o))
+(defprotocol Transactable
+  (add [this attr v])
+  (retract
+    [this attr]
+    [this attr v])
+  (->txs [this]))
 
-       clojure.lang.Seqable
-       (seq [e]           (touch e) (seq @cache))
+#?(:clj
+   (potemkin.collections/def-map-type Entity [db eid touched cache tbd meta-map]
+     (get [this k not-found]
+       (if-let [[_ v] (c/get tbd k)]
+         v
+         (or (lookup-entity this k) not-found)))
+     (assoc [this k v]
+       (assert (keyword? k) "attribute must be keyword")
+       (Entity. db eid touched cache (assoc tbd k [{:op :assoc} v]) meta-map))
+     (dissoc [this k]
+       (assert (keyword? k) "attribute must be keyword")
+       (Entity. db eid touched cache (assoc tbd k [{:op :dissoc}]) meta-map))
+     (keys [this] (touch this) (c/keys @cache))
+     (meta [this] meta-map)
+     (with-meta [this meta]
+       (Entity. db eid touched cache tbd meta))
 
-       clojure.lang.Associative
-       (equiv [e o]       (equiv-entity e o))
-       (containsKey [e k] (not= ::nf (lookup-entity e k ::nf)))
-       (entryAt [e k]     (some->> (lookup-entity e k) (clojure.lang.MapEntry. k)))
+     Transactable
+     (add [this attr v]
+       (assert (keyword? attr) "attribute must be keyword")
+       (Entity. db eid touched cache (assoc tbd attr [{:op :add} v]) meta-map))
+     (retract [this attr]
+       (assert (keyword? attr) "attribute must be keyword")
+       (Entity. db eid touched cache (assoc tbd attr [{:op :retract}]) meta-map))
+     (retract [this attr v]
+       (assert (keyword? attr) "attribute must be keyword")
+       (Entity. db eid touched cache (assoc tbd attr [{:op :retract} v]) meta-map))
+     (->txs [this]
+       (entity->txs this))
 
-       (empty [e]         (throw (UnsupportedOperationException.)))
-       (assoc [e k v]     (throw (UnsupportedOperationException.)))
-       (cons  [e [k v]]   (throw (UnsupportedOperationException.)))
-       (count [e]         (touch e) (count @(.-cache e)))
+     Object
+     (toString [this] (pr-str (assoc @cache :db/id eid)))
+     (hashCode [this] (hash eid))                           ; db?
+     (equals [this o] (equiv-entity this o))
 
-       clojure.lang.ILookup
-       (valAt [e k]       (lookup-entity e k))
-       (valAt [e k not-found] (lookup-entity e k not-found))
 
-       clojure.lang.IFn
-       (invoke [e k]      (lookup-entity e k))
-       (invoke [e k not-found] (lookup-entity e k not-found))
-       ]))
+     clojure.lang.Seqable
+     (seq [this] (touch this) (seq @cache))
 
-(defn entity? [x] (instance? Entity x))
+     clojure.lang.Associative
+     (equiv [this o] (equiv-entity this o))
+     (containsKey [this k] (not= ::nf (lookup-entity this k ::nf)))
+     (entryAt [this k] (some->> (lookup-entity this k) (clojure.lang.MapEntry. k)))
+     ;
+     (empty [this] (throw (UnsupportedOperationException.)))
+     (cons [this [k v]]
+       (assoc this k v))
+     (count [this] (touch this) (count @(.-cache this)))))
 
 #?(:clj
    (defmethod print-method Entity [e, ^java.io.Writer w]
+     (let [staged (not-empty (.tbd e))
+           ent    (assoc @(.cache e) :db/id (.eid e))]
+       (.write w
+               (pr-str
+                 (cond-> ent
+                   staged (assoc :<STAGED> staged)))))
      (.write w (str e))))
+
+(defn- rschema->attr-types
+  [{ref-attrs  :db.type/ref
+    many-attrs :db.cardinality/many
+    components :db/isComponent}]
+  {:ref-attrs       (set/difference ref-attrs many-attrs)
+   :ref-rattrs      (into #{} (map db/reverse-ref) components)
+   :ref-many-rattrs (into #{} (map db/reverse-ref) (set/difference ref-attrs components))
+   :ref-many-attrs  (set many-attrs)})
+
+(def ^:private mem-rschema->attr-types
+  (u/memoize-1 rschema->attr-types))
+
+(defn- db->attr-types [db]
+  (mem-rschema->attr-types (:rschema db)))
+
+(defn- lookup-ref? [x]
+  (and (vector? x)
+       (= 2 (count x))
+       (keyword? (first x))))
+
+
+(defn- entity->txs [^Entity e]
+  (let [eid (.-eid e)
+        db  (.-db e)
+        {:keys [ref-attrs ref-rattrs ref-many-rattrs ref-many-attrs]} (db->attr-types db)]
+    (into
+      []
+      (mapcat
+        (fn [[k [meta v]]]
+          (let [{:keys [op]} meta]
+            (cond
+              (or (ref-many-attrs k)
+                  (ref-many-rattrs k))
+              (let [v (if (lookup-ref? v)
+                        [v]
+                        (u/ensure-vec v))]
+               (case op
+                 :assoc [[:db.fn/retractAttribute eid k]
+                         {:db/id eid
+                          ;; TODO resolve as ref
+                          k      (mapv (fn [e] (or (:db/id e) e)) v)}]
+                 :add [{:db/id eid
+                        k      (mapv (fn [e] (or (:db/id e) e)) v)}]
+                 :dissoc [[:db.fn/retractAttribute eid k]]
+                 :retract (into []
+                                (map (fn [e]
+                                       [:db/retract eid k (:db/id e)]))
+                                v)))
+
+              :else
+              (case op
+                (:dissoc :retract) [[:db.fn/retractAttribute eid k]]
+                (:assoc :add) [[:db/add eid k v]])))))
+      (.-tbd e))))
+
+(defn entity? [x] (instance? Entity x))
 
 (defn- equiv-entity [^Entity this that]
   (and
-   (instance? Entity that)
-   ;; (= db  (.-db ^Entity that))
-   (= (.-eid this) (.-eid ^Entity that))))
+    (instance? Entity that)
+    ;; (= db  (.-db ^Entity that))
+    (= (.-eid this) (.-eid ^Entity that))))
 
 (defn- lookup-entity
   ([this attr] (lookup-entity this attr nil))
@@ -176,18 +268,18 @@
 (defn touch-components [db a->v]
   (reduce-kv (fn [acc a v]
                (assoc acc a
-                 (if (db/component? db a)
-                   (if (db/multival? db a)
-                     (set (map touch v))
-                     (touch v))
-                   v)))
+                          (if (db/component? db a)
+                            (if (db/multival? db a)
+                              (set (map touch v))
+                              (touch v))
+                            v)))
              {} a->v))
 
 (defn- datoms->cache [db datoms]
   (reduce (fn [acc part]
-    (let [a (:a (first part))]
-      (assoc acc a (entity-attr db a part))))
-    {} (partition-by :a datoms)))
+            (let [a (:a (first part))]
+              (assoc acc a (entity-attr db a part))))
+          {} (partition-by :a datoms)))
 
 (defn touch [^Entity e]
   {:pre [(entity? e)]}
