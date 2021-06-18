@@ -3,10 +3,9 @@
   (:require [#?(:cljs cljs.core :clj clojure.core) :as c]
             [datalevin.db :as db]
             [datalevin.util :as u]
-            [clojure.set :as set]
-            #?(:clj [potemkin.collections])))
+            [clojure.set :as set]))
 
-(declare entity ->Entity equiv-entity lookup-entity touch entity->txs)
+(declare entity ->Entity equiv-entity lookup-entity touch entity->txs lookup-stage-then-entity)
 
 (defn- entid [db eid]
   (when (or (number? eid)
@@ -127,21 +126,34 @@
   (->txs [this]))
 
 #?(:clj
-   (potemkin.collections/def-map-type Entity [db eid touched cache tbd meta-map]
-     (get [this k not-found]
-       (if-let [[_ v] (c/get tbd k)]
-         v
-         (or (lookup-entity this k) not-found)))
+   (deftype Entity [db eid touched cache tbd meta-map]
+     clojure.lang.IPersistentMap
+     (equiv [e o] (equiv-entity e o))
+     (containsKey [e k] (not= ::nf (lookup-stage-then-entity e k ::nf)))
+     (entryAt [e k] (some->> (lookup-stage-then-entity e k) (clojure.lang.MapEntry. k)))
+
+     (empty [e] (throw (UnsupportedOperationException.)))
      (assoc [this k v]
        (assert (keyword? k) "attribute must be keyword")
        (Entity. db eid touched cache (assoc tbd k [{:op :assoc} v]) meta-map))
-     (dissoc [this k]
+     (without [this k]
        (assert (keyword? k) "attribute must be keyword")
        (Entity. db eid touched cache (assoc tbd k [{:op :dissoc}]) meta-map))
-     (keys [this] (touch this) (c/keys @cache))
-     (meta [this] meta-map)
-     (with-meta [this meta]
-       (Entity. db eid touched cache tbd meta))
+     (cons [this [k v]]
+       (assoc this k v))
+     (count [this] (touch this) (count @(.-cache this)))
+     (seq [this] (touch this) (seq @cache))
+
+     Iterable
+     (iterator [this] (clojure.lang.SeqIterator. (seq this)))
+
+     clojure.lang.ILookup
+     (valAt [e k] (lookup-stage-then-entity e k))
+     (valAt [e k not-found] (lookup-stage-then-entity e k not-found))
+
+     clojure.lang.IFn
+     (invoke [e k] (lookup-stage-then-entity e k))
+     (invoke [e k not-found] (lookup-stage-then-entity e k not-found))
 
      Transactable
      (add [this attr v]
@@ -158,22 +170,8 @@
 
      Object
      (toString [this] (pr-str (assoc @cache :db/id eid)))
-     (hashCode [this] (hash eid))                           ; db?
-     (equals [this o] (equiv-entity this o))
-
-
-     clojure.lang.Seqable
-     (seq [this] (touch this) (seq @cache))
-
-     clojure.lang.Associative
-     (equiv [this o] (equiv-entity this o))
-     (containsKey [this k] (not= ::nf (lookup-entity this k ::nf)))
-     (entryAt [this k] (some->> (lookup-entity this k) (clojure.lang.MapEntry. k)))
-     ;
-     (empty [this] (throw (UnsupportedOperationException.)))
-     (cons [this [k v]]
-       (assoc this k v))
-     (count [this] (touch this) (count @(.-cache this)))))
+     (hashCode [this] (hash eid))
+     (equals [this o] (equiv-entity this o))))
 
 #?(:clj
    (defmethod print-method Entity [e, ^java.io.Writer w]
@@ -182,8 +180,7 @@
        (.write w
                (pr-str
                  (cond-> ent
-                   staged (assoc :<STAGED> staged)))))
-     (.write w (str e))))
+                   staged (assoc :<STAGED> staged)))))))
 
 (defn- rschema->attr-types
   [{ref-attrs  :db.type/ref
@@ -205,6 +202,14 @@
        (= 2 (count x))
        (keyword? (first x))))
 
+(defn lookup-stage-then-entity
+  ([e k] (lookup-stage-then-entity e k nil))
+  ([^Entity e k default-value]
+   (if-let [[_ v] (c/get (.-tbd e) k)]
+     v
+     (if-some [v (lookup-entity e k)]
+       v
+       default-value))))
 
 (defn- entity->txs [^Entity e]
   (let [eid (.-eid e)
@@ -221,18 +226,17 @@
               (let [v (if (lookup-ref? v)
                         [v]
                         (u/ensure-vec v))]
-               (case op
-                 :assoc [[:db.fn/retractAttribute eid k]
-                         {:db/id eid
-                          ;; TODO resolve as ref
-                          k      (mapv (fn [e] (or (:db/id e) e)) v)}]
-                 :add [{:db/id eid
-                        k      (mapv (fn [e] (or (:db/id e) e)) v)}]
-                 :dissoc [[:db.fn/retractAttribute eid k]]
-                 :retract (into []
-                                (map (fn [e]
-                                       [:db/retract eid k (:db/id e)]))
-                                v)))
+                (case op
+                  :assoc [[:db.fn/retractAttribute eid k]
+                          {:db/id eid
+                           k      (mapv (fn [e] (or (:db/id e) e)) v)}]
+                  :add [{:db/id eid
+                         k      (mapv (fn [e] (or (:db/id e) e)) v)}]
+                  :dissoc [[:db.fn/retractAttribute eid k]]
+                  :retract (into []
+                                 (map (fn [e]
+                                        [:db/retract eid k (:db/id e)]))
+                                 v)))
 
               :else
               (case op

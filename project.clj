@@ -16,7 +16,6 @@
                          [org.graalvm.nativeimage/svm "21.1.0"]
                          [borkdude/sci "0.2.5"]
                          [com.taoensso/nippy "3.1.1"]
-                         [potemkin/potemkin "0.4.5"]
                          [persistent-sorted-set "0.1.2"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
@@ -29,7 +28,6 @@
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [com.taoensso/nippy]
                  [persistent-sorted-set]
-                 [potemkin/potemkin]
                  [org.lmdbjava/lmdbjava]]
   :source-paths ["src"]
   :profiles {:uberjar      {:main         datalevin.main
