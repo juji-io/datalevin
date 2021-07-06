@@ -86,6 +86,9 @@ backward references).
 before) are printed. See [[touch]]."}
   entity de/entity)
 
+(def add de/add)
+(def retract de/retract)
+
 
 (def ^{:arglists '([db eid])
        :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.

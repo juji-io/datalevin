@@ -687,6 +687,10 @@
     :db.fn/retractEntity
     :db/retractEntity})
 
+;; HACK to avoid circular dependency
+(def de-entity? (delay (resolve 'datalevin.impl.entity/entity?)))
+(def de-entity->txs (delay (resolve 'datalevin.impl.entity/->txs)))
+
 (defn transact-tx-data [initial-report initial-es]
   (when-not (or (nil? initial-es)
                 (sequential? initial-es))
@@ -707,6 +711,10 @@
 
                  (nil? entity)
                  (recur report entities)
+
+                 (@de-entity? entity)
+                 (recur report
+                        (into entities (reverse (@de-entity->txs entity))))
 
                  (map? entity)
                  (let [old-eid (:db/id entity)]
