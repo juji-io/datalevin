@@ -1,16 +1,21 @@
 # Change Log
 
+## WIP
+### Added
+- Transactable entity [Thanks @den1k, #48]
+- `clear` function to clear Datalog db
+
 ## 0.4.35
-## Fixed
+### Fixed
 - Native uses the same version of LMDB as JVM, #58
 
 ## 0.4.32
-## Improved
+### Improved
 - Remove GraalVM and dtlv specific deps from JVM library jar
 - Update deps
 
 ## 0.4.31
-## Improved
+### Improved
 - More robust dependency management
 ### Fixed
 - Replacing giant values, this requires Java 11 [#56]
@@ -34,37 +39,37 @@
 - Talk to Babashka pods client in transit+json
 
 ## 0.4.27
-## Added
+### Added
 - Exposed more functions to Babashka pod
 
 ## 0.4.26
-## Added
+### Added
 - Native Datalevin can now work as a Babashka pod
 
 ## 0.4.23
-## Added
+### Added
 - Compile to native on Windows and handle Windows path correctly
 - `close-db` convenience function to close a Datalog db
 
 ## 0.4.21
-## Changed
+### Changed
 - Compile to Java 8 bytecode instead of 11 to have wider compatibility
 - Use UTF-8 throughout for character encoding
 
 ## 0.4.20
-## Improved
+### Improved
 - Improve dtlv REPL (doc f) display
 
 ## 0.4.19
-## Improved
+### Improved
 - Provide Datalevin C source as a zip to help compiling native Datalevin dependency
 
 ## 0.4.17
-## Improved
+### Improved
 - Minor improvement on the command line tool
 
 ## 0.4.16
-## Changed
+### Changed
 - Native image now bundles LMDB
 
 ## 0.4.13
@@ -110,7 +115,6 @@
 - Read `:db.type/instant` value as `java.util.Date`, not as `long` [#30]
 
 ## 0.3.13
-
 ### Fixed
 - Fixed error when transacting different data types for an untyped attribute [#28, thx @den1k]
 
