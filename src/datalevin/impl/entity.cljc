@@ -175,7 +175,7 @@
 
 #?(:clj
    (defmethod print-method Entity [e, ^java.io.Writer w]
-     (let [staged (not-empty (.tbd e))
+     (let [staged (not-empty (.-tbd e))
            ent    (assoc @(.cache e) :db/id (.eid e))]
        (.write w
                (pr-str
