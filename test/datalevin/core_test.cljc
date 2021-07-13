@@ -157,10 +157,15 @@
                                     "united states" "usa"]}]]))
     (sut/update-schema conn schema-update)
     (is (= (sut/schema conn) (merge schema schema-update)))
+    (is (sut/conn? conn))
     (sut/close conn)
     (let [conn' (sut/create-conn dir)]
       (is (= 83 (count (sut/datoms @conn' :eavt))))
       (is (= (sut/schema conn') (merge schema schema-update)))
+      (sut/close conn'))
+    (sut/clear conn)
+    (let [conn' (sut/create-conn dir)]
+      (is (= 0 (count (sut/datoms @conn' :eavt))))
       (sut/close conn'))
     (u/delete-files dir)))
 

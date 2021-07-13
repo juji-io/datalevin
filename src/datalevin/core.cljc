@@ -6,6 +6,7 @@
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
+   [datalevin.constants :as c]
    [datalevin.lmdb :as l]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
@@ -392,7 +393,8 @@ given. Return reference to the database.
 ;; Conn
 
 (defn conn?
-  "Returns `true` if this is a connection to a Datalevin db, `false` otherwise."
+  "Returns `true` if this is an open connection to a Datalog db, `false`
+  otherwise."
   [conn]
   (and #?(:clj  (instance? clojure.lang.IDeref conn)
           :cljs (satisfies? cljs.core/IDeref conn))
@@ -440,7 +442,6 @@ given. Return reference to the database.
   "Close the connection"
   [conn]
   (s/close ^Store (.-store ^DB @conn))
-  (reset! conn nil)
   nil)
 
 (defn closed?
@@ -563,8 +564,8 @@ given. Return reference to the database.
                   { :db-before @conn
                    :db-after   db
                    :tx-data    (concat
-                                (map #(assoc % :added false) (datoms @conn :eavt))
-                                (datoms db :eavt))
+                                 (map #(assoc % :added false) (datoms @conn :eavt))
+                                 (datoms db :eavt))
                    :tx-meta    tx-meta})]
      (reset! conn db)
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
@@ -1170,6 +1171,18 @@ given. Return reference to the database.
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}
   range-filter-count l/range-filter-count)
+
+(defn clear
+  "Clear all data in the Datalog database, including schema. Takes an open
+  connection to the db."
+  [conn]
+  (assert (conn? conn) "clear takes an open Datalog conn")
+  (close conn)
+  (let [dir  (s/dir ^Store (.-store ^DB @conn))
+        lmdb (open-kv dir)]
+    (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
+      (clear-dbi lmdb dbi))
+    (close-kv lmdb)))
 
 ;; byte buffer
 
