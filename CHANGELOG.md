@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.40
 ### Added
 - Transactable entity [Thanks @den1k, #48]
 - `clear` function to clear Datalog db
