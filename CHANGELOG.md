@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Added
+- `dtlv exec` takes input from stdin when no argument is given.
+
 ## 0.4.40
 ### Added
 - Transactable entity [Thanks @den1k, #48]

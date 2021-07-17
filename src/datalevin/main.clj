@@ -18,7 +18,7 @@
             [pod.huahaiy.datalevin :as pod]
             [datalevin.binding.graal]
             [datalevin.binding.java])
-  (:import [java.io PushbackReader IOException]
+  (:import [java.io BufferedReader PushbackReader IOException]
            [java.lang RuntimeException]
            [datalevin.datom Datom])
   (:gen-class))
@@ -292,7 +292,7 @@
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
 
-(defn exec
+(defn exec-code
   "Execute code and return results. `code` is a string. Acceptable code includes
   Datalevin functions and Clojure core functions."
   [code]
@@ -305,10 +305,15 @@
             (prn (eval-fn ctx next-form))
             (recur)))))))
 
+(defn exec
+  [arguments]
+  (exec-code (s/join (if (seq arguments)
+                       arguments
+                       (doall (line-seq (BufferedReader. *in*)))))))
+
 (defn- dtlv-exec [arguments]
-  (assert (seq arguments) (s/join \newline ["Missing code." exec-help]))
   (try
-    (exec (s/join arguments))
+    (exec arguments)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Execution error: " (.getMessage e)))))

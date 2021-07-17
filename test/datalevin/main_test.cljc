@@ -4,8 +4,10 @@
             [datalevin.core :as d]
             [clojure.string :as s]
             #?(:clj [clojure.test :refer [is deftest]]
-               :cljs [cljs.test :as t :include-macros true]))
-  (:import [java.util UUID]))
+               :cljs [cljs.test :as t :include-macros true])
+            [clojure.java.io :as io])
+  (:import [java.util UUID]
+           [java.io ByteArrayInputStream]))
 
 (deftest command-line-args-test
   (let [r (sut/validate-args ["-V"])]
@@ -36,7 +38,17 @@
                   "(transact! conn [{:name \"Datalevin\"}])"
                   "(q (quote [:find ?e ?n :where [?e :name ?n]]) @conn)"
                   "(close conn)")
-        res  (with-out-str (sut/exec code))]
+        res  (with-out-str (sut/exec-code code))]
+    (is (s/includes? res "#{[1 \"Datalevin\"]}"))
+    (u/delete-files dir)))
+
+(deftest exec-stdin-test
+  (let [dir  (u/tmp-dir (str "datalevin-exec-stdin-test-" (UUID/randomUUID)))
+        code (str "(def conn (get-conn \"" dir "\"))"
+                  "(transact! conn [{:name \"Datalevin\"}])"
+                  "(q (quote [:find ?e ?n :where [?e :name ?n]]) @conn)"
+                  "(close conn)")
+        res  (with-out-str (with-in-str code (sut/exec nil)))]
     (is (s/includes? res "#{[1 \"Datalevin\"]}"))
     (u/delete-files dir)))
 
@@ -113,7 +125,7 @@
                   "(q (quote [:find ?e :where (or [?e :name \"Datalevin\"]
                                                   [?e :some \"value\"])]) @conn)"
                   "(close conn)")
-        res  (with-out-str (sut/exec code))]
+        res  (with-out-str (sut/exec-code code))]
     (is (or (s/includes? res "#{[1] [2]}")
             (s/includes? res "#{[2] [1]}")))
     (u/delete-files dir)))
