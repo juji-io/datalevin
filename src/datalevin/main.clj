@@ -15,6 +15,7 @@
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
+            [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
             [datalevin.binding.graal]
             [datalevin.binding.java])
@@ -31,7 +32,17 @@
   Datalevin (version: " version ")"))
 
 (def ^:private commands
-  #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl"})
+  #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl" "serv"})
+
+(def ^:private serv-help
+  "
+  Command serv - run as a server.
+
+  Optional options:
+      -p --port        Listening port, default is 8898
+
+  Examples:
+      dtlv -p 8899 serv")
 
 (def ^:private stat-help
   "
@@ -220,6 +231,7 @@
         "  help  Show help messages"
         "  load  Load data from standard input into a database"
         "  repl  Enter an interactive shell"
+        "  serv  Run as a server"
         "  stat  Display statistics of database"
         ""
         "Options:"
@@ -243,6 +255,7 @@
    ["-g" "--datalog" "Dump/load as a Datalog database"]
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
+   ["-p" "--port" "Listening port" 8898]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
 (defn ^:no-doc validate-args
@@ -256,7 +269,7 @@
         command (first arguments)
         pod?    (= "true" (System/getenv "BABASHKA_POD"))]
     (cond
-      pod?               {:command "pod"}
+      pod?               {:command "pods"}
       (:version options) {:exit-message version-str :ok? true}
       (:help options)    {:exit-message (usage summary) :ok? true}
       errors             {:exit-message (str (error-msg errors)
@@ -586,12 +599,14 @@
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (case command
-        "pod"  (pod/run)
-        "repl" (dtlv-repl)
-        "exec" (dtlv-exec arguments)
         "copy" (dtlv-copy options arguments)
         "drop" (dtlv-drop options arguments)
         "dump" (dtlv-dump options arguments)
+        "exec" (dtlv-exec arguments)
+        "help" (dtlv-help arguments summary)
         "load" (dtlv-load options arguments)
+        "pods" (pod/run)
+        "repl" (dtlv-repl)
+        "serv" (srv/start options)
         "stat" (dtlv-stat options arguments)
-        "help" (dtlv-help arguments summary)))))
+        ))))

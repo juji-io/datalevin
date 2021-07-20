@@ -97,7 +97,7 @@ See [here](https://github.com/juji-io/datalevin#babashka-pod)
 `-p` to specify an alternative port number that the server listens to.
 
 When a client opens a Datalevin database using a connection URI, i.e.
-"dtlv://<username>:<password>@<hostname>:<port>/<db-name>",
+"dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;",
 instead of a local path name, a connection to the server is attempted. When the
 connection is successfully established, the returned object contains a
 connection token. The subsequent calls pass along the connection token.

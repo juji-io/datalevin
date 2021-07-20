@@ -54,6 +54,7 @@
              "--illegal-access=permit"
              "-Dclojure.compiler.direct-linking=true"]
   :javac-options ["--release" "11"]
+  :main datalevin.main
 
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
