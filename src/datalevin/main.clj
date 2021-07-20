@@ -255,7 +255,10 @@
    ["-g" "--datalog" "Dump/load as a Datalog database"]
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
-   ["-p" "--port" "Listening port" 8898]
+   ["-p" "--port PORT" "Listening port number"
+    :default 8898
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
 (defn ^:no-doc validate-args
