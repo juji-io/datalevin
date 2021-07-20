@@ -1,10 +1,10 @@
 (ns ^:no-doc datalevin.util
   (:require [clojure.walk]
             [clojure.string :as s]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [cognitect.transit :as transit])
   #?(:clj
-     (:import [java.lang System]
-              [java.io File]))
+     (:import [java.io File ByteArrayInputStream ByteArrayOutputStream]))
   (:refer-clojure :exclude [seqable?]))
 
 ;; files
@@ -52,6 +52,23 @@
    neutral temporary directory path."
   ([] +tmp+)
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
+
+;; transport
+
+(defn read-transit
+  "Read a transit+json encoded string into a Clojure value"
+  [^String s]
+  (transit/read
+    (transit/reader
+      (ByteArrayInputStream. (.getBytes s "utf-8")) :json)))
+
+(defn write-transit
+  "Write a Clojure value as a transit+json encoded string"
+  [v]
+  (let [baos (ByteArrayOutputStream.)]
+    (transit/write (transit/writer baos :json) v)
+    (.toString baos "utf-8")))
+
 
 ;; ----------------------------------------------------------------------------
 

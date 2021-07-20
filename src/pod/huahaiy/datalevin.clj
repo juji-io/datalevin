@@ -2,8 +2,8 @@
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
             [datalevin.core :as d]
+            [datalevin.util :as u]
             [datalevin.datom :as dd]
-            [cognitect.transit :as transit]
             [clojure.java.io :as io]
             [clojure.walk :as w])
   (:import [java.io PushbackInputStream]
@@ -389,16 +389,6 @@
   (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
           (vals exposed-vars)))
 
-(defn read-transit [^String v]
-  (transit/read
-    (transit/reader
-      (java.io.ByteArrayInputStream. (.getBytes v "utf-8")) :json)))
-
-(defn write-transit [v]
-  (let [baos (java.io.ByteArrayOutputStream.)]
-    (transit/write (transit/writer baos :json) v)
-    (.toString baos "utf-8")))
-
 (defn run []
   (loop []
     (let [message (try (read)
@@ -423,9 +413,9 @@
                                          symbol)
                                 args (-> (get message "args")
                                          read-string
-                                         read-transit)]
+                                         u/read-transit)]
                             (if-let [f (lookup var)]
-                              (let [value (write-transit (apply f args))
+                              (let [value (u/write-transit (apply f args))
                                     reply {"value"  value
                                            "id"     id
                                            "status" ["done"]}]
@@ -435,7 +425,7 @@
                             (binding [*out* *err*]
                               (println e))
                             (let [reply {"ex-message" (.getMessage e)
-                                         "ex-data"    (write-transit
+                                         "ex-data"    (u/write-transit
                                                         (assoc (ex-data e)
                                                                :type
                                                                (str (class e))))
