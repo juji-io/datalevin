@@ -4,7 +4,8 @@
             [clojure.java.io :as io]
             [cognitect.transit :as transit])
   #?(:clj
-     (:import [java.io File ByteArrayInputStream ByteArrayOutputStream]))
+     (:import [java.io File ByteArrayInputStream ByteArrayOutputStream]
+              [java.util Base64 Base64$Decoder Base64$Encoder]))
   (:refer-clojure :exclude [seqable?]))
 
 ;; files
@@ -53,7 +54,7 @@
   ([] +tmp+)
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
 
-;; transport
+;; en/decode
 
 (defn read-transit
   "Read a transit+json encoded string into a Clojure value"
@@ -69,6 +70,19 @@
     (transit/write (transit/writer baos :json) v)
     (.toString baos "utf-8")))
 
+(def base64-encoder (.withoutPadding (Base64/getEncoder)))
+
+(def base64-decoder (Base64/getDecoder))
+
+(defn encode-base64
+  "encode bytes into a base64 string"
+  [bs]
+  (.encodeToString ^Base64$Encoder base64-encoder bs))
+
+(defn decode-base64
+  "decode a base64 string to return the bytes"
+  [^String s]
+  (.decode ^Base64$Decoder base64-decoder s))
 
 ;; ----------------------------------------------------------------------------
 

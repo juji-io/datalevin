@@ -17,6 +17,7 @@
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]
                  [org.clojure/test.check]
+                 [org.bouncycastle/bcprov-jdk15on]
                  [babashka/babashka.pods]]
   :source-paths ["src/clj" "../src" "../test"]
   :java-source-paths ["src/java"]

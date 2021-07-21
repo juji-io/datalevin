@@ -14,9 +14,10 @@
                          [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.1.0"]
                          [org.graalvm.nativeimage/svm "21.1.0"]
-                         [borkdude/sci "0.2.5"]
+                         [borkdude/sci "0.2.6"]
                          [com.taoensso/nippy "3.1.1"]
-                         [persistent-sorted-set "0.1.2"]
+                         [persistent-sorted-set "0.1.3"]
+                         [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -46,6 +47,7 @@
                              [org.clojure/tools.cli]
                              [borkdude/sci]
                              [com.cognitect/transit-clj]
+                             [org.bouncycastle/bcprov-jdk15on]
                              [nrepl/bencode]]}}
   :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
