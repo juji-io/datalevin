@@ -18,7 +18,8 @@
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
             [datalevin.binding.graal]
-            [datalevin.binding.java])
+            [datalevin.binding.java]
+            [datalevin.constants :as c])
   (:import [java.io BufferedReader PushbackReader IOException]
            [java.lang RuntimeException]
            [datalevin.datom Datom])
@@ -256,7 +257,7 @@
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
    ["-p" "--port PORT" "Listening port number"
-    :default 8898
+    :default c/default-port
     :parse-fn #(Integer/parseInt %)
     :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
    ["-V" "--version" "Show Datalevin version and exit"]])

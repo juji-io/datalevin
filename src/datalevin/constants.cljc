@@ -88,6 +88,8 @@
                                    :db.type/instant :db.type/uuid
                                    :db.type/bytes})
 
+(def ^:const default-port 8898)
+
 ;;-------------------------------------------------------------
 
 ;; user configurable TODO: make it so

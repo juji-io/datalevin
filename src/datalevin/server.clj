@@ -3,7 +3,9 @@
             [datalevin.bits :as b])
   (:import [java.io BufferedReader PushbackReader IOException]
            [java.nio.charset StandardCharsets]
+           [java.net ServerSocket Socket]
            [java.security SecureRandom]
+           [java.util.concurrent Executors ThreadPoolExecutor]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
             Argon2Parameters$Builder]))
@@ -47,4 +49,9 @@
 
 (defn start
   [{:keys [port]}]
-  (println "port is " port))
+  (let [server-socket (ServerSocket. port)
+        cores         (.availableProcessors (Runtime/getRuntime))
+        executor      (Executors/newFixedThreadPool cores)]
+    (loop []
+      (let [client-socket (.accept server-socket)]
+        ))))
