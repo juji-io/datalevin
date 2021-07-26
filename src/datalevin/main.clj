@@ -7,11 +7,9 @@
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.stacktrace :as st]
-            [clojure.walk :as w]
             [sci.core :as sci]
-            [sci.impl.vars :as vars]
             [datalevin.core :as d]
-            [datalevin.query :as q]
+            [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
@@ -142,64 +140,14 @@
                  (q (quote [:find ?e ?n :where [?e :name ?n]]) @conn) \\
                  (close conn)'")
 
-(def ^:private user-facing-ns #{'datalevin.core})
-
-(defn- user-facing? [v]
-  (let [m (meta v)]
-    (and (:doc m)
-         (if-let [p (:protocol m)]
-           (and (not (:no-doc (meta p)))
-                (not (:no-doc m)))
-           (not (:no-doc m))))))
-
-(defn- user-facing-map [ns var-map]
-  (let [sci-ns (vars/->SciNamespace ns nil)]
-    (reduce
-      (fn [m [k v]]
-        (assoc m k (vars/->SciVar v
-                                  (symbol v)
-                                  (assoc (meta v)
-                                         :sci.impl/built-in true
-                                         :ns sci-ns)
-                                  false)))
-      {}
-      (select-keys var-map
-                   (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
-
-(defn- user-facing-vars []
-  (reduce
-    (fn [m ns]
-      (assoc m ns (user-facing-map ns (ns-publics ns))))
-    {}
-    user-facing-ns))
-
-(defn- resolve-var [s]
-  (when (symbol? s)
-    (some #(ns-resolve % s) user-facing-ns)))
-
-(defn- qualify-fn [x]
-  (if (list? x)
-    (let [[f & args] x]
-      (if-let [var (when-not (q/rule-head f) (resolve-var f))]
-        (apply list (symbol var) args)
-        x))
-    x))
-
-(defn- eval-fn [ctx form]
-  (sci/eval-form ctx (if (coll? form)
-                       (w/postwalk qualify-fn form)
-                       form)))
-
-(def ^:private sci-opts {:namespaces (user-facing-vars)})
-
 (defn- repl-help []
   (println "")
   (println "The following Datalevin functions are available:")
   (println "")
-  (doseq [ns   user-facing-ns
+  (doseq [ns   i/user-facing-ns
           :let [fs (->> ns
                         ns-publics
-                        (user-facing-map ns)
+                        (i/user-facing-map ns)
                         keys
                         (sort-by name)
                         (partition 4 4 nil))]]
@@ -309,24 +257,11 @@
                 (str "Unknown command: " command))))
     (exit 0 (usage summary))))
 
-(defn exec-code
-  "Execute code and return results. `code` is a string. Acceptable code includes
-  Datalevin functions and Clojure core functions."
-  [code]
-  (let [reader (sci/reader code)
-        ctx    (sci/init sci-opts)]
-    (sci/with-bindings {sci/ns @sci/ns}
-      (loop []
-        (let [next-form (sci/parse-next ctx reader)]
-          (when-not (= ::sci/eof next-form)
-            (prn (eval-fn ctx next-form))
-            (recur)))))))
-
 (defn exec
   [arguments]
-  (exec-code (s/join (if (seq arguments)
-                       arguments
-                       (doall (line-seq (BufferedReader. *in*)))))))
+  (i/exec-code (s/join (if (seq arguments)
+                         arguments
+                         (doall (line-seq (BufferedReader. *in*)))))))
 
 (defn- dtlv-exec [arguments]
   (try
@@ -556,8 +491,8 @@
   (binding [*out* *err*] (println (ex-message e)))
   (sci/set! last-error e))
 
-(defn- doc [s]
-  (when-let [f (resolve-var s)]
+(defn- document [s]
+  (when-let [f (i/resolve-var s)]
     (let [m (meta f)]
       (println " -------------------------")
       (println (str (ns-name (:ns m)) "/" (:name m)))
@@ -570,7 +505,7 @@
   (let [reader     (sci/reader *in*)
         last-error (sci/new-dynamic-var '*e nil
                                         {:ns (sci/create-ns 'clojure.core)})
-        ctx        (sci/init (update sci-opts :namespaces
+        ctx        (sci/init (update i/sci-opts :namespaces
                                      merge {'clojure.core {'*e last-error}}))]
     (sci/with-bindings {sci/ns     @sci/ns
                         last-error @last-error}
@@ -585,11 +520,11 @@
             (= next-form '(help))           (do (repl-help) (recur))
 
             (and (list? next-form) (= ((comp name first) next-form) "doc"))
-            (do (doc (first (next next-form))) (recur))
+            (do (document (first (next next-form))) (recur))
 
             :else (when-not (= ::sci/eof next-form)
                     (when-not (= ::err next-form)
-                      (let [res (try (eval-fn ctx next-form)
+                      (let [res (try (i/eval-fn ctx next-form)
                                      (catch Throwable e
                                        (handle-error ctx last-error e)
                                        ::err))]

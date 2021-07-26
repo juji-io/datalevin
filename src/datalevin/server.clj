@@ -1,7 +1,9 @@
 (ns datalevin.server
   (:require [datalevin.util :as u]
-            [datalevin.bits :as b])
-  (:import [java.io BufferedReader PushbackReader IOException]
+            [datalevin.bits :as b]
+            [datalevin.interpret :as i]
+            [clojure.string :as s])
+  (:import [java.io BufferedReader PushbackReader PrintWriter InputStreamReader]
            [java.nio.charset StandardCharsets]
            [java.net ServerSocket Socket]
            [java.security SecureRandom]
@@ -47,6 +49,17 @@
   [in-password password-hash salt]
   (= password-hash (password-hashing in-password salt)))
 
+(defn handle-connection
+  [^Socket socket]
+  (with-open [out (PrintWriter. (.getOutputStream socket) true)
+              in  (InputStreamReader. (.getInputStream socket))]
+    (let [code (s/join (doall (line-seq (BufferedReader. in))))
+          _    (println "got code: " code)
+          res  (with-out-str (i/exec-code code))
+          _    (println "got res: " res)
+          ]
+      (.println out res))))
+
 (defn start
   [{:keys [port]}]
   (let [server-socket (ServerSocket. port)
@@ -54,4 +67,5 @@
         executor      (Executors/newFixedThreadPool cores)]
     (loop []
       (let [client-socket (.accept server-socket)]
-        ))))
+        (.execute executor #(handle-connection client-socket))
+        (recur)))))
