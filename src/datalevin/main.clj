@@ -39,9 +39,11 @@
 
   Optional options:
       -p --port        Listening port, default is 8898
+      -r --root        Root data directory, default is /var/lib/datalevin
 
   Examples:
-      dtlv -p 8899 serv")
+      dtlv -p 8899 serv
+      dtlv -r /data/dtlv serv")
 
 (def ^:private stat-help
   "
@@ -208,6 +210,8 @@
     :default c/default-port
     :parse-fn #(Integer/parseInt %)
     :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
+   ["-r" "--root ROOT" "Server root data directory"
+    :default c/default-root-dir]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
 (defn ^:no-doc validate-args
@@ -445,7 +449,7 @@
   Will load raw data into the named sub-database `dbi` if given. "
   [dir src-file dbi datalog?]
   (let [f    (when src-file (PushbackReader. (io/reader src-file)))
-        in   (or f *in*)
+        in   (or f (PushbackReader. *in*))
         lmdb (l/open-kv dir)]
     (cond
       datalog? (load-datalog dir in)
@@ -547,5 +551,4 @@
         "pods" (pod/run)
         "repl" (dtlv-repl)
         "serv" (srv/start options)
-        "stat" (dtlv-stat options arguments)
-        ))))
+        "stat" (dtlv-stat options arguments)))))

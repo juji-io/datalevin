@@ -88,7 +88,9 @@
                                    :db.type/instant :db.type/uuid
                                    :db.type/bytes})
 
+;; server
 (def ^:const default-port 8898)
+(def ^:const default-root-dir "/var/lib/datalevin")
 
 ;;-------------------------------------------------------------
 
@@ -109,3 +111,7 @@
 ;; query
 
 (def ^:const +cache-limit+ 1000)  ; per Datalog db
+
+;; client/server
+
+(def ^:const +message-buffer-size+ 8192) ; number of characters

@@ -4,9 +4,43 @@
             [clojure.java.io :as io]
             [cognitect.transit :as transit])
   #?(:clj
-     (:import [java.io File ByteArrayInputStream ByteArrayOutputStream]
+     (:import [java.io File ByteArrayInputStream ByteArrayOutputStream
+               BufferedReader PrintWriter]
               [java.util Base64 Base64$Decoder Base64$Encoder]))
   (:refer-clojure :exclude [seqable?]))
+
+(defn #?@(:clj  [^Boolean seqable?]
+          :cljs [^boolean seqable?])
+  [x]
+  (and (not (string? x))
+       #?(:cljs (cljs.core/seqable? x)
+          :clj  (or (seq? x)
+                    (instance? clojure.lang.Seqable x)
+                    (nil? x)
+                    (instance? Iterable x)
+                    (instance? java.util.Map x)))))
+
+#?(:clj
+   (defmacro cond+ [& clauses]
+     (when-some [[test expr & rest] clauses]
+       (case test
+         :let `(let ~expr (cond+ ~@rest))
+         `(if ~test ~expr (cond+ ~@rest))))))
+
+#?(:clj
+   (defmacro some-of
+     ([] nil)
+     ([x] x)
+     ([x & more]
+      `(let [x# ~x] (if (nil? x#) (some-of ~@more) x#)))))
+
+#?(:clj
+   (defmacro raise [& fragments]
+     (let [msgs (butlast fragments)
+           data (last fragments)]
+       `(throw (ex-info
+                 (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs))
+                 ~data)))))
 
 ;; files
 
@@ -59,16 +93,38 @@
 (defn read-transit
   "Read a transit+json encoded string into a Clojure value"
   [^String s]
-  (transit/read
-    (transit/reader
-      (ByteArrayInputStream. (.getBytes s "utf-8")) :json)))
+  (try
+    (transit/read
+      (transit/reader
+        (ByteArrayInputStream. (.getBytes s "utf-8")) :json))
+    (catch Exception e
+      (raise "Unable to read transit:" (ex-message e) {:string s}))))
 
 (defn write-transit
   "Write a Clojure value as a transit+json encoded string"
   [v]
-  (let [baos (ByteArrayOutputStream.)]
-    (transit/write (transit/writer baos :json) v)
-    (.toString baos "utf-8")))
+  (try
+    (let [baos (ByteArrayOutputStream.)]
+      (transit/write (transit/writer baos :json) v)
+      (.toString baos "utf-8"))
+    (catch Exception e
+      (raise "Unable to write transit:" (ex-message e) {:value v}))))
+
+(defn write-message
+  "Write message as a line of transit encoded text to a PrintWriter,
+  assumes that auto-flush is on"
+  [writer m]
+  (assert (instance? PrintWriter writer)
+          "Needs a PrintWriter for writing message")
+  (.println ^PrintWriter writer (write-transit m)))
+
+(defn read-message
+  "Read message as a line of transit encoded text from a BufferedReader"
+  [reader]
+  (assert (instance? BufferedReader reader)
+          "Needs a BufferedReader for reading message")
+  (when-let [s (.readLine ^BufferedReader reader)]
+    (read-transit s)))
 
 (def base64-encoder (.withoutPadding (Base64/getEncoder)))
 
@@ -84,6 +140,7 @@
   [^String s]
   (.decode ^Base64$Decoder base64-decoder s))
 
+
 ;; ----------------------------------------------------------------------------
 
 #?(:cljs
@@ -93,39 +150,6 @@
      (def UnsupportedOperationException js/Error)))
 
 ;; ----------------------------------------------------------------------------
-
-#?(:clj
-  (defmacro raise [& fragments]
-    (let [msgs (butlast fragments)
-          data (last fragments)]
-      `(throw (ex-info
-               (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs))
-               ~data)))))
-
-(defn #?@(:clj  [^Boolean seqable?]
-          :cljs [^boolean seqable?])
-  [x]
-  (and (not (string? x))
-       #?(:cljs (cljs.core/seqable? x)
-     :clj  (or (seq? x)
-               (instance? clojure.lang.Seqable x)
-               (nil? x)
-               (instance? Iterable x)
-               (instance? java.util.Map x)))))
-
-#?(:clj
-  (defmacro cond+ [& clauses]
-    (when-some [[test expr & rest] clauses]
-      (case test
-        :let `(let ~expr (cond+ ~@rest))
-        `(if ~test ~expr (cond+ ~@rest))))))
-
-#?(:clj
-(defmacro some-of
-  ([] nil)
-  ([x] x)
-  ([x & more]
-    `(let [x# ~x] (if (nil? x#) (some-of ~@more) x#)))))
 
 ;; ----------------------------------------------------------------------------
 ;; macros and funcs to support writing defrecords and updating
