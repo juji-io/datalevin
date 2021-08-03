@@ -45,8 +45,7 @@
           (u/raise "Authentication failure" {})))))
 
 (defn startup
-  "Attempt to connect and authenticate to a server, return a connection map
-  if successful, otherwise raise exception"
+  "Attempt to connect and authenticate to a server, return a connection map"
   [host port username password database]
   (when-let [conn (connect host port)]
     (authenticate conn username password database)))

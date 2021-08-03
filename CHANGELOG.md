@@ -3,6 +3,8 @@
 ## WIP
 ### Added
 - `dtlv exec` takes input from stdin when no argument is given.
+### Improved
+- When open db, throw exception without proper file permission
 
 ## 0.4.40
 ### Added

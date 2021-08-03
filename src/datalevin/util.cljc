@@ -4,8 +4,13 @@
             [clojure.java.io :as io]
             [cognitect.transit :as transit])
   #?(:clj
-     (:import [java.io File ByteArrayInputStream ByteArrayOutputStream
-               BufferedReader PrintWriter]
+     (:import [java.io ByteArrayInputStream ByteArrayOutputStream
+               BufferedReader PrintWriter File]
+              [java.nio.file Files Path Paths LinkOption
+               AccessDeniedException]
+              [java.nio.file.attribute PosixFilePermissions
+               FileAttribute]
+              [java.net URI]
               [java.util Base64 Base64$Decoder Base64$Encoder]))
   (:refer-clojure :exclude [seqable?]))
 
@@ -55,13 +60,21 @@
 
 (defn file
   "Return directory path as File, create it if missing"
-  [path]
-  (let [^File f (io/file path)]
-    (if (.exists f)
-      f
-      (do (io/make-parents path)
-          (.mkdir f)
-          f))))
+  [^String path]
+  (try
+    (let [path' (Paths/get path (into-array String []))]
+      (if (Files/exists path' (into-array LinkOption []))
+        (io/file path)
+        (do (Files/createDirectories
+              path'
+              (into-array FileAttribute
+                          [(PosixFilePermissions/asFileAttribute
+                             (PosixFilePermissions/fromString "rwxr-x---"))]))
+            (io/file path))))
+    (catch AccessDeniedException e
+      (raise "Access denied " (ex-message e) {:path path}))
+    (catch Exception e
+      (raise "Error openning file " (ex-message e) {:path path}))))
 
 (defn empty-dir?
   "test if the given File is an empty directory"

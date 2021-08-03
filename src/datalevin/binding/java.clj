@@ -398,5 +398,5 @@
       (->LMDB env dir pool (ConcurrentHashMap.)))
     (catch Exception e
       (raise
-        "Fail to open LMDB database: " (ex-message e)
+        "Fail to open database: " (ex-message e)
         {:dir dir}))))
