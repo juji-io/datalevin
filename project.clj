@@ -31,6 +31,7 @@
                  [persistent-sorted-set]
                  [org.lmdbjava/lmdbjava]]
   :source-paths ["src"]
+  :java-source-paths ["src/java"]
   :profiles {:uberjar      {:main         datalevin.main
                             :aot          [#"^datalevin.*"
                                            pod.huahaiy.datalevin],

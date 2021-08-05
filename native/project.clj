@@ -20,7 +20,7 @@
                  [org.bouncycastle/bcprov-jdk15on]
                  [babashka/babashka.pods]]
   :source-paths ["src/clj" "../src" "../test"]
-  :java-source-paths ["src/java"]
+  :java-source-paths ["src/java" "../src/java"]
   :test-paths ["../test"]
   :plugins [[lein-parent "0.3.8"]]
   )

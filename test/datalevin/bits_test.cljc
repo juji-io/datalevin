@@ -6,21 +6,11 @@
             [clojure.test :refer [deftest is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop]
-            [datalevin.bits :as b])
+            [clojure.test.check.properties :as prop])
   (:import [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [datalevin.bits Indexable Retrieved]))
-
-;; bytes <-> text
-
-(test/defspec bytes<->str-test
-  100
-  (prop/for-all [^bytes k (gen/not-empty gen/bytes)]
-                (Arrays/equals k
-                               ^bytes (sut/binary-str->ba
-                                        (sut/binary-ba->str k)))))
 
 ;; buffer read/write
 

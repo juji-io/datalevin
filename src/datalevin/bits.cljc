@@ -3,12 +3,14 @@
   (:require [datalevin.datom :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
+            [cognitect.transit :as transit]
             [taoensso.nippy :as nippy])
   (:import [java.io DataInput DataOutput]
            [java.util Arrays UUID Date Base64]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
+           [datalevin.io]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -42,16 +44,6 @@
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
   (String. ba StandardCharsets/UTF_8))
-
-(defn binary-ba->str
-  "Convert a byte array to string using base64"
-  [^bytes ba]
-  (.encodeToString (Base64/getEncoder) ba))
-
-(defn binary-str->ba
-  "Convert a base64 encoded string back to a byte array"
-  [^String s]
-  (.decode (Base64/getDecoder) s))
 
 ;; byte buffer
 
@@ -590,3 +582,20 @@
      :veat    (get-vea bf)
      :raw     (get-bytes bf)
      (get-data bf))))
+
+(defn write-message
+  "Write message to a bytebuffer for client/server. First four bytes are the length
+  of the message (including itself), followed by transit encoded string in bytes"
+  [bf m]
+  (try
+    (let [baos (ByteArrayOutputStream.)]
+      (transit/write (transit/writer baos :json) v)
+      (.toString baos "utf-8"))
+    (catch Exception e
+      (raise "Unable to write message:" (ex-message e) {:msg m}))))
+
+(defn read-message
+  "Read message as a line of transit encoded text from a BufferedReader"
+  [reader]
+  (when-let [s (.readLine ^BufferedReader reader)]
+    ))

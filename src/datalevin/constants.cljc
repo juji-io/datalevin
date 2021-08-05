@@ -95,29 +95,29 @@
 (def ^:const default-username "datalevin")
 (def ^:const default-password "datalevin")
 (def ^:const system-dir "system")
-(def ^:const superuser-role "datalevin/superuser")
+(def ^:const superuser-role :datalevin/superuser)
+
 
 (def system-schema (merge implicit-schema
-                          {:user/name        {:db/unique    :db.unique/identity
-                                              :db/valueType :db.type/string}
-                           :user/id          {:db/unique    :db.unique/identity
-                                              :db/valueType :db.type/long}
-                           :user/pw-hash     {:db/valueType :db.type/string}
-                           :user/pw-salt     {:db/valueType :db.type/bytes}
-                           :database/type    {:db/valueType :db.type/keyword}
-                           :database/owner   {:db/valueType :db.type/ref}
-                           :database/name    {:db/valueType :db.type/string}
-                           :role/name        {:db/valueType :db.type/string}
-                           :permission/read  {:db/valueType :db.type/boolean}
-                           :permission/write {:db/valueType :db.type/boolean}
-                           :permission/db    {:db/valueType :db.type/ref}
-                           :permission/attr  {:db/valueType :db.type/keyword}
-                           :user-role/user   {:db/valueType :db.type/ref}
-                           :user-role/role   {:db/valueType :db.type/ref}
-                           :role-perm/role   {:db/valueType :db.type/ref}
-                           :role-perm/perm   {:db/valueType :db.type/ref}
-                           }
-                          ))
+                          {:user/name       {:db/unique    :db.unique/identity
+                                             :db/valueType :db.type/string}
+                           :user/id         {:db/unique    :db.unique/identity
+                                             :db/valueType :db.type/long}
+                           :user/pw-hash    {:db/valueType :db.type/string}
+                           :user/pw-salt    {:db/valueType :db.type/bytes}
+                           :database/type   {:db/valueType :db.type/keyword}
+                           :database/owner  {:db/valueType :db.type/ref}
+                           :database/name   {:db/valueType :db.type/string}
+                           :role/key        {:db/valueType :db.type/keyword}
+                           :role/desc       {:db/valueType :db.type/string}
+                           :permission/key  {:db/valueType :db.type/keyword}
+                           :permission/desc {:db/valueType :db.type/string}
+                           :permission/db   {:db/valueType :db.type/ref}
+                           :permission/attr {:db/valueType :db.type/keyword}
+                           :user-role/user  {:db/valueType :db.type/ref}
+                           :user-role/role  {:db/valueType :db.type/ref}
+                           :role-perm/role  {:db/valueType :db.type/ref}
+                           :role-perm/perm  {:db/valueType :db.type/ref}}))
 
 
 ;;-------------------------------------------------------------
@@ -142,4 +142,4 @@
 
 ;; client/server
 
-(def ^:const +message-buffer-size+ 8192) ; number of characters
+(def ^:const +default-buffer-size+ 32768) ; in bytes

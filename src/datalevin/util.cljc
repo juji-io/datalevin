@@ -1,18 +1,19 @@
 (ns ^:no-doc datalevin.util
+  (:refer-clojure :exclude [seqable?])
   (:require [clojure.walk]
             [clojure.string :as s]
             [clojure.java.io :as io]
             [cognitect.transit :as transit])
   #?(:clj
-     (:import [java.io ByteArrayInputStream ByteArrayOutputStream
-               BufferedReader PrintWriter File]
-              [java.nio.file Files Path Paths LinkOption
-               AccessDeniedException]
-              [java.nio.file.attribute PosixFilePermissions
-               FileAttribute]
-              [java.net URI]
-              [java.util Base64 Base64$Decoder Base64$Encoder]))
-  (:refer-clojure :exclude [seqable?]))
+     (:import
+      [datalevin.io ByteBufferInputStream ByteBufferOutputStream]
+      [java.io ByteArrayInputStream ByteArrayOutputStream
+       BufferedReader PrintWriter File]
+      [java.nio ByteBuffer]
+      [java.nio.file Files Path Paths LinkOption AccessDeniedException]
+      [java.nio.file.attribute PosixFilePermissions FileAttribute]
+      [java.net URI]
+      [java.util Base64 Base64$Decoder Base64$Encoder])))
 
 (defn #?@(:clj  [^Boolean seqable?]
           :cljs [^boolean seqable?])
@@ -103,7 +104,24 @@
 
 ;; en/decode
 
-(defn read-transit
+(defn read-transit-bf
+  "Read from a ByteBuffer containing transit+json encoded bytes,
+  return a Clojure value"
+  [^ByteBuffer bf]
+  (try
+    (transit/read (transit/reader (ByteBufferInputStream. bf) :json))
+    (catch Exception e
+      (raise "Unable to read transit from ByteBuffer:" (ex-message e) {}))))
+
+(defn write-transit-bf
+  "Write a Clojure value as transit+json encoded bytes into a ByteBuffer"
+  [^ByteBuffer bf v]
+  (try
+    (transit/write (transit/writer (ByteBufferOutputStream. bf) :json) v)
+    (catch Exception e
+      (raise "Unable to write transit to ByteBuffer:" (ex-message e) {}))))
+
+(defn read-transit-string
   "Read a transit+json encoded string into a Clojure value"
   [^String s]
   (try
@@ -113,7 +131,7 @@
     (catch Exception e
       (raise "Unable to read transit:" (ex-message e) {:string s}))))
 
-(defn write-transit
+(defn write-transit-string
   "Write a Clojure value as a transit+json encoded string"
   [v]
   (try
@@ -122,22 +140,6 @@
       (.toString baos "utf-8"))
     (catch Exception e
       (raise "Unable to write transit:" (ex-message e) {:value v}))))
-
-(defn write-message
-  "Write message as a line of transit encoded text to a PrintWriter,
-  assumes that auto-flush is on"
-  [writer m]
-  (assert (instance? PrintWriter writer)
-          "Needs a PrintWriter for writing message")
-  (.println ^PrintWriter writer (write-transit m)))
-
-(defn read-message
-  "Read message as a line of transit encoded text from a BufferedReader"
-  [reader]
-  (assert (instance? BufferedReader reader)
-          "Needs a BufferedReader for reading message")
-  (when-let [s (.readLine ^BufferedReader reader)]
-    (read-transit s)))
 
 (def base64-encoder (.withoutPadding (Base64/getEncoder)))
 

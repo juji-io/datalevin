@@ -8,9 +8,14 @@
             [clojure.string :as s])
   (:import [java.io BufferedReader PushbackReader PrintWriter InputStreamReader]
            [java.nio.charset StandardCharsets]
-           [java.net ServerSocket Socket SocketException]
+           [java.nio ByteBuffer]
+           [java.nio.channels Selector SelectionKey ServerSocketChannel
+            SocketChannel]
+           [java.net InetAddress InetSocketAddress ServerSocket
+            SocketException]
            [java.security SecureRandom]
-           [java.util.concurrent Executors ThreadPoolExecutor]
+           [java.util Iterator Set]
+           [java.util.concurrent Executors Executor ThreadPoolExecutor]
            [datalevin.db DB]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
@@ -53,16 +58,16 @@
   [in-password password-hash salt]
   (= password-hash (password-hashing in-password salt)))
 
-(def resources (atom {}))   ; { socket, executor, sys-conn}
-
-(def connections (atom {})) ; { conn-id -> { user-id, db-name, conn }}
+;; global server resources
+;; { selector, work-executor, sys-conn}
+(def resources (atom {}))
 
 (defn- authenticate
   [{:keys [username password database]}]
   )
 
 (defn- prepare-db [msg]
-  )
+)
 
 (defn- fatal-error-response
   [writer error-msg]
@@ -74,6 +79,23 @@
   [writer response]
   (u/write-message writer response)
   true)
+
+(defn- close-port
+  []
+  (try
+    (.close ^ServerSocketChannel (@resources :server-socket))
+    (swap! resources dissoc :server-socket)
+    (catch Exception e
+      (u/raise "Error closing server socket:" (ex-message e) {}))))
+
+(defn- open-port
+  [port]
+  (try
+    (doto (ServerSocketChannel/open)
+      (.bind (InetSocketAddress. port))
+      (.configureBlocking false))
+    (catch Exception e
+      (u/raise "Error opening port:" (ex-message e) {}))))
 
 (defn- handle-message
   "handle an incoming message, return true if connection is to be kept, otherwise
@@ -89,20 +111,15 @@
             (fatal-error-response writer "Unable to prepare the database")))
       (fatal-error-response writer "Failed to authenticate"))))
 
-(defn handle-connection
-  [sys-conn ^Socket client-socket]
-  (try
-    (with-open [reader (BufferedReader.
-                         (InputStreamReader. (.getInputStream client-socket))
-                         c/+message-buffer-size+)
-                writer (PrintWriter. (.getOutputStream client-socket) true)]
-      (loop []
-        (when-let [msg (u/read-message reader)]
-          (when (handle-message sys-conn writer msg)
-            (recur)))))
-    (catch Exception e
-      (u/raise "Error handling connection:" (ex-message e) {}))
-    (finally (.close client-socket))))
+(defn- handle-connection
+  [^SelectionKey skey]
+  (doto (.accept ^ServerSocketChannel (.channel skey))
+    (.configureBlocking false)
+    (.register (.selector skey) SelectionKey/OP_READ
+               ;; connection state
+               ;; { buffer, user-id, db-name, conn, etc. }
+               (atom {:buffer
+                      (ByteBuffer/allocateDirect c/+default-buffer-size+)}))))
 
 (defn- init-sys-db
   [root]
@@ -117,43 +134,54 @@
                   :user/id      0
                   :user/pw-hash h
                   :user/pw-salt s}
-                 {:db/id     -2
-                  :role/name c/superuser-role}
+                 {:db/id    -2
+                  :role/key c/superuser-role}
                  {:user-role/user -1
                   :user-role/role -2}]]
         (d/transact! sys-conn txs)))))
 
-(defn- init-executor []
-  )
+(defn- init-work-executor
+  []
+  (let [exec (Executors/newWorkStealingPool)]
+    (swap! resources assoc :work-executor exec)
+    exec))
 
+(defn- shutdown
+  []
+  (let [{:keys [^Selector selector work-executor sys-conn]} @resources]
+    (when selector
+      (doseq [^SelectionKey skey (.keys selector)]
+        (.close ^SocketChannel (.channel skey)))
+      (when (.isOpen selector)(.close selector)))
+    (.shutdown ^ThreadPoolExecutor work-executor)
+    (d/close sys-conn))
+  (println "Bye."))
 
-(defn- open-socket
-  [port]
-  (try
-    (reset! server-socket (ServerSocket. port))
-    (catch Exception e
-      (u/raise "Error opening port:" (ex-message e) {}))))
+(defn- open-selector []
+  (let [selector (Selector/open)]
+    (swap! resources assoc :selector selector)
+    selector))
 
 (defn start
   [{:keys [port root]}]
-  (let [
-        executor (Executors/newFixedThreadPool
-                   (.availableProcessors (Runtime/getRuntime)))]
-    (init-sys-db root)
-    (init-executor)
-    (open-socket port)
-    (println "Datalevin server started on port" port)
-    (try
+  (try
+    (let [server-socket ^ServerSocketChannel (open-port port)
+          selector      ^Selector (open-selector)]
+      (init-work-executor)
+      (init-sys-db root)
+      (.register server-socket selector SelectionKey/OP_ACCEPT)
+      (println "Datalevin server started on port" port)
       (loop []
-        (let [client-socket (.accept ^ServerSocket @server-socket)]
-          (.execute executor #(handle-connection sys-conn client-socket))
-          (recur)))
-      (catch SocketException e
-        ;; do nothing, server socket is closed
-        )
-      (catch Exception e
-        (u/raise "Error accepting connection" (ex-message e) {}))
-      (finally
-        (when @server-socket (.close ^ServerSocket @server-socket))
-        (.shutdown executor)
-        (d/close sys-conn)))))
+        (.select selector)
+        (loop [iter (-> selector (.selectedKeys) (.iterator))]
+          (when (.hasNext iter)
+            (let [^SelectionKey skey (.next iter)]
+              (cond
+                (.isAcceptable skey) (handle-connection skey)
+                (.isReadable skey)   (handle-message skey)))
+            (.remove iter)
+            (recur iter)))
+        (when (.isOpen selector) (recur))))
+    (catch Exception e
+      (u/raise "Error running server:" (ex-message e) {}))
+    (finally (shutdown))))

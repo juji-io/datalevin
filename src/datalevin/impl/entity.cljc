@@ -174,7 +174,7 @@
      (equals [this o] (equiv-entity this o))))
 
 #?(:clj
-   (defmethod print-method Entity [e, ^java.io.Writer w]
+   (defmethod print-method Entity [^Entity e, ^java.io.Writer w]
      (let [staged (not-empty (.-tbd e))
            ent    (assoc @(.cache e) :db/id (.eid e))]
        (.write w

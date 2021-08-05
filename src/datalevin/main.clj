@@ -9,6 +9,7 @@
             [clojure.stacktrace :as st]
             [sci.core :as sci]
             [datalevin.core :as d]
+            [datalevin.util :as u]
             [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
             [datalevin.bits :as b]
@@ -329,7 +330,7 @@
   (let [n (l/entries lmdb dbi)]
     (p/pprint {:dbi dbi :entries n})
     (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
-      (p/pprint [(b/binary-ba->str k) (b/binary-ba->str v)]))))
+      (p/pprint [(u/encode-base64 k) (u/encode-base64 v)]))))
 
 (defn- dump-all [lmdb]
   (let [dbis (set (l/list-dbis lmdb))]

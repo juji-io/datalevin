@@ -413,9 +413,10 @@
                                          symbol)
                                 args (-> (get message "args")
                                          read-string
-                                         u/read-transit)]
+                                         u/read-transit-string)]
                             (if-let [f (lookup var)]
-                              (let [value (u/write-transit (apply f args))
+                              (let [value (u/write-transit-string
+                                            (apply f args))
                                     reply {"value"  value
                                            "id"     id
                                            "status" ["done"]}]
@@ -425,7 +426,7 @@
                             (binding [*out* *err*]
                               (println e))
                             (let [reply {"ex-message" (.getMessage e)
-                                         "ex-data"    (u/write-transit
+                                         "ex-data"    (u/write-transit-string
                                                         (assoc (ex-data e)
                                                                :type
                                                                (str (class e))))
