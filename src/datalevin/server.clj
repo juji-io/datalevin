@@ -62,23 +62,27 @@
 ;; { selector, work-executor, sys-conn}
 (def resources (atom {}))
 
+(defn- execute
+  [f]
+  (.execute ^Executor (@resources :work-executor) f))
+
 (defn- authenticate
   [{:keys [username password database]}]
   )
 
 (defn- prepare-db [msg]
-)
+  )
 
-(defn- fatal-error-response
-  [writer error-msg]
-  (u/write-message writer {:type    :error-response
-                           :message error-msg})
-  false)
+#_(defn- fatal-error-response
+    [writer error-msg]
+    (u/write-message writer {:type    :error-response
+                             :message error-msg})
+    false)
 
-(defn- success-response
-  [writer response]
-  (u/write-message writer response)
-  true)
+#_(defn- success-response
+   [writer response]
+   (u/write-message writer response)
+   true)
 
 (defn- close-port
   []
@@ -97,29 +101,62 @@
     (catch Exception e
       (u/raise "Error opening port:" (ex-message e) {}))))
 
-(defn- handle-message
-  "handle an incoming message, return true if connection is to be kept, otherwise
-  return false"
-  [sys-conn writer {:keys [type] :as msg}]
-  (case type
-    :authentication
-    (if-let [cid (authenticate msg)]
-      (do (u/write-message writer {:type :authentication-ok
-                                   :cid  cid})
-          (if (prepare-db msg)
-            (success-response writer {:type :ready-for-query})
-            (fatal-error-response writer "Unable to prepare the database")))
-      (fatal-error-response writer "Failed to authenticate"))))
-
-(defn- handle-connection
+(defn- handle-accept
   [^SelectionKey skey]
-  (doto (.accept ^ServerSocketChannel (.channel skey))
-    (.configureBlocking false)
-    (.register (.selector skey) SelectionKey/OP_READ
-               ;; connection state
-               ;; { buffer, user-id, db-name, conn, etc. }
-               (atom {:buffer
-                      (ByteBuffer/allocateDirect c/+default-buffer-size+)}))))
+  (when-let [client-socket (.accept ^ServerSocketChannel (.channel skey))]
+    (doto ^SocketChannel client-socket
+      (.configureBlocking false)
+      (.register (.selector skey) SelectionKey/OP_READ
+                 ;; attach a connection state atom
+                 ;; { read-bf, write-bf, user-id, db-name, conn, ... }
+                 (atom {:read-bf  (ByteBuffer/allocateDirect
+                                    c/+default-buffer-size+)
+                        :write-bf (ByteBuffer/allocateDirect
+                                    c/+default-buffer-size+)})))))
+
+(defn- handle-message
+  "handle an incoming message"
+  [skey {:keys [type] :as msg}]
+  (println "message received:" msg)
+  #_(case type
+      :authentication
+      (if-let [cid (authenticate msg)]
+        (do (u/write-message writer {:type :authentication-ok
+                                     :cid  cid})
+            (if (prepare-db msg)
+              (success-response writer {:type :ready-for-query})
+              (fatal-error-response writer "Unable to prepare the database")))
+        (fatal-error-response writer "Failed to authenticate"))))
+
+(defn- segment-messages
+  [^SelectionKey skey]
+  (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)]
+    (loop [pos (.position read-bf)]
+      (when (>= pos 4)
+        (.flip read-bf)
+        (let [^int l (b/read-buffer read-bf :int)]
+          (if (>= (+ 4 ^int (.remaining read-bf)) l)
+            (let [msg (u/read-transit-bf read-bf)]
+              (execute #(handle-message skey msg))
+              (if (= 0 (.remaining read-bf))
+                (.clear read-bf)
+                (do (.compact read-bf)
+                    (recur (.position read-bf)))))
+            (.position read-bf pos)))))))
+
+(defn- handle-read
+  [^SelectionKey skey]
+  (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)
+        ch                            ^SocketChannel (.channel skey)
+        readn                         (.read ch read-bf)]
+    (cond
+      (= readn 0)  :continue
+      (> readn 0)  (segment-messages skey)
+      (= readn -1) (.close ch))))
+
+(defn- handle-write
+  [^SelectionKey skey]
+  )
 
 (defn- init-sys-db
   [root]
@@ -176,9 +213,10 @@
         (loop [iter (-> selector (.selectedKeys) (.iterator))]
           (when (.hasNext iter)
             (let [^SelectionKey skey (.next iter)]
-              (cond
-                (.isAcceptable skey) (handle-connection skey)
-                (.isReadable skey)   (handle-message skey)))
+              (when (.isValid skey)
+                (when (.isAcceptable skey) (handle-accept skey))
+                (when (.isReadable skey)   (handle-read skey))
+                (when (.isWritable skey) (handle-write skey))))
             (.remove iter)
             (recur iter)))
         (when (.isOpen selector) (recur))))

@@ -6,7 +6,8 @@
             [clojure.test :refer [deftest is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop])
+            [clojure.test.check.properties :as prop]
+            [datalevin.util :as u])
   (:import [java.util Arrays UUID Date]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
@@ -202,8 +203,8 @@
           (.rewind bf)
           (.rewind bf1)
           (str "v: " v
-               " d: " (b/hexify (b/get-bytes bf))
-               " dmin: " (b/hexify (b/get-bytes bf1)))))
+               " d: " (sut/hexify (sut/get-bytes bf))
+               " dmin: " (sut/hexify (sut/get-bytes bf1)))))
     (.clear bf1)
     (sut/put-buffer bf1 dmax :eav)
     (.flip bf1)
@@ -220,8 +221,8 @@
           (.rewind bf)
           (.rewind bf1)
           (str "v: " v
-               " d: " (b/hexify (b/get-bytes bf))
-               " dmin: " (b/hexify (b/get-bytes bf1)))))
+               " d: " (sut/hexify (sut/get-bytes bf))
+               " dmin: " (sut/hexify (sut/get-bytes bf1)))))
     (.clear bf1)
     (sut/put-buffer bf1 dmax :ave)
     (.flip bf1)
@@ -657,3 +658,14 @@
       (is (= e (.-e r)))
       (is (= a (.-a r)))
       (is (= v (.-v r))))))
+
+(test/defspec message-bf-test
+  100
+  (prop/for-all
+    [v gen/any-equatable]
+    (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+      (sut/write-message-bf bf v)
+      (let [pos (.position bf)]
+        (.flip bf)
+        (is (= pos (sut/read-buffer bf :int)))
+        (is (= v (u/read-transit-bf bf)))))))

@@ -397,7 +397,7 @@
       (raise "Error loading Datalog data: " (ex-message e) {}))))
 
 (defn- load-kv [dbi [k v]]
-  [:put dbi (b/binary-str->ba k) (b/binary-str->ba v) :raw :raw])
+  [:put dbi (u/decode-base64 k) (u/decode-base64 v) :raw :raw])
 
 (defn- load-dbi [lmdb dbi in]
   (try

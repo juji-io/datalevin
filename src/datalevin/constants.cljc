@@ -96,7 +96,7 @@
 (def ^:const default-password "datalevin")
 (def ^:const system-dir "system")
 (def ^:const superuser-role :datalevin/superuser)
-
+(def ^:const message-header-size 4) ; bytes
 
 (def system-schema (merge implicit-schema
                           {:user/name       {:db/unique    :db.unique/identity

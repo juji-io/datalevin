@@ -10,7 +10,6 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
-           [datalevin.io]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -583,19 +582,14 @@
      :raw     (get-bytes bf)
      (get-data bf))))
 
-(defn write-message
-  "Write message to a bytebuffer for client/server. First four bytes are the length
-  of the message (including itself), followed by transit encoded string in bytes"
-  [bf m]
-  (try
-    (let [baos (ByteArrayOutputStream.)]
-      (transit/write (transit/writer baos :json) v)
-      (.toString baos "utf-8"))
-    (catch Exception e
-      (raise "Unable to write message:" (ex-message e) {:msg m}))))
-
-(defn read-message
-  "Read message as a line of transit encoded text from a BufferedReader"
-  [reader]
-  (when-let [s (.readLine ^BufferedReader reader)]
-    ))
+(defn write-message-bf
+  "Write message to a bytebuffer for client/server. First four bytes are length
+  of the message (including itself), followed by transit encoded bytes"
+  [^ByteBuffer bf m]
+  (let [start-pos (.position bf)]
+    (.position bf (+ c/message-header-size start-pos))
+    (u/write-transit-bf bf m)
+    (let [end-pos (.position bf)]
+      (.position bf start-pos)
+      (put-int bf end-pos)
+      (.position bf end-pos))))
