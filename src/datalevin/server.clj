@@ -1,21 +1,17 @@
 (ns datalevin.server
   (:require [datalevin.util :as u]
-            [datalevin.bits :as b]
             [datalevin.core :as d]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.constants :as c]
-            [datalevin.interpret :as i]
-            [clojure.string :as s])
-  (:import [java.io BufferedReader PushbackReader PrintWriter InputStreamReader]
-           [java.nio.charset StandardCharsets]
+            [datalevin.interpret :as i])
+  (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey ServerSocketChannel
             SocketChannel]
-           [java.net InetAddress InetSocketAddress ServerSocket
-            SocketException]
+           [java.net InetSocketAddress]
            [java.security SecureRandom]
-           [java.util Iterator Set]
+           [java.util Iterator]
            [java.util.concurrent Executors Executor ThreadPoolExecutor]
            [datalevin.db DB]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
@@ -201,7 +197,7 @@
       (println "Datalevin server started on port" port)
       (loop []
         (.select selector)
-        (loop [iter (-> selector (.selectedKeys) (.iterator))]
+        (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
           (when (.hasNext iter)
             (let [^SelectionKey skey (.next iter)]
               (when (and (.isValid skey) (.isAcceptable skey))
