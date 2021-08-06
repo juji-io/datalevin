@@ -2,6 +2,7 @@
   (:require [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.core :as d]
+            [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.constants :as c]
             [datalevin.interpret :as i]
@@ -128,21 +129,11 @@
               (fatal-error-response writer "Unable to prepare the database")))
         (fatal-error-response writer "Failed to authenticate"))))
 
-(defn- segment-messages
+(defn- process-read
   [^SelectionKey skey]
   (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)]
-    (loop [pos (.position read-bf)]
-      (when (>= pos 4)
-        (.flip read-bf)
-        (let [^int l (b/read-buffer read-bf :int)]
-          (if (>= (+ 4 ^int (.remaining read-bf)) l)
-            (let [msg (u/read-transit-bf read-bf)]
-              (execute #(handle-message skey msg))
-              (if (= 0 (.remaining read-bf))
-                (.clear read-bf)
-                (do (.compact read-bf)
-                    (recur (.position read-bf)))))
-            (.position read-bf pos)))))))
+    (p/segment-messages read-bf
+                        (fn [msg] (execute #(handle-message skey msg))))))
 
 (defn- handle-read
   [^SelectionKey skey]
@@ -151,7 +142,7 @@
         readn                         (.read ch read-bf)]
     (cond
       (= readn 0)  :continue
-      (> readn 0)  (segment-messages skey)
+      (> readn 0)  (process-read skey)
       (= readn -1) (.close ch))))
 
 (defn- handle-write
@@ -213,10 +204,12 @@
         (loop [iter (-> selector (.selectedKeys) (.iterator))]
           (when (.hasNext iter)
             (let [^SelectionKey skey (.next iter)]
-              (when (.isValid skey)
-                (when (.isAcceptable skey) (handle-accept skey))
-                (when (.isReadable skey)   (handle-read skey))
-                (when (.isWritable skey) (handle-write skey))))
+              (when (and (.isValid skey) (.isAcceptable skey))
+                (handle-accept skey))
+              (when (and (.isValid skey) (.isReadable skey))
+                (handle-read skey))
+              (when (and (.isValid skey) (.isWritable skey))
+                (handle-write skey)))
             (.remove iter)
             (recur iter)))
         (when (.isOpen selector) (recur))))

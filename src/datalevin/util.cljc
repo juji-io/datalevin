@@ -6,7 +6,6 @@
             [cognitect.transit :as transit])
   #?(:clj
      (:import
-      [datalevin.io ByteBufferInputStream ByteBufferOutputStream]
       [java.io ByteArrayInputStream ByteArrayOutputStream
        BufferedReader PrintWriter File]
       [java.nio ByteBuffer]
@@ -103,23 +102,6 @@
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
 
 ;; en/decode
-
-(defn read-transit-bf
-  "Read from a ByteBuffer containing transit+json encoded bytes,
-  return a Clojure value"
-  [^ByteBuffer bf]
-  (try
-    (transit/read (transit/reader (ByteBufferInputStream. bf) :json))
-    (catch Exception e
-      (raise "Unable to read transit from ByteBuffer:" (ex-message e) {}))))
-
-(defn write-transit-bf
-  "Write a Clojure value as transit+json encoded bytes into a ByteBuffer"
-  [^ByteBuffer bf v]
-  (try
-    (transit/write (transit/writer (ByteBufferOutputStream. bf) :json) v)
-    (catch Exception e
-      (raise "Unable to write transit to ByteBuffer:" (ex-message e) {}))))
 
 (defn read-transit-string
   "Read a transit+json encoded string into a Clojure value"

@@ -56,7 +56,7 @@
   [^ByteBuffer bb]
   (.getLong bb))
 
-(defn- get-int
+(defn get-int
   "Get an int from a ByteBuffer"
   [^ByteBuffer bb]
   (.getInt bb))
@@ -150,7 +150,7 @@
   [^ByteBuffer bb x]
   (.putLong bb (encode-double x)))
 
-(defn- put-int
+(defn put-int
   [^ByteBuffer bb n]
   (.putInt bb ^int (int n)))
 
@@ -581,15 +581,3 @@
      :veat    (get-vea bf)
      :raw     (get-bytes bf)
      (get-data bf))))
-
-(defn write-message-bf
-  "Write message to a bytebuffer for client/server. First four bytes are length
-  of the message (including itself), followed by transit encoded bytes"
-  [^ByteBuffer bf m]
-  (let [start-pos (.position bf)]
-    (.position bf (+ c/message-header-size start-pos))
-    (u/write-transit-bf bf m)
-    (let [end-pos (.position bf)]
-      (.position bf start-pos)
-      (put-int bf end-pos)
-      (.position bf end-pos))))

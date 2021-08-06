@@ -658,14 +658,3 @@
       (is (= e (.-e r)))
       (is (= a (.-a r)))
       (is (= v (.-v r))))))
-
-(test/defspec message-bf-test
-  100
-  (prop/for-all
-    [v gen/any-equatable]
-    (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-      (sut/write-message-bf bf v)
-      (let [pos (.position bf)]
-        (.flip bf)
-        (is (= pos (sut/read-buffer bf :int)))
-        (is (= v (u/read-transit-bf bf)))))))

@@ -19,11 +19,3 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (= k (sut/read-transit-string (sut/write-transit-string k)))))
-
-(test/defspec transite-bf-test
-  100
-  (prop/for-all [k gen/any-equatable]
-                (let [bf (ByteBuffer/allocateDirect c/+default-buffer-size+)]
-                  (sut/write-transit-bf bf k)
-                  (.flip bf)
-                  (= k (sut/read-transit-bf bf)))))
