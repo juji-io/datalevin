@@ -15,7 +15,7 @@
 
 (defn read-transit-bf
   "Read from a ByteBuffer containing transit+json encoded bytes,
-  return a Clojure value"
+  return a Clojure value. Consumes the entire buffer"
   [^ByteBuffer bf]
   (try
     (transit/read (transit/reader (ByteBufferInputStream. bf) :json))
@@ -39,7 +39,7 @@
     (write-transit-bf bf m)
     (let [end-pos (.position bf)]
       (.position bf start-pos)
-      (.putInt bf end-pos)
+      (.putInt bf (- end-pos start-pos))
       (.position bf end-pos))))
 
 (defn segment-messages
@@ -50,13 +50,17 @@
     (let [pos (.position read-bf)]
       (when (> pos c/message-header-size)
         (.flip read-bf)
-        (if (< (.remaining read-bf) (.getInt read-bf))
-          (doto read-bf
-            (.limit (.capacity read-bf))
-            (.position pos))
-          (let [msg (read-transit-bf read-bf)]
-            (msg-handler msg)
-            (if-not (.hasRemaining read-bf)
-              (.clear read-bf)
-              (do (.compact read-bf)
-                  (recur)))))))))
+        (let [available (.limit read-bf)
+              length    (.getInt read-bf)]
+          (if (< available length)
+            (doto read-bf
+              (.limit (.capacity read-bf))
+              (.position pos))
+            (let [msg (read-transit-bf (.slice read-bf))]
+              (msg-handler msg)
+              (if (= available length)
+                (.clear read-bf)
+                (do (doto read-bf
+                      (.position length)
+                      (.compact))
+                    (recur))))))))))
