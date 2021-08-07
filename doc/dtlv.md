@@ -94,13 +94,29 @@ See [here](https://github.com/juji-io/datalevin#babashka-pod)
 ## Server
 
 `dtlv serv` runs in server mode and accepts connection on port 8898 (default). Use option
-`-p` to specify an alternative port number that the server listens to.
+`-p` to specify an alternative port number that the server listens to. `-r`
+option can be used to specify a root directory path on the server, where data
+live. The default is `/var/lib/datalevin`.
+
+When run locally, the default root user `datalevin` is assumed, and no need to
+specify the default password (also `datalevin`). For remote access, username and
+password is required. REPL commands can be used to change password, add users, etc.
 
 When a client opens a Datalevin database using a connection URI, i.e.
 "dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;",
-instead of a local path name, a connection to the server is attempted. When the
-connection is successfully established, the returned object contains a
-connection token. The subsequent calls pass along the connection token.
+instead of a local path name, a connection to the server is attempted. So
+the same functions for local databases work on the remote databases. The remote
+access is transparent to callers.
 
-The transportation between a client and the server uses
-[transit+json](https://github.com/cognitect/transit-format) encoded strings.
+The wire protocol between server and client uses TLV message format (1 byte type + 4 bytes length +
+payload value bytes). For example, with type `1`,
+[transit+json](https://github.com/cognitect/transit-format) encoded bytes will
+be the payload format. Other format will be added in near future, e.g. nippy if
+only Clojure clients are expected.
+
+The server uses non-blocking event driven architecture, so it support a large
+number of concurrent connected clients. A work stealing thread pool is used to handle
+individual incoming requests.
+
+For programming convenience,  the client uses blocking network connections
+managed by a connection pool.
