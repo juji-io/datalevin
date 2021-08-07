@@ -3,8 +3,7 @@
             [datalevin.core :as d]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
-            [datalevin.constants :as c]
-            [datalevin.interpret :as i])
+            [datalevin.constants :as c])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey ServerSocketChannel

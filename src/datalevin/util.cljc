@@ -103,6 +103,8 @@
 
 ;; en/decode
 
+
+
 (defn read-transit-string
   "Read a transit+json encoded string into a Clojure value"
   [^String s]
@@ -120,6 +122,16 @@
     (let [baos (ByteArrayOutputStream.)]
       (transit/write (transit/writer baos :json) v)
       (.toString baos "utf-8"))
+    (catch Exception e
+      (raise "Unable to write transit:" (ex-message e) {:value v}))))
+
+(defn write-transit-bytes
+  "Write a Clojure value as transit+json encoded bytes"
+  [v]
+  (try
+    (let [baos (ByteArrayOutputStream.)]
+      (transit/write (transit/writer baos :json) v)
+      (.toByteArray baos))
     (catch Exception e
       (raise "Unable to write transit:" (ex-message e) {:value v}))))
 

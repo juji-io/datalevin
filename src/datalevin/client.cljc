@@ -9,7 +9,7 @@
            [java.nio.channels SocketChannel]
            [java.net InetSocketAddress]))
 
-(defn connect
+(defn- connect
   [^String host port]
   (try
     (doto (SocketChannel/open)
@@ -53,3 +53,16 @@
     ))
 
 (startup "localhost" 8898 "" "" "")
+
+(defprotocol IConnection
+  (request [this msg]
+    "Send a message to server and return the response, a blocking call"))
+
+(deftype Connection [^SocketChannel ch
+                     ^ByteBuffer bf])
+
+(defprotocol IConnectionPool
+  (get-connection [this] "Get a connection from the pool")
+  (release-connection [this connection] "Return the connection back to pool"))
+
+(defn test-f [])

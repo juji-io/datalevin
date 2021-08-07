@@ -87,8 +87,13 @@ backward references).
 before) are printed. See [[touch]]."}
   entity de/entity)
 
-(def add de/add)
-(def retract de/retract)
+(def ^{:arglists '([ent attr value])
+       :doc      "Add an attribute value to an entity"}
+  add de/add)
+
+(def ^{:arglists '([ent attr][ent attr value])
+       :doc      "Remove an attribute from an entity"}
+  retract de/retract)
 
 
 (def ^{:arglists '([db eid])

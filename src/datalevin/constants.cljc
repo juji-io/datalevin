@@ -91,12 +91,18 @@
 ;; server
 
 (def ^:const default-port 8898)
+
 (def ^:const default-root-dir "/var/lib/datalevin")
+(def ^:const system-dir "system")
+
 (def ^:const default-username "datalevin")
 (def ^:const default-password "datalevin")
-(def ^:const system-dir "system")
+
 (def ^:const superuser-role :datalevin/superuser)
-(def ^:const message-header-size 4) ; bytes
+
+(def ^:const message-header-size 5) ; bytes, 1 type + 4 length
+
+(def ^:const message-type-transit (unchecked-byte 0x01))
 
 (def system-schema (merge implicit-schema
                           {:user/name       {:db/unique    :db.unique/identity

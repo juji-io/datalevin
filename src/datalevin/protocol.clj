@@ -30,17 +30,30 @@
     (catch Exception e
       (u/raise "Unable to write transit to ByteBuffer:" (ex-message e) {}))))
 
+(defn- write-value-bf
+  [bf type msg]
+  (case (short type)
+    1 (write-transit-bf bf msg)))
+
+(defn- read-value-bf
+  [bf type]
+  (case (short type)
+    1 (read-transit-bf bf)))
+
 (defn write-message-bf
-  "Write message to a ByteBuffer. First four bytes are length
-  of the message (including itself), followed by transit encoded bytes"
-  [^ByteBuffer bf m]
-  (let [start-pos (.position bf)]
-    (.position bf (+ c/message-header-size start-pos))
-    (write-transit-bf bf m)
-    (let [end-pos (.position bf)]
-      (.position bf start-pos)
-      (.putInt bf (- end-pos start-pos))
-      (.position bf end-pos))))
+  "Write a message to a ByteBuffer. First byte is type, then four bytes
+  length of the whole message (include header), followed by message value"
+  ([bf msg]
+   (write-message-bf bf msg c/message-type-transit))
+  ([^ByteBuffer bf msg type]
+   (let [start-pos (.position bf)]
+     (.position bf (+ c/message-header-size start-pos))
+     (write-value-bf bf type msg)
+     (let [end-pos (.position bf)]
+       (.position bf start-pos)
+       (.put bf ^byte (unchecked-byte type))
+       (.putInt bf (- end-pos start-pos))
+       (.position bf end-pos)))))
 
 (defn segment-messages
   "Segment the content of read buffer into messages, and call msg-handler
@@ -51,12 +64,13 @@
       (when (> pos c/message-header-size)
         (.flip read-bf)
         (let [available (.limit read-bf)
+              type      (.get read-bf)
               length    (.getInt read-bf)]
           (if (< available length)
             (doto read-bf
               (.limit (.capacity read-bf))
               (.position pos))
-            (let [msg (read-transit-bf (.slice read-bf))]
+            (let [msg (read-value-bf (.slice read-bf) type)]
               (msg-handler msg)
               (if (= available length)
                 (.clear read-bf)
