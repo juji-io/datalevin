@@ -88,7 +88,7 @@
                                    :db.type/instant :db.type/uuid
                                    :db.type/bytes})
 
-;; server
+;; server / client
 
 (def ^:const default-port 8898)
 
@@ -125,6 +125,7 @@
                            :role-perm/role  {:db/valueType :db.type/ref}
                            :role-perm/perm  {:db/valueType :db.type/ref}}))
 
+(def ^:const connection-pool-size 10)
 
 ;;-------------------------------------------------------------
 

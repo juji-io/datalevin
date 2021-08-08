@@ -78,3 +78,26 @@
                       (.position length)
                       (.compact))
                     (recur))))))))))
+
+(defn receive-one-message
+  "Consume one message from the read-bf and return it. If there is not
+  enough data for one message, return nil. Prepare the buffer for write."
+  [^ByteBuffer read-bf]
+  (let [pos (.position read-bf)]
+    (when (> pos c/message-header-size)
+      (.flip read-bf)
+      (let [available (.limit read-bf)
+            type      (.get read-bf)
+            length    (.getInt read-bf)]
+        (if (< available length)
+          (do (doto read-bf
+                (.limit (.capacity read-bf))
+                (.position pos))
+              nil)
+          (let [msg (read-value-bf (.slice read-bf) type)]
+            (if (= available length)
+              (.clear read-bf)
+              (doto read-bf
+                (.position length)
+                (.compact)))
+            msg))))))

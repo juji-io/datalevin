@@ -1,4 +1,5 @@
 (ns datalevin.server
+  "Non-blocking event driven server"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
             [datalevin.protocol :as p]
@@ -111,7 +112,6 @@
                                     c/+default-buffer-size+)})))))
 
 (defn- handle-message
-  "handle an incoming message"
   [skey {:keys [type] :as msg}]
   (println "message received:" msg)
   #_(case type
