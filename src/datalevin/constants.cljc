@@ -125,8 +125,6 @@
                            :role-perm/role  {:db/valueType :db.type/ref}
                            :role-perm/perm  {:db/valueType :db.type/ref}}))
 
-(def ^:const connection-pool-size 10)
-
 ;;-------------------------------------------------------------
 
 ;; user configurable TODO: make it so
@@ -150,3 +148,6 @@
 ;; client/server
 
 (def ^:const +default-buffer-size+ 32768) ; in bytes
+
+(def ^:const connection-pool-size 5)
+(def ^:const connection-timeout 30000) ; in milliseconds

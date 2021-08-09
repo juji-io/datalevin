@@ -34,8 +34,9 @@
    (password-hashing password salt nil))
   ([^String password ^bytes salt
     {:keys [ops-limit mem-limit out-length parallelism]
-     :or   {ops-limit   3 ; takes about 200ms to hash w/ these settings
-            mem-limit   66536
+     ;; these defaults are secure, as it takes about 0.5 second to hash
+     :or   {ops-limit   4
+            mem-limit   131072
             out-length  32
             parallelism 1}}]
    (let [builder (doto (Argon2Parameters$Builder. Argon2Parameters/ARGON2_id)

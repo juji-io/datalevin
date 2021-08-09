@@ -62,8 +62,8 @@
 
 (defn segment-messages
   "Segment the content of read buffer into messages, and call msg-handler
-  on each. The messages are byte arrays, so message parsing is done in the
-  msg-handler, which ideally is handled by a worker thread, so main-event loop
+  on each. The messages are byte arrays. Message parsing will be done in the
+  msg-handler, which ideally is handled by a worker thread, so the event loop
   is not blocked by slow parsing."
   [^ByteBuffer read-bf msg-handler]
   (loop []
