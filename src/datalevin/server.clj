@@ -112,8 +112,8 @@
                                     c/+default-buffer-size+)})))))
 
 (defn- handle-message
-  [skey {:keys [type] :as msg}]
-  (println "message received:" msg)
+  [skey type msg ]
+  (println "message received:" (p/read-value type msg))
   #_(case type
       :authentication
       (if-let [cid (authenticate msg)]
@@ -128,7 +128,8 @@
   [^SelectionKey skey]
   (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)]
     (p/segment-messages read-bf
-                        (fn [msg] (execute #(handle-message skey msg))))))
+                        (fn [type msg]
+                          (execute #(handle-message skey type msg))))))
 
 (defn- handle-read
   [^SelectionKey skey]

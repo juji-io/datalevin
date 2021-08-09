@@ -40,6 +40,11 @@
   (case (short type)
     1 (read-transit-bf bf)))
 
+(defn read-value
+  [type bs]
+  (case (short type)
+    1 (u/read-transit-bytes bs)))
+
 (defn write-message-bf
   "Write a message to a ByteBuffer. First byte is type, then four bytes
   length of the whole message (include header), followed by message value"
@@ -57,7 +62,9 @@
 
 (defn segment-messages
   "Segment the content of read buffer into messages, and call msg-handler
-  on each"
+  on each. The messages are byte arrays, so message parsing is done in the
+  msg-handler, which ideally is handled by a worker thread, so main-event loop
+  is not blocked by slow parsing."
   [^ByteBuffer read-bf msg-handler]
   (loop []
     (let [pos (.position read-bf)]
@@ -70,13 +77,12 @@
             (doto read-bf
               (.limit (.capacity read-bf))
               (.position pos))
-            (let [msg (read-value-bf (.slice read-bf) type)]
-              (msg-handler msg)
+            (let [ba (byte-array (- length c/message-header-size))]
+              (.get read-bf ba)
+              (msg-handler type ba)
               (if (= available length)
                 (.clear read-bf)
-                (do (doto read-bf
-                      (.position length)
-                      (.compact))
+                (do (.compact read-bf)
                     (recur))))))))))
 
 (defn receive-one-message

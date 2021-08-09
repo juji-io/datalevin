@@ -41,7 +41,8 @@
         msg1            {:text "this is the first message" :value 888} ; 62 bytes
         msg2            {:text "the second message"}                   ; 41 bytes
         sink            (atom [])
-        handler         (fn [msg] (swap! sink conj msg))]
+        handler         (fn [type msg]
+                          (swap! sink conj (sut/read-value type msg)))]
 
     (sut/write-message-bf src msg1)
     (sut/write-message-bf src msg2)

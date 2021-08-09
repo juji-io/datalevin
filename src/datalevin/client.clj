@@ -9,7 +9,7 @@
            [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels SocketChannel]
            [java.util ArrayList]
-           [java.net InetSocketAddress]))
+           [java.net InetSocketAddress StandardSocketOptions]))
 
 #_(defn- authenticate
     "Send an authenticate message to server, and wait to receive the response.
@@ -25,6 +25,17 @@
         (assoc conn :cid cid)
         (do (close conn)
             (u/raise "Authentication failure" {})))))
+
+(defn- connect
+  [^String host port]
+  (try
+    (doto (SocketChannel/open)
+      (.setOption StandardSocketOptions/SO_KEEPALIVE true)
+      (.setOption StandardSocketOptions/TCP_NODELAY true)
+      (.connect (InetSocketAddress. host ^int port)))
+    (catch Exception e
+      (u/raise "Unable to connect to server: " (ex-message e)
+               {:host host :port port}))))
 
 (defn- send-ch
   [^SocketChannel ch ^ByteBuffer bf ]
@@ -70,30 +81,39 @@
   (release-connection [this connection] "Return the connection back to pool"))
 
 (deftype ConnectionPool [^ArrayList available
-                         ^ArrayList used]
+                         ^ArrayList used
+                         host
+                         port
+                         username
+                         password
+                         database]
   IConnectionPool
   (get-connection [this]
     (locking this
-      (let [conn (.remove available (dec (.size available)))]
-        (.add used conn)
-        conn)))
+      (let [new-conn #(let [conn (connect host port)]
+                        (.add used conn)
+                        conn)
+            size     (.size available)]
+        (if (> size 0)
+          (let [conn ^SocketChannel (.remove available (dec size))]
+            (if (.isConnected conn)
+              (do (.add used conn)
+                  conn)
+              (new-conn)))
+          (new-conn)))))
   (release-connection [this conn]
     (locking this
       (.add available conn)
       (.remove used conn))))
 
-(defn- connect
-  [^String host port]
-  (try
-    (doto (SocketChannel/open)
-      (.connect (InetSocketAddress. host ^int port)))
-    (catch Exception e
-      (u/raise "Unable to connect to server: " (ex-message e)
-               {:host host :port port}))))
-
 (defn create
   [host port username password database]
-  (let [^ConnectionPool pool (->ConnectionPool (ArrayList.) (ArrayList.))]
+  (let [^ConnectionPool pool (->ConnectionPool
+                               (ArrayList.)
+                               (ArrayList.)
+                               username
+                               password
+                               database)]
     (dotimes [_ c/connection-pool-size]
       (.add ^ArrayList (.-available pool) (connect host port)))
     pool))
