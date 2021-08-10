@@ -106,7 +106,7 @@
       (.configureBlocking false)
       (.register (.selector skey) SelectionKey/OP_READ
                  ;; attach a connection state atom
-                 ;; { read-bf, write-bf, user-id, db-name, conn, ... }
+                 ;; { read-bf, write-bf, client-id, db-name, conn, ... }
                  (atom {:read-bf  (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)
                         :write-bf (ByteBuffer/allocateDirect
