@@ -30,9 +30,9 @@
         (= readn -1) (.close ch)))))
 
 (defprotocol IConnection
-  (send-n-receive [this msg]
+  (send-n-receive [conn msg]
     "Send a message to server and return the response, a blocking call")
-  (close [this]))
+  (close [conn]))
 
 (deftype Connection [^SocketChannel ch ^:volatile-mutable ^ByteBuffer bf]
   IConnection
@@ -76,8 +76,16 @@
     (connect-socket host port)
     (b/allocate-buffer c/+default-buffer-size+)))
 
+(defn- set-client-id
+  [conn client-id]
+  (let [{:keys [type message]}
+        (send-n-receive conn {:type      :set-client-id
+                              :client-id client-id})]
+    (when-not (= type :set-client-id-ok) (u/raise message {}))))
+
 (deftype ConnectionPool [^ArrayList available
                          ^ArrayList used
+                         client-id
                          host
                          port]
   IConnectionPool
@@ -90,11 +98,12 @@
               (do (.add used conn)
                   conn)
               (let [conn (new-connection host port)]
+                (set-client-id conn client-id)
                 (.add used conn)
                 conn)))
           (if (>= (- (System/currentTimeMillis) start) c/connection-timeout)
             (u/raise "Timeout in obtaining a connection" {})
-            (.size available))))))
+            (recur (.size available)))))))
   (release-connection [this conn]
     (.add available conn)
     (.remove used conn)))
@@ -103,8 +112,10 @@
   "Send an authenticate message to server, and wait to receive the response.
   If authentication succeeds,  return a client id.
   Otherwise, close connection, raise exception"
-  [^Connection conn username password]
-  (let [{:keys [type client-id message]}
+  [host port username password]
+  (let [conn (new-connection host port)
+
+        {:keys [type client-id message]}
         (send-n-receive conn {:type     :authentication
                               :username username
                               :password password})]
@@ -114,25 +125,21 @@
           (u/raise "Authentication failure: " message {})))))
 
 (defn- new-connectionpool
-  [host port username password]
-  (let [conn (new-connection host port)]
-    (when-let [client-id (authenticate conn username password)]
-      (let [^ConnectionPool pool (->ConnectionPool (ArrayList.)
-                                                   (ArrayList.)
-                                                   host
-                                                   port)
-            ^ArrayList available (.-available pool)]
-        (.add available conn)
-        (dotimes [_ (dec c/connection-pool-size)]
-          (let [^Connection c (new-connection host port)]
-            (send-n-receive c {:type      :set-client-id
-                               :client-id client-id})
-            (.add available c)))
-        pool))))
+  [host port client-id]
+  (let [^ConnectionPool pool (->ConnectionPool (ArrayList.)
+                                               (ArrayList.)
+                                               client-id
+                                               host
+                                               port)
+        ^ArrayList available (.-available pool)]
+    (dotimes [_ c/connection-pool-size]
+      (let [conn (new-connection host port)]
+        (set-client-id conn client-id)
+        (.add available conn)))
+    pool))
 
 (defprotocol IClient
-  (startup [this uri-str])
-  (request [this req]))
+  (request [this req] "Send a request, and return response"))
 
 (defn parse-user-info
   [^URI uri]
@@ -148,29 +155,29 @@
   [^URI uri]
   (subs (.getPath uri) 1))
 
-(deftype Client [^:volatile-mutable ^ConnectionPool pool
-                 ^:volatile-mutable ^UUID id]
+(deftype Client [^URI uri
+                 ^ConnectionPool pool
+                 ^UUID id]
   IClient
-  (startup [this uri-str]
-    (let [uri                         (URI. uri-str)
-          {:keys [username password]} (parse-user-info uri)
-          host                        (.getHost uri)
-          port                        (parse-port uri)
-          db                          (parse-db uri)]
-      )))
+  (request [client req]
+    (let [^Connection conn (get-connection pool)
+          res              (send-n-receive conn req)]
+      (release-connection pool conn)
+      res)))
+
+(defn new-client [uri-str]
+  (let [uri                         (URI. uri-str)
+        {:keys [username password]} (parse-user-info uri)
+
+        host      (.getHost uri)
+        port      (parse-port uri)
+        db        (parse-db uri)
+        client-id (authenticate host port username password)
+        pool      (new-connectionpool host port client-id)]
+    (->Client uri pool client-id)))
 
 (comment
 
-  (def uri (URI. "dtlv://localhost/sales"))
-  (.getUserInfo uri)
-  (.getHost uri)
-  (.getPort uri)
-  (subs (.getPath uri) 1)
+  (def client (new-client "dtlv://datalevin:datalevin@localhost/testdb"))
 
-  (def client (create "localhost" 8898 "" "" ""))
-  (.size (.-used client))
-
-  (def conn (get-connection client))
-
-  (request conn {:hello "world"})
   )

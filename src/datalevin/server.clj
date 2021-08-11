@@ -2,16 +2,17 @@
   "Non-blocking event driven server"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
+            [datalevin.bits :as b]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.constants :as c])
   (:import [java.nio.charset StandardCharsets]
-           [java.nio ByteBuffer]
+           [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels Selector SelectionKey ServerSocketChannel
             SocketChannel]
            [java.net InetSocketAddress]
            [java.security SecureRandom]
-           [java.util Iterator]
+           [java.util Iterator UUID]
            [java.util.concurrent Executors Executor ThreadPoolExecutor]
            [datalevin.db DB]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
@@ -57,30 +58,71 @@
   (= password-hash (password-hashing in-password salt)))
 
 ;; global server resources
-;; { selector, work-executor, sys-conn}
-(def resources (atom {}))
+;; { selector, work-executor, sys-conn, clients}
+(def resources (atom {:clients {}}))
 
 (defn- execute
   [f]
   (.execute ^Executor (@resources :work-executor) f))
 
+(defn- write-to-bf
+  [^SelectionKey skey msg]
+  (let [state                          (.attachment skey)
+        {:keys [^ByteBuffer write-bf]} @state]
+    (.clear write-bf)
+    (try
+      (p/write-message-bf write-bf msg)
+      (catch BufferOverflowException _
+        (let [size (* 10 ^int (.capacity write-bf))]
+          (swap! state assoc :write-bf (b/allocate-buffer size))
+          (write-to-bf skey msg))))))
+
+(defn write-message
+  "Attempt to write a message immediately, if cannot write all, register
+  interest in OP_WRITE event"
+  [^SelectionKey skey msg]
+  (write-to-bf skey msg)
+  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
+        ^SocketChannel ch              (.channel skey)]
+    (.flip write-bf)
+    (.write ch write-bf)
+    (when (.hasRemaining write-bf)
+      (.interestOpsOr skey SelectionKey/OP_WRITE))))
+
+(defn- handle-write
+  "We already tried to write before, now try to write the remaining data.
+  Remove interest in OP_WRITE event when done"
+  [^SelectionKey skey]
+  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
+        ^SocketChannel ch              (.channel skey)]
+    (.write ch write-bf)
+    (when-not (.hasRemaining write-bf)
+      (.interestOpsAnd skey (bit-not SelectionKey/OP_WRITE)))))
+
+(defn- pull-user
+  [sys-conn username]
+  (try
+    (d/pull (d/db sys-conn) '[*] [:user/name username])
+    (catch Exception _
+      nil)))
+
 (defn- authenticate
-  [{:keys [username password database]}]
-  )
+  [{:keys [username password]}]
+  (let [conn (@resources :sys-conn)]
+    (when-let [{:keys [user/id user/pw-salt user/pw-hash]}
+               (pull-user conn username)]
+      (when (password-matches? password pw-hash pw-salt)
+        (let [client-id (UUID/randomUUID)]
+          (swap! resources assoc-in [:clients client-id :user/id] id)
+          client-id)))))
 
 (defn- prepare-db [msg]
   )
 
-#_(defn- fatal-error-response
-    [writer error-msg]
-    (u/write-message writer {:type    :error-response
-                             :message error-msg})
-    false)
-
-#_(defn- success-response
-   [writer response]
-   (u/write-message writer response)
-   true)
+(defn- error-response
+  [skey error-msg]
+  (write-message skey {:type    :error-response
+                       :message error-msg}))
 
 (defn- close-port
   []
@@ -112,39 +154,48 @@
                         :write-bf (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)})))))
 
+(defn- authentication
+  [skey message ]
+  (if-let [client-id (authenticate message)]
+    (write-message skey {:type      :authentication-ok
+                         :client-id client-id})
+    (error-response skey "Failed to authenticate")))
+
+(defn- set-client-id
+  [skey message]
+  (let [state (.attachment skey)]
+    (swap! state assoc :client-id (message :client-id))
+    (write-message skey {:type :set-client-id-ok})))
+
+(def message-handlers
+  ['authentication
+   'set-client-id])
+
 (defn- handle-message
-  [skey type msg ]
-  (println "message received:" (p/read-value type msg))
-  #_(case type
-      :authentication
-      (if-let [cid (authenticate msg)]
-        (do (u/write-message writer {:type :authentication-ok
-                                     :cid  cid})
-            (if (prepare-db msg)
-              (success-response writer {:type :ready-for-query})
-              (fatal-error-response writer "Unable to prepare the database")))
-        (fatal-error-response writer "Failed to authenticate"))))
+  [^SelectionKey skey fmt msg ]
+  (let [{:keys [type] :as message} (p/read-value fmt msg)]
+    (println "message received:" message)
+    (case type
+      :authentication (authentication skey message)
+      :set-client-id  (set-client-id skey message)
+      (error-response skey (str "Unknown message type:" type)))))
 
 (defn- process-read
   [^SelectionKey skey]
   (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)]
     (p/segment-messages read-bf
-                        (fn [type msg]
-                          (execute #(handle-message skey type msg))))))
+                        (fn [fmt msg]
+                          (execute #(handle-message skey fmt msg))))))
 
 (defn- handle-read
   [^SelectionKey skey]
   (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)
-        ch                            ^SocketChannel (.channel skey)
+        ^SocketChannel ch             (.channel skey)
         readn                         (.read ch read-bf)]
     (cond
       (= readn 0)  :continue
       (> readn 0)  (process-read skey)
       (= readn -1) (.close ch))))
-
-(defn- handle-write
-  [^SelectionKey skey]
-  )
 
 (defn- init-sys-db
   [root]
@@ -213,3 +264,22 @@
     (catch Exception e
       (u/raise "Error running server:" (ex-message e) {}))
     (finally (shutdown))))
+
+(comment
+
+  (def conn (d/get-conn "/tmp/server1/system"))
+  (d/schema conn)
+  (def user (d/pull (d/db conn) '[*] [:user/name c/default-username]))
+
+
+  (password-hashing c/default-password (user :user/pw-salt))
+
+  (let [{:keys [user/id user/pw-salt user/pw-hash]}
+        (d/pull (d/db conn) '[*] [:user/name c/default-username])]
+    (println pw-hash)
+    (println (b/hexify pw-salt))
+    ;; (password-hashing c/default-password pw-salt)
+    (password-matches? "datalevin" pw-hash pw-salt)
+    )
+
+  )

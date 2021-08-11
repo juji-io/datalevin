@@ -31,32 +31,32 @@
       (u/raise "Unable to write transit to ByteBuffer:" (ex-message e) {}))))
 
 (defn- write-value-bf
-  [bf type msg]
-  (case (short type)
+  [bf fmt msg]
+  (case (short fmt)
     1 (write-transit-bf bf msg)))
 
 (defn- read-value-bf
-  [bf type]
-  (case (short type)
+  [bf fmt]
+  (case (short fmt)
     1 (read-transit-bf bf)))
 
 (defn read-value
-  [type bs]
-  (case (short type)
+  [fmt bs]
+  (case (short fmt)
     1 (u/read-transit-bytes bs)))
 
 (defn write-message-bf
-  "Write a message to a ByteBuffer. First byte is type, then four bytes
+  "Write a message to a ByteBuffer. First byte is format, then four bytes
   length of the whole message (include header), followed by message value"
   ([bf msg]
-   (write-message-bf bf msg c/message-type-transit))
-  ([^ByteBuffer bf msg type]
+   (write-message-bf bf msg c/message-format-transit))
+  ([^ByteBuffer bf msg fmt]
    (let [start-pos (.position bf)]
      (.position bf (+ c/message-header-size start-pos))
-     (write-value-bf bf type msg)
+     (write-value-bf bf fmt msg)
      (let [end-pos (.position bf)]
        (.position bf start-pos)
-       (.put bf ^byte (unchecked-byte type))
+       (.put bf ^byte (unchecked-byte fmt))
        (.putInt bf (- end-pos start-pos))
        (.position bf end-pos)))))
 
@@ -71,7 +71,7 @@
       (when (> pos c/message-header-size)
         (.flip read-bf)
         (let [available (.limit read-bf)
-              type      (.get read-bf)
+              fmt       (.get read-bf)
               length    (.getInt read-bf)]
           (if (< available length)
             (doto read-bf
@@ -79,7 +79,7 @@
               (.position pos))
             (let [ba (byte-array (- length c/message-header-size))]
               (.get read-bf ba)
-              (msg-handler type ba)
+              (msg-handler fmt ba)
               (if (= available length)
                 (.clear read-bf)
                 (do (.compact read-bf)
@@ -93,14 +93,14 @@
     (when (> pos c/message-header-size)
       (.flip read-bf)
       (let [available (.limit read-bf)
-            type      (.get read-bf)
+            fmt       (.get read-bf)
             length    (.getInt read-bf)]
         (if (< available length)
           (do (doto read-bf
                 (.limit (.capacity read-bf))
                 (.position pos))
               nil)
-          (let [msg (read-value-bf (.slice read-bf) type)]
+          (let [msg (read-value-bf (.slice read-bf) fmt)]
             (if (= available length)
               (.clear read-bf)
               (doto read-bf
