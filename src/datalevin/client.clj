@@ -151,21 +151,22 @@
   [^URI uri]
   (let [p (.getPort uri)] (if (= -1 p) c/default-port p)))
 
-(defn parse-db
-  [^URI uri]
-  (subs (.getPath uri) 1))
+(defn parse-db [^URI uri] (subs (.getPath uri) 1))
 
 (deftype Client [^URI uri
                  ^ConnectionPool pool
                  ^UUID id]
   IClient
   (request [client req]
-    (let [^Connection conn (get-connection pool)
-          res              (send-n-receive conn req)]
+    (let [conn (get-connection pool)
+          res  (send-n-receive conn req)]
       (release-connection pool conn)
       res)))
 
-(defn new-client [uri-str]
+(defn new-client
+  "create a new Datalevin client. This operation takes at least 0.5 seconds
+  in order to perform a secure password hashing that defeats cracking."
+  [uri-str]
   (let [uri                         (URI. uri-str)
         {:keys [username password]} (parse-user-info uri)
 

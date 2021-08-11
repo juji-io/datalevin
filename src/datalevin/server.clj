@@ -59,13 +59,11 @@
 
 ;; global server resources
 ;; { selector, work-executor, sys-conn, clients}
-(def resources (atom {:clients {}}))
-
-(defn- execute
-  [f]
-  (.execute ^Executor (@resources :work-executor) f))
+(def resources (atom {:clients {} ; client-id -> {user/id}
+                      }))
 
 (defn- write-to-bf
+  "write a message to write buffer, auto grow the buffer"
   [^SelectionKey skey msg]
   (let [state                          (.attachment skey)
         {:keys [^ByteBuffer write-bf]} @state]
@@ -116,7 +114,8 @@
           (swap! resources assoc-in [:clients client-id :user/id] id)
           client-id)))))
 
-(defn- prepare-db [msg]
+(defn- prepare-db
+  [msg]
   )
 
 (defn- error-response
@@ -154,15 +153,17 @@
                         :write-bf (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)})))))
 
+;; incoming message handlers
+
 (defn- authentication
-  [skey message ]
+  [skey message]
   (if-let [client-id (authenticate message)]
     (write-message skey {:type      :authentication-ok
                          :client-id client-id})
     (error-response skey "Failed to authenticate")))
 
 (defn- set-client-id
-  [skey message]
+  [^SelectionKey skey message]
   (let [state (.attachment skey)]
     (swap! state assoc :client-id (message :client-id))
     (write-message skey {:type :set-client-id-ok})))
@@ -171,14 +172,27 @@
   ['authentication
    'set-client-id])
 
+(defmacro message-cases
+  "Message handler function should have the same name as the incoming message
+  type, e.g. '(authentication skey message) for :authentication message type"
+  [skey type]
+  `(case ~type
+     ~@(mapcat
+         (fn [sym]
+           [(keyword sym) (list sym 'skey 'message)])
+         message-handlers)
+     (error-response ~skey (str "Unknown message type" ~type))))
+
 (defn- handle-message
   [^SelectionKey skey fmt msg ]
   (let [{:keys [type] :as message} (p/read-value fmt msg)]
     (println "message received:" message)
-    (case type
-      :authentication (authentication skey message)
-      :set-client-id  (set-client-id skey message)
-      (error-response skey (str "Unknown message type:" type)))))
+    (message-cases skey type)))
+
+(defn- execute
+  "Execute a function in a thread from worker thread pool"
+  [f]
+  (.execute ^Executor (@resources :work-executor) f))
 
 (defn- process-read
   [^SelectionKey skey]
