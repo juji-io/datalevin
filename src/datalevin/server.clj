@@ -181,7 +181,7 @@
          (fn [sym]
            [(keyword sym) (list sym 'skey 'message)])
          message-handlers)
-     (error-response ~skey (str "Unknown message type" ~type))))
+     (error-response ~skey (str "Unknown message type " ~type))))
 
 (defn- handle-message
   [^SelectionKey skey fmt msg ]

@@ -153,6 +153,13 @@
 
 (defn parse-db [^URI uri] (subs (.getPath uri) 1))
 
+(defn- parse-query
+  [^URI uri]
+  (when-let [query (.getQuery uri)]
+    (->> (s/split query #"&")
+         (map #(s/split % #"="))
+         (into {}))))
+
 (deftype Client [^URI uri
                  ^ConnectionPool pool
                  ^UUID id]
@@ -173,12 +180,22 @@
         host      (.getHost uri)
         port      (parse-port uri)
         db        (parse-db uri)
+        store     (or (get (parse-query uri) "store") c/db-store-datalog)
         client-id (authenticate host port username password)
-        pool      (new-connectionpool host port client-id)]
-    (->Client uri pool client-id)))
+        pool      (new-connectionpool host port client-id)
+        client    (->Client uri pool client-id)]
+    (request client (if (= store c/db-store-datalog)
+                      {:type :get-conn :db-name db}
+                      {:type :open-kv :db-name db}))
+    client))
 
 (comment
 
+  (def uri (URI.  "dtlv://datalevin:datalevin@localhost/testdb"))
+
+  (get (parse-query uri) "store")
+
   (def client (new-client "dtlv://datalevin:datalevin@localhost/testdb"))
+  (request client {:type :get-conn :db-name "ok"})
 
   )

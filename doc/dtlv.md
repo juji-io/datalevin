@@ -103,7 +103,7 @@ specify the default password (also `datalevin`). For remote access, username and
 password is required. REPL commands can be used to change password, add users, etc.
 
 When a client opens a Datalevin database using a connection URI, i.e.
-"dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;",
+"dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;?store=datalog|kv",
 instead of a local path name, a connection to the server is attempted. So
 the same functions for local databases work on the remote databases. The remote
 access is transparent to callers.

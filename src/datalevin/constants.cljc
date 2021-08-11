@@ -98,6 +98,9 @@
 (def ^:const default-username "datalevin")
 (def ^:const default-password "datalevin")
 
+(def ^:const db-store-datalog "datalog")
+(def ^:const db-store-kv "kv")
+
 (def ^:const superuser-role :datalevin/superuser)
 
 (def ^:const message-header-size 5) ; bytes, 1 type + 4 length
