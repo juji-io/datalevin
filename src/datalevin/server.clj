@@ -155,6 +155,14 @@
     (str (@resources :root) u/+separator+ id u/+separator+
          (b/hexify-string db-name))))
 
+(defmacro wrap-error
+  [body]
+  `(try
+     ~body
+     (catch Exception ~'e
+       (write-message 'skey {:type    :error-response
+                             :message (ex-message ~'e)}))))
+
 ;; BEGIN message handlers
 
 (defn- authentication
@@ -165,25 +173,24 @@
 
 (defn- set-client-id
   [^SelectionKey skey message]
-  (let [state (.attachment skey)]
-    (swap! state assoc :client-id (message :client-id))
-    (write-message skey {:type :set-client-id-ok})))
+  (swap! (.attachment skey) assoc :client-id (message :client-id))
+  (write-message skey {:type :set-client-id-ok}))
 
 (defn get-conn
   [^SelectionKey skey {:keys [db-name schema]}]
-  (let [dir   (db-dir skey db-name)
-        conn  (d/get-conn dir schema)
-        state (.attachment skey)]
-    (swap! state assoc :dt-conn conn)
-    (write-message skey {:type :get-conn-ok})))
+  (wrap-error
+    (let [dir  (db-dir skey db-name)
+          conn (d/get-conn dir schema)]
+      (swap! (.attachment skey) assoc :dt-conn conn)
+      (write-message skey {:type :command-complete}))))
 
 (defn open-kv
   [^SelectionKey skey {:keys [db-name]}]
-  (let [dir   (db-dir skey db-name)
-        db    (d/open-kv dir)
-        state (.attachment skey)]
-    (swap! state assoc :kv-db db)
-    (write-message skey {:type :open-kv-ok})))
+  (wrap-error
+    (let [dir (db-dir skey db-name)
+          db  (d/open-kv dir)]
+      (swap! (.attachment skey) assoc :kv-db db)
+      (write-message skey {:type :command-complete}))))
 
 ;; END message handlers
 
@@ -199,8 +206,7 @@
   [skey type]
   `(case ~type
      ~@(mapcat
-         (fn [sym]
-           [(keyword sym) (list sym 'skey 'message)])
+         (fn [sym] [(keyword sym) (list sym 'skey 'message)])
          message-handlers)
      (error-response ~skey (str "Unknown message type " ~type))))
 

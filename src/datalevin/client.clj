@@ -206,7 +206,7 @@
 
 (comment
 
-  (def client (new-client "dtlv://datalevin:datalevin@localhost/testkv?store=kv"))
+  (def client (new-client "dtlv://datalevin:datalevin@localhost/testdb"))
 
 
   )
