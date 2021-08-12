@@ -39,6 +39,10 @@
   [s]
   (map #(apply unhexify-2c %) (partition 2 s)))
 
+(defn ^:no-doc hexify-string [^String s] (hexify (.getBytes s)))
+
+(defn ^:no-doc unhexify-string [s] (String. (byte-array (unhexify s))))
+
 (defn text-ba->str
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]

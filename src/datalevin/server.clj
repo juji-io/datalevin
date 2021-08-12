@@ -58,10 +58,9 @@
   (= password-hash (password-hashing in-password salt)))
 
 ;; global server resources
-;; { selector, work-executor, sys-conn, clients}
+;; {root, selector, work-executor, sys-conn, clients}
 (def resources (atom {:clients {} ; client-id -> {user/id}
                       }))
-
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
   [^SelectionKey skey msg]
@@ -114,14 +113,9 @@
           (swap! resources assoc-in [:clients client-id :user/id] id)
           client-id)))))
 
-(defn- prepare-db
-  [msg]
-  )
-
 (defn- error-response
   [skey error-msg]
-  (write-message skey {:type    :error-response
-                       :message error-msg}))
+  (write-message skey {:type :error-response :message error-msg}))
 
 (defn- close-port
   []
@@ -147,19 +141,26 @@
       (.configureBlocking false)
       (.register (.selector skey) SelectionKey/OP_READ
                  ;; attach a connection state atom
-                 ;; { read-bf, write-bf, client-id, db-name, conn, ... }
+                 ;; { read-bf, write-bf, client-id, dt-conn, kv-db, ... }
                  (atom {:read-bf  (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)
                         :write-bf (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)})))))
 
-;; incoming message handlers
+(defn- db-dir
+  "translate from user db-name to server db path"
+  [^SelectionKey skey db-name]
+  (let [{:keys [client-id]} @(.attachment skey)
+        {:keys [user/id]}   (get-in @resources [:clients client-id])]
+    (str (@resources :root) u/+separator+ id u/+separator+
+         (b/hexify-string db-name))))
+
+;; BEGIN message handlers
 
 (defn- authentication
   [skey message]
   (if-let [client-id (authenticate message)]
-    (write-message skey {:type      :authentication-ok
-                         :client-id client-id})
+    (write-message skey {:type :authentication-ok :client-id client-id})
     (error-response skey "Failed to authenticate")))
 
 (defn- set-client-id
@@ -168,9 +169,29 @@
     (swap! state assoc :client-id (message :client-id))
     (write-message skey {:type :set-client-id-ok})))
 
+(defn get-conn
+  [^SelectionKey skey {:keys [db-name schema]}]
+  (let [dir   (db-dir skey db-name)
+        conn  (d/get-conn dir schema)
+        state (.attachment skey)]
+    (swap! state assoc :dt-conn conn)
+    (write-message skey {:type :get-conn-ok})))
+
+(defn open-kv
+  [^SelectionKey skey {:keys [db-name]}]
+  (let [dir   (db-dir skey db-name)
+        db    (d/open-kv dir)
+        state (.attachment skey)]
+    (swap! state assoc :kv-db db)
+    (write-message skey {:type :open-kv-ok})))
+
+;; END message handlers
+
 (def message-handlers
   ['authentication
-   'set-client-id])
+   'set-client-id
+   'get-conn
+   'open-kv])
 
 (defmacro message-cases
   "Message handler function should have the same name as the incoming message
@@ -190,7 +211,7 @@
     (message-cases skey type)))
 
 (defn- execute
-  "Execute a function in a thread from worker thread pool"
+  "Execute a function in a thread from the worker thread pool"
   [f]
   (.execute ^Executor (@resources :work-executor) f))
 
@@ -215,7 +236,7 @@
   [root]
   (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
                              c/system-schema)]
-    (swap! resources assoc :sys-conn sys-conn)
+    (swap! resources assoc :root root :sys-conn sys-conn)
     (when (= 0 (st/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
       (let [s   (salt)
             h   (password-hashing c/default-password s)
@@ -281,19 +302,5 @@
 
 (comment
 
-  (def conn (d/get-conn "/tmp/server1/system"))
-  (d/schema conn)
-  (def user (d/pull (d/db conn) '[*] [:user/name c/default-username]))
-
-
-  (password-hashing c/default-password (user :user/pw-salt))
-
-  (let [{:keys [user/id user/pw-salt user/pw-hash]}
-        (d/pull (d/db conn) '[*] [:user/name c/default-username])]
-    (println pw-hash)
-    (println (b/hexify pw-salt))
-    ;; (password-hashing c/default-password pw-salt)
-    (password-matches? "datalevin" pw-hash pw-salt)
-    )
 
   )

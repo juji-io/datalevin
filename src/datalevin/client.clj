@@ -151,7 +151,11 @@
   [^URI uri]
   (let [p (.getPort uri)] (if (= -1 p) c/default-port p)))
 
-(defn parse-db [^URI uri] (subs (.getPath uri) 1))
+(defn parse-db
+  [^URI uri]
+  (let [path (.getPath uri)]
+    (when-not (or (s/blank? path) (= path "/"))
+      (subs path 1))))
 
 (defn- parse-query
   [^URI uri]
@@ -170,32 +174,39 @@
       (release-connection pool conn)
       res)))
 
-(defn new-client
-  "create a new Datalevin client. This operation takes at least 0.5 seconds
-  in order to perform a secure password hashing that defeats cracking."
-  [uri-str]
-  (let [uri                         (URI. uri-str)
-        {:keys [username password]} (parse-user-info uri)
+(defn- init-db
+  [client db store schema]
+  (let [{:keys [type]}
+        (request client (if (= store c/db-store-datalog)
+                          (cond-> {:type :get-conn :db-name db}
+                            schema (assoc :schema schema))
+                          {:type :open-kv :db-name db}))]
+    (when (= type :error-response)
+      (u/raise "Unable to open database:" db {}))))
 
-        host      (.getHost uri)
-        port      (parse-port uri)
-        db        (parse-db uri)
-        store     (or (get (parse-query uri) "store") c/db-store-datalog)
-        client-id (authenticate host port username password)
-        pool      (new-connectionpool host port client-id)
-        client    (->Client uri pool client-id)]
-    (request client (if (= store c/db-store-datalog)
-                      {:type :get-conn :db-name db}
-                      {:type :open-kv :db-name db}))
-    client))
+(defn new-client
+  "Create a new client that maintains a connection pool to a remote
+  Datalevin database server. This operation takes at least 0.5 seconds
+  in order to perform a secure password hashing that defeats cracking."
+  ([uri-str]
+   (new-client uri-str nil))
+  ([uri-str schema]
+   (let [uri                         (URI. uri-str)
+         {:keys [username password]} (parse-user-info uri)
+
+         host      (.getHost uri)
+         port      (parse-port uri)
+         db        (parse-db uri)
+         store     (or (get (parse-query uri) "store") c/db-store-datalog)
+         client-id (authenticate host port username password)
+         pool      (new-connectionpool host port client-id)
+         client    (->Client uri pool client-id)]
+     (when db (init-db client db store schema))
+     client)))
 
 (comment
 
-  (def uri (URI.  "dtlv://datalevin:datalevin@localhost/testdb"))
+  (def client (new-client "dtlv://datalevin:datalevin@localhost/testkv?store=kv"))
 
-  (get (parse-query uri) "store")
-
-  (def client (new-client "dtlv://datalevin:datalevin@localhost/testdb"))
-  (request client {:type :get-conn :db-name "ok"})
 
   )
