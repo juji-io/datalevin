@@ -214,7 +214,8 @@
 (defn- entity->txs [^Entity e]
   (let [eid (.-eid e)
         db  (.-db e)
-        {:keys [ref-attrs ref-rattrs ref-many-rattrs ref-many-attrs]} (db->attr-types db)]
+        {:keys [ref-attrs ref-rattrs ref-many-rattrs ref-many-attrs]}
+        (db->attr-types db)]
     (into
       []
       (mapcat
@@ -227,12 +228,12 @@
                         [v]
                         (u/ensure-vec v))]
                 (case op
-                  :assoc [[:db.fn/retractAttribute eid k]
-                          {:db/id eid
-                           k      (mapv (fn [e] (or (:db/id e) e)) v)}]
-                  :add [{:db/id eid
-                         k      (mapv (fn [e] (or (:db/id e) e)) v)}]
-                  :dissoc [[:db.fn/retractAttribute eid k]]
+                  :assoc   [[:db.fn/retractAttribute eid k]
+                            {:db/id eid
+                             k      (mapv (fn [e] (or (:db/id e) e)) v)}]
+                  :add     [{:db/id eid
+                             k      (mapv (fn [e] (or (:db/id e) e)) v)}]
+                  :dissoc  [[:db.fn/retractAttribute eid k]]
                   :retract (into []
                                  (map (fn [e]
                                         [:db/retract eid k (:db/id e)]))
@@ -241,7 +242,7 @@
               :else
               (case op
                 (:dissoc :retract) [[:db.fn/retractAttribute eid k]]
-                (:assoc :add) [[:db/add eid k v]])))))
+                (:assoc :add)      [[:db/add eid k v]])))))
       (.-tbd e))))
 
 (defn entity? [x] (instance? Entity x))

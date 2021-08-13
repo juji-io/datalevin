@@ -12,6 +12,7 @@
                  [com.cognitect/transit-clj]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
+                 [com.taoensso/timbre]
                  [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]

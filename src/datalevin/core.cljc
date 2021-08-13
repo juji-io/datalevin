@@ -2,7 +2,9 @@
   "API for Datalevin database"
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   [clojure.string :as str]
    [datalevin.util :as u]
+   [datalevin.client :as cl]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
@@ -75,7 +77,6 @@ attribute is marked as `:db/component`:
              - Entities print as map, but are not exactly maps (they have
 compatible get interface though).
              - Entities retain reference to the database.
-             - You can’t change database through entities, only read.
              - Creating an entity by id is very cheap, almost no-op
 (attributes are looked up on demand).
              - Comparing entities just compares their ids. Be careful when
@@ -94,7 +95,6 @@ before) are printed. See [[touch]]."}
 (def ^{:arglists '([ent attr][ent attr value])
        :doc      "Remove an attribute from an entity"}
   retract de/retract)
-
 
 (def ^{:arglists '([db eid])
        :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.
@@ -398,7 +398,7 @@ given. Return reference to the database.
 ;; Conn
 
 (defn conn?
-  "Returns `true` if this is an open connection to a Datalog db, `false`
+  "Returns `true` if this is an open connection to a local Datalog db, `false`
   otherwise."
   [conn]
   (and #?(:clj  (instance? clojure.lang.IDeref conn)
@@ -679,7 +679,7 @@ given. Return reference to the database.
 
   (defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
-  (defn- new-conn
+(defn- new-conn
   [dir schema]
   (let [conn (if schema
                (create-conn dir schema)
@@ -687,7 +687,7 @@ given. Return reference to the database.
     (add-conn dir conn)
     conn))
 
-  (defn get-conn
+(defn get-conn
   "Obtain an open connection to a database. Create the database if it does not
   exist. Reuse the same connection if a connection to the same database already
   exists. Open the database if it is closed. Return the connection.

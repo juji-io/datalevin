@@ -5,7 +5,8 @@
             [datalevin.bits :as b]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
-            [datalevin.constants :as c])
+            [datalevin.constants :as c]
+            [taoensso.timbre :as log])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels Selector SelectionKey ServerSocketChannel
@@ -18,6 +19,9 @@
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
             Argon2Parameters$Builder]))
+
+(log/refer-timbre)
+(log/set-level! :info)
 
 ;; password processing
 
@@ -148,12 +152,11 @@
                                     c/+default-buffer-size+)})))))
 
 (defn- db-dir
-  "translate from user db-name to server db path"
-  [^SelectionKey skey db-name]
-  (let [{:keys [client-id]} @(.attachment skey)
-        {:keys [user/id]}   (get-in @resources [:clients client-id])]
-    (str (@resources :root) u/+separator+ id u/+separator+
-         (b/hexify-string db-name))))
+  "translate from user and db-name to server db path"
+  [user-id db-name]
+  (str (@resources :root) u/+separator+
+       user-id u/+separator+
+       (b/hexify-string db-name)))
 
 (defmacro wrap-error
   [body]
@@ -179,17 +182,31 @@
 (defn get-conn
   [^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
-    (let [dir  (db-dir skey db-name)
-          conn (d/get-conn dir schema)]
-      (swap! (.attachment skey) assoc :dt-conn conn)
+    (let [state               (.attachment skey)
+          {:keys [client-id]} @state
+          {:keys [user/id]}   (get-in @resources [:clients client-id])
+          dir                 (db-dir id db-name)
+          conn                (d/get-conn dir schema)]
+      (d/transact! (@resources :sys-conn)
+                   [{:database/owner [:user/id id]
+                     :database/type  :datalog
+                     :database/name  db-name}])
+      (swap! state assoc :dt-conn conn)
       (write-message skey {:type :command-complete}))))
 
 (defn open-kv
   [^SelectionKey skey {:keys [db-name]}]
   (wrap-error
-    (let [dir (db-dir skey db-name)
-          db  (d/open-kv dir)]
-      (swap! (.attachment skey) assoc :kv-db db)
+    (let [state               (.attachment skey)
+          {:keys [client-id]} @state
+          {:keys [user/id]}   (get-in @resources [:clients client-id])
+          dir                 (db-dir id db-name)
+          db                  (d/open-kv dir)]
+      (d/transact! (@resources :sys-conn)
+                   [{:database/owner [:user/id id]
+                     :database/type  :key-value
+                     :database/name  db-name}])
+      (swap! state assoc :kv-db db)
       (write-message skey {:type :command-complete}))))
 
 ;; END message handlers
@@ -213,20 +230,13 @@
 (defn- handle-message
   [^SelectionKey skey fmt msg ]
   (let [{:keys [type] :as message} (p/read-value fmt msg)]
-    (println "message received:" message)
+    (log/debug "message received:" message)
     (message-cases skey type)))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
   [f]
   (.execute ^Executor (@resources :work-executor) f))
-
-(defn- process-read
-  [^SelectionKey skey]
-  (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)]
-    (p/segment-messages read-bf
-                        (fn [fmt msg]
-                          (execute #(handle-message skey fmt msg))))))
 
 (defn- handle-read
   [^SelectionKey skey]
@@ -235,7 +245,9 @@
         readn                         (.read ch read-bf)]
     (cond
       (= readn 0)  :continue
-      (> readn 0)  (process-read skey)
+      (> readn 0)  (p/segment-messages
+                     read-bf
+                     (fn [fmt msg] (execute #(handle-message skey fmt msg))))
       (= readn -1) (.close ch))))
 
 (defn- init-sys-db
@@ -272,7 +284,7 @@
       (when (.isOpen selector)(.close selector)))
     (.shutdown ^ThreadPoolExecutor work-executor)
     (d/close sys-conn))
-  (println "Bye."))
+  (log/info "Bye."))
 
 (defn- open-selector []
   (let [selector (Selector/open)]
@@ -287,7 +299,7 @@
       (init-work-executor)
       (init-sys-db root)
       (.register server-socket selector SelectionKey/OP_ACCEPT)
-      (println "Datalevin server started on port" port)
+      (log/info "Datalevin server started on port" port)
       (loop []
         (.select selector)
         (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]

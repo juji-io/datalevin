@@ -41,6 +41,7 @@
   Optional options:
       -p --port        Listening port, default is 8898
       -r --root        Root data directory, default is /var/lib/datalevin
+      -v --verbose     Show detailed logging messages
 
   Examples:
       dtlv -p 8899 serv
