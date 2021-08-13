@@ -8,7 +8,7 @@
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels SocketChannel]
-           [java.util ArrayList UUID]
+           [java.util ArrayList UUID Collection]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
 (defn- send-ch
@@ -56,7 +56,8 @@
 
 (defprotocol IConnectionPool
   (get-connection [this] "Get a connection from the pool")
-  (release-connection [this connection] "Return the connection back to pool"))
+  (release-connection [this connection] "Return the connection back to pool")
+  (shutdown-pool [this] "Close all connections in the pool"))
 
 (defn- ^SocketChannel connect-socket
   "connect to server and return the client socket channel"
@@ -106,7 +107,14 @@
             (recur (.size available)))))))
   (release-connection [this conn]
     (.add available conn)
-    (.remove used conn)))
+    (.remove used conn))
+  (shutdown-pool [this]
+    (doseq [^Connection conn available]
+      (close conn)
+      (.remove available conn))
+    (doseq [^Connection conn used]
+      (close conn)
+      (.remove used conn))))
 
 (defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
@@ -139,7 +147,9 @@
     pool))
 
 (defprotocol IClient
-  (request [this req] "Send a request, and return response"))
+  (request [client req] "Send a request, and return response")
+  (stop [client] "Stop this client")
+  (stopped? [client] "Return true if the client is stopped"))
 
 (defn parse-user-info
   [^URI uri]
@@ -172,13 +182,18 @@
     (let [conn (get-connection pool)
           res  (send-n-receive conn req)]
       (release-connection pool conn)
-      res)))
+      res))
+  (stop [_]
+    (shutdown-pool pool))
+  (stopped? [_]
+    (and (.isEmpty ^ArrayList (.-available pool))
+         (.isEmpty ^ArrayList (.-used pool)))))
 
 (defn- init-db
   [client db store schema]
   (let [{:keys [type]}
         (request client (if (= store c/db-store-datalog)
-                          (cond-> {:type :get-conn :db-name db}
+                          (cond-> {:type :open :db-name db}
                             schema (assoc :schema schema))
                           {:type :open-kv :db-name db}))]
     (when (= type :error-response)

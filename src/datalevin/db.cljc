@@ -17,7 +17,7 @@
                        :refer [case-tree raise defrecord-updatable cond+]]))
   #?(:clj
      (:import [datalevin.datom Datom]
-              [datalevin.storage Store]
+              [datalevin.storage IStore]
               [datalevin.lru LRU]
               [datalevin.bits Retrieved]
               [java.util.concurrent ConcurrentHashMap])))
@@ -90,7 +90,7 @@
          (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
-(defrecord-updatable DB [^Store store eavt avet veat
+(defrecord-updatable DB [^IStore store eavt avet veat
                          max-eid max-tx schema rschema hash]
 
   clojure.lang.IEditableCollection
@@ -270,8 +270,8 @@
   (validate-schema schema)
   (s/open dir schema))
 
-(defn- new-db
-  [store]
+(defn new-db
+  [^IStore store]
   (let [schema (s/schema store)]
     (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
     (map->DB

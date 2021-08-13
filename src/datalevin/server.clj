@@ -3,6 +3,7 @@
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
             [datalevin.bits :as b]
+            [datalevin.lmdb :as l]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.constants :as c]
@@ -21,7 +22,7 @@
             Argon2Parameters$Builder]))
 
 (log/refer-timbre)
-(log/set-level! :info)
+(log/set-level! :debug)
 
 ;; password processing
 
@@ -63,8 +64,8 @@
 
 ;; global server resources
 ;; {root, selector, work-executor, sys-conn, clients}
-(def resources (atom {:clients {} ; client-id -> {user/id}
-                      }))
+(def resources (atom {:clients {; client-id -> {user/id, dt-store, kv-store }
+                                }}))
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
   [^SelectionKey skey msg]
@@ -145,7 +146,7 @@
       (.configureBlocking false)
       (.register (.selector skey) SelectionKey/OP_READ
                  ;; attach a connection state atom
-                 ;; { read-bf, write-bf, client-id, dt-conn, kv-db, ... }
+                 ;; { read-bf, write-bf, client-id }
                  (atom {:read-bf  (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)
                         :write-bf (ByteBuffer/allocateDirect
@@ -179,43 +180,50 @@
   (swap! (.attachment skey) assoc :client-id (message :client-id))
   (write-message skey {:type :set-client-id-ok}))
 
-(defn get-conn
+(defn open
   [^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
-    (let [state               (.attachment skey)
-          {:keys [client-id]} @state
+    (let [{:keys [client-id]} @(.attachment skey)
           {:keys [user/id]}   (get-in @resources [:clients client-id])
           dir                 (db-dir id db-name)
-          conn                (d/get-conn dir schema)]
+          store               (st/open dir schema)]
+      (swap! resources assoc-in [:clients client-id :dt-store] store)
       (d/transact! (@resources :sys-conn)
                    [{:database/owner [:user/id id]
                      :database/type  :datalog
                      :database/name  db-name}])
-      (swap! state assoc :dt-conn conn)
       (write-message skey {:type :command-complete}))))
 
 (defn open-kv
   [^SelectionKey skey {:keys [db-name]}]
   (wrap-error
-    (let [state               (.attachment skey)
-          {:keys [client-id]} @state
+    (let [{:keys [client-id]} @(.attachment skey)
           {:keys [user/id]}   (get-in @resources [:clients client-id])
           dir                 (db-dir id db-name)
-          db                  (d/open-kv dir)]
+          db                  (l/open-kv dir)]
+      (swap! resources assoc-in [:clients client-id :kv-store] db)
       (d/transact! (@resources :sys-conn)
                    [{:database/owner [:user/id id]
                      :database/type  :key-value
                      :database/name  db-name}])
-      (swap! state assoc :kv-db db)
       (write-message skey {:type :command-complete}))))
+
+(defn schema
+  [^SelectionKey skey _]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
+      (write-message skey {:type   :command-complete
+                           :schema (st/schema dt-store)}))))
 
 ;; END message handlers
 
 (def message-handlers
   ['authentication
    'set-client-id
-   'get-conn
-   'open-kv])
+   'open
+   'open-kv
+   'schema])
 
 (defmacro message-cases
   "Message handler function should have the same name as the incoming message
@@ -275,12 +283,21 @@
     (swap! resources assoc :work-executor exec)
     exec))
 
+(defn- close-conn
+  "Release resources related to the connection"
+  [^SelectionKey skey]
+  (let [{:keys [client-id]}         @(.attachment skey)
+        {:keys [dt-store kv-store]} (get-in @resources [:clients client-id])
+        ^SocketChannel ch           (.channel skey)]
+    (when dt-store (st/close dt-store))
+    (when kv-store (l/close-kv kv-store))
+    (.close ch)))
+
 (defn- shutdown
   []
   (let [{:keys [^Selector selector work-executor sys-conn]} @resources]
     (when selector
-      (doseq [^SelectionKey skey (.keys selector)]
-        (.close ^SocketChannel (.channel skey)))
+      (doseq [skey (.keys selector)] (close-conn skey))
       (when (.isOpen selector)(.close selector)))
     (.shutdown ^ThreadPoolExecutor work-executor)
     (d/close sys-conn))
