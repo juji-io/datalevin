@@ -859,7 +859,7 @@
                                                         (get db :eavt)
                                                         (datom e a v tx0)
                                                         (datom e a v txmax)))
-                                               (first (-search db [e a v])))]
+                                               (first (-first db [e a v])))]
                            (recur (transact-retract-datom report old-datom) entities)
                            (recur report entities)))
                        (recur report entities))
