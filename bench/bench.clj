@@ -1,4 +1,4 @@
-#!/usr/bin/env clojure
+#!/usr/bin/env clojure 
 
 "USAGE: ./bench [rebuild]? [<version>|<version-vm> ...]? [<bench-name> ...]?"
 
@@ -72,25 +72,30 @@
 (defn run-benchmarks [version vm benchmarks]
   (case vm
     "datalevin"
-    (apply run "clojure" "-Sdeps"
+    (apply run "clojure" 
+           "-J--add-opens=java.base/java.nio=ALL-UNNAMED" 
+           "-J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED" 
+           "-J--illegal-access=permit"
+           "-Sdeps"
            (cond
              (= "latest" version)
              (str "{:paths [\"src\" \"../src\" \"../target/classes\" \"../native/target/classes\"]"
-                  ":deps {datalevin {:local/root \"..\"} 
+                  ":deps {datalevin/datalevin {:local/root \"..\"} 
                   org.clojure/clojure   {:mvn/version \"1.10.3\"} 
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"} 
                   com.taoensso/nippy    {:mvn/version \"3.1.1\"} 
                   persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.2\"} 
                   org.graalvm.nativeimage/svm {:mvn/version \"21.0.0.2\"}
-                  }}")
+                  }}"
+                  )
 
              (re-matches #"\d+\.\d+\.\d+" version)
              (str "{:paths [\"src\"]"
-                  "    :deps {datalevin {:mvn/version \"" version "\"}}}")
+                  "    :deps {datalevin/datalevin {:mvn/version \"" version "\"}}}")
 
              (re-matches #"[0-9a-fA-F]{40}" version)
              (str "{:paths [\"src\"]"
-                  "    :deps {datalevin {:git/url \"https://github.com/juji-io\" :sha \"" version "\"}}}"))
+                  "    :deps {datalevin/datalevin {:git/url \"https://github.com/juji-io\" :sha \"" version "\"}}}"))
            "-m" "datalevin-bench.datalevin"
            benchmarks)
 
@@ -98,7 +103,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src-datascript\"]"
-                " :deps {datascript {:mvn/version \"" (if (= "latest" version) "1.0.0" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.0.0" version) "\"}}"
                 "}")
            "-m" "datascript-bench.datascript"
            benchmarks)
@@ -116,11 +121,11 @@
 
 (def default-benchmarks
   [
-   ;;"add-1"
-   ;;"add-5"
-   ;;"add-all"
-   ;;"init"
-   ;;"retract-5"
+   "add-1"
+   "add-5"
+   "add-all"
+   "init"
+   "retract-5"
    "q1"
    "q2"
    "q3"
@@ -134,7 +139,7 @@
 (def default-versions
   [;; ["latest" "datomic"]
    ;; ["0.18.13" "datascript"]
-   ;; ["latest" "datascript"]
+   ["latest" "datascript"]
    ["latest" "datalevin"]])
 
 
