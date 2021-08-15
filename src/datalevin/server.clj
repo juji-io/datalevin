@@ -15,7 +15,8 @@
            [java.net InetSocketAddress]
            [java.security SecureRandom]
            [java.util Iterator UUID]
-           [java.util.concurrent Executors Executor ThreadPoolExecutor]
+           [java.util.concurrent Executors Executor ThreadPoolExecutor
+            ConcurrentLinkedQueue]
            [datalevin.db DB]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
@@ -23,6 +24,12 @@
 
 (log/refer-timbre)
 (log/set-level! :debug)
+
+;; global server resources:
+;; {root, selector, register-queue, work-executor, sys-conn, clients}
+(defonce resources
+  (atom {:clients        {} ; client-id -> { user/id, dt-store, kv-store }
+         :register-queue (ConcurrentLinkedQueue.)}))
 
 ;; password processing
 
@@ -62,10 +69,23 @@
   [in-password password-hash salt]
   (= password-hash (password-hashing in-password salt)))
 
-;; global server resources
-;; {root, selector, work-executor, sys-conn, clients}
-(def resources (atom {:clients {; client-id -> {user/id, dt-store, kv-store }
-                                }}))
+(defn- pull-user
+  [sys-conn username]
+  (try
+    (d/pull (d/db sys-conn) '[*] [:user/name username])
+    (catch Exception _
+      nil)))
+
+(defn- authenticate
+  [{:keys [username password]}]
+  (let [conn (@resources :sys-conn)]
+    (when-let [{:keys [user/id user/pw-salt user/pw-hash]}
+               (pull-user conn username)]
+      (when (password-matches? password pw-hash pw-salt)
+        (let [client-id (UUID/randomUUID)]
+          (swap! resources assoc-in [:clients client-id :user/id] id)
+          client-id)))))
+
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
   [^SelectionKey skey msg]
@@ -101,34 +121,9 @@
     (when-not (.hasRemaining write-bf)
       (.interestOpsAnd skey (bit-not SelectionKey/OP_WRITE)))))
 
-(defn- pull-user
-  [sys-conn username]
-  (try
-    (d/pull (d/db sys-conn) '[*] [:user/name username])
-    (catch Exception _
-      nil)))
-
-(defn- authenticate
-  [{:keys [username password]}]
-  (let [conn (@resources :sys-conn)]
-    (when-let [{:keys [user/id user/pw-salt user/pw-hash]}
-               (pull-user conn username)]
-      (when (password-matches? password pw-hash pw-salt)
-        (let [client-id (UUID/randomUUID)]
-          (swap! resources assoc-in [:clients client-id :user/id] id)
-          client-id)))))
-
 (defn- error-response
   [skey error-msg]
   (write-message skey {:type :error-response :message error-msg}))
-
-(defn- close-port
-  []
-  (try
-    (.close ^ServerSocketChannel (@resources :server-socket))
-    (swap! resources dissoc :server-socket)
-    (catch Exception e
-      (u/raise "Error closing server socket:" (ex-message e) {}))))
 
 (defn- open-port
   [port]
@@ -164,6 +159,7 @@
   `(try
      ~body
      (catch Exception ~'e
+       (log/error ~'e)
        (write-message 'skey {:type    :error-response
                              :message (ex-message ~'e)}))))
 
@@ -253,27 +249,40 @@
           {:keys [dt-store]}                   (get-in @resources
                                                        [:clients client-id])
           datoms                               (transient [])]
+      (log/info "prepare to go to blocking")
       ;; switch this channel to blocking mode
       (.cancel skey)
-      (.selectNow selector)
+      (log/info "cancelled")
       (.configureBlocking ch true)
-      (p/write-message-blocking ch {:type :copy-in-response})
-      (.clear ^ByteBuffer read-bf)
-      (loop []
-        (let [msg (p/receive-ch ch read-bf)]
-          (if (map? msg)
-            (let [{:keys [type]} msg]
-              (case type
-                :copy-done (st/load-datoms dt-store (persistent! datoms))
-                :copy-fail :continue
-                (u/raise "Receive unexpected message while loading datoms"
-                         {:msg msg})))
-            (do (doseq [datom msg] (conj datoms datom))
-                (recur)))))
-      ;; switch back
-      (.configureBlocking ch false)
-
-      )))
+      (log/info "switched to blocking")
+      (try
+        (p/write-message-blocking ch write-bf {:type :copy-in-response})
+        (log/info "wrote copy-in-response")
+        (.clear ^ByteBuffer read-bf)
+        (loop []
+          (let [msg (p/receive-ch ch read-bf)]
+            (log/info "received msg" msg)
+            (if (map? msg)
+              (let [{:keys [type]} msg]
+                (case type
+                  :copy-done (st/load-datoms dt-store (persistent! datoms))
+                  :copy-fail (u/raise "Client error while loading datoms" {})
+                  (u/raise "Receive unexpected message while loading datoms"
+                           {:msg msg})))
+              (do (doseq [datom msg] (conj! datoms datom))
+                  (log/info "added a batch")
+                  (recur)))))
+        (p/write-message-blocking ch write-bf {:type :command-complete})
+        (log/info "wrote command complete")
+        (catch Exception e (throw e))
+        (finally
+          ;; switch back
+          (log/info "switching back to non-blockking")
+          (.configureBlocking ch false)
+          (.add ^ConcurrentLinkedQueue (@resources :register-queue)
+                [ch SelectionKey/OP_READ state])
+          (.wakeup selector)
+          (log/info "switched back"))))))
 
 (defn- open-kv
   [^SelectionKey skey {:keys [db-name]}]
@@ -302,6 +311,7 @@
    'set-schema
    'init-max-eid
    'datom-count
+   'load-datoms
    'open-kv
    ])
 
@@ -388,6 +398,32 @@
     (swap! resources assoc :selector selector)
     selector))
 
+(defn- handle-registration
+  [^Selector selector]
+  (let [^ConcurrentLinkedQueue queue (@resources :register-queue)]
+    (loop []
+      (when-let [[^SocketChannel ch ops state] (.poll queue)]
+        (.register ch selector ops state)
+        (recur)))))
+
+(defn- event-loop
+  [^Selector selector]
+  (loop []
+    (.select selector)
+    (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
+      (when (.hasNext iter)
+        (let [^SelectionKey skey (.next iter)]
+          (when (and (.isValid skey) (.isAcceptable skey))
+            (handle-accept skey))
+          (when (and (.isValid skey) (.isReadable skey))
+            (handle-read skey))
+          (when (and (.isValid skey) (.isWritable skey))
+            (handle-write skey)))
+        (.remove iter)
+        (recur iter)))
+    (handle-registration selector)
+    (when (.isOpen selector) (recur))))
+
 (defn start
   [{:keys [port root]}]
   (try
@@ -397,20 +433,7 @@
       (init-sys-db root)
       (.register server-socket selector SelectionKey/OP_ACCEPT)
       (log/info "Datalevin server started on port" port)
-      (loop []
-        (.select selector)
-        (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
-          (when (.hasNext iter)
-            (let [^SelectionKey skey (.next iter)]
-              (when (and (.isValid skey) (.isAcceptable skey))
-                (handle-accept skey))
-              (when (and (.isValid skey) (.isReadable skey))
-                (handle-read skey))
-              (when (and (.isValid skey) (.isWritable skey))
-                (handle-write skey)))
-            (.remove iter)
-            (recur iter)))
-        (when (.isOpen selector) (recur))))
+      (event-loop selector))
     (catch Exception e
       (u/raise "Error running server:" (ex-message e) {}))
     (finally (shutdown))))

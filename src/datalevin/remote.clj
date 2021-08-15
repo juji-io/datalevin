@@ -5,6 +5,7 @@
             [datalevin.client :as cl]
             [datalevin.storage :as s]
             [datalevin.bits :as b]
+            [datalevin.datom :as d]
             [datalevin.protocol :as p]
             [clojure.string :as str])
   (:import [datalevin.client Client]
@@ -15,19 +16,7 @@
            [java.util ArrayList UUID]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
-(defn- copy-in-datoms
-  [^Client client uri datoms]
-  (try
-    (doseq [batch (partition c/+wire-datom-batch-size+
-                             c/+wire-datom-batch-size+
-                             nil
-                             datoms)]
-      (cl/copy-in client batch))
-    (cl/copy-done client)
-    (catch Exception e
-      (cl/copy-fail client)
-      (u/raise "Unable to load datoms to remote db:" (ex-message e)
-               {:uri uri :datoms-count (count datoms)}))))
+
 
 (deftype DatalogStore [^String uri
                        ^Client client]
@@ -67,13 +56,11 @@
         (u/raise "Unable to get datom-count of remote db:" message {:uri uri})
         datom-count)))
   (load-datoms [_ datoms]
-    (let [{:keys [type message]} (cl/request client {:type :load-datoms})]
-      (case type
-        :copy-in-response (copy-in-datoms client uri datoms)
-        :error-response
-        (u/raise "Remote db refuse to accept datoms:" message {:uri uri})
-        (u/raise "Unknown server response to loading datoms:" message
-                 {:uri uri }))))
+    (let [{:keys [type message]}
+          (cl/copy-in client {:type :load-datoms}
+                      datoms c/+wire-datom-batch-size+)]
+      (when (= type :error-response)
+        (u/raise "Error loading datoms to server:" message {:uri uri}))))
   )
 
 (defn- redact-uri
@@ -95,6 +82,11 @@
 (comment
 
   (def store (open "dtlv://datalevin:datalevin@localhost/remote1"))
+
+  (s/load-datoms store [(d/datom 5 :name "Jiao" 223)
+                        (d/datom 6 :name "Yang" 223)])
+
+  (s/datom-count store :eavt)
 
   (s/close store)
 

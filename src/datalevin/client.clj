@@ -14,9 +14,7 @@
 (defprotocol IConnection
   (send-n-receive [conn msg]
     "Send a message to server and return the response, a blocking call")
-  (copy-in [conn msg] "Copy a message to the server, do not expect reply")
-  (copy-done [conn] "Indicate the end of copy-in data stream")
-  (copy-fail [conn] "Indicate that copy-in process has failed")
+  (send-only [conn msg] "Send a message without waiting for a response")
   (close [conn]))
 
 (deftype Connection [^SocketChannel ch
@@ -34,26 +32,15 @@
       (catch Exception e
         (u/raise "Error sending message and receiving response:" (ex-message e)
                  {:msg msg}))))
-  (copy-in [this msg]
+  (send-only [this msg]
     (try
       (p/write-message-blocking ch bf msg)
       (catch BufferOverflowException _
         (let [size (* 10 ^int (.capacity bf))]
           (set! bf (b/allocate-buffer size))
-          (copy-in this msg)))
+          (send-only this msg)))
       (catch Exception e
-        (copy-fail this)
-        (u/raise "Error copying in data:" (ex-message e) {:msg msg}))))
-  (copy-done [this]
-    (try
-      (p/write-message-blocking ch bf {:type :copy-done})
-      (catch Exception e
-        (u/raise "Error indicating copy done:" (ex-message e) {}))))
-  (copy-fail [this]
-    (try
-      (p/write-message-blocking ch bf {:type :copy-fail})
-      (catch Exception e
-        (u/raise "Error sending copy fail:" (ex-message e) {}))))
+        (u/raise "Error sending message:" (ex-message e) {:msg msg}))))
   (close [this]
     (.close ch)))
 
@@ -129,7 +116,11 @@
     pool))
 
 (defprotocol IClient
-  (request [client req] "Send a request and return response"))
+  (request [client req] "Send a request and return response")
+  (copy-in [client req data batch-size]
+    "Copy data to the server. `req` is a request type message,
+     `data` is a sequence, `batch-size` decides how to partition the data
+      so that each batch fits in buffers along the way"))
 
 (defn parse-user-info
   [^URI uri]
@@ -154,15 +145,36 @@
          (map #(s/split % #"="))
          (into {}))))
 
+(defn- copy-in*
+  [conn req data batch-size ]
+  (try
+    (doseq [batch (partition batch-size batch-size nil data)]
+      (send-only conn batch))
+    (send-n-receive conn {:type :copy-done})
+    (catch Exception e
+      (send-n-receive conn {:type :copy-fail})
+      (u/raise "Unable to copy in:" (ex-message e)
+               {:req req :count (count data)}))))
+
 (deftype Client [^URI uri
                  ^ConnectionPool pool
                  ^UUID id]
   IClient
   (request [client req]
-    (let [conn (get-connection pool)
-          res  (send-n-receive conn req)]
-      (release-connection pool conn)
-      res)))
+    (let [conn (get-connection pool)]
+      (try
+        (send-n-receive conn req)
+        (catch Exception e (throw e))
+        (finally (release-connection pool conn)))))
+  (copy-in [client req data batch-size]
+    (let [conn (get-connection pool)]
+      (try
+        (let [{:keys [type]} (send-n-receive conn req)]
+          (if (= type :copy-in-response)
+            (copy-in* conn req data batch-size)
+            (u/raise "Server refuses to accept copy in" {:req req})))
+        (catch Exception e (throw e))
+        (finally (release-connection pool conn))))))
 
 (defn- init-db
   [client db store schema]
