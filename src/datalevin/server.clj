@@ -1,5 +1,5 @@
 (ns datalevin.server
-  "Non-blocking event driven server"
+  "Non-blocking event-driven database server"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
             [datalevin.bits :as b]
@@ -180,35 +180,38 @@
   (swap! (.attachment skey) assoc :client-id (message :client-id))
   (write-message skey {:type :set-client-id-ok}))
 
-(defn open
+(defn- open
   [^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [user/id]}   (get-in @resources [:clients client-id])
-          dir                 (db-dir id db-name)
-          store               (st/open dir schema)]
-      (swap! resources assoc-in [:clients client-id :dt-store] store)
-      (d/transact! (@resources :sys-conn)
-                   [{:database/owner [:user/id id]
-                     :database/type  :datalog
-                     :database/name  db-name}])
+    (let [{:keys [client-id]}        @(.attachment skey)
+          {:keys [user/id dt-store]} (get-in @resources [:clients client-id])
+          dir                        (db-dir id db-name)]
+      (when-not (and dt-store (= dir (st/dir dt-store)))
+        (swap! resources assoc-in [:clients client-id :dt-store]
+               (st/open dir schema))
+        (d/transact! (@resources :sys-conn)
+                     [{:database/owner [:user/id id]
+                       :database/type  :datalog
+                       :database/name  db-name}]))
       (write-message skey {:type :command-complete}))))
 
-(defn open-kv
-  [^SelectionKey skey {:keys [db-name]}]
+(defn- close
+  [^SelectionKey skey _]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [user/id]}   (get-in @resources [:clients client-id])
-          dir                 (db-dir id db-name)
-          db                  (l/open-kv dir)]
-      (swap! resources assoc-in [:clients client-id :kv-store] db)
-      (d/transact! (@resources :sys-conn)
-                   [{:database/owner [:user/id id]
-                     :database/type  :key-value
-                     :database/name  db-name}])
+          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
+      (st/close dt-store)
       (write-message skey {:type :command-complete}))))
 
-(defn schema
+(defn- closed?
+  [^SelectionKey skey _]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
+      (write-message skey {:type    :command-complete
+                           :closed? (st/closed? dt-store) }))))
+
+(defn- schema
   [^SelectionKey skey _]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
@@ -216,14 +219,91 @@
       (write-message skey {:type   :command-complete
                            :schema (st/schema dt-store)}))))
 
+(defn- set-schema
+  [^SelectionKey skey {:keys [new-schema]}]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
+      (write-message skey {:type   :command-complete
+                           :schema (st/set-schema dt-store new-schema)}))))
+
+(defn- init-max-eid
+  [^SelectionKey skey _]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
+      (write-message skey {:type    :command-complete
+                           :max-eid (st/init-max-eid dt-store)}))))
+
+(defn- datom-count
+  [^SelectionKey skey {:keys [index]}]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
+      (write-message skey {:type        :command-complete
+                           :datom-count (st/datom-count dt-store index)}))))
+
+(defn- load-datoms
+  [^SelectionKey skey _]
+  (wrap-error
+    (let [state                                (.attachment skey)
+          ^Selector selector                   (.selector skey)
+          ^SocketChannel ch                    (.channel skey)
+          {:keys [client-id read-bf write-bf]} @state
+          {:keys [dt-store]}                   (get-in @resources
+                                                       [:clients client-id])
+          datoms                               (transient [])]
+      ;; switch this channel to blocking mode
+      (.cancel skey)
+      (.selectNow selector)
+      (.configureBlocking ch true)
+      (p/write-message-blocking ch {:type :copy-in-response})
+      (.clear ^ByteBuffer read-bf)
+      (loop []
+        (let [msg (p/receive-ch ch read-bf)]
+          (if (map? msg)
+            (let [{:keys [type]} msg]
+              (case type
+                :copy-done (st/load-datoms dt-store (persistent! datoms))
+                :copy-fail :continue
+                (u/raise "Receive unexpected message while loading datoms"
+                         {:msg msg})))
+            (do (doseq [datom msg] (conj datoms datom))
+                (recur)))))
+      ;; switch back
+      (.configureBlocking ch false)
+
+      )))
+
+(defn- open-kv
+  [^SelectionKey skey {:keys [db-name]}]
+  (wrap-error
+    (let [{:keys [client-id]}        @(.attachment skey)
+          {:keys [user/id kv-store]} (get-in @resources [:clients client-id])
+          dir                        (db-dir id db-name)]
+      (when-not (and kv-store (= dir (l/dir kv-store)))
+        (swap! resources assoc-in [:clients client-id :kv-store]
+               (l/open-kv dir))
+        (d/transact! (@resources :sys-conn)
+                     [{:database/owner [:user/id id]
+                       :database/type  :key-value
+                       :database/name  db-name}]))
+      (write-message skey {:type :command-complete}))))
+
 ;; END message handlers
 
 (def message-handlers
   ['authentication
    'set-client-id
    'open
+   'close
+   'closed?
+   'schema
+   'set-schema
+   'init-max-eid
+   'datom-count
    'open-kv
-   'schema])
+   ])
 
 (defmacro message-cases
   "Message handler function should have the same name as the incoming message

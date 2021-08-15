@@ -1,5 +1,5 @@
 (ns datalevin.client
-  "Blocking client with a connection pool"
+  "Blocking network client with a connection pool"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
             [clojure.string :as s]
@@ -11,53 +11,51 @@
            [java.util ArrayList UUID Collection]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
-(defn- send-ch
-  "Send all data in buffer to socket"
-  [^SocketChannel ch ^ByteBuffer bf ]
-  (loop []
-    (when (.hasRemaining bf)
-      (.write ch bf)
-      (recur))))
-
-(defn- receive-ch
-  "Receive one message from socket and put it in buffer, will block
-  until one full message is received"
-  [^SocketChannel ch ^ByteBuffer bf]
-  (loop []
-    (let [readn (.read ch bf)]
-      (cond
-        (> readn 0)  (or (p/receive-one-message bf) (recur))
-        (= readn -1) (.close ch)))))
-
 (defprotocol IConnection
   (send-n-receive [conn msg]
     "Send a message to server and return the response, a blocking call")
+  (copy-in [conn msg] "Copy a message to the server, do not expect reply")
+  (copy-done [conn] "Indicate the end of copy-in data stream")
+  (copy-fail [conn] "Indicate that copy-in process has failed")
   (close [conn]))
 
-(deftype Connection [^SocketChannel ch ^:volatile-mutable ^ByteBuffer bf]
+(deftype Connection [^SocketChannel ch
+                     ^:volatile-mutable ^ByteBuffer bf]
   IConnection
   (send-n-receive [this msg]
     (try
+      (p/write-message-blocking ch bf msg)
       (.clear bf)
-      (p/write-message-bf bf msg)
-      (.flip bf)
-      (send-ch ch bf)
-      (.clear bf)
-      (receive-ch ch bf)
+      (p/receive-ch ch bf)
       (catch BufferOverflowException _
         (let [size (* 10 ^int (.capacity bf))]
           (set! bf (b/allocate-buffer size))
           (send-n-receive this msg)))
       (catch Exception e
-        (u/raise "Error writing message to connection buffer:" (ex-message e)
+        (u/raise "Error sending message and receiving response:" (ex-message e)
                  {:msg msg}))))
+  (copy-in [this msg]
+    (try
+      (p/write-message-blocking ch bf msg)
+      (catch BufferOverflowException _
+        (let [size (* 10 ^int (.capacity bf))]
+          (set! bf (b/allocate-buffer size))
+          (copy-in this msg)))
+      (catch Exception e
+        (copy-fail this)
+        (u/raise "Error copying in data:" (ex-message e) {:msg msg}))))
+  (copy-done [this]
+    (try
+      (p/write-message-blocking ch bf {:type :copy-done})
+      (catch Exception e
+        (u/raise "Error indicating copy done:" (ex-message e) {}))))
+  (copy-fail [this]
+    (try
+      (p/write-message-blocking ch bf {:type :copy-fail})
+      (catch Exception e
+        (u/raise "Error sending copy fail:" (ex-message e) {}))))
   (close [this]
     (.close ch)))
-
-(defprotocol IConnectionPool
-  (get-connection [this] "Get a connection from the pool")
-  (release-connection [this connection] "Return the connection back to pool")
-  (shutdown-pool [this] "Close all connections in the pool"))
 
 (defn- ^SocketChannel connect-socket
   "connect to server and return the client socket channel"
@@ -73,9 +71,8 @@
 
 (defn- new-connection
   [host port]
-  (->Connection
-    (connect-socket host port)
-    (b/allocate-buffer c/+default-buffer-size+)))
+  (->Connection (connect-socket host port)
+                (b/allocate-buffer c/+default-buffer-size+)))
 
 (defn- set-client-id
   [conn client-id]
@@ -84,37 +81,26 @@
                               :client-id client-id})]
     (when-not (= type :set-client-id-ok) (u/raise message {}))))
 
+(defprotocol IConnectionPool
+  (get-connection [this] "Get a connection from the pool")
+  (release-connection [this connection] "Return the connection back to pool"))
+
 (deftype ConnectionPool [^ArrayList available
-                         ^ArrayList used
-                         client-id
-                         host
-                         port]
+                         ^ArrayList used]
   IConnectionPool
   (get-connection [this]
     (let [start (System/currentTimeMillis)]
       (loop [size (.size available)]
         (if (> size 0)
           (let [conn ^Connection (.remove available (dec size))]
-            (if (.isConnected ^SocketChannel (.-ch conn))
-              (do (.add used conn)
-                  conn)
-              (let [conn (new-connection host port)]
-                (set-client-id conn client-id)
-                (.add used conn)
-                conn)))
+            (.add used conn)
+            conn)
           (if (>= (- (System/currentTimeMillis) start) c/connection-timeout)
             (u/raise "Timeout in obtaining a connection" {})
             (recur (.size available)))))))
   (release-connection [this conn]
     (.add available conn)
-    (.remove used conn))
-  (shutdown-pool [this]
-    (doseq [^Connection conn available]
-      (close conn)
-      (.remove available conn))
-    (doseq [^Connection conn used]
-      (close conn)
-      (.remove used conn))))
+    (.remove used conn)))
 
 (defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
@@ -127,18 +113,14 @@
         (send-n-receive conn {:type     :authentication
                               :username username
                               :password password})]
+    (close conn)
     (if (= type :authentication-ok)
       client-id
-      (do (close conn)
-          (u/raise "Authentication failure: " message {})))))
+      (u/raise "Authentication failure: " message {}))))
 
 (defn- new-connectionpool
   [host port client-id]
-  (let [^ConnectionPool pool (->ConnectionPool (ArrayList.)
-                                               (ArrayList.)
-                                               client-id
-                                               host
-                                               port)
+  (let [^ConnectionPool pool (->ConnectionPool (ArrayList.) (ArrayList.))
         ^ArrayList available (.-available pool)]
     (dotimes [_ c/connection-pool-size]
       (let [conn (new-connection host port)]
@@ -147,9 +129,7 @@
     pool))
 
 (defprotocol IClient
-  (request [client req] "Send a request, and return response")
-  (stop [client] "Stop this client")
-  (stopped? [client] "Return true if the client is stopped"))
+  (request [client req] "Send a request and return response"))
 
 (defn parse-user-info
   [^URI uri]
@@ -182,12 +162,7 @@
     (let [conn (get-connection pool)
           res  (send-n-receive conn req)]
       (release-connection pool conn)
-      res))
-  (stop [_]
-    (shutdown-pool pool))
-  (stopped? [_]
-    (and (.isEmpty ^ArrayList (.-available pool))
-         (.isEmpty ^ArrayList (.-used pool)))))
+      res)))
 
 (defn- init-db
   [client db store schema]
@@ -200,7 +175,7 @@
       (u/raise "Unable to open database:" db {}))))
 
 (defn new-client
-  "Create a new client that maintains a connection pool to a remote
+  "Create a new client that maintains a pooled connection to a remote
   Datalevin database server. This operation takes at least 0.5 seconds
   in order to perform a secure password hashing that defeats cracking."
   ([uri-str]
@@ -222,6 +197,5 @@
 (comment
 
   (def client (new-client "dtlv://datalevin:datalevin@localhost/testdb"))
-
 
   )

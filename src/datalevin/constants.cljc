@@ -150,7 +150,9 @@
 
 ;; client/server
 
-(def ^:const +default-buffer-size+ 32768) ; in bytes
+(def ^:const +default-buffer-size+ 65536) ; in bytes
+
+(def ^:const +wire-datom-batch-size+ 1000)
 
 (def ^:const connection-pool-size 5)
 (def ^:const connection-timeout 30000) ; in milliseconds
