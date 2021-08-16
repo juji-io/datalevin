@@ -83,8 +83,8 @@
 
   (def store (open "dtlv://datalevin:datalevin@localhost/remote1"))
 
-  (s/load-datoms store [(d/datom 5 :name "Jiao" 223)
-                        (d/datom 6 :name "Yang" 223)])
+  (s/load-datoms store [(d/datom 9 :name "Boyan" 223)
+                        (d/datom 10 :name "Huahai" 223)])
 
   (s/datom-count store :eavt)
 

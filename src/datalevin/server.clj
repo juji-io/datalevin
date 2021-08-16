@@ -249,40 +249,33 @@
           {:keys [dt-store]}                   (get-in @resources
                                                        [:clients client-id])
           datoms                               (transient [])]
-      (log/info "prepare to go to blocking")
       ;; switch this channel to blocking mode
       (.cancel skey)
-      (log/info "cancelled")
       (.configureBlocking ch true)
-      (log/info "switched to blocking")
       (try
         (p/write-message-blocking ch write-bf {:type :copy-in-response})
-        (log/info "wrote copy-in-response")
         (.clear ^ByteBuffer read-bf)
         (loop []
           (let [msg (p/receive-ch ch read-bf)]
-            (log/info "received msg" msg)
             (if (map? msg)
               (let [{:keys [type]} msg]
                 (case type
-                  :copy-done (st/load-datoms dt-store (persistent! datoms))
+                  :copy-done (let [txs (persistent! datoms)]
+                               (st/load-datoms dt-store txs)
+                               (log/debug "Loaded" (count txs) "datoms"))
                   :copy-fail (u/raise "Client error while loading datoms" {})
                   (u/raise "Receive unexpected message while loading datoms"
                            {:msg msg})))
               (do (doseq [datom msg] (conj! datoms datom))
-                  (log/info "added a batch")
                   (recur)))))
         (p/write-message-blocking ch write-bf {:type :command-complete})
-        (log/info "wrote command complete")
         (catch Exception e (throw e))
         (finally
           ;; switch back
-          (log/info "switching back to non-blockking")
           (.configureBlocking ch false)
           (.add ^ConcurrentLinkedQueue (@resources :register-queue)
                 [ch SelectionKey/OP_READ state])
-          (.wakeup selector)
-          (log/info "switched back"))))))
+          (.wakeup selector))))))
 
 (defn- open-kv
   [^SelectionKey skey {:keys [db-name]}]
@@ -404,6 +397,7 @@
     (loop []
       (when-let [[^SocketChannel ch ops state] (.poll queue)]
         (.register ch selector ops state)
+        (log/debug "Registered client" (@state :client-id))
         (recur)))))
 
 (defn- event-loop
