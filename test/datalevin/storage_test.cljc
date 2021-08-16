@@ -34,8 +34,10 @@
           v2  (long (rand c/emax))
           d2  (d/datom c/e0 c v2)
           s2  (assoc s1 c (merge p2 {:db/aid 3}))
-          dir (lmdb/dir (.-lmdb ^Store store))]
+          dir (lmdb/dir (.-lmdb ^Store store))
+          t1  (sut/last-modified store)]
       (sut/load-datoms store [d])
+      (is (< t1 (sut/last-modified store)))
       (is (= s (sut/schema store)))
       (is (= 1 (sut/datom-count store :eav)))
       (is (= 1 (sut/datom-count store :ave)))

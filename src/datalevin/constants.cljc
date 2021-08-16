@@ -80,6 +80,7 @@
 (def ^:const vea "datalevin/vea")
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
+(def ^:const meta "datalevin/meta")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean
@@ -93,7 +94,8 @@
 (def ^:const default-port 8898)
 
 (def ^:const default-root-dir "/var/lib/datalevin")
-(def ^:const system-dir "system")
+(def ^:const
+  system-dir "system")
 
 (def ^:const default-username "datalevin")
 (def ^:const default-password "datalevin")

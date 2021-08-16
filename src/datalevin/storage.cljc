@@ -15,8 +15,10 @@
 
 (defn- transact-schema
   [lmdb schema]
-  (lmdb/transact-kv lmdb (for [[attr props] schema]
-                           [:put c/schema attr props :attr :data])))
+  (lmdb/transact-kv lmdb (conj (for [[attr props] schema]
+                                 [:put c/schema attr props :attr :data])
+                               [:put c/meta :last-modified
+                                (System/currentTimeMillis) :attr :long])))
 
 (defn- load-schema
   [lmdb]
@@ -151,6 +153,8 @@
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
   (closed? [this] "Return true if the storage is closed")
+  (last-modified [this]
+    "Return the unix timestamp of when the store is last modified")
   (max-gt [this])
   (advance-max-gt [this])
   (max-aid [this])
@@ -202,6 +206,9 @@
 
   (closed? [_]
     (lmdb/closed-kv? lmdb))
+
+  (last-modified [_]
+    (lmdb/get-value lmdb c/meta :last-modified :attr :long))
 
   (max-gt [_]
     max-gt)
@@ -264,7 +271,9 @@
             batch-fn (fn [batch]
                        (lmdb/transact-kv
                          lmdb
-                         (persistent! (reduce add-fn (transient []) batch))))]
+                         (conj (persistent! (reduce add-fn (transient []) batch))
+                               [:put c/meta :last-modified
+                                (System/currentTimeMillis) :attr :long])))]
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
@@ -425,6 +434,7 @@
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
      (let [schema' (init-schema lmdb schema)]
        (->Store lmdb
                 schema'
