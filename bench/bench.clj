@@ -1,4 +1,4 @@
-#!/usr/bin/env clojure 
+#!/usr/bin/env clojure
 
 "USAGE: ./bench [rebuild]? [<version>|<version-vm> ...]? [<bench-name> ...]?"
 
@@ -45,7 +45,7 @@
 
 
 (def opts
-  (loop [opts {:rebuild    false
+  (loop [opts {:rebuild    true
                :versions   []
                :benchmarks []}
          args *command-line-args*]
@@ -72,19 +72,20 @@
 (defn run-benchmarks [version vm benchmarks]
   (case vm
     "datalevin"
-    (apply run "clojure" 
-           "-J--add-opens=java.base/java.nio=ALL-UNNAMED" 
-           "-J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED" 
+    (apply run "clojure"
+           "-J--add-opens=java.base/java.nio=ALL-UNNAMED"
+           "-J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
            "-J--illegal-access=permit"
            "-Sdeps"
            (cond
              (= "latest" version)
              (str "{:paths [\"src\" \"../src\" \"../target/classes\" \"../native/target/classes\"]"
-                  ":deps {datalevin/datalevin {:local/root \"..\"} 
-                  org.clojure/clojure   {:mvn/version \"1.10.3\"} 
-                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"} 
-                  com.taoensso/nippy    {:mvn/version \"3.1.1\"} 
-                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.2\"} 
+                  ":deps {datalevin/datalevin {:local/root \"..\"}
+                  org.clojure/clojure   {:mvn/version \"1.10.3\"}
+                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"}
+                  com.taoensso/nippy    {:mvn/version \"3.1.1\"}
+                  com.cognitect/transit-clj {:mvn/version \"1.0.324\"}
+                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.2\"}
                   org.graalvm.nativeimage/svm {:mvn/version \"21.0.0.2\"}
                   }}"
                   )
@@ -121,11 +122,11 @@
 
 (def default-benchmarks
   [
-   "add-1"
-   "add-5"
-   "add-all"
-   "init"
-   "retract-5"
+   ;; "add-1"
+   ;; "add-5"
+   ;; "add-all"
+   ;; "init"
+   ;; "retract-5"
    "q1"
    "q2"
    "q3"
@@ -148,7 +149,7 @@
   (let [{:keys [rebuild benchmarks versions]} opts]
     (when rebuild
       (binding [sh/*sh-dir* ".."]
-        (run "lein" "do" "clean," "javac," "cljsbuild" "once" "bench")))
+        (run "lein" "do" "clean," "javac")))
     (let [benchmarks (if (empty? benchmarks) default-benchmarks benchmarks)
           versions   (if (empty? versions)   default-versions    versions)]
       (print "version   \t")

@@ -5,7 +5,8 @@
             [datalevin.util :as u]
             [clojure.set :as set]))
 
-(declare entity ->Entity equiv-entity lookup-entity touch entity->txs lookup-stage-then-entity)
+(declare entity ->Entity equiv-entity lookup-entity touch entity->txs
+         lookup-stage-then-entity)
 
 (defn- entid [db eid]
   (when (or (number? eid)
@@ -195,7 +196,7 @@
   (u/memoize-1 rschema->attr-types))
 
 (defn- db->attr-types [db]
-  (mem-rschema->attr-types (:rschema db)))
+  (mem-rschema->attr-types (db/-rschema db)))
 
 (defn- lookup-ref? [x]
   (and (vector? x)

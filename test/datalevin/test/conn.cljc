@@ -3,6 +3,7 @@
    #?(:cljs [cljs.test    :as t :refer-macros [is deftest]]
       :clj  [clojure.test :as t :refer        [is deftest]])
    [datalevin.core :as d]
+   [datalevin.db :as db]
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import [java.util Date UUID]))
@@ -30,14 +31,14 @@
 (deftest test-ways-to-create-conn-1
   (let [conn (d/create-conn)]
     (is (= #{} (set (d/datoms @conn :eavt))))
-    (is (= c/implicit-schema (:schema @conn)))
+    (is (= c/implicit-schema (db/-schema @conn)))
     (d/close conn)))
 
 (deftest test-ways-to-create-conn-2
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
         conn   (d/create-conn nil schema)]
     (is (= #{} (set (d/datoms @conn :eavt))))
-    (is (= (:schema @conn) (merge schema c/implicit-schema)))
+    (is (= (db/-schema @conn) (merge schema c/implicit-schema)))
     (d/close conn)))
 
 (deftest test-ways-to-create-conn-3
@@ -46,7 +47,7 @@
 
         conn (d/conn-from-datoms datoms)]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= (d/schema conn) (:schema @conn)))
+    (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn))
 
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
@@ -55,7 +56,7 @@
 
         conn (d/conn-from-datoms datoms nil schema)]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= (d/schema conn) (:schema @conn)))
+    (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn))
 
   (let [datoms #{(d/datom 1 :age  17)
@@ -63,7 +64,7 @@
 
         conn (d/conn-from-db (d/init-db datoms))]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= (d/schema conn) (:schema @conn)))
+    (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn))
 
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
@@ -72,7 +73,7 @@
 
         conn (d/conn-from-db (d/init-db datoms nil schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
-    (is (= (d/schema conn) (:schema @conn)))
+    (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)))
 
 (deftest test-recreate-conn

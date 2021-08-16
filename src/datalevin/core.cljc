@@ -408,6 +408,7 @@ given. Return reference to the database.
 (defn conn-from-db
   "Creates a mutable reference to a given database. See [[create-conn]]."
   [db]
+  {:pre [(db/db? db)]}
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
@@ -658,7 +659,7 @@ given. Return reference to the database.
   [conn]
   (s/schema ^Store (.-store ^DB @conn)))
 
-  (defn update-schema
+(defn update-schema
   "Update the schema of an open connection. `schema-update` is a map from
   attribute keywords to maps of corresponding properties. Return the updated
   schema.
@@ -667,12 +668,8 @@ given. Return reference to the database.
 
   (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
   [conn schema-update]
-  (let [^DB db (db conn)
-        s      (s/set-schema ^Store (.-store db) schema-update)]
-    (swap! conn (fn [db]
-                  (assoc db
-                         :schema s
-                         :rschema (db/rschema s))))
+  (let [^DB db (db conn)]
+    (s/set-schema ^Store (.-store db) schema-update)
     (schema conn)))
 
   (defonce ^:private connections (atom {}))
@@ -1178,10 +1175,8 @@ given. Return reference to the database.
   range-filter-count l/range-filter-count)
 
 (defn clear
-  "Clear all data in the Datalog database, including schema. Takes an open
-  connection to the db."
+  "Clear all data in the Datalog database, including schema."
   [conn]
-  (assert (conn? conn) "clear takes an open Datalog conn")
   (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]

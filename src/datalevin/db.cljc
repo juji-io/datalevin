@@ -39,6 +39,7 @@
 
 (defprotocol IDB
   (-schema [db])
+  (-rschema [db])
   (-attrs-by [db property]))
 
 ;; ----------------------------------------------------------------------------
@@ -79,7 +80,14 @@
   Searchable
   (-searchable? [_] false))
 
-(def ^:private caches (ConcurrentHashMap.))
+(defonce ^:private caches (ConcurrentHashMap.))
+
+(defn refresh-cache
+  ([store]
+   (refresh-cache store (s/last-modified store)))
+  ([store target]
+   (.put ^ConcurrentHashMap caches store
+         (lru/lru c/+cache-limit+ target))))
 
 (defmacro wrap-cache
   [store pattern body]
@@ -90,11 +98,11 @@
          (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
-(defrecord-updatable DB [^IStore store eavt avet veat
-                         max-eid max-tx schema rschema hash]
+(defrecord-updatable DB [^IStore store eavt avet veat max-eid max-tx hash]
 
   clojure.lang.IEditableCollection
-  (empty [db]         (with-meta (empty-db (s/dir store) schema) (meta db)))
+  (empty [db]         (with-meta (empty-db (s/dir store) (s/schema store))
+                        (meta db)))
   (asTransient [db] (db-transient db))
 
   clojure.lang.ITransientCollection
@@ -105,8 +113,9 @@
   (-searchable? [_] true)
 
   IDB
-  (-schema [_] (s/schema store))
-  (-attrs-by [_ property] (rschema property))
+  (-schema [_] (wrap-cache store :schema (s/schema store)))
+  (-rschema [_] (wrap-cache store :rschema (s/rschema store)))
+  (-attrs-by [db property] ((-rschema db) property))
 
   ISearch
   (-search
@@ -214,32 +223,19 @@
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
 
-(defn db? [x] (-searchable? x))
+(defn db?
+  "Check if x is an instance of DB, also refresh its cache if it's stale.
+  Often used in the :pre condition of a DB access function"
+  [x]
+  (when (-searchable? x)
+    (let [store  (.-store ^DB x)
+          target (s/last-modified store)
+          cache  ^LRU (.get ^ConcurrentHashMap caches store)]
+      (when (< ^long (.-target cache) ^long target)
+        (refresh-cache store target)))
+    true))
 
 ;; ----------------------------------------------------------------------------
-
-(defn attr->properties [k v]
-  (case v
-    :db.unique/identity  [:db/unique :db.unique/identity]
-    :db.unique/value     [:db/unique :db.unique/value]
-    :db.cardinality/many [:db.cardinality/many]
-    :db.type/ref         [:db.type/ref]
-    (when (true? v)
-      (case k
-        :db/isComponent [:db/isComponent]
-        []))))
-
-(defn rschema [schema]
-  (reduce-kv
-   (fn [m attr keys->values]
-     (reduce-kv
-      (fn [m key value]
-        (reduce
-         (fn [m prop]
-           (assoc m prop (conj (get m prop #{}) attr)))
-         m (attr->properties key value)))
-      m keys->values))
-   {} schema))
 
 (defn- validate-schema-key [a k v expected]
   (when-not (or (nil? v)
@@ -272,18 +268,15 @@
 
 (defn new-db
   [^IStore store]
-  (let [schema (s/schema store)]
-    (.put ^ConcurrentHashMap caches store (lru/lru c/+cache-limit+))
-    (map->DB
-      {:store   store
-       :schema  schema
-       :rschema (rschema (merge implicit-schema schema))
-       :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
-       :avet    (set/sorted-set-by d/cmp-datoms-avet)
-       :veat    (set/sorted-set-by d/cmp-datoms-veat)
-       :max-eid (s/init-max-eid store)
-       :max-tx  tx0
-       :hash    (atom 0)})))
+  (refresh-cache store)
+  (map->DB
+    {:store   store
+     :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
+     :avet    (set/sorted-set-by d/cmp-datoms-avet)
+     :veat    (set/sorted-set-by d/cmp-datoms-veat)
+     :max-eid (s/init-max-eid store)
+     :max-tx  tx0
+     :hash    (atom 0)}))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))
@@ -350,6 +343,7 @@
   (is-attr? db attr :db/isComponent))
 
 (defn entid [db eid]
+  {:pre [(db? db)]}
   (cond
     (and (integer? eid) (not (neg? (long eid))))
     eid
@@ -909,7 +903,7 @@
                  :else
                  (raise "Bad entity type at " entity ", expected map or vector"
                         {:error :transact/syntax, :tx-data entity}))))]
-    (s/load-datoms (.-store ^DB (:db-after rp)) (:tx-data rp))
-    (.put ^ConcurrentHashMap caches
-          (.-store ^DB (:db-after rp)) (lru/lru c/+cache-limit+))
+    (let [pstore (.-store ^DB (:db-after rp))]
+      (s/load-datoms pstore (:tx-data rp))
+      (refresh-cache pstore))
     rp))

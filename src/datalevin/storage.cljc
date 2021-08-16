@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.storage
-  "storage layer of Datalevin"
+  "Storage layer of Datalog store"
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
             [datalevin.bits :as b]
@@ -12,6 +12,29 @@
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
+
+(defn attr->properties [k v]
+  (case v
+    :db.unique/identity  [:db/unique :db.unique/identity]
+    :db.unique/value     [:db/unique :db.unique/value]
+    :db.cardinality/many [:db.cardinality/many]
+    :db.type/ref         [:db.type/ref]
+    (when (true? v)
+      (case k
+        :db/isComponent [:db/isComponent]
+        []))))
+
+(defn schema->rschema [schema]
+  (reduce-kv
+    (fn [m attr keys->values]
+      (reduce-kv
+        (fn [m key value]
+          (reduce
+            (fn [m prop]
+              (assoc m prop (conj (get m prop #{}) attr)))
+            m (attr->properties key value)))
+        m keys->values))
+    {} schema))
 
 (defn- transact-schema
   [lmdb schema]
@@ -149,6 +172,7 @@
           ^Datom d     (retrieved->datom lmdb attrs [k v])]
       (pred d))))
 
+
 (defprotocol IStore
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
@@ -159,6 +183,7 @@
   (advance-max-gt [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
+  (rschema [this] "Return the reverse schema map")
   (set-schema [this new-schema]
     "Update the schema of open storage, return updated schema")
   (attrs [this] "Return the aid -> attr map")
@@ -195,6 +220,7 @@
 
 (deftype Store [lmdb
                 ^:volatile-mutable schema
+                ^:volatile-mutable rschema
                 ^:volatile-mutable attrs
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
@@ -222,8 +248,12 @@
   (schema [_]
     schema)
 
+  (rschema [_]
+    rschema)
+
   (set-schema [_ new-schema]
     (set! schema (init-schema lmdb new-schema))
+    (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
     schema)
 
@@ -253,6 +283,7 @@
       (migrate lmdb attr o p)
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
+      (set! rschema (schema->rschema schema))
       (set! attrs (assoc attrs (:db/aid p) attr))
       p))
 
@@ -435,9 +466,10 @@
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
-     (let [schema' (init-schema lmdb schema)]
+     (let [schema (init-schema lmdb schema)]
        (->Store lmdb
-                schema'
-                (init-attrs schema')
+                schema
+                (schema->rschema schema)
+                (init-attrs schema)
                 (init-max-aid lmdb)
                 (init-max-gt lmdb))))))

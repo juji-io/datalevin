@@ -81,10 +81,10 @@
 
 (comment
 
-  (def store (open "dtlv://datalevin:datalevin@localhost/remote1"))
+  (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
 
-  (s/load-datoms store [(d/datom 9 :name "Boyan" 223)
-                        (d/datom 10 :name "Huahai" 223)])
+  (s/load-datoms store [(d/datom 1 :name "Boyan" 223)
+                        (d/datom 2 :name "Huahai" 223)])
 
   (s/datom-count store :eavt)
 

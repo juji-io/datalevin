@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.constants
+  (:refer-clojure :exclude [meta])
   (:import [java.util UUID Arrays]))
 
 ;;---------------------------------------------
