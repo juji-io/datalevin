@@ -343,7 +343,8 @@
       (.close-pool pool)
       (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
       (.close env)
-      (set! closed? true)))
+      (set! closed? true)
+      nil))
 
   (closed-kv? [_]
     closed?)

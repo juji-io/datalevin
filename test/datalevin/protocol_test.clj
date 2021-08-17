@@ -2,7 +2,6 @@
   (:require [datalevin.protocol :as sut]
             [datalevin.constants :as c]
             [datalevin.bits :as b]
-            [datalevin.util :as u]
             [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
@@ -16,6 +15,11 @@
                   (sut/write-transit-bf bf k)
                   (.flip bf)
                   (= k (sut/read-transit-bf bf)))))
+
+(test/defspec transite-bytes-test
+  100
+  (prop/for-all [k gen/any-equatable]
+                (= k (sut/read-transit-bytes (sut/write-transit-bytes k)))))
 
 (test/defspec transit-message-bf-test
   100

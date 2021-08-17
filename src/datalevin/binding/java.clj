@@ -197,7 +197,8 @@
   ILMDB
   (close-kv [_]
     (.close-pool pool)
-    (.close env))
+    (.close env)
+    nil)
 
   (closed-kv? [_]
     (.isClosed env))

@@ -6,8 +6,7 @@
             [cognitect.transit :as transit])
   #?(:clj
      (:import
-      [java.io ByteArrayInputStream ByteArrayOutputStream
-       BufferedReader PrintWriter File]
+      [java.io ByteArrayInputStream ByteArrayOutputStream File]
       [java.nio ByteBuffer]
       [java.nio.file Files Path Paths LinkOption AccessDeniedException]
       [java.nio.file.attribute PosixFilePermissions FileAttribute]
@@ -120,24 +119,6 @@
     (let [baos (ByteArrayOutputStream.)]
       (transit/write (transit/writer baos :json) v)
       (.toString baos "utf-8"))
-    (catch Exception e
-      (raise "Unable to write transit:" (ex-message e) {:value v}))))
-
-(defn read-transit-bytes
-  "Read transit+json encoded bytes into a Clojure value"
-  [^bytes bs]
-  (try
-    (transit/read (transit/reader (ByteArrayInputStream. bs) :json))
-    (catch Exception e
-      (raise "Unable to read transit:" (ex-message e) {:bytes bs}))))
-
-(defn write-transit-bytes
-  "Write a Clojure value as transit+json encoded bytes"
-  [v]
-  (try
-    (let [baos (ByteArrayOutputStream.)]
-      (transit/write (transit/writer baos :json) v)
-      (.toByteArray baos))
     (catch Exception e
       (raise "Unable to write transit:" (ex-message e) {:value v}))))
 

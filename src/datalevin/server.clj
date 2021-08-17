@@ -160,8 +160,22 @@
      ~body
      (catch Exception ~'e
        (log/error ~'e)
-       (write-message 'skey {:type    :error-response
-                             :message (ex-message ~'e)}))))
+       (write-message ~'skey {:type    :error-response
+                              :message (ex-message ~'e)}))))
+
+(defmacro normal-dt-store-handler
+  "Handle quick request to datalog store that needs no copy-in or out"
+  [f]
+  `(wrap-error
+     (let [dt-store# (get-in @resources [:clients
+                                         (@(.attachment ~'skey) :client-id)
+                                         :dt-store])]
+       (write-message ~'skey
+                      {:type   :command-complete
+                       :result (apply
+                                 ~(symbol "datalevin.storage" (str f))
+                                 dt-store#
+                                 ~'args)}))))
 
 ;; BEGIN message handlers
 
@@ -192,52 +206,37 @@
       (write-message skey {:type :command-complete}))))
 
 (defn- close
-  [^SelectionKey skey _]
-  (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
-      (st/close dt-store)
-      (write-message skey {:type :command-complete}))))
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler close))
 
 (defn- closed?
-  [^SelectionKey skey _]
-  (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
-      (write-message skey {:type    :command-complete
-                           :closed? (st/closed? dt-store) }))))
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler closed?))
+
+(defn- last-modified
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler last-modified))
 
 (defn- schema
-  [^SelectionKey skey _]
-  (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
-      (write-message skey {:type   :command-complete
-                           :schema (st/schema dt-store)}))))
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler schema)
+  )
+
+(defn- rschema
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler rschema))
 
 (defn- set-schema
-  [^SelectionKey skey {:keys [new-schema]}]
-  (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
-      (write-message skey {:type   :command-complete
-                           :schema (st/set-schema dt-store new-schema)}))))
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler set-schema))
 
 (defn- init-max-eid
-  [^SelectionKey skey _]
-  (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
-      (write-message skey {:type    :command-complete
-                           :max-eid (st/init-max-eid dt-store)}))))
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler init-max-eid))
 
 (defn- datom-count
-  [^SelectionKey skey {:keys [index]}]
-  (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-in @resources [:clients client-id])]
-      (write-message skey {:type        :command-complete
-                           :datom-count (st/datom-count dt-store index)}))))
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler datom-count))
 
 (defn- load-datoms
   [^SelectionKey skey _]
@@ -277,6 +276,46 @@
                 [ch SelectionKey/OP_READ state])
           (.wakeup selector))))))
 
+(defn- fetch
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler fetch))
+
+(defn- populated?
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler populated?))
+
+(defn- size
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler size))
+
+(defn- head
+  [^SelectionKey skey {:keys [args]}]
+  (normal-dt-store-handler head))
+
+(defn- slice
+  [^SelectionKey skey {:keys [args]}]
+  )
+
+(defn- rslice
+  [^SelectionKey skey {:keys [args]}]
+  )
+
+(defn- size-filter
+  [^SelectionKey skey {:keys [args]}]
+  )
+
+(defn- head-filter
+  [^SelectionKey skey {:keys [args]}]
+  )
+
+(defn- slice-filter
+  [^SelectionKey skey {:keys [args]}]
+  )
+
+(defn- rslice-filter
+  [^SelectionKey skey {:keys [args]}]
+  )
+
 (defn- open-kv
   [^SelectionKey skey {:keys [db-name]}]
   (wrap-error
@@ -300,11 +339,23 @@
    'open
    'close
    'closed?
+   'last-modified
    'schema
+   'rschema
    'set-schema
    'init-max-eid
    'datom-count
    'load-datoms
+   'fetch
+   'populated?
+   'size
+   'head
+   'slice
+   'rslice
+   'size-filter
+   'head-filter
+   'slice-filter
+   'rslice-filter
    'open-kv
    ])
 
@@ -321,7 +372,7 @@
 (defn- handle-message
   [^SelectionKey skey fmt msg ]
   (let [{:keys [type] :as message} (p/read-value fmt msg)]
-    (log/debug "message received:" message)
+    (log/debug "message received:" (dissoc message :password))
     (message-cases skey type)))
 
 (defn- execute

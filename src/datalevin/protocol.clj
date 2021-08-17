@@ -1,5 +1,5 @@
 (ns datalevin.protocol
-  "Shared code of client/server protocol"
+  "Shared code of client/server"
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :as u]
@@ -7,7 +7,7 @@
             [cognitect.transit :as transit]
             [clojure.string :as s]
             [taoensso.nippy :as nippy])
-  (:import [java.io DataInput DataOutput]
+  (:import [java.io ByteArrayInputStream ByteArrayOutputStream]
            [java.util Arrays UUID Date Base64]
            [java.nio ByteBuffer]
            [java.nio.channels SocketChannel]
@@ -15,8 +15,7 @@
            [java.lang String Character]
            [java.net URI]
            [datalevin.io ByteBufferInputStream ByteBufferOutputStream]
-           [datalevin.datom Datom]
-           ))
+           [datalevin.datom Datom]))
 
 (defn dtlv-uri?
   "return true if the given string is a Datalevin connection string"
@@ -32,10 +31,9 @@
   return a Clojure value. Consumes the entire buffer"
   [^ByteBuffer bf]
   (try
-    (transit/read (transit/reader
-                    (ByteBufferInputStream. bf)
-                    :json
-                    {:handlers transit-read-handlers}))
+    (transit/read (transit/reader (ByteBufferInputStream. bf)
+                                  :json
+                                  {:handlers transit-read-handlers}))
     (catch Exception e
       (u/raise "Unable to read transit from ByteBuffer:" (ex-message e) {}))))
 
@@ -48,10 +46,9 @@
   "Write a Clojure value as transit+json encoded bytes into a ByteBuffer"
   [^ByteBuffer bf v]
   (try
-    (transit/write (transit/writer
-                     (ByteBufferOutputStream. bf)
-                     :json
-                     {:handlers transit-write-handlers})
+    (transit/write (transit/writer (ByteBufferOutputStream. bf)
+                                   :json
+                                   {:handlers transit-write-handlers})
                    v)
     (catch Exception e
       (u/raise "Unable to write transit to ByteBuffer:" (ex-message e) {}))))
@@ -65,11 +62,6 @@
   [bf fmt]
   (case (short fmt)
     1 (read-transit-bf bf)))
-
-(defn read-value
-  [fmt bs]
-  (case (short fmt)
-    1 (u/read-transit-bytes bs)))
 
 (defn write-message-bf
   "Write a message to a ByteBuffer. First byte is format, then four bytes
@@ -85,6 +77,33 @@
        (.put bf ^byte (unchecked-byte fmt))
        (.putInt bf (- end-pos start-pos))
        (.position bf end-pos)))))
+
+(defn read-transit-bytes
+  "Read transit+json encoded bytes into a Clojure value"
+  [^bytes bs]
+  (try
+    (transit/read (transit/reader (ByteArrayInputStream. bs)
+                                  :json
+                                  {:handlers transit-read-handlers}))
+    (catch Exception e
+      (u/raise "Unable to read transit:" (ex-message e) {:bytes bs}))))
+
+(defn write-transit-bytes
+  "Write a Clojure value as transit+json encoded bytes"
+  [v]
+  (try
+    (let [baos (ByteArrayOutputStream.)]
+      (transit/write (transit/writer baos :json
+                                     {:handlers transit-write-handlers})
+                     v)
+      (.toByteArray baos))
+    (catch Exception e
+      (u/raise "Unable to write transit:" (ex-message e) {:value v}))))
+
+(defn read-value
+  [fmt bs]
+  (case (short fmt)
+    1 (read-transit-bytes bs)))
 
 (defn segment-messages
   "Segment the content of read buffer into messages, and call msg-handler

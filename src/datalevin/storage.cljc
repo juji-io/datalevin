@@ -172,7 +172,6 @@
           ^Datom d     (retrieved->datom lmdb attrs [k v])]
       (pred d))))
 
-
 (defprotocol IStore
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
@@ -227,6 +226,7 @@
   IStore
   (dir [this]
     (lmdb/dir lmdb))
+
   (close [_]
     (lmdb/close-kv lmdb))
 

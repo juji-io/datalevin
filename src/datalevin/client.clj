@@ -32,6 +32,7 @@
       (catch Exception e
         (u/raise "Error sending message and receiving response:" (ex-message e)
                  {:msg msg}))))
+
   (send-only [this msg]
     (try
       (p/write-message-blocking ch bf msg)
@@ -41,6 +42,7 @@
           (send-only this msg)))
       (catch Exception e
         (u/raise "Error sending message:" (ex-message e) {:msg msg}))))
+
   (close [this]
     (.close ch)))
 

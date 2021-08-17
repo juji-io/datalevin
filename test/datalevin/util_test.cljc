@@ -19,8 +19,3 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (= k (sut/read-transit-string (sut/write-transit-string k)))))
-
-(test/defspec transite-bytes-test
-  100
-  (prop/for-all [k gen/any-equatable]
-                (= k (sut/read-transit-bytes (sut/write-transit-bytes k)))))

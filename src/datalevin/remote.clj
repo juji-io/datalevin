@@ -17,51 +17,71 @@
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
 
+(defmacro normal-dt-store-request
+  "Request to datalog store that returns small results, no need for the
+  copy-in or copy-out protocol"
+  [call args]
+  `(let [{:keys [~'type ~'message ~'result]}
+         (cl/request ~'client {:type ~call :args ~args})]
+     (if (= ~'type :error-response)
+       (u/raise "Unable to access remote db:" ~'message {:uri ~'uri})
+       ~'result)))
 
-(deftype DatalogStore [^String uri
-                       ^Client client]
+(deftype DatalogStore [^String uri ^Client client]
   IStore
-  (dir [_]
-    uri)
-  (close [_]
-    (let [{:keys [type message]} (cl/request client {:type :close})]
-      (when (= type :error-response)
-        (u/raise "Unable to close remote db:" message {:uri uri}))))
-  (closed? [_]
-    (let [{:keys [type message closed?]} (cl/request client {:type :closed?})]
-      (if (= type :error-response)
-        (u/raise "Unable to check remote db:" message {:uri uri})
-        closed?)))
-  (schema [_]
-    (let [{:keys [type message schema]} (cl/request client {:type :schema})]
-      (if (= type :error-response)
-        (u/raise "Unable to get schema of remote db:" message {:uri uri})
-        schema)))
-  (set-schema [_ new-schema]
-    (let [{:keys [type message schema]}
-          (cl/request client {:type :set-schema :new-schema new-schema})]
-      (if (= type :error-response)
-        (u/raise "Unable to set schema of remote db:" message {:uri uri})
-        schema)))
-  (init-max-eid [_]
-    (let [{:keys [type message max-eid]}
-          (cl/request client {:type :init-max-eid})]
-      (if (= type :error-response)
-        (u/raise "Unable to get max eid of remote db:" message {:uri uri})
-        max-eid)))
-  (datom-count [_ index]
-    (let [{:keys [type message datom-count]}
-          (cl/request client {:type :datom-count :index index})]
-      (if (= type :error-response)
-        (u/raise "Unable to get datom-count of remote db:" message {:uri uri})
-        datom-count)))
+  (dir [_] uri)
+
+  (close [_] (normal-dt-store-request :close nil))
+
+  (closed? [_] (normal-dt-store-request :closed? nil))
+
+  (last-modified [_] (normal-dt-store-request :last-modified nil))
+
+  (schema [_] (normal-dt-store-request :schema nil))
+
+  (rschema [_] (normal-dt-store-request :rschema nil))
+
+  (set-schema [_ new-schema] (normal-dt-store-request :set-schema [new-schema]))
+
+  (init-max-eid [_] (normal-dt-store-request :init-max-eid nil))
+
+  (datom-count [_ index] (normal-dt-store-request :datom-count [index]))
+
   (load-datoms [_ datoms]
     (let [{:keys [type message]}
           (cl/copy-in client {:type :load-datoms}
                       datoms c/+wire-datom-batch-size+)]
       (when (= type :error-response)
         (u/raise "Error loading datoms to server:" message {:uri uri}))))
-  )
+
+  (fetch [_ datom] (normal-dt-store-request :fetch [datom]))
+
+  (populated? [_ index low-datom high-datom]
+    (normal-dt-store-request :populated? [index low-datom high-datom]))
+
+  (size [_ index low-datom high-datom]
+    (normal-dt-store-request :size [index low-datom high-datom]))
+
+  (head [_ index low-datom high-datom]
+    (normal-dt-store-request :head [index low-datom high-datom]))
+
+  (slice [_ index low-datom high-datom]
+    )
+
+  (rslice [_ index high-datom low-datom]
+    )
+
+  (size-filter [_ index pred low-datom high-datom]
+    )
+
+  (head-filter [_ index pred low-datom high-datom]
+    )
+
+  (slice-filter [_ index pred low-datom high-datom]
+    )
+
+  (rslice-filter [_ index pred high-datom low-datom]
+    ))
 
 (defn- redact-uri
   [s]
@@ -83,18 +103,26 @@
 
   (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
 
-  (s/load-datoms store [(d/datom 1 :name "Boyan" 223)
-                        (d/datom 2 :name "Huahai" 223)])
+  (s/load-datoms store [(d/datom 3 :name "Yunyao" 223)
+                        (d/datom 4 :name "Jiao" 223)])
+
+  (s/fetch store (d/datom 1 :name "Boyan"))
+
+  (s/last-modified store)
 
   (s/datom-count store :eavt)
 
-  (s/close store)
-
-  (instance? IStore store)
-
   (s/closed? store)
 
+  (s/populated? store :eavt (d/datom 1 :name "Boyan") (d/datom 1 :name "Boyan"))
+
+  (s/close store)
+
+  (s/size store :eavt (d/datom 1 :name "Boyan") (d/datom 1 :name "Boyan"))
+
   (s/schema store)
+
+  (s/rschema store)
 
   (s/set-schema store {:aka  {:db/cardinality :db.cardinality/many}
                        :name {:db/valueType :db.type/string
