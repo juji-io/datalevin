@@ -248,7 +248,7 @@
           {:keys [dt-store]}                   (get-in @resources
                                                        [:clients client-id])
           datoms                               (transient [])]
-      ;; switch this channel to blocking mode
+      ;; switch this channel to blocking mode for copy-in
       (.cancel skey)
       (.configureBlocking ch true)
       (try

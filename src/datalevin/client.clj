@@ -87,6 +87,7 @@
           (if (>= (- (System/currentTimeMillis) start) c/connection-timeout)
             (u/raise "Timeout in obtaining a connection" {})
             (recur (.size available)))))))
+
   (release-connection [this conn]
     (.add available conn)
     (.remove used conn)))
@@ -118,11 +119,13 @@
     pool))
 
 (defprotocol IClient
-  (request [client req] "Send a request and return response")
+  (request [client req] "Send a request to server and return the response")
   (copy-in [client req data batch-size]
     "Copy data to the server. `req` is a request type message,
      `data` is a sequence, `batch-size` decides how to partition the data
-      so that each batch fits in buffers along the way"))
+      so that each batch fits in buffers along the way")
+  (copy-out [client req]
+    "Request to copy data from the server. `req` is a request type message")
 
 (defn parse-user-info
   [^URI uri]
@@ -168,6 +171,7 @@
         (send-n-receive conn req)
         (catch Exception e (throw e))
         (finally (release-connection pool conn)))))
+
   (copy-in [client req data batch-size]
     (let [conn (get-connection pool)]
       (try
