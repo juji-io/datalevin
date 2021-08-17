@@ -280,7 +280,7 @@
         (b/put-buffer vb x t)
         (.flip ^BufVal vp)
         (catch BufferOverflowException _
-          (let [size (* 2 ^long (b/measure-size x))]
+          (let [size (* c/+buffer-grow-factor+ ^long (b/measure-size x))]
             (.close vp)
             (set! vp (BufVal/create size))
             (let [^ByteBuffer vb (.inBuf vp)]
@@ -491,7 +491,8 @@
         (catch Lib$MapFullException _
           (.close txn)
           (let [^Info info (Info/create env)]
-            (.setMapSize env (* 10 (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+            (.setMapSize env (* c/+buffer-grow-factor+
+                                (.me_mapsize ^Lib$MDB_envinfo (.get info))))
             (.close info)
             (.transact-kv this txs)))
         (catch Exception e

@@ -95,7 +95,7 @@
     (try
       (p/write-message-bf write-bf msg)
       (catch BufferOverflowException _
-        (let [size (* 10 ^int (.capacity write-bf))]
+        (let [size (* c/+buffer-grow-factor+ ^int (.capacity write-bf))]
           (swap! state assoc :write-bf (b/allocate-buffer size))
           (write-to-bf skey msg))))))
 
@@ -254,8 +254,9 @@
       (try
         (p/write-message-blocking ch write-bf {:type :copy-in-response})
         (.clear ^ByteBuffer read-bf)
-        (loop []
-          (let [msg (p/receive-ch ch read-bf)]
+        (loop [bf read-bf]
+          (let [[msg bf'] (p/receive-ch ch bf)]
+            (when-not (identical? bf bf') (swap! state assoc :read-bf bf'))
             (if (map? msg)
               (let [{:keys [type]} msg]
                 (case type
@@ -266,7 +267,7 @@
                   (u/raise "Receive unexpected message while loading datoms"
                            {:msg msg})))
               (do (doseq [datom msg] (conj! datoms datom))
-                  (recur)))))
+                  (recur bf')))))
         (p/write-message-blocking ch write-bf {:type :command-complete})
         (catch Exception e (throw e))
         (finally
@@ -380,6 +381,32 @@
   [f]
   (.execute ^Executor (@resources :work-executor) f))
 
+(defn segment-messages
+  "Segment the content of read buffer into messages, and call msg-handler
+  on each. The messages are byte arrays. Message parsing will be done in the
+  msg-handler. In non-blocking mode, each should be handled by a worker thread,
+  so the main event loop is not hindered by slow parsing. Assume each message is
+  small enough for the buffer, as big messages are handled by copy-in/out."
+  [^ByteBuffer read-bf msg-handler]
+  (loop []
+    (let [pos (.position read-bf)]
+      (when (> pos c/message-header-size)
+        (.flip read-bf)
+        (let [available (.limit read-bf)
+              fmt       (.get read-bf)
+              length    (.getInt read-bf)]
+          (if (< available length)
+            (doto read-bf
+              (.limit (.capacity read-bf))
+              (.position pos))
+            (let [ba (byte-array (- length c/message-header-size))]
+              (.get read-bf ba)
+              (msg-handler fmt ba)
+              (if (= available length)
+                (.clear read-bf)
+                (do (.compact read-bf)
+                    (recur))))))))))
+
 (defn- handle-read
   [^SelectionKey skey]
   (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)
@@ -387,7 +414,7 @@
         readn                         (.read ch read-bf)]
     (cond
       (= readn 0)  :continue
-      (> readn 0)  (p/segment-messages
+      (> readn 0)  (segment-messages
                      read-bf
                      (fn [fmt msg] (execute #(handle-message skey fmt msg))))
       (= readn -1) (.close ch))))

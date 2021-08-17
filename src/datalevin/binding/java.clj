@@ -164,7 +164,7 @@
       (b/put-buffer vb x t)
       (.flip vb)
       (catch BufferOverflowException _
-        (let [size (* 2 ^long (b/measure-size x))]
+        (let [size (* c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
           (b/put-buffer vb x t)
           (.flip vb)))
@@ -191,7 +191,7 @@
     (.iterate db (.-txn ^Rtx rtx) range-info)))
 
 (defn- up-db-size [^Env env]
-  (.setMapSize env (* 10 (-> env .info .mapSize))))
+  (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB

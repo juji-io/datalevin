@@ -103,10 +103,10 @@
 
   (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
 
-  (s/load-datoms store [(d/datom 3 :name "Yunyao" 223)
-                        (d/datom 4 :name "Jiao" 223)])
+  (s/load-datoms store [(d/datom 5 :name "Ola" 223)
+                        (d/datom 6 :name "Jimmy" 223)])
 
-  (s/fetch store (d/datom 1 :name "Boyan"))
+  (s/fetch store (d/datom 3 :name "Yunyao"))
 
   (s/last-modified store)
 

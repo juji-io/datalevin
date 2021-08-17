@@ -15,6 +15,7 @@
   (send-n-receive [conn msg]
     "Send a message to server and return the response, a blocking call")
   (send-only [conn msg] "Send a message without waiting for a response")
+  (receive [conn] "Receive a message, a blocking call")
   (close [conn]))
 
 (deftype Connection [^SocketChannel ch
@@ -24,9 +25,11 @@
     (try
       (p/write-message-blocking ch bf msg)
       (.clear bf)
-      (p/receive-ch ch bf)
+      (let [[resp bf'] (p/receive-ch ch bf)]
+        (when-not (identical? bf' bf) (set! bf bf'))
+        resp)
       (catch BufferOverflowException _
-        (let [size (* 10 ^int (.capacity bf))]
+        (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
           (set! bf (b/allocate-buffer size))
           (send-n-receive this msg)))
       (catch Exception e
@@ -37,11 +40,13 @@
     (try
       (p/write-message-blocking ch bf msg)
       (catch BufferOverflowException _
-        (let [size (* 10 ^int (.capacity bf))]
+        (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
           (set! bf (b/allocate-buffer size))
           (send-only this msg)))
       (catch Exception e
         (u/raise "Error sending message:" (ex-message e) {:msg msg}))))
+
+  (receive [this])
 
   (close [this]
     (.close ch)))
@@ -119,13 +124,13 @@
     pool))
 
 (defprotocol IClient
-  (request [client req] "Send a request to server and return the response")
+  (request [client req]
+    "Send a request to server and return the response. The response could
+     also initiate a copy out")
   (copy-in [client req data batch-size]
     "Copy data to the server. `req` is a request type message,
      `data` is a sequence, `batch-size` decides how to partition the data
-      so that each batch fits in buffers along the way")
-  (copy-out [client req]
-    "Request to copy data from the server. `req` is a request type message")
+      so that each batch fits in buffers along the way"))
 
 (defn parse-user-info
   [^URI uri]
@@ -161,6 +166,14 @@
       (u/raise "Unable to copy in:" (ex-message e)
                {:req req :count (count data)}))))
 
+(defn- copy-out [conn req]
+  (try
+    (let [data (transient [])]
+      (loop []
+        ))
+    (catch Exception e
+      (u/raise "Unable to receive copy:" (ex-message e) {:req req}))))
+
 (deftype Client [^URI uri
                  ^ConnectionPool pool
                  ^UUID id]
@@ -168,7 +181,10 @@
   (request [client req]
     (let [conn (get-connection pool)]
       (try
-        (send-n-receive conn req)
+        (let [{:keys [type] :as result} (send-n-receive conn req)]
+          (if (= type :copy-out-response)
+            (copy-out conn req)
+            result))
         (catch Exception e (throw e))
         (finally (release-connection pool conn)))))
 

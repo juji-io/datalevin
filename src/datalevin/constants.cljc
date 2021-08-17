@@ -135,6 +135,10 @@
 
 ;; user configurable TODO: make it so
 
+;; general
+
+(def ^:const +buffer-grow-factor+ 10)
+
 ;; lmdb
 
 (def ^:const +max-dbs+          128)

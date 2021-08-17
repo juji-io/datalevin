@@ -33,62 +33,7 @@
         (is (= pos (.getInt bf)))
         (is (= v (sut/read-transit-bf bf)))))))
 
-(defn- write2dst
-  [^ByteBuffer src ^ByteBuffer dst ^long n]
-  (.put dst (.array src) (+ (.arrayOffset src) (.position src)) n)
-  (.position src (+ (.position src) n)))
-
-(deftest segment-messages-test
-  (let [src-arr         (byte-array 200)
-        ^ByteBuffer src (ByteBuffer/wrap src-arr)
-        ^ByteBuffer dst (b/allocate-buffer 200)
-        msg1            {:text "this is the first message" :value 888} ; 62 bytes
-        msg2            {:text "the second message"}                   ; 41 bytes
-        sink            (atom [])
-        handler         (fn [type msg]
-                          (swap! sink conj (sut/read-value type msg)))]
-
-    (sut/write-message-bf src msg1)
-    (sut/write-message-bf src msg2)
-    (.flip src)
-
-    (testing "less than header length available"
-      (write2dst src dst 2)
-      (sut/segment-messages dst handler)
-      (is (= (.position dst) 2))
-      (is (empty? @sink)))
-
-    (testing "less than message length available"
-      (write2dst src dst 10)
-      (sut/segment-messages dst handler)
-      (is (= (.position dst) 12))
-      (is (empty? @sink)))
-
-    (testing "first message available"
-      (write2dst src dst 60)
-      (sut/segment-messages dst handler)
-      (is (= (.position dst) 10))
-      (is (= (.limit dst) 200))
-      (is (= (count @sink) 1))
-      (is (= msg1 (first @sink))))
-
-    (testing "second message still not available"
-      (write2dst src dst 10)
-      (sut/segment-messages dst handler)
-      (is (= (.position dst) 20))
-      (is (= (.limit dst) 200))
-      (is (= (count @sink) 1))
-      (is (= msg1 (first @sink))))
-
-    (testing "second message available"
-      (write2dst src dst 21)
-      (sut/segment-messages dst handler)
-      (is (= (.position dst) 0))
-      (is (= (.limit dst) 200))
-      (is (= (count @sink) 2))
-      (is (= msg2 (second @sink))))))
-
-(deftest receive-one-messages-test
+(deftest small-receive-one-messages-test
   (let [src-arr         (byte-array 200)
         ^ByteBuffer src (ByteBuffer/wrap src-arr)
         ^ByteBuffer dst (b/allocate-buffer 200)
@@ -101,17 +46,47 @@
     (.flip src)
 
     (testing "less than header length available"
-      (write2dst src dst 2)
-      (is (nil? (sut/receive-one-message dst)))
+      (b/buffer-transfer src dst 2)
+      (is (= [nil dst] (sut/receive-one-message dst)))
       (is (= (.position dst) 2)))
 
     (testing "less than message length available"
-      (write2dst src dst 10)
-      (is (nil? (sut/receive-one-message dst)))
+      (b/buffer-transfer src dst 10)
+      (is (= [nil dst] (sut/receive-one-message dst)))
       (is (= (.position dst) 12)))
 
     (testing "first message available"
-      (write2dst src dst 60)
-      (is (= msg1 (sut/receive-one-message dst)))
+      (b/buffer-transfer src dst 60)
+      (is (= [msg1 dst] (sut/receive-one-message dst)))
       (is (= (.position dst) 10))
       (is (= (.limit dst) 200)))))
+
+(deftest large-receive-one-messages-test
+  (let [src-arr         (byte-array 200)
+        ^ByteBuffer src (ByteBuffer/wrap src-arr)
+        ^ByteBuffer dst (b/allocate-buffer 30)
+        msg1            {:text "this is the first message" :value 888} ; 62 bytes
+        msg2            {:text "the second message"}                   ; 41 bytes
+        ]
+
+    (sut/write-message-bf src msg1)
+    (sut/write-message-bf src msg2)
+    (.flip src)
+
+    (testing "message larger than buffer, auto grow buffer"
+      (b/buffer-transfer src dst 30)
+      (let [[res ^ByteBuffer dst'] (sut/receive-one-message dst)]
+        (is (nil? res))
+        (is (= 620 (.capacity dst') (.limit dst')))
+        (is (= 30  (.position dst')))
+
+        (testing "first message and more available"
+          (b/buffer-transfer src dst' 70)
+          (is (= [msg1 dst'] (sut/receive-one-message dst')))
+          (is (= (.position dst') 38)))
+
+        (testing "second message available"
+          (b/buffer-transfer src dst' 3)
+          (is (= [msg2 dst'] (sut/receive-one-message dst')))
+          (is (= (.position dst') 0))
+          (is (= (.limit dst') 620)))))))

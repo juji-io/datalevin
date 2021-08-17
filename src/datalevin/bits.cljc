@@ -55,6 +55,13 @@
   [size]
   (ByteBuffer/allocateDirect size))
 
+(defn buffer-transfer
+  "Transfer content from one bytebuffer to another"
+  ([^ByteBuffer src ^ByteBuffer dst]
+   (.put dst src))
+  ([^ByteBuffer src ^ByteBuffer dst n]
+   (dotimes [_ n] (.put dst (.get src)))))
+
 (defn- get-long
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
