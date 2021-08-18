@@ -131,10 +131,9 @@
     (if (> pos c/message-header-size)
       (do (.flip read-bf)
           (let [available (.limit read-bf)
-                capacity  (.capacity read-bf)
                 fmt       (.get read-bf)
                 length    ^int (.getInt read-bf)
-                read-bf'  (if (< capacity length)
+                read-bf   (if (< (.capacity read-bf) length)
                             (let [^ByteBuffer bf
                                   (ByteBuffer/allocateDirect
                                     (* c/+buffer-grow-factor+ length))]
@@ -143,17 +142,17 @@
                               bf)
                             read-bf)]
             (if (< available length)
-              (do (doto read-bf'
-                    (.limit (.capacity read-bf'))
+              (do (doto read-bf
+                    (.limit (.capacity read-bf))
                     (.position pos))
-                  [nil read-bf'])
-              (let [msg (read-value-bf (.slice read-bf') fmt)]
+                  [nil read-bf])
+              (let [msg (read-value-bf (.slice read-bf) fmt)]
                 (if (= available length)
-                  (.clear read-bf')
-                  (doto read-bf'
+                  (.clear read-bf)
+                  (doto read-bf
                     (.position length)
                     (.compact)))
-                [msg read-bf']))))
+                [msg read-bf]))))
       [nil read-bf])))
 
 (defn receive-ch
@@ -164,8 +163,8 @@
   (loop [bf bf]
     (let [readn (.read ch bf)]
       (cond
-        (> readn 0)  (let [[msg bf'] (receive-one-message bf)]
+        (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                        (if msg
-                         [msg bf']
-                         (recur bf')))
+                         [msg bf]
+                         (recur bf)))
         (= readn -1) (do (.close ch) [nil bf])))))

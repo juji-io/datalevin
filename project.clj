@@ -17,6 +17,7 @@
                          [borkdude/sci "0.2.6"]
                          [com.taoensso/nippy "3.1.1"]
                          [com.taoensso/timbre "5.1.2"]
+                         [com.rpl/nippy-serializable-fns "0.4.1"]
                          [persistent-sorted-set "0.1.3"]
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [org.lmdbjava/lmdbjava "0.8.1"
@@ -49,6 +50,7 @@
                              [org.clojure/tools.cli]
                              [borkdude/sci]
                              [com.taoensso/timbre]
+                             [com.rpl/nippy-serializable-fns]
                              [com.cognitect/transit-clj]
                              [org.bouncycastle/bcprov-jdk15on]
                              [nrepl/bencode]]}}

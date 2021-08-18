@@ -4,7 +4,8 @@
             [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.constants :as c]
-            [datalevin.datom :as d])
+            [datalevin.datom :as d]
+            )
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))

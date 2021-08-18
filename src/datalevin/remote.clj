@@ -1,25 +1,26 @@
 (ns datalevin.remote
-  "Proxy for the remote storage"
+  "Proxy for remote storage"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.storage :as s]
-            [datalevin.bits :as b]
             [datalevin.datom :as d]
             [datalevin.protocol :as p]
+            [taoensso.nippy :as nippy]
+            [com.rpl.nippy-serializable-fn]
             [clojure.string :as str])
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
+           [datalevin.datom Datom]
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels SocketChannel]
            [java.util ArrayList UUID]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
-
 (defmacro normal-dt-store-request
-  "Request to datalog store that returns small results, no need for the
-  copy-in or copy-out protocol"
+  "Request to Datalog store and returns results. Does not use the
+  copy-in protocol"
   [call args]
   `(let [{:keys [~'type ~'message ~'result]}
          (cl/request ~'client {:type ~call :args ~args})]
@@ -66,22 +67,30 @@
     (normal-dt-store-request :head [index low-datom high-datom]))
 
   (slice [_ index low-datom high-datom]
-    )
+    (normal-dt-store-request :slice [index low-datom high-datom]))
 
   (rslice [_ index high-datom low-datom]
-    )
+    (normal-dt-store-request :rslice [index high-datom low-datom]))
 
   (size-filter [_ index pred low-datom high-datom]
-    )
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-dt-store-request :size-filter
+                               [index frozen-pred low-datom high-datom])))
 
   (head-filter [_ index pred low-datom high-datom]
-    )
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-dt-store-request :size-filter
+                               [index frozen-pred low-datom high-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
-    )
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-dt-store-request :size-filter
+                               [index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
-    ))
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-dt-store-request :size-filter
+                               [index frozen-pred high-datom low-datom]))))
 
 (defn- redact-uri
   [s]

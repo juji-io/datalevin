@@ -46,7 +46,13 @@
       (catch Exception e
         (u/raise "Error sending message:" (ex-message e) {:msg msg}))))
 
-  (receive [this])
+  (receive [this]
+    (try
+      (let [[resp bf'] (p/receive-ch ch bf)]
+        (when-not (identical? bf' bf) (set! bf bf'))
+        resp)
+      (catch Exception e
+        (u/raise "Error receiving data:" (ex-message e) {}))))
 
   (close [this]
     (.close ch)))
@@ -170,7 +176,14 @@
   (try
     (let [data (transient [])]
       (loop []
-        ))
+        (let [msg (receive conn)]
+          (if (map? msg)
+            (let [{:keys [type]} msg]
+              (if (= type :copy-done)
+                (persistent! data)
+                (u/raise "Server error while copying out data" {:msg msg})))
+            (do (doseq [d msg] (conj! data d))
+                (recur))))))
     (catch Exception e
       (u/raise "Unable to receive copy:" (ex-message e) {:req req}))))
 

@@ -7,6 +7,7 @@
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.constants :as c]
+            [taoensso.nippy :as nippy]
             [taoensso.timbre :as log])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
@@ -164,18 +165,30 @@
                               :message (ex-message ~'e)}))))
 
 (defmacro normal-dt-store-handler
-  "Handle quick request to datalog store that needs no copy-in or out"
+  "Handle request to Datalog store that needs no copy-in or copy-out"
   [f]
-  `(wrap-error
-     (let [dt-store# (get-in @resources [:clients
-                                         (@(.attachment ~'skey) :client-id)
-                                         :dt-store])]
-       (write-message ~'skey
-                      {:type   :command-complete
-                       :result (apply
-                                 ~(symbol "datalevin.storage" (str f))
-                                 dt-store#
-                                 ~'args)}))))
+  `(let [dt-store# (get-in @resources [:clients
+                                       (@(.attachment ~'skey) :client-id)
+                                       :dt-store])]
+     (write-message ~'skey
+                    {:type   :command-complete
+                     :result (apply
+                               ~(symbol "datalevin.storage" (str f))
+                               dt-store#
+                               ~'args)})))
+
+(defn- copy-out
+  [^SelectionKey skey data batch-size]
+  (let [state                             (.attachment skey)
+        {:keys [^ByteBuffer write-bf]}    @state
+        ^SocketChannel                 ch (.channel skey)]
+    (p/write-message-blocking ch write-bf {:type :copy-out-response})
+    (doseq [batch (partition batch-size batch-size nil data)]
+      (write-to-bf skey batch)
+      (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
+        (.flip write-bf)
+        (p/send-ch ch write-bf)))
+    (p/write-message-blocking ch write-bf {:type :copy-done})))
 
 ;; BEGIN message handlers
 
@@ -207,36 +220,35 @@
 
 (defn- close
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler close))
+  (wrap-error (normal-dt-store-handler close)))
 
 (defn- closed?
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler closed?))
+  (wrap-error (normal-dt-store-handler closed?)))
 
 (defn- last-modified
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler last-modified))
+  (wrap-error (normal-dt-store-handler last-modified)))
 
 (defn- schema
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler schema)
-  )
+  (wrap-error (normal-dt-store-handler schema)))
 
 (defn- rschema
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler rschema))
+  (wrap-error (normal-dt-store-handler rschema)))
 
 (defn- set-schema
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler set-schema))
+  (wrap-error (normal-dt-store-handler set-schema)))
 
 (defn- init-max-eid
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler init-max-eid))
+  (wrap-error (normal-dt-store-handler init-max-eid)))
 
 (defn- datom-count
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler datom-count))
+  (wrap-error (normal-dt-store-handler datom-count)))
 
 (defn- load-datoms
   [^SelectionKey skey _]
@@ -279,43 +291,65 @@
 
 (defn- fetch
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler fetch))
+  (wrap-error (normal-dt-store-handler fetch)))
 
 (defn- populated?
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler populated?))
+  (wrap-error (normal-dt-store-handler populated?)))
 
 (defn- size
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler size))
+  (wrap-error (normal-dt-store-handler size)))
 
 (defn- head
   [^SelectionKey skey {:keys [args]}]
-  (normal-dt-store-handler head))
+  (wrap-error (normal-dt-store-handler head)))
 
 (defn- slice
   [^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (copy-out skey (apply st/slice args) c/+wire-datom-batch-size+)))
 
 (defn- rslice
   [^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (copy-out skey (apply st/rslice args) c/+wire-datom-batch-size+)))
 
 (defn- size-filter
   [^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (let [[index frozen-pred low-datom high-datom] args
+
+          pred (nippy/thaw frozen-pred)
+          args [index pred low-datom high-datom]]
+      (normal-dt-store-handler size-filter))))
 
 (defn- head-filter
   [^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (let [[index frozen-pred low-datom high-datom] args
+
+          pred (nippy/thaw frozen-pred)
+          args [index pred low-datom high-datom]]
+      (normal-dt-store-handler head-filter))))
 
 (defn- slice-filter
   [^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (let [[index frozen-pred low-datom high-datom] args
+
+          pred (nippy/thaw frozen-pred)
+          args [index pred low-datom high-datom]]
+      (copy-out skey (apply st/slice-filter args) c/+wire-datom-batch-size+))))
 
 (defn- rslice-filter
   [^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (let [[index frozen-pred high-datom low-datom] args
+
+          pred (nippy/thaw frozen-pred)
+          args [index pred high-datom low-datom]]
+      (copy-out skey (apply st/rslice-filter args) c/+wire-datom-batch-size+))))
 
 (defn- open-kv
   [^SelectionKey skey {:keys [db-name]}]
