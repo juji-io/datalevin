@@ -1,5 +1,5 @@
 (ns datalevin.server
-  "Non-blocking event-driven database server"
+  "Non-blocking event-driven server"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
             [datalevin.bits :as b]
@@ -16,6 +16,7 @@
            [java.net InetSocketAddress]
            [java.security SecureRandom]
            [java.util Iterator UUID]
+           [java.util.concurrent.atomic AtomicBoolean]
            [java.util.concurrent Executors Executor ThreadPoolExecutor
             ConcurrentLinkedQueue]
            [datalevin.db DB]
@@ -26,11 +27,58 @@
 (log/refer-timbre)
 (log/set-level! :debug)
 
-;; global server resources:
-;; {root, selector, register-queue, work-executor, sys-conn, clients}
-(defonce resources
-  (atom {:clients        {} ; client-id -> { user/id, dt-store, kv-store }
-         :register-queue (ConcurrentLinkedQueue.)}))
+(defprotocol IServer
+  (start [srv] "Start the server")
+  (stop [srv] "Stop the server")
+  (get-client [srv client-id] "access client info")
+  (add-client [srv client-id user-id] "add an client")
+  (update-client [srv client-id f] "Update info about a client"))
+
+(defn- close-conn
+  "Free resources related to a connection"
+  [^SelectionKey skey clients]
+  (let [{:keys [client-id]}         @(.attachment skey)
+        {:keys [dt-store kv-store]} (clients client-id)
+        ^SocketChannel ch           (.channel skey)]
+    (when dt-store (st/close dt-store))
+    (when kv-store (l/close-kv kv-store))
+    (.close ch)))
+
+(declare event-loop)
+
+(deftype Server [^AtomicBoolean running
+                 ^int port
+                 ^String root
+                 ^Selector selector
+                 ^ConcurrentLinkedQueue register-queue
+                 ^ThreadPoolExecutor work-executor
+                 sys-conn
+                 ;; client-id -> { user/id, dt-store, kv-store }
+                 ^:volatile-mutable clients]
+  IServer
+  (start [server]
+    (.set running true)
+    (.start (Thread.
+              (fn []
+                (log/info "Datalevin server started on port" port)
+                (event-loop server)))))
+
+  (stop [server]
+    (.set running false)
+    (doseq [skey (.keys selector)] (close-conn skey clients))
+    (when (.isOpen selector) (.close selector))
+    (.shutdown work-executor)
+    (d/close sys-conn)
+    (log/info "Datalevin server shuts down."))
+
+  (get-client [server client-id]
+    (clients client-id))
+
+  (add-client [server client-id user-id]
+    (set! clients (assoc clients client-id {:user/id user-id})))
+
+  (update-client [server client-id f]
+    (set! clients (update clients client-id f))))
 
 ;; password processing
 
@@ -78,14 +126,13 @@
       nil)))
 
 (defn- authenticate
-  [{:keys [username password]}]
-  (let [conn (@resources :sys-conn)]
-    (when-let [{:keys [user/id user/pw-salt user/pw-hash]}
-               (pull-user conn username)]
-      (when (password-matches? password pw-hash pw-salt)
-        (let [client-id (UUID/randomUUID)]
-          (swap! resources assoc-in [:clients client-id :user/id] id)
-          client-id)))))
+  [^Server server {:keys [username password]}]
+  (when-let [{:keys [user/id user/pw-salt user/pw-hash]}
+             (pull-user (.-sys-conn server) username)]
+    (when (password-matches? password pw-hash pw-salt)
+      (let [client-id (UUID/randomUUID)]
+        (add-client server client-id id)
+        client-id))))
 
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
@@ -122,19 +169,6 @@
     (when-not (.hasRemaining write-bf)
       (.interestOpsAnd skey (bit-not SelectionKey/OP_WRITE)))))
 
-(defn- error-response
-  [skey error-msg]
-  (write-message skey {:type :error-response :message error-msg}))
-
-(defn- open-port
-  [port]
-  (try
-    (doto (ServerSocketChannel/open)
-      (.bind (InetSocketAddress. port))
-      (.configureBlocking false))
-    (catch Exception e
-      (u/raise "Error opening port:" (ex-message e) {}))))
-
 (defn- handle-accept
   [^SelectionKey skey]
   (when-let [client-socket (.accept ^ServerSocketChannel (.channel skey))]
@@ -147,35 +181,6 @@
                                     c/+default-buffer-size+)
                         :write-bf (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)})))))
-
-(defn- db-dir
-  "translate from user and db-name to server db path"
-  [user-id db-name]
-  (str (@resources :root) u/+separator+
-       user-id u/+separator+
-       (b/hexify-string db-name)))
-
-(defmacro wrap-error
-  [body]
-  `(try
-     ~body
-     (catch Exception ~'e
-       (log/error ~'e)
-       (write-message ~'skey {:type    :error-response
-                              :message (ex-message ~'e)}))))
-
-(defmacro normal-dt-store-handler
-  "Handle request to Datalog store that needs no copy-in or copy-out"
-  [f]
-  `(let [dt-store# (get-in @resources [:clients
-                                       (@(.attachment ~'skey) :client-id)
-                                       :dt-store])]
-     (write-message ~'skey
-                    {:type   :command-complete
-                     :result (apply
-                               ~(symbol "datalevin.storage" (str f))
-                               dt-store#
-                               ~'args)})))
 
 (defn- copy-out
   [^SelectionKey skey data batch-size]
@@ -190,75 +195,105 @@
         (p/send-ch ch write-bf)))
     (p/write-message-blocking ch write-bf {:type :copy-done})))
 
+(defn- db-dir
+  "translate from user and db-name to server db path"
+  [^Server server user-id db-name]
+  (str (.-root server) u/+separator+
+       user-id u/+separator+
+       (b/hexify-string db-name)))
+
+(defn- error-response
+  [skey error-msg]
+  (write-message skey {:type :error-response :message error-msg}))
+
+(defmacro wrap-error
+  [body]
+  `(try
+     ~body
+     (catch Exception ~'e
+       (log/error ~'e)
+       (error-response ~'skey (ex-message ~'e)))))
+
+(defmacro normal-dt-store-handler
+  "Handle request to Datalog store that needs no copy-in or copy-out"
+  [f]
+  `(write-message
+     ~'skey
+     {:type   :command-complete
+      :result (apply
+                ~(symbol "datalevin.storage" (str f))
+                (:dt-store
+                 (get-client ~'server (@(.attachment ~'skey) :client-id)))
+                ~'args)}))
+
 ;; BEGIN message handlers
 
 (defn- authentication
-  [skey message]
-  (if-let [client-id (authenticate message)]
+  [^Server server skey message]
+  (if-let [client-id (authenticate server message)]
     (write-message skey {:type :authentication-ok :client-id client-id})
     (error-response skey "Failed to authenticate")))
 
 (defn- set-client-id
-  [^SelectionKey skey message]
+  [^Server server ^SelectionKey skey message]
   (swap! (.attachment skey) assoc :client-id (message :client-id))
   (write-message skey {:type :set-client-id-ok}))
 
 (defn- open
-  [^SelectionKey skey {:keys [db-name schema]}]
+  [^Server server ^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
     (let [{:keys [client-id]}        @(.attachment skey)
-          {:keys [user/id dt-store]} (get-in @resources [:clients client-id])
+          {:keys [user/id dt-store]} (get-client server client-id)
           dir                        (db-dir id db-name)]
       (when-not (and dt-store (= dir (st/dir dt-store)))
-        (swap! resources assoc-in [:clients client-id :dt-store]
-               (st/open dir schema))
-        (d/transact! (@resources :sys-conn)
+        (update-client server client-id
+                       #(assoc % :dt-store (st/open dir schema)))
+        (d/transact! (.-sys-conn server)
                      [{:database/owner [:user/id id]
                        :database/type  :datalog
                        :database/name  db-name}]))
       (write-message skey {:type :command-complete}))))
 
 (defn- close
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler close)))
 
 (defn- closed?
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler closed?)))
 
 (defn- last-modified
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler last-modified)))
 
 (defn- schema
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler schema)))
 
 (defn- rschema
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler rschema)))
 
 (defn- set-schema
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler set-schema)))
 
 (defn- init-max-eid
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler init-max-eid)))
 
 (defn- datom-count
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler datom-count)))
 
 (defn- load-datoms
-  [^SelectionKey skey _]
+  [^Server server ^SelectionKey skey _]
   (wrap-error
     (let [state                                (.attachment skey)
           ^Selector selector                   (.selector skey)
           ^SocketChannel ch                    (.channel skey)
           {:keys [client-id read-bf write-bf]} @state
-          {:keys [dt-store]}                   (get-in @resources
-                                                       [:clients client-id])
+          {:keys [dt-store]}                   (get-client server client-id)
           datoms                               (transient [])]
       ;; switch this channel to blocking mode for copy-in
       (.cancel skey)
@@ -285,38 +320,38 @@
         (finally
           ;; switch back
           (.configureBlocking ch false)
-          (.add ^ConcurrentLinkedQueue (@resources :register-queue)
+          (.add ^ConcurrentLinkedQueue (.-register-queue server)
                 [ch SelectionKey/OP_READ state])
           (.wakeup selector))))))
 
 (defn- fetch
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler fetch)))
 
 (defn- populated?
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler populated?)))
 
 (defn- size
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler size)))
 
 (defn- head
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler head)))
 
 (defn- slice
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (copy-out skey (apply st/slice args) c/+wire-datom-batch-size+)))
 
 (defn- rslice
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (copy-out skey (apply st/rslice args) c/+wire-datom-batch-size+)))
 
 (defn- size-filter
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
@@ -325,7 +360,7 @@
       (normal-dt-store-handler size-filter))))
 
 (defn- head-filter
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
@@ -334,7 +369,7 @@
       (normal-dt-store-handler head-filter))))
 
 (defn- slice-filter
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
@@ -343,7 +378,7 @@
       (copy-out skey (apply st/slice-filter args) c/+wire-datom-batch-size+))))
 
 (defn- rslice-filter
-  [^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[index frozen-pred high-datom low-datom] args
 
@@ -352,15 +387,14 @@
       (copy-out skey (apply st/rslice-filter args) c/+wire-datom-batch-size+))))
 
 (defn- open-kv
-  [^SelectionKey skey {:keys [db-name]}]
+  [^Server server ^SelectionKey skey {:keys [db-name]}]
   (wrap-error
     (let [{:keys [client-id]}        @(.attachment skey)
-          {:keys [user/id kv-store]} (get-in @resources [:clients client-id])
+          {:keys [user/id kv-store]} (get-client server client-id)
           dir                        (db-dir id db-name)]
       (when-not (and kv-store (= dir (l/dir kv-store)))
-        (swap! resources assoc-in [:clients client-id :kv-store]
-               (l/open-kv dir))
-        (d/transact! (@resources :sys-conn)
+        (update-client server client-id #(assoc % :kv-store (l/open-kv dir)))
+        (d/transact! (.-sys-conn server)
                      [{:database/owner [:user/id id]
                        :database/type  :key-value
                        :database/name  db-name}]))
@@ -400,20 +434,21 @@
   [skey type]
   `(case ~type
      ~@(mapcat
-         (fn [sym] [(keyword sym) (list sym 'skey 'message)])
+         (fn [sym]
+           [(keyword sym) (list sym 'server 'skey 'message)])
          message-handlers)
      (error-response ~skey (str "Unknown message type " ~type))))
 
 (defn- handle-message
-  [^SelectionKey skey fmt msg ]
+  [^Server server ^SelectionKey skey fmt msg ]
   (let [{:keys [type] :as message} (p/read-value fmt msg)]
     (log/debug "message received:" (dissoc message :password))
     (message-cases skey type)))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
-  [f]
-  (.execute ^Executor (@resources :work-executor) f))
+  [^Server server f]
+  (.execute ^Executor (.-work-executor server) f))
 
 (defn segment-messages
   "Segment the content of read buffer into messages, and call msg-handler
@@ -442,7 +477,7 @@
                     (recur))))))))))
 
 (defn- handle-read
-  [^SelectionKey skey]
+  [^Server server ^SelectionKey skey]
   (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)
         ^SocketChannel ch             (.channel skey)
         readn                         (.read ch read-bf)]
@@ -450,14 +485,46 @@
       (= readn 0)  :continue
       (> readn 0)  (segment-messages
                      read-bf
-                     (fn [fmt msg] (execute #(handle-message skey fmt msg))))
+                     (fn [fmt msg]
+                       (execute server
+                                #(handle-message server skey fmt msg))))
       (= readn -1) (.close ch))))
+
+(defn- handle-registration
+  [^Server server]
+  (let [^Selector selector           (.-selector server)
+        ^ConcurrentLinkedQueue queue (.-register-queue server)]
+    (loop []
+      (when-let [[^SocketChannel ch ops state] (.poll queue)]
+        (.register ch selector ops state)
+        (log/debug "Registered client" (@state :client-id))
+        (recur)))))
+
+(defn- event-loop
+  [^Server server ]
+  (let [^Selector selector     (.-selector server)
+        ^AtomicBoolean running (.-running server)]
+    (loop []
+      (when (.get running)
+        (.select selector)
+        (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
+          (when (.hasNext iter)
+            (let [^SelectionKey skey (.next iter)]
+              (when (and (.isValid skey) (.isAcceptable skey))
+                (handle-accept skey))
+              (when (and (.isValid skey) (.isReadable skey))
+                (handle-read server skey))
+              (when (and (.isValid skey) (.isWritable skey))
+                (handle-write skey)))
+            (.remove iter)
+            (recur iter)))
+        (handle-registration server)
+        (recur)))))
 
 (defn- init-sys-db
   [root]
   (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
                              c/system-schema)]
-    (swap! resources assoc :root root :sys-conn sys-conn)
     (when (= 0 (st/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
       (let [s   (salt)
             h   (password-hashing c/default-password s)
@@ -470,79 +537,37 @@
                   :role/key c/superuser-role}
                  {:user-role/user -1
                   :user-role/role -2}]]
-        (d/transact! sys-conn txs)))))
+        (d/transact! sys-conn txs)))
+    sys-conn))
 
-(defn- init-work-executor
-  []
-  (let [exec (Executors/newWorkStealingPool)]
-    (swap! resources assoc :work-executor exec)
-    exec))
+(defn- open-port
+  [port]
+  (try
+    (doto (ServerSocketChannel/open)
+      (.bind (InetSocketAddress. port))
+      (.configureBlocking false))
+    (catch Exception e
+      (u/raise "Error opening port:" (ex-message e) {}))))
 
-(defn- close-conn
-  "Release resources related to the connection"
-  [^SelectionKey skey]
-  (let [{:keys [client-id]}         @(.attachment skey)
-        {:keys [dt-store kv-store]} (get-in @resources [:clients client-id])
-        ^SocketChannel ch           (.channel skey)]
-    (when dt-store (st/close dt-store))
-    (when kv-store (l/close-kv kv-store))
-    (.close ch)))
-
-(defn- shutdown
-  []
-  (let [{:keys [^Selector selector work-executor sys-conn]} @resources]
-    (when selector
-      (doseq [skey (.keys selector)] (close-conn skey))
-      (when (.isOpen selector)(.close selector)))
-    (.shutdown ^ThreadPoolExecutor work-executor)
-    (d/close sys-conn))
-  (log/info "Bye."))
-
-(defn- open-selector []
-  (let [selector (Selector/open)]
-    (swap! resources assoc :selector selector)
-    selector))
-
-(defn- handle-registration
-  [^Selector selector]
-  (let [^ConcurrentLinkedQueue queue (@resources :register-queue)]
-    (loop []
-      (when-let [[^SocketChannel ch ops state] (.poll queue)]
-        (.register ch selector ops state)
-        (log/debug "Registered client" (@state :client-id))
-        (recur)))))
-
-(defn- event-loop
-  [^Selector selector]
-  (loop []
-    (.select selector)
-    (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
-      (when (.hasNext iter)
-        (let [^SelectionKey skey (.next iter)]
-          (when (and (.isValid skey) (.isAcceptable skey))
-            (handle-accept skey))
-          (when (and (.isValid skey) (.isReadable skey))
-            (handle-read skey))
-          (when (and (.isValid skey) (.isWritable skey))
-            (handle-write skey)))
-        (.remove iter)
-        (recur iter)))
-    (handle-registration selector)
-    (when (.isOpen selector) (recur))))
-
-(defn start
+(defn create
+  "Create a Datalevin server"
   [{:keys [port root]}]
   (try
     (let [server-socket ^ServerSocketChannel (open-port port)
-          selector      ^Selector (open-selector)]
-      (init-work-executor)
-      (init-sys-db root)
+          selector      ^Selector (Selector/open)
+          running       (AtomicBoolean. false)]
       (.register server-socket selector SelectionKey/OP_ACCEPT)
-      (log/info "Datalevin server started on port" port)
-      (event-loop selector))
+      (->Server running
+                port
+                root
+                selector
+                (ConcurrentLinkedQueue.)
+                (Executors/newWorkStealingPool)
+                (init-sys-db root)
+                {}))
     (catch Exception e
-      (u/raise "Error running server:" (ex-message e) {}))
-    (finally (shutdown))))
+      (u/raise "Error creating server:" (ex-message e) {}))))
+
 
 (comment
 
