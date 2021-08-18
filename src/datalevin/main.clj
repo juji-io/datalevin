@@ -552,5 +552,5 @@
         "load" (dtlv-load options arguments)
         "pods" (pod/run)
         "repl" (dtlv-repl)
-        "serv" (srv/start options)
+        "serv" (srv/start (srv/create options))
         "stat" (dtlv-stat options arguments)))))

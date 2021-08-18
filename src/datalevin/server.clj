@@ -32,6 +32,7 @@
   (stop [srv] "Stop the server")
   (get-client [srv client-id] "access client info")
   (add-client [srv client-id user-id] "add an client")
+  (remove-client [srv client-id] "remove an client")
   (update-client [srv client-id f] "Update info about a client"))
 
 (defn- close-conn
@@ -76,6 +77,9 @@
 
   (add-client [server client-id user-id]
     (set! clients (assoc clients client-id {:user/id user-id})))
+
+  (remove-client [server client-id]
+    (set! clients (dissoc clients client-id)))
 
   (update-client [server client-id f]
     (set! clients (update clients client-id f))))
@@ -234,6 +238,14 @@
     (write-message skey {:type :authentication-ok :client-id client-id})
     (error-response skey "Failed to authenticate")))
 
+(defn- disconnect
+  [^Server server ^SelectionKey skey _]
+  (let [{:keys [client-id]}         @(.attachment skey)
+        {:keys [kv-store dt-store]} (get-client server client-id)]
+    (when dt-store (st/close dt-store))
+    (when kv-store (l/close-kv kv-store))
+    (remove-client server client-id)))
+
 (defn- set-client-id
   [^Server server ^SelectionKey skey message]
   (swap! (.attachment skey) assoc :client-id (message :client-id))
@@ -244,7 +256,7 @@
   (wrap-error
     (let [{:keys [client-id]}        @(.attachment skey)
           {:keys [user/id dt-store]} (get-client server client-id)
-          dir                        (db-dir id db-name)]
+          dir                        (db-dir server id db-name)]
       (when-not (and dt-store (= dir (st/dir dt-store)))
         (update-client server client-id
                        #(assoc % :dt-store (st/open dir schema)))
@@ -404,6 +416,7 @@
 
 (def message-handlers
   ['authentication
+   'disconnect
    'set-client-id
    'open
    'close

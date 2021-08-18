@@ -112,10 +112,10 @@
 
   (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
 
-  (s/load-datoms store [(d/datom 5 :name "Ola" 223)
-                        (d/datom 6 :name "Jimmy" 223)])
+  (s/load-datoms store [(d/datom 1 :name "Ola" 223)
+                        (d/datom 2 :name "Jimmy" 223)])
 
-  (s/fetch store (d/datom 3 :name "Yunyao"))
+  (s/fetch store (d/datom 1 :name "Ola"))
 
   (s/last-modified store)
 
@@ -123,11 +123,11 @@
 
   (s/closed? store)
 
-  (s/populated? store :eavt (d/datom 1 :name "Boyan") (d/datom 1 :name "Boyan"))
+  (s/populated? store :eavt (d/datom 1 :name "Ola") (d/datom 1 :name "Ola"))
 
   (s/close store)
 
-  (s/size store :eavt (d/datom 1 :name "Boyan") (d/datom 1 :name "Boyan"))
+  (s/size store :eavt (d/datom 1 :name "Ola") (d/datom 2 :name "Jimmy"))
 
   (s/schema store)
 

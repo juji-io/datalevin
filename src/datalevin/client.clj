@@ -83,7 +83,8 @@
 
 (defprotocol IConnectionPool
   (get-connection [this] "Get a connection from the pool")
-  (release-connection [this connection] "Return the connection back to pool"))
+  (release-connection [this connection] "Return the connection back to pool")
+  (close-pool [this]))
 
 (deftype ConnectionPool [^ArrayList available
                          ^ArrayList used]
@@ -101,7 +102,11 @@
 
   (release-connection [this conn]
     (.add available conn)
-    (.remove used conn)))
+    (.remove used conn))
+
+  (close-pool [this]
+    (dotimes [i (.size used)] (close (^Connection (.get used i))))
+    (dotimes [i (.size used)] (close (^Connection (.get available i))))))
 
 (defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
@@ -136,7 +141,8 @@
   (copy-in [client req data batch-size]
     "Copy data to the server. `req` is a request type message,
      `data` is a sequence, `batch-size` decides how to partition the data
-      so that each batch fits in buffers along the way"))
+      so that each batch fits in buffers along the way")
+  (disconnect [client]))
 
 (defn parse-user-info
   [^URI uri]
@@ -209,7 +215,13 @@
             (copy-in* conn req data batch-size)
             (u/raise "Server refuses to accept copy in" {:req req})))
         (catch Exception e (throw e))
-        (finally (release-connection pool conn))))))
+        (finally (release-connection pool conn)))))
+
+  (disconnect [client]
+    (let [conn (get-connection pool)]
+      (send-only conn {:type :disconnect})
+      (release-connection pool conn))
+    (close-pool pool)))
 
 (defn- init-db
   [client db store schema]
