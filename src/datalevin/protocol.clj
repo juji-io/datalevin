@@ -160,7 +160,7 @@
   until one full message is received. When buffer is too small for a
   message, a new buffer is allocated. Return [msg bf]."
   [^SocketChannel ch ^ByteBuffer bf]
-  (loop [bf bf]
+  (loop [^ByteBuffer bf bf]
     (let [readn (.read ch bf)]
       (cond
         (> readn 0)  (let [[msg bf] (receive-one-message bf)]

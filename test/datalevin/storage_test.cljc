@@ -110,8 +110,8 @@
         (sut/load-datoms store [(d/delete d1)])
         (is (= 1 (sut/datom-count store c/eav)))
         (sut/load-datoms store [d d1])
-        (is (= 3 (sut/datom-count store c/eav))))
-      (sut/close store)
+        (is (= 3 (sut/datom-count store c/eav)))
+        (sut/close store))
       (let [d     :d/e
             p3    {:db/valueType :db.type/long}
             s3    (assoc s2 d (merge p3 {:db/aid 4}))
@@ -119,8 +119,8 @@
             store (sut/open dir {d p3})]
         (is (= s3 (sut/schema store)))
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
-        (is (= s4 (sut/schema store)))))
-    (sut/close store)
+        (is (= s4 (sut/schema store)))
+        (sut/close store)))
     ))
 
 (deftest schema-test

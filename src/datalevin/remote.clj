@@ -46,6 +46,14 @@
 
   (init-max-eid [_] (normal-dt-store-request :init-max-eid nil))
 
+  (swap-attr [this attr f]
+    (s/swap-attr this attr f nil nil))
+  (swap-attr [this attr f x]
+    (s/swap-attr this attr f x nil))
+  (swap-attr [_ attr f x y]
+    (let [frozen-f (nippy/freeze f)]
+      (normal-dt-store-request :swap-attr [attr frozen-f x y])))
+
   (datom-count [_ index] (normal-dt-store-request :datom-count [index]))
 
   (load-datoms [_ datoms]
@@ -113,7 +121,7 @@
   (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
 
   (s/load-datoms store [(d/datom 1 :name "Ola" 223)
-                        (d/datom 2 :name "Jimmy" 223)])
+                        #_(d/datom 2 :name "Jimmy" 223)])
 
   (s/fetch store (d/datom 1 :name "Ola"))
 
@@ -123,7 +131,9 @@
 
   (s/closed? store)
 
-  (s/populated? store :eavt (d/datom 1 :name "Ola") (d/datom 1 :name "Ola"))
+  (s/populated? store :eavt (d/datom 1 :name "Ola") (d/datom 2 :name "Jimmy"))
+
+  (s/slice store :eavt (d/datom 1 :name "Ola") (d/datom 1 :name "Ola"))
 
   (s/close store)
 

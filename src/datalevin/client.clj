@@ -186,7 +186,7 @@
           (if (map? msg)
             (let [{:keys [type]} msg]
               (if (= type :copy-done)
-                (persistent! data)
+                {:type :command-complete :result (persistent! data)}
                 (u/raise "Server error while copying out data" {:msg msg})))
             (do (doseq [d msg] (conj! data d))
                 (recur))))))

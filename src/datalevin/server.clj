@@ -17,7 +17,7 @@
            [java.security SecureRandom]
            [java.util Iterator UUID]
            [java.util.concurrent.atomic AtomicBoolean]
-           [java.util.concurrent Executors Executor ThreadPoolExecutor
+           [java.util.concurrent Executors Executor ExecutorService
             ConcurrentLinkedQueue]
            [datalevin.db DB]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
@@ -38,21 +38,23 @@
 (defn- close-conn
   "Free resources related to a connection"
   [^SelectionKey skey clients]
-  (let [{:keys [client-id]}         @(.attachment skey)
-        {:keys [dt-store kv-store]} (clients client-id)
-        ^SocketChannel ch           (.channel skey)]
-    (when dt-store (st/close dt-store))
-    (when kv-store (l/close-kv kv-store))
-    (.close ch)))
+  (when-let [state (.attachment skey)]
+    (let [{:keys [client-id]}         @state
+          {:keys [dt-store kv-store]} (clients client-id)
+          ^SocketChannel ch           (.channel skey)]
+      (when dt-store (st/close dt-store))
+      (when kv-store (l/close-kv kv-store))
+      (.close ch))))
 
 (declare event-loop)
 
 (deftype Server [^AtomicBoolean running
                  ^int port
                  ^String root
+                 ^ServerSocketChannel server-socket
                  ^Selector selector
                  ^ConcurrentLinkedQueue register-queue
-                 ^ThreadPoolExecutor work-executor
+                 ^ExecutorService work-executor
                  sys-conn
                  ;; client-id -> { user/id, dt-store, kv-store }
                  ^:volatile-mutable clients]
@@ -66,10 +68,12 @@
 
   (stop [server]
     (.set running false)
-    (doseq [skey (.keys selector)] (close-conn skey clients))
-    (when (.isOpen selector) (.close selector))
-    (.shutdown work-executor)
+    (.wakeup selector)
     (d/close sys-conn)
+    (.shutdown work-executor)
+    (doseq [skey (.keys selector)] (close-conn skey clients))
+    (.close server-socket)
+    (.close selector)
     (log/info "Datalevin server shuts down."))
 
   (get-client [server client-id]
@@ -187,17 +191,31 @@
                                     c/+default-buffer-size+)})))))
 
 (defn- copy-out
-  [^SelectionKey skey data batch-size]
+  [^Server server ^SelectionKey skey data batch-size]
   (let [state                             (.attachment skey)
+        ^Selector selector                (.selector skey)
         {:keys [^ByteBuffer write-bf]}    @state
         ^SocketChannel                 ch (.channel skey)]
-    (p/write-message-blocking ch write-bf {:type :copy-out-response})
-    (doseq [batch (partition batch-size batch-size nil data)]
-      (write-to-bf skey batch)
-      (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
-        (.flip write-bf)
-        (p/send-ch ch write-bf)))
-    (p/write-message-blocking ch write-bf {:type :copy-done})))
+    ;; (.cancel skey)
+    ;; (.configureBlocking ch true)
+    ;; (log/debug "canceled skey")
+    (try
+      (log/debug "init copy-out")
+      (p/write-message-blocking ch write-bf {:type :copy-out-response})
+      (doseq [batch (partition batch-size batch-size nil data)]
+        (write-to-bf skey batch)
+        (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
+          (.flip write-bf)
+          (p/send-ch ch write-bf)))
+      (p/write-message-blocking ch write-bf {:type :copy-done})
+      (log/debug "done copy-out")
+      (catch Exception e (throw e))
+      (finally
+        ;; (.configureBlocking ch false)
+        ;; (.add ^ConcurrentLinkedQueue (.-register-queue server)
+        ;;       [ch SelectionKey/OP_READ state])
+        ;; (.wakeup selector)
+        ))))
 
 (defn- db-dir
   "translate from user and db-name to server db path"
@@ -218,6 +236,10 @@
        (log/error ~'e)
        (error-response ~'skey (ex-message ~'e)))))
 
+(defn dt-store
+  [^Server server ^SelectionKey skey]
+  (:dt-store (get-client server (@(.attachment skey) :client-id))))
+
 (defmacro normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
   [f]
@@ -226,8 +248,7 @@
      {:type   :command-complete
       :result (apply
                 ~(symbol "datalevin.storage" (str f))
-                (:dt-store
-                 (get-client ~'server (@(.attachment ~'skey) :client-id)))
+                (dt-store ~'server ~'skey)
                 ~'args)}))
 
 ;; BEGIN message handlers
@@ -294,6 +315,14 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler init-max-eid)))
 
+(defn- swap-attr
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[attr frozen-f x y] args
+          f                   (nippy/thaw frozen-f)
+          args                [attr f x y]]
+      (normal-dt-store-handler swap-attr))))
+
 (defn- datom-count
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler datom-count)))
@@ -355,12 +384,16 @@
 (defn- slice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (copy-out skey (apply st/slice args) c/+wire-datom-batch-size+)))
+    (copy-out server skey
+              (apply st/slice (dt-store server skey) args)
+              c/+wire-datom-batch-size+)))
 
 (defn- rslice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (copy-out skey (apply st/rslice args) c/+wire-datom-batch-size+)))
+    (copy-out server skey
+              (apply st/rslice (dt-store server skey) args)
+              c/+wire-datom-batch-size+)))
 
 (defn- size-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -387,7 +420,9 @@
 
           pred (nippy/thaw frozen-pred)
           args [index pred low-datom high-datom]]
-      (copy-out skey (apply st/slice-filter args) c/+wire-datom-batch-size+))))
+      (copy-out server skey
+                (apply st/slice-filter (dt-store server skey) args)
+                c/+wire-datom-batch-size+))))
 
 (defn- rslice-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -396,14 +431,16 @@
 
           pred (nippy/thaw frozen-pred)
           args [index pred high-datom low-datom]]
-      (copy-out skey (apply st/rslice-filter args) c/+wire-datom-batch-size+))))
+      (copy-out server skey
+                (apply st/rslice-filter (dt-store server skey) args)
+                c/+wire-datom-batch-size+))))
 
 (defn- open-kv
   [^Server server ^SelectionKey skey {:keys [db-name]}]
   (wrap-error
     (let [{:keys [client-id]}        @(.attachment skey)
           {:keys [user/id kv-store]} (get-client server client-id)
-          dir                        (db-dir id db-name)]
+          dir                        (db-dir server id db-name)]
       (when-not (and kv-store (= dir (l/dir kv-store)))
         (update-client server client-id #(assoc % :kv-store (l/open-kv dir)))
         (d/transact! (.-sys-conn server)
@@ -426,6 +463,7 @@
    'rschema
    'set-schema
    'init-max-eid
+   'swap-attr
    'datom-count
    'load-datoms
    'fetch
@@ -519,7 +557,10 @@
         ^AtomicBoolean running (.-running server)]
     (loop []
       (when (.get running)
+        (handle-registration server)
+        (log/debug "done register, about to select")
         (.select selector)
+        (log/debug "selected")
         (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
           (when (.hasNext iter)
             (let [^SelectionKey skey (.next iter)]
@@ -531,7 +572,6 @@
                 (handle-write skey)))
             (.remove iter)
             (recur iter)))
-        (handle-registration server)
         (recur)))))
 
 (defn- init-sys-db
@@ -573,6 +613,7 @@
       (->Server running
                 port
                 root
+                server-socket
                 selector
                 (ConcurrentLinkedQueue.)
                 (Executors/newWorkStealingPool)
@@ -584,5 +625,12 @@
 
 (comment
 
+  (def server (create {:port c/default-port
+                       :root (u/tmp-dir
+                               (str "remote-test-" (UUID/randomUUID)))}))
+
+  (start server)
+
+  (stop server)
 
   )
