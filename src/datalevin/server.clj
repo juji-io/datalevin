@@ -190,7 +190,46 @@
                         :write-bf (ByteBuffer/allocateDirect
                                     c/+default-buffer-size+)})))))
 
+(defn copy-in
+  "Continiously read batched data from the client"
+  [^Server server ^SelectionKey skey]
+  (let [state                      (.attachment skey)
+        {:keys [read-bf write-bf]} @state
+        ^Selector selector         (.selector skey)
+        ^SocketChannel ch          (.channel skey)
+        data                       (transient [])]
+    ;; switch this channel to blocking mode for copy-in
+    (.cancel skey)
+    (.configureBlocking ch true)
+    (try
+      (p/write-message-blocking ch write-bf {:type :copy-in-response})
+      (.clear ^ByteBuffer read-bf)
+      (loop [bf read-bf]
+        (let [[msg bf'] (p/receive-ch ch bf)]
+          (when-not (identical? bf bf') (swap! state assoc :read-bf bf'))
+          (if (map? msg)
+            (let [{:keys [type]} msg]
+              (case type
+                :copy-done :break
+                :copy-fail (u/raise "Client error while loading data" {})
+                (u/raise "Receive unexpected message while loading data"
+                         {:msg msg})))
+            (do (doseq [d msg] (conj! data d))
+                (recur bf')))))
+      (p/write-message-blocking ch write-bf {:type :command-complete})
+      (let [txs (persistent! data)]
+        (log/debug "Copied in" (count txs) "data items")
+        txs)
+      (catch Exception e (throw e))
+      (finally
+        ;; switch back
+        (.configureBlocking ch false)
+        (.add ^ConcurrentLinkedQueue (.-register-queue server)
+              [ch SelectionKey/OP_READ state])
+        (.wakeup selector)))))
+
 (defn- copy-out
+  "Continiously write data out to client in batches"
   [^SelectionKey skey data batch-size]
   (let [state                             (.attachment skey)
         {:keys [^ByteBuffer write-bf]}    @state
@@ -206,8 +245,7 @@
 (defn- db-dir
   "translate from user and db-name to server db path"
   [^Server server user-id db-name]
-  (str (.-root server) u/+separator+
-       user-id u/+separator+
+  (str (.-root server) u/+separator+ user-id u/+separator+
        (b/hexify-string db-name)))
 
 (defn- error-response
@@ -235,6 +273,21 @@
       :result (apply
                 ~(symbol "datalevin.storage" (str f))
                 (dt-store ~'server ~'skey)
+                ~'args)}))
+
+(defn kv-store
+  [^Server server ^SelectionKey skey]
+  (:kv-store (get-client server (@(.attachment skey) :client-id))))
+
+(defmacro normal-kv-store-handler
+  "Handle request to key-value store that needs no copy-in or copy-out"
+  [f]
+  `(write-message
+     ~'skey
+     {:type   :command-complete
+      :result (apply
+                ~(symbol "datalevin.lmdb" (str f))
+                (kv-store ~'server ~'skey)
                 ~'args)}))
 
 ;; BEGIN message handlers
@@ -316,40 +369,9 @@
 (defn- load-datoms
   [^Server server ^SelectionKey skey _]
   (wrap-error
-    (let [state                                (.attachment skey)
-          ^Selector selector                   (.selector skey)
-          ^SocketChannel ch                    (.channel skey)
-          {:keys [client-id read-bf write-bf]} @state
-          {:keys [dt-store]}                   (get-client server client-id)
-          datoms                               (transient [])]
-      ;; switch this channel to blocking mode for copy-in
-      (.cancel skey)
-      (.configureBlocking ch true)
-      (try
-        (p/write-message-blocking ch write-bf {:type :copy-in-response})
-        (.clear ^ByteBuffer read-bf)
-        (loop [bf read-bf]
-          (let [[msg bf'] (p/receive-ch ch bf)]
-            (when-not (identical? bf bf') (swap! state assoc :read-bf bf'))
-            (if (map? msg)
-              (let [{:keys [type]} msg]
-                (case type
-                  :copy-done (let [txs (persistent! datoms)]
-                               (st/load-datoms dt-store txs)
-                               (log/debug "Loaded" (count txs) "datoms"))
-                  :copy-fail (u/raise "Client error while loading datoms" {})
-                  (u/raise "Receive unexpected message while loading datoms"
-                           {:msg msg})))
-              (do (doseq [datom msg] (conj! datoms datom))
-                  (recur bf')))))
-        (p/write-message-blocking ch write-bf {:type :command-complete})
-        (catch Exception e (throw e))
-        (finally
-          ;; switch back
-          (.configureBlocking ch false)
-          (.add ^ConcurrentLinkedQueue (.-register-queue server)
-                [ch SelectionKey/OP_READ state])
-          (.wakeup selector))))))
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dt-store]}  (get-client server client-id)]
+      (st/load-datoms dt-store (copy-in server skey)))))
 
 (defn- fetch
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -435,6 +457,78 @@
                        :database/name  db-name}]))
       (write-message skey {:type :command-complete}))))
 
+(defn- close-kv
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- closed-kv?
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- open-dbi
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- clear-dbi
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- drop-dbi
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- list-dbis
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- copy
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- stat
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- entries
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- transact-kv
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- get-value
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- get-first
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- get-range
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- range-count
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- get-some
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- range-filter
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- range-filter-count
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
+(defn- q
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-kv-store-handler close-kv)))
+
 ;; END message handlers
 
 (def message-handlers
@@ -463,7 +557,24 @@
    'slice-filter
    'rslice-filter
    'open-kv
-   ])
+   'close-kv
+   'closed-kv?
+   'open-dbi
+   'clear-dbi
+   'drop-dbi
+   'list-dbis
+   'copy
+   'stat
+   'entries
+   'transact-kv
+   'get-value
+   'get-first
+   'get-range
+   'range-count
+   'get-some
+   'range-filter
+   'range-filter-count
+   'q])
 
 (defmacro message-cases
   "Message handler function should have the same name as the incoming message

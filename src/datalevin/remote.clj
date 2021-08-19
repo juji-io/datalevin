@@ -1,9 +1,10 @@
 (ns datalevin.remote
-  "Proxy for remote storage"
+  "Proxy for remote stores"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.storage :as s]
+            [datalevin.lmdb :as l]
             [datalevin.datom :as d]
             [datalevin.protocol :as p]
             [taoensso.nippy :as nippy]
@@ -11,6 +12,7 @@
             [clojure.string :as str])
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
+           [datalevin.lmdb ILMDB]
            [datalevin.datom Datom]
            [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
@@ -18,8 +20,8 @@
            [java.util ArrayList UUID]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
-(defmacro normal-dt-store-request
-  "Request to Datalog store and returns results. Does not use the
+(defmacro normal-request
+  "Request to remote store and returns results. Does not use the
   copy-in protocol"
   [call args]
   `(let [{:keys [~'type ~'message ~'result]}
@@ -28,23 +30,25 @@
        (u/raise "Unable to access remote db:" ~'message {:uri ~'uri})
        ~'result)))
 
+;; remote datalog store
+
 (deftype DatalogStore [^String uri ^Client client]
   IStore
   (dir [_] uri)
 
-  (close [_] (normal-dt-store-request :close nil))
+  (close [_] (normal-request :close nil))
 
-  (closed? [_] (normal-dt-store-request :closed? nil))
+  (closed? [_] (normal-request :closed? nil))
 
-  (last-modified [_] (normal-dt-store-request :last-modified nil))
+  (last-modified [_] (normal-request :last-modified nil))
 
-  (schema [_] (normal-dt-store-request :schema nil))
+  (schema [_] (normal-request :schema nil))
 
-  (rschema [_] (normal-dt-store-request :rschema nil))
+  (rschema [_] (normal-request :rschema nil))
 
-  (set-schema [_ new-schema] (normal-dt-store-request :set-schema [new-schema]))
+  (set-schema [_ new-schema] (normal-request :set-schema [new-schema]))
 
-  (init-max-eid [_] (normal-dt-store-request :init-max-eid nil))
+  (init-max-eid [_] (normal-request :init-max-eid nil))
 
   (swap-attr [this attr f]
     (s/swap-attr this attr f nil nil))
@@ -52,9 +56,9 @@
     (s/swap-attr this attr f x nil))
   (swap-attr [_ attr f x y]
     (let [frozen-f (nippy/freeze f)]
-      (normal-dt-store-request :swap-attr [attr frozen-f x y])))
+      (normal-request :swap-attr [attr frozen-f x y])))
 
-  (datom-count [_ index] (normal-dt-store-request :datom-count [index]))
+  (datom-count [_ index] (normal-request :datom-count [index]))
 
   (load-datoms [_ datoms]
     (let [{:keys [type message]}
@@ -63,42 +67,42 @@
       (when (= type :error-response)
         (u/raise "Error loading datoms to server:" message {:uri uri}))))
 
-  (fetch [_ datom] (normal-dt-store-request :fetch [datom]))
+  (fetch [_ datom] (normal-request :fetch [datom]))
 
   (populated? [_ index low-datom high-datom]
-    (normal-dt-store-request :populated? [index low-datom high-datom]))
+    (normal-request :populated? [index low-datom high-datom]))
 
   (size [_ index low-datom high-datom]
-    (normal-dt-store-request :size [index low-datom high-datom]))
+    (normal-request :size [index low-datom high-datom]))
 
   (head [_ index low-datom high-datom]
-    (normal-dt-store-request :head [index low-datom high-datom]))
+    (normal-request :head [index low-datom high-datom]))
 
   (slice [_ index low-datom high-datom]
-    (normal-dt-store-request :slice [index low-datom high-datom]))
+    (normal-request :slice [index low-datom high-datom]))
 
   (rslice [_ index high-datom low-datom]
-    (normal-dt-store-request :rslice [index high-datom low-datom]))
+    (normal-request :rslice [index high-datom low-datom]))
 
   (size-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :size-filter
-                               [index frozen-pred low-datom high-datom])))
+      (normal-request :size-filter
+                      [index frozen-pred low-datom high-datom])))
 
   (head-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :head-filter
-                               [index frozen-pred low-datom high-datom])))
+      (normal-request :head-filter
+                      [index frozen-pred low-datom high-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :slice-filter
-                               [index frozen-pred low-datom high-datom])))
+      (normal-request :slice-filter
+                      [index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :rslice-filter
-                               [index frozen-pred high-datom low-datom]))))
+      (normal-request :rslice-filter
+                      [index frozen-pred high-datom low-datom]))))
 
 (defn- redact-uri
   [s]
@@ -116,12 +120,91 @@
      (->DatalogStore (redact-uri uri-str)
                      (cl/new-client uri-str schema)))))
 
+;; kv store
+
+(deftype KVStore [^String uri ^Client client]
+  ILMDB
+
+  (dir [_] uri)
+
+  (close-kv [_] (normal-request :close-kv nil))
+
+  (closed-kv? [_] (normal-request :closed-kv? nil))
+
+  ;; (open-dbi [this dbi-name]
+  ;;   (l/open-dbi this dbi-name))
+  ;; ([db dbi-name key-size]
+  ;;  [db dbi-name key-size val-size]
+  ;;  [db dbi-name key-size val-size flags]
+  ;;  "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env")
+  ;; (clear-dbi [db dbi-name]
+  ;;   "Clear data in the DBI (i.e sub-db), but leave it open")
+  ;; (drop-dbi [db dbi-name]
+  ;;   "Clear data in the DBI (i.e. sub-db), then delete it")
+  ;; (list-dbis [db] "List the names of the sub-databases")
+  ;; (copy
+  ;;   [db dest]
+  ;;   [db dest compact?]
+  ;;   "Copy the database to a destination directory path, optionally compact
+  ;;    while copying, default not compact. ")
+  ;; (stat
+  ;;   [db]
+  ;;   [db dbi-name]
+  ;;   "Return the statitics of the unnamed top level database or a named DBI
+  ;;    (i.e. sub-database) as a map")
+  ;; (entries [db dbi-name]
+  ;;   "Get the number of data entries in a DBI (i.e. sub-db)")
+  ;; (transact-kv [db txs]
+  ;;   "Update DB, insert or delete key value pairs.")
+  ;; (get-value
+  ;;   [db dbi-name k]
+  ;;   [db dbi-name k k-type]
+  ;;   [db dbi-name k k-type v-type]
+  ;;   [db dbi-name k k-type v-type ignore-key?]
+  ;;   "Get kv pair of the specified key `k`. ")
+  ;; (get-first
+  ;;   [db dbi-name k-range]
+  ;;   [db dbi-name k-range k-type]
+  ;;   [db dbi-name k-range k-type v-type]
+  ;;   [db dbi-name k-range k-type v-type ignore-key?]
+  ;;   "Return the first kv pair in the specified key range;")
+  ;; (get-range
+  ;;   [db dbi-name k-range]
+  ;;   [db dbi-name k-range k-type]
+  ;;   [db dbi-name k-range k-type v-type]
+  ;;   [db dbi-name k-range k-type v-type ignore-key?]
+  ;;   "Return a seq of kv pairs in the specified key range;")
+  ;; (range-count
+  ;;   [db dbi-name k-range]
+  ;;   [db dbi-name k-range k-type]
+  ;;   "Return the number of kv pairs in the specified key range, does not process
+  ;;    the kv pairs.")
+  ;; (get-some
+  ;;   [db dbi-name pred k-range]
+  ;;   [db dbi-name pred k-range k-type]
+  ;;   [db dbi-name pred k-range k-type v-type]
+  ;;   [db dbi-name pred k-range k-type v-type ignore-key?]
+  ;;   "Return the first kv pair that has logical true value of `(pred x)`")
+  ;; (range-filter
+  ;;   [db dbi-name pred k-range]
+  ;;   [db dbi-name pred k-range k-type]
+  ;;   [db dbi-name pred k-range k-type v-type]
+  ;;   [db dbi-name pred k-range k-type v-type ignore-key?]
+  ;;   "Return a seq of kv pair in the specified key range, for only those
+  ;;    return true value for `(pred x)`.")
+  ;; (range-filter-count
+  ;;   [db dbi-name pred k-range]
+  ;;   [db dbi-name pred k-range k-type]
+  ;;   "Return the number of kv pairs in the specified key range, for only those
+  ;;    return true value for `(pred x)`")
+  )
+
 (comment
 
   (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
 
   (s/load-datoms store [(d/datom 1 :name "Ola" 223)
-                        #_(d/datom 2 :name "Jimmy" 223)])
+                        (d/datom 2 :name "Jimmy" 223)])
 
   (s/fetch store (d/datom 1 :name "Ola"))
 

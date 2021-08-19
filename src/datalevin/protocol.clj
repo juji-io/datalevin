@@ -86,7 +86,7 @@
   "Write a message to a ByteBuffer. First byte is format, then four bytes
   length of the whole message (include header), followed by message value"
   ([bf msg]
-   (write-message-bf bf msg c/message-format-nippy))
+   (write-message-bf bf msg c/message-format-transit))
   ([^ByteBuffer bf msg fmt]
    (let [start-pos (.position bf)]
      (.position bf (+ c/message-header-size start-pos))
