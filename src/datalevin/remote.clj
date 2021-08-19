@@ -87,17 +87,17 @@
 
   (head-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :size-filter
+      (normal-dt-store-request :head-filter
                                [index frozen-pred low-datom high-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :size-filter
+      (normal-dt-store-request :slice-filter
                                [index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (nippy/freeze pred)]
-      (normal-dt-store-request :size-filter
+      (normal-dt-store-request :rslice-filter
                                [index frozen-pred high-datom low-datom]))))
 
 (defn- redact-uri

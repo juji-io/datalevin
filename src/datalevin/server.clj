@@ -191,31 +191,17 @@
                                     c/+default-buffer-size+)})))))
 
 (defn- copy-out
-  [^Server server ^SelectionKey skey data batch-size]
+  [^SelectionKey skey data batch-size]
   (let [state                             (.attachment skey)
-        ^Selector selector                (.selector skey)
         {:keys [^ByteBuffer write-bf]}    @state
         ^SocketChannel                 ch (.channel skey)]
-    ;; (.cancel skey)
-    ;; (.configureBlocking ch true)
-    ;; (log/debug "canceled skey")
-    (try
-      (log/debug "init copy-out")
-      (p/write-message-blocking ch write-bf {:type :copy-out-response})
-      (doseq [batch (partition batch-size batch-size nil data)]
-        (write-to-bf skey batch)
-        (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
-          (.flip write-bf)
-          (p/send-ch ch write-bf)))
-      (p/write-message-blocking ch write-bf {:type :copy-done})
-      (log/debug "done copy-out")
-      (catch Exception e (throw e))
-      (finally
-        ;; (.configureBlocking ch false)
-        ;; (.add ^ConcurrentLinkedQueue (.-register-queue server)
-        ;;       [ch SelectionKey/OP_READ state])
-        ;; (.wakeup selector)
-        ))))
+    (p/write-message-blocking ch write-bf {:type :copy-out-response})
+    (doseq [batch (partition batch-size batch-size nil data)]
+      (write-to-bf skey batch)
+      (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
+        (.flip write-bf)
+        (p/send-ch ch write-bf)))
+    (p/write-message-blocking ch write-bf {:type :copy-done})))
 
 (defn- db-dir
   "translate from user and db-name to server db path"
@@ -384,14 +370,14 @@
 (defn- slice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (copy-out server skey
+    (copy-out skey
               (apply st/slice (dt-store server skey) args)
               c/+wire-datom-batch-size+)))
 
 (defn- rslice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (copy-out server skey
+    (copy-out skey
               (apply st/rslice (dt-store server skey) args)
               c/+wire-datom-batch-size+)))
 
@@ -420,7 +406,7 @@
 
           pred (nippy/thaw frozen-pred)
           args [index pred low-datom high-datom]]
-      (copy-out server skey
+      (copy-out skey
                 (apply st/slice-filter (dt-store server skey) args)
                 c/+wire-datom-batch-size+))))
 
@@ -431,7 +417,7 @@
 
           pred (nippy/thaw frozen-pred)
           args [index pred high-datom low-datom]]
-      (copy-out server skey
+      (copy-out skey
                 (apply st/rslice-filter (dt-store server skey) args)
                 c/+wire-datom-batch-size+))))
 
@@ -493,39 +479,13 @@
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]
   (let [{:keys [type] :as message} (p/read-value fmt msg)]
-    (log/debug "message received:" (dissoc message :password))
+    (log/debug "message segmented:" (dissoc message :password))
     (message-cases skey type)))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
   [^Server server f]
   (.execute ^Executor (.-work-executor server) f))
-
-(defn segment-messages
-  "Segment the content of read buffer into messages, and call msg-handler
-  on each. The messages are byte arrays. Message parsing will be done in the
-  msg-handler. In non-blocking mode, each should be handled by a worker thread,
-  so the main event loop is not hindered by slow parsing. Assume each message is
-  small enough for the buffer, as big messages are handled by copy-in/out."
-  [^ByteBuffer read-bf msg-handler]
-  (loop []
-    (let [pos (.position read-bf)]
-      (when (> pos c/message-header-size)
-        (.flip read-bf)
-        (let [available (.limit read-bf)
-              fmt       (.get read-bf)
-              length    (.getInt read-bf)]
-          (if (< available length)
-            (doto read-bf
-              (.limit (.capacity read-bf))
-              (.position pos))
-            (let [ba (byte-array (- length c/message-header-size))]
-              (.get read-bf ba)
-              (msg-handler fmt ba)
-              (if (= available length)
-                (.clear read-bf)
-                (do (.compact read-bf)
-                    (recur))))))))))
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
@@ -534,7 +494,7 @@
         readn                         (.read ch read-bf)]
     (cond
       (= readn 0)  :continue
-      (> readn 0)  (segment-messages
+      (> readn 0)  (p/segment-messages
                      read-bf
                      (fn [fmt msg]
                        (execute server
@@ -558,18 +518,16 @@
     (loop []
       (when (.get running)
         (handle-registration server)
-        (log/debug "done register, about to select")
         (.select selector)
-        (log/debug "selected")
         (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
           (when (.hasNext iter)
             (let [^SelectionKey skey (.next iter)]
               (when (and (.isValid skey) (.isAcceptable skey))
                 (handle-accept skey))
-              (when (and (.isValid skey) (.isReadable skey))
-                (handle-read server skey))
               (when (and (.isValid skey) (.isWritable skey))
-                (handle-write skey)))
+                (handle-write skey))
+              (when (and (.isValid skey) (.isReadable skey))
+                (handle-read server skey)))
             (.remove iter)
             (recur iter)))
         (recur)))))

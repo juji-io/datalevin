@@ -23,6 +23,15 @@
   (when-let [uri (URI. s)]
     (= (.getScheme uri) "dtlv")))
 
+(defn read-nippy-bf
+  "Read from a ByteBuffer containing nippy encoded bytes, return a Clojure
+  value."
+  [^ByteBuffer bf]
+  (try
+    (nippy/fast-thaw (b/get-bytes bf))
+    (catch Exception e
+      (u/raise "Unable to read nippy from ByteBuffer:" (ex-message e) {}))))
+
 (def transit-read-handlers
   {"datalevin/Datom" (transit/read-handler d/datom-from-reader)})
 
@@ -36,6 +45,14 @@
                                   {:handlers transit-read-handlers}))
     (catch Exception e
       (u/raise "Unable to read transit from ByteBuffer:" (ex-message e) {}))))
+
+(defn write-nippy-bf
+  "Write a Clojure value as nippy encoded bytes into a ByteBuffer"
+  [^ByteBuffer bf v]
+  (try
+    (b/put-bytes bf (nippy/fast-freeze v))
+    (catch Exception e
+      (u/raise "Unable to write nippy to ByteBuffer:" (ex-message e) {}))))
 
 (def transit-write-handlers
   {Datom (transit/write-handler
@@ -56,18 +73,20 @@
 (defn- write-value-bf
   [bf fmt msg]
   (case (short fmt)
-    1 (write-transit-bf bf msg)))
+    1 (write-transit-bf bf msg)
+    2 (write-nippy-bf bf msg)))
 
 (defn- read-value-bf
   [bf fmt]
   (case (short fmt)
-    1 (read-transit-bf bf)))
+    1 (read-transit-bf bf)
+    2 (read-nippy-bf bf)))
 
 (defn write-message-bf
   "Write a message to a ByteBuffer. First byte is format, then four bytes
   length of the whole message (include header), followed by message value"
   ([bf msg]
-   (write-message-bf bf msg c/message-format-transit))
+   (write-message-bf bf msg c/message-format-nippy))
   ([^ByteBuffer bf msg fmt]
    (let [start-pos (.position bf)]
      (.position bf (+ c/message-header-size start-pos))
@@ -103,7 +122,8 @@
 (defn read-value
   [fmt bs]
   (case (short fmt)
-    1 (read-transit-bytes bs)))
+    1 (read-transit-bytes bs)
+    2 (nippy/fast-thaw bs)))
 
 (defn send-ch
   "Send all data in buffer to channel, will block if channel is busy"
@@ -122,10 +142,10 @@
   (send-ch ch bf))
 
 (defn receive-one-message
-  "Consume one message from the read-bf and return it. If there is not
-  enough data for one message, return nil. Prepare the buffer for write.
-  If one message is bigger than read-bf, allocate a new read-bf. Return
-  `[msg read-bf]`"
+  "Consume one message from the read-bf and return it.
+  If there is not enough data for one message, return nil. Prepare the
+  buffer for write. If one message is bigger than read-bf, allocate a
+  new read-bf. Return `[msg read-bf]`"
   [^ByteBuffer read-bf]
   (let [pos (.position read-bf)]
     (if (> pos c/message-header-size)
@@ -146,7 +166,9 @@
                     (.limit (.capacity read-bf))
                     (.position pos))
                   [nil read-bf])
-              (let [msg (read-value-bf (.slice read-bf) fmt)]
+              (let [ba  (byte-array (- length c/message-header-size))
+                    _   (.get read-bf ba)
+                    msg (read-value fmt ba)]
                 (if (= available length)
                   (.clear read-bf)
                   (doto read-bf
@@ -161,10 +183,43 @@
   message, a new buffer is allocated. Return [msg bf]."
   [^SocketChannel ch ^ByteBuffer bf]
   (loop [^ByteBuffer bf bf]
-    (let [readn (.read ch bf)]
-      (cond
-        (> readn 0)  (let [[msg bf] (receive-one-message bf)]
-                       (if msg
-                         [msg bf]
-                         (recur bf)))
-        (= readn -1) (do (.close ch) [nil bf])))))
+    (if (> (.position bf) c/message-header-size)
+      (let [[msg ^ByteBuffer bf] (receive-one-message bf)]
+        (if msg
+          [msg bf]
+          (let [readn (.read ch bf)]
+            (cond
+              (> readn 0)  (let [[msg bf] (receive-one-message bf)]
+                             (if msg [msg bf] (recur bf)))
+              (= readn -1) (do (.close ch) [nil bf])))))
+      (let [readn (.read ch bf)]
+        (cond
+          (> readn 0)  (let [[msg bf] (receive-one-message bf)]
+                         (if msg [msg bf] (recur bf)))
+          (= readn -1) (do (.close ch) [nil bf]))))))
+
+(defn segment-messages
+  "Segment the content of read buffer into messages, and call msg-handler
+  on each. The messages are byte arrays. Message parsing will be done in the
+  msg-handler. In non-blocking mode, each should be handled by a worker thread,
+  so the main event loop is not hindered by slow parsing. Assume each message
+  is small enough for the buffer, as big messages are handled by copy-in/out."
+  [^ByteBuffer read-bf msg-handler]
+  (loop []
+    (let [pos (.position read-bf)]
+      (when (> pos c/message-header-size)
+        (.flip read-bf)
+        (let [available (.limit read-bf)
+              fmt       (.get read-bf)
+              length    (.getInt read-bf)]
+          (if (< available length)
+            (doto read-bf
+              (.limit (.capacity read-bf))
+              (.position pos))
+            (let [ba (byte-array (- length c/message-header-size))]
+              (.get read-bf ba)
+              (msg-handler fmt ba)
+              (if (= available length)
+                (.clear read-bf)
+                (do (.compact read-bf)
+                    (recur))))))))))

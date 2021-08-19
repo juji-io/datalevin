@@ -93,16 +93,18 @@
     (let [start (System/currentTimeMillis)]
       (loop [size (.size available)]
         (if (> size 0)
-          (let [conn ^Connection (.remove available (dec size))]
-            (.add used conn)
-            conn)
+          (locking this
+            (let [conn ^Connection (.remove available (dec size))]
+              (.add used conn)
+              conn))
           (if (>= (- (System/currentTimeMillis) start) c/connection-timeout)
             (u/raise "Timeout in obtaining a connection" {})
             (recur (.size available)))))))
 
   (release-connection [this conn]
-    (.add available conn)
-    (.remove used conn))
+    (locking this
+      (.remove used conn)
+      (.add available conn)))
 
   (close-pool [this]
     (dotimes [i (.size used)] (close (^Connection (.get used i))))

@@ -109,6 +109,7 @@
 (def ^:const message-header-size 5) ; bytes, 1 type + 4 length
 
 (def ^:const message-format-transit (unchecked-byte 0x01))
+(def ^:const message-format-nippy (unchecked-byte 0x02))
 
 (def system-schema (merge implicit-schema
                           {:user/name       {:db/unique    :db.unique/identity

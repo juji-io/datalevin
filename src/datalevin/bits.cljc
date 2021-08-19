@@ -213,14 +213,19 @@
                      [^Datom x ^DataOutput out]
                      (.writeLong out (.-e x))
                      (nippy/freeze-to-out! out (.-a x))
-                     (nippy/freeze-to-out! out (.-v x)))
+                     (nippy/freeze-to-out! out (.-v x))
+                     (when-let [tx (.-tx x)]
+                       (nippy/freeze-to-out! out tx)))
 
 (nippy/extend-thaw :datalevin/datom
- [^DataInput in]
- (d/datom (.readLong in)
-          (nippy/thaw-from-in! in)
-          (nippy/thaw-from-in! in)
-          c/tx0))
+                   [^DataInput in]
+                   (let [vs [(.readLong in)
+                             (nippy/thaw-from-in! in)
+                             (nippy/thaw-from-in! in)]
+                         tx (nippy/thaw-from-in! in)]
+                     (d/datom-from-reader (if tx
+                                            (conj vs tx)
+                                            tx))))
 
 ;; datom
 

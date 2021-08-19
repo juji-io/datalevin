@@ -26,7 +26,7 @@
   (prop/for-all
     [v gen/any-equatable]
     (let [^ByteBuffer bf (b/allocate-buffer 16384)]
-      (sut/write-message-bf bf v)
+      (sut/write-message-bf bf v c/message-format-transit)
       (let [pos (.position bf)]
         (.flip bf)
         (is (= 1 (short (.get bf))))
@@ -41,8 +41,8 @@
         msg2            {:text "the second message"}                   ; 41 bytes
         ]
 
-    (sut/write-message-bf src msg1)
-    (sut/write-message-bf src msg2)
+    (sut/write-message-bf src msg1 c/message-format-transit)
+    (sut/write-message-bf src msg2  c/message-format-transit)
     (.flip src)
 
     (testing "less than header length available"
@@ -69,8 +69,8 @@
         msg2            {:text "the second message"}                   ; 41 bytes
         ]
 
-    (sut/write-message-bf src msg1)
-    (sut/write-message-bf src msg2)
+    (sut/write-message-bf src msg1 c/message-format-transit)
+    (sut/write-message-bf src msg2 c/message-format-transit)
     (.flip src)
 
     (testing "message larger than buffer, auto grow buffer"
@@ -90,3 +90,53 @@
           (is (= [msg2 dst'] (sut/receive-one-message dst')))
           (is (= (.position dst') 0))
           (is (= (.limit dst') 620)))))))
+
+(deftest segment-messages-test
+  (let [src-arr         (byte-array 200)
+        ^ByteBuffer src (ByteBuffer/wrap src-arr)
+        ^ByteBuffer dst (b/allocate-buffer 200)
+        msg1            {:text "this is the first message" :value 888} ; 62 bytes
+        msg2            {:text "the second message"}                   ; 41 bytes
+        sink            (atom [])
+        handler         (fn [type msg]
+                          (swap! sink conj (sut/read-value type msg)))]
+
+    (sut/write-message-bf src msg1 c/message-format-transit)
+    (sut/write-message-bf src msg2 c/message-format-transit)
+    (.flip src)
+
+    (testing "less than header length available"
+      (b/buffer-transfer src dst 2)
+      (sut/segment-messages dst handler)
+      (is (= (.position dst) 2))
+      (is (empty? @sink)))
+
+    (testing "less than message length available"
+      (b/buffer-transfer src dst 10)
+      (sut/segment-messages dst handler)
+      (is (= (.position dst) 12))
+      (is (empty? @sink)))
+
+    (testing "first message available"
+      (b/buffer-transfer src dst 60)
+      (sut/segment-messages dst handler)
+      (is (= (.position dst) 10))
+      (is (= (.limit dst) 200))
+      (is (= (count @sink) 1))
+      (is (= msg1 (first @sink))))
+
+    (testing "second message still not available"
+      (b/buffer-transfer src dst 10)
+      (sut/segment-messages dst handler)
+      (is (= (.position dst) 20))
+      (is (= (.limit dst) 200))
+      (is (= (count @sink) 1))
+      (is (= msg1 (first @sink))))
+
+    (testing "second message available"
+      (b/buffer-transfer src dst 21)
+      (sut/segment-messages dst handler)
+      (is (= (.position dst) 0))
+      (is (= (.limit dst) 200))
+      (is (= (count @sink) 2))
+      (is (= msg2 (second @sink))))))
