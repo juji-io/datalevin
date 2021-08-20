@@ -62,8 +62,11 @@
 
   (load-datoms [_ datoms]
     (let [{:keys [type message]}
-          (cl/copy-in client {:type :load-datoms}
-                      datoms c/+wire-datom-batch-size+)]
+          (if (< (count datoms) c/+wire-datom-batch-size+)
+            (cl/request client {:type :load-datoms :mode :request
+                                :args [datoms]})
+            (cl/copy-in client {:type :load-datoms :mode :copy-in}
+                        datoms c/+wire-datom-batch-size+))]
       (when (= type :error-response)
         (u/raise "Error loading datoms to server:" message {:uri uri}))))
 

@@ -367,11 +367,14 @@
   (wrap-error (normal-dt-store-handler datom-count)))
 
 (defn- load-datoms
-  [^Server server ^SelectionKey skey _]
+  [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
           {:keys [dt-store]}  (get-client server client-id)]
-      (st/load-datoms dt-store (copy-in server skey)))))
+      (case mode
+        :copy-in (st/load-datoms dt-store (copy-in server skey))
+        :request (normal-dt-store-handler load-datoms)
+        (u/raise "Missing :mode when loading datoms" {})))))
 
 (defn- fetch
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -392,16 +395,18 @@
 (defn- slice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (copy-out skey
-              (apply st/slice (dt-store server skey) args)
-              c/+wire-datom-batch-size+)))
+    (let [datoms (apply st/slice (dt-store server skey) args)]
+      (if (< (count datoms) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result datoms})
+        (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- rslice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (copy-out skey
-              (apply st/rslice (dt-store server skey) args)
-              c/+wire-datom-batch-size+)))
+    (let [datoms (apply st/rslice (dt-store server skey) args)]
+      (if (< (count datoms) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result datoms})
+        (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- size-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -426,22 +431,24 @@
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
-          pred (nippy/thaw frozen-pred)
-          args [index pred low-datom high-datom]]
-      (copy-out skey
-                (apply st/slice-filter (dt-store server skey) args)
-                c/+wire-datom-batch-size+))))
+          pred   (nippy/thaw frozen-pred)
+          args   [index pred low-datom high-datom]
+          datoms (apply st/slice-filter (dt-store server skey) args)]
+      (if (< (count datoms) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result datoms})
+        (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- rslice-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[index frozen-pred high-datom low-datom] args
 
-          pred (nippy/thaw frozen-pred)
-          args [index pred high-datom low-datom]]
-      (copy-out skey
-                (apply st/rslice-filter (dt-store server skey) args)
-                c/+wire-datom-batch-size+))))
+          pred   (nippy/thaw frozen-pred)
+          args   [index pred high-datom low-datom]
+          datoms (apply st/rslice-filter (dt-store server skey) args)]
+      (if (< (count datoms) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result datoms})
+        (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- open-kv
   [^Server server ^SelectionKey skey {:keys [db-name]}]
