@@ -134,12 +134,13 @@
 
   (closed-kv? [_] (normal-request :closed-kv? nil))
 
-  ;; (open-dbi [this dbi-name]
-  ;;   (l/open-dbi this dbi-name))
-  ;; ([db dbi-name key-size]
-  ;;  [db dbi-name key-size val-size]
-  ;;  [db dbi-name key-size val-size flags]
-  ;;  "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env")
+  (open-dbi [db dbi-name]
+    (l/open-dbi db dbi-name c/+max-key-size+ c/+default-val-size+))
+  (open-dbi [db dbi-name key-size]
+    (l/open-dbi db dbi-name key-size c/+default-val-size+))
+  (open-dbi [_ dbi-name key-size val-size]
+    (normal-request :open-dbi [dbi-name key-size val-size]))
+
   ;; (clear-dbi [db dbi-name]
   ;;   "Clear data in the DBI (i.e sub-db), but leave it open")
   ;; (drop-dbi [db dbi-name]
@@ -202,35 +203,28 @@
   ;;    return true value for `(pred x)`")
   )
 
+(defn open-kv
+  "Open a remote kv store."
+  [uri-str]
+  (let [uri     (URI. uri-str)
+        uri-str (str uri-str
+                     (if (cl/parse-query uri) "&" "?")
+                     "store=" c/db-store-kv)]
+    (assert (cl/parse-db uri) "URI should contain a database name")
+    (->KVStore (redact-uri uri-str) (cl/new-client uri-str))))
+
 (comment
 
-  (def store (open "dtlv://datalevin:datalevin@localhost/remote"))
+  (require '[clj-memory-meter.core :as mm])
 
-  (s/load-datoms store [(d/datom 1 :name "Ola" 223)
-                        (d/datom 2 :name "Jimmy" 223)])
+  (def store (open-kv "dtlv://datalevin:datalevin@localhost/remote"))
 
-  (s/fetch store (d/datom 1 :name "Ola"))
+  (mm/measure store)
 
-  (s/last-modified store)
+  (l/closed-kv? store)
 
-  (s/datom-count store :eavt)
+  (l/close-kv store)
 
-  (s/closed? store)
-
-  (s/populated? store :eavt (d/datom 1 :name "Ola") (d/datom 2 :name "Jimmy"))
-
-  (s/slice store :eavt (d/datom 1 :name "Ola") (d/datom 1 :name "Ola"))
-
-  (s/close store)
-
-  (s/size store :eavt (d/datom 1 :name "Ola") (d/datom 2 :name "Jimmy"))
-
-  (s/schema store)
-
-  (s/rschema store)
-
-  (s/set-schema store {:aka  {:db/cardinality :db.cardinality/many}
-                       :name {:db/valueType :db.type/string
-                              :db/unique    :db.unique/identity}})
+  (l/open-dbi store "a")
 
   )

@@ -470,11 +470,11 @@
 
 (defn- closed-kv?
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler closed-kv?)))
 
 (defn- open-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler open-dbi)))
 
 (defn- clear-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -701,9 +701,13 @@
 
 (comment
 
+  (require '[clj-memory-meter.core :as mm])
+
   (def server (create {:port c/default-port
                        :root (u/tmp-dir
                                (str "remote-test-" (UUID/randomUUID)))}))
+
+  (mm/measure server)
 
   (start server)
 

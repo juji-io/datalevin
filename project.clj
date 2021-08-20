@@ -20,6 +20,7 @@
                          [com.rpl/nippy-serializable-fns "0.4.1"]
                          [persistent-sorted-set "0.1.3"]
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
+                         [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -43,8 +44,12 @@
                             :uberjar-name "test.uberjar.jar"}
              :dev          {:source-paths      ["src" "native/src/clj" "test"]
                             :java-source-paths ["native/src/java"]
+                            :jvm-opts
+                            ["-Djdk.attach.allowAttachSelf"
+                             "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                             :dependencies
                             [[org.clojure/test.check]
+                             [com.clojure-goes-fast/clj-memory-meter]
                              [babashka/babashka.pods]
                              [org.graalvm.nativeimage/svm]
                              [org.clojure/tools.cli]
@@ -59,7 +64,9 @@
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "--illegal-access=permit"
-             "-Dclojure.compiler.direct-linking=true"]
+             "-Dclojure.compiler.direct-linking=true"
+             "-Djdk.attach.allowAttachSelf"
+             "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
   :javac-options ["--release" "11"]
   :main datalevin.main
 

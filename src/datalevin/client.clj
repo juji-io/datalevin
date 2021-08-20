@@ -162,7 +162,7 @@
     (when-not (or (s/blank? path) (= path "/"))
       (subs path 1))))
 
-(defn- parse-query
+(defn parse-query
   [^URI uri]
   (when-let [query (.getQuery uri)]
     (->> (s/split query #"&")
