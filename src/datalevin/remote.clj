@@ -239,6 +239,8 @@
 
   (def store (open-kv "dtlv://datalevin:datalevin@localhost/remote"))
 
+  (open-kv (l/dir store))
+
   (mm/measure store)
 
   (l/closed-kv? store)

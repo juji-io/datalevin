@@ -394,7 +394,8 @@
             ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)
-        (.remove dbis dbi-name))
+        (.remove dbis dbi-name)
+        nil)
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 

@@ -25,7 +25,7 @@
             Argon2Parameters$Builder]))
 
 (log/refer-timbre)
-(log/set-level! :debug)
+(log/set-level! :info)
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -605,7 +605,7 @@
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]
   (let [{:keys [type] :as message} (p/read-value fmt msg)]
-    (log/debug "message segmented:" (dissoc message :password))
+    (log/debug "Message received:" (dissoc message :password))
     (message-cases skey type)))
 
 (defn- execute
@@ -615,16 +615,24 @@
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
-  (let [{:keys [^ByteBuffer read-bf]} @(.attachment skey)
+  (let [state                         (.attachment skey)
+        {:keys [^ByteBuffer read-bf]} @state
+        capacity                      (.capacity read-bf)
         ^SocketChannel ch             (.channel skey)
         readn                         (.read ch read-bf)]
     (cond
       (= readn 0)  :continue
-      (> readn 0)  (p/segment-messages
-                     read-bf
-                     (fn [fmt msg]
-                       (execute server
-                                #(handle-message server skey fmt msg))))
+      (> readn 0)  (if (= (.position read-bf) capacity)
+                     (let [size (* c/+buffer-grow-factor+ capacity)
+                           bf   (b/allocate-buffer size)]
+                       (.flip read-bf)
+                       (b/buffer-transfer read-bf bf)
+                       (swap! state assoc :read-bf bf))
+                     (p/extract-message
+                       read-bf
+                       (fn [fmt msg]
+                         (execute server
+                                  #(handle-message server skey fmt msg)))))
       (= readn -1) (.close ch))))
 
 (defn- handle-registration

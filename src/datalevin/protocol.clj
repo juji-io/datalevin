@@ -180,28 +180,26 @@
                          (if msg [msg bf] (recur bf)))
           (= readn -1) (do (.close ch) [nil bf]))))))
 
-(defn segment-messages
-  "Segment the content of read buffer into messages, and call msg-handler
-  on each. The messages are byte arrays. Message parsing will be done in the
-  msg-handler. In non-blocking mode, each should be handled by a worker thread,
-  so the main event loop is not hindered by slow parsing. Assume each message
-  is small enough for the buffer, as big messages are handled by copy-in/out."
+(defn extract-message
+  "Segment the content of read buffer to extract a message and call msg-handler
+  on it. The message is a byte array. Message parsing will be done in the
+  msg-handler. In non-blocking mode, it should be handled by a worker thread,
+  so the main event loop is not hindered by slow parsing. Assume the message
+  is small enough for the buffer."
   [^ByteBuffer read-bf msg-handler]
-  (loop []
-    (let [pos (.position read-bf)]
-      (when (> pos c/message-header-size)
-        (.flip read-bf)
-        (let [available (.limit read-bf)
-              fmt       (.get read-bf)
-              length    (.getInt read-bf)]
-          (if (< available length)
-            (doto read-bf
-              (.limit (.capacity read-bf))
-              (.position pos))
-            (let [ba (byte-array (- length c/message-header-size))]
-              (.get read-bf ba)
-              (msg-handler fmt ba)
-              (if (= available length)
-                (.clear read-bf)
-                (do (.compact read-bf)
-                    (recur))))))))))
+  (let [pos (.position read-bf)]
+    (when (> pos c/message-header-size)
+      (.flip read-bf)
+      (let [available (.limit read-bf)
+            fmt       (.get read-bf)
+            length    (.getInt read-bf)]
+        (if (< available length)
+          (doto read-bf
+            (.limit (.capacity read-bf))
+            (.position pos))
+          (let [ba (byte-array (- length c/message-header-size))]
+            (.get read-bf ba)
+            (msg-handler fmt ba)
+            (if (= available length)
+              (.clear read-bf)
+              (.compact read-bf))))))))

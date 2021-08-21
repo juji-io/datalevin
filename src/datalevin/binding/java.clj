@@ -251,7 +251,8 @@
         (with-open [txn (.txnWrite env)]
           (.drop ^Dbi (.-db dbi) txn true)
           (.commit txn))
-        (.remove dbis dbi-name))
+        (.remove dbis dbi-name)
+        nil)
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
@@ -325,9 +326,7 @@
             :del (let [[kt] r]
                    (.put-key dbi k kt)
                    (.del dbi txn))))
-        (println "abut to commit")
         (.commit txn))
-      (println "committed")
       (catch Env$MapFullException _
         (up-db-size env)
         (.transact-kv this txs))

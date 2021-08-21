@@ -207,20 +207,17 @@
       (l/transact-kv store [[:put "c" 1 (range 90000)]])
       (is (= (range 90000) (l/get-value store "c" 1))))
 
-    ;; (testing "key overflow throws"
-    ;;   (is (thrown? Exception (l/transact-kv store [[:put "a" (range 1000) 1]]))))
+    (testing "key overflow throws"
+      (is (thrown? Exception (l/transact-kv store [[:put "a" (range 1000) 1]]))))
 
-    ;; (testing "close then re-open, clear and drop"
-    ;;   (let [dir (l/dir store)]
-    ;;     (l/close-kv store)
-    ;;     (is (l/closed-kv? store))
-    ;;     (let [store  (l/open-kv dir)
-    ;;           dbi-a (l/open-dbi store "a")]
-    ;;       (is (= "a" (l/dbi-name dbi-a)))
-    ;;       (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
-    ;;       (l/clear-dbi store "a")
-    ;;       (is (nil? (l/get-value store "a" :datalevin)))
-    ;;       (l/drop-dbi store "a")
-    ;;       (is (thrown? Exception (l/get-value store "a" 1)))
-    ;;       (l/close-kv store))))
+    (testing "close then re-open, clear and drop"
+      (l/close-kv store)
+      (is (l/closed-kv? store))
+      (let [store (sut/open-kv dir)]
+        (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
+        (l/clear-dbi store "a")
+        (is (nil? (l/get-value store "a" :datalevin)))
+        (l/drop-dbi store "a")
+        (is (thrown? Exception (l/get-value store "a" 1)))
+        (l/close-kv store)))
     ))

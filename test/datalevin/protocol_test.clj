@@ -91,7 +91,7 @@
           (is (= (.position dst') 0))
           (is (= (.limit dst') 620)))))))
 
-(deftest segment-messages-test
+(deftest extract-message-test
   (let [src-arr         (byte-array 200)
         ^ByteBuffer src (ByteBuffer/wrap src-arr)
         ^ByteBuffer dst (b/allocate-buffer 200)
@@ -107,19 +107,19 @@
 
     (testing "less than header length available"
       (b/buffer-transfer src dst 2)
-      (sut/segment-messages dst handler)
+      (sut/extract-message dst handler)
       (is (= (.position dst) 2))
       (is (empty? @sink)))
 
     (testing "less than message length available"
       (b/buffer-transfer src dst 10)
-      (sut/segment-messages dst handler)
+      (sut/extract-message dst handler)
       (is (= (.position dst) 12))
       (is (empty? @sink)))
 
     (testing "first message available"
       (b/buffer-transfer src dst 60)
-      (sut/segment-messages dst handler)
+      (sut/extract-message dst handler)
       (is (= (.position dst) 10))
       (is (= (.limit dst) 200))
       (is (= (count @sink) 1))
@@ -127,7 +127,7 @@
 
     (testing "second message still not available"
       (b/buffer-transfer src dst 10)
-      (sut/segment-messages dst handler)
+      (sut/extract-message dst handler)
       (is (= (.position dst) 20))
       (is (= (.limit dst) 200))
       (is (= (count @sink) 1))
@@ -135,7 +135,7 @@
 
     (testing "second message available"
       (b/buffer-transfer src dst 21)
-      (sut/segment-messages dst handler)
+      (sut/extract-message dst handler)
       (is (= (.position dst) 0))
       (is (= (.limit dst) 200))
       (is (= (count @sink) 2))
