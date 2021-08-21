@@ -5,7 +5,6 @@
             [datalevin.client :as cl]
             [datalevin.storage :as s]
             [datalevin.lmdb :as l]
-            [datalevin.datom :as d]
             [datalevin.protocol :as p]
             [taoensso.nippy :as nippy]
             [com.rpl.nippy-serializable-fn]
@@ -13,12 +12,7 @@
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
            [datalevin.lmdb ILMDB]
-           [datalevin.datom Datom]
-           [java.nio.charset StandardCharsets]
-           [java.nio ByteBuffer BufferOverflowException]
-           [java.nio.channels SocketChannel]
-           [java.util ArrayList UUID]
-           [java.net InetSocketAddress StandardSocketOptions URI]))
+           [java.net URI]))
 
 (defmacro normal-request
   "Request to remote store and returns results. Does not use the
@@ -141,66 +135,92 @@
   (open-dbi [_ dbi-name key-size val-size]
     (normal-request :open-dbi [dbi-name key-size val-size]))
 
-  ;; (clear-dbi [db dbi-name]
-  ;;   "Clear data in the DBI (i.e sub-db), but leave it open")
-  ;; (drop-dbi [db dbi-name]
-  ;;   "Clear data in the DBI (i.e. sub-db), then delete it")
-  ;; (list-dbis [db] "List the names of the sub-databases")
-  ;; (copy
-  ;;   [db dest]
-  ;;   [db dest compact?]
-  ;;   "Copy the database to a destination directory path, optionally compact
-  ;;    while copying, default not compact. ")
-  ;; (stat
-  ;;   [db]
-  ;;   [db dbi-name]
-  ;;   "Return the statitics of the unnamed top level database or a named DBI
-  ;;    (i.e. sub-database) as a map")
-  ;; (entries [db dbi-name]
-  ;;   "Get the number of data entries in a DBI (i.e. sub-db)")
-  ;; (transact-kv [db txs]
-  ;;   "Update DB, insert or delete key value pairs.")
-  ;; (get-value
-  ;;   [db dbi-name k]
-  ;;   [db dbi-name k k-type]
-  ;;   [db dbi-name k k-type v-type]
-  ;;   [db dbi-name k k-type v-type ignore-key?]
-  ;;   "Get kv pair of the specified key `k`. ")
-  ;; (get-first
-  ;;   [db dbi-name k-range]
-  ;;   [db dbi-name k-range k-type]
-  ;;   [db dbi-name k-range k-type v-type]
-  ;;   [db dbi-name k-range k-type v-type ignore-key?]
-  ;;   "Return the first kv pair in the specified key range;")
-  ;; (get-range
-  ;;   [db dbi-name k-range]
-  ;;   [db dbi-name k-range k-type]
-  ;;   [db dbi-name k-range k-type v-type]
-  ;;   [db dbi-name k-range k-type v-type ignore-key?]
-  ;;   "Return a seq of kv pairs in the specified key range;")
-  ;; (range-count
-  ;;   [db dbi-name k-range]
-  ;;   [db dbi-name k-range k-type]
-  ;;   "Return the number of kv pairs in the specified key range, does not process
-  ;;    the kv pairs.")
-  ;; (get-some
-  ;;   [db dbi-name pred k-range]
-  ;;   [db dbi-name pred k-range k-type]
-  ;;   [db dbi-name pred k-range k-type v-type]
-  ;;   [db dbi-name pred k-range k-type v-type ignore-key?]
-  ;;   "Return the first kv pair that has logical true value of `(pred x)`")
-  ;; (range-filter
-  ;;   [db dbi-name pred k-range]
-  ;;   [db dbi-name pred k-range k-type]
-  ;;   [db dbi-name pred k-range k-type v-type]
-  ;;   [db dbi-name pred k-range k-type v-type ignore-key?]
-  ;;   "Return a seq of kv pair in the specified key range, for only those
-  ;;    return true value for `(pred x)`.")
-  ;; (range-filter-count
-  ;;   [db dbi-name pred k-range]
-  ;;   [db dbi-name pred k-range k-type]
-  ;;   "Return the number of kv pairs in the specified key range, for only those
-  ;;    return true value for `(pred x)`")
+  (clear-dbi [db dbi-name] (normal-request :clear-dbi [dbi-name]))
+
+  (drop-dbi [db dbi-name] (normal-request :drop-dbi [dbi-name]))
+
+  (list-dbis [db] (normal-request :list-dbis nil))
+
+  (copy [db dest] (l/copy db dest false))
+  (copy [db dest compact?] (normal-request :copy [dest compact?]))
+
+  (stat [db] (l/stat db nil))
+  (stat [db dbi-name] (normal-request :stat [dbi-name]))
+
+  (entries [db dbi-name] (normal-request :entries [dbi-name]))
+
+  (transact-kv [db txs]
+    (let [{:keys [type message]}
+          (if (< (count txs) c/+wire-datom-batch-size+)
+            (cl/request client {:type :transact-kv :mode :request
+                                :args [txs]})
+            (cl/copy-in client {:type :transact-kv :mode :copy-in}
+                        txs c/+wire-datom-batch-size+))]
+      (when (= type :error-response)
+        (u/raise "Error transacting kv to server:" message {:uri uri}))))
+
+  (get-value [db dbi-name k]
+    (l/get-value db dbi-name k :data :data true))
+  (get-value [db dbi-name k k-type]
+    (l/get-value db dbi-name k k-type :data true))
+  (get-value [db dbi-name k k-type v-type]
+    (l/get-value db dbi-name k k-type v-type true))
+  (get-value [db dbi-name k k-type v-type ignore-key?]
+    (normal-request :get-value [dbi-name k k-type v-type ignore-key?]))
+
+  (get-first [db dbi-name k]
+    (l/get-first db dbi-name k :data :data false))
+  (get-first [db dbi-name k k-type]
+    (l/get-first db dbi-name k k-type :data false))
+  (get-first [db dbi-name k k-type v-type]
+    (l/get-first db dbi-name k k-type v-type false))
+  (get-first [db dbi-name k k-type v-type ignore-key?]
+    (normal-request :get-first [dbi-name k k-type v-type ignore-key?]))
+
+  (get-range [db dbi-name k]
+    (l/get-range db dbi-name k :data :data false))
+  (get-range [db dbi-name k k-type]
+    (l/get-range db dbi-name k k-type :data false))
+  (get-range [db dbi-name k k-type v-type]
+    (l/get-range db dbi-name k k-type v-type false))
+  (get-range [db dbi-name k k-type v-type ignore-key?]
+    (normal-request :get-range [dbi-name k k-type v-type ignore-key?]))
+
+  (range-count [db dbi-name k-range]
+    (l/range-count db dbi-name k-range :data))
+  (range-count [db dbi-name k-range k-type]
+    (normal-request :range-count [dbi-name k-range k-type]))
+
+  (get-some [db dbi-name pred k-range]
+    (l/get-some db dbi-name pred k-range :data :data false))
+  (get-some [db dbi-name pred k-range k-type]
+    (l/get-some db dbi-name pred k-range k-type :data false))
+  (get-some [db dbi-name pred k-range k-type v-type]
+    (l/get-some db dbi-name pred k-range k-type v-type false))
+  (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-request :get-some
+                      [dbi-name frozen-pred k-range k-type v-type
+                       ignore-key?])))
+
+  (range-filter [db dbi-name pred k-range]
+    (l/range-filter db dbi-name pred k-range :data :data false))
+  (range-filter [db dbi-name pred k-range k-type]
+    (l/range-filter db dbi-name pred k-range k-type :data false))
+  (range-filter [db dbi-name pred k-range k-type v-type]
+    (l/range-filter db dbi-name pred k-range k-type v-type false))
+  (range-filter [db dbi-name pred k-range k-type v-type ignore-key?]
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-request :range-filter
+                      [dbi-name frozen-pred k-range k-type v-type
+                       ignore-key?])))
+
+  (range-filter-count [db dbi-name pred k-range]
+    (l/range-filter-count db dbi-name pred k-range :data))
+  (range-filter-count [db dbi-name pred k-range k-type]
+    (let [frozen-pred (nippy/freeze pred)]
+      (normal-request :range-filter-count
+                      [dbi-name frozen-pred k-range k-type])))
   )
 
 (defn open-kv
@@ -226,5 +246,7 @@
   (l/close-kv store)
 
   (l/open-dbi store "a")
+
+  (l/clear-dbi store "a")
 
   )

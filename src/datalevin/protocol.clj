@@ -27,10 +27,7 @@
   "Read from a ByteBuffer containing nippy encoded bytes, return a Clojure
   value."
   [^ByteBuffer bf]
-  (try
-    (nippy/fast-thaw (b/get-bytes bf))
-    (catch Exception e
-      (u/raise "Unable to read nippy from ByteBuffer:" (ex-message e) {}))))
+  (nippy/fast-thaw (b/get-bytes bf)))
 
 (def transit-read-handlers
   {"datalevin/Datom" (transit/read-handler d/datom-from-reader)})
@@ -39,20 +36,14 @@
   "Read from a ByteBuffer containing transit+json encoded bytes,
   return a Clojure value. Consumes the entire buffer"
   [^ByteBuffer bf]
-  (try
-    (transit/read (transit/reader (ByteBufferInputStream. bf)
-                                  :json
-                                  {:handlers transit-read-handlers}))
-    (catch Exception e
-      (u/raise "Unable to read transit from ByteBuffer:" (ex-message e) {}))))
+  (transit/read (transit/reader (ByteBufferInputStream. bf)
+                                :json
+                                {:handlers transit-read-handlers})))
 
 (defn write-nippy-bf
   "Write a Clojure value as nippy encoded bytes into a ByteBuffer"
   [^ByteBuffer bf v]
-  (try
-    (b/put-bytes bf (nippy/fast-freeze v))
-    (catch Exception e
-      (u/raise "Unable to write nippy to ByteBuffer:" (ex-message e) {}))))
+  (b/put-bytes bf (nippy/fast-freeze v)))
 
 (def transit-write-handlers
   {Datom (transit/write-handler
@@ -62,13 +53,10 @@
 (defn write-transit-bf
   "Write a Clojure value as transit+json encoded bytes into a ByteBuffer"
   [^ByteBuffer bf v]
-  (try
-    (transit/write (transit/writer (ByteBufferOutputStream. bf)
-                                   :json
-                                   {:handlers transit-write-handlers})
-                   v)
-    (catch Exception e
-      (u/raise "Unable to write transit to ByteBuffer:" (ex-message e) {}))))
+  (transit/write (transit/writer (ByteBufferOutputStream. bf)
+                                 :json
+                                 {:handlers transit-write-handlers})
+                 v))
 
 (defn- write-value-bf
   [bf fmt msg]
@@ -86,7 +74,7 @@
   "Write a message to a ByteBuffer. First byte is format, then four bytes
   length of the whole message (include header), followed by message value"
   ([bf msg]
-   (write-message-bf bf msg c/message-format-transit))
+   (write-message-bf bf msg c/message-format-nippy))
   ([^ByteBuffer bf msg fmt]
    (let [start-pos (.position bf)]
      (.position bf (+ c/message-header-size start-pos))
@@ -100,24 +88,18 @@
 (defn read-transit-bytes
   "Read transit+json encoded bytes into a Clojure value"
   [^bytes bs]
-  (try
-    (transit/read (transit/reader (ByteArrayInputStream. bs)
-                                  :json
-                                  {:handlers transit-read-handlers}))
-    (catch Exception e
-      (u/raise "Unable to read transit:" (ex-message e) {:bytes bs}))))
+  (transit/read (transit/reader (ByteArrayInputStream. bs)
+                                :json
+                                {:handlers transit-read-handlers})))
 
 (defn write-transit-bytes
   "Write a Clojure value as transit+json encoded bytes"
   [v]
-  (try
-    (let [baos (ByteArrayOutputStream.)]
-      (transit/write (transit/writer baos :json
-                                     {:handlers transit-write-handlers})
-                     v)
-      (.toByteArray baos))
-    (catch Exception e
-      (u/raise "Unable to write transit:" (ex-message e) {:value v}))))
+  (let [baos (ByteArrayOutputStream.)]
+    (transit/write (transit/writer baos :json
+                                   {:handlers transit-write-handlers})
+                   v)
+    (.toByteArray baos)))
 
 (defn read-value
   [fmt bs]

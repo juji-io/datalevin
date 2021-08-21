@@ -5,7 +5,8 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]])
+             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
+            [datalevin.lmdb :as l])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]
@@ -437,19 +438,21 @@
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
-    (let [^Rtx rtx (.get-rtx pool)]
-      (try
-        (let [^DBI dbi   (.get-dbi this dbi-name false)
-              ^Dbi db    (.-db dbi)
-              ^Txn txn   (.-txn rtx)
-              ^Stat stat (Stat/create txn db)
-              m          (stat-map stat)]
-          (.close stat)
-          m)
-        (catch Exception e
-          (raise "Fail to get statistics: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.reset rtx)))))
+    (if dbi-name
+      (let [^Rtx rtx (.get-rtx pool)]
+        (try
+          (let [^DBI dbi   (.get-dbi this dbi-name false)
+                ^Dbi db    (.-db dbi)
+                ^Txn txn   (.-txn rtx)
+                ^Stat stat (Stat/create txn db)
+                m          (stat-map stat)]
+            (.close stat)
+            m)
+          (catch Exception e
+            (raise "Fail to get statistics: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.reset rtx))))
+      (l/stat this)))
 
   (entries [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")

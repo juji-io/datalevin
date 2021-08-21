@@ -474,67 +474,75 @@
 
 (defn- open-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler open-dbi)))
+  (wrap-error
+    (do (apply l/open-dbi (kv-store server skey) args)
+        (write-message skey {:type :command-complete}))))
 
 (defn- clear-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler clear-dbi)))
 
 (defn- drop-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler drop-dbi)))
 
 (defn- list-dbis
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler list-dbis)))
 
 (defn- copy
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler copy)))
 
 (defn- stat
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler stat)))
 
 (defn- entries
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler entries)))
 
 (defn- transact-kv
-  [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  [^Server server ^SelectionKey skey {:keys [mode args]}]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [kv-store]}  (get-client server client-id)]
+      (case mode
+        :copy-in (l/transact-kv kv-store (copy-in server skey))
+        :request (normal-kv-store-handler transact-kv)
+        (u/raise "Missing :mode when transacting kv" {})))))
 
 (defn- get-value
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler get-value)))
 
 (defn- get-first
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler get-first)))
 
 (defn- get-range
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler get-range)))
 
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler range-count)))
 
 (defn- get-some
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler get-some)))
 
 (defn- range-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler range-filter)))
 
 (defn- range-filter-count
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  (wrap-error (normal-kv-store-handler range-filter-count)))
 
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler close-kv)))
+  )
 
 ;; END message handlers
 

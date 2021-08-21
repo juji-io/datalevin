@@ -30,11 +30,19 @@
         resp)
       (catch BufferOverflowException _
         (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
+          (println "about to grow buffer")
           (set! bf (b/allocate-buffer size))
-          (send-n-receive this msg)))
+          (println "grown buffer")
+          (p/write-message-blocking ch bf msg)
+          (println "wrote again")
+          (.clear bf)
+          (let [[resp bf'] (p/receive-ch ch bf)]
+            (println "received resp")
+            (when-not (identical? bf' bf) (set! bf bf'))
+            resp)))
       (catch Exception e
-        (u/raise "Error sending message and receiving response:" (ex-message e)
-                 {:msg msg}))))
+        (u/raise "Error sending message and receiving response:"
+                 (ex-message e) {:msg msg}))))
 
   (send-only [this msg]
     (try

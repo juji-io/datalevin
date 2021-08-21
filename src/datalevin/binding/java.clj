@@ -5,7 +5,8 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]])
+             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
+            [datalevin.lmdb :as l])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
@@ -280,15 +281,17 @@
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (let [^Rtx rtx (.get-rtx pool)]
-      (try
-        (let [^DBI dbi (.get-dbi this dbi-name false)
-              ^Dbi db  (.-db dbi)
-              ^Txn txn (.-txn rtx)]
-          (stat-map (.stat db txn)))
-        (catch Exception e
-          (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
-        (finally (.reset rtx)))))
+    (if dbi-name
+      (let [^Rtx rtx (.get-rtx pool)]
+        (try
+          (let [^DBI dbi (.get-dbi this dbi-name false)
+                ^Dbi db  (.-db dbi)
+                ^Txn txn (.-txn rtx)]
+            (stat-map (.stat db txn)))
+          (catch Exception e
+            (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
+          (finally (.reset rtx))))
+      (l/stat this)))
 
   (entries [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -322,7 +325,9 @@
             :del (let [[kt] r]
                    (.put-key dbi k kt)
                    (.del dbi txn))))
+        (println "abut to commit")
         (.commit txn))
+      (println "committed")
       (catch Env$MapFullException _
         (up-db-size env)
         (.transact-kv this txs))
