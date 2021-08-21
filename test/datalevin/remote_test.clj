@@ -25,8 +25,8 @@
 (use-fixtures :each server-fixture)
 
 (deftest dt-store-ops-test
-  (let [dt-dir "dtlv://datalevin:datalevin@localhost/test"
-        store  (sut/open dt-dir)]
+  (let [dir   "dtlv://datalevin:datalevin@localhost/ops-test"
+        store (sut/open dir)]
     (is (instance? datalevin.remote.DatalogStore store))
     (is (= c/implicit-schema (st/schema store)))
     (is (= c/e0 (st/init-max-eid store)))
@@ -114,7 +114,7 @@
       (is (= 1 (st/datom-count store c/vea)))
       (st/close store)
       (is (st/closed? store))
-      (let [store (sut/open dt-dir)]
+      (let [store (sut/open dir)]
         (is (= [d1] (st/slice store :eav d1 d1)))
         (st/load-datoms store [(d/delete d1)])
         (is (= 1 (st/datom-count store c/eav)))
@@ -125,103 +125,123 @@
             p3    {:db/valueType :db.type/long}
             s3    (assoc s2 d (merge p3 {:db/aid 4}))
             s4    (assoc s3 :f/g {:db/aid 5 :db/valueType :db.type/string})
-            store (sut/open dt-dir {d p3})]
+            store (sut/open dir {d p3})]
         (is (= s3 (st/schema store)))
         (st/set-schema store {:f/g {:db/valueType :db.type/string}})
-        (is (= s4 (st/schema store)))))
-    (st/close store)))
+        (is (= s4 (st/schema store)))
+        (st/close store)))))
+
+(deftest dt-store-larger-test
+  (testing "larger data"
+    (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
+          end   1000000
+          store (sut/open dir)
+          vs    (shuffle (range 0 end))
+          txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
+                      vs)
+          pred  (fn [^Datom d] (odd? (.-v d)))]
+
+      (is (instance? datalevin.remote.DatalogStore store))
+      (st/load-datoms store txs)
+      (is (= (filter pred txs)
+             (st/slice-filter store :eav pred
+                              (d/datom c/e0 nil nil)
+                              (d/datom c/emax nil nil))))
+      (is (= (reverse txs)
+             (st/rslice store :eav
+                        (d/datom c/emax nil nil) (d/datom c/e0 nil nil))))
+      (st/close store))))
 
 (deftest kv-store-ops-test
-  (let [dir "dtlv://datalevin:datalevin@localhost/testkv"
-        ;; store (sut/open-kv dir)
-        ]
-    ;; (is (instance? datalevin.remote.KVStore store))
-    ;; (l/open-dbi store "a")
-    ;; (l/open-dbi store "b")
-    ;; (l/open-dbi store "c" (inc Long/BYTES) (inc Long/BYTES))
-    ;; (l/open-dbi store "d")
+  (let [dir   "dtlv://datalevin:datalevin@localhost/testkv"
+        store (sut/open-kv dir)]
+    (is (instance? datalevin.remote.KVStore store))
+    (l/open-dbi store "a")
+    (l/open-dbi store "b")
+    (l/open-dbi store "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi store "d")
 
-    ;; (testing "list dbis"
-    ;;   (is (= #{"a" "b" "c" "d"} (set (l/list-dbis store)))))
+    (testing "list dbis"
+      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis store)))))
 
-    ;; (testing "transact-kv"
-    ;;   (l/transact-kv store
-    ;;                  [[:put "a" 1 2]
-    ;;                   [:put "a" 'a 1]
-    ;;                   [:put "a" 5 {}]
-    ;;                   [:put "a" :annunaki/enki true :attr :data]
-    ;;                   [:put "a" :datalevin ["hello" "world"]]
-    ;;                   [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-    ;;                   [:put "b" 2 3]
-    ;;                   [:put "b" (byte 0x01) #{1 2} :byte :data]
-    ;;                   [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
-    ;;                   [:put "b" [-1 -235254457N] 5]
-    ;;                   [:put "b" :a 4]
-    ;;                   [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-    ;;                   [:put "b" 1 :long :long :data]
-    ;;                   [:put "b" :long 1 :data :long]
-    ;;                   [:put "b" 2 3 :long :long]
-    ;;                   [:put "b" "ok" 42 :string :int]
-    ;;                   [:put "d" 3.14 :pi :double :keyword]]))
+    (testing "transact-kv"
+      (l/transact-kv store
+                     [[:put "a" 1 2]
+                      [:put "a" 'a 1]
+                      [:put "a" 5 {}]
+                      [:put "a" :annunaki/enki true :attr :data]
+                      [:put "a" :datalevin ["hello" "world"]]
+                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+                      [:put "b" 2 3]
+                      [:put "b" (byte 0x01) #{1 2} :byte :data]
+                      [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
+                      [:put "b" [-1 -235254457N] 5]
+                      [:put "b" :a 4]
+                      [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+                      [:put "b" 1 :long :long :data]
+                      [:put "b" :long 1 :data :long]
+                      [:put "b" 2 3 :long :long]
+                      [:put "b" "ok" 42 :string :int]
+                      [:put "d" 3.14 :pi :double :keyword]]))
 
-    ;; (testing "entries"
-    ;;   (is (= 4 (:entries (l/stat store))))
-    ;;   (is (= 6 (:entries (l/stat store "a"))))
-    ;;   (is (= 6 (l/entries store "a")))
-    ;;   (is (= 10 (l/entries store "b"))))
+    (testing "entries"
+      (is (= 4 (:entries (l/stat store))))
+      (is (= 6 (:entries (l/stat store "a"))))
+      (is (= 6 (l/entries store "a")))
+      (is (= 10 (l/entries store "b"))))
 
-    ;; (testing "get-value"
-    ;;   (is (= 2 (l/get-value store "a" 1)))
-    ;;   (is (= [1 2] (l/get-value store "a" 1 :data :data false)))
-    ;;   (is (= true (l/get-value store "a" :annunaki/enki :attr :data)))
-    ;;   (is (= (d/datom 1 :a/b {:id 4}) (l/get-value store "a" 42 :long :datom)))
-    ;;   (is (nil? (l/get-value store "a" 2)))
-    ;;   (is (nil? (l/get-value store "b" 1)))
-    ;;   (is (= 5 (l/get-value store "b" [-1 -235254457N])))
-    ;;   (is (= 1 (l/get-value store "a" 'a)))
-    ;;   (is (= {} (l/get-value store "a" 5)))
-    ;;   (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
-    ;;   (is (= 3 (l/get-value store "b" 2)))
-    ;;   (is (= 4 (l/get-value store "b" :a)))
-    ;;   (is (= #{1 2} (l/get-value store "b" (byte 0x01) :byte)))
-    ;;   (is (= :bk (l/get-value store "b" (byte-array [0x41 0x42]) :bytes)))
-    ;;   (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-    ;;                      ^bytes (l/get-value store "b" :bv :data :bytes)))
-    ;;   (is (= :long (l/get-value store "b" 1 :long :data)))
-    ;;   (is (= 1 (l/get-value store "b" :long :data :long)))
-    ;;   (is (= 3 (l/get-value store "b" 2 :long :long)))
-    ;;   (is (= 42 (l/get-value store "b" "ok" :string :int)))
-    ;;   (is (= :pi (l/get-value store "d" 3.14 :double :keyword))))
+    (testing "get-value"
+      (is (= 2 (l/get-value store "a" 1)))
+      (is (= [1 2] (l/get-value store "a" 1 :data :data false)))
+      (is (= true (l/get-value store "a" :annunaki/enki :attr :data)))
+      (is (= (d/datom 1 :a/b {:id 4}) (l/get-value store "a" 42 :long :datom)))
+      (is (nil? (l/get-value store "a" 2)))
+      (is (nil? (l/get-value store "b" 1)))
+      (is (= 5 (l/get-value store "b" [-1 -235254457N])))
+      (is (= 1 (l/get-value store "a" 'a)))
+      (is (= {} (l/get-value store "a" 5)))
+      (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
+      (is (= 3 (l/get-value store "b" 2)))
+      (is (= 4 (l/get-value store "b" :a)))
+      (is (= #{1 2} (l/get-value store "b" (byte 0x01) :byte)))
+      (is (= :bk (l/get-value store "b" (byte-array [0x41 0x42]) :bytes)))
+      (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
+                         ^bytes (l/get-value store "b" :bv :data :bytes)))
+      (is (= :long (l/get-value store "b" 1 :long :data)))
+      (is (= 1 (l/get-value store "b" :long :data :long)))
+      (is (= 3 (l/get-value store "b" 2 :long :long)))
+      (is (= 42 (l/get-value store "b" "ok" :string :int)))
+      (is (= :pi (l/get-value store "d" 3.14 :double :keyword))))
 
-    ;; (testing "delete"
-    ;;   (l/transact-kv store [[:del "a" 1]
-    ;;                         [:del "a" :non-exist]])
-    ;;   (is (nil? (l/get-value store "a" 1))))
+    (testing "delete"
+      (l/transact-kv store [[:del "a" 1]
+                            [:del "a" :non-exist]])
+      (is (nil? (l/get-value store "a" 1))))
 
-    ;; (testing "entries-again"
-    ;;   (is (= 5 (l/entries store "a")))
-    ;;   (is (= 10 (l/entries store "b"))))
+    (testing "entries-again"
+      (is (= 5 (l/entries store "a")))
+      (is (= 10 (l/entries store "b"))))
 
-    ;; (testing "non-existent dbi"
-    ;;   (is (thrown? Exception (l/get-value store "z" 1))))
+    (testing "non-existent dbi"
+      (is (thrown? Exception (l/get-value store "z" 1))))
 
-    ;; (testing "handle val overflow automatically"
-    ;;   (l/transact-kv store [[:put "c" 1 (range 90000)]])
-    ;;   (is (= (range 90000) (l/get-value store "c" 1))))
+    (testing "handle val overflow automatically"
+      (l/transact-kv store [[:put "c" 1 (range 100000)]])
+      (is (= (range 100000) (l/get-value store "c" 1))))
 
-    ;; (testing "key overflow throws"
-    ;;   (is (thrown? Exception (l/transact-kv store [[:put "a" (range 1000) 1]]))))
+    (testing "key overflow throws"
+      (is (thrown? Exception (l/transact-kv store [[:put "a" (range 1000) 1]]))))
 
-    ;; (testing "close then re-open, clear and drop"
-    ;;   (l/close-kv store)
-    ;;   (is (l/closed-kv? store))
-    ;;   (let [store (sut/open-kv dir)]
-    ;;     (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
-    ;;     (l/clear-dbi store "a")
-    ;;     (is (nil? (l/get-value store "a" :datalevin)))
-    ;;     (l/drop-dbi store "a")
-    ;;     (is (thrown? Exception (l/get-value store "a" 1)))
-    ;;     (l/close-kv store)))
+    (testing "close then re-open, clear and drop"
+      (l/close-kv store)
+      (is (l/closed-kv? store))
+      (let [store (sut/open-kv dir)]
+        (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
+        (l/clear-dbi store "a")
+        (is (nil? (l/get-value store "a" :datalevin)))
+        (l/drop-dbi store "a")
+        (is (thrown? Exception (l/get-value store "a" 1)))
+        (l/close-kv store)))
 
     (testing "range and filter queries"
       (let [store (sut/open-kv dir)]

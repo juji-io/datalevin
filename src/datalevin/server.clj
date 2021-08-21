@@ -25,7 +25,7 @@
             Argon2Parameters$Builder]))
 
 (log/refer-timbre)
-(log/set-level! :debug)
+(log/set-level! :info)
 
 (defprotocol IServer
   (start [srv] "Start the server")
