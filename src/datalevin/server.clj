@@ -239,7 +239,8 @@
       (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
         (.flip write-bf)
         (p/send-ch ch write-bf)))
-    (p/write-message-blocking ch write-bf {:type :copy-done})))
+    (p/write-message-blocking ch write-bf {:type :copy-done})
+    (log/debug "Copied out" (count data) "data items")))
 
 (defn- db-dir
   "translate from user and db-name to server db path"

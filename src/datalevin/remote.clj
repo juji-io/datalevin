@@ -169,23 +169,23 @@
   (get-value [db dbi-name k k-type v-type ignore-key?]
     (normal-request :get-value [dbi-name k k-type v-type ignore-key?]))
 
-  (get-first [db dbi-name k]
-    (l/get-first db dbi-name k :data :data false))
-  (get-first [db dbi-name k k-type]
-    (l/get-first db dbi-name k k-type :data false))
-  (get-first [db dbi-name k k-type v-type]
-    (l/get-first db dbi-name k k-type v-type false))
-  (get-first [db dbi-name k k-type v-type ignore-key?]
-    (normal-request :get-first [dbi-name k k-type v-type ignore-key?]))
+  (get-first [db dbi-name k-range]
+    (l/get-first db dbi-name k-range :data :data false))
+  (get-first [db dbi-name k-range k-type]
+    (l/get-first db dbi-name k-range k-type :data false))
+  (get-first [db dbi-name k-range k-type v-type]
+    (l/get-first db dbi-name k-range k-type v-type false))
+  (get-first [db dbi-name k-range k-type v-type ignore-key?]
+    (normal-request :get-first [dbi-name k-range k-type v-type ignore-key?]))
 
-  (get-range [db dbi-name k]
-    (l/get-range db dbi-name k :data :data false))
-  (get-range [db dbi-name k k-type]
-    (l/get-range db dbi-name k k-type :data false))
-  (get-range [db dbi-name k k-type v-type]
-    (l/get-range db dbi-name k k-type v-type false))
-  (get-range [db dbi-name k k-type v-type ignore-key?]
-    (normal-request :get-range [dbi-name k k-type v-type ignore-key?]))
+  (get-range [db dbi-name k-range]
+    (l/get-range db dbi-name k-range :data :data false))
+  (get-range [db dbi-name k-range k-type]
+    (l/get-range db dbi-name k-range k-type :data false))
+  (get-range [db dbi-name k-range k-type v-type]
+    (l/get-range db dbi-name k-range k-type v-type false))
+  (get-range [db dbi-name k-range k-type v-type ignore-key?]
+    (normal-request :get-range [dbi-name k-range k-type v-type ignore-key?]))
 
   (range-count [db dbi-name k-range]
     (l/range-count db dbi-name k-range :data))
