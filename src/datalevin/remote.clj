@@ -4,6 +4,7 @@
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.storage :as s]
+            [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [datalevin.protocol :as p]
             [taoensso.nippy :as nippy]
@@ -49,7 +50,7 @@
   (swap-attr [this attr f x]
     (s/swap-attr this attr f x nil))
   (swap-attr [_ attr f x y]
-    (let [frozen-f (nippy/freeze f)]
+    (let [frozen-f (nippy/fast-freeze f)]
       (normal-request :swap-attr [attr frozen-f x y])))
 
   (datom-count [_ index] (normal-request :datom-count [index]))
@@ -82,22 +83,22 @@
     (normal-request :rslice [index high-datom low-datom]))
 
   (size-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :size-filter
                       [index frozen-pred low-datom high-datom])))
 
   (head-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :head-filter
                       [index frozen-pred low-datom high-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :slice-filter
                       [index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :rslice-filter
                       [index frozen-pred high-datom low-datom]))))
 
@@ -198,7 +199,7 @@
   (get-some [db dbi-name pred k-range k-type v-type]
     (l/get-some db dbi-name pred k-range k-type v-type false))
   (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :get-some
                       [dbi-name frozen-pred k-range k-type v-type
                        ignore-key?])))
@@ -210,7 +211,7 @@
   (range-filter [db dbi-name pred k-range k-type v-type]
     (l/range-filter db dbi-name pred k-range k-type v-type false))
   (range-filter [db dbi-name pred k-range k-type v-type ignore-key?]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :range-filter
                       [dbi-name frozen-pred k-range k-type v-type
                        ignore-key?])))
@@ -218,7 +219,7 @@
   (range-filter-count [db dbi-name pred k-range]
     (l/range-filter-count db dbi-name pred k-range :data))
   (range-filter-count [db dbi-name pred k-range k-type]
-    (let [frozen-pred (nippy/freeze pred)]
+    (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :range-filter-count
                       [dbi-name frozen-pred k-range k-type])))
   )
@@ -247,7 +248,22 @@
 
   (l/close-kv store)
 
-  (l/open-dbi store "a")
+  (l/open-dbi store "z")
+
+  (let [ks  (shuffle (range 0 10000))
+        vs  (map inc ks)
+        txs (map (fn [k v] [:put "z" k v :long :long]) ks vs)]
+    (l/transact-kv store txs))
+
+  (def pred (fn [kv]
+              (let [^long k (b/read-buffer (l/k kv) :long)]
+                (< 10 k 20))))
+
+  (l/range-filter-count store "z" pred [:all] :long)
+
+  (l/range-filter store "z" pred [:all] :long :long)
+
+  (l/range-filter store "z" pred [:all] :long :long true)
 
   (l/clear-dbi store "a")
 

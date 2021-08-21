@@ -25,7 +25,7 @@
             Argon2Parameters$Builder]))
 
 (log/refer-timbre)
-(log/set-level! :info)
+(log/set-level! :debug)
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -216,7 +216,6 @@
                          {:msg msg})))
             (do (doseq [d msg] (conj! data d))
                 (recur bf')))))
-      (p/write-message-blocking ch write-bf {:type :command-complete})
       (let [txs (persistent! data)]
         (log/debug "Copied in" (count txs) "data items")
         txs)
@@ -358,7 +357,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[attr frozen-f x y] args
-          f                   (nippy/thaw frozen-f)
+          f                   (nippy/fast-thaw frozen-f)
           args                [attr f x y]]
       (normal-dt-store-handler swap-attr))))
 
@@ -372,7 +371,8 @@
     (let [{:keys [client-id]} @(.attachment skey)
           {:keys [dt-store]}  (get-client server client-id)]
       (case mode
-        :copy-in (st/load-datoms dt-store (copy-in server skey))
+        :copy-in (do (st/load-datoms dt-store (copy-in server skey))
+                     (write-message skey {:type :command-complete}))
         :request (normal-dt-store-handler load-datoms)
         (u/raise "Missing :mode when loading datoms" {})))))
 
@@ -413,7 +413,7 @@
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
-          pred (nippy/thaw frozen-pred)
+          pred (nippy/fast-thaw frozen-pred)
           args [index pred low-datom high-datom]]
       (normal-dt-store-handler size-filter))))
 
@@ -422,7 +422,7 @@
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
-          pred (nippy/thaw frozen-pred)
+          pred (nippy/fast-thaw frozen-pred)
           args [index pred low-datom high-datom]]
       (normal-dt-store-handler head-filter))))
 
@@ -431,7 +431,7 @@
   (wrap-error
     (let [[index frozen-pred low-datom high-datom] args
 
-          pred   (nippy/thaw frozen-pred)
+          pred   (nippy/fast-thaw frozen-pred)
           args   [index pred low-datom high-datom]
           datoms (apply st/slice-filter (dt-store server skey) args)]
       (if (< (count datoms) c/+wire-datom-batch-size+)
@@ -443,7 +443,7 @@
   (wrap-error
     (let [[index frozen-pred high-datom low-datom] args
 
-          pred   (nippy/thaw frozen-pred)
+          pred   (nippy/fast-thaw frozen-pred)
           args   [index pred high-datom low-datom]
           datoms (apply st/rslice-filter (dt-store server skey) args)]
       (if (< (count datoms) c/+wire-datom-batch-size+)
@@ -508,7 +508,8 @@
     (let [{:keys [client-id]} @(.attachment skey)
           {:keys [kv-store]}  (get-client server client-id)]
       (case mode
-        :copy-in (l/transact-kv kv-store (copy-in server skey))
+        :copy-in (do (l/transact-kv kv-store (copy-in server skey))
+                     (write-message skey {:type :command-complete}))
         :request (normal-kv-store-handler transact-kv)
         (u/raise "Missing :mode when transacting kv" {})))))
 
@@ -522,7 +523,11 @@
 
 (defn- get-range
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler get-range)))
+  (wrap-error
+    (let [data (apply l/get-range (kv-store server skey) args)]
+      (if (< (count data) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
 
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -530,15 +535,33 @@
 
 (defn- get-some
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler get-some)))
+  (wrap-error
+    (let [ [dbi-name frozen-pred k-range k-type v-type ignore-key?] args
+
+          pred (nippy/fast-thaw frozen-pred)
+          args [dbi-name pred k-range k-type v-type ignore-key?]]
+      (normal-kv-store-handler get-some))))
 
 (defn- range-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler range-filter)))
+  (wrap-error
+    (let [[dbi-name frozen-pred k-range k-type v-type ignore-key?] args
+
+          pred (nippy/fast-thaw frozen-pred)
+          args [dbi-name pred k-range k-type v-type ignore-key?]
+          data (apply l/range-filter (kv-store server skey) args)]
+      (if (< (count data) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
 
 (defn- range-filter-count
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler range-filter-count)))
+  (wrap-error
+    (let [[dbi-name frozen-pred k-range k-type] args
+
+          pred (nippy/fast-thaw frozen-pred)
+          args [dbi-name pred k-range k-type]]
+      (normal-kv-store-handler range-filter-count))))
 
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args]}]
