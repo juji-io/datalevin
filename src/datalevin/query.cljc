@@ -1094,7 +1094,6 @@
       qp)))
 
 (defn q [q & inputs]
-  (doseq [in inputs] (db/db? in))
   (let [parsed-q      (memoized-parse-query q)
         find          (:qfind parsed-q)
         find-elements (dp/find-elements find)

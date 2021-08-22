@@ -2,26 +2,14 @@
   "Shared code of client/server"
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
-            [datalevin.util :as u]
             [datalevin.datom :as d]
             [cognitect.transit :as transit]
-            [clojure.string :as s]
             [taoensso.nippy :as nippy])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]
-           [java.util Arrays UUID Date Base64]
-           [java.nio ByteBuffer BufferOverflowException]
+           [java.nio ByteBuffer]
            [java.nio.channels SocketChannel]
-           [java.nio.charset StandardCharsets]
-           [java.lang String Character]
-           [java.net URI]
            [datalevin.io ByteBufferInputStream ByteBufferOutputStream]
            [datalevin.datom Datom]))
-
-(defn dtlv-uri?
-  "return true if the given string is a Datalevin connection string"
-  [s]
-  (when-let [uri (URI. s)]
-    (= (.getScheme uri) "dtlv")))
 
 (defn read-nippy-bf
   "Read from a ByteBuffer containing nippy encoded bytes, return a Clojure

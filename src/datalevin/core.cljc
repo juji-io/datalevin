@@ -2,9 +2,8 @@
   "API for Datalevin database"
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-   [clojure.string :as str]
    [datalevin.util :as u]
-   [datalevin.client :as cl]
+   [datalevin.remote :as r]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
@@ -19,6 +18,7 @@
    [datalevin.impl.entity Entity]
    [datalevin.storage Store]
    [datalevin.db DB]
+   [datalevin.remote DatalogStore]
    [java.util UUID]))
 
 (if (u/graal?)
@@ -162,9 +162,19 @@ sequence of maps.
 
 ;; Query
 
-(def
-  ^{:arglists '([query & inputs])
-    :doc      "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+(defn- only-remote-db
+  "return [remote-db [updated-inputs]] if the inputs contain only one db
+  and its backing store is a remote one, where the remote-db in the inputs is
+  replaced by `:remote-db-placeholder, otherwise return nil"
+  [inputs]
+  (let [dbs    (filter db/db? inputs)
+        rdb    (first dbs)
+        rstore (.-store ^DB rdb)]
+    (when (and (= 1 (count dbs)) (instance? DatalogStore rstore))
+      [rstore (replace {rdb :remote-db-placeholder} inputs)])))
+
+(defn q
+  "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
 
           Usage:
 
@@ -173,9 +183,11 @@ sequence of maps.
                :where [_ :likes ?value]]
              db)
           ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
-          ```"}
-  q dq/q)
-
+          ```"
+  [query & inputs]
+  (if-let [[store inputs'] (only-remote-db inputs)]
+    (r/q store query inputs')
+    (apply dq/q query inputs)))
 
 ;; Creating DB
 
@@ -837,8 +849,8 @@ given. Return reference to the database.
        :doc      "Value of a key value pair"}
   v l/v)
 
-(def ^{:arglists '([dir])
-       :doc      "Open a LMDB key-value database, return the connection.
+(defn open-kv
+  "Open a LMDB key-value database, return the connection.
 
   `dir` is a string directory path in which the data are to be stored;
 
@@ -860,8 +872,11 @@ given. Return reference to the database.
   example, in Clojure, use [component](https://github.com/stuartsierra/component),
   [mount](https://github.com/tolitius/mount),
   [integrant](https://github.com/weavejester/integrant), or something similar
-  to hold on to and manage the connection. "}
-  open-kv l/open-kv)
+  to hold on to and manage the connection. "
+  [dir]
+  (if (r/dtlv-uri? dir)
+    (r/open-kv dir)
+    (l/open-kv dir)))
 
 (def ^{:arglists '([db])
        :doc      "Close this key-value store"}
@@ -1244,3 +1259,31 @@ one of the following data types:
     - `:ave`
     - `:vea`"}
   read-buffer b/read-buffer)
+
+(comment
+
+  (def schema {:aka  {:db/cardinality :db.cardinality/many}
+               :name {:db/valueType :db.type/string
+                      :db/unique    :db.unique/identity}})
+
+  (def conn (get-conn "dtlv://datalevin:datalevin@localhost/remote" schema))
+
+  (instance? DatalogStore (.-store ^DB @conn))
+
+  (transact! conn
+             [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
+              {:name "Peirce", :db/id -2, :nation "france"}
+              {:name "De Morgan", :db/id -3, :nation "English"}])
+
+
+  (q '[:find ?nation
+       :in $ ?alias
+       :where
+       [?e :aka ?alias]
+       [?e :nation ?nation]]
+     (db conn)
+     "fred")
+
+  (close conn)
+
+  )

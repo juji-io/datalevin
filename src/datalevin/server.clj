@@ -3,6 +3,8 @@
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
             [datalevin.bits :as b]
+            [datalevin.query :as q]
+            [datalevin.db :as db]
             [datalevin.lmdb :as l]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
@@ -57,7 +59,7 @@
                  ^ConcurrentLinkedQueue register-queue
                  ^ExecutorService work-executor
                  sys-conn
-                 ;; client-id -> { user/id, dt-store, kv-store }
+                 ;; client-id -> { user/id, dt-store, dt-db, kv-store }
                  ^:volatile-mutable clients]
   IServer
   (start [server]
@@ -261,7 +263,7 @@
        (log/error ~'e)
        (error-response ~'skey (ex-message ~'e)))))
 
-(defn dt-store
+(defn- dt-store
   [^Server server ^SelectionKey skey]
   (:dt-store (get-client server (@(.attachment skey) :client-id))))
 
@@ -276,7 +278,7 @@
                 (dt-store ~'server ~'skey)
                 ~'args)}))
 
-(defn kv-store
+(defn- kv-store
   [^Server server ^SelectionKey skey]
   (:kv-store (get-client server (@(.attachment skey) :client-id))))
 
@@ -319,8 +321,9 @@
           {:keys [user/id dt-store]} (get-client server client-id)
           dir                        (db-dir server id db-name)]
       (when-not (and dt-store (= dir (st/dir dt-store)))
-        (update-client server client-id
-                       #(assoc % :dt-store (st/open dir schema)))
+        (let [store (st/open dir schema)]
+          (update-client server client-id
+                         #(assoc % :dt-store store :dt-db (db/new-db store))))
         (d/transact! (.-sys-conn server)
                      [{:database/owner [:user/id id]
                        :database/type  :datalog
@@ -577,7 +580,15 @@
 
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args]}]
-  )
+  (wrap-error
+    (let [db             (:dt-db (get-client server
+                                             (@(.attachment skey) :client-id)))
+          [query inputs] args
+          inputs         (replace {:remote-db-placeholder db} inputs)
+          data           (apply q/q query inputs)]
+      (if (< (count data) c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
 
 ;; END message handlers
 

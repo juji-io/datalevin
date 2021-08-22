@@ -11,6 +11,7 @@
    [datalevin.util
     :refer [combine-hashes case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
+   [datalevin.remote :as r]
    [datalevin.bits :as b])
   #?(:cljs
      (:require-macros [datalevin.util
@@ -264,7 +265,9 @@
   [dir schema]
   {:pre [(or (nil? schema) (map? schema))]}
   (validate-schema schema)
-  (s/open dir schema))
+  (if (r/dtlv-uri? dir)
+    (r/open dir schema)
+    (s/open dir schema)))
 
 (defn new-db
   [^IStore store]

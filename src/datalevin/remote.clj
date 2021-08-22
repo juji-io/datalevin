@@ -17,6 +17,18 @@
            [java.nio.file.attribute PosixFilePermissions FileAttribute]
            [java.net URI]))
 
+(defn dtlv-uri?
+  "return true if the given string is a Datalevin connection string"
+  [s]
+  (when-let [uri (URI. s)]
+    (= (.getScheme uri) "dtlv")))
+
+(defn- redact-uri
+  [s]
+  (if (dtlv-uri? s)
+    (str/replace-first s #"(dtlv://.+):(.+)@" "$1:***@")
+    s))
+
 (defmacro normal-request
   "Request to remote store and returns results. Does not use the
   copy-in protocol"
@@ -28,6 +40,10 @@
        ~'result)))
 
 ;; remote datalog store
+
+(defprotocol IRemoteQuery
+  (q [store query inputs]
+    "For special case of queries with a single remote store as source"))
 
 (deftype DatalogStore [^String uri ^Client client]
   IStore
@@ -102,13 +118,13 @@
   (rslice-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :rslice-filter
-                      [index frozen-pred high-datom low-datom]))))
+                      [index frozen-pred high-datom low-datom])))
 
-(defn- redact-uri
-  [s]
-  (if (p/dtlv-uri? s)
-    (str/replace-first s #"(dtlv://.+):(.+)@" "$1:***@")
-    s))
+  IRemoteQuery
+  (q [_ query inputs]
+    (normal-request :q [query inputs])))
+
+
 
 (defn open
   "Open a remote Datalog store"
@@ -236,8 +252,7 @@
   (range-filter-count [db dbi-name pred k-range k-type]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :range-filter-count
-                      [dbi-name frozen-pred k-range k-type])))
-  )
+                      [dbi-name frozen-pred k-range k-type]))))
 
 (defn open-kv
   "Open a remote kv store."
