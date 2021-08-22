@@ -13,6 +13,8 @@
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
            [datalevin.lmdb ILMDB]
+           [java.nio.file Files Paths StandardOpenOption LinkOption]
+           [java.nio.file.attribute PosixFilePermissions FileAttribute]
            [java.net URI]))
 
 (defmacro normal-request
@@ -143,7 +145,20 @@
   (list-dbis [db] (normal-request :list-dbis nil))
 
   (copy [db dest] (l/copy db dest false))
-  (copy [db dest compact?] (normal-request :copy [dest compact?]))
+  (copy [db dest compact?]
+    (let [bs   (->> (normal-request :copy [compact?])
+                    (apply str)
+                    u/decode-base64)
+          dir  (Paths/get dest (into-array String []))
+          file (Paths/get (str dest u/+separator+ "data.mdb")
+                          (into-array String []))]
+      (when-not (Files/exists dir (into-array LinkOption []))
+        (Files/createDirectories
+          dir
+          (into-array FileAttribute
+                      [(PosixFilePermissions/asFileAttribute
+                         (PosixFilePermissions/fromString "rwxr-x---"))])))
+      (Files/write file ^bytes bs (into-array StandardOpenOption []))))
 
   (stat [db] (l/stat db nil))
   (stat [db dbi-name] (normal-request :stat [dbi-name]))
@@ -242,6 +257,8 @@
 
   (open-kv (l/dir store))
 
+  (l/stat store)
+
   (mm/measure store)
 
   (l/closed-kv? store)
@@ -255,11 +272,17 @@
         txs (map (fn [k v] [:put "z" k v :long :long]) ks vs)]
     (l/transact-kv store txs))
 
+  (l/copy store "/tmp/dest")
+
+  (def store2 (l/open-kv "/tmp/dest"))
+
+  (l/open-dbi store2 "z")
+
   (def pred (fn [kv]
               (let [^long k (b/read-buffer (l/k kv) :long)]
                 (< 10 k 20))))
 
-  (l/range-filter-count store "z" pred [:all] :long)
+  (l/range-filter-count store2 "z" pred [:all] :long)
 
   (l/range-filter store "z" pred [:all] :long :long)
 

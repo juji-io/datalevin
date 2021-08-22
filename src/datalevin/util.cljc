@@ -8,7 +8,7 @@
      (:import
       [java.io ByteArrayInputStream ByteArrayOutputStream File]
       [java.nio ByteBuffer]
-      [java.nio.file Files Path Paths LinkOption AccessDeniedException]
+      [java.nio.file Files Paths LinkOption AccessDeniedException]
       [java.nio.file.attribute PosixFilePermissions FileAttribute]
       [java.net URI]
       [java.util Base64 Base64$Decoder Base64$Encoder])))

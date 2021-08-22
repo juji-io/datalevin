@@ -132,25 +132,23 @@
         (st/close store)))))
 
 (deftest dt-store-larger-test
-  (testing "larger data"
-    (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
-          end   1000000
-          store (sut/open dir)
-          vs    (shuffle (range 0 end))
-          txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
-                      vs)
-          pred  (fn [^Datom d] (odd? (.-v d)))]
-
-      (is (instance? datalevin.remote.DatalogStore store))
-      (st/load-datoms store txs)
-      (is (= (filter pred txs)
-             (st/slice-filter store :eav pred
-                              (d/datom c/e0 nil nil)
-                              (d/datom c/emax nil nil))))
-      (is (= (reverse txs)
-             (st/rslice store :eav
-                        (d/datom c/emax nil nil) (d/datom c/e0 nil nil))))
-      (st/close store))))
+  (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
+        end   1000000
+        store (sut/open dir)
+        vs    (shuffle (range 0 end))
+        txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
+                    vs)
+        pred  (fn [^Datom d] (odd? (.-v d)))]
+    (is (instance? datalevin.remote.DatalogStore store))
+    (st/load-datoms store txs)
+    (is (= (filter pred txs)
+           (st/slice-filter store :eav pred
+                            (d/datom c/e0 nil nil)
+                            (d/datom c/emax nil nil))))
+    (is (= (reverse txs)
+           (st/rslice store :eav
+                      (d/datom c/emax nil nil) (d/datom c/e0 nil nil))))
+    (st/close store)))
 
 (deftest kv-store-ops-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/testkv"
@@ -266,3 +264,18 @@
           (is (= (range 1 10001)
                  (l/get-range store "r" [:all] :long :long true))))
         (l/close-kv store)))))
+
+(deftest copy-test
+  (let [src    "dtlv://datalevin:datalevin@localhost/copytest"
+        rstore (sut/open-kv src)
+        dst    (u/tmp-dir (str "copy-test-" (UUID/randomUUID)))]
+    (l/open-dbi rstore "z")
+    (let [ks  (shuffle (range 0 10000))
+          vs  (map inc ks)
+          txs (map (fn [k v] [:put "z" k v :long :long]) ks vs)]
+      (l/transact-kv rstore txs))
+    (l/copy rstore dst)
+    (let [cstore (l/open-kv dst)]
+      (l/open-dbi cstore "z")
+      (is (= (l/get-range rstore "z" [:all] :long :long)
+             (l/get-range cstore "z" [:all] :long :long))))))

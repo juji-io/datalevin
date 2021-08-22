@@ -11,6 +11,7 @@
             [taoensso.timbre :as log])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
+           [java.nio.file Files Paths]
            [java.nio.channels Selector SelectionKey ServerSocketChannel
             SocketChannel]
            [java.net InetSocketAddress]
@@ -491,9 +492,19 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-kv-store-handler list-dbis)))
 
+;; TODO use LMDB copyfd to write to socket directly
+;; However, LMDBJava does not wrap copyfd
 (defn- copy
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler copy)))
+  (wrap-error
+    (let [[compact?] args
+          tf         (u/tmp-dir (str "copy-" (UUID/randomUUID)))
+          path       (Paths/get (str tf u/+separator+ "data.mdb")
+                                (into-array String []))]
+      (l/copy (kv-store server skey) tf compact?)
+      (copy-out skey
+                (u/encode-base64 (Files/readAllBytes path))
+                8192))))
 
 (defn- stat
   [^Server server ^SelectionKey skey {:keys [args]}]
