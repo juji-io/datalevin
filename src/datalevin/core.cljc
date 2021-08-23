@@ -167,11 +167,11 @@ sequence of maps.
   and its backing store is a remote one, where the remote-db in the inputs is
   replaced by `:remote-db-placeholder, otherwise return nil"
   [inputs]
-  (let [dbs    (filter db/db? inputs)
-        rdb    (first dbs)
-        rstore (.-store ^DB rdb)]
-    (when (and (= 1 (count dbs)) (instance? DatalogStore rstore))
-      [rstore (replace {rdb :remote-db-placeholder} inputs)])))
+  (let [dbs (filter db/db? inputs)]
+    (when-let [rdb (first dbs)]
+      (let [rstore (.-store ^DB rdb)]
+        (when (and (= 1 (count dbs)) (instance? DatalogStore rstore))
+          [rstore (replace {rdb :remote-db-placeholder} inputs)])))))
 
 (defn q
   "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).

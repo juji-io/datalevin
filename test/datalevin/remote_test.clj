@@ -278,4 +278,6 @@
     (let [cstore (l/open-kv dst)]
       (l/open-dbi cstore "z")
       (is (= (l/get-range rstore "z" [:all] :long :long)
-             (l/get-range cstore "z" [:all] :long :long))))))
+             (l/get-range cstore "z" [:all] :long :long)))
+      (l/close-kv cstore))
+    (l/close-kv rstore)))

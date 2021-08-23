@@ -28,7 +28,7 @@
             Argon2Parameters$Builder]))
 
 (log/refer-timbre)
-(log/set-level! :info)
+(log/set-level! :debug)
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -159,26 +159,12 @@
           (write-to-bf skey msg))))))
 
 (defn write-message
-  "Attempt to write a message immediately, if cannot write all, register
-  interest in OP_WRITE event"
   [^SelectionKey skey msg]
   (write-to-bf skey msg)
-  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
-        ^SocketChannel ch              (.channel skey)]
+  (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
+        ^SocketChannel                 ch (.channel skey)]
     (.flip write-bf)
-    (.write ch write-bf)
-    (when (.hasRemaining write-bf)
-      (.interestOpsOr skey SelectionKey/OP_WRITE))))
-
-(defn- handle-write
-  "We already tried to write before, now try to write the remaining data.
-  Remove interest in OP_WRITE event when done"
-  [^SelectionKey skey]
-  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
-        ^SocketChannel ch              (.channel skey)]
-    (.write ch write-bf)
-    (when-not (.hasRemaining write-bf)
-      (.interestOpsAnd skey (bit-not SelectionKey/OP_WRITE)))))
+    (p/send-ch ch write-bf)))
 
 (defn- handle-accept
   [^SelectionKey skey]
@@ -253,7 +239,10 @@
 
 (defn- error-response
   [skey error-msg]
-  (write-message skey {:type :error-response :message error-msg}))
+  (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
+        ^SocketChannel                 ch (.channel skey)]
+    (p/write-message-blocking ch write-bf
+                              {:type :error-response :message error-msg})))
 
 (defmacro wrap-error
   [body]
@@ -270,6 +259,7 @@
 (defmacro normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
   [f]
+
   `(write-message
      ~'skey
      {:type   :command-complete
@@ -704,8 +694,6 @@
             (let [^SelectionKey skey (.next iter)]
               (when (and (.isValid skey) (.isAcceptable skey))
                 (handle-accept skey))
-              (when (and (.isValid skey) (.isWritable skey))
-                (handle-write skey))
               (when (and (.isValid skey) (.isReadable skey))
                 (handle-read server skey)))
             (.remove iter)

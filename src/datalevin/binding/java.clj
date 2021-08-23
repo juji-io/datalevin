@@ -326,7 +326,8 @@
             :del (let [[kt] r]
                    (.put-key dbi k kt)
                    (.del dbi txn))))
-        (.commit txn))
+        (.commit txn)
+        :transacted)
       (catch Env$MapFullException _
         (up-db-size env)
         (.transact-kv this txs))
