@@ -84,7 +84,8 @@
 (defprotocol IConnectionPool
   (get-connection [this] "Get a connection from the pool")
   (release-connection [this connection] "Return the connection back to pool")
-  (close-pool [this]))
+  (close-pool [this])
+  (closed-pool? [this]))
 
 (deftype ConnectionPool [^ArrayList available
                          ^ArrayList used]
@@ -107,8 +108,13 @@
       (.add available conn)))
 
   (close-pool [this]
-    (dotimes [i (.size used)] (close (^Connection (.get used i))))
-    (dotimes [i (.size used)] (close (^Connection (.get available i))))))
+    (dotimes [i (.size used)] (close ^Connection (.get used i)))
+    (.clear used)
+    (dotimes [i (.size used)] (close ^Connection (.get available i)))
+    (.clear available))
+
+  (closed-pool? [this]
+    (and (.isEmpty used) (.isEmpty available))))
 
 (defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
@@ -144,7 +150,8 @@
     "Copy data to the server. `req` is a request type message,
      `data` is a sequence, `batch-size` decides how to partition the data
       so that each batch fits in buffers along the way")
-  (disconnect [client]))
+  (disconnect [client])
+  (disconnected? [client]))
 
 (defn parse-user-info
   [^URI uri]
@@ -223,7 +230,10 @@
     (let [conn (get-connection pool)]
       (send-only conn {:type :disconnect})
       (release-connection pool conn))
-    (close-pool pool)))
+    (close-pool pool))
+
+  (disconnected? [client]
+    (closed-pool? pool)))
 
 (defn- init-db
   [client db store schema]
@@ -254,9 +264,3 @@
          client    (->Client uri pool client-id)]
      (when db (init-db client db store schema))
      client)))
-
-(comment
-
-  (def client (new-client "dtlv://datalevin:datalevin@localhost/testdb"))
-
-  )

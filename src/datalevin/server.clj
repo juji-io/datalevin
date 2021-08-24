@@ -159,6 +159,7 @@
           (write-to-bf skey msg))))))
 
 (defn write-message
+  "write a message to channel"
   [^SelectionKey skey msg]
   (write-to-bf skey msg)
   (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
@@ -238,7 +239,7 @@
        (b/hexify-string db-name)))
 
 (defn- error-response
-  [skey error-msg]
+  [^SelectionKey skey error-msg]
   (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
         ^SocketChannel                 ch (.channel skey)]
     (p/write-message-blocking ch write-bf
@@ -700,6 +701,15 @@
             (recur iter)))
         (recur)))))
 
+;; permission levels
+(derive ::alter ::view)
+(derive ::create ::alter)
+(derive ::control ::create)
+
+;; permission objects
+(derive ::server ::database)
+(derive ::server ::user)
+
 (defn- init-sys-db
   [root]
   (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
@@ -712,10 +722,20 @@
                   :user/id      0
                   :user/pw-hash h
                   :user/pw-salt s}
-                 {:db/id    -2
-                  :role/key c/superuser-role}
-                 {:user-role/user -1
-                  :user-role/role -2}]]
+                 {:db/id     -2
+                  :role/key  ::superuser
+                  :role/desc "Super user role"}
+                 {:db/id          -3
+                  :user-role/user -1
+                  :user-role/role -2}
+                 {:db/id            -4
+                  :permission/level ::control
+                  :permission/obj   ::server
+                  :permission/desc  "Permission to do everything on server"}
+                 {:db/id          -5
+                  :role-perm/perm -4
+                  :role-perm/role -2}
+                 ]]
         (d/transact! sys-conn txs)))
     sys-conn))
 

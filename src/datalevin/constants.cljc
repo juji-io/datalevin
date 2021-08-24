@@ -104,33 +104,32 @@
 (def ^:const db-store-datalog "datalog")
 (def ^:const db-store-kv "kv")
 
-(def ^:const superuser-role :datalevin/superuser)
-
 (def ^:const message-header-size 5) ; bytes, 1 type + 4 length
 
 (def ^:const message-format-transit (unchecked-byte 0x01))
 (def ^:const message-format-nippy (unchecked-byte 0x02))
 
 (def system-schema (merge implicit-schema
-                          {:user/name       {:db/unique    :db.unique/identity
-                                             :db/valueType :db.type/string}
-                           :user/id         {:db/unique    :db.unique/identity
-                                             :db/valueType :db.type/long}
-                           :user/pw-hash    {:db/valueType :db.type/string}
-                           :user/pw-salt    {:db/valueType :db.type/bytes}
-                           :database/type   {:db/valueType :db.type/keyword}
-                           :database/owner  {:db/valueType :db.type/ref}
-                           :database/name   {:db/valueType :db.type/string}
-                           :role/key        {:db/valueType :db.type/keyword}
-                           :role/desc       {:db/valueType :db.type/string}
-                           :permission/key  {:db/valueType :db.type/keyword}
-                           :permission/desc {:db/valueType :db.type/string}
-                           :permission/db   {:db/valueType :db.type/ref}
-                           :permission/attr {:db/valueType :db.type/keyword}
-                           :user-role/user  {:db/valueType :db.type/ref}
-                           :user-role/role  {:db/valueType :db.type/ref}
-                           :role-perm/role  {:db/valueType :db.type/ref}
-                           :role-perm/perm  {:db/valueType :db.type/ref}}))
+                          {:user/name        {:db/unique    :db.unique/identity
+                                              :db/valueType :db.type/string}
+                           :user/id          {:db/unique    :db.unique/identity
+                                              :db/valueType :db.type/long}
+                           :user/pw-hash     {:db/valueType :db.type/string}
+                           :user/pw-salt     {:db/valueType :db.type/bytes}
+                           :database/type    {:db/valueType :db.type/keyword}
+                           :database/owner   {:db/valueType :db.type/ref}
+                           :database/name    {:db/valueType :db.type/string}
+                           :role/key         {:db/valueType :db.type/keyword}
+                           :role/desc        {:db/valueType :db.type/string}
+                           :permission/level {:db/valueType :db.type/keyword}
+                           :permission/obj   {:db/valueType :db.type/keyword}
+                           :permission/db    {:db/valueType :db.type/ref}
+                           :permission/user  {:db/valueType :db.type/ref}
+                           :permission/desc  {:db/valueType :db.type/string}
+                           :user-role/user   {:db/valueType :db.type/ref}
+                           :user-role/role   {:db/valueType :db.type/ref}
+                           :role-perm/role   {:db/valueType :db.type/ref}
+                           :role-perm/perm   {:db/valueType :db.type/ref}}))
 
 ;;-------------------------------------------------------------
 

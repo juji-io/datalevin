@@ -6,7 +6,6 @@
             [datalevin.storage :as s]
             [datalevin.bits :as b]
             [datalevin.lmdb :as l]
-            [datalevin.protocol :as p]
             [taoensso.nippy :as nippy]
             [com.rpl.nippy-serializable-fn]
             [clojure.string :as str])
@@ -50,9 +49,11 @@
   IStore
   (dir [_] uri)
 
-  (close [_] (normal-request :close nil))
+  (close [_]
+    (normal-request :close nil)
+    (cl/disconnect client))
 
-  (closed? [_] (normal-request :closed? nil))
+  (closed? [_] (cl/disconnected? client))
 
   (last-modified [_] (normal-request :last-modified nil))
 
@@ -125,8 +126,6 @@
   (q [_ query inputs]
     (normal-request :q [query inputs])))
 
-
-
 (defn open
   "Open a remote Datalog store"
   ([uri-str]
@@ -137,16 +136,18 @@
      (->DatalogStore (redact-uri uri-str)
                      (cl/new-client uri-str schema)))))
 
-;; kv store
+;; remote kv store
 
 (deftype KVStore [^String uri ^Client client]
   ILMDB
 
   (dir [_] uri)
 
-  (close-kv [_] (normal-request :close-kv nil))
+  (close-kv [_]
+    (normal-request :close-kv nil)
+    (cl/disconnect client))
 
-  (closed-kv? [_] (normal-request :closed-kv? nil))
+  (closed-kv? [_] (cl/disconnected? client))
 
   (open-dbi [db dbi-name]
     (l/open-dbi db dbi-name c/+max-key-size+ c/+default-val-size+))
@@ -264,46 +265,3 @@
                      "store=" c/db-store-kv)]
     (assert (cl/parse-db uri) "URI should contain a database name")
     (->KVStore (redact-uri uri-str) (cl/new-client uri-str))))
-
-(comment
-
-  (require '[clj-memory-meter.core :as mm])
-
-  (def store (open-kv "dtlv://datalevin:datalevin@localhost/remote"))
-
-  (open-kv (l/dir store))
-
-  (l/stat store)
-
-  (mm/measure store)
-
-  (l/closed-kv? store)
-
-  (l/close-kv store)
-
-  (l/open-dbi store "z")
-
-  (let [ks  (shuffle (range 0 10000))
-        vs  (map inc ks)
-        txs (map (fn [k v] [:put "z" k v :long :long]) ks vs)]
-    (l/transact-kv store txs))
-
-  (l/copy store "/tmp/dest")
-
-  (def store2 (l/open-kv "/tmp/dest"))
-
-  (l/open-dbi store2 "z")
-
-  (def pred (fn [kv]
-              (let [^long k (b/read-buffer (l/k kv) :long)]
-                (< 10 k 20))))
-
-  (l/range-filter-count store2 "z" pred [:all] :long)
-
-  (l/range-filter store "z" pred [:all] :long :long)
-
-  (l/range-filter store "z" pred [:all] :long :long true)
-
-  (l/clear-dbi store "a")
-
-  )
