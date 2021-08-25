@@ -10,7 +10,8 @@
             [datalevin.storage :as st]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
-            [taoensso.timbre :as log])
+            [taoensso.timbre :as log]
+            [clojure.string :as s])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
            [java.nio.file Files Paths]
@@ -135,6 +136,47 @@
     (d/pull (d/db sys-conn) '[*] [:user/name username])
     (catch Exception _
       nil)))
+
+(defn- next-user-id
+  [sys-conn]
+  )
+
+(defn create-user
+  [^Server server username password ]
+  (let [sys-conn (.-sys-conn server)]
+    (if (pull-user sys-conn username)
+      (u/raise "User already exits" {:username username})
+      (if (s/blank? password)
+        (u/raise "Password is required when creating user" {})
+        (let [s   (salt)
+              h   (password-hashing password s)
+              txs [{:db/id        -1
+                    :user/name    username
+                    :user/id      0
+                    :user/pw-hash h
+                    :user/pw-salt s}
+                   {:db/id     -2
+                    :role/key  ::superuser
+                    :role/desc "Super user role"}
+                   {:db/id          -3
+                    :user-role/user -1
+                    :user-role/role -2}
+                   {:db/id            -4
+                    :permission/level ::control
+                    :permission/obj   ::server
+                    :permission/desc  "Permission to do everything on server"}
+                   {:db/id          -5
+                    :role-perm/perm -4
+                    :role-perm/role -2}
+                   {:db/id     -6
+                    :role/key  ::db-ownder
+                    :role/desc "Database owner"}
+                   {:db/id            -7
+                    :permission/level ::create
+                    :permission/obj   ::database}
+                   {:db/id          -8
+                    :role-perm/perm -7
+                    :role-perm/role -6}]])))))
 
 (defn- authenticate
   [^Server server {:keys [username password]}]
@@ -388,6 +430,10 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler head)))
 
+(defn- tail
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler tail)))
+
 (defn- slice
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
@@ -421,6 +467,15 @@
           pred (nippy/fast-thaw frozen-pred)
           args [index pred low-datom high-datom]]
       (normal-dt-store-handler head-filter))))
+
+(defn- tail-filter
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[index frozen-pred high-datom low-datom] args
+
+          pred (nippy/fast-thaw frozen-pred)
+          args [index pred high-datom low-datom]]
+      (normal-dt-store-handler tail-filter))))
 
 (defn- slice-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -602,10 +657,12 @@
    'populated?
    'size
    'head
+   'tail
    'slice
    'rslice
    'size-filter
    'head-filter
+   'tail-filter
    'slice-filter
    'rslice-filter
    'open-kv
@@ -735,7 +792,15 @@
                  {:db/id          -5
                   :role-perm/perm -4
                   :role-perm/role -2}
-                 ]]
+                 {:db/id     -6
+                  :role/key  ::db-ownder
+                  :role/desc "Database owner"}
+                 {:db/id            -7
+                  :permission/level ::create
+                  :permission/obj   ::database}
+                 {:db/id          -8
+                  :role-perm/perm -7
+                  :role-perm/role -6}]]
         (d/transact! sys-conn txs)))
     sys-conn))
 

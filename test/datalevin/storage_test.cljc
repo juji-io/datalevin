@@ -47,6 +47,7 @@
       (is (= true (sut/populated? store :eav d d)))
       (is (= 1 (sut/size store :eav d d)))
       (is (= d (sut/head store :eav d d)))
+      (is (= d (sut/tail store :eav d d)))
       (sut/swap-attr store b merge p1)
       (sut/load-datoms store [d1])
       (is (= s1 (sut/schema store)))
@@ -57,6 +58,7 @@
       (is (= 0 (sut/size store :eav d (d/datom c/e0 :non-exist v1))))
       (is (nil? (sut/populated? store :eav d (d/datom c/e0 :non-exist v1))))
       (is (= d (sut/head store :eav d d1)))
+      (is (= d1 (sut/tail store :eav d1 d)))
       (is (= 2 (sut/size store :eav d d1)))
       (is (= [d d1] (sut/slice store :eav d d1)))
       (is (= [d d1] (sut/slice store :ave d d1)))
@@ -72,6 +74,10 @@
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
       (is (= d (sut/head-filter store :eav
+                                (fn [^Datom d] (= v (.-v d)))
+                                (d/datom c/e0 nil nil)
+                                (d/datom c/e0 nil nil))))
+      (is (= d (sut/tail-filter store :eav
                                 (fn [^Datom d] (= v (.-v d)))
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))

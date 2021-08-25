@@ -199,6 +199,8 @@
     "Return the number of datoms within the given range (inclusive)")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")
+  (tail [this index high-datom low-datom]
+    "Return the last datom within the given range (inclusive)")
   (slice [this index low-datom high-datom]
     "Return a range of datoms within the given range (inclusive).")
   (rslice [this index high-datom low-datom]
@@ -208,6 +210,9 @@
     return true for (pred x), where x is the datom")
   (head-filter [this index pred low-datom high-datom]
     "Return the first datom within the given range (inclusive) that
+    return true for (pred x), where x is the datom")
+  (tail-filter [this index pred high-datom low-datom]
+    "Return the last datom within the given range (inclusive) that
     return true for (pred x), where x is the datom")
   (slice-filter [this index pred low-datom high-datom]
     "Return a range of datoms within the given range (inclusive) that
@@ -350,6 +355,16 @@
                                  index
                                  :id)))
 
+  (tail [_ index high-datom low-datom]
+    (retrieved->datom
+      lmdb attrs (lmdb/get-first lmdb
+                                 (index->dbi index)
+                                 [:closed-back
+                                  (high-datom->indexable schema high-datom)
+                                  (low-datom->indexable schema low-datom)]
+                                 index
+                                 :id)))
+
   (slice [_ index low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/get-range
@@ -389,6 +404,17 @@
                                 [:closed
                                  (low-datom->indexable schema low-datom)
                                  (high-datom->indexable schema high-datom)]
+                                index
+                                :id)))
+
+  (tail-filter [_ index pred high-datom low-datom]
+    (retrieved->datom
+      lmdb attrs (lmdb/get-some lmdb
+                                (index->dbi index)
+                                (datom-pred->kv-pred lmdb attrs index pred)
+                                [:closed-back
+                                 (high-datom->indexable schema high-datom)
+                                 (low-datom->indexable schema low-datom)]
                                 index
                                 :id)))
 

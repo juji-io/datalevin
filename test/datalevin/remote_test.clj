@@ -135,12 +135,18 @@
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
         end   1000000
         store (sut/open dir)
-        vs    (shuffle (range 0 end))
+        vs    (range 0 end)
         txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
                     vs)
         pred  (fn [^Datom d] (odd? (.-v d)))]
     (is (instance? datalevin.remote.DatalogStore store))
     (st/load-datoms store txs)
+    (is (= (d/datom c/e0 :id 0)
+           (st/head store :eav (d/datom c/e0 :id nil)
+                    (d/datom c/emax :id nil))))
+    (is (= (d/datom (dec (+ c/e0 end) ) :id (dec (+ c/e0 end)))
+           (st/tail store :eav (d/datom c/emax :id nil)
+                    (d/datom c/e0 :id nil))))
     (is (= (filter pred txs)
            (st/slice-filter store :eav pred
                             (d/datom c/e0 nil nil)

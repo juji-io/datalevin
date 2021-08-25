@@ -117,7 +117,6 @@
                            :user/pw-hash     {:db/valueType :db.type/string}
                            :user/pw-salt     {:db/valueType :db.type/bytes}
                            :database/type    {:db/valueType :db.type/keyword}
-                           :database/owner   {:db/valueType :db.type/ref}
                            :database/name    {:db/valueType :db.type/string}
                            :role/key         {:db/valueType :db.type/keyword}
                            :role/desc        {:db/valueType :db.type/string}

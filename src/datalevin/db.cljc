@@ -29,7 +29,8 @@
 (defprotocol ISearch
   (-search [data pattern])
   (-count [data pattern])
-  (-first [data pattern]))
+  (-first [data pattern])
+  (-last [data pattern]))
 
 (defprotocol IIndexAccess
   (-populated? [db index components])
@@ -158,6 +159,26 @@
            (s/head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
            (s/head store :vea (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
+
+  (-last
+    [db pattern]
+    (let [[e a v _] pattern]
+      (wrap-cache
+        store
+        [:last e a v]
+        (case-tree
+          [e a (some? v)]
+          [(s/fetch store (datom e a v)) ; e a v
+           (s/tail store :eav  (datom e a c/vmax) (datom e a c/v0)) ; e a _
+           (s/tail-filter store :eav
+                          (fn [^Datom d] (= v (.-v d)))
+                          (datom e nil nil)
+                          (datom e nil nil))  ; e _ v
+           (s/tail store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
+           (s/tail store :ave (datom emax a v) (datom e0 a v)) ; _ a v
+           (s/tail store :ave (datom emax a nil) (datom e0 a nil)) ; _ a _
+           (s/tail store :vea (datom emax nil v) (datom e0 nil v)) ; _ _ v
+           (s/tail store :eav (datom emax nil nil) (datom e0 nil nil))]))))
 
   (-count
     [db pattern]

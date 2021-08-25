@@ -96,6 +96,9 @@
   (head [_ index low-datom high-datom]
     (normal-request :head [index low-datom high-datom]))
 
+  (tail [_ index high-datom low-datom]
+    (normal-request :tail [index high-datom low-datom]))
+
   (slice [_ index low-datom high-datom]
     (normal-request :slice [index low-datom high-datom]))
 
@@ -111,6 +114,11 @@
     (let [frozen-pred (nippy/fast-freeze pred)]
       (normal-request :head-filter
                       [index frozen-pred low-datom high-datom])))
+
+  (tail-filter [_ index pred high-datom low-datom]
+    (let [frozen-pred (nippy/fast-freeze pred)]
+      (normal-request :tail-filter
+                      [index frozen-pred high-datom low-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
