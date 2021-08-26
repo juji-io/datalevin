@@ -118,12 +118,14 @@
                            :user/pw-salt     {:db/valueType :db.type/bytes}
                            :database/type    {:db/valueType :db.type/keyword}
                            :database/name    {:db/valueType :db.type/string}
-                           :role/key         {:db/valueType :db.type/keyword}
+                           :database/id      {:db/valueType :db.type/uuid
+                                              :db/unique    :db.unique/identity}
+                           :role/name        {:db/valueType :db.type/keyword
+                                              :db/unique    :db.unique/identity}
                            :role/desc        {:db/valueType :db.type/string}
                            :permission/level {:db/valueType :db.type/keyword}
                            :permission/obj   {:db/valueType :db.type/keyword}
                            :permission/db    {:db/valueType :db.type/ref}
-                           :permission/user  {:db/valueType :db.type/ref}
                            :permission/desc  {:db/valueType :db.type/string}
                            :user-role/user   {:db/valueType :db.type/ref}
                            :user-role/role   {:db/valueType :db.type/ref}

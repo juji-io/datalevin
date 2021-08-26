@@ -11,7 +11,8 @@
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log]
-            [clojure.string :as s])
+            [clojure.string :as s]
+            [me.tonsky.persistent-sorted-set.arrays :as da])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
            [java.nio.file Files Paths]
@@ -24,6 +25,7 @@
            [java.util.concurrent Executors Executor ExecutorService
             ConcurrentLinkedQueue]
            [datalevin.db DB]
+           [datalevin.datom Datom]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
             Argon2Parameters$Builder]))
@@ -137,9 +139,23 @@
     (catch Exception _
       nil)))
 
+(defn- user-permissions
+  [sys-conn user-id]
+  (d/q '[:find (pull ?p [:permission/level :permission/obj :permission/db])
+         :in $ ?uid
+         :where
+         [?u :user/id ?uid]
+         [?ur :user-role/user ?u]
+         [?ur :user-role/role ?r]
+         [?rp :role-perm/role ?r]
+         [?rp :role-perm/perm ?p]]
+       @sys-conn
+       user-id))
+
 (defn- next-user-id
   [sys-conn]
-  )
+  (let [^Datom d (first (db/-last @sys-conn [nil :user/id nil]))]
+    (inc ^long (.-v d))))
 
 (defn create-user
   [^Server server username password ]
@@ -150,33 +166,16 @@
         (u/raise "Password is required when creating user" {})
         (let [s   (salt)
               h   (password-hashing password s)
+              id  (next-user-id sys-conn)
               txs [{:db/id        -1
                     :user/name    username
-                    :user/id      0
+                    :user/id      id
                     :user/pw-hash h
                     :user/pw-salt s}
-                   {:db/id     -2
-                    :role/key  ::superuser
-                    :role/desc "Super user role"}
-                   {:db/id          -3
+                   {:db/id          -2
                     :user-role/user -1
-                    :user-role/role -2}
-                   {:db/id            -4
-                    :permission/level ::control
-                    :permission/obj   ::server
-                    :permission/desc  "Permission to do everything on server"}
-                   {:db/id          -5
-                    :role-perm/perm -4
-                    :role-perm/role -2}
-                   {:db/id     -6
-                    :role/key  ::db-ownder
-                    :role/desc "Database owner"}
-                   {:db/id            -7
-                    :permission/level ::create
-                    :permission/obj   ::database}
-                   {:db/id          -8
-                    :role-perm/perm -7
-                    :role-perm/role -6}]])))))
+                    :user-role/role [:role/key ::db-owner]}]]
+          (d/transact! sys-conn txs))))))
 
 (defn- authenticate
   [^Server server {:keys [username password]}]
@@ -347,6 +346,27 @@
   (swap! (.attachment skey) assoc :client-id (message :client-id))
   (write-message skey {:type :set-client-id-ok}))
 
+(defn- transact-db-info
+  [^Server server user-id db-type db-name]
+  (let [db-id (d/squuid)]
+    (d/transact! (.-sys-conn server)
+                 [{:db/id         -1
+                   :database/type db-type
+                   :database/id   db-id
+                   :database/name db-name}
+                  {:db/id     -2
+                   :role/name (keyword (str "db-owner-" db-id))}
+                  {:db/id            -3
+                   :permission/level ::create
+                   :permission/obj   ::database
+                   :permission/db    -1}
+                  {:db/id          -4
+                   :user-role/user [:user/id user-id]
+                   :user-role/role -2}
+                  {:db/id          -5
+                   :role-perm/perm -3
+                   :role-perm/role -2}])))
+
 (defn- open
   [^Server server ^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
@@ -357,10 +377,7 @@
         (let [store (st/open dir schema)]
           (update-client server client-id
                          #(assoc % :dt-store store :dt-db (db/new-db store))))
-        (d/transact! (.-sys-conn server)
-                     [{:database/owner [:user/id id]
-                       :database/type  :datalog
-                       :database/name  db-name}]))
+        (transact-db-info server id :datalog db-name))
       (write-message skey {:type :command-complete}))))
 
 (defn- close
@@ -509,10 +526,7 @@
           dir                        (db-dir server id db-name)]
       (when-not (and kv-store (= dir (l/dir kv-store)))
         (update-client server client-id #(assoc % :kv-store (l/open-kv dir)))
-        (d/transact! (.-sys-conn server)
-                     [{:database/owner [:user/id id]
-                       :database/type  :key-value
-                       :database/name  db-name}]))
+        (transact-db-info server id :key-value db-name))
       (write-message skey {:type :command-complete}))))
 
 (defn- close-kv
@@ -781,7 +795,7 @@
                   :user/pw-salt s}
                  {:db/id     -2
                   :role/key  ::superuser
-                  :role/desc "Super user role"}
+                  :role/desc "A role able to do everything"}
                  {:db/id          -3
                   :user-role/user -1
                   :user-role/role -2}
@@ -793,11 +807,12 @@
                   :role-perm/perm -4
                   :role-perm/role -2}
                  {:db/id     -6
-                  :role/key  ::db-ownder
-                  :role/desc "Database owner"}
+                  :role/name ::db-owner
+                  :role/desc "A role able to create database"}
                  {:db/id            -7
                   :permission/level ::create
-                  :permission/obj   ::database}
+                  :permission/obj   ::database
+                  :permission/desc  "Permission to create database"}
                  {:db/id          -8
                   :role-perm/perm -7
                   :role-perm/role -6}]]

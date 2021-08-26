@@ -145,7 +145,7 @@
            (st/head store :eav (d/datom c/e0 :id nil)
                     (d/datom c/emax :id nil))))
     (is (= (d/datom (dec (+ c/e0 end) ) :id (dec (+ c/e0 end)))
-           (st/tail store :eav (d/datom c/emax :id nil)
+           (st/tail store :ave (d/datom c/emax :id nil)
                     (d/datom c/e0 :id nil))))
     (is (= (filter pred txs)
            (st/slice-filter store :eav pred
