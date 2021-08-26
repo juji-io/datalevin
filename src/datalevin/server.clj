@@ -33,6 +33,35 @@
 (log/refer-timbre)
 (log/set-level! :debug)
 
+;; permission levels
+(derive ::alter ::view)
+(derive ::create ::alter)
+(derive ::control ::create)
+
+;; permission objects
+(derive ::server ::database)
+
+(defn- user-permissions
+  [sys-conn user-id]
+  (d/q '[:find (pull ?p [:permission/level :permission/obj :permission/db])
+         :in $ ?uid
+         :where
+         [?u :user/id ?uid]
+         [?ur :user-role/user ?u]
+         [?ur :user-role/role ?r]
+         [?rp :role-perm/role ?r]
+         [?rp :role-perm/perm ?p]]
+       @sys-conn
+       user-id))
+
+(defn- has-permission?
+  [req-level req-obj req-db user-permissions]
+  (some (fn [{:keys [permission/level permission/obj permission/db]}]
+          (and (isa? level req-level)
+               (isa? obj req-obj)
+               (if req-db (= req-db db) true)))
+        user-permissions))
+
 (defprotocol IServer
   (start [srv] "Start the server")
   (stop [srv] "Stop the server")
@@ -62,7 +91,8 @@
                  ^ConcurrentLinkedQueue register-queue
                  ^ExecutorService work-executor
                  sys-conn
-                 ;; client-id -> { user/id, dt-store, dt-db, kv-store }
+                 ;; client-id -> { user/id, permissions,
+                 ;;                dt-store, dt-db, kv-store }
                  ^:volatile-mutable clients]
   IServer
   (start [server]
@@ -86,7 +116,10 @@
     (clients client-id))
 
   (add-client [server client-id user-id]
-    (set! clients (assoc clients client-id {:user/id user-id})))
+    (set! clients
+          (assoc clients client-id
+                 {:user/id     user-id
+                  :permissions (user-permissions sys-conn user-id)})))
 
   (remove-client [server client-id]
     (set! clients (dissoc clients client-id)))
@@ -138,19 +171,6 @@
     (d/pull (d/db sys-conn) '[*] [:user/name username])
     (catch Exception _
       nil)))
-
-(defn- user-permissions
-  [sys-conn user-id]
-  (d/q '[:find (pull ?p [:permission/level :permission/obj :permission/db])
-         :in $ ?uid
-         :where
-         [?u :user/id ?uid]
-         [?ur :user-role/user ?u]
-         [?ur :user-role/role ?r]
-         [?rp :role-perm/role ?r]
-         [?rp :role-perm/perm ?p]]
-       @sys-conn
-       user-id))
 
 (defn- next-user-id
   [sys-conn]
@@ -771,15 +791,6 @@
             (.remove iter)
             (recur iter)))
         (recur)))))
-
-;; permission levels
-(derive ::alter ::view)
-(derive ::create ::alter)
-(derive ::control ::create)
-
-;; permission objects
-(derive ::server ::database)
-(derive ::server ::user)
 
 (defn- init-sys-db
   [root]
