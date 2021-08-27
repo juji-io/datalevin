@@ -43,20 +43,22 @@
 
 (defn- user-permissions
   [sys-conn user-id]
-  (d/q '[:find (pull ?p [:permission/level :permission/obj :permission/db])
-         :in $ ?uid
-         :where
-         [?u :user/id ?uid]
-         [?ur :user-role/user ?u]
-         [?ur :user-role/role ?r]
-         [?rp :role-perm/role ?r]
-         [?rp :role-perm/perm ?p]]
-       @sys-conn
-       user-id))
+  (map first
+       (d/q '[:find (pull ?p [:permission/level :permission/obj :permission/db])
+              :in $ ?uid
+              :where
+              [?u :user/id ?uid]
+              [?ur :user-role/user ?u]
+              [?ur :user-role/role ?r]
+              [?rp :role-perm/role ?r]
+              [?rp :role-perm/perm ?p]]
+            @sys-conn
+            user-id)))
 
 (defn- has-permission?
   [req-level req-obj req-db user-permissions]
-  (some (fn [{:keys [permission/level permission/obj permission/db]}]
+  (some (fn [{:keys [permission/level permission/obj permission/db] :as p}]
+          (log/debug p)
           (and (isa? level req-level)
                (isa? obj req-obj)
                (if req-db (= req-db db) true)))
@@ -93,16 +95,18 @@
                  sys-conn
                  ;; client-id -> { user/id, permissions,
                  ;;                dt-store, dt-db, kv-store }
-                 ^:volatile-mutable clients]
+                 ^:volatile-mutable clients
+                 ;; dir -> store
+                 ^:volatile-mutable stores]
   IServer
-  (start [server]
+  (start [_]
     (.set running true)
     (.start (Thread.
               (fn []
                 (log/info "Datalevin server started on port" port)
                 (event-loop server)))))
 
-  (stop [server]
+  (stop [_]
     (.set running false)
     (.wakeup selector)
     (d/close sys-conn)
@@ -112,19 +116,19 @@
     (.close selector)
     (log/info "Datalevin server shuts down."))
 
-  (get-client [server client-id]
+  (get-client [_ client-id]
     (clients client-id))
 
-  (add-client [server client-id user-id]
-    (set! clients
-          (assoc clients client-id
-                 {:user/id     user-id
-                  :permissions (user-permissions sys-conn user-id)})))
+  (add-client [_ client-id user-id]
+    (let [perms (user-permissions sys-conn user-id)]
+      (log/debug (pr-str perms))
+      (set! clients (assoc clients client-id
+                           {:user/id user-id :permissions perms}))))
 
-  (remove-client [server client-id]
+  (remove-client [_ client-id]
     (set! clients (dissoc clients client-id)))
 
-  (update-client [server client-id f]
+  (update-client [_ client-id f]
     (set! clients (update clients client-id f))))
 
 ;; password processing
@@ -366,14 +370,20 @@
   (swap! (.attachment skey) assoc :client-id (message :client-id))
   (write-message skey {:type :set-client-id-ok}))
 
+(defn- db-exists?
+  [^Server server user-id db-type db-name]
+  )
+
 (defn- transact-db-info
   [^Server server user-id db-type db-name]
   (let [db-id (d/squuid)]
-    (d/transact! (.-sys-conn server)
-                 [{:db/id         -1
-                   :database/type db-type
-                   :database/id   db-id
-                   :database/name db-name}
+    (d/transact! (.-sys-co
+                   nn server)
+                 [{:db/id          -1
+                   :database/type  db-type
+                   :database/id    db-id
+                   :database/owner [:user/id user-id]
+                   :database/name  db-name}
                   {:db/id     -2
                    :role/name (keyword (str "db-owner-" db-id))}
                   {:db/id            -3
@@ -390,14 +400,22 @@
 (defn- open
   [^Server server ^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
-    (let [{:keys [client-id]}        @(.attachment skey)
-          {:keys [user/id dt-store]} (get-client server client-id)
-          dir                        (db-dir server id db-name)]
-      (when-not (and dt-store (= dir (st/dir dt-store)))
-        (let [store (st/open dir schema)]
+    (let [{:keys [client-id]}                   @(.attachment skey)
+          {:keys [user/id dt-store] :as client} (get-client server client-id)
+          dir                                   (db-dir server id db-name)]
+      (log/debug "client" client)
+      (log/debug "dir" dir)
+      (log/debug "dt-store" dt-store)
+      (if-let [store ((.-stores server) dir)]
+        (when-not (and dt-store (= dt-store store))
           (update-client server client-id
-                         #(assoc % :dt-store store :dt-db (db/new-db store))))
-        (transact-db-info server id :datalog db-name))
+                         #(assoc % :dt-store store :dt-db (db/new-db store)))))
+      #_(when-not (and dt-store (= dir (st/dir dt-store)))
+          (let [store (st/open dir schema)]
+            (log/debug "store dir" (st/dir store))
+            (update-client server client-id
+                           #(assoc % :dt-store store :dt-db (db/new-db store))))
+          (transact-db-info server id :datalog db-name))
       (write-message skey {:type :command-complete}))))
 
 (defn- close
@@ -855,6 +873,7 @@
                 (ConcurrentLinkedQueue.)
                 (Executors/newWorkStealingPool)
                 (init-sys-db root)
+                {}
                 {}))
     (catch Exception e
       (u/raise "Error creating server:" (ex-message e) {}))))
@@ -867,8 +886,6 @@
   (def server (create {:port c/default-port
                        :root (u/tmp-dir
                                (str "remote-test-" (UUID/randomUUID)))}))
-
-  (mm/measure server)
 
   (start server)
 

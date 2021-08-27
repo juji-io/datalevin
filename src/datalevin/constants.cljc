@@ -118,6 +118,7 @@
                            :user/pw-salt     {:db/valueType :db.type/bytes}
                            :database/type    {:db/valueType :db.type/keyword}
                            :database/name    {:db/valueType :db.type/string}
+                           :database/owner   {:db/valueType :db.type/ref}
                            :database/id      {:db/valueType :db.type/uuid
                                               :db/unique    :db.unique/identity}
                            :role/name        {:db/valueType :db.type/keyword
