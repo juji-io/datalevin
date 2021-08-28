@@ -70,7 +70,8 @@
   (get-client [srv client-id] "access client info")
   (add-client [srv client-id user-id] "add an client")
   (remove-client [srv client-id] "remove an client")
-  (update-client [srv client-id f] "Update info about a client"))
+  (update-client [srv client-id f] "Update info about a client")
+  (get-store [srv dir] "access a store"))
 
 (defn- close-conn
   "Free resources related to a connection"
@@ -99,7 +100,7 @@
                  ;; dir -> store
                  ^:volatile-mutable stores]
   IServer
-  (start [_]
+  (start [server]
     (.set running true)
     (.start (Thread.
               (fn []
@@ -129,7 +130,10 @@
     (set! clients (dissoc clients client-id)))
 
   (update-client [_ client-id f]
-    (set! clients (update clients client-id f))))
+    (set! clients (update clients client-id f)))
+
+  (get-store [_ dir]
+    (stores dir)))
 
 ;; password processing
 
@@ -377,8 +381,7 @@
 (defn- transact-db-info
   [^Server server user-id db-type db-name]
   (let [db-id (d/squuid)]
-    (d/transact! (.-sys-co
-                   nn server)
+    (d/transact! (.-sys-conn server)
                  [{:db/id          -1
                    :database/type  db-type
                    :database/id    db-id
@@ -406,7 +409,7 @@
       (log/debug "client" client)
       (log/debug "dir" dir)
       (log/debug "dt-store" dt-store)
-      (if-let [store ((.-stores server) dir)]
+      (if-let [store (get-store server dir)]
         (when-not (and dt-store (= dt-store store))
           (update-client server client-id
                          #(assoc % :dt-store store :dt-db (db/new-db store)))))
