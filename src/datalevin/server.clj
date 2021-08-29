@@ -71,7 +71,9 @@
   (add-client [srv client-id user-id] "add an client")
   (remove-client [srv client-id] "remove an client")
   (update-client [srv client-id f] "Update info about a client")
-  (get-store [srv dir] "access a store"))
+  (get-store [srv dir] "access a store")
+  (add-store [srv dir store] "add a store")
+  (remove-store [srv dir] "remove a store"))
 
 (defn- close-conn
   "Free resources related to a connection"
@@ -133,7 +135,19 @@
     (set! clients (update clients client-id f)))
 
   (get-store [_ dir]
-    (stores dir)))
+    (when-let [store (stores dir)]
+      (cond
+        (instance? datalevin.storage.IStore store)
+        (when-not (st/closed? store) store)
+        (instance? datalevin.lmdb.ILMDB store)
+        (when-not (l/closed-kv? store) store)
+        :else (u/raise "Unknown store" {:dir dir}))))
+
+  (add-store [_ dir store]
+    (set! stores (assoc stores dir store)))
+
+  (remove-store [_ dir]
+    (set! stores (dissoc stores dir))))
 
 ;; password processing
 
@@ -307,6 +321,12 @@
   (str (.-root server) u/+separator+ user-id u/+separator+
        (b/hexify-string db-name)))
 
+(defn- db-exists?
+  [^Server server user-id db-name]
+  (u/file-exists (str (db-dir server user-id db-name)
+                      u/+separator+
+                      "data.mdb")))
+
 (defn- error-response
   [^SelectionKey skey error-msg]
   (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
@@ -374,10 +394,6 @@
   (swap! (.attachment skey) assoc :client-id (message :client-id))
   (write-message skey {:type :set-client-id-ok}))
 
-(defn- db-exists?
-  [^Server server user-id db-type db-name]
-  )
-
 (defn- transact-db-info
   [^Server server user-id db-type db-name]
   (let [db-id (d/squuid)]
@@ -403,22 +419,18 @@
 (defn- open
   [^Server server ^SelectionKey skey {:keys [db-name schema]}]
   (wrap-error
-    (let [{:keys [client-id]}                   @(.attachment skey)
-          {:keys [user/id dt-store] :as client} (get-client server client-id)
-          dir                                   (db-dir server id db-name)]
-      (log/debug "client" client)
-      (log/debug "dir" dir)
-      (log/debug "dt-store" dt-store)
-      (if-let [store (get-store server dir)]
-        (when-not (and dt-store (= dt-store store))
-          (update-client server client-id
-                         #(assoc % :dt-store store :dt-db (db/new-db store)))))
-      #_(when-not (and dt-store (= dir (st/dir dt-store)))
-          (let [store (st/open dir schema)]
-            (log/debug "store dir" (st/dir store))
-            (update-client server client-id
-                           #(assoc % :dt-store store :dt-db (db/new-db store))))
-          (transact-db-info server id :datalog db-name))
+    (let [{:keys [client-id]}        @(.attachment skey)
+          {:keys [user/id dt-store]} (get-client server client-id)
+          dir                        (db-dir server id db-name)
+          existing-db?               (db-exists? server id db-name)
+          store                      (or (get-store server dir)
+                                         (st/open dir schema))]
+      (add-store server dir store)
+      (when-not (and dt-store (= dt-store store))
+        (update-client server client-id
+                       #(assoc % :dt-store store :dt-db (db/new-db store))))
+      (when-not existing-db?
+        (transact-db-info server id :datalog db-name))
       (write-message skey {:type :command-complete}))))
 
 (defn- close
@@ -564,9 +576,14 @@
   (wrap-error
     (let [{:keys [client-id]}        @(.attachment skey)
           {:keys [user/id kv-store]} (get-client server client-id)
-          dir                        (db-dir server id db-name)]
+          dir                        (db-dir server id db-name)
+          existing-db?               (db-exists? server id db-name)
+          store                      (or (get-store server dir)
+                                         (l/open-kv dir))]
+      (add-store server dir store)
       (when-not (and kv-store (= dir (l/dir kv-store)))
-        (update-client server client-id #(assoc % :kv-store (l/open-kv dir)))
+        (update-client server client-id #(assoc % :kv-store store)))
+      (when-not existing-db?
         (transact-db-info server id :key-value db-name))
       (write-message skey {:type :command-complete}))))
 

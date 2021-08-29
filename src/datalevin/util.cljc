@@ -57,6 +57,11 @@
       (do (io/delete-file f)
           (recur (rest fs))))))
 
+(defn file-exists
+  "check if a file exists"
+  [fname]
+  (.exists (io/file fname)))
+
 (defn file
   "Return directory path as File, create it if missing"
   [^String path]
