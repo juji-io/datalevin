@@ -109,7 +109,7 @@
 (def ^:const message-format-transit (unchecked-byte 0x01))
 (def ^:const message-format-nippy (unchecked-byte 0x02))
 
-(def system-schema (merge implicit-schema
+(def server-schema (merge implicit-schema
                           {:user/name        {:db/unique    :db.unique/identity
                                               :db/valueType :db.type/string}
                            :user/id          {:db/unique    :db.unique/identity
@@ -118,13 +118,13 @@
                            :user/pw-salt     {:db/valueType :db.type/bytes}
                            :database/type    {:db/valueType :db.type/keyword}
                            :database/name    {:db/valueType :db.type/string}
-                           :database/owner   {:db/valueType :db.type/ref}
+                           :database/creator {:db/valueType :db.type/ref}
                            :database/id      {:db/valueType :db.type/uuid
                                               :db/unique    :db.unique/identity}
                            :role/name        {:db/valueType :db.type/keyword
                                               :db/unique    :db.unique/identity}
                            :role/desc        {:db/valueType :db.type/string}
-                           :permission/level {:db/valueType :db.type/keyword}
+                           :permission/act   {:db/valueType :db.type/keyword}
                            :permission/obj   {:db/valueType :db.type/keyword}
                            :permission/db    {:db/valueType :db.type/ref}
                            :permission/desc  {:db/valueType :db.type/string}

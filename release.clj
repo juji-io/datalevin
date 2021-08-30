@@ -41,7 +41,7 @@
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
     (update-file "src/datalevin/main.clj" old->new)
-    (update-file "native/project.clj"  old->new) 
+    (update-file "native/project.clj"  old->new)
     (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
@@ -97,6 +97,7 @@
 
 (defn -main []
   (sh "lein" "clean")
+  (update-file "src/datalevin/server.clj" #(str/replace % ":debug" ":info"))
   (update-version)
   (run-tests)
   (make-commit)
