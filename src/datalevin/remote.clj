@@ -2,9 +2,8 @@
   "Proxy for remote stores"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
-            [datalevin.client :as cl]
+            [datalevin.client :as cl :refer [normal-request]]
             [datalevin.storage :as s]
-            [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [taoensso.nippy :as nippy]
             [com.rpl.nippy-serializable-fn]
@@ -28,16 +27,6 @@
   (if (dtlv-uri? s)
     (str/replace-first s #"(dtlv://.+):(.+)@" "$1:***@")
     s))
-
-(defmacro normal-request
-  "Request to remote store and returns results. Does not use the
-  copy-in protocol"
-  [call args]
-  `(let [{:keys [~'type ~'message ~'result]}
-         (cl/request ~'client {:type ~call :args ~args})]
-     (if (= ~'type :error-response)
-       (u/raise "Unable to access remote db:" ~'message {:uri ~'uri})
-       ~'result)))
 
 ;; remote datalog store
 
@@ -276,7 +265,7 @@
 
 (comment
 
-  (def store (open "dtlv://datalevin:datalevin@localhost/test"))
+  (def store (open "dtlv://datalevin:datalevin@localhost/teststore"))
 
 
   )

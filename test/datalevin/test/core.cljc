@@ -1,14 +1,17 @@
 (ns datalevin.test.core
   (:require
-    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [clojure.string :as str]
-    [datalevin.core :as d]
-    [datalevin.impl.entity :as de]
-    [datalevin.util #?@(:cljs [:refer-macros [defrecord-updatable]]
+   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.string :as str]
+   [datalevin.core :as d]
+   [datalevin.constants :as c]
+   [datalevin.impl.entity :as de]
+   [datalevin.util :as u #?@(:cljs [:refer-macros [defrecord-updatable]]
                              :clj  [:refer [defrecord-updatable]])]
-    #?(:cljs [datalevin.test.cljs])))
+   #?(:clj [datalevin.server :as srv])
+   #?(:cljs [datalevin.test.cljs]))
+  #?(:clj (:import [java.util UUID])))
 
 #?(:cljs
    (enable-console-print!))
@@ -68,3 +71,17 @@
 (defn no-namespace-maps [t]
   (binding [*print-namespace-maps* false]
     (t)))
+
+#?(:clj
+   (defn server-fixture
+     [f]
+     (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
+           server (srv/create {:port c/default-port
+                               :root dir})]
+       (try
+         (srv/start server)
+         (f)
+         (catch Exception e (throw e))
+         (finally
+           (srv/stop server)
+           (u/delete-files dir))))))

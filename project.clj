@@ -58,7 +58,11 @@
                              [com.rpl/nippy-serializable-fns]
                              [com.cognitect/transit-clj]
                              [org.bouncycastle/bcprov-jdk15on]
-                             [nrepl/bencode]]}}
+                             [nrepl/bencode]]
+                            :global-vars
+                            {*print-namespace-maps* false
+                             *unchecked-math*       :warn-on-boxed
+                             *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
@@ -79,8 +83,8 @@
           :namespaces  [datalevin.core datalevin.main]
           :metadata    {:doc/format :markdown}
           :source-uri
-          {#"target/classes" "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
-           #".*"             "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
-  :global-vars {*print-namespace-maps* false
-                *unchecked-math*       :warn-on-boxed
-                *warn-on-reflection*   true})
+          {#"target/classes"
+           "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
+           #".*"
+           "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
+  )

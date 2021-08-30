@@ -1,26 +1,15 @@
 (ns datalevin.remote-test
   (:require [datalevin.remote :as sut]
-            [datalevin.server :as srv]
             [datalevin.storage :as st]
             [datalevin.lmdb :as l]
             [datalevin.datom :as d]
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [clojure.test :refer [is are testing deftest use-fixtures]])
+            [datalevin.test.core :refer [server-fixture]]
+            [clojure.test :refer [is testing deftest use-fixtures]])
   (:import [java.util UUID Arrays]
            [datalevin.datom Datom]))
-
-(defn server-fixture
-  [f]
-  (let [server (srv/create {:port c/default-port
-                            :root (u/tmp-dir
-                                    (str "remote-test-" (UUID/randomUUID)))})]
-    (try
-      (srv/start server)
-      (f)
-      (catch Exception e (throw e))
-      (finally (srv/stop server)))))
 
 (use-fixtures :each server-fixture)
 

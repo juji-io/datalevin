@@ -33,13 +33,14 @@
 (log/refer-timbre)
 (log/set-level! :debug)
 
-;; permission levels
+;; permission acts
 (derive ::alter ::view)
 (derive ::create ::alter)
 (derive ::control ::create)
 
 ;; permission objects
 (derive ::server ::database)
+(derive ::server ::role)
 
 (defn- user-permissions
   [sys-conn user-id]
@@ -52,17 +53,7 @@
               [?ur :user-role/role ?r]
               [?rp :role-perm/role ?r]
               [?rp :role-perm/perm ?p]]
-            @sys-conn
-            user-id)))
-
-(defn- has-permission?
-  [req-act req-obj req-db user-permissions]
-  (some (fn [{:keys [permission/act permission/obj permission/db] :as p}]
-          (log/debug p)
-          (and (isa? act req-act)
-               (isa? obj req-obj)
-               (if req-db (= req-db db) true)))
-        user-permissions))
+            @sys-conn user-id)))
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -105,12 +96,12 @@
   (stop [server]
     (.set running false)
     (.wakeup selector)
-    (d/close sys-conn)
-    (.shutdown work-executor)
     (doseq [skey (.keys selector)] (close-conn skey))
-    (doseq [dir (keys stores)] (remove-store server dir))
     (.close server-socket)
-    (.close selector)
+    (when (.isOpen selector) (.close selector))
+    (.shutdown work-executor)
+    (doseq [dir (keys stores)] (remove-store server dir))
+    (d/close sys-conn)
     (log/info "Datalevin server shuts down."))
 
   (get-client [_ client-id]
@@ -196,10 +187,13 @@
 
 (defn- next-user-id
   [sys-conn]
-  (let [^Datom d (first (db/-last @sys-conn [nil :user/id nil]))]
+  (let [^Datom d (db/-last @sys-conn [nil :user/id nil])]
+    (log/debug "d" d)
     (inc ^long (.-v d))))
 
-(defn- user-role-name [id] (keyword (str "user-" id)))
+(defn- user-role-name
+  [id]
+  (keyword "datalevin.server" (str "user-" id)))
 
 (defn- transact-new-user
   [sys-conn username password]
@@ -241,6 +235,40 @@
       (let [client-id (UUID/randomUUID)]
         (add-client server client-id id)
         client-id))))
+
+(defn- db-eid
+  [sys-conn user-id db-name]
+  (d/q '[:find ?d .
+         :in $ ?uid ?dname
+         :where
+         [?u :user/id ?uid]
+         [?ur :user-role/user ?u]
+         [?ur :user-role/role ?r]
+         [?rp :role-perm/role ?r]
+         [?rp :role-perm/perm ?p]
+         [?p :permission/db ?d]
+         [?d :database/name ?dname]]
+       @sys-conn user-id db-name))
+
+(defn- has-permission?
+  [sys-conn user-id req-act req-obj req-db-name user-permissions]
+  (some (fn [{:keys [permission/act permission/obj permission/db] :as p}]
+          (log/debug p)
+          (and (isa? act req-act)
+               (isa? obj req-obj)
+               (if req-db-name
+                 (= db {:db/id (db-eid sys-conn user-id req-db-name)})
+                 true)))
+        user-permissions))
+
+(defmacro wrap-permission
+  [sys-conn req-act req-obj req-db-name message body]
+  `(let [{:keys [~'client-id]}             @(~'.attachment ~'skey)
+         {:keys [~'permissions ~'user/id]} (get-client ~'server ~'client-id)]
+     (if (has-permission? ~sys-conn ~'id ~req-act ~req-obj
+                          ~req-db-name ~'permissions)
+       ~body
+       (u/raise ~message {}))))
 
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
@@ -363,7 +391,6 @@
 (defmacro normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
   [f]
-
   `(write-message
      ~'skey
      {:type   :command-complete
@@ -400,11 +427,12 @@
   [^Server server ^SelectionKey skey _]
   (let [{:keys [client-id]} @(.attachment skey)
         selector            (.selector skey)]
-    (doseq [^SelectionKey k (.keys selector)
-            :let            [state (.attachment k)]
-            :when           state]
-      (when (= client-id (@state :client-id))
-        (close-conn k)))
+    (when (.isOpen selector)
+      (doseq [^SelectionKey k (.keys selector)
+              :let            [state (.attachment k)]
+              :when           state]
+        (when (= client-id (@state :client-id))
+          (close-conn k))))
     (remove-client server client-id)))
 
 (defn- set-client-id
@@ -413,15 +441,19 @@
   (write-message skey {:type :set-client-id-ok}))
 
 (defn- create-user
-  [^Server server skey {:keys [username password]}]
+  [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn (.-sys-conn server)]
-      (if (pull-user sys-conn username)
-        (u/raise "User already exits" {:username username})
-        (if (s/blank? password)
-          (u/raise "Password is required when creating user" {})
-          (transact-new-user sys-conn username password)))
-      (write-message skey {:type :command-complete}))))
+    (let [sys-conn            (.-sys-conn server)
+          [username password] args]
+      (wrap-permission
+        sys-conn ::control ::server nil
+        "Don't have permission to create user"
+        (if (pull-user sys-conn username)
+          (u/raise "User already exits" {:username username})
+          (if (s/blank? password)
+            (u/raise "Password is required when creating user" {})
+            (do (transact-new-user sys-conn username password)
+                (write-message skey {:type :command-complete}))))))))
 
 (defn- open
   "Open a store. NB. stores are left open"
@@ -429,17 +461,24 @@
   (wrap-error
     (let [{:keys [client-id]}        @(.attachment skey)
           {:keys [user/id dt-store]} (get-client server client-id)
-          dir                        (db-dir server id db-name)
           existing-db?               (db-exists? server id db-name)
-          store                      (or (get-store server dir)
-                                         (st/open dir schema))]
-      (add-store server dir store)
-      (when-not (and dt-store (= dt-store store))
-        (update-client server client-id
-                       #(assoc % :dt-store store :dt-db (db/new-db store))))
-      (when-not existing-db?
-        (transact-new-db (.-sys-conn server) id :datalog db-name))
-      (write-message skey {:type :command-complete}))))
+          sys-conn                   (.-sys-conn server)]
+      (wrap-permission
+        sys-conn
+        (if existing-db? ::view ::create)
+        ::database
+        (when existing-db? db-name)
+        "Don't have permission to open database"
+        (let [dir   (db-dir server id db-name)
+              store (or (get-store server dir)
+                        (st/open dir schema))]
+          (add-store server dir store)
+          (when-not (and dt-store (= dt-store store))
+            (update-client server client-id
+                           #(assoc % :dt-store store :dt-db (db/new-db store))))
+          (when-not existing-db?
+            (transact-new-db (.-sys-conn server) id :datalog db-name))
+          (write-message skey {:type :command-complete}))))))
 
 (defn- close
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -722,6 +761,7 @@
   ['authentication
    'disconnect
    'set-client-id
+   'create-user
    'open
    'close
    'closed?
@@ -827,15 +867,16 @@
       (when (.get running)
         (handle-registration server)
         (.select selector)
-        (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
-          (when (.hasNext iter)
-            (let [^SelectionKey skey (.next iter)]
-              (when (and (.isValid skey) (.isAcceptable skey))
-                (handle-accept skey))
-              (when (and (.isValid skey) (.isReadable skey))
-                (handle-read server skey)))
-            (.remove iter)
-            (recur iter)))
+        (when (.get running)
+          (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
+            (when (.hasNext iter)
+              (let [^SelectionKey skey (.next iter)]
+                (when (and (.isValid skey) (.isAcceptable skey))
+                  (handle-accept skey))
+                (when (and (.isValid skey) (.isReadable skey))
+                  (handle-read server skey)))
+              (.remove iter)
+              (recur iter))))
         (recur)))))
 
 (defn- init-sys-db
@@ -851,7 +892,7 @@
                   :user/pw-hash h
                   :user/pw-salt s}
                  {:db/id     -2
-                  :role/name :user-0
+                  :role/name ::user-0
                   :role/desc "Superuser, a role able to do everything"}
                  {:db/id          -3
                   :user-role/user -1

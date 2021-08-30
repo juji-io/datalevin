@@ -264,3 +264,31 @@
          client    (->Client uri pool client-id)]
      (when db (init-db client db store schema))
      client)))
+
+(defmacro normal-request
+  "Request to server and returns results. Does not use the
+  copy-in protocol. `call` is a keyword, `args` is a vector"
+  [call args]
+  `(let [{:keys [~'type ~'message ~'result]}
+         (request ~'client {:type ~call :args ~args})]
+     (if (= ~'type :error-response)
+       (u/raise "Request to Datalevin server failed: " ~'message
+                {:call ~call :args ~args})
+       ~'result)))
+
+(defn create-user
+  [^Client client username password]
+  (normal-request :create-user [username password]))
+
+
+(comment
+
+  (def client (new-client "dtlv://datalevin:datalevin@localhost"))
+
+  (create-user client "boyan" "lol")
+
+  (def client1 (new-client "dtlv://boyan:lol@localhost"))
+
+  (def client2 (new-client "dtlv://boyan:okl@localhost"))
+
+  )
