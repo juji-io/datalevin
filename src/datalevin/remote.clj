@@ -267,5 +267,10 @@
 
   (def store (open "dtlv://datalevin:datalevin@localhost/teststore"))
 
+  (let [i 1
+        f (fn [] (inc i))]
+    (instance? clojure.lang.AFn f))
+
+
 
   )

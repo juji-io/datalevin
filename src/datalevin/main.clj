@@ -493,7 +493,7 @@
     (print (str ns-name "> "))
     (flush)))
 
-(defn- handle-error [_ctx last-error e]
+(defn- handle-error [_ last-error e]
   (binding [*out* *err*] (println (ex-message e)))
   (sci/set! last-error e))
 
