@@ -7,6 +7,7 @@
             [taoensso.nippy :as nippy]
             [datalevin.query :as q]
             [datalevin.util :as u]
+            [datalevin.core :as d]
             [datalevin.binding.graal]
             [datalevin.binding.java])
   (:import [clojure.lang AFn]

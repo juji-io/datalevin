@@ -37,7 +37,7 @@
           dir (lmdb/dir (.-lmdb ^Store store))
           t1  (sut/last-modified store)]
       (sut/load-datoms store [d])
-      (is (< t1 (sut/last-modified store)))
+      (is (<= t1 (sut/last-modified store)))
       (is (= s (sut/schema store)))
       (is (= 1 (sut/datom-count store :eav)))
       (is (= 1 (sut/datom-count store :ave)))

@@ -4,6 +4,10 @@
         "allPublicMethods":true
     },
     {
+        "name":"java.nio.file.Files",
+        "allPublicMethods":true
+    },
+    {
         "name":"java.lang.Byte",
         "allPublicConstructors":true,
         "allPublicMethods":true
