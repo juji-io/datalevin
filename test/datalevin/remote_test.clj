@@ -2,7 +2,9 @@
   (:require [datalevin.remote :as sut]
             [datalevin.storage :as st]
             [datalevin.lmdb :as l]
+            [datalevin.interpret :as i]
             [datalevin.datom :as d]
+            [datalevin.core :as dc]
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :as u]
@@ -45,7 +47,7 @@
       (is (= true (st/populated? store :eav d d)))
       (is (= 1 (st/size store :eav d d)))
       (is (= d (st/head store :eav d d)))
-      (st/swap-attr store b merge p1)
+      (st/swap-attr store b (i/inter-fn [& ms] (apply merge ms)) p1)
       (st/load-datoms store [d1])
       (is (= s1 (st/schema store)))
       (is (= 2 (st/datom-count store :eav)))
@@ -66,15 +68,15 @@
                                (d/datom c/e0 b nil)
                                (d/datom c/e0 nil nil))))
       (is (= 1 (st/size-filter store :eav
-                               (fn [^Datom d] (= v (.-v d)))
+                               (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
                                (d/datom c/e0 nil nil)
                                (d/datom c/e0 nil nil))))
       (is (= d (st/head-filter store :eav
-                               (fn [^Datom d] (= v (.-v d)))
+                               (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
                                (d/datom c/e0 nil nil)
                                (d/datom c/e0 nil nil))))
       (is (= [d] (st/slice-filter store :eav
-                                  (fn [^Datom d] (= v (.-v d)))
+                                  (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
                                   (d/datom c/e0 nil nil)
                                   (d/datom c/e0 nil nil))))
       (is (= [d1 d] (st/rslice store :ave d1 d)))
@@ -85,10 +87,10 @@
                                (d/datom c/e0 b nil)
                                (d/datom c/e0 nil nil))))
       (is (= [d] (st/slice-filter store :ave
-                                  (fn [^Datom d] (= v (.-v d)))
+                                  (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
                                   (d/datom c/e0 nil nil)
                                   (d/datom c/e0 nil nil))))
-      (st/swap-attr store c merge p2)
+      (st/swap-attr store c (i/inter-fn [& ms] (apply merge ms)) p2)
       (st/load-datoms store [d2])
       (is (= s2 (st/schema store)))
       (is (= 3 (st/datom-count store c/eav)))
@@ -127,7 +129,7 @@
         vs    (range 0 end)
         txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
                     vs)
-        pred  (fn [^Datom d] (odd? (.-v d)))]
+        pred  (i/inter-fn [d] (odd? (dc/datom-v d)))]
     (is (instance? datalevin.remote.DatalogStore store))
     (st/load-datoms store txs)
     (is (= (d/datom c/e0 :id 0)
@@ -242,9 +244,9 @@
         (let [ks   (shuffle (range 0 10000))
               vs   (map inc ks)
               txs  (map (fn [k v] [:put "r" k v :long :long]) ks vs)
-              pred (fn [kv]
-                     (let [^long k (b/read-buffer (l/k kv) :long)]
-                       (< 10 k 20)))
+              pred (i/inter-fn [kv]
+                               (let [^long k (dc/read-buffer (dc/k kv) :long)]
+                                 (< 10 k 20)))
               fks  (range 11 20)
               fvs  (map inc fks)
               res  (map (fn [k v] [k v]) fks fvs)

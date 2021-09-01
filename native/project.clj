@@ -13,7 +13,6 @@
                  [nrepl/bencode]
                  [com.taoensso/nippy]
                  [com.taoensso/timbre]
-                 [com.rpl/nippy-serializable-fns]
                  [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]

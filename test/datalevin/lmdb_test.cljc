@@ -1,6 +1,7 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as l]
             [datalevin.bits :as b]
+            [datalevin.interpret :as i]
             [datalevin.util :as u]
             [datalevin.binding.graal]
             [datalevin.binding.java]
@@ -316,9 +317,9 @@
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-          pred (fn [kv]
-                 (let [^long k (b/read-buffer (l/k kv) :long)]
-                   (> k 15)))]
+          pred (i/inter-fn [kv]
+                           (let [^long k (b/read-buffer (l/k kv) :long)]
+                             (> k 15)))]
       (l/transact-kv lmdb txs)
       (is (= 17 (l/get-some lmdb "c" pred [:all] :long :long true)))
       (is (= [16 17] (l/get-some lmdb "c" pred [:all] :long :long))))
@@ -332,9 +333,9 @@
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-          pred (fn [kv]
-                 (let [^long k (b/read-buffer (l/k kv) :long)]
-                   (< 10 k 20)))
+          pred (i/inter-fn [kv]
+                           (let [^long k (b/read-buffer (l/k kv) :long)]
+                             (< 10 k 20)))
           fks  (range 11 20)
           fvs  (map inc fks)
           res  (map (fn [k v] [k v]) fks fvs)

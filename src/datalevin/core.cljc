@@ -18,6 +18,7 @@
    [datalevin.impl.entity Entity]
    [datalevin.storage Store]
    [datalevin.db DB]
+   [datalevin.datom Datom]
    [datalevin.remote DatalogStore]
    [java.util UUID]))
 
@@ -1095,11 +1096,15 @@ given. Return reference to the database.
                    [db dbi-name pred k-range k-type]
                    [db dbi-name pred k-range k-type v-type]
                    [db dbi-name pred k-range k-type v-type ignore-key?])
-       :doc      "Return the first kv pair that has logical true value of `(pred x)` in the key-value store,
-     where `pred` is a function, `x` is an `IKV` fetched from the store,
-     with both key and value fields being a `ByteBuffer`.
+       :doc
+       "Return the first kv pair that has logical true value of `(pred x)` in
+        the key-value store, where `pred` is a function, `x` is an `IKV`
+        fetched from the store, with both key and value fields being a
+        `ByteBuffer`.
 
      `pred` can use [[read-buffer]] to read the content.
+
+      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1114,7 +1119,9 @@ given. Return reference to the database.
 
      Examples:
 
-              (def pred (fn [kv]
+              (require '[datalevin.interpret :as i])
+
+              (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
                           (> lk 15)))
 
@@ -1136,6 +1143,8 @@ given. Return reference to the database.
 
      `pred` can use [[read-buffer]] to read the buffer content.
 
+      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
@@ -1149,7 +1158,9 @@ given. Return reference to the database.
 
      Examples:
 
-              (def pred (fn [kv]
+              (require '[datalevin.interpret :as i])
+
+              (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
                           (> lk 15)))
 
@@ -1165,10 +1176,12 @@ given. Return reference to the database.
                    [db dbi-name pred k-range k-type])
        :doc      "Return the number of kv pairs in the specified key range in the key-value store, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
+     is an `IKV`, with both key and value fields being a `ByteBuffer`.
      Does not process the kv pairs.
 
      `pred` can use [[read-buffer]] to read the buffer content.
+
+      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
     `k-type` indicates data type of `k` and the allowed data types are described
     in [[read-buffer]].
@@ -1180,8 +1193,9 @@ given. Return reference to the database.
 
      Examples:
 
+              (require '[datalevin.interpret :as i])
 
-              (def pred (fn [kv]
+              (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
                           (> lk 15)))
 
@@ -1259,31 +1273,3 @@ one of the following data types:
     - `:ave`
     - `:vea`"}
   read-buffer b/read-buffer)
-
-(comment
-
-  (def schema {:aka  {:db/cardinality :db.cardinality/many}
-               :name {:db/valueType :db.type/string
-                      :db/unique    :db.unique/identity}})
-
-  (def conn (get-conn "dtlv://datalevin:datalevin@localhost/remote" schema))
-
-  (instance? DatalogStore (.-store ^DB @conn))
-
-  (transact! conn
-             [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
-              {:name "Peirce", :db/id -2, :nation "france"}
-              {:name "De Morgan", :db/id -3, :nation "English"}])
-
-
-  (q '[:find ?nation
-       :in $ ?alias
-       :where
-       [?e :aka ?alias]
-       [?e :nation ?nation]]
-     (db conn)
-     "fred")
-
-  (close conn)
-
-  )

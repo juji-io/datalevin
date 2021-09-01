@@ -1,13 +1,17 @@
 (ns datalevin.interpret
   "Code interpreter"
   (:require [clojure.walk :as w]
+            [clojure.set :as set]
             [sci.core :as sci]
             [sci.impl.vars :as vars]
+            [taoensso.nippy :as nippy]
             [datalevin.query :as q]
-            [datalevin.datom :as d]
+            [datalevin.util :as u]
             [datalevin.binding.graal]
             [datalevin.binding.java])
-  (:import [datalevin.datom Datom]))
+  (:import [clojure.lang AFn]
+           [datalevin.datom Datom]
+           [java.io DataInput DataOutput]))
 
 (def user-facing-ns #{'datalevin.core})
 
@@ -42,7 +46,7 @@
 
 (defn resolve-var [s]
   (when (symbol? s)
-    (some #(ns-resolve % s) user-facing-ns)))
+    (some #(ns-resolve % s) (conj user-facing-ns *ns*))))
 
 (defn- qualify-fn [x]
   (if (list? x)
@@ -57,7 +61,8 @@
                        (w/postwalk qualify-fn form)
                        form)))
 
-(def sci-opts {:namespaces (user-facing-vars)})
+(def sci-opts {:namespaces (user-facing-vars)
+               :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
 
 (defn exec-code
   "Execute code and print results. `code` is a string. Acceptable code includes
@@ -72,39 +77,64 @@
             (prn (eval-fn ctx next-form))
             (recur)))))))
 
-(defn- save-env [locals form]
-  (let [quoted-form `(quote (sci/eval-form (sci/init {})
-                                           ~(cons 'fn (rest (rest form)))))]
+;; inter-fn
+
+(defn- filter-used
+  "Only keep referred locals in the form"
+  [locals [args & body]]
+  (let [args (set args)
+        used (reduce (fn [coll s]
+                       (if-not (or (qualified-symbol? s) (args s))
+                         (conj coll s)
+                         coll))
+                     #{}
+                     (filter symbol? (flatten body)))]
+    (set/intersection (set locals) used)))
+
+(defn- save-env
+  "Borrowed some pieces from https://github.com/technomancy/serializable-fn"
+  [locals form]
+  (let [form        (cons 'fn (w/postwalk qualify-fn (rest form)))
+        quoted-form `(quote ~form)]
     (if locals
-      `(list `let [~@(for [local   locals,
+      `(list `let [~@(for [local   (filter-used locals (rest form)),
                            let-arg [`(quote ~local)
                                     `(list `quote ~local)]]
                        let-arg)]
              ~quoted-form)
       quoted-form)))
 
-(defmacro predicate
-  "Create a predicate that can be used in Datalevin queries. This predicate
-  is serializable and runs in a sandbox-ed interpreter."
+(defmacro inter-fn
+  "Create a function that can be used in Datalevin queries. This function
+  can be sent over the wire after frozen by nippy, and runs in a
+  sandboxed interpreter."
   [args & body]
   `(with-meta
-     (sci/eval-form (sci/init {}) (fn ~args (do ~@body)))
-     {:type   ::predicate
+     (sci/eval-form (sci/init sci-opts) (fn ~args (do ~@body)))
+     {:type   :datalevin/inter-fn
       :source ~(save-env (keys &env) &form)}))
 
-(comment
+(defn inter-fn?
+  "return true if `x` is an `inter-fn`"
+  [x]
+  (and (instance? clojure.lang.AFn x)
+       (= (:type (meta x)) :datalevin/inter-fn)))
 
-  (def equal-v (predicate [^Datom datom v] (= (.-v datom) v)))
+(defn- source->inter-fn
+  "Convert a source form to get an inter-fn"
+  [src]
+  (with-meta
+    (sci/eval-form (sci/init sci-opts) src)
+    {:type   :datalevin/inter-fn
+     :source src}))
 
-  (meta equal-v)
+(nippy/extend-freeze AFn :datalevin/inter-fn
+                     [^AFn x ^DataOutput out]
+                     (if (inter-fn? x)
+                       (nippy/freeze-to-out! out (:source (meta x)))
+                       (u/raise "Can only freeze an inter-fn" {})))
 
-  (instance? clojure.lang.AFn equal-v)
-
-  (equal-v (d/datom 1 :a 2) 2)
-
-
-
-
-  pred
-
-  )
+(nippy/extend-thaw :datalevin/inter-fn
+                   [^DataInput in]
+                   (let [src (nippy/thaw-from-in! in)]
+                     (source->inter-fn src)))

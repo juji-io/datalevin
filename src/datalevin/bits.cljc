@@ -3,10 +3,8 @@
   (:require [datalevin.datom :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [cognitect.transit :as transit]
             [taoensso.nippy :as nippy])
-  (:import [java.io DataInput DataOutput]
-           [java.util Arrays UUID Date Base64]
+  (:import [java.util Arrays UUID Date Base64]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
@@ -205,27 +203,6 @@
     (int? x)           8
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
-
-
-;; nippy
-
-(nippy/extend-freeze Datom :datalevin/datom
-                     [^Datom x ^DataOutput out]
-                     (.writeLong out (.-e x))
-                     (nippy/freeze-to-out! out (.-a x))
-                     (nippy/freeze-to-out! out (.-v x))
-                     (when-let [tx (.-tx x)]
-                       (nippy/freeze-to-out! out tx)))
-
-(nippy/extend-thaw :datalevin/datom
-                   [^DataInput in]
-                   (let [vs [(.readLong in)
-                             (nippy/thaw-from-in! in)
-                             (nippy/thaw-from-in! in)]
-                         tx (nippy/thaw-from-in! in)]
-                     (d/datom-from-reader (if tx
-                                            (conj vs tx)
-                                            tx))))
 
 ;; datom
 

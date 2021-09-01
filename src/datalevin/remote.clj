@@ -6,7 +6,6 @@
             [datalevin.storage :as s]
             [datalevin.lmdb :as l]
             [taoensso.nippy :as nippy]
-            [com.rpl.nippy-serializable-fn]
             [clojure.string :as str])
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
