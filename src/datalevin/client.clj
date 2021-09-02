@@ -165,17 +165,11 @@
 
 (defn parse-db
   "Extract the identifier of database from URI. A database is uniquely
-  identified by /<creator username>/<database name>. If the creator part
-  is missing, current username is assumed. Return a vector
-  of [<creator username>, <database name>] "
+  identified by its name (after being converted to its kebab case)."
   [^URI uri]
   (let [path (.getPath uri)]
     (when-not (or (s/blank? path) (= path "/"))
-      (let [res (s/split (subs path 1) #"/")
-            c   (count res)]
-        (if (= c 1)
-          [nil (first res)]
-          [(first res) (second res)])))))
+      (u/lisp-case (subs path 1)))))
 
 (defn parse-query
   [^URI uri]
@@ -264,7 +258,7 @@
          {:keys [username password]} (parse-user-info uri)
          host                        (.getHost uri)
          port                        (parse-port uri)
-         [_ db]                      (parse-db uri)
+         db                          (parse-db uri)
          store                       (or (get (parse-query uri) "store")
                                          c/db-store-datalog)
          client-id                   (authenticate host port username password)
@@ -310,7 +304,7 @@
   `perm-obj` can be one of `:datalevin.server/database`, `:datalevin.server/role`,
   or `:datalevin.server/server`, where the last one subsumes all the others
 
-  `perm-db` is a database UUID. If it is `nil`, the permission applies to all
+  `perm-db` is database name. If it is `nil`, the permission applies to all
   databases."
   [client role-name perm-desc perm-act perm-obj perm-db]
   (normal-request client :assign-permission

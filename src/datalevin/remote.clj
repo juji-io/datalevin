@@ -128,7 +128,7 @@
    (open uri-str nil))
   ([uri-str schema]
    (let [uri (URI. uri-str)]
-     (assert (second (cl/parse-db uri)) "URI should contain a database name")
+     (assert (cl/parse-db uri) "URI should contain a database name")
      (->DatalogStore (redact-uri uri-str)
                      (cl/new-client uri-str schema)))))
 
@@ -259,7 +259,7 @@
         uri-str (str uri-str
                      (if (cl/parse-query uri) "&" "?")
                      "store=" c/db-store-kv)]
-    (assert (second (cl/parse-db uri)) "URI should contain a database name")
+    (assert (cl/parse-db uri) "URI should contain a database name")
     (->KVStore (redact-uri uri-str) (cl/new-client uri-str))))
 
 (comment

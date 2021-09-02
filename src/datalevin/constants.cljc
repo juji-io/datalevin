@@ -110,24 +110,24 @@
 (def ^:const message-format-nippy (unchecked-byte 0x02))
 
 (def server-schema (merge implicit-schema
-                          {:user/name        {:db/unique    :db.unique/identity
-                                              :db/valueType :db.type/string}
-                           :user/pw-hash     {:db/valueType :db.type/string}
-                           :user/pw-salt     {:db/valueType :db.type/bytes}
-                           :database/type    {:db/valueType :db.type/keyword}
-                           :database/name    {:db/valueType :db.type/string}
-                           :database/creator {:db/valueType :db.type/ref}
-                           :role/name        {:db/valueType :db.type/keyword
-                                              :db/unique    :db.unique/identity}
-                           :role/desc        {:db/valueType :db.type/string}
-                           :permission/act   {:db/valueType :db.type/keyword}
-                           :permission/obj   {:db/valueType :db.type/keyword}
-                           :permission/db    {:db/valueType :db.type/ref}
-                           :permission/desc  {:db/valueType :db.type/string}
-                           :user-role/user   {:db/valueType :db.type/ref}
-                           :user-role/role   {:db/valueType :db.type/ref}
-                           :role-perm/role   {:db/valueType :db.type/ref}
-                           :role-perm/perm   {:db/valueType :db.type/ref}}))
+                          {:user/name       {:db/unique    :db.unique/identity
+                                             :db/valueType :db.type/string}
+                           :user/pw-hash    {:db/valueType :db.type/string}
+                           :user/pw-salt    {:db/valueType :db.type/bytes}
+                           :database/name   {:db/unique    :db.unique/identity
+                                             :db/valueType :db.type/string}
+                           :database/type   {:db/valueType :db.type/keyword}
+                           :role/name       {:db/valueType :db.type/keyword
+                                             :db/unique    :db.unique/identity}
+                           :role/desc       {:db/valueType :db.type/string}
+                           :permission/act  {:db/valueType :db.type/keyword}
+                           :permission/obj  {:db/valueType :db.type/keyword}
+                           :permission/db   {:db/valueType :db.type/ref}
+                           :permission/desc {:db/valueType :db.type/string}
+                           :user-role/user  {:db/valueType :db.type/ref}
+                           :user-role/role  {:db/valueType :db.type/ref}
+                           :role-perm/role  {:db/valueType :db.type/ref}
+                           :role-perm/perm  {:db/valueType :db.type/ref}}))
 
 ;;-------------------------------------------------------------
 
