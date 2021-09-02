@@ -164,10 +164,18 @@
   (let [p (.getPort uri)] (if (= -1 p) c/default-port p)))
 
 (defn parse-db
+  "Extract the identifier of database from URI. A database is uniquely
+  identified by /<creator username>/<database name>. If the creator part
+  is missing, current username is assumed. Return a vector
+  of [<creator username>, <database name>] "
   [^URI uri]
   (let [path (.getPath uri)]
     (when-not (or (s/blank? path) (= path "/"))
-      (subs path 1))))
+      (let [res (s/split (subs path 1) #"/")
+            c   (count res)]
+        (if (= c 1)
+          [nil (first res)]
+          [(first res) (second res)])))))
 
 (defn parse-query
   [^URI uri]
@@ -254,32 +262,59 @@
   ([uri-str schema]
    (let [uri                         (URI. uri-str)
          {:keys [username password]} (parse-user-info uri)
-
-         host      (.getHost uri)
-         port      (parse-port uri)
-         db        (parse-db uri)
-         store     (or (get (parse-query uri) "store") c/db-store-datalog)
-         client-id (authenticate host port username password)
-         pool      (new-connectionpool host port client-id)
-         client    (->Client uri pool client-id)]
+         host                        (.getHost uri)
+         port                        (parse-port uri)
+         [_ db]                      (parse-db uri)
+         store                       (or (get (parse-query uri) "store")
+                                         c/db-store-datalog)
+         client-id                   (authenticate host port username password)
+         pool                        (new-connectionpool host port client-id)
+         client                      (->Client uri pool client-id)]
      (when db (init-db client db store schema))
      client)))
 
-(defmacro normal-request
-  "Request to server and returns results. Does not use the
+(defn normal-request
+  "Send request to server and returns results. Does not use the
   copy-in protocol. `call` is a keyword, `args` is a vector"
-  [call args]
-  `(let [{:keys [~'type ~'message ~'result]}
-         (request ~'client {:type ~call :args ~args})]
-     (if (= ~'type :error-response)
-       (u/raise "Request to Datalevin server failed: " ~'message
-                {:call ~call :args ~args})
-       ~'result)))
+  [client call args]
+  (let [{:keys [type message result]}
+        (request client {:type call :args args})]
+    (if (= type :error-response)
+      (u/raise "Request to Datalevin server failed: " message
+               {:call call :args args})
+      result)))
 
 (defn create-user
-  [^Client client username password]
-  (normal-request :create-user [username password]))
+  "Create a user that can login. Username will be converted to Kebab case
+  (i.e. all lower case and words connected with dashes)."
+  [client username password]
+  (normal-request client :create-user [username password]))
 
+(defn create-role
+  "Create a role. `role-name` is a keyword, `role-desc` is a string."
+  [client role-name role-desc]
+  (normal-request client :create-role [role-name role-desc]))
+
+(defn assign-role
+  "Assign a role to a user. "
+  [client role-name username]
+  (normal-request client :assign-role [role-name username]))
+
+(defn assign-permission
+  "Assign a permission to a role.
+
+  `perm-act` can be one of `:datalevin.server/view`, `:datalevin.server/alter`,
+  `:datalevin.server/create`, or `:datalevin.server/control`, with each subsumes
+  the former.
+
+  `perm-obj` can be one of `:datalevin.server/database`, `:datalevin.server/role`,
+  or `:datalevin.server/server`, where the last one subsumes all the others
+
+  `perm-db` is a database UUID. If it is `nil`, the permission applies to all
+  databases."
+  [client role-name perm-desc perm-act perm-obj perm-db]
+  (normal-request client :assign-permission
+                  [role-name perm-desc perm-act perm-obj perm-db]))
 
 (comment
 
@@ -287,8 +322,8 @@
 
   (create-user client "boyan" "lol")
 
-  (def client1 (new-client "dtlv://boyan:lol@localhost"))
+  (create-role client :test-role "lol")
 
-  (def client2 (new-client "dtlv://boyan:okl@localhost"))
+  (assign-role client :test-role "boyan")
 
   )

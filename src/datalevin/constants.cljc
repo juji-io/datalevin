@@ -112,15 +112,11 @@
 (def server-schema (merge implicit-schema
                           {:user/name        {:db/unique    :db.unique/identity
                                               :db/valueType :db.type/string}
-                           :user/id          {:db/unique    :db.unique/identity
-                                              :db/valueType :db.type/long}
                            :user/pw-hash     {:db/valueType :db.type/string}
                            :user/pw-salt     {:db/valueType :db.type/bytes}
                            :database/type    {:db/valueType :db.type/keyword}
                            :database/name    {:db/valueType :db.type/string}
                            :database/creator {:db/valueType :db.type/ref}
-                           :database/id      {:db/valueType :db.type/uuid
-                                              :db/unique    :db.unique/identity}
                            :role/name        {:db/valueType :db.type/keyword
                                               :db/unique    :db.unique/identity}
                            :role/desc        {:db/valueType :db.type/string}

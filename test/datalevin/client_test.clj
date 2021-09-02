@@ -14,4 +14,4 @@
   (let [uri (URI. "dtlv://juji:nice!1@juji.io/mydb")]
     (is (= {:username "juji" :password "nice!1"} (sut/parse-user-info uri)))
     (is (= c/default-port (sut/parse-port uri)))
-    (is (= "mydb" (sut/parse-db uri)))))
+    (is (= [nil "mydb"] (sut/parse-db uri)))))

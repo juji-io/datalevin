@@ -270,3 +270,20 @@
           (let [ret (apply f args)]
             (reset! cache {args ret})
             ret)))))
+
+(defn- split-words [s]
+  (remove
+    empty?
+    (-> s
+        (s/replace #"_|-" " ")
+        (s/replace
+          #"(\p{javaUpperCase})((\p{javaUpperCase})[(\p{javaLowerCase})0-9])"
+          "$1 $2")
+        (s/replace #"(\p{javaLowerCase})(\p{javaUpperCase})" "$1 $2")
+        (s/split #"[^\w0-9]+"))))
+
+(defn lisp-case
+  ^String [^String s]
+  {:pre  [(string? s)]
+   :post [(string? %)]}
+  (s/join "-" (map s/lower-case (split-words s))))
