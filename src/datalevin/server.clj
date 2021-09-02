@@ -188,13 +188,13 @@
       nil)))
 
 (defn- pull-role
-  [sys-conn role-name]
+  [sys-conn role-key]
   (try
-    (d/pull (d/db sys-conn) '[*] [:role/name role-name])
+    (d/pull (d/db sys-conn) '[*] [:role/key role-key])
     (catch Exception _
       nil)))
 
-(defn- user-role-name [username] (keyword "datalevin.role" username))
+(defn- user-role-key [username] (keyword "datalevin.role" username))
 
 (defn- transact-new-user
   [sys-conn username password]
@@ -204,27 +204,26 @@
                             :user/name    username
                             :user/pw-hash h
                             :user/pw-salt s}
-                           {:db/id     -2
-                            :role/name (user-role-name username)}
+                           {:db/id    -2
+                            :role/key (user-role-key username)}
                            {:db/id          -3
                             :user-role/user -1
                             :user-role/role -2}])))
 
 (defn- transact-new-role
-  [sys-conn role-name role-desc]
-  (d/transact! sys-conn [(cond-> {:role/name role-name}
-                           role-desc (assoc :role/desc role-desc))]))
+  [sys-conn role-key]
+  (d/transact! sys-conn [{:role/key role-key}]))
 
 (defn- transact-user-role
-  [sys-conn role-name username]
+  [sys-conn role-key username]
   (d/transact! sys-conn [{:user-role/user [:user/name username]
-                          :user-role/role [:role/name role-name]}]))
+                          :user-role/role [:role/key role-key]}]))
 
 #_(defn- permission-eid
     [sys-conn perm-act perm-obj perm-db])
 
 #_(defn- transact-role-permission
-   [sys-conn role-name perm-desc perm-act perm-obj perm-db]
+   [sys-conn role-key perm-desc perm-act perm-obj perm-db]
    (let [perm-eid ()]))
 
 #_(defn- permit-db?
@@ -255,7 +254,7 @@
                  :permission/db  -1}
                 {:db/id          -3
                  :role-perm/perm -2
-                 :role-perm/role [:role/name (user-role-name username)]}]))
+                 :role-perm/role [:role/key (user-role-key username)]}]))
 
 (defn- authenticate
   [^Server server {:keys [username password]}]
@@ -377,17 +376,13 @@
     (log/debug "Copied out" (count data) "data items")))
 
 (defn- db-dir
-  "translate from user and db-name to server db path"
-  [^Server server username db-name]
-  (str (.-root server) u/+separator+
-       (b/hexify-string username) u/+separator+
-       (b/hexify-string db-name)))
+  "translate from db-name to server db path"
+  [^Server server db-name]
+  (str (.-root server) u/+separator+ (b/hexify-string db-name)))
 
 (defn- db-exists?
-  [^Server server username db-name]
-  (u/file-exists (str (db-dir server username db-name)
-                      u/+separator+
-                      "data.mdb")))
+  [^Server server db-name]
+  (u/file-exists (str (db-dir server db-name) u/+separator+ "data.mdb")))
 
 (defn- error-response
   [^SelectionKey skey error-msg]
@@ -480,37 +475,37 @@
 (defn- create-role
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn              (.-sys-conn server)
-          [role-name role-desc] args]
+    (let [sys-conn   (.-sys-conn server)
+          [role-key] args]
       (wrap-permission
         sys-conn ::control ::server nil
         "Don't have permission to create role"
-        (if (pull-role sys-conn role-name)
-          (u/raise "Role already exits" {:role-name role-name})
-          (do (transact-new-role sys-conn role-name role-desc)
+        (if (pull-role sys-conn role-key)
+          (u/raise "Role already exits" {:role-key role-key})
+          (do (transact-new-role sys-conn role-key)
               (write-message skey {:type :command-complete})))))))
 
 (defn- assign-role
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn             (.-sys-conn server)
-          [role-name username] args]
+    (let [sys-conn            (.-sys-conn server)
+          [role-key username] args]
       (wrap-permission
         sys-conn ::control ::server nil
         "Don't have permission to assign role"
-        (do (transact-user-role sys-conn role-name username)
+        (do (transact-user-role sys-conn role-key username)
             (write-message skey {:type :command-complete}))))))
 
 (defn- assign-permission
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn                                        (.-sys-conn server)
-          [role-name perm-desc perm-act perm-obj perm-db] args]
+    (let [sys-conn                             (.-sys-conn server)
+          [role-key perm-act perm-obj perm-db] args]
       (wrap-permission
         sys-conn ::control ::server nil
         "Don't have permission to assign role"
         (do #_(transact-role-permission
-                sys-conn role-name perm-desc perm-act perm-obj perm-db)
+                sys-conn role-key perm-desc perm-act perm-obj perm-db)
             (write-message skey {:type :command-complete}))))))
 
 (defn- open
@@ -519,7 +514,7 @@
   (wrap-error
     (let [{:keys [client-id]}         @(.attachment skey)
           {:keys [username dt-store]} (get-client server client-id)
-          existing-db?                (db-exists? server username db-name)
+          existing-db?                (db-exists? server db-name)
           sys-conn                    (.-sys-conn server)]
       (wrap-permission
         sys-conn
@@ -527,7 +522,7 @@
         ::database
         (when existing-db? db-name)
         "Don't have permission to open database"
-        (let [dir   (db-dir server username db-name)
+        (let [dir   (db-dir server db-name)
               store (or (get-store server dir)
                         (st/open dir schema))]
           (add-store server dir store)
@@ -684,8 +679,8 @@
   (wrap-error
     (let [{:keys [client-id]}         @(.attachment skey)
           {:keys [username kv-store]} (get-client server client-id)
-          dir                         (db-dir server username db-name)
-          existing-db?                (db-exists? server username db-name)
+          dir                         (db-dir server db-name)
+          existing-db?                (db-exists? server db-name)
           store                       (or (get-store server dir)
                                           (l/open-kv dir))]
       (add-store server dir store)
@@ -954,16 +949,14 @@
                   :user/name    c/default-username
                   :user/pw-hash h
                   :user/pw-salt s}
-                 {:db/id     -2
-                  :role/name (user-role-name c/default-username)
-                  :role/desc "Superuser, a role able to do everything"}
+                 {:db/id    -2
+                  :role/key (user-role-key c/default-username)}
                  {:db/id          -3
                   :user-role/user -1
                   :user-role/role -2}
-                 {:db/id           -4
-                  :permission/act  ::control
-                  :permission/obj  ::server
-                  :permission/desc "Permission to do everything on server"}
+                 {:db/id          -4
+                  :permission/act ::control
+                  :permission/obj ::server}
                  {:db/id          -5
                   :role-perm/perm -4
                   :role-perm/role -2}]]

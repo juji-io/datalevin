@@ -285,14 +285,14 @@
   (normal-request client :create-user [username password]))
 
 (defn create-role
-  "Create a role. `role-name` is a keyword, `role-desc` is a string."
-  [client role-name role-desc]
-  (normal-request client :create-role [role-name role-desc]))
+  "Create a role. `role-key` is a keyword."
+  [client role-key]
+  (normal-request client :create-role [role-key]))
 
 (defn assign-role
   "Assign a role to a user. "
-  [client role-name username]
-  (normal-request client :assign-role [role-name username]))
+  [client role-key username]
+  (normal-request client :assign-role [role-key username]))
 
 (defn assign-permission
   "Assign a permission to a role.
@@ -306,9 +306,9 @@
 
   `perm-db` is database name. If it is `nil`, the permission applies to all
   databases."
-  [client role-name perm-desc perm-act perm-obj perm-db]
+  [client role-key perm-act perm-obj perm-db]
   (normal-request client :assign-permission
-                  [role-name perm-desc perm-act perm-obj perm-db]))
+                  [role-key perm-act perm-obj perm-db]))
 
 (comment
 
