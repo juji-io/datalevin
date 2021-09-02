@@ -289,6 +289,11 @@
   [client role-key]
   (normal-request client :create-role [role-key]))
 
+(defn create-database
+  "Create a database. `db-type` can be `:datalog` or `:key-value`"
+  [client db-name db-type]
+  (normal-request client :create-database [db-name db-type]))
+
 (defn assign-role
   "Assign a role to a user. "
   [client role-key username]
@@ -301,10 +306,11 @@
   `:datalevin.server/create`, or `:datalevin.server/control`, with each subsumes
   the former.
 
-  `perm-obj` can be one of `:datalevin.server/database`, `:datalevin.server/role`,
-  or `:datalevin.server/server`, where the last one subsumes all the others
+  `perm-obj` can be one of `:datalevin.server/database`,
+  `:datalevin.server/user`, `:datalevin.server/role`, or
+  `:datalevin.server/server`, where the last one subsumes all the others
 
-  `perm-db` is database name. If it is `nil`, the permission applies to all
+  `perm-db` is a database name. If it is `nil`, the permission applies to all
   databases."
   [client role-key perm-act perm-obj perm-db]
   (normal-request client :assign-permission
