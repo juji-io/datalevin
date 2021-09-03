@@ -28,5 +28,5 @@
                              :datalevin.server/create
                              :datalevin.server/database
                              nil)
-      (sut/create-database client1 "hr" c/dl-type))
-    ))
+      (sut/create-database client1 "hr" c/dl-type)
+      )))

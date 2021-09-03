@@ -37,7 +37,7 @@
 (derive ::create ::alter)
 (derive ::control ::create)
 
-;; permission objects
+;; permission securable object types
 (derive ::server ::database)
 (derive ::server ::user)
 (derive ::server ::role)
@@ -65,8 +65,7 @@
 (defn- user-permissions
   [sys-conn username]
   (map first
-       (d/q '[:find (pull ?p [:permission/act :permission/obj
-                              {:permission/db [:database/name]}])
+       (d/q '[:find (pull ?p [:permission/act :permission/obj :permission/tgt])
               :in $ ?uname
               :where
               [?u :user/name ?uname]
@@ -80,9 +79,9 @@
   (start [srv] "Start the server")
   (stop [srv] "Stop the server")
   (get-clients [srv] "access all the clients")
-  (get-client [srv client-id] "access client info")
-  (add-client [srv client-id username] "add an client")
-  (remove-client [srv client-id] "remove an client")
+  (get-client [srv client-id] "access a client")
+  (add-client [srv client-id username] "add a client")
+  (remove-client [srv client-id] "remove a client")
   (update-client [srv client-id f] "update info about a client")
   (get-store [srv dir] "access an open store")
   (add-store [srv dir store] "add a store")
@@ -171,7 +170,7 @@
         (u/raise "Unknown store" {:dir dir})))
     (set! stores (dissoc stores dir))))
 
-;; password processing
+;; password
 
 (defn salt
   "generate a 16 byte salt"
@@ -247,6 +246,11 @@
                               :user-role/user -1
                               :user-role/role -2}]))))
 
+(defn- transact-new-password
+  [sys-conn username password]
+  )
+
+
 (defn- transact-new-role
   [sys-conn role-key]
   (if (pull-role sys-conn role-key)
@@ -275,21 +279,21 @@
     (update-cached-role server username)))
 
 (defn- permission-eid
-  [sys-conn perm-act perm-obj perm-db]
-  (if perm-db
+  [sys-conn perm-act perm-obj perm-tgt]
+  (if perm-tgt
     (d/q '[:find ?p .
-           :in $ ?act ?obj ?db
+           :in $ ?act ?obj ??tgt
            :where
            [?p :permission/act ?act]
            [?p :permission/obj ?obj]
-           [?p :permission/db [:database/name ?db]]]
-         @sys-conn perm-act perm-obj perm-db)
+           [?p :permission/tgt ?tgt]]
+         @sys-conn perm-act perm-obj)
     (d/q '[:find ?p .
            :in $ ?act ?obj
            :where
            [?p :permission/act ?act]
            [?p :permission/obj ?obj]
-           (not [?p :permission/db ?db])]
+           (not [?p :permission/tgt ?tgt])]
          @sys-conn perm-act perm-obj)))
 
 (defn- update-cached-permission
@@ -303,22 +307,29 @@
                      #(assoc % :permissions
                              (user-permissions sys-conn uname))))))
 
+(defn- perm-tgt-eid
+  [sys-conn perm-obj perm-tgt]
+  (case perm-obj
+    ::database (db-eid sys-conn perm-tgt)
+    ::user     (user-eid sys-conn perm-tgt)
+    ::role     (role-eid sys-conn perm-tgt)))
+
 (defn- transact-role-permission
-  [^Server server role-key perm-act perm-obj perm-db]
+  [^Server server role-key perm-act perm-obj perm-tgt]
   (let [sys-conn (.-sys-conn server)]
     (if-let [rid (role-eid sys-conn role-key)]
-      (if-let [pid (permission-eid sys-conn perm-act perm-obj perm-db)]
+      (if-let [pid (permission-eid sys-conn perm-act perm-obj perm-tgt)]
         (d/transact! sys-conn [{:role-perm/perm pid :role-perm/role rid}])
-        (if perm-db
-          (if-let [did (db-eid sys-conn perm-db)]
+        (if perm-tgt
+          (if-let [tid (perm-tgt-eid sys-conn perm-obj perm-tgt)]
             (d/transact! sys-conn [{:db/id          -1
                                     :permission/act perm-act
                                     :permission/obj perm-obj
-                                    :permission/db  did}
+                                    :permission/tgt tid}
                                    {:db/id          -2
                                     :role-perm/perm -1
                                     :role-perm/role rid}])
-            (u/raise "Dababase does not exist." {:db perm-db}))
+            (u/raise "Dababase does not exist." {:db perm-tgt}))
           (d/transact! sys-conn [{:db/id          -1
                                   :permission/act perm-act
                                   :permission/obj perm-obj}
@@ -327,21 +338,6 @@
                                   :role-perm/role rid}])))
       (u/raise "Role does not exist." {:role-key role-key}))
     (update-cached-permission server role-key)))
-
-#_(defn- permit-db?
-    [sys-conn username req-act req-db-name db-eid]
-    (d/q '[:find ?eid .
-           :in $ ?uid ?act ?dname ?eid
-           :where
-           [?eid :database/name ?dname]
-           [?u :user/name ?uid]
-           [?ur :user-role/user ?u]
-           [?ur :user-role/role ?r]
-           [?rp :role-perm/role ?r]
-           [?rp :role-perm/perm ?p]
-           [?p :permission/db ?eid]
-           ]
-         @sys-conn username req-act req-db-name db-eid))
 
 (defn- transact-new-db
   [sys-conn username db-type db-name]
@@ -352,7 +348,7 @@
                 {:db/id          -2
                  :permission/act ::create
                  :permission/obj ::database
-                 :permission/db  -1}
+                 :permission/tgt -1}
                 {:db/id          -3
                  :role-perm/perm -2
                  :role-perm/role [:role/key (user-role-key username)]}]))
@@ -367,25 +363,27 @@
         client-id))))
 
 (defn- has-permission?
-  [req-act req-obj req-db-name user-permissions]
-  (some (fn [{:keys [permission/act permission/obj permission/db] :as p}]
+  [req-act req-obj req-tgt user-permissions]
+  (some (fn [{:keys [permission/act permission/obj permission/tgt] :as p}]
           (log/debug p)
           (and (isa? act req-act)
                (isa? obj req-obj)
-               (if req-db-name
-                 (if db
-                   (= req-db-name (db :database/name))
+               (if req-tgt
+                 (if tgt
+                   (= req-tgt (tgt :db/id))
                    true)
                  true)))
         user-permissions))
 
 (defmacro ^:no-doc wrap-permission
-  [req-act req-obj req-db-name message & body]
+  [req-act req-obj req-tgt message & body]
   `(let [{:keys [~'client-id]}   @(~'.attachment ~'skey)
          {:keys [~'permissions]} (get-client ~'server ~'client-id)]
-     (if (has-permission? ~req-act ~req-obj ~req-db-name ~'permissions)
+     (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
        (do ~@body)
        (u/raise ~message {}))))
+
+;; network
 
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
@@ -474,14 +472,14 @@
     (p/write-message-blocking ch write-bf {:type :copy-done})
     (log/debug "Copied out" (count data) "data items")))
 
-(defn- db-dir
-  "translate from db-name to server db path"
-  [^Server server db-name]
-  (str (.-root server) u/+separator+ (b/hexify-string db-name)))
-
-(defn- db-exists?
-  [^Server server db-name]
-  (u/file-exists (str (db-dir server db-name) u/+separator+ "data.mdb")))
+(defn- open-port
+  [port]
+  (try
+    (doto (ServerSocketChannel/open)
+      (.bind (InetSocketAddress. port))
+      (.configureBlocking false))
+    (catch Exception e
+      (u/raise "Error opening port:" (ex-message e) {}))))
 
 (defn- error-response
   [^SelectionKey skey error-msg]
@@ -497,6 +495,17 @@
      (catch Exception ~'e
        (log/error ~'e)
        (error-response ~'skey (ex-message ~'e)))))
+
+;; db
+
+(defn- db-dir
+  "translate from db-name to server db path"
+  [^Server server db-name]
+  (str (.-root server) u/+separator+ (b/hexify-string db-name)))
+
+(defn- db-exists?
+  [^Server server db-name]
+  (u/file-exists (str (db-dir server db-name) u/+separator+ "data.mdb")))
 
 (defn- dt-store
   [^Server server ^SelectionKey skey]
@@ -534,12 +543,13 @@
   (wrap-error
     (let [{:keys [client-id]}         @(.attachment skey)
           {:keys [username dt-store]} (get-client server client-id)
+          db-name                     (u/lisp-case db-name)
           existing-db?                (db-exists? server db-name)
           sys-conn                    (.-sys-conn server)]
       (wrap-permission
         (if existing-db? ::view ::create)
         ::database
-        (when existing-db? db-name)
+        (when existing-db? (db-eid sys-conn db-name))
         "Don't have permission to open database"
         (let [dir   (db-dir server db-name)
               store (or (get-store server dir)
@@ -562,6 +572,31 @@
                            #(assoc % :permissions
                                    (user-permissions sys-conn username))))
           (write-message skey {:type :command-complete}))))))
+
+(defn- init-sys-db
+  [root]
+  (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
+                             c/server-schema)]
+    (when (= 0 (st/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
+      (let [s   (salt)
+            h   (password-hashing c/default-password s)
+            txs [{:db/id        -1
+                  :user/name    c/default-username
+                  :user/pw-hash h
+                  :user/pw-salt s}
+                 {:db/id    -2
+                  :role/key (user-role-key c/default-username)}
+                 {:db/id          -3
+                  :user-role/user -1
+                  :user-role/role -2}
+                 {:db/id          -4
+                  :permission/act ::control
+                  :permission/obj ::server}
+                 {:db/id          -5
+                  :role-perm/perm -4
+                  :role-perm/role -2}]]
+        (d/transact! sys-conn txs)))
+    sys-conn))
 
 ;; BEGIN message handlers
 
@@ -599,10 +634,25 @@
         ::create ::user nil
         "Don't have permission to create user"
         (if (s/blank? password)
-          (u/raise "Password is required when creating user" {})
+          (u/raise "Password is required when creating user." {})
           (do (transact-new-user sys-conn username password)
               (write-message skey {:type     :command-complete
                                    :username username})))))))
+
+(defn- reset-password
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [sys-conn            (.-sys-conn server)
+          [username password] args]
+      (wrap-permission
+        ::alter ::user (user-eid sys-conn username)
+        "Don't have permission to reset password"
+        (if (s/blank? password)
+          (u/raise "Password is required when creating user" {})
+          (do (transact-new-password sys-conn username password)
+              (write-message skey {:type :command-complete})))))))
+
+
 
 (defn- create-role
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -618,11 +668,17 @@
 (defn- create-database
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn          (.-sys-conn server)
-          [db-name db-type] args]
+    (let [sys-conn            (.-sys-conn server)
+          {:keys [client-id]} @(.attachment skey)
+          {:keys [username]}  (get-client server client-id)
+          [db-name db-type]   args
+          db-name             (u/lisp-case db-name)]
       (wrap-permission
         ::create ::database nil
         "Don't have permission to create database"
+        (if (db-exists? server db-name)
+          (u/raise "Database already exists." {:db db-name})
+          (transact-new-db sys-conn username db-type db-name))
         (write-message skey {:type :command-complete})))))
 
 (defn- assign-role
@@ -635,14 +691,14 @@
         (transact-user-role server role-key username)
         (write-message skey {:type :command-complete})))))
 
-(defn- assign-permission
+(defn- grant-permission
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key perm-act perm-obj perm-db] args]
+    (let [[role-key perm-act perm-obj perm-tgt] args]
       (wrap-permission
         ::alter ::role nil
         "Don't have permission to assign permission to role"
-        (transact-role-permission server role-key perm-act perm-obj perm-db)
+        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
         (write-message skey {:type :command-complete})))))
 
 (defn- open
@@ -915,15 +971,23 @@
 
 ;; END message handlers
 
+;; events
+
 (def message-handlers
   ['authentication
    'disconnect
    'set-client-id
    'create-user
+   'reset-password
+   'drop-user
    'create-role
+   'drop-role
    'create-database
+   'drop-database
    'assign-role
-   'assign-permission
+   'withdraw-role
+   'grant-permission
+   'revoke-permission
    'open
    'close
    'closed?
@@ -1041,40 +1105,6 @@
               (recur iter))))
         (recur)))))
 
-(defn- init-sys-db
-  [root]
-  (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
-                             c/server-schema)]
-    (when (= 0 (st/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
-      (let [s   (salt)
-            h   (password-hashing c/default-password s)
-            txs [{:db/id        -1
-                  :user/name    c/default-username
-                  :user/pw-hash h
-                  :user/pw-salt s}
-                 {:db/id    -2
-                  :role/key (user-role-key c/default-username)}
-                 {:db/id          -3
-                  :user-role/user -1
-                  :user-role/role -2}
-                 {:db/id          -4
-                  :permission/act ::control
-                  :permission/obj ::server}
-                 {:db/id          -5
-                  :role-perm/perm -4
-                  :role-perm/role -2}]]
-        (d/transact! sys-conn txs)))
-    sys-conn))
-
-(defn- open-port
-  [port]
-  (try
-    (doto (ServerSocketChannel/open)
-      (.bind (InetSocketAddress. port))
-      (.configureBlocking false))
-    (catch Exception e
-      (u/raise "Error opening port:" (ex-message e) {}))))
-
 (defn create
   "Create a Datalevin server"
   [{:keys [port root]}]
@@ -1106,8 +1136,6 @@
                                (str "remote-test-" (UUID/randomUUID)))}))
 
   (def conn (.-sys-conn server))
-
-
 
   (start server)
 

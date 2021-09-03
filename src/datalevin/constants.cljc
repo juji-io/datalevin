@@ -124,7 +124,7 @@
                                             :db/unique    :db.unique/identity}
                            :permission/act {:db/valueType :db.type/keyword}
                            :permission/obj {:db/valueType :db.type/keyword}
-                           :permission/db  {:db/valueType :db.type/ref}
+                           :permission/tgt {:db/valueType :db.type/ref}
                            :user-role/user {:db/valueType :db.type/ref}
                            :user-role/role {:db/valueType :db.type/ref}
                            :role-perm/role {:db/valueType :db.type/ref}

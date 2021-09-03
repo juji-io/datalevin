@@ -169,7 +169,7 @@
   [^URI uri]
   (let [path (.getPath uri)]
     (when-not (or (s/blank? path) (= path "/"))
-      (u/lisp-case (subs path 1)))))
+      (subs path 1))))
 
 (defn parse-query
   [^URI uri]
@@ -278,43 +278,84 @@
                {:call call :args args})
       result)))
 
+;; we do input validation and normalization in the server, as we
+;; will support 3rd party clients
+
 (defn create-user
-  "Create a user that can login. Username will be converted to Kebab case
+  "Create a user that can login. `username` will be converted to Kebab case
   (i.e. all lower case and words connected with dashes)."
   [client username password]
   (normal-request client :create-user [username password]))
+
+(defn reset-password
+  "Reset a user's password."
+  [client username password]
+  (normal-request client :reset-password [username password]))
+
+(defn drop-user
+  "Delete a user."
+  [client username]
+  (normal-request client :drop-user [username]))
 
 (defn create-role
   "Create a role. `role-key` is a keyword."
   [client role-key]
   (normal-request client :create-role [role-key]))
 
+(defn drop-role
+  "Delete a role. `role-key` is a keyword."
+  [client role-key]
+  (normal-request client :drop-role [role-key]))
+
 (defn create-database
-  "Create a database. `db-type` can be `:datalog` or `:key-value`"
+  "Create a database. `db-type` can be `:datalog` or `:key-value`.
+  `db-name` will be converted to Kebab case (i.e. all lower case and
+  words connected with dashes)."
   [client db-name db-type]
   (normal-request client :create-database [db-name db-type]))
+
+(defn drop-database
+  "Delete a database."
+  [client db-name]
+  (normal-request client :drop-database [db-name]))
 
 (defn assign-role
   "Assign a role to a user. "
   [client username role-key]
   (normal-request client :assign-role [role-key username]))
 
-(defn assign-permission
-  "Assign a permission to a role.
+(defn withdraw-role
+  "Withdraw a role from a user. "
+  [client username role-key]
+  (normal-request client :withdraw-role [role-key username]))
 
-  `perm-act` can be one of `:datalevin.server/view`, `:datalevin.server/alter`,
-  `:datalevin.server/create`, or `:datalevin.server/control`, with each subsumes
-  the former.
+(defn grant-permission
+  "Grant a permission to a role.
 
-  `perm-obj` can be one of `:datalevin.server/database`,
-  `:datalevin.server/user`, `:datalevin.server/role`, or
-  `:datalevin.server/server`, where the last one subsumes all the others
+  `perm-act` indicates the permitted action. It can be one of
+  `:datalevin.server/view`, `:datalevin.server/alter`,
+  `:datalevin.server/create`, or `:datalevin.server/control`, with each
+  subsumes the former.
 
-  `perm-db` is a database name. If it is `nil`, the permission applies to all
-  databases."
-  [client role-key perm-act perm-obj perm-db]
-  (normal-request client :assign-permission
-                  [role-key perm-act perm-obj perm-db]))
+  `perm-obj` indicates the object type of the securable. It can be one of
+  `:datalevin.server/database`, `:datalevin.server/user`,
+  `:datalevin.server/role`, or `:datalevin.server/server`, where the last one
+  subsumes all the others.
+
+  `perm-tgt` indicate the concrete securable target. It can be a database name,
+  a username, or a role key, depending on `perm-obj`. If it is `nil`, the
+  permission applies to all securables in that object type."
+  [client role-key perm-act perm-obj perm-tgt]
+  (normal-request client :grant-permission
+                  [role-key perm-act perm-obj perm-tgt]))
+
+(defn revoke-permission
+  "Revoke a permission from a role.
+
+  See [[grant-permission]]."
+  [client role-key perm-act perm-obj perm-tgt]
+  (normal-request client :revoke-permission
+                  [role-key perm-act perm-obj perm-tgt]))
 
 (comment
 
