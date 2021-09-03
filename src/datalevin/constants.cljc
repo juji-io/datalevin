@@ -104,7 +104,7 @@
 (def ^:const db-store-datalog "datalog")
 (def ^:const db-store-kv "kv")
 
-(def ^:const dt-type :datalog)
+(def ^:const dl-type :datalog)
 (def ^:const kv-type :key-value)
 
 (def ^:const message-header-size 5) ; bytes, 1 type + 4 length

@@ -116,7 +116,7 @@
   (closed-pool? [this]
     (and (.isEmpty used) (.isEmpty available))))
 
-(defn- authenticate
+(defn authenticate
   "Send an authenticate message to server, and wait to receive the response.
   If authentication succeeds,  return a client id.
   Otherwise, close connection, raise exception"
@@ -296,7 +296,7 @@
 
 (defn assign-role
   "Assign a role to a user. "
-  [client role-key username]
+  [client username role-key]
   (normal-request client :assign-role [role-key username]))
 
 (defn assign-permission
