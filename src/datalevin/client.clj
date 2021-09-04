@@ -278,8 +278,8 @@
                {:call call :args args})
       result)))
 
-;; we do input validation and normalization in the server, as we
-;; will support 3rd party clients
+;; we do input validation and normalization in the server, as
+;; 3rd party clients may be written
 
 (defn create-user
   "Create a user that can login. `username` will be converted to Kebab case
@@ -297,6 +297,11 @@
   [client username]
   (normal-request client :drop-user [username]))
 
+(defn list-users
+  "List all users."
+  [client]
+  (normal-request client :list-users []))
+
 (defn create-role
   "Create a role. `role-key` is a keyword."
   [client role-key]
@@ -307,6 +312,11 @@
   [client role-key]
   (normal-request client :drop-role [role-key]))
 
+(defn list-roles
+  "List all roles."
+  [client]
+  (normal-request client :list-roles []))
+
 (defn create-database
   "Create a database. `db-type` can be `:datalog` or `:key-value`.
   `db-name` will be converted to Kebab case (i.e. all lower case and
@@ -314,10 +324,24 @@
   [client db-name db-type]
   (normal-request client :create-database [db-name db-type]))
 
-(defn drop-database
-  "Delete a database."
+(defn close-database
+  "Force close a database. Connected clients that are using it are disconnected.
+
+  See [[disconnect-client]]"
   [client db-name]
   (normal-request client :drop-database [db-name]))
+
+(defn drop-database
+  "Delete a database. May not be successful if currently in use.
+
+  See [[close-database]]"
+  [client db-name]
+  (normal-request client :drop-database [db-name]))
+
+(defn list-databases
+  "List all databases."
+  [client]
+  (normal-request client :list-databases []))
 
 (defn assign-role
   "Assign a role to a user. "
@@ -328,6 +352,11 @@
   "Withdraw a role from a user. "
   [client username role-key]
   (normal-request client :withdraw-role [role-key username]))
+
+(defn list-user-roles
+  "List the roles assigned to a user. "
+  [client username]
+  (normal-request client :list-user-roles [username]))
 
 (defn grant-permission
   "Grant a permission to a role.
@@ -357,14 +386,45 @@
   (normal-request client :revoke-permission
                   [role-key perm-act perm-obj perm-tgt]))
 
+(defn list-role-permissions
+  "List the permissions granted to a role.
+
+  See [[grant-permission]]."
+  [client role-key]
+  (normal-request client :list-role-permissions [role-key]))
+
+(defn list-user-permissions
+  "List the permissions granted to a user through the roles assigned."
+  [client username]
+  (normal-request client :list-user-permissions [username]))
+
+(defn query-system
+  "Issue arbitrary Datalog query to the system database on the server."
+  [client query & arguments]
+  (normal-request client :query-system [query arguments]))
+
+(defn show-clients
+  "Show information about the currently connected clients on the server."
+  [client]
+  (normal-request client :show-clients []))
+
+(defn disconnect-client
+  "Force disconnect a client from the server."
+  [client client-id]
+  (normal-request client :disconnect-client [client-id]))
+
 (comment
 
   (def client (new-client "dtlv://datalevin:datalevin@localhost"))
 
   (create-user client "boyan" "lol")
 
-  (create-role client :test-role "lol")
+  (list-users client)
 
-  (assign-role client :test-role "boyan")
+  (def client1 (new-client "dtlv://boyan:lol@localhost"))
+
+  (create-role client1 :test-role)
+
+  (assign-role client "boyan" :test-role )
 
   )

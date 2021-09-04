@@ -198,6 +198,7 @@
   ILMDB
   (close-kv [_]
     (.close-pool pool)
+    (.sync env true)
     (.close env)
     nil)
 

@@ -1,5 +1,5 @@
 (ns datalevin.server
-  "Non-blocking event-driven server"
+  "Non-blocking event-driven database server with role based access control"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
             [datalevin.bits :as b]
@@ -32,7 +32,60 @@
 (log/refer-timbre)
 (log/set-level! :debug)
 
-;; permission acts
+(defprotocol IServer
+  (start [srv] "Start the server")
+  (stop [srv] "Stop the server")
+  (get-clients [srv] "access all the clients")
+  (get-client [srv client-id] "access a client")
+  (add-client [srv client-id username] "add a client")
+  (remove-client [srv client-id] "remove a client")
+  (update-client [srv client-id f] "update info about a client")
+  (get-store [srv dir] "access an open store")
+  (add-store [srv dir store] "add a store")
+  (remove-store [srv dir] "remove a store"))
+
+;; system db management
+
+(def server-schema
+  (merge c/implicit-schema
+         {:user/name    {:db/doc       "User name, must be unique"
+                         :db/unique    :db.unique/identity
+                         :db/valueType :db.type/string}
+          :user/pw-hash {:db/doc       "Hash of password"
+                         :db/valueType :db.type/string}
+          :user/pw-salt {:db/doc       "Salt of password"
+                         :db/valueType :db.type/bytes}
+
+          :database/name {:db/doc       "Database name, must be unique"
+                          :db/unique    :db.unique/identity
+                          :db/valueType :db.type/string}
+          :database/type {:db/doc       "Database type, :datalog or :key-value"
+                          :db/valueType :db.type/keyword}
+
+          :role/key {:db/doc       "Role name, a keyword, must be unique"
+                     :db/valueType :db.type/keyword
+                     :db/unique    :db.unique/identity}
+
+          :permission/act {:db/doc       "Securable action: ::view, ::alter,
+                                          ::create, or ::control"
+                           :db/valueType :db.type/keyword}
+          :permission/obj {:db/doc       "Securable object type: ::database,
+                                          ::user, ::role, or ::server"
+                           :db/valueType :db.type/keyword}
+          :permission/tgt {:db/doc       "Securable target, an entity id"
+                           :db/valueType :db.type/ref}
+
+          :user-role/user {:db/doc       "User part of a user role assignment"
+                           :db/valueType :db.type/ref}
+          :user-role/role {:db/doc       "Role part of a user role assignment"
+                           :db/valueType :db.type/ref}
+
+          :role-perm/role {:db/doc       "Role part of a role permission grant"
+                           :db/valueType :db.type/ref}
+          :role-perm/perm {:db/doc       "Permission part of a permission grant"
+                           :db/valueType :db.type/ref}}))
+
+;; permission securable actions
 (derive ::alter ::view)
 (derive ::create ::alter)
 (derive ::control ::create)
@@ -42,6 +95,42 @@
 (derive ::server ::user)
 (derive ::server ::role)
 
+(defn salt
+  "generate a 16 byte salt"
+  []
+  (let [bs (byte-array 16)]
+    (.nextBytes (SecureRandom.) bs)
+    bs))
+
+(defn password-hashing
+  "hashing password using argon2id algorithm, see
+  https://github.com/p-h-c/phc-winner-argon2"
+  ([password salt]
+   (password-hashing password salt nil))
+  ([^String password ^bytes salt
+    {:keys [ops-limit mem-limit out-length parallelism]
+     ;; these defaults are secure, as it takes about 0.5 second to hash
+     :or   {ops-limit   4
+            mem-limit   131072
+            out-length  32
+            parallelism 1}}]
+   (let [builder (doto (Argon2Parameters$Builder. Argon2Parameters/ARGON2_id)
+                   (.withVersion Argon2Parameters/ARGON2_VERSION_13)
+                   (.withIterations ops-limit)
+                   (.withMemoryAsKB mem-limit)
+                   (.withParallelism parallelism)
+                   (.withSalt salt))
+         gen     (doto (Argon2BytesGenerator.)
+                   (.init (.build builder)))
+         out-bs  (byte-array out-length)
+         in-bs   (.getBytes password StandardCharsets/UTF_8)]
+     (.generateBytes gen in-bs out-bs (int 0) (int out-length))
+     (u/encode-base64 out-bs))))
+
+(defn password-matches?
+  [in-password password-hash salt]
+  (= password-hash (password-hashing in-password salt)))
+
 (defn- pull-user
   [sys-conn username]
   (try
@@ -50,6 +139,12 @@
       nil)))
 
 (defn- user-eid [sys-conn username] (:db/id (pull-user sys-conn username)))
+
+(defn- query-users [sys-conn]
+  (d/q '[:find [?uname ...]
+         :where
+         [?u :user/name ?uname]]
+       @sys-conn))
 
 (defn- user-roles
   [sys-conn username]
@@ -61,6 +156,12 @@
          [?ur :user-role/role ?r]
          [?r :role/key ?rk]]
        @sys-conn username))
+
+(defn- query-roles [sys-conn]
+  (d/q '[:find [?rk ...]
+         :where
+         [?r :role/key ?rk]]
+       @sys-conn))
 
 (defn- user-permissions
   [sys-conn username]
@@ -75,23 +176,220 @@
               [?rp :role-perm/perm ?p]]
             @sys-conn username)))
 
-(defprotocol IServer
-  (start [srv] "Start the server")
-  (stop [srv] "Stop the server")
-  (get-clients [srv] "access all the clients")
-  (get-client [srv client-id] "access a client")
-  (add-client [srv client-id username] "add a client")
-  (remove-client [srv client-id] "remove a client")
-  (update-client [srv client-id f] "update info about a client")
-  (get-store [srv dir] "access an open store")
-  (add-store [srv dir store] "add a store")
-  (remove-store [srv dir] "remove a store"))
+(defn- role-permissions
+  [sys-conn role-key]
+  (map first
+       (d/q '[:find (pull ?p [:permission/act :permission/obj :permission/tgt])
+              :in $ ?rk
+              :where
+              [?r :role/key ?rk]
+              [?ur :user-role/role ?r]
+              [?rp :role-perm/role ?r]
+              [?rp :role-perm/perm ?p]]
+            @sys-conn role-key)))
 
-(defn- close-conn
-  [^SelectionKey skey]
-  (.close ^SocketChannel (.channel skey)))
+(defn- pull-role
+  [sys-conn role-key]
+  (try
+    (d/pull @sys-conn '[*] [:role/key role-key])
+    (catch Exception _
+      nil)))
+
+(defn- role-eid [sys-conn role-key] (:db/id (pull-role sys-conn role-key)))
+
+(defn- user-role-eid
+  [sys-conn uid rid]
+  (when (and uid rid)
+    (d/q '[:find ?ur .
+           :in $ ?u ?r
+           :where
+           [?ur :user-role/user ?u]
+           [?ur :user-role/role ?r]]
+         @sys-conn uid rid)))
+
+(defn- permission-eid
+  ([sys-conn perm-tgt]
+   (when perm-tgt
+     (d/q '[:find [?p ...]
+            :in $ ?tgt
+            :where
+            [?p :permission/tgt ?tgt]]
+          @sys-conn perm-tgt)))
+  ([sys-conn perm-act perm-obj perm-tgt]
+   (if perm-tgt
+     (d/q '[:find ?p .
+            :in $ ?act ?obj ?tgt
+            :where
+            [?p :permission/act ?act]
+            [?p :permission/obj ?obj]
+            [?p :permission/tgt ?tgt]]
+          @sys-conn perm-act perm-obj)
+     (d/q '[:find ?p .
+            :in $ ?act ?obj
+            :where
+            [?p :permission/act ?act]
+            [?p :permission/obj ?obj]
+            (not [?p :permission/tgt ?tgt])]
+          @sys-conn perm-act perm-obj))))
+
+(defn- role-permission-eid
+  [sys-conn rid pid]
+  (when (and rid pid)
+    (d/q '[:find ?rp .
+           :in $ ?r ?p
+           :where
+           [?rp :role-perm/role ?r]
+           [?rp :role-perm/perm ?p]]
+         @sys-conn rid pid)))
+
+(defn- pull-db
+  [sys-conn db-name]
+  (try
+    (d/pull @sys-conn '[*] [:database/name db-name])
+    (catch Exception _
+      nil)))
+
+(defn- query-databases
+  [sys-conn]
+  (d/q '[:find [?dname ...]
+         :where
+         [?d :database/name ?dname]]
+       @sys-conn))
+
+(defn- db-eid [sys-conn db-name] (:db/id (pull-db sys-conn db-name)))
+
+;; each user is a role, similar to postgres
+(defn- user-role-key [username] (keyword "datalevin.role" username))
+
+(defn- user-role-key? [sys-conn role-key]
+  (let [ns (namespace role-key)
+        n  (name role-key)]
+    (and (= ns "datalevin.role") (pull-user sys-conn n))))
+
+(defn- transact-new-user
+  [sys-conn username password]
+  (if (pull-user sys-conn username)
+    (u/raise "User already exits" {:username username})
+    (let [s (salt)]
+      (d/transact! sys-conn [{:db/id        -1
+                              :user/name    username
+                              :user/pw-hash (password-hashing password s)
+                              :user/pw-salt s}
+                             {:db/id    -2
+                              :role/key (user-role-key username)}
+                             {:db/id          -3
+                              :user-role/user -1
+                              :user-role/role -2}
+                             {:db/id          -4
+                              :permission/act ::alter
+                              :permission/obj ::user
+                              :permission/tgt -1}
+                             {:db/id          -5
+                              :role-perm/perm -4
+                              :role-perm/role -2}]))))
+
+(defn- transact-new-password
+  [sys-conn uid password]
+  (let [s (salt)]
+    (d/transact! sys-conn [{:db/id        uid
+                            :user/pw-hash (password-hashing password s)
+                            :user/pw-salt s}])))
+
+(defn- transact-drop-user
+  [sys-conn uid username]
+  (let [rid    (role-eid sys-conn (user-role-key username))
+        urid   (user-role-eid sys-conn uid rid)
+        pids   (permission-eid uid)
+        p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
+        rpids  (mapcat (partial role-permission-eid sys-conn rid) pids)
+        rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
+    (d/transact! sys-conn (concat rp-txs p-txs
+                                  [[:db/retractEntity urid]
+                                   [:db/retractEntity rid]
+                                   [:db/retractEntity uid]]))))
+
+(defn- transact-new-role
+  [sys-conn role-key]
+  (if (pull-role sys-conn role-key)
+    (u/raise "Role already exits" {:role-key role-key})
+    (d/transact! sys-conn [{:role/key role-key}])))
+
+(defn- transact-drop-role
+  [sys-conn rid]
+  (let [ur-txs (mapv (fn [urid] [:db/retractEntity urid])
+                     (d/q '[:find [?ur ...]
+                            :in $ ?rid
+                            :where
+                            [?ur :user-role/role ?rid]]
+                           @sys-conn rid))
+        rp-txs (mapv (fn [rpid] [:db/retractEntity rpid])
+                     (d/q '[:find [?rp ...]
+                            :in $ ?rid
+                            :where
+                            [?rp :role-perm/role ?rid]]
+                           @sys-conn rid))]
+    (d/transact! sys-conn (concat rp-txs ur-txs
+                                  [[:db/retractEntity rid]]))))
+
+(defn- transact-new-db
+  [sys-conn username db-type db-name]
+  (d/transact! sys-conn
+               [{:db/id         -1
+                 :database/type db-type
+                 :database/name db-name}
+                {:db/id          -2
+                 :permission/act ::create
+                 :permission/obj ::database
+                 :permission/tgt -1}
+                {:db/id          -3
+                 :role-perm/perm -2
+                 :role-perm/role [:role/key (user-role-key username)]}]))
+
+(defn- transact-drop-db
+  [sys-conn did]
+  (let [pids     (d/q '[:find [?p ...]
+                        :in $ ?did
+                        :where
+                        [?p :permission/tgt ?did]]
+                       @sys-conn did)
+        pids-txs (mapv (fn [pid] [:db/retractEntity pid]) pids)
+        rpids    (mapcat (fn [pid]
+                           (d/q '[:find [?rp ...]
+                                  :in $ ?pid
+                                  :where
+                                  [?rp :role-perm/perm ?pid]]
+                                 @sys-conn pid))
+                         pids)
+        rp-txs   (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
+    (d/transact! sys-conn (concat rp-txs pids-txs [[:db/retractEntity did]]))))
+
+(defn- perm-tgt-eid
+  [sys-conn perm-obj perm-tgt]
+  (case perm-obj
+    ::database (db-eid sys-conn perm-tgt)
+    ::user     (user-eid sys-conn perm-tgt)
+    ::role     (role-eid sys-conn perm-tgt)))
+
+(defn- has-permission?
+  [req-act req-obj req-tgt user-permissions]
+  (some (fn [{:keys [permission/act permission/obj permission/tgt] :as p}]
+          (and (isa? act req-act)
+               (isa? obj req-obj)
+               (if (and req-tgt tgt)
+                 (= req-tgt (tgt :db/id))
+                 true)))
+        user-permissions))
+
+(defmacro ^:no-doc wrap-permission
+  [req-act req-obj req-tgt message & body]
+  `(let [{:keys [~'client-id]}   @(~'.attachment ~'skey)
+         {:keys [~'permissions]} (get-client ~'server ~'client-id)]
+     (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
+       (do ~@body)
+       (u/raise ~message {}))))
 
 (declare event-loop)
+(declare close-conn)
 
 (deftype Server [^AtomicBoolean running
                  ^int port
@@ -136,6 +434,7 @@
           roles (user-roles sys-conn username)
           perms (user-permissions sys-conn username)]
       (log/debug "Added client for user" username
+                 "with roles:" (pr-str roles)
                  "with permissions:" (pr-str perms))
       (set! clients (assoc clients client-id
                            {:uid         uid
@@ -170,92 +469,14 @@
         (u/raise "Unknown store" {:dir dir})))
     (set! stores (dissoc stores dir))))
 
-;; password
-
-(defn salt
-  "generate a 16 byte salt"
-  []
-  (let [bs (byte-array 16)]
-    (.nextBytes (SecureRandom.) bs)
-    bs))
-
-(defn password-hashing
-  "hashing password using argon2id algorithm, see
-  https://github.com/p-h-c/phc-winner-argon2"
-  ([password salt]
-   (password-hashing password salt nil))
-  ([^String password ^bytes salt
-    {:keys [ops-limit mem-limit out-length parallelism]
-     ;; these defaults are secure, as it takes about 0.5 second to hash
-     :or   {ops-limit   4
-            mem-limit   131072
-            out-length  32
-            parallelism 1}}]
-   (let [builder (doto (Argon2Parameters$Builder. Argon2Parameters/ARGON2_id)
-                   (.withVersion Argon2Parameters/ARGON2_VERSION_13)
-                   (.withIterations ops-limit)
-                   (.withMemoryAsKB mem-limit)
-                   (.withParallelism parallelism)
-                   (.withSalt salt))
-         gen     (doto (Argon2BytesGenerator.)
-                   (.init (.build builder)))
-         out-bs  (byte-array out-length)
-         in-bs   (.getBytes password StandardCharsets/UTF_8)]
-     (.generateBytes gen in-bs out-bs (int 0) (int out-length))
-     (u/encode-base64 out-bs))))
-
-(defn password-matches?
-  [in-password password-hash salt]
-  (= password-hash (password-hashing in-password salt)))
-
-;; db management
-
-(defn- pull-role
-  [sys-conn role-key]
-  (try
-    (d/pull @sys-conn '[*] [:role/key role-key])
-    (catch Exception _
-      nil)))
-
-(defn- role-eid [sys-conn role-key] (:db/id (pull-role sys-conn role-key)))
-
-(defn- pull-db
-  [sys-conn db-name]
-  (try
-    (d/pull @sys-conn '[*] [:database/name db-name])
-    (catch Exception _
-      nil)))
-
-(defn- db-eid [sys-conn db-name] (:db/id (pull-db sys-conn db-name)))
-
-;; each user is a role, similar to postgres
-(defn- user-role-key [username] (keyword "datalevin.role" username))
-
-(defn- transact-new-user
-  [sys-conn username password]
-  (if (pull-user sys-conn username)
-    (u/raise "User already exits" {:username username})
-    (let [s (salt)]
-      (d/transact! sys-conn [{:db/id        -1
-                              :user/name    username
-                              :user/pw-hash (password-hashing password s)
-                              :user/pw-salt s}
-                             {:db/id    -2
-                              :role/key (user-role-key username)}
-                             {:db/id          -3
-                              :user-role/user -1
-                              :user-role/role -2}]))))
-
-(defn- transact-new-password
-  [sys-conn username password]
-  )
-
-
-(defn- transact-new-role
-  [sys-conn role-key]
-  (if (pull-role sys-conn role-key)
-    (u/raise "Role already exits" {:role-key role-key})
-    (d/transact! sys-conn [{:role/key role-key}])))
+(defn- authenticate
+  [^Server server {:keys [username password]}]
+  (when-let [{:keys [user/pw-salt user/pw-hash]}
+             (pull-user (.-sys-conn server) username)]
+    (when (password-matches? password pw-hash pw-salt)
+      (let [client-id (UUID/randomUUID)]
+        (add-client server client-id username)
+        client-id))))
 
 (defn- update-cached-role
   [^Server server target-username]
@@ -268,6 +489,23 @@
       (update-client server cid
                      #(assoc % :roles roles :permissions permissions)))))
 
+(defn- disconnect-client*
+  [^Server server client-id]
+  (let [^Selector selector (.-selector server)]
+    (when (.isOpen selector)
+      (doseq [^SelectionKey k (.keys selector)
+              :let            [state (.attachment k)]
+              :when           state]
+        (when (= client-id (@state :client-id))
+          (close-conn k))))
+    (remove-client server client-id)))
+
+(defn- disconnect-user
+  [^Server server tgt-username]
+  (doseq [[client-id {:keys [username]}] (get-clients server)
+          :when                          (= tgt-username username)]
+    (disconnect-client* server client-id)))
+
 (defn- transact-user-role
   [^Server server role-key username]
   (let [sys-conn (.-sys-conn server)]
@@ -277,24 +515,6 @@
         (u/raise "Role does not exist." {:role-key role-key}))
       (u/raise "User does not exist." {:username username}))
     (update-cached-role server username)))
-
-(defn- permission-eid
-  [sys-conn perm-act perm-obj perm-tgt]
-  (if perm-tgt
-    (d/q '[:find ?p .
-           :in $ ?act ?obj ??tgt
-           :where
-           [?p :permission/act ?act]
-           [?p :permission/obj ?obj]
-           [?p :permission/tgt ?tgt]]
-         @sys-conn perm-act perm-obj)
-    (d/q '[:find ?p .
-           :in $ ?act ?obj
-           :where
-           [?p :permission/act ?act]
-           [?p :permission/obj ?obj]
-           (not [?p :permission/tgt ?tgt])]
-         @sys-conn perm-act perm-obj)))
 
 (defn- update-cached-permission
   [^Server server target-role]
@@ -306,13 +526,6 @@
       (update-client server cid
                      #(assoc % :permissions
                              (user-permissions sys-conn uname))))))
-
-(defn- perm-tgt-eid
-  [sys-conn perm-obj perm-tgt]
-  (case perm-obj
-    ::database (db-eid sys-conn perm-tgt)
-    ::user     (user-eid sys-conn perm-tgt)
-    ::role     (role-eid sys-conn perm-tgt)))
 
 (defn- transact-role-permission
   [^Server server role-key perm-act perm-obj perm-tgt]
@@ -339,51 +552,7 @@
       (u/raise "Role does not exist." {:role-key role-key}))
     (update-cached-permission server role-key)))
 
-(defn- transact-new-db
-  [sys-conn username db-type db-name]
-  (d/transact! sys-conn
-               [{:db/id         -1
-                 :database/type db-type
-                 :database/name db-name}
-                {:db/id          -2
-                 :permission/act ::create
-                 :permission/obj ::database
-                 :permission/tgt -1}
-                {:db/id          -3
-                 :role-perm/perm -2
-                 :role-perm/role [:role/key (user-role-key username)]}]))
-
-(defn- authenticate
-  [^Server server {:keys [username password]}]
-  (when-let [{:keys [user/pw-salt user/pw-hash]}
-             (pull-user (.-sys-conn server) username)]
-    (when (password-matches? password pw-hash pw-salt)
-      (let [client-id (UUID/randomUUID)]
-        (add-client server client-id username)
-        client-id))))
-
-(defn- has-permission?
-  [req-act req-obj req-tgt user-permissions]
-  (some (fn [{:keys [permission/act permission/obj permission/tgt] :as p}]
-          (log/debug p)
-          (and (isa? act req-act)
-               (isa? obj req-obj)
-               (if req-tgt
-                 (if tgt
-                   (= req-tgt (tgt :db/id))
-                   true)
-                 true)))
-        user-permissions))
-
-(defmacro ^:no-doc wrap-permission
-  [req-act req-obj req-tgt message & body]
-  `(let [{:keys [~'client-id]}   @(~'.attachment ~'skey)
-         {:keys [~'permissions]} (get-client ~'server ~'client-id)]
-     (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
-       (do ~@body)
-       (u/raise ~message {}))))
-
-;; network
+;; networking
 
 (defn- write-to-bf
   "write a message to write buffer, auto grow the buffer"
@@ -481,6 +650,10 @@
     (catch Exception e
       (u/raise "Error opening port:" (ex-message e) {}))))
 
+(defn- close-conn
+  [^SelectionKey skey]
+  (.close ^SocketChannel (.channel skey)))
+
 (defn- error-response
   [^SelectionKey skey error-msg]
   (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
@@ -576,7 +749,7 @@
 (defn- init-sys-db
   [root]
   (let [sys-conn (d/get-conn (str root u/+separator+ c/system-dir)
-                             c/server-schema)]
+                             server-schema)]
     (when (= 0 (st/datom-count (.-store ^DB (d/db sys-conn)) c/eav))
       (let [s   (salt)
             h   (password-hashing c/default-password s)
@@ -608,16 +781,9 @@
       (u/raise "Failed to authenticate" {}))))
 
 (defn- disconnect
-  [^Server server ^SelectionKey skey _]
-  (let [{:keys [client-id]} @(.attachment skey)
-        selector            (.selector skey)]
-    (when (.isOpen selector)
-      (doseq [^SelectionKey k (.keys selector)
-              :let            [state (.attachment k)]
-              :when           state]
-        (when (= client-id (@state :client-id))
-          (close-conn k))))
-    (remove-client server client-id)))
+  [server ^SelectionKey skey _]
+  (let [{:keys [client-id]} @(.attachment skey)]
+    (disconnect-client* server client-id)))
 
 (defn- set-client-id
   [^Server server ^SelectionKey skey message]
@@ -643,27 +809,79 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [sys-conn            (.-sys-conn server)
-          [username password] args]
-      (wrap-permission
-        ::alter ::user (user-eid sys-conn username)
-        "Don't have permission to reset password"
-        (if (s/blank? password)
-          (u/raise "Password is required when creating user" {})
-          (do (transact-new-password sys-conn username password)
-              (write-message skey {:type :command-complete})))))))
+          [username password] args
+          uid                 (user-eid sys-conn username)]
+      (if uid
+        (wrap-permission
+          ::alter ::user uid
+          (str "Don't have permission to reset password of " username)
+          (if (s/blank? password)
+            (u/raise "New password is required when resetting password" {})
+            (do (transact-new-password sys-conn uid password)
+                (write-message skey {:type :command-complete}))))
+        (u/raise "User does not exist" {:username username})))))
 
+(defn- drop-user
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [sys-conn   (.-sys-conn server)
+          [username] args
+          uid        (user-eid sys-conn username)]
+      (if (= username c/default-username)
+        (u/raise "Default user cannot be dropped." {})
+        (if uid
+          (wrap-permission
+            ::create ::user uid
+            "Don't have permission to drop the user"
+            (disconnect-user server username)
+            (transact-drop-user sys-conn uid username)
+            (write-message skey {:type :command-complete}))
+          (u/raise "User does not exist." {:user username}))))))
 
+(defn- list-users
+  [^Server server ^SelectionKey skey _]
+  (wrap-error
+    (wrap-permission
+      ::view ::user nil
+      "Don't have permission to list users"
+      (write-message skey {:type   :command-complete
+                           :result (query-users (.-sys-conn server))}))))
 
 (defn- create-role
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn   (.-sys-conn server)
-          [role-key] args]
+    (let [[role-key] args]
       (wrap-permission
         ::create ::role nil
         "Don't have permission to create role"
-        (transact-new-role sys-conn role-key)
+        (transact-new-role (.-sys-conn server) role-key)
         (write-message skey {:type :command-complete})))))
+
+(defn- drop-role
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [sys-conn   (.-sys-conn server)
+          [role-key] args
+          rid        (role-eid sys-conn role-key)]
+      (if rid
+        (if (user-role-key? sys-conn role-key)
+          (u/raise "Cannot drop default role of an active user" {})
+          (wrap-permission
+            ::create ::role rid
+            "Don't have permission to drop the role"
+            (transact-drop-role sys-conn rid)
+            (update-cached-permission server role-key)
+            (write-message skey {:type :command-complete})))
+        (u/raise "Role does not exist." {:role role-key})))))
+
+(defn- list-roles
+  [^Server server ^SelectionKey skey _]
+  (wrap-error
+    (wrap-permission
+      ::view ::role nil
+      "Don't have permission to list roles"
+      (write-message skey {:type   :command-complete
+                           :result (query-roles (.-sys-conn server))}))))
 
 (defn- create-database
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -678,10 +896,79 @@
         "Don't have permission to create database"
         (if (db-exists? server db-name)
           (u/raise "Database already exists." {:db db-name})
-          (transact-new-db sys-conn username db-type db-name))
+          (do (transact-new-db sys-conn username db-type db-name)
+              (update-client server client-id
+                             #(assoc % :permissions
+                                     (user-permissions sys-conn username)))))
         (write-message skey {:type :command-complete})))))
 
+(defn- close-database
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [sys-conn            (.-sys-conn server)
+          {:keys [client-id]} @(.attachment skey)
+          {:keys [username]}  (get-client server client-id)
+          [db-name db-type]   args
+          db-name             (u/lisp-case db-name)]
+      (wrap-permission
+        ::create ::database nil
+        "Don't have permission to create database"
+        (if (db-exists? server db-name)
+          (u/raise "Database already exists." {:db db-name})
+          (do (transact-new-db sys-conn username db-type db-name)
+              (update-client server client-id
+                             #(assoc % :permissions
+                                     (user-permissions sys-conn username)))))
+        (write-message skey {:type :command-complete})))))
+
+(defn- drop-database
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [sys-conn            (.-sys-conn server)
+          {:keys [client-id]} @(.attachment skey)
+          {:keys [username]}  (get-client server client-id)
+          [db-name]           args
+          did                 (db-eid sys-conn db-name)]
+      (if did
+        (if ()
+          (u/raise "Cannot drop a database currently in use." {})
+          (wrap-permission
+            ::create ::database did
+            "Don't have permission to drop the database"
+            (transact-drop-db sys-conn did)
+            (write-message skey {:type :command-complete})))
+        (u/raise "Database does not exist." {})))))
+
+(defn- list-databases
+  [^Server server ^SelectionKey skey _]
+  (wrap-error
+    (wrap-permission
+      ::view ::server nil
+      "Don't have permission to list databases"
+      (write-message skey {:type   :command-complete
+                           :result (query-databases (.-sys-conn server))}))))
+
 (defn- assign-role
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[role-key username] args]
+      (wrap-permission
+        ::alter ::role nil
+        "Don't have permission to assign role to user"
+        (transact-user-role server role-key username)
+        (write-message skey {:type :command-complete})))))
+
+(defn- withdraw-role
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[role-key username] args]
+      (wrap-permission
+        ::alter ::role nil
+        "Don't have permission to assign role to user"
+        (transact-user-role server role-key username)
+        (write-message skey {:type :command-complete})))))
+
+(defn- list-user-roles
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[role-key username] args]
@@ -700,6 +987,87 @@
         "Don't have permission to assign permission to role"
         (transact-role-permission server role-key perm-act perm-obj perm-tgt)
         (write-message skey {:type :command-complete})))))
+
+(defn- revoke-permission
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[role-key perm-act perm-obj perm-tgt] args]
+      (wrap-permission
+        ::alter ::role nil
+        "Don't have permission to assign permission to role"
+        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
+        (write-message skey {:type :command-complete})))))
+
+(defn- list-role-permissions
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[role-key perm-act perm-obj perm-tgt] args]
+      (wrap-permission
+        ::alter ::role nil
+        "Don't have permission to assign permission to role"
+        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
+        (write-message skey {:type :command-complete})))))
+
+(defn- list-user-permissions
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[role-key perm-act perm-obj perm-tgt] args]
+      (wrap-permission
+        ::alter ::role nil
+        "Don't have permission to assign permission to role"
+        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
+        (write-message skey {:type :command-complete})))))
+
+(defn- query-system
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[query arguments] args]
+      (wrap-permission
+        ::view ::server nil
+        "Don't have permission to query system."
+        (write-message skey {:type   :command-complete
+                             :result (apply d/q query
+                                            @(.-sys-conn server)
+                                            arguments)})))))
+
+(defn- show-clients
+  [^Server server ^SelectionKey skey _]
+  (wrap-error
+    (wrap-permission
+      ::view ::server nil
+      "Don't have permission to show clients."
+      (let [clients (get-clients server)
+            result  (zipmap (keys clients)
+                            (map () (vals clients)))]
+        (write-message skey {:type   :command-complete
+                             :result result})))))
+
+(defn- disconnect-client
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (let [sys-conn            (.-sys-conn server)
+        {:keys [client-id]} @(.attachment skey)
+        {:keys [username]}  (get-client server client-id)
+        [db-name db-type]   args
+        db-name             (u/lisp-case db-name)]
+    (wrap-permission
+      ::create ::database nil
+      "Don't have permission to create database"
+      (if (db-exists? server db-name)
+        (u/raise "Database already exists." {:db db-name})
+        (do (transact-new-db sys-conn username db-type db-name)
+            (update-client server client-id
+                           #(assoc % :permissions
+                                   (user-permissions sys-conn username)))))
+      (write-message skey {:type :command-complete})))
+  (wrap-error
+    (let [[query arguments] args]
+      (wrap-permission
+        ::view ::server nil
+        "Don't have permission to query system."
+        (write-message skey {:type   :command-complete
+                             :result (apply d/q query
+                                            @(.-sys-conn server)
+                                            arguments)})))))
 
 (defn- open
   "Open a datalog store."
@@ -971,7 +1339,7 @@
 
 ;; END message handlers
 
-;; events
+;; messages
 
 (def message-handlers
   ['authentication
@@ -980,14 +1348,24 @@
    'create-user
    'reset-password
    'drop-user
+   'list-users
    'create-role
    'drop-role
+   'list-roles
    'create-database
+   'close-database
    'drop-database
+   'list-databases
    'assign-role
    'withdraw-role
+   'list-user-roles
    'grant-permission
    'revoke-permission
+   'list-role-permissions
+   'list-user-permissions
+   'query-system
+   'show-clients
+   'disconnect-client
    'open
    'close
    'closed?
@@ -1106,7 +1484,7 @@
         (recur)))))
 
 (defn create
-  "Create a Datalevin server"
+  "Create a Datalevin server. Initially not running, call `start` to run."
   [{:keys [port root]}]
   (try
     (let [server-socket ^ServerSocketChannel (open-port port)
@@ -1126,7 +1504,6 @@
     (catch Exception e
       (u/raise "Error creating server:" (ex-message e) {}))))
 
-
 (comment
 
   (require '[clj-memory-meter.core :as mm])
@@ -1139,12 +1516,17 @@
 
   (start server)
 
-  (pull-role conn :test-role)
+  (pull-role conn :datalevin.role/boyan)
 
-  (user-roles conn "datalevin")
+  (role-permissions conn :datalevin.role/boyan)
 
-  (user-permissions conn "datalevin")
+  (user-roles conn "boyan")
+
+  (user-permissions conn "boyan")
+
+  (d/datoms @conn :eav)
 
   (stop server)
+
 
   )

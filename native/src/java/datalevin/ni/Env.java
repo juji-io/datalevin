@@ -55,6 +55,8 @@ public class Env {
      * Close and free memory
      */
     public void close() {
+        final int force = 1;
+        Lib.checkRc(Lib.mdb_env_sync(get(), force));
         Lib.mdb_env_close(get());
         UnmanagedMemory.free(ptr);
     }
