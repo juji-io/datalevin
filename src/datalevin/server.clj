@@ -37,7 +37,7 @@
   (stop [srv] "Stop the server")
   (get-clients [srv] "access all the clients")
   (get-client [srv client-id] "access a client")
-  (add-client [srv client-id username] "add a client")
+  (add-client [srv ip client-id username] "add a client")
   (remove-client [srv client-id] "remove a client")
   (update-client [srv client-id f] "update info about a client")
   (get-store [srv dir] "access an open store")
@@ -138,7 +138,37 @@
     (catch Exception _
       nil)))
 
+(defn- pull-db
+  [sys-conn db-name]
+  (try
+    (d/pull @sys-conn '[*] [:database/name db-name])
+    (catch Exception _
+      nil)))
+
+(defn- pull-role
+  [sys-conn role-key]
+  (try
+    (d/pull @sys-conn '[*] [:role/key role-key])
+    (catch Exception _
+      nil)))
+
 (defn- user-eid [sys-conn username] (:db/id (pull-user sys-conn username)))
+
+(defn- db-eid [sys-conn db-name] (:db/id (pull-db sys-conn db-name)))
+
+(defn- role-eid [sys-conn role-key] (:db/id (pull-role sys-conn role-key)))
+
+(defn- eid->username
+  [sys-conn eid]
+  (:user/name (d/pull @sys-conn [:user/name] eid)))
+
+(defn- eid->db-name
+  [sys-conn eid]
+  (:database/name (d/pull @sys-conn [:database/name] eid)))
+
+(defn- eid->role-key
+  [sys-conn eid]
+  (:user/name (d/pull @sys-conn [:user/anme] eid)))
 
 (defn- query-users [sys-conn]
   (d/q '[:find [?uname ...]
@@ -163,18 +193,34 @@
          [?r :role/key ?rk]]
        @sys-conn))
 
+(defn- perm-tgt-eid
+  [sys-conn perm-obj perm-tgt]
+  (case perm-obj
+    ::database (db-eid sys-conn perm-tgt)
+    ::user     (user-eid sys-conn perm-tgt)
+    ::role     (role-eid sys-conn perm-tgt)
+    ::server   nil))
+
+(defn- perm-tgt-name
+  [sys-conn perm-obj perm-tgt]
+  (case perm-obj
+    ::database (eid->db-name sys-conn perm-tgt)
+    ::user     (eid->username sys-conn perm-tgt)
+    ::role     (eid->role-key sys-conn perm-tgt)
+    ::server   nil))
+
 (defn- user-permissions
-  [sys-conn username]
-  (map first
-       (d/q '[:find (pull ?p [:permission/act :permission/obj :permission/tgt])
-              :in $ ?uname
-              :where
-              [?u :user/name ?uname]
-              [?ur :user-role/user ?u]
-              [?ur :user-role/role ?r]
-              [?rp :role-perm/role ?r]
-              [?rp :role-perm/perm ?p]]
-            @sys-conn username)))
+  ([sys-conn username ]
+   (mapv first
+         (d/q '[:find (pull ?p [:permission/act :permission/obj :permission/tgt])
+                :in $ ?uname
+                :where
+                [?u :user/name ?uname]
+                [?ur :user-role/user ?u]
+                [?ur :user-role/role ?r]
+                [?rp :role-perm/role ?r]
+                [?rp :role-perm/perm ?p]]
+              @sys-conn username))))
 
 (defn- role-permissions
   [sys-conn role-key]
@@ -187,15 +233,6 @@
               [?rp :role-perm/role ?r]
               [?rp :role-perm/perm ?p]]
             @sys-conn role-key)))
-
-(defn- pull-role
-  [sys-conn role-key]
-  (try
-    (d/pull @sys-conn '[*] [:role/key role-key])
-    (catch Exception _
-      nil)))
-
-(defn- role-eid [sys-conn role-key] (:db/id (pull-role sys-conn role-key)))
 
 (defn- user-role-eid
   [sys-conn uid rid]
@@ -242,21 +279,12 @@
            [?rp :role-perm/perm ?p]]
          @sys-conn rid pid)))
 
-(defn- pull-db
-  [sys-conn db-name]
-  (try
-    (d/pull @sys-conn '[*] [:database/name db-name])
-    (catch Exception _
-      nil)))
-
 (defn- query-databases
   [sys-conn]
   (d/q '[:find [?dname ...]
          :where
          [?d :database/name ?dname]]
        @sys-conn))
-
-(defn- db-eid [sys-conn db-name] (:db/id (pull-db sys-conn db-name)))
 
 ;; each user is a role, similar to postgres
 (defn- user-role-key [username] (keyword "datalevin.role" username))
@@ -351,33 +379,26 @@
                         :in $ ?did
                         :where
                         [?p :permission/tgt ?did]]
-                       @sys-conn did)
+                      @sys-conn did)
         pids-txs (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids    (mapcat (fn [pid]
                            (d/q '[:find [?rp ...]
                                   :in $ ?pid
                                   :where
                                   [?rp :role-perm/perm ?pid]]
-                                 @sys-conn pid))
+                                @sys-conn pid))
                          pids)
         rp-txs   (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
     (d/transact! sys-conn (concat rp-txs pids-txs [[:db/retractEntity did]]))))
 
-(defn- perm-tgt-eid
-  [sys-conn perm-obj perm-tgt]
-  (case perm-obj
-    ::database (db-eid sys-conn perm-tgt)
-    ::user     (user-eid sys-conn perm-tgt)
-    ::role     (role-eid sys-conn perm-tgt)))
-
-(defn- has-permission?
+(defn has-permission?
   [req-act req-obj req-tgt user-permissions]
   (some (fn [{:keys [permission/act permission/obj permission/tgt] :as p}]
           (and (isa? act req-act)
                (isa? obj req-obj)
-               (if (and req-tgt tgt)
-                 (= req-tgt (tgt :db/id))
-                 true)))
+               (if req-tgt
+                 (if tgt (= req-tgt (tgt :db/id)) true)
+                 (if tgt false true))))
         user-permissions))
 
 (defmacro ^:no-doc wrap-permission
@@ -400,7 +421,7 @@
                  ^ExecutorService work-executor
                  sys-conn
                  ;; session data, a map of
-                 ;; client-id -> { uid, username, roles, permissions,
+                 ;; client-id -> { ip, uid, username, roles, permissions,
                  ;;                dt-store, dt-db, kv-store }
                  ^:volatile-mutable clients
                  ;; dir -> store
@@ -429,18 +450,20 @@
   (get-client [_ client-id]
     (clients client-id))
 
-  (add-client [server client-id username]
-    (let [uid   (user-eid sys-conn username)
-          roles (user-roles sys-conn username)
+  (add-client [server ip client-id username]
+    (let [roles (user-roles sys-conn username)
           perms (user-permissions sys-conn username)]
-      (log/debug "Added client for user" username
+      (log/debug "Added client from:" ip
+                 "for user:" username
                  "with roles:" (pr-str roles)
                  "with permissions:" (pr-str perms))
-      (set! clients (assoc clients client-id
-                           {:uid         uid
-                            :username    username
-                            :roles       roles
-                            :permissions perms}))))
+      (set! clients
+            (assoc clients client-id
+                   {:ip          ip
+                    :uid         (user-eid sys-conn username)
+                    :username    username
+                    :roles       roles
+                    :permissions perms}))))
 
   (remove-client [_ client-id]
     (set! clients (dissoc clients client-id)))
@@ -469,14 +492,7 @@
         (u/raise "Unknown store" {:dir dir})))
     (set! stores (dissoc stores dir))))
 
-(defn- authenticate
-  [^Server server {:keys [username password]}]
-  (when-let [{:keys [user/pw-salt user/pw-hash]}
-             (pull-user (.-sys-conn server) username)]
-    (when (password-matches? password pw-hash pw-salt)
-      (let [client-id (UUID/randomUUID)]
-        (add-client server client-id username)
-        client-id))))
+
 
 (defn- update-cached-role
   [^Server server target-username]
@@ -650,6 +666,10 @@
     (catch Exception e
       (u/raise "Error opening port:" (ex-message e) {}))))
 
+(defn- get-ip [^SelectionKey skey]
+  (let [ch ^SocketChannel (.channel skey)]
+    (.toString (.getAddress ^InetSocketAddress (.getRemoteAddress ch)))))
+
 (defn- close-conn
   [^SelectionKey skey]
   (.close ^SocketChannel (.channel skey)))
@@ -675,6 +695,11 @@
   "translate from db-name to server db path"
   [^Server server db-name]
   (str (.-root server) u/+separator+ (b/hexify-string db-name)))
+
+(defn- dir->db-name
+  [^Server server dir]
+  (b/unhexify-string
+    (s/replace-first dir (str (.-root server) u/+separator+) "")))
 
 (defn- db-exists?
   [^Server server db-name]
@@ -771,12 +796,48 @@
         (d/transact! sys-conn txs)))
     sys-conn))
 
+(defn- authenticate
+  [^Server server ^SelectionKey skey {:keys [username password]}]
+  (when-let [{:keys [user/pw-salt user/pw-hash]}
+             (pull-user (.-sys-conn server) username)]
+    (when (password-matches? password pw-hash pw-salt)
+      (let [client-id (UUID/randomUUID)
+            ip        (get-ip skey)]
+        (add-client server ip client-id username)
+        client-id))))
+
+(defn- store->db-name
+  [^Server server store db-type]
+  (dir->db-name server (case db-type
+                         :datalog   (st/dir store)
+                         :key-value (l/dir store))))
+
+(defn- client-display
+  [^Server server [client-id m]]
+  (let [sys-conn (.-sys-conn server)]
+    [client-id
+     (cond-> m
+       true          (update :permissions
+                             #(mapv
+                                (fn [{:keys [permission/act permission/obj
+                                            permission/tgt]}]
+                                  (let [{:keys [db/id]} tgt]
+                                    [act obj (perm-tgt-name sys-conn obj id)]))
+                                %))
+       (:dt-store m) (assoc :open-datalog-db
+                            (store->db-name server (:dt-store m) c/dl-type))
+       (:kv-store m) (assoc :open-kv-db
+                            (store->db-name server (:kv-store m) c/kv-type))
+       true          (select-keys
+                       [:ip :username :roles :permissions
+                        :open-datalog-db :open-kv-db]))]))
+
 ;; BEGIN message handlers
 
 (defn- authentication
   [^Server server skey message]
   (wrap-error
-    (if-let [client-id (authenticate server message)]
+    (if-let [client-id (authenticate server skey message)]
       (write-message skey {:type :authentication-ok :client-id client-id})
       (u/raise "Failed to authenticate" {}))))
 
@@ -1029,18 +1090,17 @@
                              :result (apply d/q query
                                             @(.-sys-conn server)
                                             arguments)})))))
-
 (defn- show-clients
   [^Server server ^SelectionKey skey _]
   (wrap-error
     (wrap-permission
       ::view ::server nil
       "Don't have permission to show clients."
-      (let [clients (get-clients server)
-            result  (zipmap (keys clients)
-                            (map () (vals clients)))]
-        (write-message skey {:type   :command-complete
-                             :result result})))))
+      (write-message skey
+                     {:type   :command-complete
+                      :result (->> (get-clients server)
+                                   (map (partial client-display server))
+                                   (into {}))}))))
 
 (defn- disconnect-client
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1512,9 +1572,14 @@
                        :root (u/tmp-dir
                                (str "remote-test-" (UUID/randomUUID)))}))
 
+  (start server)
+
   (def conn (.-sys-conn server))
 
-  (start server)
+  (eid->username conn 1)
+
+  (pull-user conn "datalevin")
+
 
   (pull-role conn :datalevin.role/boyan)
 

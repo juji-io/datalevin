@@ -343,6 +343,7 @@
     (when-not closed?
       (.close-pool pool)
       (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
+      (when-not (.isClosed env) (.sync env))
       (.close env)
       (set! closed? true)
       nil))

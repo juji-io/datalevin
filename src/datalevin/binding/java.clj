@@ -198,7 +198,7 @@
   ILMDB
   (close-kv [_]
     (.close-pool pool)
-    (.sync env true)
+    (when-not (.isClosed env) (.sync env true))
     (.close env)
     nil)
 

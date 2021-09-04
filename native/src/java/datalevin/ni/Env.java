@@ -15,6 +15,8 @@ import java.util.List;
 @CContext(Lib.Directives.class)
 public class Env {
 
+    private boolean closed;
+
     private WordPointer ptr;
 
     public Env(WordPointer ptr) {
@@ -55,10 +57,30 @@ public class Env {
      * Close and free memory
      */
     public void close() {
-        final int force = 1;
-        Lib.checkRc(Lib.mdb_env_sync(get(), force));
+        if (closed) {
+            return;
+        }
+        closed = true;
         Lib.mdb_env_close(get());
         UnmanagedMemory.free(ptr);
+    }
+
+    /**
+     * return closed status
+     */
+    public boolean isClosed() {
+        return closed;
+    }
+
+    /**
+     * Force sync to disk
+     */
+    public void sync() {
+        if (closed) {
+            return;
+        }
+        final int force = 1;
+        Lib.checkRc(Lib.mdb_env_sync(get(), force));
     }
 
     public void setMapSize(long size) {

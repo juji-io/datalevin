@@ -116,7 +116,7 @@
   (closed-pool? [this]
     (and (.isEmpty used) (.isEmpty available))))
 
-(defn authenticate
+(defn- authenticate
   "Send an authenticate message to server, and wait to receive the response.
   If authentication succeeds,  return a client id.
   Otherwise, close connection, raise exception"
@@ -415,11 +415,13 @@
 
 (comment
 
-  (def client (new-client "dtlv://datalevin:datalevin@localhost"))
+  (def client (new-client "dtlv://datalevin:datalevin@localhost/clientdb"))
 
   (create-user client "boyan" "lol")
 
   (list-users client)
+
+  (show-clients client)
 
   (def client1 (new-client "dtlv://boyan:lol@localhost"))
 

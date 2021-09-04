@@ -538,6 +538,14 @@
                           (prn res))))
                     (recur))))))))
 
+(defn start-server
+  "Start a Datalevin server. `opts` is a map with these keys:
+  `:port` is the port number the server listens to, default is `8898`.
+  `:root` is the root data directory on the server, default is
+  `/var/lib/datalevin`."
+  [opts]
+  (srv/start (srv/create opts)))
+
 (defn ^:no-doc -main [& args]
   (let [{:keys [command options arguments summary exit-message ok?]}
         (validate-args args)]
@@ -552,5 +560,5 @@
         "load" (dtlv-load options arguments)
         "pods" (pod/run)
         "repl" (dtlv-repl)
-        "serv" (srv/start (srv/create options))
+        "serv" (start-server options)
         "stat" (dtlv-stat options arguments)))))

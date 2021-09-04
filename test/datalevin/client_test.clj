@@ -12,25 +12,26 @@
 (deftest basic-ops-test
   (let [uri-str "dtlv://datalevin:datalevin@localhost/clientdb"
         uri     (URI. uri-str)]
-    (is (= {:username "datalevin" :password "datalevin"}
-           (sut/parse-user-info uri)))
-    (is (= c/default-port (sut/parse-port uri)))
-    (is (= "clientdb" (sut/parse-db uri)))
+    (is (= (sut/parse-user-info uri)
+           {:username "datalevin" :password "datalevin"}))
+    (is (= (sut/parse-port uri) c/default-port))
+    (is (= (sut/parse-db uri) "clientdb" ))
 
     (let [client (sut/new-client uri-str)]
-      (is (= ["datalevin"] (sut/list-users client)))
-      (is (= ["clientdb"] (sut/list-databases client)))
-      (is (= [:datalevin.role/datalevin] (sut/list-roles client)))
+      (is (= (sut/list-users client) ["datalevin"]))
+      (is (= (sut/list-databases client) ["clientdb"]))
+      (is (= (sut/list-roles client) [:datalevin.role/datalevin]))
+      (is (= (count (sut/show-clients client)) 1))
       (is (thrown? Exception (sut/assign-role client "noone" :nothing)))
 
       (sut/create-user client "juji" "secret")
-      (is (instance? UUID (sut/authenticate "localhost" c/default-port
-                                            "juji" "secret")))
-      (is (= #{"datalevin" "juji"} (set (sut/list-users client))))
-      (is (= #{:datalevin.role/datalevin :datalevin.role/juji}
-             (set (sut/list-roles client))))
 
       (let [client1 (sut/new-client "dtlv://juji:secret@localhost")]
+        (is (= (count (sut/show-clients client)) 2))
+        (is (= (set (sut/list-users client)) #{"datalevin" "juji"}))
+        (is (= (set (sut/list-roles client))
+               #{:datalevin.role/datalevin :datalevin.role/juji}))
+
         (is (thrown? Exception (sut/list-users client1)))
         (is (thrown? Exception (sut/list-databases client1)))
         (is (thrown? Exception (sut/list-roles client1)))
