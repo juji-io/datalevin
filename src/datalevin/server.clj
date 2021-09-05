@@ -133,6 +133,7 @@
 
 (defn- pull-user
   [sys-conn username]
+  {:pre [(d/conn? sys-conn)]}
   (try
     (d/pull @sys-conn '[*] [:user/name username])
     (catch Exception _
@@ -140,6 +141,7 @@
 
 (defn- pull-db
   [sys-conn db-name]
+  {:pre [(d/conn? sys-conn)]}
   (try
     (d/pull @sys-conn '[*] [:database/name db-name])
     (catch Exception _
@@ -147,6 +149,7 @@
 
 (defn- pull-role
   [sys-conn role-key]
+  {:pre [(d/conn? sys-conn)]}
   (try
     (d/pull @sys-conn '[*] [:role/key role-key])
     (catch Exception _
@@ -224,15 +227,15 @@
 
 (defn- role-permissions
   [sys-conn role-key]
-  (map first
-       (d/q '[:find (pull ?p [:permission/act :permission/obj :permission/tgt])
-              :in $ ?rk
-              :where
-              [?r :role/key ?rk]
-              [?ur :user-role/role ?r]
-              [?rp :role-perm/role ?r]
-              [?rp :role-perm/perm ?p]]
-            @sys-conn role-key)))
+  (mapv first
+        (d/q '[:find (pull ?p [:permission/act :permission/obj :permission/tgt])
+               :in $ ?rk
+               :where
+               [?r :role/key ?rk]
+               [?ur :user-role/role ?r]
+               [?rp :role-perm/role ?r]
+               [?rp :role-perm/perm ?p]]
+             @sys-conn role-key)))
 
 (defn- user-role-eid
   [sys-conn uid rid]
@@ -317,9 +320,9 @@
                               :role-perm/role -2}]))))
 
 (defn- transact-new-password
-  [sys-conn uid password]
+  [sys-conn username password]
   (let [s (salt)]
-    (d/transact! sys-conn [{:db/id        uid
+    (d/transact! sys-conn [{:user/name    username
                             :user/pw-hash (password-hashing password s)
                             :user/pw-salt s}])))
 
@@ -349,15 +352,56 @@
                             :in $ ?rid
                             :where
                             [?ur :user-role/role ?rid]]
-                           @sys-conn rid))
+                          @sys-conn rid))
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid])
                      (d/q '[:find [?rp ...]
                             :in $ ?rid
                             :where
                             [?rp :role-perm/role ?rid]]
-                           @sys-conn rid))]
+                          @sys-conn rid))]
     (d/transact! sys-conn (concat rp-txs ur-txs
                                   [[:db/retractEntity rid]]))))
+
+(defn- transact-user-role
+  [sys-conn rid username]
+  (if-let [uid (user-eid sys-conn username)]
+    (d/transact! sys-conn [{:user-role/user uid :user-role/role rid}])
+    (u/raise "User does not exist." {:username username})))
+
+(defn- transact-withdraw-role
+  [sys-conn rid username]
+  (if-let [uid (user-eid sys-conn username)]
+    (when-let [urid (user-role-eid sys-conn uid rid)]
+      (d/transact! sys-conn [[:db/retractEntity urid]]))
+    (u/raise "User does not exist." {:username username})))
+
+(defn- transact-role-permission
+  [sys-conn rid perm-act perm-obj perm-tgt]
+  (if-let [pid (permission-eid sys-conn perm-act perm-obj perm-tgt)]
+    (d/transact! sys-conn [{:role-perm/perm pid :role-perm/role rid}])
+    (if perm-tgt
+      (if-let [tid (perm-tgt-eid sys-conn perm-obj perm-tgt)]
+        (d/transact! sys-conn [{:db/id          -1
+                                :permission/act perm-act
+                                :permission/obj perm-obj
+                                :permission/tgt tid}
+                               {:db/id          -2
+                                :role-perm/perm -1
+                                :role-perm/role rid}])
+        (u/raise "Permission target does not exist." {}))
+      (d/transact! sys-conn [{:db/id          -1
+                              :permission/act perm-act
+                              :permission/obj perm-obj}
+                             {:db/id          -2
+                              :role-perm/perm -1
+                              :role-perm/role rid}]))))
+
+(defn- transact-revoke-permission
+  [sys-conn rid perm-act perm-obj perm-tgt]
+  (if-let [pid (permission-eid sys-conn perm-act perm-obj perm-tgt)]
+    (when-let [rpid (role-permission-eid sys-conn rid pid)]
+      (d/transact! sys-conn [[:db/retractEntity rpid]]))
+    (u/raise "Permission does not exist." {})))
 
 (defn- transact-new-db
   [sys-conn username db-type db-name]
@@ -391,7 +435,14 @@
         rp-txs   (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
     (d/transact! sys-conn (concat rp-txs pids-txs [[:db/retractEntity did]]))))
 
-(defn has-permission?
+(defn- close-store
+  [store]
+  (cond
+    (instance? datalevin.storage.IStore store) (st/close store)
+    (instance? datalevin.lmdb.ILMDB store)     (l/close-kv store)
+    :else                                      (u/raise "Unknown store" {})))
+
+(defn- has-permission?
   [req-act req-obj req-tgt user-permissions]
   (some (fn [{:keys [permission/act permission/obj permission/tgt] :as p}]
           (and (isa? act req-act)
@@ -409,8 +460,7 @@
        (do ~@body)
        (u/raise ~message {}))))
 
-(declare event-loop)
-(declare close-conn)
+(declare event-loop close-conn)
 
 (deftype Server [^AtomicBoolean running
                  ^int port
@@ -484,15 +534,8 @@
     (set! stores (assoc stores dir store)))
 
   (remove-store [server dir]
-    (when-let [store (get-store server dir)]
-      (cond
-        (instance? datalevin.storage.IStore store) (st/close store)
-        (instance? datalevin.lmdb.ILMDB store)     (l/close-kv store)
-        :else
-        (u/raise "Unknown store" {:dir dir})))
+    (when-let [store (get-store server dir)] (close-store store))
     (set! stores (dissoc stores dir))))
-
-
 
 (defn- update-cached-role
   [^Server server target-username]
@@ -522,16 +565,6 @@
           :when                          (= tgt-username username)]
     (disconnect-client* server client-id)))
 
-(defn- transact-user-role
-  [^Server server role-key username]
-  (let [sys-conn (.-sys-conn server)]
-    (if-let [uid (user-eid sys-conn username)]
-      (if-let [rid (role-eid sys-conn role-key)]
-        (d/transact! sys-conn [{:user-role/user uid :user-role/role rid}])
-        (u/raise "Role does not exist." {:role-key role-key}))
-      (u/raise "User does not exist." {:username username}))
-    (update-cached-role server username)))
-
 (defn- update-cached-permission
   [^Server server target-role]
   (let [sys-conn (.-sys-conn server)]
@@ -542,31 +575,6 @@
       (update-client server cid
                      #(assoc % :permissions
                              (user-permissions sys-conn uname))))))
-
-(defn- transact-role-permission
-  [^Server server role-key perm-act perm-obj perm-tgt]
-  (let [sys-conn (.-sys-conn server)]
-    (if-let [rid (role-eid sys-conn role-key)]
-      (if-let [pid (permission-eid sys-conn perm-act perm-obj perm-tgt)]
-        (d/transact! sys-conn [{:role-perm/perm pid :role-perm/role rid}])
-        (if perm-tgt
-          (if-let [tid (perm-tgt-eid sys-conn perm-obj perm-tgt)]
-            (d/transact! sys-conn [{:db/id          -1
-                                    :permission/act perm-act
-                                    :permission/obj perm-obj
-                                    :permission/tgt tid}
-                                   {:db/id          -2
-                                    :role-perm/perm -1
-                                    :role-perm/role rid}])
-            (u/raise "Dababase does not exist." {:db perm-tgt}))
-          (d/transact! sys-conn [{:db/id          -1
-                                  :permission/act perm-act
-                                  :permission/obj perm-obj}
-                                 {:db/id          -2
-                                  :role-perm/perm -1
-                                  :role-perm/role rid}])))
-      (u/raise "Role does not exist." {:role-key role-key}))
-    (update-cached-permission server role-key)))
 
 ;; networking
 
@@ -708,6 +716,14 @@
 (defn- dt-store
   [^Server server ^SelectionKey skey]
   (:dt-store (get-client server (@(.attachment skey) :client-id))))
+
+(defn- db-in-use?
+  [server db-name]
+  (let [store (get-store server (db-dir server db-name))]
+    (some (fn [[_ {:keys [dt-store kv-store]}]]
+            (or (and (identical? store dt-store) (not (st/closed? store)))
+                (and (identical? store kv-store) (not (l/closed-kv? store)))))
+          (get-clients server))))
 
 (defmacro ^:no-doc normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
@@ -878,7 +894,7 @@
           (str "Don't have permission to reset password of " username)
           (if (s/blank? password)
             (u/raise "New password is required when resetting password" {})
-            (do (transact-new-password sys-conn uid password)
+            (do (transact-new-password sys-conn username password)
                 (write-message skey {:type :command-complete}))))
         (u/raise "User does not exist" {:username username})))))
 
@@ -966,38 +982,38 @@
 (defn- close-database
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn            (.-sys-conn server)
-          {:keys [client-id]} @(.attachment skey)
-          {:keys [username]}  (get-client server client-id)
-          [db-name db-type]   args
-          db-name             (u/lisp-case db-name)]
-      (wrap-permission
-        ::create ::database nil
-        "Don't have permission to create database"
-        (if (db-exists? server db-name)
-          (u/raise "Database already exists." {:db db-name})
-          (do (transact-new-db sys-conn username db-type db-name)
-              (update-client server client-id
-                             #(assoc % :permissions
-                                     (user-permissions sys-conn username)))))
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn  (.-sys-conn server)
+          [db-name] args
+          did       (db-eid sys-conn db-name)
+          dir       (db-dir server db-name)]
+      (if did
+        (if-let [store (get-store server dir)]
+          (wrap-permission
+            ::create ::database did
+            "Don't have permission to close the database"
+            (doseq [[cid {:keys [dt-store kv-store]}] (get-clients server)]
+              (when (or (identical? store dt-store) (identical? store kv-store))
+                (disconnect-client* server cid)))
+            (remove-store server dir)
+            (write-message skey {:type :command-complete}))
+          (u/raise "Database is closed already." {}))
+        (u/raise "Database doe snot exist." {})))))
 
 (defn- drop-database
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn            (.-sys-conn server)
-          {:keys [client-id]} @(.attachment skey)
-          {:keys [username]}  (get-client server client-id)
-          [db-name]           args
-          did                 (db-eid sys-conn db-name)]
+    (let [sys-conn  (.-sys-conn server)
+          [db-name] args
+          did       (db-eid sys-conn db-name)]
       (if did
-        (if ()
-          (u/raise "Cannot drop a database currently in use." {})
-          (wrap-permission
-            ::create ::database did
-            "Don't have permission to drop the database"
-            (transact-drop-db sys-conn did)
-            (write-message skey {:type :command-complete})))
+        (wrap-permission
+          ::create ::database did
+          "Don't have permission to drop the database"
+          (if (db-in-use? server db-name)
+            (u/raise "Cannot drop a database currently in use." {})
+            (do (transact-drop-db sys-conn did)
+                (u/delete-files (db-dir server db-name))
+                (write-message skey {:type :command-complete}))))
         (u/raise "Database does not exist." {})))))
 
 (defn- list-databases
@@ -1012,72 +1028,104 @@
 (defn- assign-role
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key username] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign role to user"
-        (transact-user-role server role-key username)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn            (.-sys-conn server)
+          [role-key username] args
+          rid                 (role-eid sys-conn role-key)]
+      (if rid
+        (wrap-permission
+          ::alter ::role rid
+          "Don't have permission to assign the role to user"
+          (transact-user-role sys-conn rid username)
+          (update-cached-role server username)
+          (write-message skey {:type :command-complete}))
+        (u/raise "Role does not exist." {})))))
 
 (defn- withdraw-role
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key username] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign role to user"
-        (transact-user-role server role-key username)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn            (.-sys-conn server)
+          [role-key username] args
+          rid                 (role-eid sys-conn role-key)]
+      (if rid
+        (wrap-permission
+          ::alter ::role rid
+          "Don't have permission to withdraw the role from user"
+          (transact-withdraw-role sys-conn rid username)
+          (update-cached-role server username)
+          (write-message skey {:type :command-complete}))
+        (u/raise "Role does not exist." {})))))
 
 (defn- list-user-roles
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key username] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign role to user"
-        (transact-user-role server role-key username)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn   (.-sys-conn server)
+          [username] args
+          uid        (user-eid sys-conn username)]
+      (if uid
+        (wrap-permission
+          ::view ::user uid
+          "Don't have permission to view the user's roles"
+          (user-roles sys-conn username)
+          (write-message skey {:type :command-complete}))
+        (u/raise "User does not exist." {})))))
 
 (defn- grant-permission
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key perm-act perm-obj perm-tgt] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign permission to role"
-        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn                              (.-sys-conn server)
+          [role-key perm-act perm-obj perm-tgt] args
+          rid                                   (role-eid sys-conn role-key)]
+      (if rid
+        (wrap-permission
+          ::alter ::role rid
+          "Don't have permission to grant permission to the role"
+          (transact-role-permission sys-conn rid perm-act perm-obj perm-tgt)
+          (update-cached-permission server role-key)
+          (write-message skey {:type :command-complete}))
+        (u/raise "Role does not exist." {})))))
 
 (defn- revoke-permission
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key perm-act perm-obj perm-tgt] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign permission to role"
-        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn                              (.-sys-conn server)
+          [role-key perm-act perm-obj perm-tgt] args
+          rid                                   (role-eid sys-conn role-key)]
+      (if rid
+        (wrap-permission
+          ::alter ::role rid
+          "Don't have permission to revoke permission from the role"
+          (transact-revoke-permission sys-conn rid perm-act perm-obj perm-tgt)
+          (update-cached-permission server role-key)
+          (write-message skey {:type :command-complete}))
+        (u/raise "Role does not exist." {})))))
 
 (defn- list-role-permissions
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key perm-act perm-obj perm-tgt] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign permission to role"
-        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn   (.-sys-conn server)
+          [role-key] args
+          rid        (role-eid role-key)]
+      (if rid
+        (wrap-permission
+          ::view ::role rid
+          "Don't have permission to list permissions of the role"
+          (write-message skey {:type   :command-complete
+                               :result (role-permissions sys-conn role-key)}))
+        (u/raise "Role does not exist." {})))))
 
 (defn- list-user-permissions
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[role-key perm-act perm-obj perm-tgt] args]
-      (wrap-permission
-        ::alter ::role nil
-        "Don't have permission to assign permission to role"
-        (transact-role-permission server role-key perm-act perm-obj perm-tgt)
-        (write-message skey {:type :command-complete})))))
+    (let [sys-conn   (.-sys-conn server)
+          [username] args
+          uid        (user-eid sys-conn username)]
+      (if uid
+        (wrap-permission
+          ::view ::user uid
+          "Don't have permission to list permission of the user"
+          (write-message skey {:type   :command-complete
+                               :result (user-permissions sys-conn username)}))
+        (u/raise "User does not exist." {})))))
 
 (defn- query-system
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1104,30 +1152,13 @@
 
 (defn- disconnect-client
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (let [sys-conn            (.-sys-conn server)
-        {:keys [client-id]} @(.attachment skey)
-        {:keys [username]}  (get-client server client-id)
-        [db-name db-type]   args
-        db-name             (u/lisp-case db-name)]
-    (wrap-permission
-      ::create ::database nil
-      "Don't have permission to create database"
-      (if (db-exists? server db-name)
-        (u/raise "Database already exists." {:db db-name})
-        (do (transact-new-db sys-conn username db-type db-name)
-            (update-client server client-id
-                           #(assoc % :permissions
-                                   (user-permissions sys-conn username)))))
-      (write-message skey {:type :command-complete})))
   (wrap-error
-    (let [[query arguments] args]
+    (let [[client-id] args]
       (wrap-permission
-        ::view ::server nil
-        "Don't have permission to query system."
-        (write-message skey {:type   :command-complete
-                             :result (apply d/q query
-                                            @(.-sys-conn server)
-                                            arguments)})))))
+        ::control ::server nil
+        "Don't have permission to disconnect a client"
+        (disconnect-client* server client-id)
+        (write-message skey {:type :command-complete})))))
 
 (defn- open
   "Open a datalog store."
@@ -1576,10 +1607,15 @@
 
   (def conn (.-sys-conn server))
 
+  (user-eid conn "boyan")
+
   (eid->username conn 1)
 
-  (pull-user conn "datalevin")
+  (pull-user conn "boyan")
 
+  (pull-role conn :test-role)
+
+  (role-eid conn :test-role)
 
   (pull-role conn :datalevin.role/boyan)
 

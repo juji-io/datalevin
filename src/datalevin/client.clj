@@ -325,7 +325,8 @@
   (normal-request client :create-database [db-name db-type]))
 
 (defn close-database
-  "Force close a database. Connected clients that are using it are disconnected.
+  "Force close a database. Connected clients that are using it
+  will be disconnected.
 
   See [[disconnect-client]]"
   [client db-name]
@@ -345,12 +346,12 @@
 
 (defn assign-role
   "Assign a role to a user. "
-  [client username role-key]
+  [client role-key username]
   (normal-request client :assign-role [role-key username]))
 
 (defn withdraw-role
   "Withdraw a role from a user. "
-  [client username role-key]
+  [client role-key username]
   (normal-request client :withdraw-role [role-key username]))
 
 (defn list-user-roles
@@ -411,13 +412,16 @@
 (defn disconnect-client
   "Force disconnect a client from the server."
   [client client-id]
+  (assert (instance? UUID client-id) "")
   (normal-request client :disconnect-client [client-id]))
 
 (comment
 
-  (def client (new-client "dtlv://datalevin:datalevin@localhost/clientdb"))
+  (def client (new-client "dtlv://datalevin:datalevin@localhost/"))
 
   (create-user client "boyan" "lol")
+
+  (reset-password client "boyan" "ok")
 
   (list-users client)
 
@@ -425,8 +429,10 @@
 
   (def client1 (new-client "dtlv://boyan:lol@localhost"))
 
-  (create-role client1 :test-role)
+  (create-role client :test-role)
 
-  (assign-role client "boyan" :test-role )
+  (list-roles client)
+
+  (assign-role client "boyan" :test-role)
 
   )

@@ -41,7 +41,7 @@
         (sut/disconnect client1))
 
       (sut/create-role client :juji/admin)
-      (sut/assign-role client "juji" :juji/admin )
+      (sut/assign-role client :juji/admin "juji")
       (sut/grant-permission client :juji/admin
                             :datalevin.server/create
                             :datalevin.server/database
