@@ -261,15 +261,3 @@
                      "store=" c/db-store-kv)]
     (assert (cl/parse-db uri) "URI should contain a database name")
     (->KVStore (redact-uri uri-str) (cl/new-client uri-str))))
-
-(comment
-
-  (def store (open "dtlv://datalevin:datalevin@localhost/teststore"))
-
-  (let [i 1
-        f (fn [] (inc i))]
-    (instance? clojure.lang.AFn f))
-
-
-
-  )

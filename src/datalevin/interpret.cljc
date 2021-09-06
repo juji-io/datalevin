@@ -7,22 +7,26 @@
             [taoensso.nippy :as nippy]
             [datalevin.query :as q]
             [datalevin.util :as u]
-            [datalevin.core :as d]
+            [datalevin.core]
+            [datalevin.client]
             [datalevin.binding.graal]
-            [datalevin.binding.java])
+            [datalevin.binding.java]
+            [clojure.string :as s])
   (:import [clojure.lang AFn]
            [datalevin.datom Datom]
            [java.io DataInput DataOutput]))
 
-(def user-facing-ns #{'datalevin.core})
+(def user-facing-ns #{'datalevin.core 'datalevin.client})
 
 (defn- user-facing? [v]
-  (let [m (meta v)]
-    (and (:doc m)
+  (let [m (meta v)
+        d (m :doc)]
+    (and d
          (if-let [p (:protocol m)]
            (and (not (:no-doc (meta p)))
                 (not (:no-doc m)))
-           (not (:no-doc m))))))
+           (not (:no-doc m)))
+         (not (s/starts-with? d "Positional factory function for class")))))
 
 (defn user-facing-map [ns var-map]
   (let [sci-ns (vars/->SciNamespace ns nil)]

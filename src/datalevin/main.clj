@@ -32,7 +32,7 @@
   Datalevin (version: " version ")"))
 
 (def ^:private commands
-  #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl" "serv"})
+  #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
 
 (def ^:private serv-help
   "
@@ -146,8 +146,7 @@
 
 (defn- repl-help []
   (println "")
-  (println "The following Datalevin functions are available:")
-  (println "")
+  (println "In addition to Clojure core functions, the following functions are available:")
   (doseq [ns   i/user-facing-ns
           :let [fs (->> ns
                         ns-publics
@@ -155,14 +154,17 @@
                         keys
                         (sort-by name)
                         (partition 4 4 nil))]]
+    (println "")
+    (println "In namespace" ns)
+    (println "")
     (doseq [f4 fs]
       (doseq [f f4]
-        (printf "%-20s" (name f)))
+        (printf "%-22s" (name f)))
       (println "")))
   (println "")
-  (println "Call function just like in code: (<function> <args>)")
+  (println "Can call function without namespace: (<function name> <arguments>)")
   (println "")
-  (println "Type (doc <function>) to read documentation of the function")
+  (println "Type (doc <function name>) to read documentation of the function")
   "")
 
 (def ^:private repl-header
@@ -538,14 +540,6 @@
                           (prn res))))
                     (recur))))))))
 
-(defn start-server
-  "Start a Datalevin server. `opts` is a map with these keys:
-  `:port` is the port number the server listens to, default is `8898`.
-  `:root` is the root data directory on the server, default is
-  `/var/lib/datalevin`."
-  [opts]
-  (srv/start (srv/create opts)))
-
 (defn ^:no-doc -main [& args]
   (let [{:keys [command options arguments summary exit-message ok?]}
         (validate-args args)]
@@ -560,5 +554,5 @@
         "load" (dtlv-load options arguments)
         "pods" (pod/run)
         "repl" (dtlv-repl)
-        "serv" (start-server options)
+        "serv" (srv/start (srv/create options))
         "stat" (dtlv-stat options arguments)))))

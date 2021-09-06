@@ -11,15 +11,15 @@
            [java.util ArrayList UUID Collection]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
-(defprotocol IConnection
+(defprotocol ^:no-doc IConnection
   (send-n-receive [conn msg]
     "Send a message to server and return the response, a blocking call")
   (send-only [conn msg] "Send a message without waiting for a response")
   (receive [conn] "Receive a message, a blocking call")
   (close [conn]))
 
-(deftype Connection [^SocketChannel ch
-                     ^:volatile-mutable ^ByteBuffer bf]
+(deftype ^:no-doc Connection [^SocketChannel ch
+                              ^:volatile-mutable ^ByteBuffer bf]
   IConnection
   (send-n-receive [this msg]
     (try
@@ -81,14 +81,14 @@
                               :client-id client-id})]
     (when-not (= type :set-client-id-ok) (u/raise message {}))))
 
-(defprotocol IConnectionPool
+(defprotocol ^:no-doc IConnectionPool
   (get-connection [this] "Get a connection from the pool")
   (release-connection [this connection] "Return the connection back to pool")
   (close-pool [this])
   (closed-pool? [this]))
 
-(deftype ConnectionPool [^ArrayList available
-                         ^ArrayList used]
+(deftype ^:no-doc ConnectionPool [^ArrayList available
+                                  ^ArrayList used]
   IConnectionPool
   (get-connection [this]
     (let [start (System/currentTimeMillis)]
@@ -142,7 +142,7 @@
         (.add available conn)))
     pool))
 
-(defprotocol IClient
+(defprotocol ^:no-doc IClient
   (request [client req]
     "Send a request to server and return the response. The response could
      also initiate a copy out")
@@ -153,17 +153,17 @@
   (disconnect [client])
   (disconnected? [client]))
 
-(defn parse-user-info
+(defn ^:no-doc parse-user-info
   [^URI uri]
   (when-let [user-info (.getUserInfo uri)]
     (when-let [[_ username password] (re-find #"(.+):(.+)" user-info)]
       {:username username :password password})))
 
-(defn parse-port
+(defn ^:no-doc parse-port
   [^URI uri]
   (let [p (.getPort uri)] (if (= -1 p) c/default-port p)))
 
-(defn parse-db
+(defn ^:no-doc parse-db
   "Extract the identifier of database from URI. A database is uniquely
   identified by its name (after being converted to its kebab case)."
   [^URI uri]
@@ -171,7 +171,7 @@
     (when-not (or (s/blank? path) (= path "/"))
       (subs path 1))))
 
-(defn parse-query
+(defn ^:no-doc parse-query
   [^URI uri]
   (when-let [query (.getQuery uri)]
     (->> (s/split query #"&")
@@ -204,9 +204,9 @@
     (catch Exception e
       (u/raise "Unable to receive copy:" (ex-message e) {:req req}))))
 
-(deftype Client [^URI uri
-                 ^ConnectionPool pool
-                 ^UUID id]
+(deftype ^:no-doc Client [^URI uri
+                          ^ConnectionPool pool
+                          ^UUID id]
   IClient
   (request [client req]
     (let [conn (get-connection pool)]
@@ -265,7 +265,7 @@
      (when db (init-db client db store schema))
      client)))
 
-(defn normal-request
+(defn ^:no-doc normal-request
   "Send request to server and returns results. Does not use the
   copy-in protocol. `call` is a keyword, `args` is a vector"
   [client call args]
@@ -419,25 +419,3 @@
   [client client-id]
   (assert (instance? UUID client-id) "")
   (normal-request client :disconnect-client [client-id]))
-
-(comment
-
-  (def client (new-client "dtlv://datalevin:datalevin@localhost/"))
-
-  (create-user client "boyan" "lol")
-
-  (reset-password client "boyan" "ok")
-
-  (list-users client)
-
-  (show-clients client)
-
-  (def client1 (new-client "dtlv://boyan:lol@localhost"))
-
-  (create-role client :test-role)
-
-  (list-roles client)
-
-  (assign-role client "boyan" :test-role)
-
-  )

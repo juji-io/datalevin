@@ -48,11 +48,3 @@
     (is (equal-v' (d/datom 1 :a 2) 2))
     (is (sut/inter-fn? in-range'))
     (is (in-range' 12))))
-
-(comment
-
-  (def v (sut/inter-fn [datom v] (= (dc/datom-v datom) v)))
-
-  (meta v)
-
-  )

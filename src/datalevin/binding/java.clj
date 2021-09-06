@@ -401,8 +401,13 @@
           ^Env env      (.open builder
                                file
                                (into-array EnvFlags default-env-flags))
-          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-      (->LMDB env dir pool (ConcurrentHashMap.)))
+          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)
+          lmdb          (->LMDB env dir pool (ConcurrentHashMap.))]
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread.
+                          #(when-not (l/closed-kv? lmdb)
+                             (l/close-kv lmdb))))
+      lmdb)
     (catch Exception e
       (raise
         "Fail to open database: " (ex-message e)

@@ -149,8 +149,7 @@
       (is (= 3 (st/datom-count store c/eav)))
 
       (is (thrown? Exception (st/set-schema store {:o/p {}})))
-      ))
-  )
+      (is (thrown? Exception (st/load-datoms store []))))))
 
 (deftest dt-store-larger-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"

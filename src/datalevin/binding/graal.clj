@@ -567,12 +567,17 @@
                      dir
                      (* ^long c/+init-db-size+ 1024 1024)
                      c/+max-readers+
-                     c/+max-dbs+)]
-      (->LMDB env
-              dir
-              (->RtxPool env (ConcurrentHashMap.) 0)
-              (ConcurrentHashMap.)
-              false))
+                     c/+max-dbs+)
+          lmdb     (->LMDB env
+                           dir
+                           (->RtxPool env (ConcurrentHashMap.) 0)
+                           (ConcurrentHashMap.)
+                           false)]
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread.
+                          #(when-not (l/closed-kv? lmdb)
+                             (l/close-kv lmdb))))
+      lmdb)
     (catch Exception e
       (raise
         "Fail to open database: " (ex-message e)
