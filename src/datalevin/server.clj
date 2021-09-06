@@ -24,6 +24,8 @@
            [java.util.concurrent Executors Executor ExecutorService
             ConcurrentLinkedQueue]
            [datalevin.db DB]
+           [datalevin.storage IStore]
+           [datalevin.lmdb ILMDB]
            [datalevin.datom Datom]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
@@ -40,6 +42,7 @@
   (add-client [srv ip client-id username] "add a client")
   (remove-client [srv client-id] "remove a client")
   (update-client [srv client-id f] "update info about a client")
+  (get-stores [srv] "access all open stores")
   (get-store [srv dir] "access an open store")
   (add-store [srv dir store] "add a store")
   (remove-store [srv dir] "remove a store"))
@@ -292,10 +295,14 @@
 ;; each user is a role, similar to postgres
 (defn- user-role-key [username] (keyword "datalevin.role" username))
 
-(defn- user-role-key? [sys-conn role-key]
-  (let [ns (namespace role-key)
-        n  (name role-key)]
-    (and (= ns "datalevin.role") (pull-user sys-conn n))))
+(defn- user-role-key?
+  ([sys-conn role-key]
+   (user-role-key? sys-conn role-key nil))
+  ([sys-conn role-key username]
+   (let [ns (namespace role-key)
+         n  (name role-key)]
+     (and (= ns "datalevin.role")  (pull-user sys-conn n)
+          (if username (= n username) true)))))
 
 (defn- transact-new-user
   [sys-conn username password]
@@ -330,7 +337,7 @@
   [sys-conn uid username]
   (let [rid    (role-eid sys-conn (user-role-key username))
         urid   (user-role-eid sys-conn uid rid)
-        pids   (permission-eid uid)
+        pids   (permission-eid sys-conn uid)
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids  (mapcat (partial role-permission-eid sys-conn rid) pids)
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
@@ -521,6 +528,8 @@
   (update-client [_ client-id f]
     (set! clients (update clients client-id f)))
 
+  (get-stores [_] stores)
+
   (get-store [_ dir]
     (when-let [store (stores dir)]
       (cond
@@ -709,6 +718,8 @@
   (b/unhexify-string
     (s/replace-first dir (str (.-root server) u/+separator+) "")))
 
+(b/unhexify-string (s/replace-first "/tmp/remote-test-5dcbac16-268f-4c66-be30-de34dec2caef/7465737473746F7265/""/tmp/remote-test-5dcbac16-268f-4c66-be30-de34dec2caef/" ""))
+
 (defn- db-exists?
   [^Server server db-name]
   (u/file-exists (str (db-dir server db-name) u/+separator+ "data.mdb")))
@@ -717,13 +728,34 @@
   [^Server server ^SelectionKey skey]
   (:dt-store (get-client server (@(.attachment skey) :client-id))))
 
+(defn- store-closed?
+  [store]
+  (cond
+    (instance? IStore store) (st/closed? store)
+    (instance? ILMDB store)  (l/closed-kv? store)
+    :else                    (u/raise "Unknown store type" {})))
+
+(defn- store-in-use? [[dir store]] (when-not (store-closed? store) dir))
+
 (defn- db-in-use?
   [server db-name]
-  (let [store (get-store server (db-dir server db-name))]
-    (some (fn [[_ {:keys [dt-store kv-store]}]]
-            (or (and (identical? store dt-store) (not (st/closed? store)))
-                (and (identical? store kv-store) (not (l/closed-kv? store)))))
-          (get-clients server))))
+  (when-let [store (get-store server (db-dir server db-name))]
+    (not (store-closed? store))))
+
+(defn- store->db-name
+  [server store]
+  (dir->db-name
+    server
+    (cond
+      (instance? IStore store) (st/dir store)
+      (instance? ILMDB store)  (l/dir store)
+      :else                    (u/raise "Unknown store type" {}))))
+
+(defn- in-use-dbs
+  [server]
+  (->> (get-stores server)
+       (keep store-in-use?)
+       (mapv (partial dir->db-name server))))
 
 (defmacro ^:no-doc normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
@@ -822,12 +854,6 @@
         (add-client server ip client-id username)
         client-id))))
 
-(defn- store->db-name
-  [^Server server store db-type]
-  (dir->db-name server (case db-type
-                         :datalog   (st/dir store)
-                         :key-value (l/dir store))))
-
 (defn- client-display
   [^Server server [client-id m]]
   (let [sys-conn (.-sys-conn server)]
@@ -837,13 +863,14 @@
                              #(mapv
                                 (fn [{:keys [permission/act permission/obj
                                             permission/tgt]}]
-                                  (let [{:keys [db/id]} tgt]
-                                    [act obj (perm-tgt-name sys-conn obj id)]))
+                                  (if-let [{:keys [db/id]} tgt]
+                                    [act obj (perm-tgt-name sys-conn obj id)]
+                                    [act obj]))
                                 %))
        (:dt-store m) (assoc :open-datalog-db
-                            (store->db-name server (:dt-store m) c/dl-type))
+                            (store->db-name server (:dt-store m)))
        (:kv-store m) (assoc :open-kv-db
-                            (store->db-name server (:kv-store m) c/kv-type))
+                            (store->db-name server (:kv-store m)))
        true          (select-keys
                        [:ip :username :roles :permissions
                         :open-datalog-db :open-kv-db]))]))
@@ -982,10 +1009,11 @@
 (defn- close-database
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [sys-conn  (.-sys-conn server)
-          [db-name] args
-          did       (db-eid sys-conn db-name)
-          dir       (db-dir server db-name)]
+    (let [sys-conn            (.-sys-conn server)
+          [db-name]           args
+          {:keys [client-id]} @(.attachment skey)
+          did                 (db-eid sys-conn db-name)
+          dir                 (db-dir server db-name)]
       (if did
         (if-let [store (get-store server dir)]
           (wrap-permission
@@ -993,7 +1021,8 @@
             "Don't have permission to close the database"
             (doseq [[cid {:keys [dt-store kv-store]}] (get-clients server)]
               (when (or (identical? store dt-store) (identical? store kv-store))
-                (disconnect-client* server cid)))
+                (when-not (= client-id cid)
+                  (disconnect-client* server cid))))
             (remove-store server dir)
             (write-message skey {:type :command-complete}))
           (u/raise "Database is closed already." {}))
@@ -1025,6 +1054,15 @@
       (write-message skey {:type   :command-complete
                            :result (query-databases (.-sys-conn server))}))))
 
+(defn- list-databases-in-use
+  [^Server server ^SelectionKey skey _]
+  (wrap-error
+    (wrap-permission
+      ::view ::server nil
+      "Don't have permission to list databases in use"
+      (write-message skey {:type   :command-complete
+                           :result (in-use-dbs server)}))))
+
 (defn- assign-role
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
@@ -1047,12 +1085,14 @@
           [role-key username] args
           rid                 (role-eid sys-conn role-key)]
       (if rid
-        (wrap-permission
-          ::alter ::role rid
-          "Don't have permission to withdraw the role from user"
-          (transact-withdraw-role sys-conn rid username)
-          (update-cached-role server username)
-          (write-message skey {:type :command-complete}))
+        (if (user-role-key? sys-conn role-key username)
+          (u/raise "Cannot withdraw the default role of a user" {})
+          (wrap-permission
+            ::alter ::role rid
+            "Don't have permission to withdraw the role from user"
+            (transact-withdraw-role sys-conn rid username)
+            (update-cached-role server username)
+            (write-message skey {:type :command-complete})))
         (u/raise "Role does not exist." {})))))
 
 (defn- list-user-roles
@@ -1065,8 +1105,8 @@
         (wrap-permission
           ::view ::user uid
           "Don't have permission to view the user's roles"
-          (user-roles sys-conn username)
-          (write-message skey {:type :command-complete}))
+          (write-message skey {:type   :command-complete
+                               :result (user-roles sys-conn username)}))
         (u/raise "User does not exist." {})))))
 
 (defn- grant-permission
@@ -1104,7 +1144,7 @@
   (wrap-error
     (let [sys-conn   (.-sys-conn server)
           [role-key] args
-          rid        (role-eid role-key)]
+          rid        (role-eid sys-conn role-key)]
       (if rid
         (wrap-permission
           ::view ::role rid
@@ -1153,11 +1193,11 @@
 (defn- disconnect-client
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [[client-id] args]
+    (let [[cid] args]
       (wrap-permission
         ::control ::server nil
         "Don't have permission to disconnect a client"
-        (disconnect-client* server client-id)
+        (disconnect-client* server cid)
         (write-message skey {:type :command-complete})))))
 
 (defn- open
@@ -1447,6 +1487,7 @@
    'close-database
    'drop-database
    'list-databases
+   'list-databases-in-use
    'assign-role
    'withdraw-role
    'list-user-roles

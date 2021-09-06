@@ -215,7 +215,6 @@
           (if (= type :copy-out-response)
             (copy-out conn req)
             result))
-        (catch Exception e (throw e))
         (finally (release-connection pool conn)))))
 
   (copy-in [client req data batch-size]
@@ -225,7 +224,6 @@
           (if (= type :copy-in-response)
             (copy-in* conn req data batch-size)
             (u/raise "Server refuses to accept copy in" {:req req})))
-        (catch Exception e (throw e))
         (finally (release-connection pool conn)))))
 
   (disconnect [client]
@@ -330,7 +328,7 @@
 
   See [[disconnect-client]]"
   [client db-name]
-  (normal-request client :drop-database [db-name]))
+  (normal-request client :close-database [db-name]))
 
 (defn drop-database
   "Delete a database. May not be successful if currently in use.
@@ -343,6 +341,11 @@
   "List all databases."
   [client]
   (normal-request client :list-databases []))
+
+(defn list-databases-in-use
+  "List databases that are in use."
+  [client]
+  (normal-request client :list-databases-in-use []))
 
 (defn assign-role
   "Assign a role to a user. "

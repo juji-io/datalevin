@@ -4,7 +4,8 @@
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [cognitect.transit :as transit]
-            [taoensso.nippy :as nippy])
+            [taoensso.nippy :as nippy]
+            [datalevin.util :as u])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]
            [java.nio ByteBuffer]
            [java.nio.channels SocketChannel]
@@ -161,12 +162,14 @@
             (cond
               (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                              (if msg [msg bf] (recur bf)))
-              (= readn -1) (do (.close ch) [nil bf])))))
+              (= readn -1) (do (.close ch)
+                               (u/raise "Socket channel is closed." {}))))))
       (let [readn (.read ch bf)]
         (cond
           (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                          (if msg [msg bf] (recur bf)))
-          (= readn -1) (do (.close ch) [nil bf]))))))
+          (= readn -1) (do (.close ch)
+                           (u/raise "Socket channel is closed." {})))))))
 
 (defn extract-message
   "Segment the content of read buffer to extract a message and call msg-handler
