@@ -1241,7 +1241,13 @@
 
 (defn- set-schema
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-dt-store-handler set-schema)))
+  (wrap-error
+    (wrap-permission
+      ::alter ::database (db-eid (.-sys-conn server)
+                                 (store->db-name server
+                                                 (dt-store server skey)))
+      "Don't have permission to alter the database"
+      (normal-dt-store-handler set-schema))))
 
 (defn- init-max-eid
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1263,12 +1269,16 @@
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dt-store]}  (get-client server client-id)]
-      (case mode
-        :copy-in (do (st/load-datoms dt-store (copy-in server skey))
-                     (write-message skey {:type :command-complete}))
-        :request (normal-dt-store-handler load-datoms)
-        (u/raise "Missing :mode when loading datoms" {})))))
+          {:keys [dt-store]}  (get-client server client-id)
+          sys-conn            (.-sys-conn server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
+        "Don't have permission to alter the database"
+        (case mode
+          :copy-in (do (st/load-datoms dt-store (copy-in server skey))
+                       (write-message skey {:type :command-complete}))
+          :request (normal-dt-store-handler load-datoms)
+          (u/raise "Missing :mode when loading datoms" {}))))))
 
 (defn- fetch
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1413,12 +1423,16 @@
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [kv-store]}  (get-client server client-id)]
-      (case mode
-        :copy-in (do (l/transact-kv kv-store (copy-in server skey))
-                     (write-message skey {:type :command-complete}))
-        :request (normal-kv-store-handler transact-kv)
-        (u/raise "Missing :mode when transacting kv" {})))))
+          {:keys [kv-store]}  (get-client server client-id)
+          sys-conn            (.-sys-conn server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn (store->db-name server kv-store))
+        "Don't have permission to alter the database"
+        (case mode
+          :copy-in (do (l/transact-kv kv-store (copy-in server skey))
+                       (write-message skey {:type :command-complete}))
+          :request (normal-kv-store-handler transact-kv)
+          (u/raise "Missing :mode when transacting kv" {}))))))
 
 (defn- get-value
   [^Server server ^SelectionKey skey {:keys [args]}]

@@ -25,7 +25,14 @@
                            :datalevin.server/create
                            :datalevin.server/database
                            nil)
-      (is (= (count (cl/list-user-permissions client "someone")) 3))))
+      (is (= (count (cl/list-user-permissions client "someone")) 3))
+
+
+      (cl/create-user client "viewer" "secret")
+      (cl/grant-permission client :datalevin.role/viewer
+                           :datalevin.server/view
+                           :datalevin.server/database
+                           nil)))
 
   (testing "datalog store ops"
     (let [dir   "dtlv://someone:secret@localhost/ops-test"
@@ -132,7 +139,18 @@
           (is (= s3 (st/schema store)))
           (st/set-schema store {:f/g {:db/valueType :db.type/string}})
           (is (= s4 (st/schema store)))
-          (st/close store))))))
+          (st/close store)))))
+
+  (testing "data viewer permission"
+    (let [dir   "dtlv://viewer:secret@localhost/ops-test"
+          store (sut/open dir)]
+      (is (instance? datalevin.remote.DatalogStore store))
+      (is (not= c/implicit-schema (st/schema store)))
+      (is (= 3 (st/datom-count store c/eav)))
+
+      (is (thrown? Exception (st/set-schema store {:o/p {}})))
+      ))
+  )
 
 (deftest dt-store-larger-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
