@@ -1,11 +1,9 @@
 (ns datalevin.client-test
   (:require [datalevin.client :as sut]
             [datalevin.constants :as c]
-            [datalevin.util :as u]
             [datalevin.test.core :refer [server-fixture]]
             [clojure.test :refer [is testing deftest use-fixtures]])
-  (:import [java.util UUID Arrays]
-           [java.net URI]
+  (:import [java.net URI]
            [datalevin.client Client]))
 
 (use-fixtures :each server-fixture)
@@ -27,6 +25,16 @@
                ["clientdb"]))
         (is (= (sut/list-roles client) [:datalevin.role/datalevin]))
         (is (= (count (sut/show-clients client)) 1))
+        (is (= (sut/query-system client
+                                 '[:find [?rk ...]
+                                   :in $ ?un
+                                   :where
+                                   [?u :user/name ?un]
+                                   [?ur :user-role/user ?u]
+                                   [?ur :user-role/role ?r]
+                                   [?r :role/key ?rk]]
+                                 "datalevin")
+               [:datalevin.role/datalevin]))
         (is (thrown? Exception (sut/assign-role client "no-one" :nothing))))
 
       (testing "create user"
@@ -35,9 +43,12 @@
         (is (= (set (sut/list-roles client))
                #{:datalevin.role/datalevin :datalevin.role/juji})))
 
-      (testing "new user's default permission"
+      (testing "new user's default permissions"
         (let [client1 (sut/new-client "dtlv://juji:secret@localhost")]
           (is (= (count (sut/show-clients client)) 2))
+
+          (is (= (sut/list-user-roles client1 "juji") [:datalevin.role/juji]))
+          (is (= (count (sut/list-user-permissions client1 "juji")) 2))
 
           (is (thrown? Exception (sut/list-users client1)))
           (is (thrown? Exception (sut/list-databases client1)))
@@ -56,10 +67,9 @@
                               nil)
         (is (= (set (sut/list-roles client))
                #{:datalevin.role/datalevin :datalevin.role/juji :juji/admin}))
-        (is (= (count (sut/list-role-permissions client :juji/admin)) 1))
+        (is (= (count (sut/list-role-permissions client :juji/admin)) 2))
         (is (= (count (sut/list-user-roles client "juji")) 2))
-        (is (= (count (sut/list-user-permissions client "juji")) 2))
-        )
+        (is (= (count (sut/list-user-permissions client "juji")) 4)))
 
       (testing "a user created a db, then is forcibly disconnected by superuser"
         (let [client2 (sut/new-client "dtlv://juji:new-secret@localhost")]
@@ -69,7 +79,9 @@
 
           (sut/create-database client2 "hr" c/dl-type)
           (is (= (count (sut/list-databases client)) 2))
-          (is (= (count (sut/list-user-permissions client "juji")) 3))
+          (is (= (count (sut/list-role-permissions
+                          client2 :datalevin.role/juji)) 3))
+          (is (= (count (sut/list-user-permissions client2 "juji")) 5))
 
           (is (thrown? Exception (sut/list-databases client2)))
 
@@ -91,7 +103,35 @@
 
           (sut/drop-database client "hr")
           (is (= (count (sut/list-databases client)) 1))
-          (is (= (count (sut/list-user-permissions client "juji")) 2))
-          ))
+          (is (= (count (sut/list-user-permissions client "juji")) 4))))
 
-      )))
+      (testing "revoke permission from role"
+        (let [client4 (sut/new-client "dtlv://juji:new-secret@localhost")]
+          (sut/revoke-permission client :juji/admin
+                                 :datalevin.server/create
+                                 :datalevin.server/database
+                                 nil)
+          (is (= (count (sut/list-user-permissions client4 "juji")) 3))
+          (is (thrown? Exception (sut/create-database client4 "ml" c/kv-type)))
+          (sut/disconnect client4)))
+
+      (testing "withdraw role from user, then drop the role"
+        (sut/withdraw-role client :juji/admin "juji")
+        (is (= (sut/list-user-roles client "juji") [:datalevin.role/juji]))
+        (is (= (count (sut/list-user-permissions client "juji")) 2))
+
+        (sut/drop-role client :juji/admin)
+        (is (thrown? Exception (sut/drop-role client :datalevin.role/juji)))
+        (is (= (count (sut/list-roles client)) 2)))
+
+      (testing "drop user"
+        (sut/drop-user client "juji")
+        (is (= (count (sut/list-users client)) 1))
+        (is (= (count (sut/list-roles client)) 1)))
+
+      (sut/reset-password client "datalevin" "nondefault")
+      (sut/disconnect client))
+
+    (testing "reset default user's password"
+      (let [client5 (sut/new-client "dtlv://datalevin:nondefault@localhost")]
+        (is (= (sut/list-users client5) ["datalevin"]))))))

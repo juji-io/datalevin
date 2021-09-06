@@ -403,7 +403,9 @@
   (normal-request client :list-user-permissions [username]))
 
 (defn query-system
-  "Issue arbitrary Datalog query to the system database on the server."
+  "Issue arbitrary Datalog query to the system database on the server.
+  Note that unlike `q` function, the arguments here should NOT include db,
+  as the server will supply it."
   [client query & arguments]
   (normal-request client :query-system [query arguments]))
 

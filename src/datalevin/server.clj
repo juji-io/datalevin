@@ -324,6 +324,13 @@
                               :permission/tgt -1}
                              {:db/id          -5
                               :role-perm/perm -4
+                              :role-perm/role -2}
+                             {:db/id          -6
+                              :permission/act ::view
+                              :permission/obj ::role
+                              :permission/tgt -2}
+                             {:db/id          -7
+                              :role-perm/perm -6
                               :role-perm/role -2}]))))
 
 (defn- transact-new-password
@@ -339,8 +346,9 @@
         urid   (user-role-eid sys-conn uid rid)
         pids   (permission-eid sys-conn uid)
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
-        rpids  (mapcat (partial role-permission-eid sys-conn rid) pids)
-        rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
+        rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
+        rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)
+        ]
     (d/transact! sys-conn (concat rp-txs p-txs
                                   [[:db/retractEntity urid]
                                    [:db/retractEntity rid]
@@ -350,23 +358,29 @@
   [sys-conn role-key]
   (if (pull-role sys-conn role-key)
     (u/raise "Role already exits" {:role-key role-key})
-    (d/transact! sys-conn [{:role/key role-key}])))
+    (d/transact! sys-conn [{:db/id    -1
+                            :role/key role-key}
+                           {:db/id          -2
+                            :permission/act ::view
+                            :permission/obj ::role
+                            :permission/tgt -1}
+                           {:db/id          -3
+                            :role-perm/perm -2
+                            :role-perm/role -1}])))
 
 (defn- transact-drop-role
   [sys-conn rid]
-  (let [ur-txs (mapv (fn [urid] [:db/retractEntity urid])
-                     (d/q '[:find [?ur ...]
-                            :in $ ?rid
-                            :where
-                            [?ur :user-role/role ?rid]]
-                          @sys-conn rid))
-        rp-txs (mapv (fn [rpid] [:db/retractEntity rpid])
-                     (d/q '[:find [?rp ...]
-                            :in $ ?rid
-                            :where
-                            [?rp :role-perm/role ?rid]]
-                          @sys-conn rid))]
-    (d/transact! sys-conn (concat rp-txs ur-txs
+  (let [ur-txs (log/spy (mapv (fn [urid] [:db/retractEntity urid])
+                              (d/q '[:find [?ur ...]
+                                     :in $ ?rid
+                                     :where
+                                     [?ur :user-role/role ?rid]]
+                                   @sys-conn rid)))
+        pids   (log/spy (permission-eid sys-conn rid))
+        p-txs  (log/spy (mapv (fn [pid] [:db/retractEntity pid]) pids))
+        rpids  (log/spy (mapv (partial role-permission-eid sys-conn rid) pids))
+        rp-txs (log/spy (mapv (fn [rpid] [:db/retractEntity rpid]) rpids))]
+    (d/transact! sys-conn (concat rp-txs p-txs ur-txs
                                   [[:db/retractEntity rid]]))))
 
 (defn- transact-user-role
