@@ -9,12 +9,14 @@
             [datalevin.util :as u]
             [datalevin.core]
             [datalevin.client]
-            [datalevin.binding.graal]
-            [datalevin.binding.java]
             [clojure.string :as s])
   (:import [clojure.lang AFn]
            [datalevin.datom Datom]
            [java.io DataInput DataOutput]))
+
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
 
 (def user-facing-ns #{'datalevin.core 'datalevin.client})
 

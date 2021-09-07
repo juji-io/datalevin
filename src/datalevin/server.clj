@@ -1649,6 +1649,7 @@
 (defn create
   "Create a Datalevin server. Initially not running, call `start` to run."
   [{:keys [port root verbose]}]
+  {:pre [(int? port) (not (s/blank? root))]}
   (try
     (log/set-level! (if verbose :debug :info))
     (let [server-socket ^ServerSocketChannel (open-port port)

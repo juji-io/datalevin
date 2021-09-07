@@ -48,6 +48,10 @@
 
 ;; files
 
+#?(:clj
+   (defn windows? []
+     (s/starts-with? (System/getProperty "os.name") "Windows")))
+
 (defn delete-files
   "Recursively delete file"
   [& fs]
@@ -66,15 +70,18 @@
   "Return directory path as File, create it if missing"
   [^String path]
   (try
-    (let [path' (Paths/get path (into-array String []))]
+    (let [path' (Paths/get path (into-array String []))
+          f     ^File (io/file path)]
       (if (Files/exists path' (into-array LinkOption []))
-        (io/file path)
-        (do (Files/createDirectories
-              path'
-              (into-array FileAttribute
-                          [(PosixFilePermissions/asFileAttribute
-                             (PosixFilePermissions/fromString "rwxr-x---"))]))
-            (io/file path))))
+        f
+        (do (if (windows?)
+              (.mkdirs f)
+              (Files/createDirectories
+                path'
+                (into-array FileAttribute
+                            [(PosixFilePermissions/asFileAttribute
+                               (PosixFilePermissions/fromString "rwxr-x---"))])))
+            f)))
     (catch AccessDeniedException e
       (raise "Access denied " (ex-message e) {:path path}))
     (catch Exception e
@@ -174,10 +181,6 @@
 #?(:clj
    (defn graal? []
      (System/getProperty "org.graalvm.nativeimage.kind")))
-
-#?(:clj
-   (defn windows? []
-     (s/starts-with? (System/getProperty "os.name") "Windows")))
 
 #?(:clj
    (defn- get-sig [method]

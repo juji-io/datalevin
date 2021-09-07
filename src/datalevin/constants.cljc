@@ -92,9 +92,8 @@
 
 ;; server / client
 
-(def ^:const default-port 8898)
+(def ^:const default-port (int 8898))
 
-(def ^:const default-root-dir "/var/lib/datalevin")
 (def ^:const
   system-dir "system")
 

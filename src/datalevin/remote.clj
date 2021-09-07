@@ -17,9 +17,7 @@
 (defn dtlv-uri?
   "return true if the given string is a Datalevin connection string"
   [s]
-  (when s
-    (when-let [uri (URI. s)]
-      (= (.getScheme uri) "dtlv"))))
+  (when s (str/starts-with? s "dtlv://")))
 
 (defn- redact-uri
   [s]

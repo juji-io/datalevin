@@ -270,10 +270,13 @@ Datalevin is aimed to be a versatile database.
 
 ### Use as a Datalog store
 
-Since Datalevin has almost the same Datalog API as Datascript, which in turn has
+In addition to [our API doc](https://juji-io.github.io/datalevin/index.html),
+since Datalevin has almost the same Datalog API as Datascript, which in turn has
 almost the same API as Datomic®, please consult the abundant tutorials, guides
-and learning sites available to learn about the usage of Datomic® flavor of
-Datalog. Here is a simple code example using Datalevin:
+and learning sites available online to learn about the usage of Datomic® flavor
+of Datalog.
+
+Here is a simple code example using Datalevin:
 
 ```clojure
 (require '[datalevin.core :as d])
@@ -516,7 +519,7 @@ These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.0 --Native networked server mode with authentication.-- [Done 2021/09/06]
+* 0.5.0 --Native networked server mode with access control.-- [Done 2021/09/06]
 * 0.6.0 A new Datalog query engine with improved performance.
 * 0.7.0 Persisted transaction functions.
 * 0.8.0 Composite tuples.

@@ -6,16 +6,14 @@ Using the same native command line tool, `dtlv serv` will run in the server mode
 and accepts network connection on port 8898 (default).
 
 * Use option `-p` to specify an alternative port number that the server listens
-  to. User should make proper firewall settings to allow needed access to the port.
+  to. Proper firewall settings is needed to allow remote access to the port.
 * `-r` option can be used to specify a root directory path on the server, where
-  all data reside under. The default path is `/var/lib/datalevin`. User should
-  make sure proper file permissions are set on the system.
-* `-v` option enables verbose server debug logs. Datalevin server writes logs to stdout.
-
-The user is recommended to run the server process as a daemon or service using
-the preferred operation system tools, e.g. systemd on Linux, Launch Daemon on
-MacOS, or sc.exe on Windows. Packagers are welcomed to package Datalevin server
-on the preferred platforms.
+  all data reside under. The default path is `/var/lib/datalevin` on Posix
+  systems, `C:\ProgramData\Datalevin` on Windows. User should
+  make sure read/write file permissions are set on the directory path for the
+  user running the server.
+* `-v` option enables verbose server debug logs. Datalevin server writes logs to
+  stdout.
 
 There is a default builtin user `datalevin` with a default password `datalevin`.
 This is a system account that can do everything on the server. It
@@ -44,11 +42,18 @@ nil
 It is suggested to create different users for access to the server (see below).
 Leave the `datalevin` user for server administration purpose only.
 
+The user is recommended to run the server process as a daemon or service using
+the preferred operation system tools, e.g. systemd on Linux, Launch Daemon on
+MacOS, or sc.exe on Windows. Packagers are welcomed to package Datalevin server
+on the preferred platforms.
+
 For remote access, username and password is required on the connection URI.
 When a client (for now, just the Datalevin library itself) opens a Datalevin database
 using a connection URI, i.e.
 "dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;?store=datalog|kv",
-instead of a local path name, a connection to the server is attempted.
+instead of a local path name, a connection to the server is attempted. `db-name`
+should be unique on the server. `store` parameter is optional, default is
+`datalog`. A database will be created if it does not yet exist.
 
 The same functions for local databases work on the remote databases. The remote
 access is transparent to function callers.
@@ -161,8 +166,8 @@ A permission consists of three pieces of information:
   implies all others.
 * `:permission/tgt` refers to the concrete target of the securable. It could be
   a username, a role keyword, a database name or `nil`, depending on
-  `permission/obj`. When the target is `nil`, the permission applies to all objects
-  of that type.
+  `permission/obj`. All these target names uniquely identify securable objects.
+  When the target is `nil`, the permission applies to all objects of that type.
 
 
 Each user has a corresponding built-in unique role. For example, the default

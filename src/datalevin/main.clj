@@ -12,17 +12,18 @@
             [datalevin.util :as u]
             [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
-            [datalevin.bits :as b]
             [datalevin.lmdb :as l]
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
-            [datalevin.binding.graal]
-            [datalevin.binding.java]
             [datalevin.constants :as c])
   (:import [java.io BufferedReader PushbackReader IOException]
            [java.lang RuntimeException]
            [datalevin.datom Datom])
   (:gen-class))
+
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
 
 (def ^:private version "0.5.0")
 
@@ -201,8 +202,13 @@
   (s/join \newline ["The following errors occurred while parsing your command:"
                     (s/join \newline errors)]))
 
+(def default-root-dir
+  (if (u/windows?)
+    "C:\\ProgramData\\Datalevin"
+    "/var/lib/datalevin"))
+
 (def ^:private cli-opts
-  [["-a" "--all" "Include all of the sub-databases"]
+  [[")-a" "--all" "Include all of the sub-databases"]
    ["-c" "--compact" "Compact while copying"]
    ["-d" "--dir PATH" "Path to the database directory"]
    ["-D" "--delete" "Delete the sub-database, not just empty it"]
@@ -215,7 +221,7 @@
     :parse-fn #(Integer/parseInt %)
     :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
    ["-r" "--root ROOT" "Server root data directory"
-    :default c/default-root-dir]
+    :default default-root-dir]
    ["-v" "--verbose" "Show verbose server debug log"]
    ["-V" "--version" "Show Datalevin version and exit"]])
 

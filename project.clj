@@ -29,10 +29,16 @@
                           ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
+                 [org.clojure/tools.cli]
+                 [org.bouncycastle/bcprov-jdk15on]
+                 [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
+                 [com.taoensso/timbre]
+                 [com.cognitect/transit-clj]
                  [borkdude/sci]
-                 [persistent-sorted-set]
-                 [org.lmdbjava/lmdbjava]]
+                 [nrepl/bencode]
+                 [babashka/babashka.pods]
+                 [persistent-sorted-set]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]
   :profiles {:uberjar      {:main         datalevin.main
@@ -50,13 +56,7 @@
                             :dependencies
                             [[org.clojure/test.check]
                              [com.clojure-goes-fast/clj-memory-meter]
-                             [babashka/babashka.pods]
-                             [org.graalvm.nativeimage/svm]
-                             [org.clojure/tools.cli]
-                             [com.taoensso/timbre]
-                             [com.cognitect/transit-clj]
-                             [org.bouncycastle/bcprov-jdk15on]
-                             [nrepl/bencode]]
+                             [org.graalvm.nativeimage/svm]]
                             :global-vars
                             {*print-namespace-maps* false
                              *unchecked-math*       :warn-on-boxed
