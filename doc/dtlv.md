@@ -210,8 +210,8 @@ statistics of LMDB sub-databases.
 
 ## Babashka Pod
 
-See [here](#babashka-pod)
+See [here](https://github.com/juji-io/datalevin#babashka-pod)
 
 ## Server/client
 
-See [here](blob/master/doc/server.md)
+See [here](https://github.com/juji-io/datalevin/blob/master/doc/server.md)

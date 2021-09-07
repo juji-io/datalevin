@@ -97,7 +97,6 @@
 
 (defn -main []
   (sh "lein" "clean")
-  (update-file "src/datalevin/server.clj" #(str/replace % ":debug" ":info"))
   (update-version)
   (run-tests)
   (make-commit)
