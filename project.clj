@@ -78,7 +78,7 @@
                                     :sign-releases false}]]
   :plugins [[lein-codox "0.10.7"]]
   :codox {:output-path "codox"
-          :namespaces  [datalevin.core datalevin.main]
+          :namespaces  [datalevin.core datalevin.client]
           :metadata    {:doc/format :markdown}
           :source-uri
           {#"target/classes"
