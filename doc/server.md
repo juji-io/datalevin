@@ -48,8 +48,9 @@ For remote access, username and password is required on the connection URI.
 When a client (for now, just the Datalevin library itself) opens a Datalevin database
 using a connection URI, i.e.
 "dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;?store=datalog|kv",
-instead of a local path name, a connection to the server is attempted. So the
-same functions for local databases work on the remote databases. The remote
+instead of a local path name, a connection to the server is attempted.
+
+The same functions for local databases work on the remote databases. The remote
 access is transparent to function callers.
 
 ## Implementation
@@ -67,20 +68,20 @@ interface to the higher level callers.
 
 Compared with traditional client/server architecture, where the server performs
 all the actual data processing work, the architecture of Datalevin enable easier
-implementation of rich database features. For much of the high level
+implementation of rich user convenience features. For much of the high level
 functionalities sit on top of storage, such as caching, transaction data
-preparation, query parse, change listening, and so on, so they are handled on
+preparation, query parse, change listening, and so on, they are handled on
 the client side, which is the same as in the local embedded mode. For example,
 our recent added feature of [transactable
 entity](#entities-with-staged-transactions-datalog-store) works the same in
-either local or server mode, without needing any code changes.
+either embedded or server mode, without needing any code changes.
 
 Compared with the peer architecture of Datomic®, where peers receive all the
 data, Datalevin clients requests only the needed data on demand. The amount of
 network traffic is reduced, clients are simpler than peers and have less work to
-do, so the impact on the user application is minimized. Because not all the data are
-duplicated on all the nodes, the size of the database only depends on the
-capacity of the server, which can afford to be a beefy machine.
+do, so the impact on the user application performance is minimized. Because not
+all the data are duplicated on all the peers, the size of the database only
+depends on the capacity of the server, which can afford to be a beefy machine.
 
 In Datalevin client/server mode, transaction and querying can happen both in
 client and server side, depending on the context. For example, for queries
@@ -104,13 +105,13 @@ Work stealing thread pool reduces lock contentions and maximizes the server CPU
 utilization. Each thread processes its message and writes its own response back
 to the network channel when it becomes ready, so the server message handling is
 asynchronous. It is the client's responsibility to track request/response
-correspondence.
+correspondence if multiple messages are on the wire.
 
-For developer convenience, the current implemented client uses blocking
-network connections. For normal commands, it sends a request and waits for
-the responses from the server, so the data access API is the same for both the
-local databases and remote databases. In addition, the client has a built-in
-connection pool, to reuse pre-established connections.
+For developer convenience, the current implemented client in the library makes
+synchronous and blocking network connections. For normal commands, it sends a
+request and waits for the responses from the server, so the data access API is
+the same for both the local databases and remote databases. In addition, the
+client has a built-in connection pool, to reuse pre-established connections.
 
 The wire protocol between server and client is largely inspired by the wire
 protocol of PostgreSQL. It uses TLV message format, with 1 byte message type in
@@ -123,10 +124,10 @@ the message type byte. For example, with type `1`,
 be the payload. The default payload format is type `2`, using
 [nippy](https://github.com/ptaoussanis/nippy) serialization.
 
-nippy format produces smaller bytes size with faster speed, but it only works
+nippy format produces smaller bytes with faster speed, but it only works
 with Clojure code. If a client needs to be written for other languages, transit
-is a better choice as it is based on JSON. The server accepts either format just
-as well. Other format may be added in the future if necessary.
+is a better choice. The server accepts either format just as well. Other format
+may be added in the future if necessary.
 
 The command messages are Clojure maps, e.g. `{:type :list-databases :args []}`. The
 command responses are also Clojure maps. e.g. `{:type :command-complete :results
@@ -136,11 +137,11 @@ copy-in/copy-out data stream messages are batched data in Clojure vectors
 instead of maps.
 
 User defined functions (e.g. filtering predicates) are serialized and sent to
-server for execution. They are first evaluated in the sandbox using a interpreter, i.e.
-[sci](https://github.com/borkdude/sci) based on a white list. Once interpreted,
-they become the same kind of Clojure functions as if compiled, so the
-performance hit is minimal. It is also more secure, as there's little danger of
-malicious user code bringing down the server.
+server for execution. They are first evaluated in the sandbox using a Clojure
+interpreter, i.e. [sci](https://github.com/borkdude/sci) based on a white list.
+Once interpreted, they become the same kind of Clojure functions as if compiled,
+so the performance hit is minimal. It is also more secure, as there's less
+danger of malicious user code bringing down the server.
 
 ### Security
 
@@ -170,9 +171,10 @@ Each user has a corresponding built-in unique role. For example, the default
   :permission/obj :datalevin.server/server}`, which permits
   the role to do everything on the server.
 
-In the command line REPL, issue `(create-user ...)` to create a user,
-`(create-role ...)` to create a role, `(assign-role ...)` to assign a role to a
-user, `(grant-permission ..)` to grant a permission to a role.
+In the command line REPL, after connecting to a server, issue `(create-user
+...)` to create a user, `(create-role ...)` to create a role, `(assign-role
+...)` to assign a role to a user, `(grant-permission ..)` to grant a permission
+to a role.
 
 User password is stored as a salt and a hash. The password hashing algorithm
 takes the recommended more than 0.5 seconds to run on a modern server class
