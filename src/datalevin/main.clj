@@ -208,7 +208,7 @@
     "/var/lib/datalevin"))
 
 (def ^:private cli-opts
-  [[")-a" "--all" "Include all of the sub-databases"]
+  [["-a" "--all" "Include all of the sub-databases"]
    ["-c" "--compact" "Compact while copying"]
    ["-d" "--dir PATH" "Path to the database directory"]
    ["-D" "--delete" "Delete the sub-database, not just empty it"]
