@@ -66,22 +66,25 @@
   [fname]
   (.exists (io/file fname)))
 
+(defn create-dirs
+  "create all parent directories"
+  [^String path]
+  (if (windows?)
+    (.mkdirs ^File (io/file path))
+    (Files/createDirectories
+      (Paths/get path (into-array String []))
+      (into-array FileAttribute
+                  [(PosixFilePermissions/asFileAttribute
+                     (PosixFilePermissions/fromString "rwxr-x---"))]))))
+
 (defn file
   "Return directory path as File, create it if missing"
   [^String path]
   (try
-    (let [path' (Paths/get path (into-array String []))
-          f     ^File (io/file path)]
-      (if (Files/exists path' (into-array LinkOption []))
-        f
-        (do (if (windows?)
-              (.mkdirs f)
-              (Files/createDirectories
-                path'
-                (into-array FileAttribute
-                            [(PosixFilePermissions/asFileAttribute
-                               (PosixFilePermissions/fromString "rwxr-x---"))])))
-            f)))
+    (let [path' (Paths/get path (into-array String []))]
+      (when-not (Files/exists path' (into-array LinkOption []))
+        (create-dirs path))
+      (io/file path))
     (catch AccessDeniedException e
       (raise "Access denied " (ex-message e) {:path path}))
     (catch Exception e

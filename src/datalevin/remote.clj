@@ -165,11 +165,7 @@
           file (Paths/get (str dest u/+separator+ "data.mdb")
                           (into-array String []))]
       (when-not (Files/exists dir (into-array LinkOption []))
-        (Files/createDirectories
-          dir
-          (into-array FileAttribute
-                      [(PosixFilePermissions/asFileAttribute
-                         (PosixFilePermissions/fromString "rwxr-x---"))])))
+        (u/create-dirs dest))
       (Files/write file ^bytes bs (into-array StandardOpenOption []))))
 
   (stat [db] (l/stat db nil))
