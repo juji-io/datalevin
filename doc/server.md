@@ -1,4 +1,4 @@
-# Datalevin Server/client
+# Datalevin Server/Client
 
 ## Usage
 
