@@ -519,7 +519,7 @@ These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.2 --Native networked server mode with access control.-- [Done 2021/09/06]
+* 0.5.2 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
 * 0.6.0 A new Datalog query engine with improved performance.
 * 0.7.0 Persisted transaction functions.
 * 0.8.0 Composite tuples.

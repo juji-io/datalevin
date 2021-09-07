@@ -56,7 +56,7 @@
             s2 (assoc s1 c (merge p2 {:db/aid 3}))
             t1 (st/last-modified store)]
         (st/load-datoms store [d])
-        (is (< t1 (st/last-modified store)))
+        (is (<= t1 (st/last-modified store)))
         (is (= s (st/schema store)))
         (is (= 1 (st/datom-count store :eav)))
         (is (= 1 (st/datom-count store :ave)))
