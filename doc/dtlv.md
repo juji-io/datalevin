@@ -34,6 +34,7 @@ Options:
   -l, --list                           List the names of sub-databases instead of the content
   -p, --port PORT  8898                Listening port number
   -r, --root ROOT  /var/lib/datalevin  Server root data directory
+  -v, --verbose                        Show verbose server debug log
   -V, --version                        Show Datalevin version and exit
 
 Type 'dtlv help <command>' to read about a specific command.
