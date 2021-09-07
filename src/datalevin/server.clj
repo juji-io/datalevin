@@ -32,7 +32,6 @@
             Argon2Parameters$Builder]))
 
 (log/refer-timbre)
-(log/set-level! :debug)
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -93,10 +92,14 @@
 (derive ::create ::alter)
 (derive ::control ::create)
 
+(def permission-actions #{::view ::alter ::create ::control})
+
 ;; permission securable object types
 (derive ::server ::database)
 (derive ::server ::user)
 (derive ::server ::role)
+
+(def permission-objects #{::database ::user ::role ::server})
 
 (defn salt
   "generate a 16 byte salt"
@@ -732,8 +735,6 @@
   (b/unhexify-string
     (s/replace-first dir (str (.-root server) u/+separator+) "")))
 
-(b/unhexify-string (s/replace-first "/tmp/remote-test-5dcbac16-268f-4c66-be30-de34dec2caef/7465737473746F7265/""/tmp/remote-test-5dcbac16-268f-4c66-be30-de34dec2caef/" ""))
-
 (defn- db-exists?
   [^Server server db-name]
   (u/file-exists (str (db-dir server db-name) u/+separator+ "data.mdb")))
@@ -1133,7 +1134,9 @@
         (wrap-permission
           ::alter ::role rid
           "Don't have permission to grant permission to the role"
-          (transact-role-permission sys-conn rid perm-act perm-obj perm-tgt)
+          (if (and (permission-actions perm-act) (permission-objects perm-obj))
+            (transact-role-permission sys-conn rid perm-act perm-obj perm-tgt)
+            (u/raise "Unknown permission action or object." {}))
           (update-cached-permission server role-key)
           (write-message skey {:type :command-complete}))
         (u/raise "Role does not exist." {})))))
@@ -1645,8 +1648,9 @@
 
 (defn create
   "Create a Datalevin server. Initially not running, call `start` to run."
-  [{:keys [port root]}]
+  [{:keys [port root verbose]}]
   (try
+    (log/set-level! (if verbose :debug :info))
     (let [server-socket ^ServerSocketChannel (open-port port)
           selector      ^Selector (Selector/open)
           running       (AtomicBoolean. false)]

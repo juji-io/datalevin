@@ -1273,3 +1273,11 @@ one of the following data types:
     - `:ave`
     - `:vea`"}
   read-buffer b/read-buffer)
+
+(def ^{:arglists '([s])
+       :doc      "Turn a string into a hexified string"}
+  hexify-string b/hexify-string)
+
+(def ^{:arglists '([s])
+       :doc      "Turn a hexified string back into a normal string"}
+  unhexify-string b/unhexify-string)

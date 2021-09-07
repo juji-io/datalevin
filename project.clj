@@ -17,7 +17,7 @@
                          [borkdude/sci "0.2.6"]
                          [com.taoensso/nippy "3.1.1"]
                          [com.taoensso/timbre "5.1.2"]
-                         [persistent-sorted-set "0.1.3"]
+                         [persistent-sorted-set "0.1.4"]
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
                          [org.lmdbjava/lmdbjava "0.8.1"

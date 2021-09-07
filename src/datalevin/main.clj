@@ -44,7 +44,7 @@
       -v --verbose     Show detailed logging messages
 
   Examples:
-      dtlv -p 8899 serv
+      dtlv -p 8899 -v serv
       dtlv -r /data/dtlv serv")
 
 (def ^:private stat-help
@@ -210,12 +210,13 @@
    ["-g" "--datalog" "Dump/load as a Datalog database"]
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
-   ["-p" "--port PORT" "Listening port number"
+   ["-p" "--port PORT" "Server listening port number"
     :default c/default-port
     :parse-fn #(Integer/parseInt %)
     :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
    ["-r" "--root ROOT" "Server root data directory"
     :default c/default-root-dir]
+   ["-v" "--verbose" "Show verbose server debug log"]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
 (defn ^:no-doc validate-args

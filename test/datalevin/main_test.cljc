@@ -16,7 +16,7 @@
   (let [r (sut/validate-args ["-h"])]
     (is (:ok? r))
     (is (:exit-message r)))
-  (let [r (sut/validate-args ["-v"])]
+  (let [r (sut/validate-args ["-k"])]
     (is (:exit-message r))
     (is (s/includes? (:exit-message r) "Unknown option")))
   (let [r (sut/validate-args ["hello"])]

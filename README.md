@@ -37,6 +37,13 @@ applications to manage state. Because data is persistent on disk in Datalevin,
 application state can survive application restarts, and data size can be larger
 than memory.
 
+Datalevin can also run in an event-driven networked client/server mode (default
+port is 8898). The mode change is transparent. In the local mode, a data
+directory path, e.g. "/data/mydb", is needed for database location, whereas a
+URI, e.g. "dtlv://myname:secret@myhost.in.cloud/mydb" is used in the client/server
+mode. The same set of core functions work in both modes. In addition,
+full-fledged role based access control is provided on the server.
+
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,
 e.g.
@@ -50,7 +57,7 @@ written, they are indexed. There are no separate processes or threads for
 indexing, compaction or doing any database maintenance work that compete with
 your applications for resources. Since Datalog is simply a more ergonomic query
 language than SQL, Datalevin can serves the role of an easier-to-use and
-more lightweight relational database (RDBMS), e.g. where SQLite is called for.
+more lightweight relational database (RDBMS), e.g. where SQLite or Firebird is called for.
 
 Independent from Datalog, Datalevin can be used as a fast key-value store for
 [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with support
@@ -78,7 +85,7 @@ Presentation:
 
 ### Clojure library
 
-Datalevin is a Clojure library, simply add it to your project as a dependency
+The core of Datalevin is a Clojure library, simply add it to your project as a dependency
 and start using it!
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
@@ -98,17 +105,21 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 
 ### Native command line tool
 
-Datalevin supports compilation into [GraalVM native
+A native command line tool is built to work with Datalevin databases in shell
+scripting, e.g. database backup/compaction, data import/export,
+query/transaction execution, and so on. The same binary can run
+as a Datalevin server. This tool also includes a REPL with a Clojure
+interpreter, in addition to support all the database functions.
+
+Native Datalevin is built by compiling into [GraalVM native
 image](https://www.graalvm.org/reference-manual/native-image/), which should
 have better performance, for the native image version does not incur JNI
 overhead and uses a comparator written in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
-A native command line tool is built to work with Datalevin databases in shell
-scripting, e.g. database backup/compaction, data import/export,
-query/transaction execution, and so on. Here is how to get it:
+Here is how to get native Datalevin binary:
 
-#### MacOS and Linux
+#### MacOS and Linux Packager
 
 Install using [homebrew](https://brew.sh/)
 
@@ -116,7 +127,7 @@ Install using [homebrew](https://brew.sh/)
 brew install huahaiy/brew/datalevin
 ```
 
-#### Windows
+#### Windows Packager
 
 Install using [scoop](https://scoop.sh/)
 
@@ -153,28 +164,81 @@ Commands:
   help  Show help messages
   load  Load data from standard input into a database
   repl  Enter an interactive shell
+  serv  Run as a server
   stat  Display statistics of database
 
 Options:
-  -a, --all        Include all of the sub-databases
-  -c, --compact    Compact while copying.
-  -d, --dir PATH   Path to the database directory
-  -D, --delete     Delete the sub-database, not just empty it
-  -f, --file PATH  Path to the specified file
-  -g, --datalog    Dump/load as a Datalog database
-  -h, --help       Show usage
-  -l, --list       List the names of sub-databases instead of the content
-  -V, --version    Show Datalevin version and exit
+  -a, --all                            Include all of the sub-databases
+  -c, --compact                        Compact while copying
+  -d, --dir PATH                       Path to the database directory
+  -D, --delete                         Delete the sub-database, not just empty it
+  -f, --file PATH                      Path to the specified file
+  -g, --datalog                        Dump/load as a Datalog database
+  -h, --help                           Show usage
+  -l, --list                           List the names of sub-databases instead of the content
+  -p, --port PORT  8898                Listening port number
+  -r, --root ROOT  /var/lib/datalevin  Server root data directory
+  -V, --version                        Show Datalevin version and exit
 
 Type 'dtlv help <command>' to read about a specific command.
 
 ```
 
-Launch `dtlv` in `rlwrap` to get a better REPL experience, i.e. `rlwrap dtlv`.
+
+Starting `dtlv` without any arguments goes into the REPL, where you can type
+`(help)` to see a list of available functions:
+
+```console
+  Datalevin (version: 0.4.40)
+
+  Type (help) to see available functions. Clojure core functions are also available.
+  Type (exit) to exit.
+
+user> (help)
+
+In addition to Clojure core functions, the following functions are available:
+
+In namespace datalevin.core
+
+add                   clear                 clear-dbi             close
+close-db              close-kv              closed-kv?            closed?
+conn-from-datoms      conn-from-db          conn?                 copy
+create-conn           datom                 datom-a               datom-e
+datom-v               datom?                datoms                db
+db?                   dir                   drop-dbi              empty-db
+entid                 entity                entity-db             entries
+get-conn              get-first             get-range             get-some
+get-value             index-range           init-db               k
+list-dbis             listen!               open-dbi              open-kv
+pull                  pull-many             put-buffer            q
+range-count           range-filter          range-filter-count    read-buffer
+reset-conn!           resolve-tempid        retract               rseek-datoms
+schema                seek-datoms           stat                  tempid
+touch                 transact              transact!             transact-async
+transact-kv           unlisten!             update-schema         v
+with-conn
+
+In namespace datalevin.client
+
+assign-role           close-database        create-database       create-role
+create-user           disconnect-client     drop-database         drop-role
+drop-user             grant-permission      list-databases        list-databases-in-use
+list-role-permissions list-roles            list-user-permissions list-user-roles
+list-users            new-client            query-system          reset-password
+revoke-permission     show-clients          withdraw-role
+
+Can call function without namespace: (<function name> <arguments>)
+
+Type (doc <function name>) to read documentation of the function
+user>
+
+```
+
+You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 
 ### Babashka pod
 
-`dtlv` program can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
+`dtlv` executable can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
 
 ```console
 $ rlwrap bb
@@ -206,6 +270,11 @@ Datalevin is aimed to be a versatile database.
 
 ### Use as a Datalog store
 
+Since Datalevin has almost the same Datalog API as Datascript, which in turn has
+almost the same API as Datomic®, please consult the abundant tutorials, guides
+and learning sites available to learn about the usage of Datomic® flavor of
+Datalog. Here is a simple code example using Datalevin:
+
 ```clojure
 (require '[datalevin.core :as d])
 
@@ -221,6 +290,8 @@ Datalevin is aimed to be a versatile database.
 
 ;; Create DB on disk and connect to it, assume write permission to create given dir
 (def conn (d/get-conn "/tmp/datalevin/mydb" schema))
+;; or if you have a Datalevin server running on myhost with default port 8898
+;; (def conn (d/get-conn "dtlv://myname:mypasswd@myhost/mydb" schema))
 
 ;; Transact some data
 ;; Notice that :nation is not defined in schema, so it will be treated as an EDN blob
@@ -256,14 +327,20 @@ Datalevin is aimed to be a versatile database.
 ```
 
 ### Use as a key value store
+
+Datalevin packages the underlying LMDB database as a convenient key value store
+for EDN data.
+
 ```clojure
 (require '[datalevin.core :as d])
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
 (def db (d/open-kv "/tmp/datalevin/mykvdb"))
+;; or if you have a Datalevin server running on myhost with default port 8898
+;; (def db (d/open-kv "dtlv://myname:mypasswd@myhost/mykvdb" schema))
 
-;; Define some table (called "dbi" in LMDB) names
+;; Define some table (called "dbi", or sub-databases in LMDB) names
 (def misc-table "misc-test-table")
 (def date-table "date-test-table")
 
@@ -305,7 +382,7 @@ Datalevin is aimed to be a versatile database.
 ```
 ### Entities with staged transactions (Datalog store)
 
-In other Datalog DBs (Datomic, DataScript, Datahike) `d/entity` returns a type
+In other Datalog DBs (Datomic®, DataScript, and Datahike) `d/entity` returns a type
 that errors on associative updates. This makes sense because Entity represents
 a snapshot state of a DB Entity and `d/transact` demarcates transactions.
 However, this API leads to a cumbersome developer experience, especially
@@ -314,6 +391,8 @@ must be used in transactions because `nil` values are not allowed.
 
 Datalevin ships with a special Entity type that allows for associative updates
 while remaining immutable until expanded during transaction time (`d/transact`).
+This type works the same in either local or remote mode.
+
 Below are some examples. Look for the `:<STAGED>` keyword in the printed entities
 
 ```clojure
@@ -347,7 +426,7 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 (def ava-with-age (d/entity db [:user/handle "ava"]))
 
 (d/touch ava-with-age)
-;=> {:user/handle "ava", 
+;=> {:user/handle "ava",
 ;    :user/friends #{#:db{:id 3} #:db{:id 2}},
 ;    :user/age 42, <-- age was transacted!
 ;    :db/id 1}
@@ -363,9 +442,9 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 
 ; eve is a friend of ada
 (d/touch (d/entity db3 [:user/handle "ava"]))
-;=> {:user/handle "ava", 
-;    :user/friends #{#:db{:id 4} <-- that's eve!                             
-;                    #:db{:id 3} 
+;=> {:user/handle "ava",
+;    :user/friends #{#:db{:id 4} <-- that's eve!
+;                    #:db{:id 3}
 ;                    #:db{:id 2}},
 ;    :user/age 43,
 ;    :db/id 1}
@@ -379,7 +458,7 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
     [(d/retract (d/entity db3 [:user/handle "ava"]) :user/friends [{:db/id 4}])]))
 
 (d/touch (d/entity db4 [:user/handle "ava"]))
-;=> {:user/handle "ava", 
+;=> {:user/handle "ava",
 ;    :user/friends #{#:db{:id 3} #:db{:id 2}}, ; <-- eve is not a friend anymore
 ;    :user/age 43,
 ;    :db/id 1}
@@ -437,7 +516,7 @@ These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.0 Native networked server mode with authentication.
+* 0.5.0 --Native networked server mode with authentication.-- [Done 2021/09/06]
 * 0.6.0 A new Datalog query engine with improved performance.
 * 0.7.0 Persisted transaction functions.
 * 0.8.0 Composite tuples.
@@ -453,8 +532,8 @@ We appreciate and welcome your contribution or suggestion. Please file issues or
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
 totally from scratch and is not related by any means to" Datomic®. Although
-currently a port, Datalevin differs from Datascript in more significant ways
-than just the difference in data durability:
+a port, Datalevin differs from Datascript in more significant ways
+than just the difference in data durability and running mode:
 
 * As mentioned, Datalevin is not an immutable database, and there is no
   "database as a value" feature.  Since history is not kept, transaction ids are
@@ -503,8 +582,6 @@ are applicable to Datascript.
 * The total data size of a Datalevin database has the same limit as LMDB's, e.g.
   128TB on a modern 64-bit machine that implements 48-bit address spaces.
 
-* There's no network interface as of now, but this may change.
-
 * Currently supports Clojure on JVM 11 or the above, but adding support for other
   Clojure-hosting runtime is possible, since bindings for LMDB
   exist in almost all major languages and available on most platforms.
@@ -525,7 +602,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
 
-* If you need a simple and fast durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+* If you need a simple, fast and versatile durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
 ## License
 
