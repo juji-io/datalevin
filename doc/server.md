@@ -73,7 +73,7 @@ functionalities sit on top of storage, such as caching, transaction data
 preparation, query parse, change listening, and so on, they are handled on
 the client side, which is the same as in the local embedded mode. For example,
 our recent added feature of [transactable
-entity](#entities-with-staged-transactions-datalog-store) works the same in
+entity](https://github.com/juji-io/datalevin#entities-with-staged-transactions-datalog-store) works the same in
 either embedded or server mode, without needing any code changes.
 
 Compared with the peer architecture of Datomic®, where peers receive all the
