@@ -96,7 +96,7 @@ functions are handled on the server.
 
 All these are transparent to the users and the same data access API works for
 all cases.  Further optimizations can be implemented behind the scene
-without having to introducing new operational complexities.
+without having to introduce new operational complexities.
 
 ### Networking
 
