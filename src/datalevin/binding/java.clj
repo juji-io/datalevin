@@ -4,11 +4,10 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]]
-            [datalevin.lmdb :as l])
+            [datalevin.lmdb :as l :refer [open-kv kv-flags IBuffer IRange IKV
+                                          IRtx IRtxPool IDB ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
+            PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]))
@@ -18,23 +17,64 @@
   (k [this] (.key ^CursorIterable$KeyVal this))
   (v [this] (.val ^CursorIterable$KeyVal this)))
 
+(defn- flag
+  [flag-key]
+  (case flag-key
+    :fixedmap   EnvFlags/MDB_FIXEDMAP
+    :nosubdir   EnvFlags/MDB_NOSUBDIR
+    :rdonly-env EnvFlags/MDB_RDONLY_ENV
+    :writemap   EnvFlags/MDB_WRITEMAP
+    :nometasync EnvFlags/MDB_NOMETASYNC
+    :nosync     EnvFlags/MDB_NOSYNC
+    :mapasync   EnvFlags/MDB_MAPASYNC
+    :notls      EnvFlags/MDB_NOTLS
+    :nolock     EnvFlags/MDB_NOLOCK
+    :nordahead  EnvFlags/MDB_NORDAHEAD
+    :nomeminit  EnvFlags/MDB_NOMEMINIT
+
+    :cp-compact CopyFlags/MDB_CP_COMPACT
+
+    :reversekey DbiFlags/MDB_REVERSEKEY
+    :dupsort    DbiFlags/MDB_DUPSORT
+    :integerkey DbiFlags/MDB_INTEGERKEY
+    :dupfixed   DbiFlags/MDB_DUPFIXED
+    :integerdup DbiFlags/MDB_INTEGERDUP
+    :reversedup DbiFlags/MDB_REVERSEDUP
+    :create     DbiFlags/MDB_CREATE
+
+    :nooverwrite PutFlags/MDB_NOOVERWRITE
+    :nodupdata   PutFlags/MDB_NODUPDATA
+    :current     PutFlags/MDB_CURRENT
+    :reserve     PutFlags/MDB_RESERVE
+    :append      PutFlags/MDB_APPEND
+    :appenddup   PutFlags/MDB_APPENDDUP
+    :multiple    PutFlags/MDB_MULTIPLE
+
+    :rdonly-txn TxnFlags/MDB_RDONLY_TXN))
+
+(defn- flag-type
+  [type-key]
+  (case type-key
+    :env  EnvFlags
+    :copy CopyFlags
+    :dbi  DbiFlags
+    :put  PutFlags
+    :txn  TxnFlags))
+
 (defmethod kv-flags :java
-  [f]
-  (case f
-    :nordahead EnvFlags/MDB_NORDAHEAD
-    :mapasync  EnvFlags/MDB_MAPASYNC
-    :writemap  EnvFlags/MDB_WRITEMAP
-    :create    DbiFlags/MDB_CREATE
-    ))
+  [type flags]
+  (let [t (flag-type type)]
+    (if (seq flags)
+      (into-array t (mapv flag flags))
+      (make-array t 0))))
 
-(def default-env-flags [EnvFlags/MDB_NORDAHEAD
-                        EnvFlags/MDB_MAPASYNC
-                        EnvFlags/MDB_WRITEMAP])
+(def default-env-flags (kv-flags :env [:nordahead :mapasync :writemap]))
 
-(def default-dbi-flags [DbiFlags/MDB_CREATE])
-(def read-dbi-flags (make-array DbiFlags 0))
+(def default-dbi-flags (kv-flags :dbi [:create]))
 
-(def default-put-flags (make-array PutFlags 0))
+(def read-dbi-flags (kv-flags :dbi []))
+
+(def default-put-flags (kv-flags :put []))
 
 (deftype Rtx [^Txn txn
               ^:volatile-mutable ^Boolean use?
@@ -188,7 +228,7 @@
     (b/text-ba->str (.getName db)))
   (put [_ txn append?]
     (if append?
-      (.put db txn kb vb (into-array PutFlags [PutFlags/MDB_APPEND]))
+      (.put db txn kb vb (kv-flags :put [:append]))
       (.put db txn kb vb default-put-flags)))
   (put [this txn]
     (.put this txn nil))
@@ -228,9 +268,7 @@
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
-          db  (.openDbi env
-                        ^String dbi-name
-                        ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))
+          db  (.openDbi env ^String dbi-name ^"[Lorg.lmdbjava.DbiFlags;" flags)
           dbi (->DBI db kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
@@ -279,9 +317,7 @@
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
-        (.copy env d (if compact?
-                       (into-array CopyFlags [CopyFlags/MDB_CP_COMPACT])
-                       (make-array CopyFlags 0)))
+        (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
         (raise "Destination directory is not empty."))))
 
   (stat [this]
@@ -407,9 +443,7 @@
                           (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
                           (.setMaxReaders c/+max-readers+)
                           (.setMaxDbs c/+max-dbs+))
-          ^Env env      (.open builder
-                               file
-                               (into-array EnvFlags default-env-flags))
+          ^Env env      (.open builder file default-env-flags)
           ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)
           lmdb          (->LMDB env dir pool (ConcurrentHashMap.))]
       (.addShutdownHook (Runtime/getRuntime)

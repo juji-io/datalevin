@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- Expose all LMDB flags
+
 ## 0.5.3
 ### Added
 - Transparent networked client/server mode with role based access control. #46
