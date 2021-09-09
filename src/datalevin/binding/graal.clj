@@ -4,9 +4,8 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]]
-            [datalevin.lmdb :as l])
+            [datalevin.lmdb :as l :refer [open-kv kv-flags IBuffer IRange
+                                          IRtx IRtxPool IDB IKV ILMDB]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]
@@ -414,7 +413,7 @@
               (if (.hasNext iter)
                 (let [kv      (.next iter)
                       holder' (conj! holder
-                                     (-> kv lmdb/k b/get-bytes b/text-ba->str))]
+                                     (-> kv l/k b/get-bytes b/text-ba->str))]
                   (recur iter holder'))
                 (persistent! holder)))))
         (catch Exception e

@@ -1,8 +1,10 @@
 # Change Log
 
 ## WIP
+### Fixed
+- Don't do AOT in library, to avoid deps error due to exclusion of graal
 ### Improved
-- Expose all LMDB flags
+- Expose all LMDB flags in JVM version of kv store
 
 ## 0.5.3
 ### Added

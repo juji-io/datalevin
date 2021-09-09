@@ -29,15 +29,9 @@
                           ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
-                 [org.clojure/tools.cli]
-                 [org.bouncycastle/bcprov-jdk15on]
                  [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
-                 [com.taoensso/timbre]
-                 [com.cognitect/transit-clj]
                  [borkdude/sci]
-                 [nrepl/bencode]
-                 [babashka/babashka.pods]
                  [persistent-sorted-set]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]
@@ -55,6 +49,12 @@
                              "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                             :dependencies
                             [[org.clojure/test.check]
+                             [org.clojure/tools.cli]
+                             [org.bouncycastle/bcprov-jdk15on]
+                             [com.taoensso/timbre]
+                             [com.cognitect/transit-clj]
+                             [nrepl/bencode]
+                             [babashka/babashka.pods]
                              [com.clojure-goes-fast/clj-memory-meter]
                              [org.graalvm.nativeimage/svm]]
                             :global-vars
@@ -70,7 +70,6 @@
              "-Djdk.attach.allowAttachSelf"
              "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
   :javac-options ["--release" "11"]
-  :main datalevin.main
 
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
