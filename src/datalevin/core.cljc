@@ -879,6 +879,11 @@ given. Return reference to the database.
     (r/open-kv dir)
     (l/open-kv dir)))
 
+(def ^{:arglists '([flag])
+       :doc      "Translate from keyword representation of LMDB flags into its
+                 value. e.g. `:create` is turned into MDB_CREATE flag"}
+  kv-flags l/kv-flags)
+
 (def ^{:arglists '([db])
        :doc      "Close this key-value store"}
   close-kv l/close-kv)

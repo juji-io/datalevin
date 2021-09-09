@@ -1,8 +1,9 @@
 # Change Log
 
-## 0.5.2
+## 0.5.3
 ### Added
-- Transparent networked client/server mode with role based access control.
+- Transparent networked client/server mode with role based access control. #46
+  and #61
 - `dtlv exec` takes input from stdin when no argument is given.
 ### Improved
 - When open db, throw exception without proper file permission

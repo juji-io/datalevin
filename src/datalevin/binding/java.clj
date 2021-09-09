@@ -18,6 +18,15 @@
   (k [this] (.key ^CursorIterable$KeyVal this))
   (v [this] (.val ^CursorIterable$KeyVal this)))
 
+(defmethod kv-flags :java
+  [f]
+  (case f
+    :nordahead EnvFlags/MDB_NORDAHEAD
+    :mapasync  EnvFlags/MDB_MAPASYNC
+    :writemap  EnvFlags/MDB_WRITEMAP
+    :create    DbiFlags/MDB_CREATE
+    ))
+
 (def default-env-flags [EnvFlags/MDB_NORDAHEAD
                         EnvFlags/MDB_MAPASYNC
                         EnvFlags/MDB_WRITEMAP])
