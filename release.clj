@@ -40,6 +40,7 @@
         old->new #(str/replace % old-v new-v)]
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
+    (update-file "test-jar/deps.edn" old->new)
     (update-file "src/datalevin/main.clj" old->new)
     (update-file "native/project.clj"  old->new)
     (update-file "native/README.md" old->new)
