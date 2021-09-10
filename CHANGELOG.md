@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.5
 
 ### Improved
 - Wrap all LMDB flags as keywords
