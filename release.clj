@@ -58,6 +58,7 @@
   (sh "git" "add"
       "CHANGELOG.md"
       "project.clj"
+      "test-jar/deps.edn"
       "src/datalevin/main.clj"
       "native/project.clj"
       "native/README.md"

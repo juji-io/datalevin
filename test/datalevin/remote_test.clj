@@ -153,7 +153,7 @@
 
 (deftest dt-store-larger-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
-        end   1000000
+        end   100000
         store (sut/open dir)
         vs    (range 0 end)
         txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
@@ -250,8 +250,8 @@
       (is (thrown? Exception (l/get-value store "z" 1))))
 
     (testing "handle val overflow automatically"
-      (l/transact-kv store [[:put "c" 1 (range 100000)]])
-      (is (= (range 100000) (l/get-value store "c" 1))))
+      (l/transact-kv store [[:put "c" 1 (range 50000)]])
+      (is (= (range 50000) (l/get-value store "c" 1))))
 
     (testing "key overflow throws"
       (is (thrown? Exception (l/transact-kv store [[:put "a" (range 1000) 1]]))))
