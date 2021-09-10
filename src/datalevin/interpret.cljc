@@ -1,5 +1,5 @@
 (ns datalevin.interpret
-  "Code interpreter"
+  "Code interpreter."
   (:require [clojure.walk :as w]
             [clojure.set :as set]
             [sci.core :as sci]
@@ -18,7 +18,7 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def user-facing-ns #{'datalevin.core 'datalevin.client})
+(def ^:no-doc user-facing-ns #{'datalevin.core 'datalevin.client})
 
 (defn- user-facing? [v]
   (let [m (meta v)
@@ -30,7 +30,7 @@
            (not (:no-doc m)))
          (not (s/starts-with? d "Positional factory function for class")))))
 
-(defn user-facing-map [ns var-map]
+(defn ^:no-doc user-facing-map [ns var-map]
   (let [sci-ns (vars/->SciNamespace ns nil)]
     (reduce
       (fn [m [k v]]
@@ -51,7 +51,7 @@
     {}
     user-facing-ns))
 
-(defn resolve-var [s]
+(defn ^:no-doc resolve-var [s]
   (when (symbol? s)
     (some #(ns-resolve % s) (conj user-facing-ns *ns*))))
 
@@ -63,13 +63,14 @@
         x))
     x))
 
-(defn eval-fn [ctx form]
+(defn ^:no-doc eval-fn [ctx form]
   (sci/eval-form ctx (if (coll? form)
                        (w/postwalk qualify-fn form)
                        form)))
 
-(def sci-opts {:namespaces (user-facing-vars)
-               :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
+(def ^:no-doc sci-opts
+  {:namespaces (user-facing-vars)
+   :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
 
 (defn exec-code
   "Execute code and print results. `code` is a string. Acceptable code includes
@@ -112,9 +113,10 @@
       quoted-form)))
 
 (defmacro inter-fn
-  "Create a function that can be used in Datalevin queries. This function
-  can be sent over the wire after frozen by nippy, and runs in a
-  sandboxed interpreter."
+  "Create a function that can be used as an input in Datalevin queries,
+  e.g. as a filtering predicate. This function will be sent over the wire
+  if the database is on a remote server. It runs in a sandboxed interpreter
+  whether the database is remote or local."
   [args & body]
   `(with-meta
      (sci/eval-form (sci/init sci-opts) (fn ~args (do ~@body)))
@@ -122,7 +124,7 @@
       :source ~(save-env (keys &env) &form)}))
 
 (defn inter-fn?
-  "return true if `x` is an `inter-fn`"
+  "Return true if `x` is an `inter-fn`"
   [x]
   (and (instance? clojure.lang.AFn x)
        (= (:type (meta x)) :datalevin/inter-fn)))

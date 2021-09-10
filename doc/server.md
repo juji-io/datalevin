@@ -18,9 +18,9 @@ and accepts network connection on port 8898 (default).
 There is a default builtin user `datalevin` with a default password `datalevin`.
 This is a system account that can do everything on the server. It
 is recommended that the default password should be reset immediately after
-installation.
+installation:
 
-1. Start the server, maybe as root
+1. Start the server, maybe as a sudo user, to access the default data root directory
 ```console
 # dtlv serv
 ```
@@ -142,11 +142,11 @@ with Clojure code. If a client needs to be written for other languages, transit
 is a better choice. The server accepts either format just as well. Other format
 may be added in the future if necessary.
 
-The command messages are Clojure maps, e.g. `{:type :list-databases :args []}`. The
-command responses are also Clojure maps. e.g. `{:type :command-complete :results
+The command messages are EDN maps, e.g. `{:type :list-databases :args []}`. The
+command responses are also EDN maps. e.g. `{:type :command-complete :results
 ["mydb" "hr-db"]}`. For bulk data, the client/server switch to a direct
 copy-in/copy-out sub-protocol, where data are continuously streamed. The
-copy-in/copy-out data stream messages are batched data in Clojure vectors
+copy-in/copy-out data stream messages are batched data in EDN vectors
 instead of maps.
 
 User defined functions (e.g. filtering predicates) are serialized and sent to
@@ -178,15 +178,16 @@ A permission consists of three pieces of information:
   When the target is `nil`, the permission applies to all objects of that type.
 
 
-Each user has a corresponding built-in unique role. For example, the default
-  user `datalevin`  has a built role `:datalevin.role/datalevin`. This role is
-  granted the permission `{:permission/act :datalevin.server/control,
-  :permission/obj :datalevin.server/server}`, which permits
-  the role to do everything on the server.
+Each user has a corresponding built-in unique role, with a role keyword
+`:datalevin.role/<username>`. For example, the default user `datalevin`  has a
+built-in role `:datalevin.role/datalevin`. This role is granted the permission
+`{:permission/act :datalevin.server/control, :permission/obj
+:datalevin.server/server}`, which permits the role to do everything on the
+server.
 
-In the command line REPL, after connecting to a server, issue `(create-user
-...)` to create a user, `(create-role ...)` to create a role, `(assign-role
-...)` to assign a role to a user, `(grant-permission ..)` to grant a permission
+In the command line REPL, after connecting to a server, issue [`(create-user
+...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-create-user) to create a user, [`(create-role ...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-create-role) to create a role, [`(assign-role
+...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-assign-role) to assign a role to a user, [`(grant-permission ...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-grant-permission) to grant a permission
 to a role.
 
 User password is stored as a salt and a hash. The password hashing algorithm
