@@ -94,6 +94,14 @@ having a single remote data source, the entire query processing is done remotely
 to save networking traffic. For other cases, only low level data access
 functions are handled on the server.
 
+Each client always check `last-modified` time of the remote database before data
+access, so when multiple clients are accessing the same database on the server,
+all see the same most update-to-date data, as long as the clients and the server
+have clock synchronization, which is a mild condition that most modern server
+deployment environment should meet, with ntp or chrony services being part of
+the standard server environment. In term of CAP theorem, Datalevin favors
+consistency over availability, consisting with our goal of simplifying data access.
+
 All these are transparent to the users and the same data access API works for
 all cases.  Further optimizations can be implemented behind the scene
 without having to introduce new operational complexities.
