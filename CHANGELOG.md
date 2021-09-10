@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- documentation
+
 ## 0.5.8
 
 ### Improved
