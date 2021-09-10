@@ -8,14 +8,16 @@
 
 (comment
 
-  (def env (l/open-kv "/tmp/search"))
+  (def env (l/open-kv "/tmp/search1"))
 
-  (def dbi (l/open-dbi env "dict" c/+max-key-size+ c/+default-val-size+
+  (def dbi (l/open-dbi env "dict" c/+max-key-size+ c/+max-key-size+
                        (conj c/default-dbi-flags :dupsort)))
 
   (l/transact-kv env [[:put "dict" "a" 1]
                       [:put "dict" "a" 2]])
 
   (l/get-value env "dict" "a")
+
+  (l/close-kv env)
 
   )
