@@ -100,7 +100,7 @@ all see the same most update-to-date data, as long as the clients and the server
 have clock synchronization, which is a mild condition that most modern server
 deployment environment should meet, with ntp or chrony services being part of
 the standard server environment. In term of CAP theorem, Datalevin favors
-consistency over availability, consisting with our goal of simplifying data access.
+consistency over availability, in consistent with our goal of simplifying data access.
 
 All these are transparent to the users and the same data access API works for
 all cases.  Further optimizations can be implemented behind the scene
