@@ -8,10 +8,10 @@
   <li><code>-r</code> option can be used to specify a root directory path on the server, where  all data reside under. The default path is <code>/var/lib/datalevin</code> on Posix  systems, <code>C:\ProgramData\Datalevin</code> on Windows. User should  make sure read/write file permissions are set on the directory path for the  user running the server.</li>
   <li><code>-v</code> option enables verbose server debug logs. Datalevin server writes logs to  stdout.</li>
 </ul>
-<p>There is a default builtin user <code>datalevin</code> with a default password <code>datalevin</code>. This is a system account that can do everything on the server. It is recommended that the default password should be reset immediately after installation.</p>
+<p>There is a default builtin user <code>datalevin</code> with a default password <code>datalevin</code>. This is a system account that can do everything on the server. It is recommended that the default password should be reset immediately after installation:</p>
 <ol>
   <li>
-  <p>Start the server, maybe as root</p>
+  <p>Start the server, maybe as a sudo user, to access the default data root directory</p>
   <pre><code class="console"># dtlv serv
 </code></pre></li>
   <li>Start Datalevin REPL in another terminal:</li>
@@ -46,8 +46,8 @@ nil
 <p>The wire protocol between server and client is largely inspired by the wire protocol of PostgreSQL. It uses TLV message format, with 1 byte message type in front, followed by 4 bytes message length, and concludes with the message payload.</p>
 <p>The payload format is extensible, indicated by the message type byte. For example, with type <code>1</code>, <a href="https://github.com/cognitect/transit-format">transit+json</a> encoded bytes will be the payload. The default payload format is type <code>2</code>, using <a href="https://github.com/ptaoussanis/nippy">nippy</a> serialization.</p>
 <p>nippy format produces smaller bytes with faster speed, but it only works with Clojure code. If a client needs to be written for other languages, transit is a better choice. The server accepts either format just as well. Other format may be added in the future if necessary.</p>
-<p>The command messages are Clojure maps, e.g. <code>{:type :list-databases :args []}</code>. The command responses are also Clojure maps. e.g. <code>{:type :command-complete :results
-["mydb" "hr-db"]}</code>. For bulk data, the client/server switch to a direct copy-in/copy-out sub-protocol, where data are continuously streamed. The copy-in/copy-out data stream messages are batched data in Clojure vectors instead of maps.</p>
+<p>The command messages are EDN maps, e.g. <code>{:type :list-databases :args []}</code>. The command responses are also EDN maps. e.g. <code>{:type :command-complete :results
+["mydb" "hr-db"]}</code>. For bulk data, the client/server switch to a direct copy-in/copy-out sub-protocol, where data are continuously streamed. The copy-in/copy-out data stream messages are batched data in EDN vectors instead of maps.</p>
 <p>User defined functions (e.g. filtering predicates) are serialized and sent to server for execution. They are first evaluated in the sandbox using a Clojure interpreter, i.e. <a href="https://github.com/borkdude/sci">sci</a> based on a white list. Once interpreted, they become the same kind of Clojure functions as if compiled, so the performance hit is minimal. It is also more secure, as there’s less danger of malicious user code bringing down the server.</p>
 <h3><a href="#security" name="security"></a>Security</h3>
 <p>Datalevin server implements full-fledged role based access control (RBAC). Permissions are granted to roles, and roles are assigned to users. User access is secured by password.</p>
@@ -57,9 +57,9 @@ nil
   <li><code>:permission/obj</code> indicates the object type of the securable, and it can be  one of <code>:datalevin.server/user</code>, <code>:datalevin.server/role</code>,  <code>:datalevin.server/database</code>, or <code>:datalevin.server/server</code>, with the last one  implies all others.</li>
   <li><code>:permission/tgt</code> refers to the concrete target of the securable. It could be  a username, a role keyword, a database name or <code>nil</code>, depending on  <code>permission/obj</code>. All these target names uniquely identify securable objects.  When the target is <code>nil</code>, the permission applies to all objects of that type.</li>
 </ul>
-<p>Each user has a corresponding built-in unique role. For example, the default  user <code>datalevin</code> has a built role <code>:datalevin.role/datalevin</code>. This role is  granted the permission <code>{:permission/act :datalevin.server/control,
-  :permission/obj :datalevin.server/server}</code>, which permits  the role to do everything on the server.</p>
-<p>In the command line REPL, after connecting to a server, issue <code>(create-user
-...)</code> to create a user, <code>(create-role ...)</code> to create a role, <code>(assign-role
-...)</code> to assign a role to a user, <code>(grant-permission ..)</code> to grant a permission to a role.</p>
+<p>Each user has a corresponding built-in unique role, with a role keyword <code>:datalevin.role/&lt;username&gt;</code>. For example, the default user <code>datalevin</code> has a built-in role <code>:datalevin.role/datalevin</code>. This role is granted the permission <code>{:permission/act :datalevin.server/control, :permission/obj
+:datalevin.server/server}</code>, which permits the role to do everything on the server.</p>
+<p>In the command line REPL, after connecting to a server, issue <a href="https://juji-io.github.io/datalevin/datalevin.client.html#var-create-user"><code>(create-user
+...)</code></a> to create a user, <a href="https://juji-io.github.io/datalevin/datalevin.client.html#var-create-role"><code>(create-role ...)</code></a> to create a role, <a href="https://juji-io.github.io/datalevin/datalevin.client.html#var-assign-role"><code>(assign-role
+...)</code></a> to assign a role to a user, <a href="https://juji-io.github.io/datalevin/datalevin.client.html#var-grant-permission"><code>(grant-permission ...)</code></a> to grant a permission to a role.</p>
 <p>User password is stored as a salt and a hash. The password hashing algorithm takes the recommended more than 0.5 seconds to run on a modern server class machine, so it can defeat a brutal force cracking effort.</p></div></div></div></body></html>
