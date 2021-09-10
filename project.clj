@@ -32,6 +32,7 @@
                  [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
                  [borkdude/sci]
+                 [com.cognitect/transit-clj]
                  [persistent-sorted-set]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]

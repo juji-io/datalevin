@@ -47,7 +47,10 @@
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
-  (sh "lein" "test"))
+  (sh "lein" "test")
+  (println "\n\n[ Testing jar ]\n")
+  (sh "lein" "jar")
+  (sh "test-jar/test.sh"))
 
 (defn make-commit []
   (println "\n\n[ Making a commit ]\n")
