@@ -522,9 +522,9 @@ adjust the priorities based on feedback.
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
 * 0.6.0 As a search engine: fuzzy fulltext search across multiple attributes.
-* 0.7.0 Persisted transaction functions.
-* 0.8.0 A new Datalog query engine with improved performance.
-* 0.9.0 Composite tuples.
+* 0.7.0 A new Datalog query engine with improved performance.
+* 0.8.0 Option to store data in compressed form.
+* 0.9.0 Composite tuples and persisted transaction functions.
 * 1.0.0 Fully automatic schema migration on write.
 * 2.0.0 As a product rule engine: implementing Rete/UL algorithm.
 * 3.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
