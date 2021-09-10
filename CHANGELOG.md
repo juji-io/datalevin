@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.8
 
 ### Improved
 - More robust build
