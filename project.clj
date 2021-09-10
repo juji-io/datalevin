@@ -22,11 +22,11 @@
                          [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
-                          :exclusions
-                          [org.ow2.asm/asm-analysis
-                           org.ow2.asm/asm-commons
-                           org.ow2.asm/asm-tree
-                           org.ow2.asm/asm-util]
+                          ;; :exclusions
+                          ;; [org.ow2.asm/asm-analysis
+                          ;;  org.ow2.asm/asm-commons
+                          ;;  org.ow2.asm/asm-tree
+                          ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [org.lmdbjava/lmdbjava]
