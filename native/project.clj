@@ -1,4 +1,4 @@
-(def version "0.5.6")
+(def version "0.5.7")
 
 (defproject datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
