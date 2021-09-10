@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+### Improved
+- Wrap all LMDB flags as keywords
+
 ## 0.5.4
 ### Fixed
 - Don't do AOT in library, to avoid deps error due to exclusion of graal

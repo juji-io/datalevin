@@ -23,6 +23,14 @@
 
 ;; lmdb
 
+(def default-env-flags [:nordahead :mapasync :writemap])
+
+(def default-dbi-flags [:create])
+
+(def read-dbi-flags [])
+
+(def default-put-flags [])
+
 (def ^:const +max-key-size+     511)   ; in bytes
 
 ;; index storage

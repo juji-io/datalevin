@@ -3,8 +3,6 @@
             [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
-            [datalevin.binding.graal]
-            [datalevin.binding.java]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test :refer [deftest testing is]]
@@ -14,6 +12,10 @@
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays]
            [java.lang Long]))
+
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))

@@ -4,7 +4,7 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as l :refer [open-kv kv-flags IBuffer IRange IKV
+            [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IKV
                                           IRtx IRtxPool IDB ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
@@ -61,20 +61,12 @@
     :put  PutFlags
     :txn  TxnFlags))
 
-(defmethod kv-flags :java
+(defn- kv-flags
   [type flags]
   (let [t (flag-type type)]
     (if (seq flags)
       (into-array t (mapv flag flags))
       (make-array t 0))))
-
-(def default-env-flags (kv-flags :env [:nordahead :mapasync :writemap]))
-
-(def default-dbi-flags (kv-flags :dbi [:create]))
-
-(def read-dbi-flags (kv-flags :dbi []))
-
-(def default-put-flags (kv-flags :put []))
 
 (deftype Rtx [^Txn txn
               ^:volatile-mutable ^Boolean use?
@@ -229,7 +221,7 @@
   (put [_ txn append?]
     (if append?
       (.put db txn kb vb (kv-flags :put [:append]))
-      (.put db txn kb vb default-put-flags)))
+      (.put db txn kb vb (kv-flags :put c/default-put-flags))))
   (put [this txn]
     (.put this txn nil))
   (del [_ txn]
@@ -259,16 +251,17 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-               default-dbi-flags))
+               c/default-dbi-flags))
   (open-dbi [this dbi-name key-size]
-    (.open-dbi this dbi-name key-size c/+default-val-size+ default-dbi-flags))
+    (.open-dbi this dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
-    (.open-dbi this dbi-name key-size val-size default-dbi-flags))
+    (.open-dbi this dbi-name key-size val-size c/default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size flags]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
-          db  (.openDbi env ^String dbi-name ^"[Lorg.lmdbjava.DbiFlags;" flags)
+          db  (.openDbi env ^String dbi-name
+                        ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
           dbi (->DBI db kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
@@ -280,7 +273,7 @@
         (if create?
           (.open-dbi this dbi-name)
           (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-                     read-dbi-flags))))
+                     c/read-dbi-flags))))
 
   (clear-dbi [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -443,7 +436,7 @@
                           (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
                           (.setMaxReaders c/+max-readers+)
                           (.setMaxDbs c/+max-dbs+))
-          ^Env env      (.open builder file default-env-flags)
+          ^Env env      (.open builder file (kv-flags :env c/default-env-flags))
           ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)
           lmdb          (->LMDB env dir pool (ConcurrentHashMap.))]
       (.addShutdownHook (Runtime/getRuntime)

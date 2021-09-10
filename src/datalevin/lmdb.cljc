@@ -110,6 +110,3 @@
 
 (defmulti open-kv
   (fn [dir] (if (u/graal?) :graal :java)))
-
-(defmulti kv-flags
-  (fn [type flags] (if (u/graal?) :graal :java)))

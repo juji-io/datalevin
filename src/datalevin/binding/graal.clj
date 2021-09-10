@@ -4,7 +4,7 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as l :refer [open-kv kv-flags IBuffer IRange
+            [datalevin.lmdb :as l :refer [open-kv IBuffer IRange
                                           IRtx IRtxPool IDB IKV ILMDB]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
@@ -16,6 +16,49 @@
             Lib$Directives Lib$BadReaderLockException
             Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
             Lib$MapFullException]))
+
+(defn- flag
+  [flag-key]
+  (case flag-key
+    :fixedmap   (Lib/MDB_FIXEDMAP)
+    :nosubdir   (Lib/MDB_NOSUBDIR)
+    :rdonly-env (Lib/MDB_RDONLY)
+    :writemap   (Lib/MDB_WRITEMAP)
+    :nometasync (Lib/MDB_NOMETASYNC)
+    :nosync     (Lib/MDB_NOSYNC)
+    :mapasync   (Lib/MDB_MAPASYNC)
+    :notls      (Lib/MDB_NOTLS)
+    :nolock     (Lib/MDB_NOLOCK)
+    :nordahead  (Lib/MDB_NORDAHEAD)
+    :nomeminit  (Lib/MDB_NOMEMINIT)
+
+    :cp-compact (Lib/MDB_CP_COMPACT)
+
+    :reversekey (Lib/MDB_REVERSEKEY)
+    :dupsort    (Lib/MDB_DUPSORT)
+    :integerkey (Lib/MDB_INTEGERKEY)
+    :dupfixed   (Lib/MDB_DUPFIXED)
+    :integerdup (Lib/MDB_INTEGERDUP)
+    :reversedup (Lib/MDB_REVERSEDUP)
+    :create     (Lib/MDB_CREATE)
+
+    :nooverwrite (Lib/MDB_NOOVERWRITE)
+    :nodupdata   (Lib/MDB_NODUPDATA)
+    :current     (Lib/MDB_CURRENT)
+    :reserve     (Lib/MDB_RESERVE)
+    :append      (Lib/MDB_APPEND)
+    :appenddup   (Lib/MDB_APPENDDUP)
+    :multiple    (Lib/MDB_MULTIPLE)
+
+    :rdonly-txn (Lib/MDB_RDONLY)))
+
+(defn- kv-flags
+  [flags]
+  (if (seq flags)
+    (reduce (fn [r f] (bit-or ^int r ^int f))
+            0
+            (map flag flags))
+    0))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -355,16 +398,16 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi
-      this dbi-name c/+max-key-size+ c/+default-val-size+ (Lib/MDB_CREATE)))
+      this dbi-name c/+max-key-size+ c/+default-val-size+ c/default-dbi-flags))
   (open-dbi [this dbi-name key-size]
-    (.open-dbi this dbi-name key-size c/+default-val-size+ (Lib/MDB_CREATE)))
+    (.open-dbi this dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
-    (.open-dbi this dbi-name key-size val-size (Lib/MDB_CREATE)))
+    (.open-dbi this dbi-name key-size val-size c/default-dbi-flags))
   (open-dbi [_ dbi-name key-size val-size flags]
     (assert (not closed?) "LMDB env is closed.")
     (let [kp  (BufVal/create key-size)
           vp  (BufVal/create val-size)
-          dbi (Dbi/create env dbi-name flags)
+          dbi (Dbi/create env dbi-name (kv-flags flags))
           db  (->DBI dbi kp vp)]
       (.put dbis dbi-name db)
       db))
@@ -375,7 +418,8 @@
     (or (.get dbis dbi-name)
         (if create?
           (.open-dbi this dbi-name)
-          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+ 0))))
+          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
+                     c/read-dbi-flags))))
 
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
@@ -566,7 +610,8 @@
                      dir
                      (* ^long c/+init-db-size+ 1024 1024)
                      c/+max-readers+
-                     c/+max-dbs+)
+                     c/+max-dbs+
+                     (kv-flags c/default-env-flags))
           lmdb     (->LMDB env
                            dir
                            (->RtxPool env (ConcurrentHashMap.) 0)
