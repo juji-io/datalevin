@@ -53,6 +53,7 @@ jobs:
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
+          overwrite: true
 
       - name: Zip C Source
         run: |
