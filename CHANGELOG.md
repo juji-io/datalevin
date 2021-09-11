@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.9
 ### Improved
 - Only check to refersh db cache at user facing namespaces, so internal db
   calls work with a consistent db view
