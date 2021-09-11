@@ -586,7 +586,7 @@ are applicable to Datascript.
 * The total data size of a Datalevin database has the same limit as LMDB's, e.g.
   128TB on a modern 64-bit machine that implements 48-bit address spaces.
 
-* Currently supports Clojure on JVM 11 or the above, but adding support for other
+* Currently supports Clojure on JVM 8 or the above, but adding support for other
   Clojure-hosting runtime is possible, since bindings for LMDB
   exist in almost all major languages and available on most platforms.
 

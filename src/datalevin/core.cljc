@@ -199,9 +199,7 @@ Only usable for debug output.
 ;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema])
-       :doc      "Open Datalog database at the given data directory. Creates an
-empty database there if it does not exist yet. Update the schema if one is
-given. Return reference to the database.
+       :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
              Usage:
 
@@ -245,9 +243,7 @@ given. Return reference to the database.
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
-       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms.
-
-             Does no validation on inputs, so `datoms` must be well-formed and match schema.
+       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
              See also [[datom]]."}
   init-db db/init-db)
@@ -430,7 +426,8 @@ given. Return reference to the database.
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
-  "Create a mutable reference to a database with the given datoms added to it."
+  "Create a mutable reference to a database with the given datoms added to it.
+  `dir` could be a local directory path or a dtlv connection URI string."
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
   ([datoms dir schema] (conn-from-db (init-db datoms dir schema))))
@@ -438,8 +435,9 @@ given. Return reference to the database.
 
 (defn create-conn
   "Creates a mutable reference (a “connection”) to a database at the given
-  data directory and opens the database. Creates the database if it doesn't
+  location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
+  `dir` could be a local directory path or a dtlv connection URI string.
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -705,9 +703,7 @@ given. Return reference to the database.
     conn))
 
 (defn get-conn
-  "Obtain an open connection to a database. Create the database if it does not
-  exist. Reuse the same connection if a connection to the same database already
-  exists. Open the database if it is closed. Return the connection.
+  "Obtain an open connection to a database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
 
   See also [[create-conn]] and [[with-conn]]"
   ([dir]
@@ -725,8 +721,8 @@ given. Return reference to the database.
   this call. If a database needs to be kept open, use `create-conn` and
   hold onto the returned connection. See also [[create-conn]] and [[get-conn]]
 
-  `spec` is a vector of an identifier of the database connection, a data path
-  string, and optionally a schema map.
+  `spec` is a vector of an identifier of the database connection, a path or
+  dtlv URI string, and optionally a schema map.
 
   Example:
 
@@ -860,7 +856,7 @@ given. Return reference to the database.
 (defn open-kv
   "Open a LMDB key-value database, return the connection.
 
-  `dir` is a string directory path in which the data are to be stored;
+  `dir` is a directory path or a dtlv connection URI string.
 
   Will detect the platform this code is running in, and dispatch accordingly.
 
@@ -895,7 +891,7 @@ given. Return reference to the database.
   closed-kv? l/closed-kv?)
 
 (def ^{:arglists '([db])
-       :doc      "Return the directory path of the key-value store"}
+       :doc      "Return the path or URI string of the key-value store"}
   dir l/dir)
 
 (def ^{:arglists '([db]

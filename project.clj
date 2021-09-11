@@ -70,7 +70,7 @@
              "-Dclojure.compiler.direct-linking=true"
              "-Djdk.attach.allowAttachSelf"
              "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
-  :javac-options ["--release" "11"]
+  :javac-options ["--release" "8"]
 
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username

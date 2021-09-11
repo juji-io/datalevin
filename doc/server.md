@@ -24,13 +24,11 @@ installation:
 ```console
 # dtlv serv
 ```
-2. Start Datalevin REPL in another terminal:
-
+2. Start Datalevin REPL in another terminal
 ```console
 $ dtlv
 ```
-
-3. Type the following in the REPL:
+3. Type the following in the REPL
 
 ```console
 user> (def client (new-client "dtlv://datalevin:datalevin@localhost"))
