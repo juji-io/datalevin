@@ -53,8 +53,10 @@ instead of a local path name, a connection to the server is attempted. `db-name`
 should be unique on the server. `store` parameter is optional, default is
 `datalog`. A database will be created if it does not yet exist.
 
-The same functions for local databases work on the remote databases. The remote
-access is transparent to function callers.
+The same functions for local databases work on the remote databases, i.e. any
+function that takes a `dir` argument can also take a connection URI string,
+e.g. `(get-conn "dtlv://datalevin:datalevin@localhost/mydb")`. The remote access
+is transparent to the function callers.
 
 ## Implementation
 
