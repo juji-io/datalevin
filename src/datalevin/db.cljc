@@ -35,6 +35,7 @@
 (defprotocol IIndexAccess
   (-populated? [db index components])
   (-datoms [db index components])
+  (-first-datom [db index components])
   (-seek-datoms [db index components])
   (-rseek-datoms [db index components])
   (-index-range [db attr start end]))
@@ -148,7 +149,7 @@
         [:first e a v]
         (case-tree
           [e a (some? v)]
-          [(s/fetch store (datom e a v)) ; e a v
+          [(first (s/fetch store (datom e a v))) ; e a v
            (s/head store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/head-filter store :eav
                           (fn [^Datom d] (= v (.-v d)))
@@ -168,7 +169,7 @@
         [:last e a v]
         (case-tree
           [e a (some? v)]
-          [(s/fetch store (datom e a v)) ; e a v
+          [(first (s/fetch store (datom e a v))) ; e a v
            (s/tail store :eav  (datom e a c/vmax) (datom e a c/v0)) ; e a _
            (s/tail-filter store :eav
                           (fn [^Datom d] (= v (.-v d)))
@@ -216,6 +217,14 @@
       [:datoms index cs]
       (s/slice store index (components->pattern db index cs e0 tx0)
                (components->pattern db index cs emax txmax))))
+
+  (-first-datom
+    [db index cs]
+    (wrap-cache
+      store
+      [:first-datom index cs]
+      (s/head store index (components->pattern db index cs e0 tx0)
+              (components->pattern db index cs emax txmax))))
 
   (-seek-datoms
     [db index cs]
@@ -367,7 +376,6 @@
   (is-attr? db attr :db/isComponent))
 
 (defn entid [db eid]
-  {:pre [(db? db)]}
   (cond
     (and (integer? eid) (not (neg? (long eid))))
     eid
@@ -388,7 +396,7 @@
                            (datom e0 attr value tx0)
                            (datom emax attr value txmax))
                 first :e)
-            (-> (-datoms db :avet eid) first :e))))
+            (:e (-first-datom db :avet eid)))))
 
     #?@(:cljs [(array? eid) (recur db (array-seq eid))])
 
@@ -397,7 +405,7 @@
                        (datom e0 :db/ident eid tx0)
                        (datom emax :db/ident eid txmax))
             first :e)
-        (-> (-datoms db :avet [:db/ident eid]) first :e))
+        (:e (-first-datom db :avet [:db/ident eid])))
 
     :else
     (raise "Expected number or lookup ref for entity id, got " eid
@@ -420,10 +428,10 @@
     (when-some [found (let [a (.-a datom)
                             v (.-v datom)]
                         (or
-                         (not-empty (set/slice (get db :avet)
-                                               (d/datom e0 a v tx0)
-                                               (d/datom emax a v txmax)))
-                         (not-empty (-datoms db :avet [a v]))))]
+                          (not-empty (set/slice (get db :avet)
+                                                (d/datom e0 a v tx0)
+                                                (d/datom emax a v txmax)))
+                          (-populated? db :avet [a v])))]
       (raise "Cannot add " datom " because of unique constraint: " found
              {:error     :transact/unique
               :attribute (.-a datom)
@@ -568,7 +576,7 @@
   (let [e (or (:e (first (set/slice (get db :avet)
                                     (d/datom e0 a v tx0)
                                     (d/datom emax a v txmax))))
-              (:e (first (-datoms db :avet [a v]))))]
+              (:e (-first-datom db :avet [a v])))]
     (cond
       (nil? e) ;; value not yet in db
       eav
@@ -655,16 +663,16 @@
         v         (if (ref? db a) (entid-strict db v) v)
         new-datom (datom e a v tx)]
     (if (multival? db a)
-      (if (empty? (or (set/slice (get db :eavt)
-                                 (datom e a v tx0)
-                                 (datom e a v txmax))
-                      (-search db [e a v])))
+      (if (and (empty? (set/slice (get db :eavt)
+                                  (datom e a v tx0)
+                                  (datom e a v txmax)))
+               (= (-count db [e a v]) 0))
         (transact-report report new-datom)
         report)
       (if-some [^Datom old-datom (or (first (set/slice (get db :eavt)
                                                        (datom e a nil tx0)
                                                        (datom e a nil txmax)))
-                                     (first (-search db [e a])))]
+                                     (-first db [e a]))]
         (if (= (.-v old-datom) v)
           report
           (-> report
@@ -799,7 +807,7 @@
                                             (d/datom ident :db/fn nil tx0)
                                             (d/datom ident :db/fn nil txmax))
                                           first :v)
-                                      (-> (-search db [ident :db/fn]) first :v))
+                                      (:v (-first db [ident :db/fn])))
                              args (next entity)]
                          (if (fn? fun)
                            (recur report (concat (apply fun db args) entities))
@@ -831,7 +839,7 @@
                            (recur (transact-add report [:db/add e a nv]) entities)
                            (raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms) "], expected " ov
                                   {:error :transact/cas, :old datoms, :expected ov, :new nv}))
-                         (let [v (:v (first datoms))]
+                         (let [v (:v (nth datoms 0))]
                            (if (= v ov)
                              (recur (transact-add report [:db/add e a nv]) entities)
                              (raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
@@ -856,8 +864,7 @@
                                                     (get db :avet)
                                                     (d/datom e0 a v tx0)
                                                     (d/datom emax a v txmax))))
-                                               (:e (first
-                                                     (-datoms db :avet [a v])))))
+                                               (:e (-first-datom db :avet [a v]))))
                            allocated-eid (get tempids e)]
                        (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
                          (retry-with-tempid initial-report report initial-es e upserted-eid)
@@ -877,7 +884,7 @@
                                                         (get db :eavt)
                                                         (datom e a v tx0)
                                                         (datom e a v txmax)))
-                                               (first (-first db [e a v])))]
+                                               (-first db [e a v]))]
                            (recur (transact-retract-datom report old-datom) entities)
                            (recur report entities)))
                        (recur report entities))

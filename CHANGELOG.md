@@ -2,6 +2,10 @@
 
 ## WIP
 ### Improved
+- Only check to refersh db cache at user facing namespaces, so internal db
+  calls work with a consistent db view
+- Replace unnecessary expensive calls such as `db/-search` or `db/-datoms` with
+  cheaper calls to improve remote store access speed.
 - documentation
 
 ## 0.5.8

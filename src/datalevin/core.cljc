@@ -28,9 +28,9 @@
 
 ;; Entities
 
-(def ^{:arglists '([db eid])
-       :doc      "Retrieves an entity by its id from Datalog database. Entities
-are lazy map-like structures to navigate Datalevin database content.
+(defn entity
+  "Retrieves an entity by its id from Datalog database. Entities
+  are lazy map-like structures to navigate Datalevin database content.
 
              `db` is a Datalog database.
 
@@ -44,7 +44,7 @@ are lazy map-like structures to navigate Datalevin database content.
                  (entity db 100500) ; => nil
 
              Creating an entity by id is very cheap, almost no-op, as attr access
-is on-demand:
+  is on-demand:
 
                  (entity db 1) ; => {:db/id 1}
 
@@ -63,31 +63,33 @@ is on-demand:
                  (:ns/ref (entity db 1)) ; => {:db/id 2}
 
              References can be walked backwards by prepending `_` to name part
-of an attribute:
+  of an attribute:
 
                  (:_ref (entity db 2)) ; => [{:db/id 1}]
                  (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
 
              Reverse reference lookup returns sequence of entities unless
-attribute is marked as `:db/component`:
+  attribute is marked as `:db/component`:
 
                  (:_component-ref (entity db 2)) ; => {:db/id 1}
 
              Entity gotchas:
 
              - Entities print as map, but are not exactly maps (they have
-compatible get interface though).
+  compatible get interface though).
              - Entities retain reference to the database.
              - Creating an entity by id is very cheap, almost no-op
-(attributes are looked up on demand).
+  (attributes are looked up on demand).
              - Comparing entities just compares their ids. Be careful when
-comparing entities taken from differenct dbs or from different versions of the
-same db.
+  comparing entities taken from differenct dbs or from different versions of the
+  same db.
              - Accessed entity attributes are cached on entity itself (except
-backward references).
+  backward references).
              - When printing, only cached attributes (the ones you have accessed
-before) are printed. See [[touch]]."}
-  entity de/entity)
+  before) are printed. See [[touch]]."
+  [db eid]
+  {:pre [(db/db? db)]}
+  (de/entity db eid))
 
 (def ^{:arglists '([ent attr value])
        :doc      "Add an attribute value to an entity"}
@@ -97,24 +99,24 @@ before) are printed. See [[touch]]."}
        :doc      "Remove an attribute from an entity"}
   retract de/retract)
 
-(def ^{:arglists '([db eid])
-       :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.
+(defn entid
+  "Given lookup ref `[unique-attr value]`, returns numberic entity id.
 
              `db` is a Datalog database.
 
              If entity does not exist, returns `nil`.
 
              For numeric `eid` returns `eid` itself (does not check for entity
-existence in that case)."}
-  entid db/entid)
-
+  existence in that case)."
+  [db eid]
+  {:pre [(db/db? db)]}
+  (db/entid db eid))
 
 (defn entity-db
   "Returns a Datalog db that entity was created from."
   [^Entity entity]
   {:pre [(de/entity? entity)]}
   (.-db entity))
-
 
 (def ^{:arglists '([e])
        :doc      "Forces all entity attributes to be eagerly fetched and cached.
@@ -131,9 +133,9 @@ Only usable for debug output.
 
 ;; Pull API
 
-(def ^{:arglists '([db selector eid])
-       :doc      "Fetches data from Datalog database using recursive declarative
-description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
+(defn pull
+  "Fetches data from Datalog database using recursive declarative
+  description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
              Unlike [[entity]], returns plain Clojure map (not lazy).
 
@@ -143,13 +145,15 @@ description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/o
                  ; => {:db/id   1,
                  ;     :name    \"Ivan\"
                  ;     :likes   [:pizza]
-                 ;     :friends [{:db/id 2, :name \"Oleg\"}]}"}
-  pull dp/pull)
+                 ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
+  [db selector eid]
+  {:pre [(db/db? db)]}
+  (dp/pull db selector eid))
 
 
-(def ^{:arglists '([db selector eids])
-       :doc      "Same as [[pull]], but accepts sequence of ids and returns
-sequence of maps.
+(defn pull-many
+  "Same as [[pull]], but accepts sequence of ids and returns
+  sequence of maps.
 
              Usage:
 
@@ -157,14 +161,16 @@ sequence of maps.
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
              ;     {:db/id 2, :name \"Oleg\"}]
-             ```"}
-  pull-many dp/pull-many)
+             ```"
+  [db selector eids]
+  {:pre [(db/db? db)]}
+  (dp/pull-many db selector eids))
 
 
 ;; Query
 
 (defn- only-remote-db
-  "return [remote-db [updated-inputs]] if the inputs contain only one db
+  "Return [remote-db [updated-inputs]] if the inputs contain only one db
   and its backing store is a remote one, where the remote-db in the inputs is
   replaced by `:remote-db-placeholder, otherwise return nil"
   [inputs]
@@ -210,8 +216,7 @@ given. Return reference to the database.
 
 
 (def ^{:arglists '([x])
-       :doc      "Returns `true` if the given value is a Datalog database,
-`false` otherwise."}
+       :doc      "Returns `true` if the given value is a Datalog database. Has the side effect of updating the cache of the db to the most recent. Return `false` otherwise. "}
   db? db/db?)
 
 
@@ -670,6 +675,7 @@ given. Return reference to the database.
 (defn schema
   "Return the schema"
   [conn]
+  {:pre [(conn? conn)]}
   (s/schema ^Store (.-store ^DB @conn)))
 
 (defn update-schema
@@ -681,13 +687,14 @@ given. Return reference to the database.
 
   (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
   [conn schema-update]
+  {:pre [(conn? conn)]}
   (let [^DB db (db conn)]
     (s/set-schema ^Store (.-store db) schema-update)
     (schema conn)))
 
-  (defonce ^:private connections (atom {}))
+(defonce ^:private connections (atom {}))
 
-  (defn- add-conn [dir conn] (swap! connections assoc dir conn))
+(defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
 (defn- new-conn
   [dir schema]

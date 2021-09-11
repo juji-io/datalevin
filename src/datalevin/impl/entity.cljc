@@ -15,7 +15,6 @@
     (db/entid db eid)))
 
 (defn entity [db eid]
-  {:pre [(db/db? db)]}
   (when-let [e (entid db eid)]
     (->Entity db e (volatile! false) (volatile! {}) {} {})))
 
