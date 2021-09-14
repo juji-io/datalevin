@@ -121,6 +121,7 @@ public final class Lib {
         }
 
         private static void extract(final String parent, final String name) {
+            System.out.println("filename " + name);
             try {
                 final File file = new File(parent, name);
                 file.deleteOnExit();
