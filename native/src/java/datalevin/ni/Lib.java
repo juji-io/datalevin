@@ -61,9 +61,8 @@ public final class Lib {
      * Sets up the context required for interacting with native library.
      */
     public static final class Directives implements CContext.Directives {
-
         static {
-            final String ENV_DIR = getenv("DTLV_NATIVE_EXTRACT_DIR");
+            final String ENV_DIR = getenv("DTVL_NATIVE_EXTRACT_DIR");
             final String EXTRACT_DIR =
                 (ENV_DIR == null ? getProperty("java.io.tmpdir") : ENV_DIR);
 

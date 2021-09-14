@@ -4,6 +4,11 @@ if "%GRAALVM_HOME%"=="" (
     exit /b
 )
 
+if "%DTVL_NATIVE_EXTRACT_DIR%"=="" (
+    echo Please set DTVL_NATIVE_EXTRACT_DIR
+    exit /b
+)
+
 set JAVA_HOME=%GRAALVM_HOME%\bin
 set PATH=%GRAALVM_HOME%\bin;%PATH%
 
