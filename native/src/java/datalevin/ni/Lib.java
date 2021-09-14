@@ -119,9 +119,9 @@ public final class Lib {
         }
 
         private static void extract(final String parent, final String name) {
-            System.out.println("filename " + name);
             try {
-                final File file = new File(parent, name);
+                final String filename = Paths.get(name).toString();
+                final File file = new File(parent, filename);
                 file.deleteOnExit();
 
                 final ClassLoader cl = currentThread().getContextClassLoader();
@@ -134,6 +134,7 @@ public final class Lib {
                     while (-1 != (bytes = in.read(buffer))) {
                         out.write(buffer, 0, bytes);
                     }
+                    System.out.println("Written " + file.toPath().toString());
                 }
             } catch (final IOException e) {
                 throw new IllegalStateException("Failed to extract " + name
