@@ -109,6 +109,7 @@
   (make-commit)
   (github-release)
   (sh "lein" "deploy" "clojars")
+  (sh "cd" "native" "&&" "lein" "deploy" "clojars")
   (System/exit 0))
 
 (-main)

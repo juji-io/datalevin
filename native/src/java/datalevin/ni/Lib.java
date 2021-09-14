@@ -92,7 +92,8 @@ public final class Lib {
             final String dtlvHeaderName = "dtlv.h";
 
             final String lmdbHeaderName = "lmdb.h";
-            final String lmdbHeaderDir = "lmdb/libraries/liblmdb";
+            final String lmdbHeaderDir =
+                Paths.get("lmdb/libraries/liblmdb").toString();
             final String lmdbHeaderFileName = lmdbHeaderDir + File.separator
                 + lmdbHeaderName;
 
