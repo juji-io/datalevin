@@ -92,10 +92,8 @@ public final class Lib {
             final String dtlvHeaderName = "dtlv.h";
 
             final String lmdbHeaderName = "lmdb.h";
-            final String lmdbHeaderDir =
-                Paths.get("lmdb/libraries/liblmdb").toString();
-            final String lmdbHeaderFileName = lmdbHeaderDir + File.separator
-                + lmdbHeaderName;
+            final String lmdbHeaderPath = "lmdb/libraries/liblmdb";
+            final String lmdbHeaderDir = Paths.get(lmdbHeaderPath).toString();
 
             final File dir = new File(EXTRACT_DIR);
             if (!dir.exists() || !dir.isDirectory()) {
@@ -107,14 +105,14 @@ public final class Lib {
                 + File.separator + lmdbHeaderDir;
 
             try {
-                Path lmdbHeaderPath = Paths.get(lmdbHeaderAbsDir);
-                Files.createDirectories(lmdbHeaderPath);
+                Path path = Paths.get(lmdbHeaderAbsDir);
+                Files.createDirectories(path);
             } catch (final IOException e) {
                 throw new IllegalStateException("Failed to create directory "
                                                 + lmdbHeaderAbsDir);
             }
 
-            extract(EXTRACT_DIR, lmdbHeaderFileName);
+            extract(EXTRACT_DIR, lmdbHeaderPath + "/" + lmdbHeaderName);
             extract(EXTRACT_DIR, dtlvHeaderName);
             extract(EXTRACT_DIR, dtlvLibName);
             extract(EXTRACT_DIR, lmdbLibName);
