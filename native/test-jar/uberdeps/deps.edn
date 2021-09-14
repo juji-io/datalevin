@@ -1,0 +1,1 @@
+{:deps {uberdeps/uberdeps {:mvn/version "1.1.0"}}}

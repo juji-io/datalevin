@@ -4,11 +4,6 @@ if "%GRAALVM_HOME%"=="" (
     exit /b
 )
 
-if "%DTVL_NATIVE_EXTRACT_DIR%"=="" (
-    echo Please set DTVL_NATIVE_EXTRACT_DIR
-    exit /b
-)
-
 set JAVA_HOME=%GRAALVM_HOME%\bin
 set PATH=%GRAALVM_HOME%\bin;%PATH%
 
@@ -19,7 +14,6 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-jar" "target/test.uberjar.jar" ^
-  "-H:CLibraryPath=%DTVL_NATIVE_EXTRACT_DIR%" ^
   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
   dtlv-test
 
@@ -34,7 +28,6 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-jar" "target/main.uberjar.jar" ^
-  "-H:CLibraryPath=%DTVL_NATIVE_EXTRACT_DIR%" ^
   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
   dtlv
 

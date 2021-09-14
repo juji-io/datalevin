@@ -65,11 +65,9 @@ public final class Lib {
     public static final class Directives implements CContext.Directives {
         static {
             final String EXTRACT_DIR =
-                OptionUtils.flatten(",", SubstrateOptions.CLibraryPath.getValue()).get(0);
-            System.out.println("EXTRACT_DIR " + EXTRACT_DIR);
-            //final String ENV_DIR = getenv("DTVL_NATIVE_EXTRACT_DIR");
-            //final String EXTRACT_DIR =
-            //   (ENV_DIR == null ? pwd : ENV_DIR);
+                OptionUtils
+                .flatten(",", SubstrateOptions.CLibraryPath.getValue())
+                .get(0);
 
             final String arch = getProperty("os.arch");
             final boolean arch64 = "x64".equals(arch) || "amd64".equals(arch)
@@ -80,14 +78,21 @@ public final class Lib {
             final boolean osx = os.startsWith("Mac OS X");
             final boolean windows = os.startsWith("Windows");
 
-            final String dtlvLibName, lmdbLibName;
+            final String dtlvLibName, lmdbLibName, myPlatform;
 
-            if ( arch64 && (linux || osx)) {
+            if (arch64 && linux) {
                 dtlvLibName = "libdtlv.a";
                 lmdbLibName = "liblmdb.a";
-            } else if (arch64 && windows) {
+                myPlatform = "ubuntu-latest-amd64";
+            } else if (arch64 && osx) {
+                dtlvLibName = "libdtlv.a";
+                lmdbLibName = "liblmdb.a";
+                myPlatform = "macos-latest-amd64";
+            }
+            else if (arch64 && windows) {
                 dtlvLibName = "dtlv.lib";
                 lmdbLibName = "lmdb.lib";
+                myPlatform = "windows-amd64";
             } else {
                 throw new IllegalStateException("Unsupported platform: "
                                                 + os + " on " + arch);
@@ -116,13 +121,16 @@ public final class Lib {
                                                 + lmdbHeaderAbsDir);
             }
 
-            extract(EXTRACT_DIR, lmdbHeaderPath + "/" + lmdbHeaderName);
-            extract(EXTRACT_DIR, dtlvHeaderName);
-            extract(EXTRACT_DIR, dtlvLibName);
-            extract(EXTRACT_DIR, lmdbLibName);
+            extract(EXTRACT_DIR, myPlatform,
+                    lmdbHeaderPath + "/" + lmdbHeaderName);
+            extract(EXTRACT_DIR, myPlatform, dtlvHeaderName);
+            extract(EXTRACT_DIR, myPlatform, dtlvLibName);
+            extract(EXTRACT_DIR, myPlatform, lmdbLibName);
         }
 
-        private static void extract(final String parent, final String name) {
+        private static void extract(final String parent,
+                                    final String platform,
+                                    final String name) {
             try {
                 final String filename = Paths.get(name).toString();
                 final File file = new File(parent, filename);
@@ -130,7 +138,8 @@ public final class Lib {
 
                 final ClassLoader cl = currentThread().getContextClassLoader();
 
-                try (InputStream in = cl.getResourceAsStream(name);
+                try (InputStream in
+                     = cl.getResourceAsStream(platform + "/" + name);
                      OutputStream out = Files.newOutputStream(file.toPath())) {
                     requireNonNull(in, "Classpath resource not found");
                     int bytes;

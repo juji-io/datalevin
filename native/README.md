@@ -34,20 +34,11 @@ application into a GraalVM native image, you need to use `org.clojars.huahaiy/da
 code](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/)
 that are pre-compiled for various platforms.
 
-During your native image compilation, the initialization code extracts these
-native libraries from the jar and put them under a temporary directory, which
-can be specified by an environment variable `DTVL_NATIVE_EXTRACT_DIR`. The
-built-in default is `/tmp`, so typically you do not need to set this variable on
-Linux or MacOS.
-
-On Windows, you need to set this variable to an existing writable directory. If
-you do, you also need to add an argument:
-
-```
-    "-H:CLibraryPath=%DTVL_NATIVE_EXTRACT_DIR%" ^
-```
-to your native-image command, so that GraalVM native-image compiler can find
-the automatically extracted `datalevin-native` libraries.
+During the native image compilation, our initialization code extracts these
+native libraries from the jar and put them in the GraalVM's default
+`CLibraryPath` for the platform (e.g.
+`${GRAALVM_HOME}/lib/svm/clibraries/linux-amd64/`). Make sure you have write
+permission for the directory.
 
 For CI/CD, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)

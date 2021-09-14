@@ -8,9 +8,9 @@
   :managed-dependencies [[org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
-                         [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.1.10"]
-                         [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.1.10"]
-                         [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.1.10"]
+                         [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.2.0"]
+                         [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.2.0"]
+                         [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.2.0"]
                          [babashka/babashka.pods "0.0.1"]
                          [com.cognitect/transit-clj "1.0.324"
                           :exclusions [com.fasterxml.jackson.core/jackson-core]]
