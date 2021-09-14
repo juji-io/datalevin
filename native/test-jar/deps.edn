@@ -1,1 +1,8 @@
-{:deps {org.clojars.huahaiy/datalevin-native {:local/root "./../target/datalevin-native-0.5.9.jar"}}}
+{:paths   ["src" "target/classes"]
+ :aliases {:uberjar
+           {:replace-deps {com.github.seancorfield/depstar {:mvn/version "2.1.297"}}
+            :exec-fn      hf.depstar/uberjar
+            :exec-args    {:aot true}}}
+ :deps    {org.clojure/clojure {:mvn/version "1.10.3"}
+           org.clojars.huahaiy/datalevin-native
+           {:local/root "./../target/datalevin-native-0.5.9.jar"}}}

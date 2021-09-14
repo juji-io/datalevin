@@ -1,5 +1,6 @@
 (ns test-jar.core
-  (:require [datalevin.core :as d]))
+  (:require [datalevin.core :as d])
+  (:gen-class))
 
 ;; Define an optional schema.
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
@@ -49,3 +50,6 @@
   (d/close conn)
 
   (println "Success!"))
+
+(defn -main [& args]
+  (run {}))

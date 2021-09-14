@@ -43,6 +43,7 @@ reading
 native/*.zip
 native/dtlv
 native/dtlv-test
-native/reports/
-native/main-config/
-native/test-config/
+native/test-jar/jar-test
+*/reports/
+*/*/reports/
+*.build_artifacts.txt
