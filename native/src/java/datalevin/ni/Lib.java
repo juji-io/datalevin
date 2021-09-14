@@ -1,5 +1,11 @@
 package datalevin.ni;
 
+import static java.util.Objects.requireNonNull;
+import static java.lang.System.getProperty;
+import static java.lang.System.getenv;
+import static java.lang.Thread.currentThread;
+import static java.util.Locale.ENGLISH;
+
 import com.oracle.svm.core.c.ProjectHeaderFile;
 import com.oracle.svm.core.c.CGlobalData;
 import com.oracle.svm.core.c.CGlobalDataFactory;
@@ -32,10 +38,18 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.PointerBase;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+
 
 /**
  * Import LMDB Library C API
@@ -47,6 +61,86 @@ public final class Lib {
      * Sets up the context required for interacting with native library.
      */
     public static final class Directives implements CContext.Directives {
+
+        static {
+            final String ENV_DIR = getenv("DTLV_NATIVE_EXTRACT_DIR");
+            final String EXTRACT_DIR =
+                (ENV_DIR == null ? getProperty("java.io.tmpdir") : ENV_DIR);
+
+            final String arch = getProperty("os.arch");
+            final boolean arch64 = "x64".equals(arch) || "amd64".equals(arch)
+                || "x86_64".equals(arch);
+
+            final String os = getProperty("os.name");
+            final boolean linux = os.toLowerCase(ENGLISH).startsWith("linux");
+            final boolean osx = os.startsWith("Mac OS X");
+            final boolean windows = os.startsWith("Windows");
+
+            final String dtlvLibName, lmdbLibName;
+
+            if ( arch64 && (linux || osx)) {
+                dtlvLibName = "libdtlv.a";
+                lmdbLibName = "liblmdb.a";
+            } else if (arch64 && windows) {
+                dtlvLibName = "dtlv.lib";
+                lmdbLibName = "lmdb.lib";
+            } else {
+                throw new IllegalStateException("Unsupported platform: "
+                                                + os + " on " + arch);
+            }
+
+            final String dtlvHeaderName = "dtlv.h";
+
+            final String lmdbHeaderName = "lmdb.h";
+            final String lmdbHeaderDir = "lmdb/libraries/liblmdb";
+            final String lmdbHeaderFileName = lmdbHeaderDir + File.separator
+                + lmdbHeaderName;
+
+            final File dir = new File(EXTRACT_DIR);
+            if (!dir.exists() || !dir.isDirectory()) {
+                throw new IllegalStateException("Invalid extraction directory "
+                                                + dir);
+            }
+
+            final String lmdbHeaderAbsDir = EXTRACT_DIR
+                + File.separator + lmdbHeaderDir;
+
+            try {
+                Path lmdbHeaderPath = Paths.get(lmdbHeaderAbsDir);
+                Files.createDirectories(lmdbHeaderPath);
+            } catch (final IOException e) {
+                throw new IllegalStateException("Failed to create directory "
+                                                + lmdbHeaderAbsDir);
+            }
+
+            extract(EXTRACT_DIR, lmdbHeaderFileName);
+            extract(EXTRACT_DIR, dtlvHeaderName);
+            extract(EXTRACT_DIR, dtlvLibName);
+            extract(EXTRACT_DIR, lmdbLibName);
+        }
+
+        private static void extract(final String parent, final String name) {
+            try {
+                final File file = new File(parent, name);
+                file.deleteOnExit();
+
+                final ClassLoader cl = currentThread().getContextClassLoader();
+
+                try (InputStream in = cl.getResourceAsStream(name);
+                     OutputStream out = Files.newOutputStream(file.toPath())) {
+                    requireNonNull(in, "Classpath resource not found");
+                    int bytes;
+                    final byte[] buffer = new byte[4096];
+                    while (-1 != (bytes = in.read(buffer))) {
+                        out.write(buffer, 0, bytes);
+                    }
+                }
+            } catch (final IOException e) {
+                throw new IllegalStateException("Failed to extract " + name
+                                                + " in " + parent);
+            }
+        }
+
         @Override
         public List<String> getHeaderFiles() {
             return Collections

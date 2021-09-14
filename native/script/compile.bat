@@ -33,21 +33,8 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-jar" "target/test.uberjar.jar" ^
-  "-H:Name=dtlv-test" ^
-  "-H:+ReportExceptionStackTraces" ^
-  "-H:ConfigurationFileDirectories=config" ^
-  "-J-Dclojure.spec.skip-macros=true" ^
-  "-J-Dclojure.compiler.direct-linking=true" ^
-  "-H:CLibraryPath=%CPATH%" ^
+  "-H:CLibraryPath=%DTVL_NATIVE_EXTRACT_DIR%" ^
   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
-  "--initialize-at-build-time"  ^
-  "-H:Log=registerResource:" ^
-  "--report-unsupported-elements-at-runtime" ^
-  "--allow-incomplete-classpath" ^
-  "--no-fallback" ^
-  "--native-image-info" ^
-  "--verbose" ^
-  "-J-Xmx6g" ^
   dtlv-test
 
 if %errorlevel% neq 0 exit /b %errorlevel%
@@ -61,21 +48,8 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
   "-jar" "target/main.uberjar.jar" ^
-  "-H:Name=dtlv" ^
-  "-H:+ReportExceptionStackTraces" ^
-  "-H:ConfigurationFileDirectories=config" ^
-  "-J-Dclojure.spec.skip-macros=true" ^
-  "-J-Dclojure.compiler.direct-linking=true" ^
-  "-H:CLibraryPath=%CPATH%" ^
+  "-H:CLibraryPath=%DTVL_NATIVE_EXTRACT_DIR%" ^
   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
-  "--initialize-at-build-time"  ^
-  "-H:Log=registerResource:" ^
-  "--report-unsupported-elements-at-runtime" ^
-  "--allow-incomplete-classpath" ^
-  "--no-fallback" ^
-  "--native-image-info" ^
-  "--verbose" ^
-  "-J-Xmx6g" ^
   dtlv
 
 if %errorlevel% neq 0 exit /b %errorlevel%

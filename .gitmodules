@@ -1,3 +1,0 @@
-[submodule "native/src/c/lmdb"]
-	path = native/src/c/lmdb
-	url = https://github.com/LMDB/lmdb

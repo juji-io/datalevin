@@ -39,8 +39,8 @@ than memory.
 
 Datalevin can also run in an event-driven networked client/server mode (default
 port is 8898). The mode change is transparent. In the local mode, a data
-directory path, e.g. "/data/mydb", is needed for database location, whereas a
-URI, e.g. "dtlv://myname:secret@myhost.in.cloud/mydb" is used in the client/server
+directory path, e.g. `/data/mydb`, is needed for database location, whereas a
+URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the client/server
 mode. The same set of core functions work in both modes. In addition,
 full-fledged role based access control is provided on the server.
 
@@ -83,7 +83,9 @@ Presentation:
 
 ## :truck: Installation
 
-### Clojure library
+Datalevin can be installed with different methods, depending on how you plan to use it.
+
+### Clojure Library
 
 The core of Datalevin is a Clojure library, simply add it to your project as a dependency
 and start using it!
@@ -103,7 +105,7 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 [datalevin "0.5.9"]
 ```
 
-### Native command line tool
+### Native Command Line Tool
 
 A native command line tool is built to work with Datalevin databases in shell
 scripting, e.g. database backup/compaction, data import/export,
@@ -117,9 +119,9 @@ have better performance, for the native image version does not incur JNI
 overhead and uses a comparator written in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
-Here is how to get native Datalevin binary:
+Here is how to get native Datalevin:
 
-#### MacOS and Linux Packager
+#### MacOS and Linux Package
 
 Install using [homebrew](https://brew.sh/)
 
@@ -127,7 +129,7 @@ Install using [homebrew](https://brew.sh/)
 brew install huahaiy/brew/datalevin
 ```
 
-#### Windows Packager
+#### Windows Package
 
 Install using [scoop](https://scoop.sh/)
 
@@ -143,7 +145,7 @@ scoop install datalevin
 
 #### Direct Download
 
-Or download the binary from github:
+Or download the executable binary from github:
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.9/dtlv-0.5.9-ubuntu-latest-amd64.zip)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.9/dtlv-0.5.9-macos-latest-amd64.zip)
@@ -237,7 +239,7 @@ user>
 
 You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 
-### Babashka pod
+### Babashka Pod
 
 `dtlv` executable can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
 
@@ -263,7 +265,16 @@ user=> (d/close conn)
 nil
 ```
 
-If your application depends on Datalevin and want to compile to GraalVM native image, read this [note](https://github.com/juji-io/datalevin/tree/master/native).
+### GraalVM Native Image
+
+If your application depends on the Datalevin library and you want to compile your
+application to a GraalVM native image, put `org.clojars.huahaiy/datalevin-native`
+instead of `datalevin/datalevin` (they have the same version number) in your
+`project.clj` or `deps.edn` file.
+
+This is necessary because `datelevin-native` artifact contains GraalVM specific
+code that should not appear in a regular JVM library. See also this
+[note](https://github.com/juji-io/datalevin/tree/master/native).
 
 ## :tada: Library Usage
 
@@ -330,9 +341,9 @@ Here is a simple code example using Datalevin:
 (d/close conn)
 ```
 
-### Use as a key value store
+### Use as a key-value store
 
-Datalevin packages the underlying LMDB database as a convenient key value store
+Datalevin packages the underlying LMDB database as a convenient key-value store
 for EDN data.
 
 ```clojure
@@ -478,6 +489,8 @@ lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel free to rea
 
 Please refer to the [API
 documentation](https://juji-io.github.io/datalevin/index.html) for more details.
+You may also consult online materials for Datascript or Datomic®, as the Datalog API is
+similar.
 
 ## :rocket: Status
 

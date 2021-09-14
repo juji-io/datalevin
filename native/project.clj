@@ -1,6 +1,6 @@
 (def version "0.5.9")
 
-(defproject datalevin-native version
+(defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
   :parent-project {:path    "../project.clj"
                    :inherit [:managed-dependencies :profiles :jvm-opts

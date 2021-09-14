@@ -1,5 +1,13 @@
 # Change Log
 
+## WIP
+### Added
+- Release artifact `org.clojars.huahaiy/datalevin-native` on clojars, for
+  depending on Datalevin while compiling GraalVM native image. User
+  no longer needs to manually compile Datalevin C libraries.
+- Environment variable `DTVL_NATIVE_EXTRACT_DIR` for customizing location where
+  C libraries will be extracted to, default is `/tmp`
+
 ## 0.5.9
 ### Improved
 - Only check to refersh db cache at user facing namespaces, so internal db

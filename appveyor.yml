@@ -17,6 +17,7 @@ clone_folder: C:\projects\datalevin
 
 environment:
   GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-21.1.0
+  DTVL_NATIVE_EXTRACT_DIR: C:\projects\datalevin
 
 clone_script:
 - ps: >-
@@ -31,12 +32,9 @@ clone_script:
       git checkout -qf FETCH_HEAD
     }
 
-- cmd: git submodule update --init --recursive
-
 build_script:
 - cmd: >-
     powershell -Command "(New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein.bat', 'lein.bat')"
-
 
     call lein.bat self-install
 
