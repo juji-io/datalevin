@@ -6,6 +6,8 @@ import static java.lang.System.getenv;
 import static java.lang.Thread.currentThread;
 import static java.util.Locale.ENGLISH;
 
+import com.oracle.svm.core.SubstrateOptions;
+import com.oracle.svm.core.option.OptionUtils;
 import com.oracle.svm.core.c.ProjectHeaderFile;
 import com.oracle.svm.core.c.CGlobalData;
 import com.oracle.svm.core.c.CGlobalDataFactory;
@@ -62,9 +64,12 @@ public final class Lib {
      */
     public static final class Directives implements CContext.Directives {
         static {
-            final String ENV_DIR = getenv("DTVL_NATIVE_EXTRACT_DIR");
             final String EXTRACT_DIR =
-                (ENV_DIR == null ? getProperty("java.io.tmpdir") : ENV_DIR);
+                OptionUtils.flatten(",", SubstrateOptions.CLibraryPath.getValue()).get(0);
+            System.out.println("EXTRACT_DIR " + EXTRACT_DIR);
+            //final String ENV_DIR = getenv("DTVL_NATIVE_EXTRACT_DIR");
+            //final String EXTRACT_DIR =
+            //   (ENV_DIR == null ? pwd : ENV_DIR);
 
             final String arch = getProperty("os.arch");
             final boolean arch64 = "x64".equals(arch) || "amd64".equals(arch)
@@ -133,7 +138,6 @@ public final class Lib {
                     while (-1 != (bytes = in.read(buffer))) {
                         out.write(buffer, 0, bytes);
                     }
-                    System.out.println("Written " + file.toPath().toString());
                 }
             } catch (final IOException e) {
                 throw new IllegalStateException("Failed to extract " + name
