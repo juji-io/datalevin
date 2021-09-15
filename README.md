@@ -3,7 +3,7 @@
 <p align="center"> 🧘 Simple, fast and durable Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.5.11" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.5.12" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -95,14 +95,14 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps
- {datalevin/datalevin {:mvn/version "0.5.11"}}}
+ {datalevin/datalevin {:mvn/version "0.5.12"}}}
 ```
 
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.5.11"]
+[datalevin "0.5.12"]
 ```
 
 ### Native Command Line Tool
@@ -147,14 +147,14 @@ scoop install datalevin
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.11/dtlv-0.5.11-ubuntu-latest-amd64.zip)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.11/dtlv-0.5.11-macos-latest-amd64.zip)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.11/dtlv-0.5.11-windows-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.12/dtlv-0.5.12-ubuntu-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.12/dtlv-0.5.12-macos-latest-amd64.zip)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.12/dtlv-0.5.12-windows-amd64.zip)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.5.11)
+  Datalevin (version: 0.5.12)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -192,7 +192,7 @@ Starting `dtlv` without any arguments goes into the REPL, where you can type
 `(help)` to see a list of available functions:
 
 ```console
-  Datalevin (version: 0.5.11)
+  Datalevin (version: 0.5.12)
 
   Type (help) to see available functions. Clojure core functions are also available.
   Type (exit) to exit.
