@@ -18,8 +18,11 @@ fi
 export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
 
-clojure -X:uberjar :jar target/test-jar.jar :main-class test-jar.core
+clojure -X:uberjar :jar target/test-jar.jar 
 
-"$GRAALVM_HOME/bin/native-image" -jar target/test-jar.jar jar-test
+"$GRAALVM_HOME/bin/native-image" \
+    --initialize-at-build-time \
+    -jar target/test-jar.jar \
+    jar-test
 
 # ./jar-test
