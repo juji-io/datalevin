@@ -17,47 +17,54 @@
             Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
             Lib$MapFullException]))
 
-(defn- flag
-  [flag-key]
-  (case flag-key
-    :fixedmap   (Lib/MDB_FIXEDMAP)
-    :nosubdir   (Lib/MDB_NOSUBDIR)
-    :rdonly-env (Lib/MDB_RDONLY)
-    :writemap   (Lib/MDB_WRITEMAP)
-    :nometasync (Lib/MDB_NOMETASYNC)
-    :nosync     (Lib/MDB_NOSYNC)
-    :mapasync   (Lib/MDB_MAPASYNC)
-    :notls      (Lib/MDB_NOTLS)
-    :nolock     (Lib/MDB_NOLOCK)
-    :nordahead  (Lib/MDB_NORDAHEAD)
-    :nomeminit  (Lib/MDB_NOMEMINIT)
+(defprotocol IFlag
+  (value [this flag-key]))
 
-    :cp-compact (Lib/MDB_CP_COMPACT)
+(deftype ^{Retention RetentionPolicy/RUNTIME
+           CContext  {:value Lib$Directives}}
+    Flag []
+  IFlag
+  (value [_ flag-key]
+    (case flag-key
+      :fixedmap   (Lib/MDB_FIXEDMAP)
+      :nosubdir   (Lib/MDB_NOSUBDIR)
+      :rdonly-env (Lib/MDB_RDONLY)
+      :writemap   (Lib/MDB_WRITEMAP)
+      :nometasync (Lib/MDB_NOMETASYNC)
+      :nosync     (Lib/MDB_NOSYNC)
+      :mapasync   (Lib/MDB_MAPASYNC)
+      :notls      (Lib/MDB_NOTLS)
+      :nolock     (Lib/MDB_NOLOCK)
+      :nordahead  (Lib/MDB_NORDAHEAD)
+      :nomeminit  (Lib/MDB_NOMEMINIT)
 
-    :reversekey (Lib/MDB_REVERSEKEY)
-    :dupsort    (Lib/MDB_DUPSORT)
-    :integerkey (Lib/MDB_INTEGERKEY)
-    :dupfixed   (Lib/MDB_DUPFIXED)
-    :integerdup (Lib/MDB_INTEGERDUP)
-    :reversedup (Lib/MDB_REVERSEDUP)
-    :create     (Lib/MDB_CREATE)
+      :cp-compact (Lib/MDB_CP_COMPACT)
 
-    :nooverwrite (Lib/MDB_NOOVERWRITE)
-    :nodupdata   (Lib/MDB_NODUPDATA)
-    :current     (Lib/MDB_CURRENT)
-    :reserve     (Lib/MDB_RESERVE)
-    :append      (Lib/MDB_APPEND)
-    :appenddup   (Lib/MDB_APPENDDUP)
-    :multiple    (Lib/MDB_MULTIPLE)
+      :reversekey (Lib/MDB_REVERSEKEY)
+      :dupsort    (Lib/MDB_DUPSORT)
+      :integerkey (Lib/MDB_INTEGERKEY)
+      :dupfixed   (Lib/MDB_DUPFIXED)
+      :integerdup (Lib/MDB_INTEGERDUP)
+      :reversedup (Lib/MDB_REVERSEDUP)
+      :create     (Lib/MDB_CREATE)
 
-    :rdonly-txn (Lib/MDB_RDONLY)))
+      :nooverwrite (Lib/MDB_NOOVERWRITE)
+      :nodupdata   (Lib/MDB_NODUPDATA)
+      :current     (Lib/MDB_CURRENT)
+      :reserve     (Lib/MDB_RESERVE)
+      :append      (Lib/MDB_APPEND)
+      :appenddup   (Lib/MDB_APPENDDUP)
+      :multiple    (Lib/MDB_MULTIPLE)
+
+      :rdonly-txn (Lib/MDB_RDONLY))))
 
 (defn- kv-flags
   [flags]
   (if (seq flags)
-    (reduce (fn [r f] (bit-or ^int r ^int f))
-            0
-            (map flag flags))
+    (let [flag (->Flag)]
+      (reduce (fn [r f] (bit-or ^int r ^int f))
+              0
+              (map #(value flag %) flags)))
     0))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME

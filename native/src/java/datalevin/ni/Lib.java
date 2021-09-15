@@ -126,6 +126,7 @@ public final class Lib {
             extract(EXTRACT_DIR, myPlatform, dtlvHeaderName);
             extract(EXTRACT_DIR, myPlatform, dtlvLibName);
             extract(EXTRACT_DIR, myPlatform, lmdbLibName);
+            System.out.println("Extraction successful!");
         }
 
         private static void extract(final String parent,

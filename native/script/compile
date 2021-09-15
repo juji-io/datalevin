@@ -21,6 +21,7 @@ lein uberjar
 
 "$GRAALVM_HOME/bin/native-image" -jar "$MAIN_JAR" ${app_name}
 
+lein clean
 lein with-profile test-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" -jar "$TEST_JAR" ${test_name}

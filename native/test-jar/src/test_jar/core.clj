@@ -47,9 +47,7 @@
   ;; => ([{:db/id 1, :aka ["foo" "fred"], :nation "France"}])
 
   ;; Close DB connection
-  (d/close conn)
-
-  (println "Success!"))
+  (d/close conn))
 
 (defn -main [& args]
   (run {}))
