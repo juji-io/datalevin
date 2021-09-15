@@ -12,6 +12,7 @@
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.2.0"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.2.0"]
                          [babashka/babashka.pods "0.0.1"]
+                         [com.fasterxml.jackson.core/jackson-core "2.12.5"]
                          [com.cognitect/transit-clj "1.0.324"
                           :exclusions [com.fasterxml.jackson.core/jackson-core]]
                          [nrepl/bencode "1.1.0"]
@@ -35,6 +36,7 @@
                  [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
                  [borkdude/sci]
+                 [com.fasterxml.jackson.core/jackson-core]
                  [com.cognitect/transit-clj]
                  [persistent-sorted-set]]
   :source-paths ["src"]

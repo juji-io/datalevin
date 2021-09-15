@@ -1,1 +1,4 @@
-{:deps {datalevin/datalevin {:local/root "./../target/datalevin-0.5.11.jar"}}}
+{:deps
+ {datalevin/datalevin {:local/root "./../target/datalevin-0.5.11.jar"}}
+                                        ;{datalevin/datalevin {:mvn/version "0.5.11"}}
+ }
