@@ -90,20 +90,21 @@ Datalevin can be installed with different methods, depending on how you plan to 
 The core of Datalevin is a Clojure library, simply add it to your project as a dependency
 and start using it!
 
-If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
-`deps.edn`, declare the dependency on Datalevin:
-
-```Clojure
-{:deps
- {datalevin/datalevin {:mvn/version "0.5.12"}}}
-```
-
 If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
 [datalevin "0.5.12"]
 ```
+
+If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
+`deps.edn`, declare the dependency like so:
+
+```Clojure
+{:deps {datalevin/datalevin {:mvn/version "0.5.12"}
+        com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
+```
+
 
 ### Native Command Line Tool
 

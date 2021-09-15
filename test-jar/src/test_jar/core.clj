@@ -49,3 +49,6 @@
   (d/close conn)
 
   (println "Success!"))
+
+(defn -main [& args]
+  (run {}))
