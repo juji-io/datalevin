@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.10
 ### Added
 - Release artifact `org.clojars.huahaiy/datalevin-native` on clojars, for
   depending on Datalevin while compiling GraalVM native image. User
