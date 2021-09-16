@@ -22,6 +22,7 @@
                  [org.lmdbjava/lmdbjava]
                  [org.clojure/test.check]
                  [org.bouncycastle/bcprov-jdk15on]
+                 [com.github.clj-easy/graal-build-time]
                  [babashka/babashka.pods]]
   :javac-options ["--release" "11"]
   :aot [#"^datalevin.*"]

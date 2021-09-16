@@ -11,6 +11,7 @@ fi
 
 export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
+# export DTLV_LIB_EXTRACT_DIR=/tmp
 
 clojure -X:uberjar :jar target/test-jar.jar
 
@@ -18,5 +19,7 @@ clojure -X:uberjar :jar target/test-jar.jar
 "$GRAALVM_HOME/bin/native-image" \
     -jar target/test-jar.jar \
     jar-test
+
+# -H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR} \
 
 ./jar-test

@@ -39,8 +39,16 @@ build time](https://github.com/clj-easy/graal-docs#class-initialization),
 otherwise, native image build will fail due to link errors. During the native
 image build time, our class initialization code extracts native libraries from
 the `datalevin-native` jar and put them in the GraalVM's default `CLibraryPath`
-for the platform (e.g. `${GRAALVM_HOME}/lib/svm/clibraries/linux-amd64/`). Make
-sure you have write permission for the directory.
+for the platform (e.g. `${GRAALVM_HOME}/lib/svm/clibraries/linux-amd64/`). The
+files will be deleted on JVM exit.
+
+If you are uncomfortable with writing the default location or lack the write
+permission for that directory, you can set an environment variable
+`DTLV_LIB_EXTRACT_DIR` in the shell doing the native image build, and the native
+libraries will then be put there instead. If so, you must also add
+`-H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR}` option in your native image command
+line. The directory referred to by the environment variable must exist and is
+writable.
 
 For CI/CD, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)

@@ -64,10 +64,13 @@ public final class Lib {
      */
     public static final class Directives implements CContext.Directives {
         static {
-            final String EXTRACT_DIR =
+            final String extractEnv = getenv("DTLV_LIB_EXTRACT_DIR");
+            final String defaultCLibPath =
                 OptionUtils
                 .flatten(",", SubstrateOptions.CLibraryPath.getValue())
                 .get(0);
+            final String EXTRACT_DIR =
+                extractEnv == null ? defaultCLibPath : extractEnv;
 
             final String arch = getProperty("os.arch");
             final boolean arch64 = "x64".equals(arch) || "amd64".equals(arch)

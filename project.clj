@@ -25,6 +25,7 @@
                          [persistent-sorted-set "0.1.4"]
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
+                         [com.github.clj-easy/graal-build-time "0.1.0"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions

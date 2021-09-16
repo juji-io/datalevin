@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Added
+- `DTLV_LIB_EXTRACT_DIR` environment variable to allow customization of native
+  libraries extraction location.
+### Improved
+- Use clj-easy/graal-build-time, in anticipation of GraalVM 22.
+
 ## 0.5.13
 
 ### Improved
