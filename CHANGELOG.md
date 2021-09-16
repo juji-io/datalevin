@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.13
 
 ### Improved
 - Better robust jar layout for `org.clojars.huahaiy/datalevin-native`
