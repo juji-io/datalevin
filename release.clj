@@ -41,9 +41,11 @@
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
     (update-file "test-jar/deps.edn" old->new)
+    (update-file "test-jar/project.clj" old->new)
     (update-file "doc/dtlv.md" old->new)
     (update-file "src/datalevin/main.clj" old->new)
     (update-file "native/project.clj"  old->new)
+    (update-file "native/test-jar/deps.edn"  old->new)
     (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
@@ -52,7 +54,10 @@
   (sh "lein" "test")
   (println "\n\n[ Testing jar ]\n")
   (sh "lein" "jar")
-  (sh "test-jar/test.sh"))
+  (sh "test-jar/test.sh")
+  (println "\n\n[ Testing native jar ]\n")
+  (sh "lein" "jar" :dir "native")
+  (sh "./test.sh" :dir "native/test-jar"))
 
 (defn make-commit []
   (println "\n\n[ Making a commit ]\n")
@@ -60,9 +65,11 @@
       "CHANGELOG.md"
       "project.clj"
       "test-jar/deps.edn"
+      "test-jar/project.clj"
       "doc/dtlv.md"
       "src/datalevin/main.clj"
       "native/project.clj"
+      "native/test-jar/deps.edn"
       "native/README.md"
       "README.md")
 

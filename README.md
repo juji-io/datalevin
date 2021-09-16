@@ -105,7 +105,6 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
         com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
 ```
 
-
 ### Native Command Line Tool
 
 A native command line tool is built to work with Datalevin databases in shell

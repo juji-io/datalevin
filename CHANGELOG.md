@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+### Improved
+- Better robust jar layout for `org.clojars.huahaiy/datalevin-native`
+
 ## 0.5.10
 ### Added
 - Release artifact `org.clojars.huahaiy/datalevin-native` on clojars, for

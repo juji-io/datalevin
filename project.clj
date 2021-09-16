@@ -8,9 +8,9 @@
   :managed-dependencies [[org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
-                         [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.2.0"]
-                         [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.2.0"]
-                         [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.2.0"]
+                         [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]
+                         [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.4.2"]
+                         [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
                          [babashka/babashka.pods "0.0.1"]
                          [com.fasterxml.jackson.core/jackson-core "2.12.5"]
                          [com.cognitect/transit-clj "1.0.324"
@@ -43,11 +43,9 @@
   :source-paths ["src"]
   :java-source-paths ["src/java"]
   :profiles {:uberjar      {:main         datalevin.main
-                            :aot          [#"^datalevin.*"
-                                           pod.huahaiy.datalevin],
+                            :aot          [pod.huahaiy.datalevin],
                             :uberjar-name "main.uberjar.jar"}
              :test-uberjar {:main         datalevin.test
-                            :aot          [#"^datalevin.*"]
                             :uberjar-name "test.uberjar.jar"}
              :dev          {:source-paths      ["src" "native/src/clj" "test"]
                             :java-source-paths ["native/src/java"]

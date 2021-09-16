@@ -34,8 +34,10 @@ application into a GraalVM native image, you need to use `org.clojars.huahaiy/da
 code](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/)
 that are pre-compiled for various platforms.
 
-During the native image compilation, our initialization code extracts these
-native libraries from the jar and put them in the GraalVM's default
+Like all Clojure applications, class initialization needs to be done
+at image build time, otherwise, native image build will fail due to link errors.
+During the native image build time, our class initialization code extracts
+native libraries from the `datalevin-native` jar and put them in the GraalVM's default
 `CLibraryPath` for the platform (e.g.
 `${GRAALVM_HOME}/lib/svm/clibraries/linux-amd64/`). Make sure you have write
 permission for the directory.

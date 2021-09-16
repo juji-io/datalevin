@@ -139,8 +139,9 @@ public final class Lib {
 
                 final ClassLoader cl = currentThread().getContextClassLoader();
 
-                try (InputStream in
-                     = cl.getResourceAsStream(platform + "/" + name);
+                try (InputStream in = cl.getResourceAsStream("dtlvnative/"
+                                                             + platform + "/"
+                                                             + name);
                      OutputStream out = Files.newOutputStream(file.toPath())) {
                     requireNonNull(in, "Classpath resource not found");
                     int bytes;
