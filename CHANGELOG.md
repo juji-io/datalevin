@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.14
 ### Added
 - `DTLV_LIB_EXTRACT_DIR` environment variable to allow customization of native
   libraries extraction location.
