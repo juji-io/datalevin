@@ -109,14 +109,15 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 A native command line tool is built to work with Datalevin databases in shell
 scripting, e.g. database backup/compaction, data import/export,
-query/transaction execution, and so on. The same binary can run
-as a Datalevin server. This tool also includes a REPL with a Clojure
+query/transaction execution, server administration, and so on. The same binary
+can also run as a Datalevin server. This tool also includes a REPL with a Clojure
 interpreter, in addition to support all the database functions.
 
 Native Datalevin is built by compiling into [GraalVM native
-image](https://www.graalvm.org/reference-manual/native-image/), which should
-have better performance, for the native image version does not incur JNI
-overhead and uses a comparator written in C, see [blog
+image](https://www.graalvm.org/reference-manual/native-image/). In addition to
+fast starup time, it should also have better database performance, for the
+native image version does not incur JNI overhead and uses a comparator written
+in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
 Here is how to get native Datalevin:
@@ -188,8 +189,7 @@ Type 'dtlv help <command>' to read about a specific command.
 ```
 
 
-Starting `dtlv` without any arguments goes into the REPL, where you can type
-`(help)` to see a list of available functions:
+Starting `dtlv` without any arguments goes into the console:
 
 ```console
   Datalevin (version: 0.5.14)
@@ -220,6 +220,10 @@ schema                seek-datoms           stat                  tempid
 touch                 transact              transact!             transact-async
 transact-kv           unlisten!             update-schema         v
 with-conn
+
+In namespace datalevin.interpret
+
+exec-code             inter-fn              inter-fn?
 
 In namespace datalevin.client
 

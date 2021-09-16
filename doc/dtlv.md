@@ -94,6 +94,10 @@ touch                 transact              transact!             transact-async
 transact-kv           unlisten!             update-schema         v
 with-conn
 
+In namespace datalevin.interpret
+
+exec-code             inter-fn              inter-fn?
+
 In namespace datalevin.client
 
 assign-role           close-database        create-database       create-role
