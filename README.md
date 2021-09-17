@@ -146,7 +146,10 @@ scoop install datalevin
 
 #### Docker
 
-See `huahaiy/datalevin` image on [Docker hub](https://hub.docker.com/r/huahaiy/datalevin).
+```console
+docker pull huahaiy/datalevin
+```
+See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage.
 
 #### Direct Download
 
