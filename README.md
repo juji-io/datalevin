@@ -144,6 +144,10 @@ scoop bucket add extras
 scoop install datalevin
 ```
 
+#### Docker
+
+See `huahaiy/datalevin` image on [Docker hub](https://hub.docker.com/repository/docker/huahaiy/datalevin/general).
+
 #### Direct Download
 
 Or download the executable binary from github:
