@@ -9,11 +9,15 @@
 (use-fixtures :each server-fixture)
 
 (deftest basic-ops-test
-  (let [uri-str "dtlv://datalevin:datalevin@localhost/clientdb"
-        uri     (URI. uri-str)]
+  (let [uri-str  "dtlv://datalevin:datalevin@localhost/clientdb"
+        uri      (URI. uri-str)
+        uri-str1 "dtlv://MyName:d%40t%21@localhost/clientdb"
+        uri1     (URI. uri-str1)]
     (testing "uri parsing"
       (is (= (sut/parse-user-info uri)
              {:username "datalevin" :password "datalevin"}))
+      (is (= (sut/parse-user-info uri1)
+             {:username "MyName" :password "d@t!"}))
       (is (= (sut/parse-port uri) c/default-port))
       (is (= (sut/parse-db uri) "clientdb" )))
 

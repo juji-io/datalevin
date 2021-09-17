@@ -248,7 +248,10 @@
 (defn new-client
   "Create a new client that maintains a pooled connection to a remote
   Datalevin database server. This operation takes at least 0.5 seconds
-  in order to perform a secure password hashing that defeats cracking."
+  in order to perform a secure password hashing that defeats cracking.
+
+  Fields in the `uri-str` should be properly URL encoded, e.g. password
+  needs to be URL encoded."
   ([uri-str]
    (new-client uri-str nil))
   ([uri-str schema]
