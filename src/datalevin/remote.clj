@@ -19,7 +19,7 @@
   [s]
   (when s (str/starts-with? s "dtlv://")))
 
-(defn- redact-uri
+(defn redact-uri
   [s]
   (if (dtlv-uri? s)
     (str/replace-first s #"(dtlv://.+):(.+)@" "$1:***@")
@@ -36,8 +36,9 @@
   (dir [_] uri)
 
   (close [_]
-    (cl/normal-request client :close nil)
-    (cl/disconnect client))
+    (when-not (cl/disconnected? client)
+      (cl/normal-request client :close nil)
+      (cl/disconnect client)))
 
   (closed? [_] (cl/disconnected? client))
 
@@ -126,9 +127,13 @@
    (open uri-str nil))
   ([uri-str schema]
    (let [uri (URI. uri-str)]
-     (assert (cl/parse-db uri) "URI should contain a database name")
-     (->DatalogStore (redact-uri uri-str)
-                     (cl/new-client uri-str schema)))))
+     (if-let [db-name (cl/parse-db uri)]
+       (let [client (cl/new-client uri-str)
+             store  (or (get (cl/parse-query uri) "store")
+                        c/db-store-datalog)]
+         (cl/open-database client db-name store schema)
+         (->DatalogStore uri-str client))
+       (u/raise "URI should contain a database name" {})))))
 
 ;; remote kv store
 
@@ -166,7 +171,9 @@
                           (into-array String []))]
       (when-not (Files/exists dir (into-array LinkOption []))
         (u/create-dirs dest))
-      (Files/write file ^bytes bs (into-array StandardOpenOption []))))
+      (Files/write file ^bytes bs
+                   ^"[Ljava.nio.file.StandardOpenOption;"
+                   (into-array StandardOpenOption []))))
 
   (stat [db] (l/stat db nil))
   (stat [db dbi-name] (cl/normal-request client :stat [dbi-name]))
@@ -253,5 +260,8 @@
         uri-str (str uri-str
                      (if (cl/parse-query uri) "&" "?")
                      "store=" c/db-store-kv)]
-    (assert (cl/parse-db uri) "URI should contain a database name")
-    (->KVStore (redact-uri uri-str) (cl/new-client uri-str))))
+    (if-let [db-name (cl/parse-db uri)]
+      (let [client (cl/new-client uri-str)]
+        (cl/open-database client db-name c/db-store-kv)
+        (->KVStore uri-str client))
+      (u/raise "URI should contain a database name"))))

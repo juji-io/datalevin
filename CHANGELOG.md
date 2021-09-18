@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+
+### Changed
+- Allow a single client to have multiple open databases at the same time
+- Client does not open db implicitly, user needs to open db explicitly
+
+### Fixed
+- New `create-conn` should override the old, #65
+
 ## 0.5.14
 ### Added
 - `DTLV_LIB_EXTRACT_DIR` environment variable to allow customization of native

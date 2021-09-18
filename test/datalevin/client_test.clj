@@ -9,21 +9,21 @@
 (use-fixtures :each server-fixture)
 
 (deftest basic-ops-test
-  (let [uri-str  "dtlv://datalevin:datalevin@localhost/clientdb"
+  (let [uri-str  "dtlv://datalevin:datalevin@localhost"
         uri      (URI. uri-str)
-        uri-str1 "dtlv://MyName:d%40t%21@localhost/clientdb"
+        uri-str1 "dtlv://MyName:d%40t%21@localhost"
         uri1     (URI. uri-str1)]
     (testing "uri parsing"
       (is (= (sut/parse-user-info uri)
              {:username "datalevin" :password "datalevin"}))
       (is (= (sut/parse-user-info uri1)
              {:username "MyName" :password "d@t!"}))
-      (is (= (sut/parse-port uri) c/default-port))
-      (is (= (sut/parse-db uri) "clientdb" )))
+      (is (= (sut/parse-port uri) c/default-port)))
 
     (let [client (sut/new-client uri-str)]
       (testing "fresh server after the superuser connecting to a db"
         (is (= (sut/list-users client) ["datalevin"]))
+        (sut/open-database client "clientdb" "datalog")
         (is (= (sut/list-databases client)
                (sut/list-databases-in-use client)
                ["clientdb"]))
@@ -96,7 +96,8 @@
             (is (thrown? Exception (sut/list-user-roles client2 "juji"))))))
 
       (testing "db is forcibly closed by superuser, then dropped"
-        (let [client3 (sut/new-client "dtlv://juji:new-secret@localhost/hr")]
+        (let [client3 (sut/new-client "dtlv://juji:new-secret@localhost")]
+          (sut/open-database client3 "hr" "kv")
           (is (= (count (sut/list-databases-in-use client)) 2))
           (is (thrown? Exception (sut/drop-database client "hr")))
 

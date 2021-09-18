@@ -235,15 +235,18 @@
   (disconnected? [client]
     (closed-pool? pool)))
 
-(defn- init-db
-  [client db store schema]
-  (let [{:keys [type]}
-        (request client (if (= store c/db-store-datalog)
-                          (cond-> {:type :open :db-name db}
-                            schema (assoc :schema schema))
-                          {:type :open-kv :db-name db}))]
-    (when (= type :error-response)
-      (u/raise "Unable to open database:" db {}))))
+(defn open-database
+  "Open a database. `db-type` can be \"datalog\" or \"kv\""
+  ([client db-name db-type]
+   (open-database client db-name db-type nil))
+  ([client db-name db-type schema]
+   (let [{:keys [type]}
+         (request client (if (= db-type c/db-store-kv)
+                           {:type :open-kv :db-name db-name}
+                           (cond-> {:type :open :db-name db-name}
+                             schema (assoc :schema schema))))]
+     (when (= type :error-response)
+       (u/raise "Unable to open database:" db-name {})))))
 
 (defn new-client
   "Create a new client that maintains a pooled connection to a remote
@@ -252,21 +255,14 @@
 
   Fields in the `uri-str` should be properly URL encoded, e.g. password
   needs to be URL encoded."
-  ([uri-str]
-   (new-client uri-str nil))
-  ([uri-str schema]
-   (let [uri                         (URI. uri-str)
-         {:keys [username password]} (parse-user-info uri)
-         host                        (.getHost uri)
-         port                        (parse-port uri)
-         db                          (parse-db uri)
-         store                       (or (get (parse-query uri) "store")
-                                         c/db-store-datalog)
-         client-id                   (authenticate host port username password)
-         pool                        (new-connectionpool host port client-id)
-         client                      (->Client uri pool client-id)]
-     (when db (init-db client db store schema))
-     client)))
+  [uri-str]
+  (let [uri                         (URI. uri-str)
+        {:keys [username password]} (parse-user-info uri)
+        host                        (.getHost uri)
+        port                        (parse-port uri)
+        client-id                   (authenticate host port username password)
+        pool                        (new-connectionpool host port client-id)]
+    (->Client uri pool client-id)))
 
 (defn ^:no-doc normal-request
   "Send request to server and returns results. Does not use the
