@@ -45,13 +45,17 @@ the preferred operation system tools, e.g. systemd on Linux, Launch Daemon on
 MacOS, or sc.exe on Windows. Packagers are welcomed to package Datalevin server
 on the preferred platforms.
 
-For remote access, username and password is required on the connection URI.
+For remote access, username and password is required on the connection URI. Make
+sure username and password are URL encoded strings on the URI.
+
 When a client (for now, just the Datalevin library itself) opens a Datalevin database
 using a connection URI, i.e.
-"dtlv://&lt;username&gt;:&lt;password&gt;@&lt;hostname&gt;:&lt;port&gt;/&lt;db-name&gt;?store=datalog|kv",
-instead of a local path name, a connection to the server is attempted. `db-name`
-should be unique on the server. `store` parameter is optional, default is
-`datalog`. A database will be created if it does not yet exist.
+`dtlv://<username>:<password>@<hostname>:<port>/<db-name>?store=datalog|kv`,
+instead of a local path name, a connection to the server is attempted.
+
+`db-name` should be unique on the server. `store` parameter is optional, default
+is `datalog`, the other option is `kv` for key-value store. A database will be
+created if it does not yet exist.
 
 The same functions for local databases work on the remote databases, i.e. any
 function that takes a `dir` argument can also take a connection URI string,
