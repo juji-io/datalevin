@@ -55,7 +55,7 @@ instead of a local path name, a connection to the server is attempted.
 
 `db-name` should be unique on the server. `store` parameter is optional, default
 is `datalog`, the other option is `kv` for key-value store. A database will be
-created if it does not yet exist.
+created if it does not yet exist. `port` is optional, default is `8898`.
 
 The same functions for local databases work on the remote databases, i.e. any
 function that takes a `dir` argument can also take a connection URI string,
