@@ -358,11 +358,13 @@
                           :user/notes [{:note/text "do this do that"}
                                        {:note/text "enough is enough!"}]}])
     (is (= (-> (sut/entity @conn [:user/email "eva@example.com"])
-               sut/touch)
-           {:user/email "eva@example.com",
-            :user/notes #{#:db{:id 6} #:db{:id 5}},
-            :db/id      4}))
+               sut/touch
+               :user/email)
+           "eva@example.com"))
+    (sut/close conn)
     (s/stop server)))
+
+(= #{{:db/id 3} {:db/id 2}} #{{:db/id 2} {:db/id 3}})
 
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))

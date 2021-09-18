@@ -813,7 +813,10 @@
         (when existing-db? (db-eid sys-conn db-name))
         "Don't have permission to open database"
         (let [dir   (db-dir server db-name)
-              store (or (get-store server dir)
+              store (or (when-let [ds (get-store server dir)]
+                          (when schema
+                            (st/set-schema ds schema))
+                          ds)
                         (case db-type
                           :datalog   (st/open dir schema)
                           :key-value (l/open-kv dir)))]
