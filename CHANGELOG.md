@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.15
 
 ### Changed
 - Allow a single client to have multiple open databases at the same time
