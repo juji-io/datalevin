@@ -364,8 +364,6 @@
     (sut/close conn)
     (s/stop server)))
 
-(= #{{:db/id 3} {:db/id 2}} #{{:db/id 2} {:db/id 3}})
-
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
         conn  (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity

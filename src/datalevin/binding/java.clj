@@ -238,9 +238,10 @@
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
   (close-kv [_]
-    (.close-pool pool)
-    (when-not (.isClosed env) (.sync env true))
-    (.close env)
+    (when-not (.isClosed env)
+      (.sync env true)
+      (.close-pool pool)
+      (.close env))
     nil)
 
   (closed-kv? [_]

@@ -169,7 +169,7 @@
   [^URI uri]
   (let [path (.getPath uri)]
     (when-not (or (s/blank? path) (= path "/"))
-      (subs path 1))))
+      (u/lisp-case (subs path 1)))))
 
 (defn ^:no-doc parse-query
   [^URI uri]
@@ -240,13 +240,14 @@
   ([client db-name db-type]
    (open-database client db-name db-type nil))
   ([client db-name db-type schema]
-   (let [{:keys [type]}
+   (let [{:keys [type message]}
          (request client (if (= db-type c/db-store-kv)
                            {:type :open-kv :db-name db-name}
                            (cond-> {:type :open :db-name db-name}
                              schema (assoc :schema schema))))]
      (when (= type :error-response)
-       (u/raise "Unable to open database:" db-name {})))))
+       (u/raise "Unable to open database:" db-name
+                {:message message})))))
 
 (defn new-client
   "Create a new client that maintains a pooled connection to a remote

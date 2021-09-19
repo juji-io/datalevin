@@ -31,26 +31,34 @@
   (q [store query inputs]
     "For special case of queries with a single remote store as source"))
 
-(deftype DatalogStore [^String uri ^Client client]
+(deftype DatalogStore [^String uri
+                       ^String db-name
+                       ^Client client]
   IStore
   (dir [_] uri)
 
   (close [_]
     (when-not (cl/disconnected? client)
-      (cl/normal-request client :close nil)
+      (cl/normal-request client :close [db-name])
       (cl/disconnect client)))
 
-  (closed? [_] (cl/disconnected? client))
+  (closed? [_]
+    (if (cl/disconnected? client)
+      true
+      (cl/normal-request client :closed? [db-name])))
 
-  (last-modified [_] (cl/normal-request client :last-modified nil))
+  (last-modified [_]
+    (cl/normal-request client :last-modified [db-name]))
 
-  (schema [_] (cl/normal-request client :schema nil))
+  (schema [_] (cl/normal-request client :schema [db-name]))
 
-  (rschema [_] (cl/normal-request client :rschema nil))
+  (rschema [_] (cl/normal-request client :rschema [db-name]))
 
-  (set-schema [_ new-schema] (cl/normal-request client :set-schema [new-schema]))
+  (set-schema [_ new-schema]
+    (cl/normal-request client :set-schema [db-name new-schema]))
 
-  (init-max-eid [_] (cl/normal-request client :init-max-eid nil))
+  (init-max-eid [_]
+    (cl/normal-request client :init-max-eid [db-name]))
 
   (swap-attr [this attr f]
     (s/swap-attr this attr f nil nil))
@@ -58,68 +66,72 @@
     (s/swap-attr this attr f x nil))
   (swap-attr [_ attr f x y]
     (let [frozen-f (nippy/fast-freeze f)]
-      (cl/normal-request client :swap-attr [attr frozen-f x y])))
+      (cl/normal-request client :swap-attr [db-name attr frozen-f x y])))
 
-  (datom-count [_ index] (cl/normal-request client :datom-count [index]))
+  (datom-count [_ index]
+    (cl/normal-request client :datom-count [db-name index]))
 
   (load-datoms [_ datoms]
     (let [{:keys [type message]}
           (if (< (count datoms) c/+wire-datom-batch-size+)
-            (cl/request client {:type :load-datoms :mode :request
-                                :args [datoms]})
-            (cl/copy-in client {:type :load-datoms :mode :copy-in}
+            (cl/request client {:type :load-datoms
+                                :mode :request
+                                :args [db-name datoms]})
+            (cl/copy-in client {:type :load-datoms
+                                :mode :copy-in
+                                :args [db-name]}
                         datoms c/+wire-datom-batch-size+))]
       (when (= type :error-response)
         (u/raise "Error loading datoms to server:" message {:uri uri}))))
 
-  (fetch [_ datom] (cl/normal-request client :fetch [datom]))
+  (fetch [_ datom] (cl/normal-request client :fetch [db-name datom]))
 
   (populated? [_ index low-datom high-datom]
-    (cl/normal-request client :populated? [index low-datom high-datom]))
+    (cl/normal-request client :populated? [db-name index low-datom high-datom]))
 
   (size [_ index low-datom high-datom]
-    (cl/normal-request client :size [index low-datom high-datom]))
+    (cl/normal-request client :size [db-name index low-datom high-datom]))
 
   (head [_ index low-datom high-datom]
-    (cl/normal-request client :head [index low-datom high-datom]))
+    (cl/normal-request client :head [db-name index low-datom high-datom]))
 
   (tail [_ index high-datom low-datom]
-    (cl/normal-request client :tail [index high-datom low-datom]))
+    (cl/normal-request client :tail [db-name index high-datom low-datom]))
 
   (slice [_ index low-datom high-datom]
-    (cl/normal-request client :slice [index low-datom high-datom]))
+    (cl/normal-request client :slice [db-name index low-datom high-datom]))
 
   (rslice [_ index high-datom low-datom]
-    (cl/normal-request client :rslice [index high-datom low-datom]))
+    (cl/normal-request client :rslice [db-name index high-datom low-datom]))
 
   (size-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :size-filter
-                         [index frozen-pred low-datom high-datom])))
+                         [db-name index frozen-pred low-datom high-datom])))
 
   (head-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :head-filter
-                         [index frozen-pred low-datom high-datom])))
+                         [db-name index frozen-pred low-datom high-datom])))
 
   (tail-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :tail-filter
-                         [index frozen-pred high-datom low-datom])))
+                         [db-name index frozen-pred high-datom low-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :slice-filter
-                         [index frozen-pred low-datom high-datom])))
+                         [db-name index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :rslice-filter
-                         [index frozen-pred high-datom low-datom])))
+                         [db-name index frozen-pred high-datom low-datom])))
 
   IRemoteQuery
   (q [_ query inputs]
-    (cl/normal-request client :q [query inputs])))
+    (cl/normal-request client :q [db-name query inputs])))
 
 (defn open
   "Open a remote Datalog store"
@@ -132,38 +144,44 @@
              store  (or (get (cl/parse-query uri) "store")
                         c/db-store-datalog)]
          (cl/open-database client db-name store schema)
-         (->DatalogStore uri-str client))
+         (->DatalogStore uri-str db-name client))
        (u/raise "URI should contain a database name" {})))))
 
 ;; remote kv store
 
-(deftype KVStore [^String uri ^Client client]
+(deftype KVStore [^String uri
+                  ^String db-name
+                  ^Client client]
   ILMDB
-
   (dir [_] uri)
 
   (close-kv [_]
-    (cl/normal-request client :close-kv nil)
+    (cl/normal-request client :close-kv [db-name])
     (cl/disconnect client))
 
-  (closed-kv? [_] (cl/disconnected? client))
+  (closed-kv? [_]
+    (if (cl/disconnected? client)
+      true
+      (cl/normal-request client :closed-kv? [db-name])))
 
   (open-dbi [db dbi-name]
     (l/open-dbi db dbi-name c/+max-key-size+ c/+default-val-size+))
   (open-dbi [db dbi-name key-size]
     (l/open-dbi db dbi-name key-size c/+default-val-size+))
   (open-dbi [_ dbi-name key-size val-size]
-    (cl/normal-request client :open-dbi [dbi-name key-size val-size]))
+    (cl/normal-request client :open-dbi [db-name dbi-name key-size val-size]))
 
-  (clear-dbi [db dbi-name] (cl/normal-request client :clear-dbi [dbi-name]))
+  (clear-dbi [db dbi-name]
+    (cl/normal-request client :clear-dbi [db-name dbi-name]))
 
-  (drop-dbi [db dbi-name] (cl/normal-request client :drop-dbi [dbi-name]))
+  (drop-dbi [db dbi-name]
+    (cl/normal-request client :drop-dbi [db-name dbi-name]))
 
-  (list-dbis [db] (cl/normal-request client :list-dbis nil))
+  (list-dbis [db] (cl/normal-request client :list-dbis [db-name]))
 
   (copy [db dest] (l/copy db dest false))
   (copy [db dest compact?]
-    (let [bs   (->> (cl/normal-request client :copy [compact?])
+    (let [bs   (->> (cl/normal-request client :copy [db-name compact?])
                     (apply str)
                     u/decode-base64)
           dir  (Paths/get dest (into-array String []))
@@ -176,16 +194,19 @@
                    (into-array StandardOpenOption []))))
 
   (stat [db] (l/stat db nil))
-  (stat [db dbi-name] (cl/normal-request client :stat [dbi-name]))
+  (stat [db dbi-name] (cl/normal-request client :stat [db-name dbi-name]))
 
-  (entries [db dbi-name] (cl/normal-request client :entries [dbi-name]))
+  (entries [db dbi-name] (cl/normal-request client :entries [db-name dbi-name]))
 
   (transact-kv [db txs]
     (let [{:keys [type message]}
           (if (< (count txs) c/+wire-datom-batch-size+)
-            (cl/request client {:type :transact-kv :mode :request
-                                :args [txs]})
-            (cl/copy-in client {:type :transact-kv :mode :copy-in}
+            (cl/request client {:type :transact-kv
+                                :mode :request
+                                :args [db-name txs]})
+            (cl/copy-in client {:type :transact-kv
+                                :mode :copy-in
+                                :args [db-name]}
                         txs c/+wire-datom-batch-size+))]
       (when (= type :error-response)
         (u/raise "Error transacting kv to server:" message {:uri uri}))))
@@ -197,7 +218,8 @@
   (get-value [db dbi-name k k-type v-type]
     (l/get-value db dbi-name k k-type v-type true))
   (get-value [db dbi-name k k-type v-type ignore-key?]
-    (cl/normal-request client :get-value [dbi-name k k-type v-type ignore-key?]))
+    (cl/normal-request client :get-value
+                       [db-name dbi-name k k-type v-type ignore-key?]))
 
   (get-first [db dbi-name k-range]
     (l/get-first db dbi-name k-range :data :data false))
@@ -206,7 +228,8 @@
   (get-first [db dbi-name k-range k-type v-type]
     (l/get-first db dbi-name k-range k-type v-type false))
   (get-first [db dbi-name k-range k-type v-type ignore-key?]
-    (cl/normal-request client :get-first [dbi-name k-range k-type v-type ignore-key?]))
+    (cl/normal-request client :get-first
+                       [db-name dbi-name k-range k-type v-type ignore-key?]))
 
   (get-range [db dbi-name k-range]
     (l/get-range db dbi-name k-range :data :data false))
@@ -215,12 +238,13 @@
   (get-range [db dbi-name k-range k-type v-type]
     (l/get-range db dbi-name k-range k-type v-type false))
   (get-range [db dbi-name k-range k-type v-type ignore-key?]
-    (cl/normal-request client :get-range [dbi-name k-range k-type v-type ignore-key?]))
+    (cl/normal-request client :get-range
+                       [db-name dbi-name k-range k-type v-type ignore-key?]))
 
   (range-count [db dbi-name k-range]
     (l/range-count db dbi-name k-range :data))
   (range-count [db dbi-name k-range k-type]
-    (cl/normal-request client :range-count [dbi-name k-range k-type]))
+    (cl/normal-request client :range-count [db-name dbi-name k-range k-type]))
 
   (get-some [db dbi-name pred k-range]
     (l/get-some db dbi-name pred k-range :data :data false))
@@ -231,7 +255,7 @@
   (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :get-some
-                         [dbi-name frozen-pred k-range k-type v-type
+                         [db-name dbi-name frozen-pred k-range k-type v-type
                           ignore-key?])))
 
   (range-filter [db dbi-name pred k-range]
@@ -243,7 +267,7 @@
   (range-filter [db dbi-name pred k-range k-type v-type ignore-key?]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :range-filter
-                         [dbi-name frozen-pred k-range k-type v-type
+                         [db-name dbi-name frozen-pred k-range k-type v-type
                           ignore-key?])))
 
   (range-filter-count [db dbi-name pred k-range]
@@ -251,7 +275,7 @@
   (range-filter-count [db dbi-name pred k-range k-type]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :range-filter-count
-                         [dbi-name frozen-pred k-range k-type]))))
+                         [db-name dbi-name frozen-pred k-range k-type]))))
 
 (defn open-kv
   "Open a remote kv store."
@@ -263,5 +287,5 @@
     (if-let [db-name (cl/parse-db uri)]
       (let [client (cl/new-client uri-str)]
         (cl/open-database client db-name c/db-store-kv)
-        (->KVStore uri-str client))
+        (->KVStore uri-str db-name client))
       (u/raise "URI should contain a database name"))))
