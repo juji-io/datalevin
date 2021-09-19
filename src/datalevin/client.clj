@@ -236,7 +236,7 @@
     (closed-pool? pool)))
 
 (defn open-database
-  "Open a database. `db-type` can be \"datalog\" or \"kv\""
+  "Open a database on server. `db-type` can be \"datalog\" or \"kv\""
   ([client db-name db-type]
    (open-database client db-name db-type nil))
   ([client db-name db-type schema]

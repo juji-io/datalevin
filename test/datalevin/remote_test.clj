@@ -5,6 +5,7 @@
             [datalevin.interpret :as i]
             [datalevin.datom :as d]
             [datalevin.core :as dc]
+            [datalevin.db :as db]
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.util :as u]
@@ -307,3 +308,27 @@
              (l/get-range cstore "z" [:all] :long :long)))
       (l/close-kv cstore))
     (l/close-kv rstore)))
+
+(deftest same-client-multiple-dbs-test
+  (let [uri-str "dtlv://datalevin:datalevin@localhost"
+        client  (cl/new-client uri-str)
+        store1  (sut/open-kv client (str uri-str "/mykv"))
+        store2  (sut/open client (str uri-str "/mydt") nil)]
+    (is (instance? datalevin.remote.KVStore store1))
+    (is (instance? datalevin.remote.DatalogStore store2))
+
+    (dc/open-dbi store1 "a")
+    (dc/transact-kv store1 [[:put "a" "hello" "world"]])
+    (is (= (dc/get-value store1 "a" "hello") "world"))
+    (dc/close-kv store1)
+
+    (let [conn (dc/conn-from-db (db/new-db store2))]
+      (dc/transact! conn [{:hello "world"}])
+      (is (= (dc/q '[:find ?w .
+                     :where
+                     [_ :hello ?w]]
+                   @conn)
+             "world"))
+      (dc/close conn))
+
+    ))
