@@ -126,6 +126,30 @@
           :sales/total           23}]]
     (sut/transact! conn txs)
     (is (= 83 (count (sut/datoms @conn :eavt))))
+    (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
+                         :in $ ?ns
+                         :where
+                         [?e :db/ident ?v]
+                         [(namespace ?v) ?ns]]
+                       @conn "sales"))
+           #{{:db/id                   4,
+              :db/ident                :sales/top-product-use,
+              :juji.data/origin-column 4}
+             {:db/id                   3,
+              :db/ident                :sales/total,
+              :juji.data/display?      true,
+              :juji.data/origin-column 3,
+              :sales/year              2018,
+              :juji.data/synonyms      ["payment" "spending" "total"]}
+             {:db/id                   2,
+              :db/ident                :sales/country,
+              :juji.data/origin-column 1,
+              :juji.data/references    :regions/country}
+             {:db/id                   1,
+              :db/ident                :sales/company,
+              :juji.data/display?      true,
+              :juji.data/origin-column 0,
+              :juji.data/synonyms      ["company" "customer"]}}))
     (is (= (sut/q '[:find [?v ...]
                     :in $ ?a
                     :where
@@ -294,6 +318,30 @@
           :sales/total           23}]]
     (sut/transact! conn txs)
     (is (= 83 (count (sut/datoms @conn :eavt))))
+    (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
+                         :in $ ?ns
+                         :where
+                         [?e :db/ident ?v]
+                         [(namespace ?v) ?ns]]
+                       @conn "sales"))
+           #{{:db/id                   4,
+              :db/ident                :sales/top-product-use,
+              :juji.data/origin-column 4}
+             {:db/id                   3,
+              :db/ident                :sales/total,
+              :juji.data/display?      true,
+              :juji.data/origin-column 3,
+              :sales/year              2018,
+              :juji.data/synonyms      ["payment" "spending" "total"]}
+             {:db/id                   2,
+              :db/ident                :sales/country,
+              :juji.data/origin-column 1,
+              :juji.data/references    :regions/country}
+             {:db/id                   1,
+              :db/ident                :sales/company,
+              :juji.data/display?      true,
+              :juji.data/origin-column 0,
+              :juji.data/synonyms      ["company" "customer"]}}))
     (is (= (sut/q '[:find [?v ...]
                     :in $ ?a
                     :where
