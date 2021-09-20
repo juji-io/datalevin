@@ -329,6 +329,4 @@
                      [_ :hello ?w]]
                    @conn)
              "world"))
-      (dc/close conn))
-
-    ))
+      (dc/close conn))))

@@ -42,7 +42,7 @@ port is 8898). The mode change is transparent. In the local mode, a data
 directory path, e.g. `/data/mydb`, is needed for database location, whereas a
 URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the client/server
 mode. The same set of core functions work in both modes. In addition,
-full-fledged role based access control is provided on the server.
+full-fledged role based access control (RBAC) is provided on the server.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,

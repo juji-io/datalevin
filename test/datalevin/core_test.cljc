@@ -127,10 +127,11 @@
     (sut/transact! conn txs)
     (is (= 83 (count (sut/datoms @conn :eavt))))
     (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
-                         :in $ ?ns
+                         :in $ ?ns-in
                          :where
                          [?e :db/ident ?v]
-                         [(namespace ?v) ?ns]]
+                         [(namespace ?v) ?ns]
+                         [(= ?ns ?ns-in)]]
                        @conn "sales"))
            #{{:db/id                   4,
               :db/ident                :sales/top-product-use,
@@ -319,10 +320,11 @@
     (sut/transact! conn txs)
     (is (= 83 (count (sut/datoms @conn :eavt))))
     (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
-                         :in $ ?ns
+                         :in $ ?ns-in
                          :where
                          [?e :db/ident ?v]
-                         [(namespace ?v) ?ns]]
+                         [(namespace ?v) ?ns]
+                         [(= ?ns ?ns-in)]]
                        @conn "sales"))
            #{{:db/id                   4,
               :db/ident                :sales/top-product-use,
@@ -410,6 +412,239 @@
                :user/email)
            "eva@example.com"))
     (sut/close conn)
+    (s/stop server)))
+
+(deftest remote-local-identity-test
+  (let [server     (s/create {:port c/default-port
+                              :root (u/tmp-dir
+                                      (str "remote-schema-test-"
+                                           (UUID/randomUUID)))})
+        _          (s/start server)
+        schema
+        {:juji.data/original-form {:db/valueType :db.type/string, :db/aid 1},
+         :retail/sku              {:db/valueType :db.type/string, :db/aid 2},
+         :retail/color            {:db/valueType :db.type/string, :db/aid 3},
+         :juji.data/nominal?      {:db/valueType :db.type/boolean, :db/aid 4},
+         :juji.data/no-index?     {:db/valueType :db.type/boolean, :db/aid 5},
+         :juji.data/display?      {:db/valueType :db.type/boolean, :db/aid 6},
+         :retail/type             {:db/valueType :db.type/string, :db/aid 7},
+         :juji.data/origin-column {:db/valueType :db.type/long, :db/aid 8},
+         :juji.data/id?           {:db/valueType :db.type/boolean, :db/aid 9},
+         :retail/brand            {:db/valueType :db.type/string, :db/aid 10},
+         :juji.data/unit          {:db/valueType   :db.type/string,
+                                   :db/cardinality :db.cardinality/many, :db/aid 11},
+         :db/ident                {:db/unique    :db.unique/identity,
+                                   :db/valueType :db.type/keyword, :db/aid 0},
+         :retail/material         {:db/valueType :db.type/string, :db/aid 12},
+         :juji.data/of-attribute  {:db/valueType :db.type/keyword, :db/aid 13},
+         :retail/price            {:db/valueType :db.type/double, :db/aid 14},
+         :juji.data/references    {:db/valueType :db.type/keyword, :db/aid 15},
+         :juji.data/value         {:db/valueType :db.type/string, :db/aid 16},
+         :retail/gender           {:db/valueType :db.type/string, :db/aid 17},
+         :retail/country          {:db/valueType :db.type/string, :db/aid 18},
+         :juji.data/synonyms      {:db/valueType   :db.type/string,
+                                   :db/cardinality :db.cardinality/many, :db/aid 19}}
+        txs
+        [{:juji.data/synonyms      ["sku" "apparel" "garment" "clothe" "item"],
+          :juji.data/display?      true,
+          :db/ident                :retail/sku,
+          :juji.data/origin-column 0,
+          :juji.data/original-form "sku",
+          :db/id                   -1}
+         {:juji.data/synonyms      ["company" "designer"],
+          :juji.data/display?      true,
+          :db/ident                :retail/brand,
+          :juji.data/origin-column 1,
+          :juji.data/original-form "brand",
+          :db/id                   -2}
+         {:juji.data/synonyms      [],
+          :juji.data/display?      true,
+          :db/ident                :retail/type,
+          :juji.data/origin-column 2,
+          :juji.data/original-form "Type",
+          :db/id                   -3}
+         {:db/ident                :retail/gender,
+          :juji.data/origin-column 3,
+          :juji.data/original-form "Gender",
+          :db/id                   -4}
+         {:db/ident                :retail/color,
+          :juji.data/origin-column 4,
+          :juji.data/original-form "color",
+          :db/id                   -5}
+         {:db/ident                :retail/price,
+          :juji.data/origin-column 5,
+          :juji.data/original-form "price ($)",
+          :db/id                   -6}
+         {:juji.data/synonyms      ["make in"],
+          :db/ident                :retail/country,
+          :juji.data/origin-column 6,
+          :juji.data/original-form "country",
+          :db/id                   -7}
+         {:db/ident                :retail/material,
+          :juji.data/origin-column 7,
+          :juji.data/original-form "material",
+          :db/id                   -8}
+         {:juji.data/synonyms      [],
+          :juji.data/of-attribute  :retail/type,
+          :juji.data/value         "short",
+          :juji.data/original-form "Shorts",
+          :db/id                   -9}
+         {:juji.data/synonyms      [],
+          :juji.data/of-attribute  :retail/type,
+          :juji.data/value         "short",
+          :juji.data/original-form "Shorts",
+          :db/id                   -10}
+         {:retail/sku      "s123456",
+          :retail/color    "white",
+          :retail/type     "tshirt",
+          :retail/brand    "365life",
+          :db/id           -11,
+          :retail/material "cotton",
+          :retail/price    9.99,
+          :retail/gender   "male",
+          :retail/country  "japan"}
+         {:retail/sku      "s234567",
+          :retail/color    "red",
+          :retail/type     "short",
+          :retail/brand    "alfani",
+          :db/id           -12,
+          :retail/material "cotton",
+          :retail/price    19.99,
+          :retail/gender   "male",
+          :retail/country  "japan"}
+         {:retail/sku      "s345678",
+          :retail/color    "silver",
+          :retail/type     "short",
+          :retail/brand    "charter club",
+          :db/id           -13,
+          :retail/material "denim",
+          :retail/price    12.99,
+          :retail/gender   "male",
+          :retail/country  "japan"}
+         {:retail/sku      "s456789",
+          :retail/color    "black",
+          :retail/type     "dress",
+          :retail/brand    "giani bernini",
+          :db/id           -14,
+          :retail/material "silk",
+          :retail/price    45.98,
+          :retail/gender   "female",
+          :retail/country  "germany"}
+         {:retail/sku      "s567890",
+          :retail/color    "silver",
+          :retail/type     "dress",
+          :retail/brand    "acorn",
+          :db/id           -15,
+          :retail/material "silk",
+          :retail/price    23.69,
+          :retail/gender   "female",
+          :retail/country  "germany"}
+         {:retail/sku      "s678901",
+          :retail/color    "white",
+          :retail/type     "skirt",
+          :retail/brand    "artology",
+          :db/id           -16,
+          :retail/material "denim",
+          :retail/price    19.99,
+          :retail/gender   "female",
+          :retail/country  "u.s."}
+         {:retail/sku      "s123457",
+          :retail/color    "red",
+          :retail/type     "tshirt",
+          :retail/brand    "365life",
+          :db/id           -17,
+          :retail/material "cotton",
+          :retail/price    9.99,
+          :retail/gender   "male",
+          :retail/country  "japan"}
+         {:retail/sku      "f123456",
+          :retail/color    "red",
+          :retail/type     "tshirt",
+          :retail/brand    "365life",
+          :db/id           -18,
+          :retail/material "cotton",
+          :retail/price    9.99,
+          :retail/gender   "female",
+          :retail/country  "japan"}
+         {:retail/sku      "f123457",
+          :retail/color    "pink",
+          :retail/type     "tshirt",
+          :retail/brand    "365life",
+          :db/id           -19,
+          :retail/material "cotton",
+          :retail/price    9.99,
+          :retail/gender   "female",
+          :retail/country  "japan"}
+         {:retail/sku      "f123458",
+          :retail/color    "lime green",
+          :retail/type     "tshirt",
+          :retail/brand    "365life",
+          :db/id           -20,
+          :retail/material "cotton",
+          :retail/price    8.99,
+          :retail/gender   "female",
+          :retail/country  "u.s."}
+         {:retail/sku      "f4567890",
+          :retail/color    "silver",
+          :retail/type     "tshirt",
+          :retail/brand    "acorn",
+          :db/id           -21,
+          :retail/material "silk",
+          :retail/price    19.99,
+          :retail/gender   "female",
+          :retail/country  "germany"}
+         {:retail/sku      "s6789020",
+          :retail/color    "white",
+          :retail/type     "skirt",
+          :retail/brand    "artology",
+          :db/id           -22,
+          :retail/material "denim",
+          :retail/price    49.99,
+          :retail/gender   "female",
+          :retail/country  "u.s."}]
+        r-uri-str  "dtlv://datalevin:datalevin@localhost/xyz"
+        l-dir      (u/tmp-dir (str "identity-test-" (UUID/randomUUID)))
+        conn       (sut/create-conn r-uri-str schema)
+        local-conn (sut/create-conn l-dir schema)]
+    (sut/transact! conn txs)
+    (sut/transact! local-conn txs)
+    (is (= (sut/schema conn) (sut/schema local-conn)))
+    (is (= (sut/datoms @conn :eav) (sut/datoms @local-conn :eav)))
+    (is (= (sut/q '[:find ?e
+                    :in $ ?m
+                    :where
+                    [?e :retail/material ?m]]
+                  @conn "cotton")
+           (sut/q '[:find ?e
+                    :in $ ?m
+                    :where
+                    [?e :retail/material ?m]]
+                  @local-conn "cotton")))
+    (is (= (sut/pull @conn '[*] 22) (sut/pull @local-conn '[*] 22)))
+    (is (= (sut/q '[:find [?e ...]
+                    :in $ ?ns-in
+                    :where
+                    [(namespace ?v) ?ns]
+                    [(= ?ns ?ns-in)]
+                    [?e :juji.data/of-attribute ?v]]
+                  @local-conn "retail")
+           (sut/q '[:find [?e ...]
+                    :in $ ?ns-in
+                    :where
+                    [(namespace ?v) ?ns]
+                    [(= ?ns ?ns-in)]
+                    [?e :juji.data/of-attribute ?v]]
+                  @conn "retail")))
+    (is (= (sut/q '[:find [?e ...]
+                    :in $
+                    :where
+                    [?e :db/ident]] @conn)
+           (sut/q '[:find [?e ...]
+                    :in $
+                    :where
+                    [?e :db/ident]] @local-conn)))
+    (sut/close conn)
+    (sut/close local-conn)
     (s/stop server)))
 
 (deftest instant-update-test
