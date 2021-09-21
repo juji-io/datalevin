@@ -149,7 +149,8 @@
   (copy-in [client req data batch-size]
     "Copy data to the server. `req` is a request type message,
      `data` is a sequence, `batch-size` decides how to partition the data
-      so that each batch fits in buffers along the way")
+      so that each batch fits in buffers along the way. The response could
+      also initiate a copy out")
   (disconnect [client])
   (disconnected? [client]))
 
@@ -178,17 +179,6 @@
          (map #(s/split % #"="))
          (into {}))))
 
-(defn- copy-in*
-  [conn req data batch-size ]
-  (try
-    (doseq [batch (partition batch-size batch-size nil data)]
-      (send-only conn batch))
-    (send-n-receive conn {:type :copy-done})
-    (catch Exception e
-      (send-n-receive conn {:type :copy-fail})
-      (u/raise "Unable to copy in:" (ex-message e)
-               {:req req :count (count data)}))))
-
 (defn- copy-out [conn req]
   (try
     (let [data (transient [])]
@@ -203,6 +193,20 @@
                 (recur))))))
     (catch Exception e
       (u/raise "Unable to receive copy:" (ex-message e) {:req req}))))
+
+(defn- copy-in*
+  [conn req data batch-size ]
+  (try
+    (doseq [batch (partition batch-size batch-size nil data)]
+      (send-only conn batch))
+    (let [{:keys [type] :as result} (send-n-receive conn {:type :copy-done})]
+      (if (= type :copy-out-response)
+        (copy-out conn req)
+        result))
+    (catch Exception e
+      (send-n-receive conn {:type :copy-fail})
+      (u/raise "Unable to copy in:" (ex-message e)
+               {:req req :count (count data)}))))
 
 (deftype ^:no-doc Client [^URI uri
                           ^ConnectionPool pool

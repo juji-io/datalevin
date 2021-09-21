@@ -12,13 +12,14 @@
     :refer [combine-hashes case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
    [datalevin.remote :as r]
-   [datalevin.bits :as b])
+   [datalevin.datom :as dd])
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
   #?(:clj
      (:import [datalevin.datom Datom]
               [datalevin.storage IStore]
+              [datalevin.remote DatalogStore]
               [datalevin.lru LRU]
               [datalevin.bits Retrieved]
               [java.util.concurrent ConcurrentHashMap])))
@@ -689,7 +690,7 @@
              (filter (fn [^Datom d] (component? db (.-a d))))
              (map (fn [^Datom d] [:db.fn/retractEntity (.-v d)]))) datoms))
 
-(declare transact-tx-data)
+(declare local-transact-tx-data)
 
 (defn- retry-with-tempid [initial-report report es tempid upserted-eid]
   (if (contains? (:tempids initial-report) tempid)
@@ -701,7 +702,7 @@
     (let [tempids' (-> (:tempids report)
                        (assoc tempid upserted-eid))
           report'  (assoc initial-report :tempids tempids')]
-      (transact-tx-data report' es))))
+      (local-transact-tx-data report' es))))
 
 (def builtin-fn?
   #{:db.fn/call
@@ -717,11 +718,8 @@
 (def de-entity? (delay (resolve 'datalevin.impl.entity/entity?)))
 (def de-entity->txs (delay (resolve 'datalevin.impl.entity/->txs)))
 
-(defn transact-tx-data [initial-report initial-es]
-  (when-not (or (nil? initial-es)
-                (sequential? initial-es))
-    (raise "Bad transaction data " initial-es ", expected sequential collection"
-           {:error :transact/syntax, :tx-data initial-es}))
+(defn- local-transact-tx-data
+  [initial-report initial-es]
   (let [rp (loop [report (-> initial-report
                              (update :db-after transient))
                   es     initial-es]
@@ -938,3 +936,20 @@
       (s/load-datoms pstore (:tx-data rp))
       (refresh-cache pstore))
     rp))
+
+(defn transact-tx-data
+  [initial-report initial-es]
+  (when-not (or (nil? initial-es)
+                (sequential? initial-es))
+    (raise "Bad transaction data " initial-es ", expected sequential collection"
+           {:error :transact/syntax, :tx-data initial-es}))
+  (let [store (.-store ^DB (:db-before initial-report))]
+    (if (and (instance? DatalogStore store)
+             (not (some @de-entity? initial-es)))
+      (let [res            (r/tx-data store initial-es)
+            [datoms pairs] (split-with dd/datom? res)]
+        (assoc initial-report
+               :db-after (new-db store)
+               :tx-data datoms
+               :tempids (into {} pairs)))
+      (local-transact-tx-data initial-report initial-es))))

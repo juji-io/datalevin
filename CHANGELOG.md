@@ -1,13 +1,17 @@
 # Change Log
 
-## 0.5.15
+## WIP
+### Improved
+- Do most of transaction data preparation remotely to reduce traffic
+### Fixed
+- Handle more cases of function serialization, fix #66
 
+## 0.5.15
 ### Changed
 - Allow a single client to have multiple open databases at the same time
 - Client does not open db implicitly, user needs to open db explicitly
-
 ### Fixed
-- New `create-conn` should override the old, #65
+- New `create-conn` should override the old, fix #65
 
 ## 0.5.14
 ### Added

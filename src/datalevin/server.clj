@@ -900,6 +900,11 @@
          (assoc :open-dbs (keys (:dbs m)))
          (select-keys [:ip :username :roles :permissions :open-dbs]))]))
 
+(defn- encode-tx-result
+  "encode transaction report into a vector"
+  [{:keys [tx-data tempids]}]
+  )
+
 ;; BEGIN message handlers
 
 (defn- authentication
@@ -1294,6 +1299,31 @@
           :request (normal-dt-store-handler load-datoms)
           (u/raise "Missing :mode when loading datoms" {}))))))
 
+(defn- tx-data
+  [^Server server ^SelectionKey skey {:keys [mode args]}]
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          {:keys [dbs]}       (get-client server client-id)
+          db-name             (nth args 0)
+          dt-store            (dbs db-name)
+          sys-conn            (.-sys-conn server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
+        "Don't have permission to alter the database"
+        (let [txs (log/spy (case mode
+                             :copy-in (copy-in server skey)
+                             :request (nth args 1)
+                             (u/raise "Missing :mode when transact data" {})))
+              db  (get-db server db-name)
+              rp  (d/with db txs)
+              ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
+              res (select-keys rp [:tx-data :tempids])]
+          (if (< ct c/+wire-datom-batch-size+)
+            (write-message skey {:type :command-complete :result res})
+            (let [{:keys [tx-data tempids]} res]
+              (copy-out skey (into tx-data tempids)
+                        c/+wire-datom-batch-size+))))))))
+
 (defn- fetch
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler fetch)))
@@ -1542,6 +1572,7 @@
    'swap-attr
    'datom-count
    'load-datoms
+   'tx-data
    'fetch
    'populated?
    'size

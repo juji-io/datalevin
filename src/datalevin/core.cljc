@@ -178,7 +178,7 @@ Only usable for debug output.
     (when-let [rdb (first dbs)]
       (let [rstore (.-store ^DB rdb)]
         (when (and (= 1 (count dbs)) (instance? DatalogStore rstore))
-          [rstore (replace {rdb :remote-db-placeholder} inputs)])))))
+          [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
 
 (defn q
   "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).

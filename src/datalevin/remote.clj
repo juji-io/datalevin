@@ -25,11 +25,31 @@
     (str/replace-first s #"(dtlv://.+):(.+)@" "$1:***@")
     s))
 
+(defn- load-datoms*
+  [client db-name datoms datom-type]
+  (let [t (if (= datom-type :txs)
+            :tx-data
+            :load-datoms)
+        {:keys [type message]}
+        (if (< (count datoms) c/+wire-datom-batch-size+)
+          (cl/request client {:type t
+                              :mode :request
+                              :args [db-name datoms]})
+          (cl/copy-in client {:type t
+                              :mode :copy-in
+                              :args [db-name]}
+                      datoms c/+wire-datom-batch-size+))]
+    (when (= type :error-response)
+      (u/raise "Error loading datoms to server:" message {}))))
+
 ;; remote datalog store
 
-(defprotocol IRemoteQuery
+(defprotocol IRemote
   (q [store query inputs]
-    "For special case of queries with a single remote store as source"))
+    "For special case of queries with a single remote store as source,
+     send the query and inputs over to remote server")
+  (tx-data [store data]
+    "Send to remote server the data from call to `db/transact-tx-data`"))
 
 (deftype DatalogStore [^String uri
                        ^String db-name
@@ -71,17 +91,7 @@
     (cl/normal-request client :datom-count [db-name index]))
 
   (load-datoms [_ datoms]
-    (let [{:keys [type message]}
-          (if (< (count datoms) c/+wire-datom-batch-size+)
-            (cl/request client {:type :load-datoms
-                                :mode :request
-                                :args [db-name datoms]})
-            (cl/copy-in client {:type :load-datoms
-                                :mode :copy-in
-                                :args [db-name]}
-                        datoms c/+wire-datom-batch-size+))]
-      (when (= type :error-response)
-        (u/raise "Error loading datoms to server:" message {:uri uri}))))
+    (load-datoms* client db-name datoms :raw))
 
   (fetch [_ datom] (cl/normal-request client :fetch [db-name datom]))
 
@@ -128,9 +138,11 @@
       (cl/normal-request client :rslice-filter
                          [db-name index frozen-pred high-datom low-datom])))
 
-  IRemoteQuery
+  IRemote
   (q [_ query inputs]
-    (cl/normal-request client :q [db-name query inputs])))
+    (cl/normal-request client :q [db-name query inputs]))
+  (tx-data [store data]
+    (load-datoms* client db-name data :txs)))
 
 (defn open
   "Open a remote Datalog store"

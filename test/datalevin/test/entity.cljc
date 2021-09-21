@@ -170,7 +170,7 @@
                           :root (u/tmp-dir
                                   (str "entity-test-" (UUID/randomUUID)))})
         _      (s/start server)
-        db     (-> (d/empty-db "dtlv://datalevin:datalevin@localhost/entity"
+        db     (-> (d/empty-db "dtlv://datalevin:datalevin@localhost/entity-test"
                                {:user/handle  #:db {:valueType :db.type/string
                                                     :unique    :db.unique/identity}
                                 :user/friends #:db{:valueType   :db.type/ref
