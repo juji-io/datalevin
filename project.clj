@@ -43,27 +43,33 @@
                  [persistent-sorted-set]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]
-  :profiles {:uberjar      {:main         datalevin.main
-                            :aot          [pod.huahaiy.datalevin],
-                            :uberjar-name "main.uberjar.jar"}
-             :test-uberjar {:main         datalevin.test
-                            :uberjar-name "test.uberjar.jar"}
-             :dev          {:source-paths      ["src" "test"]
-                            :java-source-paths ["native/src/java"]
-                            :dependencies
-                            [[org.clojure/test.check]
-                             [org.clojure/tools.cli]
-                             [org.bouncycastle/bcprov-jdk15on]
-                             [com.taoensso/timbre]
-                             [com.cognitect/transit-clj]
-                             [nrepl/bencode]
-                             [babashka/babashka.pods]
-                             [com.clojure-goes-fast/clj-memory-meter]
-                             [org.graalvm.nativeimage/svm]]
-                            :global-vars
-                            {*print-namespace-maps* false
-                             *unchecked-math*       :warn-on-boxed
-                             *warn-on-reflection*   true}}}
+  :profiles {:uberjar        {:main           datalevin.main
+                              :aot            [datalevin.main]
+                              :jar-inclusions [#"graal"]
+                              :dependencies
+                              [[nrepl/bencode]
+                               [org.clojure/tools.cli]
+                               [org.bouncycastle/bcprov-jdk15on]
+                               [com.taoensso/timbre]]}
+             :native-uberjar {:aot          [pod.huahaiy.datalevin],
+                              :uberjar-name "main.uberjar.jar"}
+             :test-uberjar   {:main         datalevin.test
+                              :uberjar-name "test.uberjar.jar"}
+             :dev            {:source-paths      ["src" "test"]
+                              :java-source-paths ["native/src/java"]
+                              :dependencies
+                              [[org.clojure/test.check]
+                               [org.clojure/tools.cli]
+                               [org.bouncycastle/bcprov-jdk15on]
+                               [com.taoensso/timbre]
+                               [nrepl/bencode]
+                               [babashka/babashka.pods]
+                               [com.clojure-goes-fast/clj-memory-meter]
+                               [org.graalvm.nativeimage/svm]]
+                              :global-vars
+                              {*print-namespace-maps* false
+                               *unchecked-math*       :warn-on-boxed
+                               *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"

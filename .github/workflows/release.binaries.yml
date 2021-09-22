@@ -19,6 +19,24 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install Lein
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: brew install leiningen
+          linux: echo "lein is already installed"
+
+      - name: Run Tests then Uberjar
+        run: |
+          lein test
+          lein uberjar
+
+      - name: Upload Uberjar
+        uses: shogo82148/actions-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
+          overwrite: true
+
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
         with:
@@ -27,12 +45,6 @@ jobs:
       - name: Install Native Image
         run: |
           gu install native-image
-
-      - name: Install Lein
-        uses: knicknic/os-specific-run@v1.0.3
-        with:
-          macos: brew install leiningen
-          linux: echo "lein is already installed"
 
       - name: Build Native Datalevin
         run: |

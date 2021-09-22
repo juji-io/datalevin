@@ -1,6 +1,8 @@
 # Change Log
 
 ## WIP
+### Added
+- JVM uberjar release for download
 ### Changed
 - JVM library is now released as Java8 compatible, #69
 ### Improved

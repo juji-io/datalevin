@@ -17,7 +17,7 @@ MAIN_JAR="target/main.uberjar.jar"
 TEST_JAR="target/test.uberjar.jar"
 
 lein clean
-lein uberjar
+lein with-profile native-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" -jar "$MAIN_JAR" ${app_name}
 

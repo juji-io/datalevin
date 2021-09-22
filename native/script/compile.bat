@@ -23,7 +23,7 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-call ..\lein.bat uberjar
+call ..\lein.bat with-profile native-uberjar uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^

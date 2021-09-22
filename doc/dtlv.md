@@ -139,12 +139,13 @@ Here Doc is used here to give input:
 
 ```console
 $ dtlv exec << EOF
-> (def conn (get-conn "/tmp/test-db"))
-> (q '[:find ?g :where [__ :name ?g]] @conn)
-> EOF
-#'user/conn
-#{["hello"]}
+(def conn (get-conn "/tmp/test-db"))
+(transact! conn [{:name "world"}])
+(q '[:find ?g :where [_ :name ?g]] @conn)
+(close conn)
+EOF
 ```
+
 `dtlv` is also the tool for database maintenance.
 etc.
 
