@@ -129,8 +129,7 @@
   (github-release)
   (sh "lein" "clean")
   (sh "lein" "deploy" "clojars")
-  (sh "lein" "clean" :dir "native")
-  (sh "lein" "deploy" "clojars" :dir "native")
+  (sh "script/deploy" :dir "native")
   (System/exit 0))
 
 (-main)

@@ -640,8 +640,8 @@
   "write a message to channel"
   [^SelectionKey skey msg]
   (write-to-bf skey msg)
-  (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
-        ^SocketChannel                 ch (.channel skey)]
+  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
+        ^SocketChannel ch              (.channel skey)]
     (.flip write-bf)
     (p/send-ch ch write-bf)))
 

@@ -28,7 +28,6 @@
                            nil)
       (is (= (count (cl/list-user-permissions client "someone")) 3))
 
-
       (cl/create-user client "viewer" "secret")
       (cl/grant-permission client :datalevin.role/viewer
                            :datalevin.server/view

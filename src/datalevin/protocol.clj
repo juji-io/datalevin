@@ -99,10 +99,11 @@
 (defn send-ch
   "Send all data in buffer to channel, will block if channel is busy"
   [^SocketChannel ch ^ByteBuffer bf ]
-  (loop []
-    (when (.hasRemaining bf)
-      (.write ch bf)
-      (recur))))
+  (locking bf
+    (loop []
+      (when (.hasRemaining bf)
+        (.write ch bf)
+        (recur)))))
 
 (defn write-message-blocking
   "Write a message in blocking mode"
@@ -165,9 +166,11 @@
               (= readn -1) (do (.close ch)
                                (u/raise "Socket channel is closed." {}))))))
       (let [readn (.read ch bf)]
+        (println "readn:" readn)
         (cond
           (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                          (if msg [msg bf] (recur bf)))
+          (= readn 0)  (recur bf)
           (= readn -1) (do (.close ch)
                            (u/raise "Socket channel is closed." {})))))))
 
