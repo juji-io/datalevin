@@ -48,11 +48,8 @@
                             :uberjar-name "main.uberjar.jar"}
              :test-uberjar {:main         datalevin.test
                             :uberjar-name "test.uberjar.jar"}
-             :dev          {:source-paths      ["src" "native/src/clj" "test"]
+             :dev          {:source-paths      ["src" "test"]
                             :java-source-paths ["native/src/java"]
-                            :jvm-opts
-                            ["-Djdk.attach.allowAttachSelf"
-                             "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                             :dependencies
                             [[org.clojure/test.check]
                              [org.clojure/tools.cli]
@@ -69,14 +66,6 @@
                              *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
-  :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-             "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-             "--illegal-access=permit"
-             "-Dclojure.compiler.direct-linking=true"
-             "-Djdk.attach.allowAttachSelf"
-             "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
-  :javac-options ["--release" "8"]
-
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password

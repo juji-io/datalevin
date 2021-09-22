@@ -3,7 +3,7 @@
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
   :parent-project {:path    "../project.clj"
-                   :inherit [:managed-dependencies :profiles :jvm-opts
+                   :inherit [:managed-dependencies :profiles
                              :deploy-repositories :global-vars
                              :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
@@ -24,6 +24,12 @@
                  [org.bouncycastle/bcprov-jdk15on]
                  [com.github.clj-easy/graal-build-time]
                  [babashka/babashka.pods]]
+  :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+             "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+             "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+             "--illegal-access=permit"
+             "-Djdk.attach.allowAttachSelf"
+             "-Dclojure.compiler.direct-linking=true"]
   :javac-options ["--release" "11"]
   :aot [#"^datalevin.*"]
   :source-paths ["../src" "../test"]

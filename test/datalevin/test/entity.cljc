@@ -168,7 +168,7 @@
 (deftest test-transactable-entity-with-remote-store
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                  (str "entity-test-" (UUID/randomUUID)))})
+                                     (str "entity-test-" (UUID/randomUUID)))})
         _      (s/start server)
         db     (-> (d/empty-db "dtlv://datalevin:datalevin@localhost/entity-test"
                                {:user/handle  #:db {:valueType :db.type/string

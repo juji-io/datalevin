@@ -651,8 +651,8 @@
 (deftest entity-fn-test
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                  (str "entity-fn-test-"
-                                       (UUID/randomUUID)))})
+                                     (str "entity-fn-test-"
+                                          (UUID/randomUUID)))})
         _      (s/start server)
 
         f1 (i/inter-fn [db eid] (sut/entity db eid))
@@ -683,6 +683,24 @@
     (sut/close l-conn)
     (s/stop server)))
 
+(deftest datalog-larger-tx-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                     (str "large-tx-test-"
+                                          (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
+        end    100000
+        conn   (sut/create-conn dir)
+        vs     (range 0 end)
+        txs    (mapv (fn [a v] {a v}) (repeat :id) vs)]
+    (sut/transact! conn txs)
+    (is (= (sut/q '[:find (count ?e)
+                    :where [?e :id]]
+                  @conn)
+           [[end]]))
+    (sut/close conn)
+    (s/stop server)))
 
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))

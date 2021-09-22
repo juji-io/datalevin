@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Changed
+- JVM library is now released as Java8 compatible, #69
+### Improved
+- Auto switch to local transaction preparation if something is wrong with remote
+  preparation (e.g. problem with serialization)
+
 ## 0.5.16
 ### Improved
 - Do most of transaction data preparation remotely to reduce traffic

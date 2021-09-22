@@ -199,8 +199,8 @@
       (coll? a) (if (= a b)
                   0
                   1)
-      #?@(:clj [(bytes? a) (Arrays/compare ^bytes a ^bytes b)])
-      :else (compare a b))
+      #?@(:clj [(bytes? a) (if (Arrays/equals ^bytes a ^bytes b) 0 1)])
+      :else     (compare a b))
     -1))
 
 (def nil-cmp (nil-check-cmp-fn compare))

@@ -954,12 +954,14 @@
     (raise "Bad transaction data " initial-es ", expected sequential collection"
            {:error :transact/syntax, :tx-data initial-es}))
   (let [store (.-store ^DB (:db-before initial-report))]
-    (if (and (instance? DatalogStore store)
-             (not (some @de-entity? initial-es)))
-      (let [res            (r/tx-data store initial-es)
-            [datoms pairs] (split-with datom? res)]
-        (assoc initial-report
-               :db-after (new-db store)
-               :tx-data datoms
-               :tempids (into {} pairs)))
+    (if (instance? DatalogStore store)
+      (try
+        (let [res            (r/tx-data store initial-es)
+              [datoms pairs] (split-with datom? res)]
+          (assoc initial-report
+                 :db-after (new-db store)
+                 :tx-data datoms
+                 :tempids (into {} pairs)))
+        (catch Exception _
+          (local-transact-tx-data initial-report initial-es)))
       (local-transact-tx-data initial-report initial-es))))
