@@ -105,6 +105,8 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
         com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
 ```
 
+This JVM library supports Java 8 and above.
+
 ### Native Command Line Tool
 
 A native command line tool is built to work with Datalevin databases in shell
@@ -276,6 +278,18 @@ user=> (d/close conn)
 nil
 ```
 
+### JVM Command Line Tool
+
+A JVM
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.17/datalevin-0.5.17-standalone.jar)
+is downloadable to use as the command line tool, in case the pre-built native
+version above is not available for your platform. For example,
+
+```console
+java -jar datalevin-0.5.17-standalone.jar
+```
+This will start the Datalevin REPL.
+
 ### GraalVM Native Image
 
 If your application depends on the Datalevin library and you want to compile your
@@ -285,7 +299,8 @@ instead of `datalevin/datalevin` (they have the same version number) in your
 
 This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
-[note](https://github.com/juji-io/datalevin/tree/master/native).
+[note](https://github.com/juji-io/datalevin/tree/master/native). This native
+library supports JVM 11 and above.
 
 ## :tada: Library Usage
 
