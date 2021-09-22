@@ -4,7 +4,7 @@
 ### Added
 - JVM uberjar release for download
 ### Changed
-- JVM library is now released as Java8 compatible, #69
+- JVM library is now Java 8 compatible, #69
 ### Improved
 - Auto switch to local transaction preparation if something is wrong with remote
   preparation (e.g. problem with serialization)
