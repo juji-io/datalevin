@@ -41,6 +41,7 @@
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
     (update-file "test-jar/deps.edn" old->new)
+    (update-file "test-jar/test-uber.sh" old->new)
     (update-file "test-jar/project.clj" old->new)
     (update-file "doc/dtlv.md" old->new)
     (update-file "src/datalevin/main.clj" old->new)
@@ -52,15 +53,22 @@
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
   (sh "lein" "test")
+
   (println "\n\n[ Testing jar ]\n")
   (sh "lein" "jar")
   (sh "test-jar/test.sh")
+
   (println "\n\n[ Testing uberjar ]\n")
   (sh "lein" "uberjar")
   (sh "test-jar/test-uber.sh")
+
   (println "\n\n[ Testing native jar ]\n")
-  (sh "lein" "jar" :dir "native")
-  (sh "./test.sh" :dir "native/test-jar"))
+  (sh "script/jar" :dir "native")
+  (sh "./test.sh" :dir "native/test-jar")
+
+  (println "\n\n[ Testing native jar ]\n")
+  (sh "script/compile" :dir "native")
+  (sh "./dtlv-test" :dir "native"))
 
 (defn make-commit []
   (println "\n\n[ Making a commit ]\n")
@@ -68,6 +76,7 @@
       "CHANGELOG.md"
       "project.clj"
       "test-jar/deps.edn"
+      "test-jar/test-uber.sh"
       "test-jar/project.clj"
       "doc/dtlv.md"
       "src/datalevin/main.clj"
@@ -118,7 +127,9 @@
   (run-tests)
   (make-commit)
   (github-release)
+  (sh "lein" "clean")
   (sh "lein" "deploy" "clojars")
+  (sh "lein" "clean" :dir "native")
   (sh "lein" "deploy" "clojars" :dir "native")
   (System/exit 0))
 

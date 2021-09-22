@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -eou pipefail
+
+if [ -z "$GRAALVM_HOME" ]; then
+    echo "Please set GRAALVM_HOME"
+    exit 1
+fi
+
+export JAVA_HOME=$GRAALVM_HOME
+export PATH=$GRAALVM_HOME/bin:$PATH
+
+lein clean
+lein jar

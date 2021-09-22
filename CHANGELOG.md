@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.17
 ### Added
 - JVM uberjar release for download
 ### Changed
