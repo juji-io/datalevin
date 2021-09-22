@@ -11,7 +11,6 @@
            [datalevin.storage IStore]
            [datalevin.lmdb ILMDB]
            [java.nio.file Files Paths StandardOpenOption LinkOption]
-           [java.nio.file.attribute PosixFilePermissions FileAttribute]
            [java.net URI]))
 
 (defn dtlv-uri?
@@ -55,6 +54,9 @@
                        ^String db-name
                        ^Client client]
   IStore
+
+  (db-name [_] db-name)
+
   (dir [_] uri)
 
   (close [_]

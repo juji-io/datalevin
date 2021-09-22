@@ -1,6 +1,7 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
             [datalevin.server :as s]
+            [datalevin.interpret :as i]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest]])
@@ -646,6 +647,42 @@
     (sut/close conn)
     (sut/close local-conn)
     (s/stop server)))
+
+(deftest entity-fn-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "entity-fn-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        f1 (i/inter-fn [db eid] (sut/entity db eid))
+        f2 (i/inter-fn [db eid] (sut/touch (sut/entity db eid)))
+
+        end 3
+        vs  (range 0 end)
+        txs (mapv sut/datom (range c/e0 (+ c/e0 end)) (repeat :value) vs)
+
+        q '[:find ?ent :in $ ent :where [?e _ _] [(ent $ ?e) ?ent]]
+
+        uri    "dtlv://datalevin:datalevin@localhost/entity-fn"
+        r-conn (sut/get-conn uri)
+
+        dir    (u/tmp-dir (str "entity-fn-test-" (UUID/randomUUID)))
+        l-conn (sut/get-conn dir)]
+    (sut/transact! r-conn txs)
+    (sut/transact! l-conn txs)
+
+    (is (i/inter-fn? f1))
+    (is (i/inter-fn? f2))
+
+    (is (= (sut/q q @r-conn f1)
+           (sut/q q @l-conn sut/entity)))
+    (is (= (sut/q q @r-conn f2)
+           (sut/q q @l-conn (fn [db eid] (sut/touch (sut/entity db eid))))))
+    (sut/close r-conn)
+    (sut/close l-conn)
+    (s/stop server)))
+
 
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))

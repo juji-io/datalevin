@@ -73,12 +73,13 @@
   {:namespaces (user-facing-vars)
    :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
 
+(def ^:no-doc ctx (sci/init sci-opts))
+
 (defn exec-code
   "Execute code and print results. `code` is a string. Acceptable code includes
   Datalevin functions and Clojure core functions."
   [code]
-  (let [reader (sci/reader code)
-        ctx    (sci/init sci-opts)]
+  (let [reader (sci/reader code)]
     (sci/with-bindings {sci/ns @sci/ns}
       (loop []
         (let [next-form (sci/parse-next ctx reader)]
@@ -120,21 +121,21 @@
   interpreter whether the database is remote or local."
   [args & body]
   `(with-meta
-     (sci/eval-form (sci/init sci-opts) (fn ~args (do ~@body)))
+     (sci/eval-form ctx (fn ~args (do ~@body)))
      {:type   :datalevin/inter-fn
       :source ~(save-env (keys &env) &form)}))
 
 (defn inter-fn?
   "Return true if `x` is an `inter-fn`"
   [x]
-  (and (instance? clojure.lang.AFn x)
-       (= (:type (meta x)) :datalevin/inter-fn)))
+  (and ;(instance? clojure.lang.AFn x)
+    (= (:type (meta x)) :datalevin/inter-fn)))
 
 (defn- source->inter-fn
   "Convert a source form to get an inter-fn"
   [src]
   (with-meta
-    (sci/eval-form (sci/init sci-opts) src)
+    (sci/eval-form ctx src)
     {:type   :datalevin/inter-fn
      :source src}))
 
@@ -142,7 +143,7 @@
                      [^AFn x ^DataOutput out]
                      (if (inter-fn? x)
                        (nippy/freeze-to-out! out (:source (meta x)))
-                       (u/raise "Can only freeze an inter-fn" {})))
+                       (u/raise "Can only freeze an inter-fn" {:x x})))
 
 (nippy/extend-thaw :datalevin/inter-fn
                    [^DataInput in]

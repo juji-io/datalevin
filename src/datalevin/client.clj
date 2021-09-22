@@ -33,7 +33,7 @@
           (set! bf (b/allocate-buffer size))
           (send-n-receive this msg)))
       (catch Exception e
-        (u/raise "Error sending message and receiving response:"
+        (u/raise "Error sending message and receiving response: "
                  (ex-message e) {:msg msg}))))
 
   (send-only [this msg]
@@ -44,7 +44,7 @@
           (set! bf (b/allocate-buffer size))
           (send-only this msg)))
       (catch Exception e
-        (u/raise "Error sending message:" (ex-message e) {:msg msg}))))
+        (u/raise "Error sending message: " (ex-message e) {:msg msg}))))
 
   (receive [this]
     (try

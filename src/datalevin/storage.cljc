@@ -174,6 +174,7 @@
       (pred d))))
 
 (defprotocol IStore
+  (db-name [this] "Return the db-name, if it is a remote or server store")
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
   (closed? [this] "Return true if the storage is closed")
@@ -223,14 +224,18 @@
 
 (declare insert-data delete-data)
 
-(deftype Store [lmdb
+(deftype Store [db-name
+                lmdb
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
                 ^:volatile-mutable attrs
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore
-  (dir [this]
+
+  (db-name [_] db-name)
+
+  (dir [_]
     (lmdb/dir lmdb))
 
   (close [_]
@@ -485,6 +490,8 @@
   ([dir]
    (open dir nil))
   ([dir schema]
+   (open dir schema nil))
+  ([dir schema db-name]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
@@ -494,7 +501,8 @@
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
      (let [schema (init-schema lmdb schema)]
-       (->Store lmdb
+       (->Store db-name
+                lmdb
                 schema
                 (schema->rschema schema)
                 (init-attrs schema)

@@ -12,7 +12,7 @@
     :refer [combine-hashes case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
    [datalevin.remote :as r]
-   [datalevin.datom :as dd])
+   [datalevin.client :as cl])
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
@@ -22,8 +22,10 @@
               [datalevin.remote DatalogStore]
               [datalevin.lru LRU]
               [datalevin.bits Retrieved]
+              [java.net URI]
               [java.util.concurrent ConcurrentHashMap])))
 
+(defonce dbs (atom {}))
 
 ;;;;;;;;;; Searching
 
@@ -293,12 +295,16 @@
     (validate-schema-key a :db/cardinality (:db/cardinality kv) #{:db.cardinality/one :db.cardinality/many})))
 
 (defn- open-store
-  [dir schema]
-  {:pre [(or (nil? schema) (map? schema))]}
-  (validate-schema schema)
+  [dir schema db-name]
   (if (r/dtlv-uri? dir)
-    (r/open dir schema)
-    (s/open dir schema)))
+    (let [uri     (URI. dir)
+          db-name (cl/parse-db uri)
+          store   (r/open dir schema)]
+      (swap! dbs assoc db-name store)
+      store)
+    (let [store (s/open dir schema db-name)]
+      (when db-name (swap! dbs assoc db-name store))
+      store)))
 
 (defn new-db
   [^IStore store]
@@ -315,16 +321,20 @@
 (defn ^DB empty-db
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
-  ([dir schema]
+  ([dir schema] (empty-db dir schema nil))
+  ([dir schema db-name]
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
-   (new-db (open-store dir schema))))
+   (new-db (open-store dir schema db-name))))
 
 (defn ^DB init-db
-  ([datoms] (init-db datoms nil nil))
-  ([datoms dir] (init-db datoms dir nil))
-  ([datoms dir schema]
-   (let [store (open-store dir schema)]
+  ([datoms] (init-db datoms nil nil nil))
+  ([datoms dir] (init-db datoms dir nil nil))
+  ([datoms dir schema] (init-db datoms dir schema nil))
+  ([datoms dir schema db-name]
+   {:pre [(or (nil? schema) (map? schema))]}
+   (validate-schema schema)
+   (let [store (open-store dir schema db-name)]
      (s/load-datoms store datoms)
      (new-db store))))
 
@@ -947,7 +957,7 @@
     (if (and (instance? DatalogStore store)
              (not (some @de-entity? initial-es)))
       (let [res            (r/tx-data store initial-es)
-            [datoms pairs] (split-with dd/datom? res)]
+            [datoms pairs] (split-with datom? res)]
         (assoc initial-report
                :db-after (new-db store)
                :tx-data datoms

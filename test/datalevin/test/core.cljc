@@ -76,8 +76,9 @@
    (defn server-fixture
      [f]
      (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
-           server (srv/create {:port c/default-port
-                               :root dir})]
+           server (srv/create {:port    c/default-port
+                               :root    dir
+                               :verbose true})]
        (try
          (srv/start server)
          (f)

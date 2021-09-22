@@ -530,10 +530,10 @@
   (add-client [server ip client-id username]
     (let [roles (user-roles sys-conn username)
           perms (user-permissions sys-conn username)]
-      (log/debug "Added client from:" ip
-                 "for user:" username
-                 "with roles:" (pr-str roles)
-                 "with permissions:" (pr-str perms))
+      (log/info "Added client from:" ip
+                "for user:" username
+                "with roles:" (pr-str roles)
+                "with permissions:" (pr-str perms))
       (set! clients
             (assoc clients client-id
                    {:ip          ip
@@ -544,7 +544,7 @@
                     :permissions perms}))))
 
   (remove-client [_ client-id]
-    (log/debug "Removed client:" client-id)
+    (log/info "Removed client:" client-id)
     (set! clients (dissoc clients client-id)))
 
   (update-client [_ client-id f]
@@ -564,6 +564,7 @@
 
   (add-store [server dir store]
     (let [db-name (store->db-name server store)]
+      (log/info "Open database:" db-name)
       (set! stores (assoc stores dir store))
       (when (instance? IStore store)
         (set! dt-dbs (assoc dt-dbs db-name (db/new-db store))))))
@@ -571,6 +572,7 @@
   (remove-store [server dir]
     (when-let [store (get-store server dir)]
       (let [db-name (store->db-name server store)]
+        (log/info "Close database:" db-name)
         (if-let [db (get-db server db-name)]
           (do (db/close-db db)
               (set! dt-dbs (dissoc dt-dbs db-name)))
@@ -818,7 +820,7 @@
                 (kv-store ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
-(defn- open-store
+(defn- open-server-store
   "Open a store. NB. stores are left open"
   [^Server server ^SelectionKey skey {:keys [db-name schema]} db-type]
   (wrap-error
@@ -838,7 +840,7 @@
                             (st/set-schema ds schema))
                           ds)
                         (case db-type
-                          :datalog   (st/open dir schema)
+                          :datalog   (st/open dir schema db-name)
                           :key-value (l/open-kv dir)))]
           (add-store server dir store)
           (update-client server client-id #(update % :dbs assoc db-name store))
@@ -1235,7 +1237,7 @@
 (defn- open
   "Open a datalog store."
   [^Server server ^SelectionKey skey message]
-  (open-store server skey message c/dl-type))
+  (open-server-store server skey message c/dl-type))
 
 (defn- close
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1310,10 +1312,10 @@
       (wrap-permission
         ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
         "Don't have permission to alter the database"
-        (let [txs (log/spy (case mode
-                             :copy-in (copy-in server skey)
-                             :request (nth args 1)
-                             (u/raise "Missing :mode when transact data" {})))
+        (let [txs (case mode
+                    :copy-in (copy-in server skey)
+                    :request (nth args 1)
+                    (u/raise "Missing :mode when transact data" {}))
               db  (get-db server db-name)
               rp  (d/with db txs)
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
@@ -1408,7 +1410,7 @@
 
 (defn- open-kv
   [^Server server ^SelectionKey skey message]
-  (open-store server skey message c/kv-type))
+  (open-server-store server skey message c/kv-type))
 
 (defn- close-kv
   [^Server server ^SelectionKey skey {:keys [args]}]

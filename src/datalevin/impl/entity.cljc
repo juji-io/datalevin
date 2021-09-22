@@ -2,8 +2,13 @@
   (:refer-clojure :exclude [keys get])
   (:require [#?(:cljs cljs.core :clj clojure.core) :as c]
             [datalevin.db :as db]
+            [datalevin.storage :as st]
             [datalevin.util :as u]
-            [clojure.set :as set]))
+            [taoensso.nippy :as nippy]
+            [clojure.set :as set])
+  (:import [datalevin.db DB]
+           [datalevin.storage IStore]
+           [java.io DataInput DataOutput]))
 
 (declare entity ->Entity equiv-entity lookup-entity touch entity->txs
          lookup-stage-then-entity)
@@ -14,7 +19,8 @@
             (keyword? eid))
     (db/entid db eid)))
 
-(defn entity [db eid]
+(defn entity
+  [db eid]
   (when-let [e (entid db eid)]
     (->Entity db e (volatile! false) (volatile! {}) {} {})))
 
@@ -296,4 +302,30 @@
       (vreset! (.-touched e) true)))
   e)
 
+(defn- load-cache [^Entity e cache]
+  (vreset! (.-cache e) cache)
+  (vreset! (.-touched e) true)
+  e)
+
 #?(:cljs (goog/exportSymbol "datalevin.impl.entity.Entity" Entity))
+
+(nippy/extend-freeze Entity :datalevin/entity
+                     [^Entity x ^DataOutput out]
+                     (nippy/freeze-to-out!
+                       out
+                       (let [^DB db  (.-db x)
+                             db-name (st/db-name ^IStore (.-store db))
+                             m       {:db/id   (.-eid x)
+                                      :db-name db-name}]
+                         (if @(.-touched x)
+                           (assoc m :touched true :cache @(.-cache x))
+                           m))))
+
+(nippy/extend-thaw :datalevin/entity
+                   [^DataInput in]
+                   (let [{:keys [db-name touched cache db/id]}
+                         (nippy/thaw-from-in! in)
+                         e (entity (@db/dbs db-name) id)]
+                     (if touched
+                       (load-cache e cache)
+                       e)))
