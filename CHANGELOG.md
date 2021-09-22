@@ -1,10 +1,10 @@
 # Change Log
 
-## WIP
+## 0.5.16
 ### Improved
 - Do most of transaction data preparation remotely to reduce traffic
 ### Fixed
-- Handle more cases of function serialization, fix #66
+- Handle entity serialization, fix #66
 
 ## 0.5.15
 ### Changed
