@@ -23,12 +23,12 @@
   IConnection
   (send-n-receive [this msg]
     (try
-      (p/write-message-blocking ch bf msg)
-      (.clear bf)
-      (println "is ch blocking?" (.isBlocking ch))
-      (let [[resp bf'] (p/receive-ch ch bf)]
-        (when-not (identical? bf' bf) (set! bf bf'))
-        resp)
+      (locking bf
+        (p/write-message-blocking ch bf msg)
+        (.clear bf)
+        (let [[resp bf'] (p/receive-ch ch bf)]
+          (when-not (identical? bf' bf) (set! bf bf'))
+          resp))
       (catch BufferOverflowException _
         (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
           (set! bf (b/allocate-buffer size))
