@@ -127,8 +127,7 @@
   (run-tests)
   (make-commit)
   (github-release)
-  (sh "lein" "clean")
-  (sh "lein" "deploy" "clojars")
+  (sh "./deploy")
   (sh "script/deploy" :dir "native")
   (System/exit 0))
 
