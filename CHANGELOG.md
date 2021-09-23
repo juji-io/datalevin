@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- Occasional server message write corruptions in busy network traffic on Linux.
+
 ## 0.5.17
 ### Added
 - JVM uberjar release for download

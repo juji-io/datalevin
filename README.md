@@ -158,8 +158,10 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 Or download the executable binary from github:
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.17/dtlv-0.5.17-ubuntu-latest-amd64.zip)
+  on x86-64 (AMD64)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.17/dtlv-0.5.17-macos-latest-amd64.zip)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.17/dtlv-0.5.17-windows-amd64.zip)
+  on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.17/dtlv-0.5.17-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
@@ -282,8 +284,8 @@ nil
 
 A JVM
 [uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.17/datalevin-0.5.17-standalone.jar)
-is downloadable to use as the command line tool, in case the pre-built native
-version above is not available for your platform. For example,
+is downloadable to use as the command line tool, in case a pre-built native
+version is not available for your platform. For example,
 
 ```console
 java -jar datalevin-0.5.17-standalone.jar
