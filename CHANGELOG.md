@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.5.19
+### Improved
+- Remove client immediately when `disconnect` message is received, clean up
+  resources afterwards, so a logically correct number of clients can be obtained
+  in the next API call on slow machines.
+
 ## 0.5.18
 ### Fixed
 - Occasional server message write corruptions in busy network traffic on Linux.
