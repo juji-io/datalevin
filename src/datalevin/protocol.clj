@@ -163,6 +163,7 @@
             (cond
               (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                              (if msg [msg bf] (recur bf)))
+              (= readn 0)  (recur bf)
               (= readn -1) (do (.close ch)
                                (u/raise "Socket channel is closed." {}))))))
       (let [readn (.read ch bf)]

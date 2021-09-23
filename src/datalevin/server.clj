@@ -530,10 +530,6 @@
   (add-client [server ip client-id username]
     (let [roles (user-roles sys-conn username)
           perms (user-permissions sys-conn username)]
-      (log/info "Added client from:" ip
-                "for user:" username
-                "with roles:" (pr-str roles)
-                "with permissions:" (pr-str perms))
       (set! clients
             (assoc clients client-id
                    {:ip          ip
@@ -541,11 +537,15 @@
                     :username    username
                     :dbs         {}
                     :roles       roles
-                    :permissions perms}))))
+                    :permissions perms}))
+      (log/info "Added client from:" ip
+                "for user:" username
+                "with roles:" (pr-str roles)
+                "with permissions:" (pr-str perms))))
 
   (remove-client [_ client-id]
-    (log/info "Removed client:" client-id)
-    (set! clients (dissoc clients client-id)))
+    (set! clients (dissoc clients client-id))
+    (log/info "Removed client:" client-id))
 
   (update-client [_ client-id f]
     (set! clients (update clients client-id f)))
@@ -564,19 +564,19 @@
 
   (add-store [server dir store]
     (let [db-name (store->db-name server store)]
-      (log/info "Open database:" db-name)
       (set! stores (assoc stores dir store))
       (when (instance? IStore store)
-        (set! dt-dbs (assoc dt-dbs db-name (db/new-db store))))))
+        (set! dt-dbs (assoc dt-dbs db-name (db/new-db store))))
+      (log/info "Opened database:" db-name)))
 
   (remove-store [server dir]
     (when-let [store (get-store server dir)]
       (let [db-name (store->db-name server store)]
-        (log/info "Close database:" db-name)
         (if-let [db (get-db server db-name)]
           (do (db/close-db db)
               (set! dt-dbs (dissoc dt-dbs db-name)))
-          (close-store store))))
+          (close-store store))
+        (log/info "Closed database:" db-name)))
     (set! stores (dissoc stores dir)))
 
   (get-db [server db-name]
@@ -595,14 +595,14 @@
 
 (defn- disconnect-client*
   [^Server server client-id]
+  (remove-client server client-id)
   (let [^Selector selector (.-selector server)]
     (when (.isOpen selector)
       (doseq [^SelectionKey k (.keys selector)
               :let            [state (.attachment k)]
               :when           state]
         (when (= client-id (@state :client-id))
-          (close-conn k))))
-    (remove-client server client-id)))
+          (close-conn k))))))
 
 (defn- disconnect-user
   [^Server server tgt-username]
