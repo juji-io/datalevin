@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.18
 ### Fixed
 - Occasional server message write corruptions in busy network traffic on Linux.
 
