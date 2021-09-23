@@ -57,6 +57,13 @@
                               :uberjar-name "test.uberjar.jar"}
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
+                              :jvm-opts
+                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+                               "--illegal-access=permit"
+                               "-Djdk.attach.allowAttachSelf"
+                               "-Dclojure.compiler.direct-linking=true"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]
