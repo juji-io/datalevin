@@ -623,27 +623,18 @@
 
 ;; networking
 
-(defn- write-to-bf
-  "write a message to write buffer, auto grow the buffer"
+(defn- write-message
+  "write a message to channel, auto grow the buffer"
   [^SelectionKey skey msg]
   (let [state                          (.attachment skey)
-        {:keys [^ByteBuffer write-bf]} @state]
-    (.clear write-bf)
+        {:keys [^ByteBuffer write-bf]} @state
+        ^SocketChannel  ch             (.channel skey)]
     (try
-      (p/write-message-bf write-bf msg)
+      (p/write-message-blocking ch write-bf msg)
       (catch BufferOverflowException _
         (let [size (* c/+buffer-grow-factor+ ^int (.capacity write-bf))]
           (vswap! state assoc :write-bf (b/allocate-buffer size))
-          (write-to-bf skey msg))))))
-
-(defn- write-message
-  "write a message to channel"
-  [^SelectionKey skey msg]
-  (write-to-bf skey msg)
-  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
-        ^SocketChannel ch              (.channel skey)]
-    (.flip write-bf)
-    (p/send-ch ch write-bf)))
+          (write-message skey msg))))))
 
 (defn- handle-accept
   [^SelectionKey skey]
@@ -701,13 +692,11 @@
   (let [state                             (.attachment skey)
         {:keys [^ByteBuffer write-bf]}    @state
         ^SocketChannel                 ch (.channel skey)]
-    (p/write-message-blocking ch write-bf {:type :copy-out-response})
-    (doseq [batch (partition batch-size batch-size nil data)]
-      (write-to-bf skey batch)
-      (let [{:keys [^ByteBuffer write-bf]} @state] ; may have grown
-        (.flip write-bf)
-        (p/send-ch ch write-bf)))
-    (p/write-message-blocking ch write-bf {:type :copy-done})
+    (locking write-bf
+      (p/write-message-blocking ch write-bf {:type :copy-out-response})
+      (doseq [batch (partition batch-size batch-size nil data)]
+        (write-message skey batch))
+      (p/write-message-blocking ch write-bf {:type :copy-done}))
     (log/debug "Copied out" (count data) "data items")))
 
 (defn- open-port

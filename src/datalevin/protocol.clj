@@ -99,19 +99,19 @@
 (defn send-ch
   "Send all data in buffer to channel, will block if channel is busy"
   [^SocketChannel ch ^ByteBuffer bf ]
-  (locking bf
-    (loop []
-      (when (.hasRemaining bf)
-        (.write ch bf)
-        (recur)))))
+  (loop []
+    (when (.hasRemaining bf)
+      (.write ch bf)
+      (recur))))
 
 (defn write-message-blocking
   "Write a message in blocking mode"
   [^SocketChannel ch ^ByteBuffer bf msg]
-  (.clear bf)
-  (write-message-bf bf msg)
-  (.flip bf)
-  (send-ch ch bf))
+  (locking bf
+    (.clear bf)
+    (write-message-bf bf msg)
+    (.flip bf)
+    (send-ch ch bf)))
 
 (defn receive-one-message
   "Consume one message from the read-bf and return it.
