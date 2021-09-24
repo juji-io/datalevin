@@ -48,15 +48,15 @@ Datalevin 0.4.x to run in Datalevin 0.5.x.
    older version, e.g. 0.4.44 binary from `dtlv` to `dtlv-0.4`.
 
 ```console
-$ wget https://github.com/juji-io/datalevin/releases/download/0.4.44/dtlv-0.4.44-macos-latest-amd64.zip
+wget https://github.com/juji-io/datalevin/releases/download/0.4.44/dtlv-0.4.44-macos-latest-amd64.zip
 
-$ unzip dtlv-0.4.44-macos-latest-amd64.zip
+unzip dtlv-0.4.44-macos-latest-amd64.zip
 
-$ mv dtlv dtlv-0.4
+mv dtlv dtlv-0.4
 
-$ wget https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-macos-latest-amd64.zip
+wget https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-macos-latest-amd64.zip
 
-$ unzip dtlv-0.5.21-macos-latest-amd64.zip
+unzip dtlv-0.5.21-macos-latest-amd64.zip
 ```
 
 2. Backup the current database first, e.g.
