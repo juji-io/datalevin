@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- Backport native datalog dump/load fix for `bytes` from 0.5.21
+
 ## 0.4.40
 ### Added
 - Transactable entity [Thanks @den1k, #48]
