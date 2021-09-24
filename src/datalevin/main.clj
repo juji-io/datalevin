@@ -16,7 +16,7 @@
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
             [datalevin.constants :as c])
-  (:import [java.io BufferedReader PushbackReader IOException]
+  (:import [java.io BufferedReader PushbackReader IOException Writer]
            [java.lang RuntimeException]
            [datalevin.datom Datom])
   (:gen-class))
@@ -350,7 +350,7 @@
   (let [conn (d/create-conn dir)]
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (p/pprint [(.-e datom) (.-a datom) (.-v datom)]))))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
@@ -393,7 +393,8 @@
 (defn- load-datalog [dir in]
   (try
     (with-open [^PushbackReader r in]
-      (let [read-form #(edn/read {:eof ::EOF} r)
+      (let [read-form #(edn/read {:eof     ::EOF
+                                  :readers d/data-readers} r)
             schema    (read-form)
             datoms    (->> (repeatedly read-form)
                            (take-while #(not= ::EOF %))

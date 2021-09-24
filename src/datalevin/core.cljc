@@ -206,8 +206,7 @@ Only usable for debug output.
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (empty-db \"dtlv://datalevin:secret@example.host/mydb\")
-             "}
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\")"}
   empty-db db/empty-db)
 
 
@@ -627,7 +626,8 @@ Only usable for debug output.
 
 (def ^{:no-doc true}
   data-readers {'datalevin/Datom dd/datom-from-reader
-                'datalevin/DB    db/db-from-reader})
+                'datalevin/DB    db/db-from-reader
+                'datalevin/bytes b/bytes-from-reader})
 
 #?(:cljs
    (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))

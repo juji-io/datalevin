@@ -2,7 +2,7 @@
 
 ## WIP
 ### Fixed
-- Dump/load correctly all supported Datalog data types
+- Dumping/loading Datalog store handles raw bytes correctly
 
 ## 0.5.19
 ### Improved

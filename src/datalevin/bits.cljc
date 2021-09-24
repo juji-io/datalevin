@@ -5,6 +5,7 @@
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
   (:import [java.util Arrays UUID Date Base64]
+           [java.io Writer]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
@@ -45,6 +46,17 @@
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
   (String. ba StandardCharsets/UTF_8))
+
+(defmethod print-method (Class/forName "[B")
+  [^bytes bs, ^Writer w]
+  (.write w "#datalevin/bytes ")
+  (.write w "\"")
+  (.write w ^String (hexify bs))
+  (.write w "\""))
+
+(defn ^bytes bytes-from-reader
+  [s]
+  (byte-array (unhexify s)))
 
 ;; byte buffer
 
