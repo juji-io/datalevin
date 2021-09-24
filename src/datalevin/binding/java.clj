@@ -330,7 +330,7 @@
                 ^Txn txn (.-txn rtx)]
             (stat-map (.stat db txn)))
           (catch Exception e
-            (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
+            (raise "Fail to get stat: " (ex-message e) {:dbi dbi-name}))
           (finally (.reset rtx))))
       (l/stat this)))
 

@@ -301,7 +301,7 @@ instead of `datalevin/datalevin` (they have the same version number) in your
 
 This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
-[note](https://github.com/juji-io/datalevin/tree/master/native). This native
+[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
 library supports JVM 11 and above.
 
 ## :tada: Library Usage
