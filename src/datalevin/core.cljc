@@ -32,61 +32,61 @@
   "Retrieves an entity by its id from Datalog database. Entities
   are lazy map-like structures to navigate Datalevin database content.
 
-             `db` is a Datalog database.
+  `db` is a Datalog database.
 
-             For `eid` pass entity id or lookup attr:
+  For `eid` pass entity id or lookup attr:
 
-                 (entity db 1)
-                 (entity db [:unique-attr :value])
+      (entity db 1)
+      (entity db [:unique-attr :value])
 
-             If entity does not exist, `nil` is returned:
+  If entity does not exist, `nil` is returned:
 
-                 (entity db 100500) ; => nil
+      (entity db 100500) ; => nil
 
-             Creating an entity by id is very cheap, almost no-op, as attr access
+  Creating an entity by id is very cheap, almost no-op, as attr access
   is on-demand:
 
-                 (entity db 1) ; => {:db/id 1}
+      (entity db 1) ; => {:db/id 1}
 
-             Entity attributes can be lazily accessed through key lookups:
+  Entity attributes can be lazily accessed through key lookups:
 
-                 (:attr (entity db 1)) ; => :value
-                 (get (entity db 1) :attr) ; => :value
+      (:attr (entity db 1)) ; => :value
+      (get (entity db 1) :attr) ; => :value
 
-             Cardinality many attributes are returned sequences:
+  Cardinality many attributes are returned sequences:
 
-                 (:attrs (entity db 1)) ; => [:v1 :v2 :v3]
+      (:attrs (entity db 1)) ; => [:v1 :v2 :v3]
 
-             Reference attributes are returned as another entities:
+  Reference attributes are returned as another entities:
 
-                 (:ref (entity db 1)) ; => {:db/id 2}
-                 (:ns/ref (entity db 1)) ; => {:db/id 2}
+      (:ref (entity db 1)) ; => {:db/id 2}
+      (:ns/ref (entity db 1)) ; => {:db/id 2}
 
-             References can be walked backwards by prepending `_` to name part
+  References can be walked backwards by prepending `_` to name part
   of an attribute:
 
-                 (:_ref (entity db 2)) ; => [{:db/id 1}]
-                 (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
+      (:_ref (entity db 2)) ; => [{:db/id 1}]
+      (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
 
-             Reverse reference lookup returns sequence of entities unless
+  Reverse reference lookup returns sequence of entities unless
   attribute is marked as `:db/component`:
 
-                 (:_component-ref (entity db 2)) ; => {:db/id 1}
+      (:_component-ref (entity db 2)) ; => {:db/id 1}
 
-             Entity gotchas:
+  Entity gotchas:
 
-             - Entities print as map, but are not exactly maps (they have
-  compatible get interface though).
-             - Entities retain reference to the database.
-             - Creating an entity by id is very cheap, almost no-op
-  (attributes are looked up on demand).
-             - Comparing entities just compares their ids. Be careful when
-  comparing entities taken from differenct dbs or from different versions of the
-  same db.
-             - Accessed entity attributes are cached on entity itself (except
-  backward references).
-             - When printing, only cached attributes (the ones you have accessed
-  before) are printed. See [[touch]]."
+    - Entities print as map, but are not exactly maps (they have
+    compatible get interface though).
+    - Entities retain reference to the database.
+    - Creating an entity by id is very cheap, almost no-op
+    (attributes are looked up on demand).
+    - Comparing entities just compares their ids. Be careful when
+    comparing entities taken from differenct dbs or from different versions of the
+    same db.
+    - Accessed entity attributes are cached on entity itself (except
+    backward references).
+    - When printing, only cached attributes (the ones you have accessed
+      before) are printed. See [[touch]]."
   [db eid]
   {:pre [(db/db? db)]}
   (de/entity db eid))
@@ -102,11 +102,11 @@
 (defn entid
   "Given lookup ref `[unique-attr value]`, returns numberic entity id.
 
-             `db` is a Datalog database.
+  `db` is a Datalog database.
 
-             If entity does not exist, returns `nil`.
+  If entity does not exist, returns `nil`.
 
-             For numeric `eid` returns `eid` itself (does not check for entity
+  For numeric `eid` returns `eid` itself (does not check for entity
   existence in that case)."
   [db eid]
   {:pre [(db/db? db)]}
@@ -122,12 +122,11 @@
        :doc      "Forces all entity attributes to be eagerly fetched and cached.
 Only usable for debug output.
 
-             Usage:
+  Usage:
 
-             ```
              (entity db 1) ; => {:db/id 1}
              (touch (entity db 1)) ; => {:db/id 1, :dislikes [:pie], :likes [:pizza]}
-             ```"}
+             "}
   touch de/touch)
 
 
@@ -137,15 +136,15 @@ Only usable for debug output.
   "Fetches data from Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
-             Unlike [[entity]], returns plain Clojure map (not lazy).
+  Unlike [[entity]], returns plain Clojure map (not lazy).
 
-             Usage:
+  Usage:
 
-                 (pull db [:db/id, :name, :likes, {:friends [:db/id :name]}] 1)
-                 ; => {:db/id   1,
-                 ;     :name    \"Ivan\"
-                 ;     :likes   [:pizza]
-                 ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
+                (pull db [:db/id, :name, :likes, {:friends [:db/id :name]}] 1)
+                ; => {:db/id   1,
+                ;     :name    \"Ivan\"
+                ;     :likes   [:pizza]
+                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
   [db selector eid]
   {:pre [(db/db? db)]}
   (dp/pull db selector eid))
@@ -155,13 +154,11 @@ Only usable for debug output.
   "Same as [[pull]], but accepts sequence of ids and returns
   sequence of maps.
 
-             Usage:
+  Usage:
 
-             ```
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
-             ;     {:db/id 2, :name \"Oleg\"}]
-             ```"
+             ;     {:db/id 2, :name \"Oleg\"}]"
   [db selector eids]
   {:pre [(db/db? db)]}
   (dp/pull-many db selector eids))
@@ -201,15 +198,16 @@ Only usable for debug output.
 (def ^{:arglists '([] [dir] [dir schema])
        :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
-             Usage:
+  Usage:
 
-             ```
              (empty-db)
 
              (empty-db \"/tmp/test-empty-db\")
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
-             ```"}
+
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\")
+             "}
   empty-db db/empty-db)
 
 
@@ -450,12 +448,14 @@ Only usable for debug output.
 
   Usage:
 
+
              (create-conn)
 
              (create-conn \"/tmp/test-create-conn\")
 
              (create-conn \"/tmp/test-create-conn\" {:likes {:db/cardinality :db.cardinality/many}})
-  "
+
+             (create-conn \"dtlv://datalevin:secret@example.host/mydb\")"
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
   ([dir schema] (conn-from-db (empty-db dir schema))))
@@ -683,7 +683,7 @@ Only usable for debug output.
 
   Example:
 
-  (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
+        (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
   [conn schema-update]
   {:pre [(conn? conn)]}
   (let [^DB db (db conn)]
@@ -726,11 +726,11 @@ Only usable for debug output.
 
   Example:
 
-  (with-conn [conn \"my-data-path\"]
-    ...conn...)
+          (with-conn [conn \"my-data-path\"]
+            ;; body)
 
-  (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
-    ...conn...)
+          (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
+            ;; body)
   "
   [spec & body]
   `(let [dir#    ~(second spec)
@@ -950,23 +950,23 @@ Only usable for debug output.
 
   Example:
 
-  (transact-kv
-    lmdb
-    [ [:put \"a\" 1 2]
-     [:put \"a\" 'a 1]
-     [:put \"a\" 5 {}]
-     [:put \"a\" :annunaki/enki true :attr :data]
-     [:put \"a\" :datalevin [\"hello\" \"world\"]]
-     [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-     [:put \"a\" (byte 0x01) #{1 2} :byte :data]
-     [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
-     [:put \"a\" [-1 -235254457N] 5]
-     [:put \"a\" :a 4]
-     [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-     [:put \"a\" :long 1 :data :long]
-     [:put \"a\" 2 3 :long :long]
-     [:del \"a\" 1]
-     [:del \"a\" :non-exist] ])"}
+          (transact-kv
+            lmdb
+            [ [:put \"a\" 1 2]
+            [:put \"a\" 'a 1]
+            [:put \"a\" 5 {}]
+            [:put \"a\" :annunaki/enki true :attr :data]
+            [:put \"a\" :datalevin [\"hello\" \"world\"]]
+            [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+            [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+            [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+            [:put \"a\" [-1 -235254457N] 5]
+            [:put \"a\" :a 4]
+            [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+            [:put \"a\" :long 1 :data :long]
+            [:put \"a\" 2 3 :long :long]
+            [:del \"a\" 1]
+            [:del \"a\" :non-exist] ])"}
   transact-kv l/transact-kv)
 
 (def ^{:arglists '([db dbi-name k]
@@ -983,20 +983,20 @@ Only usable for debug output.
 
   Examples:
 
-  (get-value lmdb \"a\" 1)
-  ;;==> 2
+        (get-value lmdb \"a\" 1)
+        ;;==> 2
 
-  ;; specify data types
-  (get-value lmdb \"a\" :annunaki/enki :attr :data)
-  ;;==> true
+        ;; specify data types
+        (get-value lmdb \"a\" :annunaki/enki :attr :data)
+        ;;==> true
 
-  ;; return key value pair
-  (get-value lmdb \"a\" 1 :data :data false)
-  ;;==> [1 2]
+        ;; return key value pair
+        (get-value lmdb \"a\" 1 :data :data false)
+        ;;==> [1 2]
 
-  ;; key doesn't exist
-  (get-value lmdb \"a\" 2)
-  ;;==> nil "}
+        ;; key doesn't exist
+        (get-value lmdb \"a\" 2)
+        ;;==> nil "}
   get-value l/get-value)
 
 (def ^{:arglists '([db dbi-name k-range]
@@ -1253,28 +1253,28 @@ Only usable for debug output.
        :doc      "Get the given type of data from buffer `bf`, `v-type` can be
 one of the following data types:
 
-    - `:data` (default), arbitrary EDN data
-    - `:string`, UTF-8 string
-    - `:int`, 32 bits integer
-    - `:long`, 64 bits integer
-    - `:id`, 64 bits integer, not prefixed with a type header
-    - `:float`, 32 bits IEEE754 floating point number
-    - `:double`, 64 bits IEEE754 floating point number
-    - `:byte`, single byte
-    - `:bytes`, an byte array
-    - `:keyword`, EDN keyword
-    - `:symbol`, EDN symbol
-    - `:boolean`, `true` or `false`
-    - `:instant`, timestamp, same as `java.util.Date`
-    - `:uuid`, UUID, same as `java.util.UUID`
+  - `:data` (default), arbitrary EDN data
+  - `:string`, UTF-8 string
+  - `:int`, 32 bits integer
+  - `:long`, 64 bits integer
+  - `:id`, 64 bits integer, not prefixed with a type header
+  - `:float`, 32 bits IEEE754 floating point number
+  - `:double`, 64 bits IEEE754 floating point number
+  - `:byte`, single byte
+  - `:bytes`, an byte array
+  - `:keyword`, EDN keyword
+  - `:symbol`, EDN symbol
+  - `:boolean`, `true` or `false`
+  - `:instant`, timestamp, same as `java.util.Date`
+  - `:uuid`, UUID, same as `java.util.UUID`
 
   or one of the following Datalog specific data types
 
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:ave`
-    - `:vea`"}
+  - `:datom`
+  - `:attr`
+  - `:eav`
+  - `:ave`
+  - `:vea`"}
   read-buffer b/read-buffer)
 
 (def ^{:arglists '([s])

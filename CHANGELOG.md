@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- Dump/load correctly all supported Datalog data types
+
 ## 0.5.19
 ### Improved
 - Remove client immediately when `disconnect` message is received, clean up
