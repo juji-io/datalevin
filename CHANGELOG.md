@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.20
 ### Fixed
 - Dumping/loading Datalog store handles raw bytes correctly
 
