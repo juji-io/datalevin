@@ -51,7 +51,7 @@ wget https://github.com/juji-io/datalevin/releases/download/0.4.44/dtlv-0.4.44-m
 
 unzip dtlv-0.4.44-macos-latest-amd64.zip
 
-rm dtlv dtlv-0.4
+mv dtlv dtlv-0.4
 
 wget https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-macos-latest-amd64.zip
 
