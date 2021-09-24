@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.4.41
 ### Fixed
 - Backport native datalog dump/load fix for `bytes` from 0.5.21
 
