@@ -51,12 +51,12 @@
   [^bytes bs, ^Writer w]
   (.write w "#datalevin/bytes ")
   (.write w "\"")
-  (.write w ^String (hexify bs))
+  (.write w ^String (u/encode-base64 bs))
   (.write w "\""))
 
 (defn ^bytes bytes-from-reader
   [s]
-  (byte-array (unhexify s)))
+  (u/decode-base64 s))
 
 ;; byte buffer
 

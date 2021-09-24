@@ -11,7 +11,10 @@
 
 (deftest basic-ops-test
   (let [schema
-        {:sales/country           {:db/valueType :db.type/string, :db/aid 1},
+        {:db/ident                {:db/unique    :db.unique/identity,
+                                   :db/valueType :db.type/keyword,
+                                   :db/aid       0},
+         :sales/country           {:db/valueType :db.type/string, :db/aid 1},
          :juji.data/display?      {:db/valueType :db.type/boolean, :db/aid 2},
          :juji.data/origin-column {:db/valueType :db.type/long, :db/aid 3},
          :sales/company           {:db/valueType :db.type/string, :db/aid 4},
@@ -201,7 +204,10 @@
                                        (UUID/randomUUID)))})
         _      (s/start server)
         schema
-        {:sales/country           {:db/valueType :db.type/string, :db/aid 1},
+        {:db/ident                {:db/unique    :db.unique/identity,
+                                   :db/valueType :db.type/keyword,
+                                   :db/aid       0},
+         :sales/country           {:db/valueType :db.type/string, :db/aid 1},
          :juji.data/display?      {:db/valueType :db.type/boolean, :db/aid 2},
          :juji.data/origin-column {:db/valueType :db.type/long, :db/aid 3},
          :sales/company           {:db/valueType :db.type/string, :db/aid 4},
