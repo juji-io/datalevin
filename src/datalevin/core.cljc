@@ -605,7 +605,8 @@ given. Return reference to the database.
 
 (def ^{:no-doc true}
   data-readers {'datalevin/Datom dd/datom-from-reader
-                'datalevin/DB    db/db-from-reader})
+                'datalevin/DB    db/db-from-reader
+                'datalevin/bytes b/bytes-from-reader})
 
 #?(:cljs
    (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))

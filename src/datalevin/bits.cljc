@@ -5,7 +5,9 @@
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
   (:import [java.io DataInput DataOutput]
-           [java.util Arrays UUID Date Base64]
+           [java.lang Class]
+           [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder]
+           [java.io Writer]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
@@ -38,6 +40,10 @@
   [s]
   (map #(apply unhexify-2c %) (partition 2 s)))
 
+(def base64-encoder (.withoutPadding (Base64/getEncoder)))
+
+(def base64-decoder (Base64/getDecoder))
+
 (defn text-ba->str
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
@@ -46,12 +52,23 @@
 (defn binary-ba->str
   "Convert a byte array to string using base64"
   [^bytes ba]
-  (.encodeToString (Base64/getEncoder) ba))
+  (.encodeToString ^Base64$Encoder base64-encoder ba))
 
 (defn binary-str->ba
   "Convert a base64 encoded string back to a byte array"
   [^String s]
-  (.decode (Base64/getDecoder) s))
+  (.decode ^Base64$Decoder base64-decoder s))
+
+(defmethod print-method (Class/forName "[B")
+  [^bytes bs, ^Writer w]
+  (.write w "#datalevin/bytes ")
+  (.write w "\"")
+  (.write w ^String (u/encode-base64 bs))
+  (.write w "\""))
+
+(defn ^bytes bytes-from-reader
+  [s]
+  (u/decode-base64 s))
 
 ;; byte buffer
 
