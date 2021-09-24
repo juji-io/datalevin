@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.44
+### Fixed
+- Backport the dump/load fix from 0.5.20
+
 ## 0.5.20
 ### Fixed
 - Dumping/loading Datalog store handles raw bytes correctly
