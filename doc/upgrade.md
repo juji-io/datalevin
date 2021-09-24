@@ -29,7 +29,7 @@ introductions. No data migration should be expected for such version bumps.
 In summary, we should expect that minor version number changes require migrating
 existing databases when upgrading. Major version bumps may not require migration
  if you are diligent in following the minor version upgrades, but if you are
- not, data migration is needed. No-breaking version bumps do not require data
+ not, data migration is needed. Non-breaking version bumps do not require data
  migration.
 
 ## Database Upgrade
@@ -37,8 +37,9 @@ existing databases when upgrading. Major version bumps may not require migration
 Now we know when a database upgrade is needed, here is how to do it.
 
 Upgrading a database from an old version to a new version requires the use of
-native command line tool, `dtlv`. In fact, both the old and the new version of
-the `dtlv` tools are needed.
+command line tool, `dtlv`, or `datalevin-x.x.x-standalone.jar` uberjar if a
+native build does not exist on your platform. In fact, both the old and the new
+versions of the command tool are needed.
 
 For example, we want to upgrade a Datalog database that has been running in
 Datalevin 0.4.x to run in Datalevin 0.5.x.
