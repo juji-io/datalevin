@@ -52,8 +52,7 @@
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
-  (sh "lein" "clean")
-  (sh "lein" "test")
+  (sh "./lein-test")
 
   (println "\n\n[ Testing jar ]\n")
   (sh "./jar")
