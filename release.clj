@@ -52,14 +52,15 @@
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
+  (sh "lein" "clean")
   (sh "lein" "test")
 
   (println "\n\n[ Testing jar ]\n")
-  (sh "lein" "jar")
+  (sh "./jar")
   (sh "test-jar/test.sh")
 
   (println "\n\n[ Testing uberjar ]\n")
-  (sh "lein" "uberjar")
+  (sh "./uberjar")
   (sh "test-jar/test-uber.sh")
 
   (println "\n\n[ Testing native jar ]\n")
@@ -122,9 +123,8 @@
         "https://api.github.com/repos/juji-io/datalevin/releases")))
 
 (defn -main []
-  (sh "lein" "clean")
-  (update-version)
   (run-tests)
+  (update-version)
   (make-commit)
   (github-release)
   (sh "./deploy")
