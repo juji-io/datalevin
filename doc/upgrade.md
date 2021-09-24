@@ -37,9 +37,9 @@ existing databases when upgrading. Major version bumps may not require migration
 Now we know when a database upgrade is needed, here is how to do it.
 
 Upgrading a database from an old version to a new version requires the use of
-command line tool, `dtlv`, or `datalevin-x.x.x-standalone.jar` uberjar if a
-native build does not exist on your platform. In fact, both the old and the new
-versions of the command tool are needed.
+Datalevin command line tool, `dtlv`, or `datalevin-x.x.x-standalone.jar` uberjar
+if a native build does not exist on your platform. In fact, both the old and the
+new versions of the command tool are needed.
 
 For example, we want to upgrade a Datalog database that has been running in
 Datalevin 0.4.x to run in Datalevin 0.5.x.
@@ -47,36 +47,37 @@ Datalevin 0.4.x to run in Datalevin 0.5.x.
 1. Download the latest versions of both versions of `dtlv` tool. Rename the
    older version, e.g. 0.4.44 binary from `dtlv` to `dtlv-0.4`.
 
-```
-wget https://github.com/juji-io/datalevin/releases/download/0.4.44/dtlv-0.4.44-macos-latest-amd64.zip
+```console
+$ wget https://github.com/juji-io/datalevin/releases/download/0.4.44/dtlv-0.4.44-macos-latest-amd64.zip
 
-unzip dtlv-0.4.44-macos-latest-amd64.zip
+$ unzip dtlv-0.4.44-macos-latest-amd64.zip
 
-mv dtlv dtlv-0.4
+$ mv dtlv dtlv-0.4
 
-wget https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-macos-latest-amd64.zip
+$ wget https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-macos-latest-amd64.zip
 
-unzip dtlv-0.5.21-macos-latest-amd64.zip
+$ unzip dtlv-0.5.21-macos-latest-amd64.zip
 ```
 
 2. Backup the current database first, e.g.
 
-```
+```console
 ./dtlv-0.4 -d /src/dir -c copy /backup/dir
 ```
 This also compacts the data file, so it's not huge. Ideally, one would run a cron job to backup daily for production databases.
 
 3. Dump the current database as a text file, e.g.
 
-```
+```console
 ./dtlv-0.4 -d /src/dir -g -f dump-file dump
 ```
 
 This dumps the content of the Datalog database to a file called `dump-file`. The
 format of the database dump is version independent.
 
-4. Import the data into the new version of database, e.g.
-```
+4. Import the data into the new version of database using new version of the tool, e.g.
+
+```console
 ./dtlv -d /dest/dir -f dump-file -g load
 ```
 
