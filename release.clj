@@ -41,7 +41,7 @@
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
     (update-file "src/datalevin/main.clj" old->new)
-    (update-file "native/project.clj"  old->new) 
+    (update-file "native/project.clj"  old->new)
     (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
@@ -61,7 +61,7 @@
 
   (sh "git" "commit" "-m" (str "Version " new-v))
   (sh "git" "tag" new-v)
-  (sh "git" "push" "origin" "master"))
+  (sh "git" "push" "origin" "backport"))
 
 (defn- str->json [s]
   (-> s
@@ -88,7 +88,7 @@
                        (str/join "\n"))
         request  { "tag_name" new-v
                    "name"     new-v
-                   "target_commitish" "master"
+                   "target_commitish" "backport"
                    "body" changelog}]
     (sh "curl" "-u" GITHUB_AUTH
         "-X" "POST"
