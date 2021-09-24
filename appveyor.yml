@@ -4,7 +4,7 @@ version: "v-{build}"
 
 branches:
   only:
-    - master
+    - backport
 
 skip_non_tags: true
 

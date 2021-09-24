@@ -1,4 +1,4 @@
-name: Build
+name: Backport Build
 
 on:
   release:
@@ -16,6 +16,7 @@ jobs:
       - name: Checkout repository and submodules
         uses: actions/checkout@v2
         with:
+          ref: backport
           submodules: recursive
 
       - name: Setup Graalvm
