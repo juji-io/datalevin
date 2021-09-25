@@ -520,6 +520,12 @@ documentation](https://juji-io.github.io/datalevin/index.html) for more details.
 You may also consult online materials for Datascript or Datomic®, as the Datalog API is
 similar.
 
+## :birthday: Upgrade
+
+Please read
+[this](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) for
+information regarding upgrading your existing database from older versions.
+
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
