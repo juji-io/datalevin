@@ -5,7 +5,7 @@
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
   (:import [java.util Arrays UUID Date Base64]
-           [java.io Writer]
+           [java.io Writer DataInput DataOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
