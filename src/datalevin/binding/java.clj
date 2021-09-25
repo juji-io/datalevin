@@ -230,7 +230,8 @@
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
   (iterate-kv [_ rtx range-info]
-    (.iterate db (.-txn ^Rtx rtx) range-info)))
+    (.iterate db (.-txn ^Rtx rtx) range-info))
+  )
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))

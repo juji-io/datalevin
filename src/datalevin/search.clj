@@ -18,6 +18,8 @@
 
   (l/get-value env "dict" "a")
 
+  (l/get-range env "dict" [:closed "a" "a"])
+
   (l/close-kv env)
 
   )

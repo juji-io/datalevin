@@ -12,6 +12,17 @@
   (put-start-key [this data k-type] "put data in start-key buffer.")
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
+(defprotocol IInvertedList
+  (put-list [this k vs] "put an inverted list by key")
+  (del-list [this k] "delete an inverted list by key")
+  (get-list [this k] "get a list by key")
+  (list-count [this k] "get the number of items in the inverted list")
+  (filter-list [this k pred] "get filtered items of a list")
+  (filter-list-count [this k pred] "get the count of filtered items of a list")
+  (put-list-item [this k item] "put an item in a inverted list")
+  (del-list-item [this k item] "delete an item from a inverted list")
+  (in-list? [this k item] "return true if an item is in an inverted list"))
+
 (defprotocol IRtx
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
