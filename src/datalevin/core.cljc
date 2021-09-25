@@ -12,10 +12,10 @@
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
-   [datalevin.impl.entity :as de]
+   [datalevin.entity :as de]
    [datalevin.bits :as b])
   (:import
-   [datalevin.impl.entity Entity]
+   [datalevin.entity Entity]
    [datalevin.storage Store]
    [datalevin.db DB]
    [datalevin.datom Datom]

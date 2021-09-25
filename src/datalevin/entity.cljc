@@ -1,4 +1,4 @@
-(ns ^:no-doc datalevin.impl.entity
+(ns ^:no-doc datalevin.entity
   (:refer-clojure :exclude [keys get])
   (:require [#?(:cljs cljs.core :clj clojure.core) :as c]
             [datalevin.db :as db]
@@ -307,7 +307,7 @@
   (vreset! (.-touched e) true)
   e)
 
-#?(:cljs (goog/exportSymbol "datalevin.impl.entity.Entity" Entity))
+#?(:cljs (goog/exportSymbol "datalevin.entity.Entity" Entity))
 
 (nippy/extend-freeze Entity :datalevin/entity
                      [^Entity x ^DataOutput out]

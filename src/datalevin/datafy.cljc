@@ -2,7 +2,7 @@
   (:require [clojure.core.protocols :as cp]
             [datalevin.pull-api :as dp]
             [datalevin.db :as db]
-            [datalevin.impl.entity :as e]))
+            [datalevin.entity :as e]))
 
 (declare datafy-entity-seq)
 
@@ -31,7 +31,7 @@
     {`cp/datafy (fn [entities] (navize-pulled-entity-seq db-val entities))}))
 
 (extend-protocol cp/Datafiable
-  datalevin.impl.entity.Entity
+  datalevin.entity.Entity
   (datafy [this]
     (let [db           (.-db this)
           ref-attrs    ((db/-rschema db) :db.type/ref )

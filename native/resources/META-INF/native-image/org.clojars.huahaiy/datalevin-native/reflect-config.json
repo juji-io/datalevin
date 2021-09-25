@@ -55,7 +55,7 @@
       "allPublicClasses" : true
     },
     {
-        "name":"datalevin.impl.entity.Entity",
+        "name":"datalevin.entity.Entity",
         "allDeclaredConstructors" : true,
         "allPublicConstructors" : true,
         "allDeclaredMethods" : true,

@@ -6,7 +6,7 @@
    [clojure.string :as str]
    [datalevin.core :as d]
    [datalevin.constants :as c]
-   [datalevin.impl.entity :as de]
+   [datalevin.entity :as de]
    [datalevin.util :as u #?@(:cljs [:refer-macros [defrecord-updatable]]
                              :clj  [:refer [defrecord-updatable]])]
    #?(:clj [datalevin.server :as srv])

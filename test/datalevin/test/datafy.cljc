@@ -5,7 +5,7 @@
    [datalevin.datafy :as datafy]
    [datalevin.core :as d]
    [clojure.core.protocols :as cp]
-   [datalevin.impl.entity :as e]))
+   [datalevin.entity :as e]))
 
 (defn- test-db []
   (let [schema {:ref           {:db/valueType :db.type/ref}

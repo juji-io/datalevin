@@ -725,8 +725,8 @@
     :db/retractEntity})
 
 ;; HACK to avoid circular dependency
-(def de-entity? (delay (resolve 'datalevin.impl.entity/entity?)))
-(def de-entity->txs (delay (resolve 'datalevin.impl.entity/->txs)))
+(def de-entity? (delay (resolve 'datalevin.entity/entity?)))
+(def de-entity->txs (delay (resolve 'datalevin.entity/->txs)))
 
 (defn- local-transact-tx-data
   [initial-report initial-es]
