@@ -109,4 +109,4 @@
      return true value for `(pred x)`"))
 
 (defmulti open-kv
-  (fn [_] (if (u/graal?) :graal :java)))
+  (fn [dir] (if (u/graal?) :graal :java)))

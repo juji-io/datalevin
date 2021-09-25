@@ -4,8 +4,8 @@
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
-  (:import [java.io DataInput DataOutput]
-           [java.util Arrays UUID Date Base64]
+  (:import [java.util Arrays UUID Date Base64]
+           [java.io Writer]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
@@ -40,20 +40,25 @@
   [s]
   (map #(apply unhexify-2c %) (partition 2 s)))
 
+(defn ^:no-doc hexify-string [^String s] (hexify (.getBytes s)))
+
+(defn ^:no-doc unhexify-string [s] (String. (byte-array (unhexify s))))
+
 (defn text-ba->str
   "Convert a byte array to string, the array is known to contain text data"
   [^bytes ba]
   (String. ba StandardCharsets/UTF_8))
 
-(defn binary-ba->str
-  "Convert a byte array to string using base64"
-  [^bytes ba]
-  (.encodeToString (Base64/getEncoder) ba))
+(defmethod print-method (Class/forName "[B")
+  [^bytes bs, ^Writer w]
+  (.write w "#datalevin/bytes ")
+  (.write w "\"")
+  (.write w ^String (u/encode-base64 bs))
+  (.write w "\""))
 
-(defn binary-str->ba
-  "Convert a base64 encoded string back to a byte array"
-  [^String s]
-  (.decode (Base64/getDecoder) s))
+(defn ^bytes bytes-from-reader
+  [s]
+  (u/decode-base64 s))
 
 ;; bitmap
 
@@ -85,12 +90,19 @@
   [size]
   (ByteBuffer/allocateDirect size))
 
+(defn buffer-transfer
+  "Transfer content from one bytebuffer to another"
+  ([^ByteBuffer src ^ByteBuffer dst]
+   (.put dst src))
+  ([^ByteBuffer src ^ByteBuffer dst n]
+   (dotimes [_ n] (.put dst (.get src)))))
+
 (defn- get-long
   "Get a long from a ByteBuffer"
   [^ByteBuffer bb]
   (.getLong bb))
 
-(defn- get-int
+(defn get-int
   "Get an int from a ByteBuffer"
   [^ByteBuffer bb]
   (.getInt bb))
@@ -184,7 +196,7 @@
   [^ByteBuffer bb x]
   (.putLong bb (encode-double x)))
 
-(defn- put-int
+(defn put-int
   [^ByteBuffer bb n]
   (.putInt bb ^int (int n)))
 
@@ -229,23 +241,10 @@
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
 
-
 ;; nippy
 
 ;; TODO PR to nippy to work with bf directly
 ;; https://github.com/ptaoussanis/nippy/issues/140
-
-(nippy/extend-freeze Datom :datalevin/datom
-                     [^Datom x ^DataOutput out]
-                     (.writeLong out (.-e x))
-                     (nippy/freeze-to-out! out (.-a x))
-                     (nippy/freeze-to-out! out (.-v x)))
-
-(nippy/extend-thaw :datalevin/datom
-                   [^DataInput in]
-                   (d/datom (.readLong in)
-                            (nippy/thaw-from-in! in)
-                            (nippy/thaw-from-in! in)))
 
 (nippy/extend-freeze RoaringBitmap :datalevin/bitmap
                      [^RoaringBitmap x ^DataOutput out]

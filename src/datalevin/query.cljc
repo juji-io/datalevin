@@ -8,7 +8,7 @@
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
    [datalevin.lru]
-   [datalevin.impl.entity :as de]
+   [datalevin.entity :as de]
    [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
                                                FindColl FindRel FindScalar FindTuple PlainSymbol
                                                RulesVar SrcVar Variable]])]
@@ -1083,7 +1083,8 @@
             resolved
             tuple))))
 
-(def ^:private query-cache (volatile! (datalevin.lru/lru lru-cache-size)))
+(def ^:private query-cache (volatile! (datalevin.lru/lru lru-cache-size
+                                                         :constant)))
 
 (defn memoized-parse-query [q]
   (if-some [cached (get @query-cache q nil)]
@@ -1105,16 +1106,16 @@
                         (sequential? q) dp/query->map)
         wheres        (:where q)
         context       (-> (Context. [] {} {})
-                        (resolve-ins (:qin parsed-q) inputs))
+                          (resolve-ins (:qin parsed-q) inputs))
         resultset     (-> context
-                        (-q wheres)
-                        (collect all-vars))]
+                          (-q wheres)
+                          (collect all-vars))]
     (cond->> resultset
       (:with q)
-        (mapv #(vec (subvec % 0 result-arity)))
+      (mapv #(vec (subvec % 0 result-arity)))
       (some dp/aggregate? find-elements)
-        (aggregate find-elements context)
+      (aggregate find-elements context)
       (some dp/pull? find-elements)
-        (pull find-elements context)
+      (pull find-elements context)
       true
-        (-post-process find (:qreturn-map parsed-q)))))
+      (-post-process find (:qreturn-map parsed-q)))))

@@ -15,6 +15,8 @@ import java.util.List;
 @CContext(Lib.Directives.class)
 public class Env {
 
+    private boolean closed;
+
     private WordPointer ptr;
 
     public Env(WordPointer ptr) {
@@ -24,7 +26,8 @@ public class Env {
     /**
      * Factory method to create an instance
      */
-    public static Env create(String dir, long size, int maxReaders, int maxDbs) {
+    public static Env create(String dir, long size, int maxReaders, int maxDbs,
+                             int flags) {
 
         WordPointer ptr = UnmanagedMemory.malloc(SizeOf.get(WordPointer.class));
         Lib.checkRc(Lib.mdb_env_create(ptr));
@@ -36,9 +39,7 @@ public class Env {
         Lib.checkRc(Lib.mdb_env_set_maxdbs(env, maxDbs));
         Lib.checkRc(Lib.mdb_env_open(env,
                                      CTypeConversion.toCString(dir).get(),
-                                     Mask.set(Lib.MDB_NORDAHEAD(),
-                                              Lib.MDB_MAPASYNC(),
-                                              Lib.MDB_WRITEMAP()),
+                                     flags,
                                      0664));
 
         return new Env(ptr);
@@ -55,8 +56,30 @@ public class Env {
      * Close and free memory
      */
     public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
         Lib.mdb_env_close(get());
         UnmanagedMemory.free(ptr);
+    }
+
+    /**
+     * return closed status
+     */
+    public boolean isClosed() {
+        return closed;
+    }
+
+    /**
+     * Force sync to disk
+     */
+    public void sync() {
+        if (closed) {
+            return;
+        }
+        final int force = 1;
+        Lib.checkRc(Lib.mdb_env_sync(get(), force));
     }
 
     public void setMapSize(long size) {

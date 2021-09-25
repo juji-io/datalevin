@@ -1,12 +1,14 @@
 (ns ^:no-doc datalevin.datom
   (:require
-    #?(:cljs [goog.array :as garray])
-    [datalevin.constants :refer [tx0]]
-    [datalevin.util :refer [combine-hashes]])
+   #?(:cljs [goog.array :as garray])
+   [taoensso.nippy :as nippy]
+   [datalevin.constants :refer [tx0]]
+   [datalevin.util :refer [combine-hashes]])
   #?(:cljs
      (:require-macros [datalevin.util :refer [combine-cmp]]))
   #?(:clj
-     (:import (java.util Arrays))))
+     (:import [java.util Arrays]
+              [java.io DataInput DataOutput])))
 
 (declare hash-datom equiv-datom seq-datom nth-datom assoc-datom val-at-datom)
 
@@ -197,8 +199,8 @@
       (coll? a) (if (= a b)
                   0
                   1)
-      #?@(:clj [(bytes? a) (Arrays/compare ^bytes a ^bytes b)])
-      :else (compare a b))
+      #?@(:clj [(bytes? a) (if (Arrays/equals ^bytes a ^bytes b) 0 1)])
+      :else     (compare a b))
     -1))
 
 (def nil-cmp (nil-check-cmp-fn compare))
@@ -267,3 +269,21 @@
 (defn datom-v [^Datom d] (.-v d))
 
 (defn datom-eav [^Datom d] [(.-e d) (.-a d) (.-v d)])
+
+(nippy/extend-freeze Datom :datalevin/datom
+                     [^Datom x ^DataOutput out]
+                     (.writeLong out (.-e x))
+                     (nippy/freeze-to-out! out (.-a x))
+                     (nippy/freeze-to-out! out (.-v x))
+                     (when-let [tx (.-tx x)]
+                       (nippy/freeze-to-out! out tx)))
+
+(nippy/extend-thaw :datalevin/datom
+                   [^DataInput in]
+                   (let [vs [(.readLong in)
+                             (nippy/thaw-from-in! in)
+                             (nippy/thaw-from-in! in)]
+                         tx (nippy/thaw-from-in! in)]
+                     (datom-from-reader (if tx
+                                          (conj vs tx)
+                                          tx))))

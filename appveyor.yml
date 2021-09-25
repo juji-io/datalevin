@@ -16,7 +16,8 @@ configuration:
 clone_folder: C:\projects\datalevin
 
 environment:
-  GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-21.0.0
+  GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-21.1.0
+  DTVL_NATIVE_EXTRACT_DIR: C:\projects\datalevin
 
 clone_script:
 - ps: >-
@@ -31,19 +32,16 @@ clone_script:
       git checkout -qf FETCH_HEAD
     }
 
-- cmd: git submodule update --init --recursive
-
 build_script:
 - cmd: >-
     powershell -Command "(New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein.bat', 'lein.bat')"
-
 
     call lein.bat self-install
 
 - cmd: >-
     call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
 
-    powershell -Command "if (Test-Path('graalvm')) { return } else { (New-Object Net.WebClient).DownloadFile('https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-21.0.0/graalvm-ce-java11-windows-amd64-21.0.0.zip', 'graalvm.zip') }"
+    powershell -Command "if (Test-Path('graalvm')) { return } else { (New-Object Net.WebClient).DownloadFile('https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-21.1.0/graalvm-ce-java11-windows-amd64-21.1.0.zip', 'graalvm.zip') }"
 
     powershell -Command "if (Test-Path('graalvm')) { return } else { Expand-Archive graalvm.zip graalvm }"
 

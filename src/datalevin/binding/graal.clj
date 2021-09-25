@@ -4,8 +4,8 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IRtx IRtxPool IDB IKV ILMDB]])
+            [datalevin.lmdb :as l :refer [open-kv IBuffer IRange
+                                          IRtx IRtxPool IDB IKV ILMDB]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]
@@ -16,6 +16,56 @@
             Lib$Directives Lib$BadReaderLockException
             Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
             Lib$MapFullException]))
+
+(defprotocol IFlag
+  (value [this flag-key]))
+
+(deftype ^{Retention RetentionPolicy/RUNTIME
+           CContext  {:value Lib$Directives}}
+    Flag []
+  IFlag
+  (value [_ flag-key]
+    (case flag-key
+      :fixedmap   (Lib/MDB_FIXEDMAP)
+      :nosubdir   (Lib/MDB_NOSUBDIR)
+      :rdonly-env (Lib/MDB_RDONLY)
+      :writemap   (Lib/MDB_WRITEMAP)
+      :nometasync (Lib/MDB_NOMETASYNC)
+      :nosync     (Lib/MDB_NOSYNC)
+      :mapasync   (Lib/MDB_MAPASYNC)
+      :notls      (Lib/MDB_NOTLS)
+      :nolock     (Lib/MDB_NOLOCK)
+      :nordahead  (Lib/MDB_NORDAHEAD)
+      :nomeminit  (Lib/MDB_NOMEMINIT)
+
+      :cp-compact (Lib/MDB_CP_COMPACT)
+
+      :reversekey (Lib/MDB_REVERSEKEY)
+      :dupsort    (Lib/MDB_DUPSORT)
+      :integerkey (Lib/MDB_INTEGERKEY)
+      :dupfixed   (Lib/MDB_DUPFIXED)
+      :integerdup (Lib/MDB_INTEGERDUP)
+      :reversedup (Lib/MDB_REVERSEDUP)
+      :create     (Lib/MDB_CREATE)
+
+      :nooverwrite (Lib/MDB_NOOVERWRITE)
+      :nodupdata   (Lib/MDB_NODUPDATA)
+      :current     (Lib/MDB_CURRENT)
+      :reserve     (Lib/MDB_RESERVE)
+      :append      (Lib/MDB_APPEND)
+      :appenddup   (Lib/MDB_APPENDDUP)
+      :multiple    (Lib/MDB_MULTIPLE)
+
+      :rdonly-txn (Lib/MDB_RDONLY))))
+
+(defn- kv-flags
+  [flags]
+  (if (seq flags)
+    (let [flag (->Flag)]
+      (reduce (fn [r f] (bit-or ^int r ^int f))
+              0
+              (map #(value flag %) flags)))
+    0))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -280,7 +330,7 @@
         (b/put-buffer vb x t)
         (.flip ^BufVal vp)
         (catch BufferOverflowException _
-          (let [size (* 2 ^long (b/measure-size x))]
+          (let [size (* c/+buffer-grow-factor+ ^long (b/measure-size x))]
             (.close vp)
             (set! vp (BufVal/create size))
             (let [^ByteBuffer vb (.inBuf vp)]
@@ -342,8 +392,10 @@
     (when-not closed?
       (.close-pool pool)
       (doseq [^DBI dbi (.values dbis)] (.close ^Dbi (.-db dbi)))
+      (when-not (.isClosed env) (.sync env))
       (.close env)
-      (set! closed? true)))
+      (set! closed? true)
+      nil))
 
   (closed-kv? [_]
     closed?)
@@ -353,16 +405,16 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi
-      this dbi-name c/+max-key-size+ c/+default-val-size+ (Lib/MDB_CREATE)))
+      this dbi-name c/+max-key-size+ c/+default-val-size+ c/default-dbi-flags))
   (open-dbi [this dbi-name key-size]
-    (.open-dbi this dbi-name key-size c/+default-val-size+ (Lib/MDB_CREATE)))
+    (.open-dbi this dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
-    (.open-dbi this dbi-name key-size val-size (Lib/MDB_CREATE)))
+    (.open-dbi this dbi-name key-size val-size c/default-dbi-flags))
   (open-dbi [_ dbi-name key-size val-size flags]
     (assert (not closed?) "LMDB env is closed.")
     (let [kp  (BufVal/create key-size)
           vp  (BufVal/create val-size)
-          dbi (Dbi/create env dbi-name flags)
+          dbi (Dbi/create env dbi-name (kv-flags flags))
           db  (->DBI dbi kp vp)]
       (.put dbis dbi-name db)
       db))
@@ -373,7 +425,8 @@
     (or (.get dbis dbi-name)
         (if create?
           (.open-dbi this dbi-name)
-          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+ 0))))
+          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
+                     c/read-dbi-flags))))
 
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
@@ -392,7 +445,8 @@
             ^Txn txn (Txn/create env)]
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
         (.commit txn)
-        (.remove dbis dbi-name))
+        (.remove dbis dbi-name)
+        nil)
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
@@ -410,7 +464,7 @@
               (if (.hasNext iter)
                 (let [kv      (.next iter)
                       holder' (conj! holder
-                                     (-> kv lmdb/k b/get-bytes b/text-ba->str))]
+                                     (-> kv l/k b/get-bytes b/text-ba->str))]
                   (recur iter holder'))
                 (persistent! holder)))))
         (catch Exception e
@@ -436,19 +490,21 @@
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
-    (let [^Rtx rtx (.get-rtx pool)]
-      (try
-        (let [^DBI dbi   (.get-dbi this dbi-name false)
-              ^Dbi db    (.-db dbi)
-              ^Txn txn   (.-txn rtx)
-              ^Stat stat (Stat/create txn db)
-              m          (stat-map stat)]
-          (.close stat)
-          m)
-        (catch Exception e
-          (raise "Fail to get statistics: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.reset rtx)))))
+    (if dbi-name
+      (let [^Rtx rtx (.get-rtx pool)]
+        (try
+          (let [^DBI dbi   (.get-dbi this dbi-name false)
+                ^Dbi db    (.-db dbi)
+                ^Txn txn   (.-txn rtx)
+                ^Stat stat (Stat/create txn db)
+                m          (stat-map stat)]
+            (.close stat)
+            m)
+          (catch Exception e
+            (raise "Fail to get statistics: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.reset rtx))))
+      (l/stat this)))
 
   (entries [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
@@ -490,7 +546,8 @@
         (catch Lib$MapFullException _
           (.close txn)
           (let [^Info info (Info/create env)]
-            (.setMapSize env (* 10 (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+            (.setMapSize env (* c/+buffer-grow-factor+
+                                (.me_mapsize ^Lib$MDB_envinfo (.get info))))
             (.close info)
             (.transact-kv this txs)))
         (catch Exception e
@@ -560,13 +617,19 @@
                      dir
                      (* ^long c/+init-db-size+ 1024 1024)
                      c/+max-readers+
-                     c/+max-dbs+)]
-      (->LMDB env
-              dir
-              (->RtxPool env (ConcurrentHashMap.) 0)
-              (ConcurrentHashMap.)
-              false))
+                     c/+max-dbs+
+                     (kv-flags c/default-env-flags))
+          lmdb     (->LMDB env
+                           dir
+                           (->RtxPool env (ConcurrentHashMap.) 0)
+                           (ConcurrentHashMap.)
+                           false)]
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread.
+                          #(when-not (l/closed-kv? lmdb)
+                             (l/close-kv lmdb))))
+      lmdb)
     (catch Exception e
       (raise
-        "Fail to open LMDB database: " (ex-message e)
+        "Fail to open database: " (ex-message e)
         {:dir dir}))))

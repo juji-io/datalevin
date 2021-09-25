@@ -4,6 +4,10 @@
         "allPublicMethods":true
     },
     {
+        "name":"java.nio.file.Files",
+        "allPublicMethods":true
+    },
+    {
         "name":"java.lang.Byte",
         "allPublicConstructors":true,
         "allPublicMethods":true
@@ -49,6 +53,17 @@
       "allPublicFields" : true,
       "allDeclaredFields" : true,
       "allPublicClasses" : true
+    },
+    {
+        "name":"datalevin.entity.Entity",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
     },
     {
         "name":"sun.security.provider.SHA",

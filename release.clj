@@ -40,22 +40,48 @@
         old->new #(str/replace % old-v new-v)]
     (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
     (update-file "project.clj" old->new)
+    (update-file "test-jar/deps.edn" old->new)
+    (update-file "test-jar/test-uber.sh" old->new)
+    (update-file "test-jar/project.clj" old->new)
+    (update-file "doc/dtlv.md" old->new)
     (update-file "src/datalevin/main.clj" old->new)
-    (update-file "native/project.clj"  old->new) 
+    (update-file "native/project.clj"  old->new)
+    (update-file "native/test-jar/deps.edn"  old->new)
     (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
-  (sh "lein" "test"))
+  (sh "./lein-test")
+
+  (println "\n\n[ Testing jar ]\n")
+  (sh "./jar")
+  (sh "test-jar/test.sh")
+
+  (println "\n\n[ Testing uberjar ]\n")
+  (sh "./uberjar")
+  (sh "test-jar/test-uber.sh")
+
+  (println "\n\n[ Testing native jar ]\n")
+  (sh "script/jar" :dir "native")
+  (sh "./test.sh" :dir "native/test-jar")
+
+  (println "\n\n[ Testing native jar ]\n")
+  (sh "script/compile" :dir "native")
+  (sh "./dtlv-test" :dir "native"))
 
 (defn make-commit []
   (println "\n\n[ Making a commit ]\n")
   (sh "git" "add"
       "CHANGELOG.md"
       "project.clj"
+      "test-jar/deps.edn"
+      "test-jar/test-uber.sh"
+      "test-jar/project.clj"
+      "doc/dtlv.md"
       "src/datalevin/main.clj"
       "native/project.clj"
+      "native/test-jar/deps.edn"
       "native/README.md"
       "README.md")
 
@@ -96,12 +122,12 @@
         "https://api.github.com/repos/juji-io/datalevin/releases")))
 
 (defn -main []
-  (sh "lein" "clean")
-  (update-version)
   (run-tests)
+  (update-version)
   (make-commit)
   (github-release)
-  (sh "lein" "deploy" "clojars")
+  (sh "./deploy")
+  (sh "script/deploy" :dir "native")
   (System/exit 0))
 
 (-main)

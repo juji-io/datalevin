@@ -34,8 +34,10 @@
           v2  (long (rand c/emax))
           d2  (d/datom c/e0 c v2)
           s2  (assoc s1 c (merge p2 {:db/aid 3}))
-          dir (lmdb/dir (.-lmdb ^Store store))]
+          dir (lmdb/dir (.-lmdb ^Store store))
+          t1  (sut/last-modified store)]
       (sut/load-datoms store [d])
+      (is (<= t1 (sut/last-modified store)))
       (is (= s (sut/schema store)))
       (is (= 1 (sut/datom-count store :eav)))
       (is (= 1 (sut/datom-count store :ave)))
@@ -45,6 +47,7 @@
       (is (= true (sut/populated? store :eav d d)))
       (is (= 1 (sut/size store :eav d d)))
       (is (= d (sut/head store :eav d d)))
+      (is (= d (sut/tail store :eav d d)))
       (sut/swap-attr store b merge p1)
       (sut/load-datoms store [d1])
       (is (= s1 (sut/schema store)))
@@ -55,6 +58,7 @@
       (is (= 0 (sut/size store :eav d (d/datom c/e0 :non-exist v1))))
       (is (nil? (sut/populated? store :eav d (d/datom c/e0 :non-exist v1))))
       (is (= d (sut/head store :eav d d1)))
+      (is (= d1 (sut/tail store :eav d1 d)))
       (is (= 2 (sut/size store :eav d d1)))
       (is (= [d d1] (sut/slice store :eav d d1)))
       (is (= [d d1] (sut/slice store :ave d d1)))
@@ -70,6 +74,10 @@
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
       (is (= d (sut/head-filter store :eav
+                                (fn [^Datom d] (= v (.-v d)))
+                                (d/datom c/e0 nil nil)
+                                (d/datom c/e0 nil nil))))
+      (is (= d (sut/tail-filter store :eav
                                 (fn [^Datom d] (= v (.-v d)))
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
@@ -108,8 +116,8 @@
         (sut/load-datoms store [(d/delete d1)])
         (is (= 1 (sut/datom-count store c/eav)))
         (sut/load-datoms store [d d1])
-        (is (= 3 (sut/datom-count store c/eav))))
-      (sut/close store)
+        (is (= 3 (sut/datom-count store c/eav)))
+        (sut/close store))
       (let [d     :d/e
             p3    {:db/valueType :db.type/long}
             s3    (assoc s2 d (merge p3 {:db/aid 4}))
@@ -117,8 +125,9 @@
             store (sut/open dir {d p3})]
         (is (= s3 (sut/schema store)))
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
-        (is (= s4 (sut/schema store)))))
-    (sut/close store)))
+        (is (= s4 (sut/schema store)))
+        (sut/close store)))
+    ))
 
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
@@ -130,7 +139,8 @@
     (is (sut/closed? store))
     (let [store (sut/open dir s)]
       (is (= s1 (sut/schema store)))
-      (sut/close store))))
+      (sut/close store))
+    (u/delete-files dir)))
 
 (deftest giants-string-test
   (let [schema {:a {:db/valueType :db.type/string}}
@@ -143,7 +153,8 @@
     (is (= [d] (sut/slice store :eavt
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
-    (sut/close store)))
+    (sut/close store)
+    (u/delete-files dir)))
 
 (deftest giants-data-test
   (let [dir   (u/tmp-dir (str "datalevin-giants-data-test-" (UUID/randomUUID)))
@@ -168,7 +179,8 @@
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store'))))
+      (sut/close store'))
+    (u/delete-files dir)))
 
 (deftest normal-data-test
   (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
@@ -194,7 +206,8 @@
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store))))
+      (sut/close store))
+    ))
 
 (deftest false-value-test
   (let [d     (d/datom c/e0 :a false)
@@ -202,7 +215,8 @@
         store (sut/open dir)]
     (sut/load-datoms store [d])
     (is (= [d] (sut/fetch store d)))
-    (sut/close store)))
+    (sut/close store)
+    (u/delete-files dir)))
 
 (test/defspec random-data-test
   100

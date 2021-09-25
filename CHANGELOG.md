@@ -1,7 +1,111 @@
 # Change Log
 
+## 0.4.44
+### Fixed
+- Backport the dump/load fix from 0.5.20
+
+## 0.5.20
+### Fixed
+- Dumping/loading Datalog store handles raw bytes correctly
+
+## 0.5.19
+### Improved
+- Remove client immediately when `disconnect` message is received, clean up
+  resources afterwards, so a logically correct number of clients can be obtained
+  in the next API call on slow machines.
+
+## 0.5.18
+### Fixed
+- Occasional server message write corruptions in busy network traffic on Linux.
+
+## 0.5.17
+### Added
+- JVM uberjar release for download
+### Changed
+- JVM library is now Java 8 compatible, #69
+### Improved
+- Auto switch to local transaction preparation if something is wrong with remote
+  preparation (e.g. problem with serialization)
+
+## 0.5.16
+### Improved
+- Do most of transaction data preparation remotely to reduce traffic
+### Fixed
+- Handle entity serialization, fix #66
+
+## 0.5.15
+### Changed
+- Allow a single client to have multiple open databases at the same time
+- Client does not open db implicitly, user needs to open db explicitly
+### Fixed
+- New `create-conn` should override the old, fix #65
+
+## 0.5.14
+### Added
+- `DTLV_LIB_EXTRACT_DIR` environment variable to allow customization of native
+  libraries extraction location.
+### Improved
+- Use clj-easy/graal-build-time, in anticipation of GraalVM 22.
+
+## 0.5.13
+
+### Improved
+- Better robust jar layout for `org.clojars.huahaiy/datalevin-native`
+
+## 0.5.10
+### Added
+- Release artifact `org.clojars.huahaiy/datalevin-native` on clojars, for
+  depending on Datalevin while compiling GraalVM native image. User
+  no longer needs to manually compile Datalevin C libraries.
+
+## 0.5.9
+### Improved
+- Only check to refersh db cache at user facing namespaces, so internal db
+  calls work with a consistent db view
+- Replace unnecessary expensive calls such as `db/-search` or `db/-datoms` with
+  cheaper calls to improve remote store access speed.
+- documentation
+
+## 0.5.8
+
+### Improved
+- More robust build
+
+## 0.5.5
+
+### Improved
+- Wrap all LMDB flags as keywords
+
+## 0.5.4
+### Fixed
+- Don't do AOT in library, to avoid deps error due to exclusion of graal
+### Improved
+- Expose all LMDB flags in JVM version of kv store
+
+## 0.5.3
+### Added
+- Transparent networked client/server mode with role based access control. #46
+  and #61
+- `dtlv exec` takes input from stdin when no argument is given.
+### Improved
+- When open db, throw exception without proper file permission
+
+## 0.4.40
+### Added
+- Transactable entity [Thanks @den1k, #48]
+- `clear` function to clear Datalog db
+
+## 0.4.35
+### Fixed
+- Native uses the same version of LMDB as JVM, #58
+
+## 0.4.32
+### Improved
+- Remove GraalVM and dtlv specific deps from JVM library jar
+- Update deps
+
 ## 0.4.31
-## Improved
+### Improved
 - More robust dependency management
 ### Fixed
 - Replacing giant values, this requires Java 11 [#56]
@@ -25,37 +129,37 @@
 - Talk to Babashka pods client in transit+json
 
 ## 0.4.27
-## Added
+### Added
 - Exposed more functions to Babashka pod
 
 ## 0.4.26
-## Added
+### Added
 - Native Datalevin can now work as a Babashka pod
 
 ## 0.4.23
-## Added
+### Added
 - Compile to native on Windows and handle Windows path correctly
 - `close-db` convenience function to close a Datalog db
 
 ## 0.4.21
-## Changed
+### Changed
 - Compile to Java 8 bytecode instead of 11 to have wider compatibility
 - Use UTF-8 throughout for character encoding
 
 ## 0.4.20
-## Improved
+### Improved
 - Improve dtlv REPL (doc f) display
 
 ## 0.4.19
-## Improved
+### Improved
 - Provide Datalevin C source as a zip to help compiling native Datalevin dependency
 
 ## 0.4.17
-## Improved
+### Improved
 - Minor improvement on the command line tool
 
 ## 0.4.16
-## Changed
+### Changed
 - Native image now bundles LMDB
 
 ## 0.4.13
@@ -101,7 +205,6 @@
 - Read `:db.type/instant` value as `java.util.Date`, not as `long` [#30]
 
 ## 0.3.13
-
 ### Fixed
 - Fixed error when transacting different data types for an untyped attribute [#28, thx @den1k]
 

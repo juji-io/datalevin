@@ -4,9 +4,15 @@
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    #?(:clj [clojure.java.shell :as sh])
    datalevin.lmdb-test
+   datalevin.util-test
    datalevin.main-test
    datalevin.bits-test
    datalevin.storage-test
+   datalevin.protocol-test
+   datalevin.server-test
+   datalevin.client-test
+   datalevin.remote-test
+   datalevin.interpret-test
    datalevin.core-test
    datalevin.test.core
    datalevin.test.components
@@ -44,10 +50,16 @@
 (defn ^:export test-clj []
   (let [{:keys [fail error]}
         (t/run-tests
-          'datalevin.lmdb-test 
+          'datalevin.lmdb-test
+          'datalevin.util-test
           'datalevin.main-test
           'datalevin.bits-test
           'datalevin.storage-test
+          'datalevin.protocol-test
+          'datalevin.server-test
+          'datalevin.client-test
+          'datalevin.remote-test
+          'datalevin.interpret-test
           'datalevin.core-test
           'datalevin.test.core
           'datalevin.test.components

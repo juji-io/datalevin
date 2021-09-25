@@ -4,10 +4,10 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as lmdb
-             :refer [open-kv IBuffer IRange IKV IRtx IRtxPool IDB ILMDB]])
+            [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IKV
+                                          IRtx IRtxPool IDB ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn KeyRange Txn$BadReaderLockException CopyFlags
+            PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             CursorIterable$KeyVal]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]))
@@ -17,14 +17,56 @@
   (k [this] (.key ^CursorIterable$KeyVal this))
   (v [this] (.val ^CursorIterable$KeyVal this)))
 
-(def default-env-flags [EnvFlags/MDB_NORDAHEAD
-                        EnvFlags/MDB_MAPASYNC
-                        EnvFlags/MDB_WRITEMAP])
+(defn- flag
+  [flag-key]
+  (case flag-key
+    :fixedmap   EnvFlags/MDB_FIXEDMAP
+    :nosubdir   EnvFlags/MDB_NOSUBDIR
+    :rdonly-env EnvFlags/MDB_RDONLY_ENV
+    :writemap   EnvFlags/MDB_WRITEMAP
+    :nometasync EnvFlags/MDB_NOMETASYNC
+    :nosync     EnvFlags/MDB_NOSYNC
+    :mapasync   EnvFlags/MDB_MAPASYNC
+    :notls      EnvFlags/MDB_NOTLS
+    :nolock     EnvFlags/MDB_NOLOCK
+    :nordahead  EnvFlags/MDB_NORDAHEAD
+    :nomeminit  EnvFlags/MDB_NOMEMINIT
 
-(def default-dbi-flags [DbiFlags/MDB_CREATE])
-(def read-dbi-flags (make-array DbiFlags 0))
+    :cp-compact CopyFlags/MDB_CP_COMPACT
 
-(def default-put-flags (make-array PutFlags 0))
+    :reversekey DbiFlags/MDB_REVERSEKEY
+    :dupsort    DbiFlags/MDB_DUPSORT
+    :integerkey DbiFlags/MDB_INTEGERKEY
+    :dupfixed   DbiFlags/MDB_DUPFIXED
+    :integerdup DbiFlags/MDB_INTEGERDUP
+    :reversedup DbiFlags/MDB_REVERSEDUP
+    :create     DbiFlags/MDB_CREATE
+
+    :nooverwrite PutFlags/MDB_NOOVERWRITE
+    :nodupdata   PutFlags/MDB_NODUPDATA
+    :current     PutFlags/MDB_CURRENT
+    :reserve     PutFlags/MDB_RESERVE
+    :append      PutFlags/MDB_APPEND
+    :appenddup   PutFlags/MDB_APPENDDUP
+    :multiple    PutFlags/MDB_MULTIPLE
+
+    :rdonly-txn TxnFlags/MDB_RDONLY_TXN))
+
+(defn- flag-type
+  [type-key]
+  (case type-key
+    :env  EnvFlags
+    :copy CopyFlags
+    :dbi  DbiFlags
+    :put  PutFlags
+    :txn  TxnFlags))
+
+(defn- kv-flags
+  [type flags]
+  (let [t (flag-type type)]
+    (if (seq flags)
+      (into-array t (mapv flag flags))
+      (make-array t 0))))
 
 (deftype Rtx [^Txn txn
               ^:volatile-mutable ^Boolean use?
@@ -164,7 +206,7 @@
       (b/put-buffer vb x t)
       (.flip vb)
       (catch BufferOverflowException _
-        (let [size (* 2 ^long (b/measure-size x))]
+        (let [size (* c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
           (b/put-buffer vb x t)
           (.flip vb)))
@@ -178,8 +220,8 @@
     (b/text-ba->str (.getName db)))
   (put [_ txn append?]
     (if append?
-      (.put db txn kb vb (into-array PutFlags [PutFlags/MDB_APPEND]))
-      (.put db txn kb vb default-put-flags)))
+      (.put db txn kb vb (kv-flags :put [:append]))
+      (.put db txn kb vb (kv-flags :put c/default-put-flags))))
   (put [this txn]
     (.put this txn nil))
   (del [_ txn]
@@ -191,13 +233,16 @@
     (.iterate db (.-txn ^Rtx rtx) range-info)))
 
 (defn- up-db-size [^Env env]
-  (.setMapSize env (* 10 (-> env .info .mapSize))))
+  (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
 
 (deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
   ILMDB
   (close-kv [_]
-    (.close-pool pool)
-    (.close env))
+    (when-not (.isClosed env)
+      (.sync env true)
+      (.close-pool pool)
+      (.close env))
+    nil)
 
   (closed-kv? [_]
     (.isClosed env))
@@ -207,18 +252,17 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-               default-dbi-flags))
+               c/default-dbi-flags))
   (open-dbi [this dbi-name key-size]
-    (.open-dbi this dbi-name key-size c/+default-val-size+ default-dbi-flags))
+    (.open-dbi this dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size]
-    (.open-dbi this dbi-name key-size val-size default-dbi-flags))
+    (.open-dbi this dbi-name key-size val-size c/default-dbi-flags))
   (open-dbi [this dbi-name key-size val-size flags]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
-          db  (.openDbi env
-                        ^String dbi-name
-                        ^"[Lorg.lmdbjava.DbiFlags;" (into-array DbiFlags flags))
+          db  (.openDbi env ^String dbi-name
+                        ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
           dbi (->DBI db kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
@@ -230,7 +274,7 @@
         (if create?
           (.open-dbi this dbi-name)
           (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-                     read-dbi-flags))))
+                     c/read-dbi-flags))))
 
   (clear-dbi [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -249,7 +293,8 @@
         (with-open [txn (.txnWrite env)]
           (.drop ^Dbi (.-db dbi) txn true)
           (.commit txn))
-        (.remove dbis dbi-name))
+        (.remove dbis dbi-name)
+        nil)
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
@@ -266,9 +311,7 @@
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
-        (.copy env d (if compact?
-                       (into-array CopyFlags [CopyFlags/MDB_CP_COMPACT])
-                       (make-array CopyFlags 0)))
+        (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
         (raise "Destination directory is not empty."))))
 
   (stat [this]
@@ -279,15 +322,17 @@
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (let [^Rtx rtx (.get-rtx pool)]
-      (try
-        (let [^DBI dbi (.get-dbi this dbi-name false)
-              ^Dbi db  (.-db dbi)
-              ^Txn txn (.-txn rtx)]
-          (stat-map (.stat db txn)))
-        (catch Exception e
-          (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
-        (finally (.reset rtx)))))
+    (if dbi-name
+      (let [^Rtx rtx (.get-rtx pool)]
+        (try
+          (let [^DBI dbi (.get-dbi this dbi-name false)
+                ^Dbi db  (.-db dbi)
+                ^Txn txn (.-txn rtx)]
+            (stat-map (.stat db txn)))
+          (catch Exception e
+            (raise "Fail to get stat: " (ex-message e) {:dbi dbi-name}))
+          (finally (.reset rtx))))
+      (l/stat this)))
 
   (entries [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -321,7 +366,8 @@
             :del (let [[kt] r]
                    (.put-key dbi k kt)
                    (.del dbi txn))))
-        (.commit txn))
+        (.commit txn)
+        :transacted)
       (catch Env$MapFullException _
         (up-db-size env)
         (.transact-kv this txs))
@@ -391,12 +437,15 @@
                           (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
                           (.setMaxReaders c/+max-readers+)
                           (.setMaxDbs c/+max-dbs+))
-          ^Env env      (.open builder
-                               file
-                               (into-array EnvFlags default-env-flags))
-          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
-      (->LMDB env dir pool (ConcurrentHashMap.)))
+          ^Env env      (.open builder file (kv-flags :env c/default-env-flags))
+          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)
+          lmdb          (->LMDB env dir pool (ConcurrentHashMap.))]
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread.
+                          #(when-not (l/closed-kv? lmdb)
+                             (l/close-kv lmdb))))
+      lmdb)
     (catch Exception e
       (raise
-        "Fail to open LMDB database: " (ex-message e)
+        "Fail to open database: " (ex-message e)
         {:dir dir}))))

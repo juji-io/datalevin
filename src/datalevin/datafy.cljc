@@ -2,14 +2,15 @@
   (:require [clojure.core.protocols :as cp]
             [datalevin.pull-api :as dp]
             [datalevin.db :as db]
-            [datalevin.impl.entity :as e]))
+            [datalevin.entity :as e]))
 
 (declare datafy-entity-seq)
 
 (defn- navize-pulled-entity [db-val pulled-entity]
-  (let [ref-attrs (:db.type/ref (:rschema db-val))
+  (let [rschema    (db/-rschema db-val)
+        ref-attrs  (rschema :db.type/ref )
         ref-rattrs (set (map db/reverse-ref ref-attrs))
-        many-attrs (:db.cardinality/many (:rschema db-val))]
+        many-attrs (rschema :db.cardinality/many)]
     (with-meta pulled-entity
       {`cp/nav (fn [coll k v]
                  (cond
@@ -30,10 +31,10 @@
     {`cp/datafy (fn [entities] (navize-pulled-entity-seq db-val entities))}))
 
 (extend-protocol cp/Datafiable
-  datalevin.impl.entity.Entity
+  datalevin.entity.Entity
   (datafy [this]
-    (let [db (.-db this)
-          ref-attrs (:db.type/ref (:rschema db))
-          ref-rattrs (set (map db/reverse-ref ref-attrs))
+    (let [db           (.-db this)
+          ref-attrs    ((db/-rschema db) :db.type/ref )
+          ref-rattrs   (set (map db/reverse-ref ref-attrs))
           pull-pattern (into ["*"] ref-rattrs)]
       (navize-pulled-entity db (dp/pull db pull-pattern (:db/id this))))))

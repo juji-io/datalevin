@@ -171,7 +171,8 @@
              (set (:alias (first (d/q '[:find [(pull ?e [*]) ...]
                                         :where [?e :name "Peter"]]
                                       @conn2))))))
-      (d/close conn2))))
+      (d/close conn2))
+    (u/delete-files dir)))
 
 (deftest test-readme
   (let [dir  (u/tmp-dir (str "datalevin-test-readme-" (UUID/randomUUID)))
@@ -197,4 +198,5 @@
                   [?e :aka ?alias]]
                 @conn
                 "fred")))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))

@@ -472,7 +472,6 @@
          (let [db   (d/empty-db nil schema)
                ents (mapv (fn [ba] {:bytes ba}) byte-arrays)]
            (is (every? true?
-                       (map #(zero? (java.util.Arrays/compare ^bytes %1 ^bytes %2))
+                       (map #(java.util.Arrays/equals ^bytes %1 ^bytes %2)
                             byte-arrays
                             (map :v (:tx-data (d/with db ents)))))))))))
-

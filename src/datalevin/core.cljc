@@ -2,99 +2,115 @@
   "API for Datalevin database"
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   [datalevin.util :as u]
+   [datalevin.remote :as r]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
+   [datalevin.constants :as c]
    [datalevin.lmdb :as l]
-   [datalevin.binding.graal]
-   [datalevin.binding.java]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
-   [datalevin.impl.entity :as de]
+   [datalevin.entity :as de]
    [datalevin.bits :as b])
   (:import
-   [datalevin.impl.entity Entity]
+   [datalevin.entity Entity]
    [datalevin.storage Store]
    [datalevin.db DB]
+   [datalevin.datom Datom]
+   [datalevin.remote DatalogStore]
    [java.util UUID]))
+
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
 
 ;; Entities
 
-(def ^{:arglists '([db eid])
-       :doc      "Retrieves an entity by its id from Datalog database. Entities
-are lazy map-like structures to navigate Datalevin database content.
+(defn entity
+  "Retrieves an entity by its id from Datalog database. Entities
+  are lazy map-like structures to navigate Datalevin database content.
 
-             `db` is a Datalog database.
+  `db` is a Datalog database.
 
-             For `eid` pass entity id or lookup attr:
+  For `eid` pass entity id or lookup attr:
 
-                 (entity db 1)
-                 (entity db [:unique-attr :value])
+      (entity db 1)
+      (entity db [:unique-attr :value])
 
-             If entity does not exist, `nil` is returned:
+  If entity does not exist, `nil` is returned:
 
-                 (entity db 100500) ; => nil
+      (entity db 100500) ; => nil
 
-             Creating an entity by id is very cheap, almost no-op, as attr access
-is on-demand:
+  Creating an entity by id is very cheap, almost no-op, as attr access
+  is on-demand:
 
-                 (entity db 1) ; => {:db/id 1}
+      (entity db 1) ; => {:db/id 1}
 
-             Entity attributes can be lazily accessed through key lookups:
+  Entity attributes can be lazily accessed through key lookups:
 
-                 (:attr (entity db 1)) ; => :value
-                 (get (entity db 1) :attr) ; => :value
+      (:attr (entity db 1)) ; => :value
+      (get (entity db 1) :attr) ; => :value
 
-             Cardinality many attributes are returned sequences:
+  Cardinality many attributes are returned sequences:
 
-                 (:attrs (entity db 1)) ; => [:v1 :v2 :v3]
+      (:attrs (entity db 1)) ; => [:v1 :v2 :v3]
 
-             Reference attributes are returned as another entities:
+  Reference attributes are returned as another entities:
 
-                 (:ref (entity db 1)) ; => {:db/id 2}
-                 (:ns/ref (entity db 1)) ; => {:db/id 2}
+      (:ref (entity db 1)) ; => {:db/id 2}
+      (:ns/ref (entity db 1)) ; => {:db/id 2}
 
-             References can be walked backwards by prepending `_` to name part
-of an attribute:
+  References can be walked backwards by prepending `_` to name part
+  of an attribute:
 
-                 (:_ref (entity db 2)) ; => [{:db/id 1}]
-                 (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
+      (:_ref (entity db 2)) ; => [{:db/id 1}]
+      (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
 
-             Reverse reference lookup returns sequence of entities unless
-attribute is marked as `:db/component`:
+  Reverse reference lookup returns sequence of entities unless
+  attribute is marked as `:db/component`:
 
-                 (:_component-ref (entity db 2)) ; => {:db/id 1}
+      (:_component-ref (entity db 2)) ; => {:db/id 1}
 
-             Entity gotchas:
+  Entity gotchas:
 
-             - Entities print as map, but are not exactly maps (they have
-compatible get interface though).
-             - Entities retain reference to the database.
-             - You can’t change database through entities, only read.
-             - Creating an entity by id is very cheap, almost no-op
-(attributes are looked up on demand).
-             - Comparing entities just compares their ids. Be careful when
-comparing entities taken from differenct dbs or from different versions of the
-same db.
-             - Accessed entity attributes are cached on entity itself (except
-backward references).
-             - When printing, only cached attributes (the ones you have accessed
-before) are printed. See [[touch]]."}
-  entity de/entity)
+    - Entities print as map, but are not exactly maps (they have
+    compatible get interface though).
+    - Entities retain reference to the database.
+    - Creating an entity by id is very cheap, almost no-op
+    (attributes are looked up on demand).
+    - Comparing entities just compares their ids. Be careful when
+    comparing entities taken from differenct dbs or from different versions of the
+    same db.
+    - Accessed entity attributes are cached on entity itself (except
+    backward references).
+    - When printing, only cached attributes (the ones you have accessed
+      before) are printed. See [[touch]]."
+  [db eid]
+  {:pre [(db/db? db)]}
+  (de/entity db eid))
 
+(def ^{:arglists '([ent attr value])
+       :doc      "Add an attribute value to an entity"}
+  add de/add)
 
-(def ^{:arglists '([db eid])
-       :doc      "Given lookup ref `[unique-attr value]`, returns numberic entity id.
+(def ^{:arglists '([ent attr][ent attr value])
+       :doc      "Remove an attribute from an entity"}
+  retract de/retract)
 
-             `db` is a Datalog database.
+(defn entid
+  "Given lookup ref `[unique-attr value]`, returns numberic entity id.
 
-             If entity does not exist, returns `nil`.
+  `db` is a Datalog database.
 
-             For numeric `eid` returns `eid` itself (does not check for entity
-existence in that case)."}
-  entid db/entid)
+  If entity does not exist, returns `nil`.
 
+  For numeric `eid` returns `eid` itself (does not check for entity
+  existence in that case)."
+  [db eid]
+  {:pre [(db/db? db)]}
+  (db/entid db eid))
 
 (defn entity-db
   "Returns a Datalog db that entity was created from."
@@ -102,57 +118,67 @@ existence in that case)."}
   {:pre [(de/entity? entity)]}
   (.-db entity))
 
-
 (def ^{:arglists '([e])
        :doc      "Forces all entity attributes to be eagerly fetched and cached.
 Only usable for debug output.
 
-             Usage:
+  Usage:
 
-             ```
              (entity db 1) ; => {:db/id 1}
              (touch (entity db 1)) ; => {:db/id 1, :dislikes [:pie], :likes [:pizza]}
-             ```"}
+             "}
   touch de/touch)
 
 
 ;; Pull API
 
-(def ^{:arglists '([db selector eid])
-       :doc      "Fetches data from Datalog database using recursive declarative
-description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
+(defn pull
+  "Fetches data from Datalog database using recursive declarative
+  description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
-             Unlike [[entity]], returns plain Clojure map (not lazy).
+  Unlike [[entity]], returns plain Clojure map (not lazy).
 
-             Usage:
+  Usage:
 
-                 (pull db [:db/id, :name, :likes, {:friends [:db/id :name]}] 1)
-                 ; => {:db/id   1,
-                 ;     :name    \"Ivan\"
-                 ;     :likes   [:pizza]
-                 ;     :friends [{:db/id 2, :name \"Oleg\"}]}"}
-  pull dp/pull)
+                (pull db [:db/id, :name, :likes, {:friends [:db/id :name]}] 1)
+                ; => {:db/id   1,
+                ;     :name    \"Ivan\"
+                ;     :likes   [:pizza]
+                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
+  [db selector eid]
+  {:pre [(db/db? db)]}
+  (dp/pull db selector eid))
 
 
-(def ^{:arglists '([db selector eids])
-       :doc      "Same as [[pull]], but accepts sequence of ids and returns
-sequence of maps.
+(defn pull-many
+  "Same as [[pull]], but accepts sequence of ids and returns
+  sequence of maps.
 
-             Usage:
+  Usage:
 
-             ```
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
-             ;     {:db/id 2, :name \"Oleg\"}]
-             ```"}
-  pull-many dp/pull-many)
+             ;     {:db/id 2, :name \"Oleg\"}]"
+  [db selector eids]
+  {:pre [(db/db? db)]}
+  (dp/pull-many db selector eids))
 
 
 ;; Query
 
-(def
-  ^{:arglists '([query & inputs])
-    :doc      "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+(defn- only-remote-db
+  "Return [remote-db [updated-inputs]] if the inputs contain only one db
+  and its backing store is a remote one, where the remote-db in the inputs is
+  replaced by `:remote-db-placeholder, otherwise return nil"
+  [inputs]
+  (let [dbs (filter db/db? inputs)]
+    (when-let [rdb (first dbs)]
+      (let [rstore (.-store ^DB rdb)]
+        (when (and (= 1 (count dbs)) (instance? DatalogStore rstore))
+          [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
+
+(defn q
+  "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
 
           Usage:
 
@@ -161,32 +187,31 @@ sequence of maps.
                :where [_ :likes ?value]]
              db)
           ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
-          ```"}
-  q dq/q)
-
+          ```"
+  [query & inputs]
+  (if-let [[store inputs'] (only-remote-db inputs)]
+    (r/q store query inputs')
+    (apply dq/q query inputs)))
 
 ;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema])
-       :doc      "Open Datalog database at the given data directory. Creates an
-empty database there if it does not exist yet. Update the schema if one is
-given. Return reference to the database.
+       :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
-             Usage:
+  Usage:
 
-             ```
              (empty-db)
 
              (empty-db \"/tmp/test-empty-db\")
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
-             ```"}
+
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\")"}
   empty-db db/empty-db)
 
 
 (def ^{:arglists '([x])
-       :doc      "Returns `true` if the given value is a Datalog database,
-`false` otherwise."}
+       :doc      "Returns `true` if the given value is a Datalog database. Has the side effect of updating the cache of the db to the most recent. Return `false` otherwise. "}
   db? db/db?)
 
 
@@ -215,9 +240,7 @@ given. Return reference to the database.
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
-       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms.
-
-             Does no validation on inputs, so `datoms` must be well-formed and match schema.
+       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
              See also [[datom]]."}
   init-db db/init-db)
@@ -386,7 +409,8 @@ given. Return reference to the database.
 ;; Conn
 
 (defn conn?
-  "Returns `true` if this is a connection to a Datalevin db, `false` otherwise."
+  "Returns `true` if this is an open connection to a local Datalog db, `false`
+  otherwise."
   [conn]
   (and #?(:clj  (instance? clojure.lang.IDeref conn)
           :cljs (satisfies? cljs.core/IDeref conn))
@@ -395,10 +419,12 @@ given. Return reference to the database.
 (defn conn-from-db
   "Creates a mutable reference to a given database. See [[create-conn]]."
   [db]
+  {:pre [(db/db? db)]}
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
-  "Create a mutable reference to a database with the given datoms added to it."
+  "Create a mutable reference to a database with the given datoms added to it.
+  `dir` could be a local directory path or a dtlv connection URI string."
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
   ([datoms dir schema] (conn-from-db (init-db datoms dir schema))))
@@ -406,8 +432,9 @@ given. Return reference to the database.
 
 (defn create-conn
   "Creates a mutable reference (a “connection”) to a database at the given
-  data directory and opens the database. Creates the database if it doesn't
+  location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
+  `dir` could be a local directory path or a dtlv connection URI string.
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -420,12 +447,14 @@ given. Return reference to the database.
 
   Usage:
 
+
              (create-conn)
 
              (create-conn \"/tmp/test-create-conn\")
 
              (create-conn \"/tmp/test-create-conn\" {:likes {:db/cardinality :db.cardinality/many}})
-  "
+
+             (create-conn \"dtlv://datalevin:secret@example.host/mydb\")"
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
   ([dir schema] (conn-from-db (empty-db dir schema))))
@@ -434,7 +463,6 @@ given. Return reference to the database.
   "Close the connection"
   [conn]
   (s/close ^Store (.-store ^DB @conn))
-  (reset! conn nil)
   nil)
 
 (defn closed?
@@ -557,8 +585,8 @@ given. Return reference to the database.
                   { :db-before @conn
                    :db-after   db
                    :tx-data    (concat
-                                (map #(assoc % :added false) (datoms @conn :eavt))
-                                (datoms db :eavt))
+                                 (map #(assoc % :added false) (datoms @conn :eavt))
+                                 (datoms db :eavt))
                    :tx-meta    tx-meta})]
      (reset! conn db)
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
@@ -598,7 +626,8 @@ given. Return reference to the database.
 
 (def ^{:no-doc true}
   data-readers {'datalevin/Datom dd/datom-from-reader
-                'datalevin/DB    db/db-from-reader})
+                'datalevin/DB    db/db-from-reader
+                'datalevin/bytes b/bytes-from-reader})
 
 #?(:cljs
    (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))
@@ -644,30 +673,28 @@ given. Return reference to the database.
 (defn schema
   "Return the schema"
   [conn]
+  {:pre [(conn? conn)]}
   (s/schema ^Store (.-store ^DB @conn)))
 
-  (defn update-schema
+(defn update-schema
   "Update the schema of an open connection. `schema-update` is a map from
   attribute keywords to maps of corresponding properties. Return the updated
   schema.
 
   Example:
 
-  (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
+        (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
   [conn schema-update]
-  (let [^DB db (db conn)
-        s      (s/set-schema ^Store (.-store db) schema-update)]
-    (swap! conn (fn [db]
-                  (assoc db
-                         :schema s
-                         :rschema (db/rschema s))))
+  {:pre [(conn? conn)]}
+  (let [^DB db (db conn)]
+    (s/set-schema ^Store (.-store db) schema-update)
     (schema conn)))
 
-  (defonce ^:private connections (atom {}))
+(defonce ^:private connections (atom {}))
 
-  (defn- add-conn [dir conn] (swap! connections assoc dir conn))
+(defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
-  (defn- new-conn
+(defn- new-conn
   [dir schema]
   (let [conn (if schema
                (create-conn dir schema)
@@ -675,10 +702,8 @@ given. Return reference to the database.
     (add-conn dir conn)
     conn))
 
-  (defn get-conn
-  "Obtain an open connection to a database. Create the database if it does not
-  exist. Reuse the same connection if a connection to the same database already
-  exists. Open the database if it is closed. Return the connection.
+(defn get-conn
+  "Obtain an open connection to a database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
 
   See also [[create-conn]] and [[with-conn]]"
   ([dir]
@@ -696,16 +721,16 @@ given. Return reference to the database.
   this call. If a database needs to be kept open, use `create-conn` and
   hold onto the returned connection. See also [[create-conn]] and [[get-conn]]
 
-  `spec` is a vector of an identifier of the database connection, a data path
-  string, and optionally a schema map.
+  `spec` is a vector of an identifier of the database connection, a path or
+  dtlv URI string, and optionally a schema map.
 
   Example:
 
-  (with-conn [conn \"my-data-path\"]
-    ...conn...)
+          (with-conn [conn \"my-data-path\"]
+            ;; body)
 
-  (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
-    ...conn...)
+          (with-conn [conn \"my-data-path\" {:likes {:db/cardinality :db.cardinality/many}}]
+            ;; body)
   "
   [spec & body]
   `(let [dir#    ~(second spec)
@@ -828,10 +853,10 @@ given. Return reference to the database.
        :doc      "Value of a key value pair"}
   v l/v)
 
-(def ^{:arglists '([dir])
-       :doc      "Open a LMDB key-value database, return the connection.
+(defn open-kv
+  "Open a LMDB key-value database, return the connection.
 
-  `dir` is a string directory path in which the data are to be stored;
+  `dir` is a directory path or a dtlv connection URI string.
 
   Will detect the platform this code is running in, and dispatch accordingly.
 
@@ -851,8 +876,11 @@ given. Return reference to the database.
   example, in Clojure, use [component](https://github.com/stuartsierra/component),
   [mount](https://github.com/tolitius/mount),
   [integrant](https://github.com/weavejester/integrant), or something similar
-  to hold on to and manage the connection. "}
-  open-kv l/open-kv)
+  to hold on to and manage the connection. "
+  [dir]
+  (if (r/dtlv-uri? dir)
+    (r/open-kv dir)
+    (l/open-kv dir)))
 
 (def ^{:arglists '([db])
        :doc      "Close this key-value store"}
@@ -863,7 +891,7 @@ given. Return reference to the database.
   closed-kv? l/closed-kv?)
 
 (def ^{:arglists '([db])
-       :doc      "Return the directory path of the key-value store"}
+       :doc      "Return the path or URI string of the key-value store"}
   dir l/dir)
 
 (def ^{:arglists '([db]
@@ -922,23 +950,23 @@ given. Return reference to the database.
 
   Example:
 
-  (transact-kv
-    lmdb
-    [ [:put \"a\" 1 2]
-     [:put \"a\" 'a 1]
-     [:put \"a\" 5 {}]
-     [:put \"a\" :annunaki/enki true :attr :data]
-     [:put \"a\" :datalevin [\"hello\" \"world\"]]
-     [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-     [:put \"a\" (byte 0x01) #{1 2} :byte :data]
-     [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
-     [:put \"a\" [-1 -235254457N] 5]
-     [:put \"a\" :a 4]
-     [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-     [:put \"a\" :long 1 :data :long]
-     [:put \"a\" 2 3 :long :long]
-     [:del \"a\" 1]
-     [:del \"a\" :non-exist] ])"}
+          (transact-kv
+            lmdb
+            [ [:put \"a\" 1 2]
+            [:put \"a\" 'a 1]
+            [:put \"a\" 5 {}]
+            [:put \"a\" :annunaki/enki true :attr :data]
+            [:put \"a\" :datalevin [\"hello\" \"world\"]]
+            [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+            [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+            [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+            [:put \"a\" [-1 -235254457N] 5]
+            [:put \"a\" :a 4]
+            [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+            [:put \"a\" :long 1 :data :long]
+            [:put \"a\" 2 3 :long :long]
+            [:del \"a\" 1]
+            [:del \"a\" :non-exist] ])"}
   transact-kv l/transact-kv)
 
 (def ^{:arglists '([db dbi-name k]
@@ -955,20 +983,20 @@ given. Return reference to the database.
 
   Examples:
 
-  (get-value lmdb \"a\" 1)
-  ;;==> 2
+        (get-value lmdb \"a\" 1)
+        ;;==> 2
 
-  ;; specify data types
-  (get-value lmdb \"a\" :annunaki/enki :attr :data)
-  ;;==> true
+        ;; specify data types
+        (get-value lmdb \"a\" :annunaki/enki :attr :data)
+        ;;==> true
 
-  ;; return key value pair
-  (get-value lmdb \"a\" 1 :data :data false)
-  ;;==> [1 2]
+        ;; return key value pair
+        (get-value lmdb \"a\" 1 :data :data false)
+        ;;==> [1 2]
 
-  ;; key doesn't exist
-  (get-value lmdb \"a\" 2)
-  ;;==> nil "}
+        ;; key doesn't exist
+        (get-value lmdb \"a\" 2)
+        ;;==> nil "}
   get-value l/get-value)
 
 (def ^{:arglists '([db dbi-name k-range]
@@ -1071,11 +1099,15 @@ given. Return reference to the database.
                    [db dbi-name pred k-range k-type]
                    [db dbi-name pred k-range k-type v-type]
                    [db dbi-name pred k-range k-type v-type ignore-key?])
-       :doc      "Return the first kv pair that has logical true value of `(pred x)` in the key-value store,
-     where `pred` is a function, `x` is an `IKV` fetched from the store,
-     with both key and value fields being a `ByteBuffer`.
+       :doc
+       "Return the first kv pair that has logical true value of `(pred x)` in
+        the key-value store, where `pred` is a function, `x` is an `IKV`
+        fetched from the store, with both key and value fields being a
+        `ByteBuffer`.
 
      `pred` can use [[read-buffer]] to read the content.
+
+      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1090,7 +1122,9 @@ given. Return reference to the database.
 
      Examples:
 
-              (def pred (fn [kv]
+              (require '[datalevin.interpret :as i])
+
+              (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
                           (> lk 15)))
 
@@ -1112,6 +1146,8 @@ given. Return reference to the database.
 
      `pred` can use [[read-buffer]] to read the buffer content.
 
+      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
      `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
@@ -1125,7 +1161,9 @@ given. Return reference to the database.
 
      Examples:
 
-              (def pred (fn [kv]
+              (require '[datalevin.interpret :as i])
+
+              (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
                           (> lk 15)))
 
@@ -1141,10 +1179,12 @@ given. Return reference to the database.
                    [db dbi-name pred k-range k-type])
        :doc      "Return the number of kv pairs in the specified key range in the key-value store, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IMapEntry`, with both key and value fields being a `ByteBuffer`.
+     is an `IKV`, with both key and value fields being a `ByteBuffer`.
      Does not process the kv pairs.
 
      `pred` can use [[read-buffer]] to read the buffer content.
+
+      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
     `k-type` indicates data type of `k` and the allowed data types are described
     in [[read-buffer]].
@@ -1156,14 +1196,25 @@ given. Return reference to the database.
 
      Examples:
 
+              (require '[datalevin.interpret :as i])
 
-              (def pred (fn [kv]
+              (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
                           (> lk 15)))
 
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}
   range-filter-count l/range-filter-count)
+
+(defn clear
+  "Clear all data in the Datalog database, including schema."
+  [conn]
+  (close conn)
+  (let [dir  (s/dir ^Store (.-store ^DB @conn))
+        lmdb (open-kv dir)]
+    (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
+      (clear-dbi lmdb dbi))
+    (close-kv lmdb)))
 
 ;; byte buffer
 
@@ -1194,18 +1245,34 @@ given. Return reference to the database.
        :doc      "Get the given type of data from buffer `bf`, `v-type` can be
 one of the following data types:
 
-    - `:data` (default), arbitrary EDN data
-    - `:string`, UTF-8 string
-    - `:int`, 32 bits integer
-    - `:long`, 64 bits integer
-    - `:id`, 64 bits integer, not prefixed with a type header
-    - `:float`, 32 bits IEEE754 floating point number
-    - `:double`, 64 bits IEEE754 floating point number
-    - `:byte`, single byte
-    - `:bytes`, an byte array
-    - `:keyword`, EDN keyword
-    - `:symbol`, EDN symbol
-    - `:boolean`, `true` or `false`
-    - `:instant`, timestamp, same as `java.util.Date`
-    - `:uuid`, UUID, same as `java.util.UUID`"}
+  - `:data` (default), arbitrary EDN data
+  - `:string`, UTF-8 string
+  - `:int`, 32 bits integer
+  - `:long`, 64 bits integer
+  - `:id`, 64 bits integer, not prefixed with a type header
+  - `:float`, 32 bits IEEE754 floating point number
+  - `:double`, 64 bits IEEE754 floating point number
+  - `:byte`, single byte
+  - `:bytes`, an byte array
+  - `:keyword`, EDN keyword
+  - `:symbol`, EDN symbol
+  - `:boolean`, `true` or `false`
+  - `:instant`, timestamp, same as `java.util.Date`
+  - `:uuid`, UUID, same as `java.util.UUID`
+
+  or one of the following Datalog specific data types
+
+  - `:datom`
+  - `:attr`
+  - `:eav`
+  - `:ave`
+  - `:vea`"}
   read-buffer b/read-buffer)
+
+(def ^{:arglists '([s])
+       :doc      "Turn a string into a hexified string"}
+  hexify-string b/hexify-string)
+
+(def ^{:arglists '([s])
+       :doc      "Turn a hexified string back into a normal string"}
+  unhexify-string b/unhexify-string)

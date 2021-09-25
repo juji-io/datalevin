@@ -1,23 +1,32 @@
-(def version "0.4.31")
+(def version "0.5.21")
 
 (defproject datalevin version
-  :description "A simple, fast and durable Datalog database"
+  :description "A simple, fast and versatile Datalog database"
   :url "https://github.com/juji-io/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies [[org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
+                         [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]
+                         [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.4.2"]
+                         [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
                          [babashka/babashka.pods "0.0.1"]
+                         [com.fasterxml.jackson.core/jackson-core "2.12.5"]
                          [com.cognitect/transit-clj "1.0.324"
-                          :exclusions [com.fasterxml.jackson.core/jackson-core]]
+                          ;; :exclusions [com.fasterxml.jackson.core/jackson-core]
+                          ]
                          [nrepl/bencode "1.1.0"]
-                         [org.graalvm.sdk/graal-sdk "21.0.0.2"]
-                         [org.graalvm.nativeimage/svm "21.0.0.2"]
-                         [borkdude/sci "0.2.4"]
+                         [org.graalvm.sdk/graal-sdk "21.1.0"]
+                         [org.graalvm.nativeimage/svm "21.1.0"]
+                         [borkdude/sci "0.2.6"]
                          [com.taoensso/nippy "3.1.1"]
-                         [persistent-sorted-set "0.1.2"]
                          [org.roaringbitmap/RoaringBitmap "0.9.3"]
+                         [com.taoensso/timbre "5.1.2"]
+                         [persistent-sorted-set "0.1.4"]
+                         [org.bouncycastle/bcprov-jdk15on "1.69"]
+                         [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
+                         [com.github.clj-easy/graal-build-time "0.1.0"]
                          [org.lmdbjava/lmdbjava "0.8.1"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -27,44 +36,63 @@
                           ;;  org.ow2.asm/asm-util]
                           ]]
   :dependencies [[org.clojure/clojure :scope "provided"]
-                 [org.clojure/tools.cli]
-                 [borkdude/sci]
-                 [com.cognitect/transit-clj]
-                 [nrepl/bencode]
+                 [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
-                 [persistent-sorted-set]
+                 [borkdude/sci]
+                 [com.fasterxml.jackson.core/jackson-core]
+                 [com.cognitect/transit-clj]
                  [org.roaringbitmap/RoaringBitmap]
-                 [org.graalvm.nativeimage/svm]
-                 [org.lmdbjava/lmdbjava]]
-  :source-paths ["src" "native/src/clj" "test"]
-  :java-source-paths ["native/src/java"]
-  :profiles {:uberjar      {:aot          [#"^datalevin.*"
-                                           pod.huahaiy.datalevin],
-                            :main         datalevin.main
-                            :uberjar-name "main.uberjar.jar"}
-             :test-uberjar {:main         datalevin.test
-                            :aot          [#"^datalevin.*"]
-                            :uberjar-name "test.uberjar.jar"}
-             :dev          {:dependencies
-                            [[org.clojure/test.check]
-                             [babashka/babashka.pods]]}}
+                 [persistent-sorted-set]]
+  :source-paths ["src"]
+  :java-source-paths ["src/java"]
+  :profiles {:uberjar        {:main           datalevin.main
+                              :aot            [datalevin.main]
+                              :jar-inclusions [#"graal"]
+                              :dependencies
+                              [[nrepl/bencode]
+                               [org.clojure/tools.cli]
+                               [org.bouncycastle/bcprov-jdk15on]
+                               [com.taoensso/timbre]]}
+             :native-uberjar {:aot          [pod.huahaiy.datalevin],
+                              :uberjar-name "main.uberjar.jar"}
+             :test-uberjar   {:main         datalevin.test
+                              :uberjar-name "test.uberjar.jar"}
+             :dev            {:source-paths      ["src" "test"]
+                              :java-source-paths ["native/src/java"]
+                              ;; uncomment on java 11 and above
+                              :jvm-opts
+                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+                               "--illegal-access=permit"
+                               "-Djdk.attach.allowAttachSelf"
+                               "-Dclojure.compiler.direct-linking=true"]
+                              :dependencies
+                              [[org.clojure/test.check]
+                               [org.clojure/tools.cli]
+                               [org.bouncycastle/bcprov-jdk15on]
+                               [com.taoensso/timbre]
+                               [nrepl/bencode]
+                               [babashka/babashka.pods]
+                               [com.clojure-goes-fast/clj-memory-meter]
+                               [org.graalvm.nativeimage/svm]]
+                              :global-vars
+                              {*print-namespace-maps* false
+                               *unchecked-math*       :warn-on-boxed
+                               *warn-on-reflection*   true}}}
+  :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
-  :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-             "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-             "-Dclojure.compiler.direct-linking=true"]
-  :javac-options ["--release" "11"]
-
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password
                                     :sign-releases false}]]
   :plugins [[lein-codox "0.10.7"]]
   :codox {:output-path "codox"
-          :namespaces  [datalevin.core datalevin.main]
+          :namespaces  [datalevin.core datalevin.client datalevin.interpret]
           :metadata    {:doc/format :markdown}
           :source-uri
-          {#"target/classes" "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
-           #".*"             "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
-  :global-vars {*print-namespace-maps* false
-                *unchecked-math*       :warn-on-boxed
-                *warn-on-reflection*   true})
+          {#"target/classes"
+           "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
+           #".*"
+           "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
+  )

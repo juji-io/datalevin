@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   release:
     types:
       - created
@@ -18,20 +19,32 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Graalvm
-        uses: DeLaGuardo/setup-graalvm@master
-        with:
-          graalvm-version: '21.0.0.java11'
-
-      - name: Install Native Image
-        run: |
-          gu install native-image
-
       - name: Install Lein
         uses: knicknic/os-specific-run@v1.0.3
         with:
           macos: brew install leiningen
           linux: echo "lein is already installed"
+
+      - name: Run Tests then Uberjar
+        run: |
+          lein test
+          lein uberjar
+
+      - name: Upload Uberjar
+        uses: shogo82148/actions-upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
+          overwrite: true
+
+      - name: Setup Graalvm
+        uses: DeLaGuardo/setup-graalvm@master
+        with:
+          graalvm-version: '21.1.0.java11'
+
+      - name: Install Native Image
+        run: |
+          gu install native-image
 
       - name: Build Native Datalevin
         run: |
@@ -53,22 +66,4 @@ jobs:
         with:
           upload_url: ${{ github.event.release.upload_url }}
           asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
-
-      - name: Zip C Source
-        run: |
-          cd native
-          7z a -tzip datalevin-c-source-${{ github.event.release.tag_name }}.zip src/c
-
-      - name: Upload C Source
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: native/datalevin-c-source-${{ github.event.release.tag_name }}.zip
-          overwrite: true
-
-      - name: Upload reflect-config.json
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: native/config/reflect-config.json
           overwrite: true

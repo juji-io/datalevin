@@ -7,23 +7,25 @@
             [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.stacktrace :as st]
-            [clojure.walk :as w]
             [sci.core :as sci]
-            [sci.impl.vars :as vars]
             [datalevin.core :as d]
-            [datalevin.query :as q]
+            [datalevin.util :as u]
+            [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
-            [datalevin.bits :as b]
             [datalevin.lmdb :as l]
+            [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
-            [datalevin.binding.graal]
-            [datalevin.binding.java])
-  (:import [java.io PushbackReader IOException]
+            [datalevin.constants :as c])
+  (:import [java.io BufferedReader PushbackReader IOException Writer]
            [java.lang RuntimeException]
            [datalevin.datom Datom])
   (:gen-class))
 
-(def ^:private version "0.4.31")
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
+
+(def ^:private version "0.5.21")
 
 (def ^:private version-str
   (str
@@ -31,7 +33,20 @@
   Datalevin (version: " version ")"))
 
 (def ^:private commands
-  #{"exec" "copy" "drop" "dump" "load" "stat" "help" "repl"})
+  #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
+
+(def ^:private serv-help
+  "
+  Command serv - run as a server.
+
+  Optional options:
+      -p --port        Listening port, default is 8898
+      -r --root        Root data directory, default is /var/lib/datalevin
+      -v --verbose     Show detailed logging messages
+
+  Examples:
+      dtlv -p 8899 -v serv
+      dtlv -r /data/dtlv serv")
 
 (def ^:private stat-help
   "
@@ -130,75 +145,27 @@
                  (q (quote [:find ?e ?n :where [?e :name ?n]]) @conn) \\
                  (close conn)'")
 
-(def ^:private user-facing-ns #{'datalevin.core})
-
-(defn- user-facing? [v]
-  (let [m (meta v)]
-    (and (:doc m)
-         (if-let [p (:protocol m)]
-           (and (not (:no-doc (meta p)))
-                (not (:no-doc m)))
-           (not (:no-doc m))))))
-
-(defn- user-facing-map [ns var-map]
-  (let [sci-ns (vars/->SciNamespace ns nil)]
-    (reduce
-      (fn [m [k v]]
-        (assoc m k (vars/->SciVar v
-                                  (symbol v)
-                                  (assoc (meta v)
-                                         :sci.impl/built-in true
-                                         :ns sci-ns)
-                                  false)))
-      {}
-      (select-keys var-map
-                   (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
-
-(defn- user-facing-vars []
-  (reduce
-    (fn [m ns]
-      (assoc m ns (user-facing-map ns (ns-publics ns))))
-    {}
-    user-facing-ns))
-
-(defn- resolve-var [s]
-  (when (symbol? s)
-    (some #(ns-resolve % s) user-facing-ns)))
-
-(defn- qualify-fn [x]
-  (if (list? x)
-    (let [[f & args] x]
-      (if-let [var (when-not (q/rule-head f) (resolve-var f))]
-        (apply list (symbol var) args)
-        x))
-    x))
-
-(defn- eval-fn [ctx form]
-  (sci/eval-form ctx (if (coll? form)
-                       (w/postwalk qualify-fn form)
-                       form)))
-
-(def ^:private sci-opts {:namespaces (user-facing-vars)})
-
 (defn- repl-help []
   (println "")
-  (println "The following Datalevin functions are available:")
-  (println "")
-  (doseq [ns   user-facing-ns
+  (println "In addition to Clojure core functions, the following functions are available:")
+  (doseq [ns   i/user-facing-ns
           :let [fs (->> ns
                         ns-publics
-                        (user-facing-map ns)
+                        (i/user-facing-map ns)
                         keys
                         (sort-by name)
                         (partition 4 4 nil))]]
+    (println "")
+    (println "In namespace" ns)
+    (println "")
     (doseq [f4 fs]
       (doseq [f f4]
-        (printf "%-20s" (name f)))
+        (printf "%-22s" (name f)))
       (println "")))
   (println "")
-  (println "Call function just like in code: (<function> <args>)")
+  (println "Can call function without namespace: (<function name> <arguments>)")
   (println "")
-  (println "Type (doc <function>) to read documentation of the function")
+  (println "Type (doc <function name>) to read documentation of the function")
   "")
 
 (def ^:private repl-header
@@ -220,6 +187,7 @@
         "  help  Show help messages"
         "  load  Load data from standard input into a database"
         "  repl  Enter an interactive shell"
+        "  serv  Run as a server"
         "  stat  Display statistics of database"
         ""
         "Options:"
@@ -234,6 +202,11 @@
   (s/join \newline ["The following errors occurred while parsing your command:"
                     (s/join \newline errors)]))
 
+(def default-root-dir
+  (if (u/windows?)
+    "C:\\ProgramData\\Datalevin"
+    "/var/lib/datalevin"))
+
 (def ^:private cli-opts
   [["-a" "--all" "Include all of the sub-databases"]
    ["-c" "--compact" "Compact while copying"]
@@ -243,6 +216,13 @@
    ["-g" "--datalog" "Dump/load as a Datalog database"]
    ["-h" "--help" "Show usage"]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
+   ["-p" "--port PORT" "Server listening port number"
+    :default c/default-port
+    :parse-fn #(Integer/parseInt %)
+    :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
+   ["-r" "--root ROOT" "Server root data directory"
+    :default default-root-dir]
+   ["-v" "--verbose" "Show verbose server debug log"]
    ["-V" "--version" "Show Datalevin version and exit"]])
 
 (defn ^:no-doc validate-args
@@ -256,7 +236,7 @@
         command (first arguments)
         pod?    (= "true" (System/getenv "BABASHKA_POD"))]
     (cond
-      pod?               {:command "pod"}
+      pod?               {:command "pods"}
       (:version options) {:exit-message version-str :ok? true}
       (:help options)    {:exit-message (usage summary) :ok? true}
       errors             {:exit-message (str (error-msg errors)
@@ -293,22 +273,14 @@
     (exit 0 (usage summary))))
 
 (defn exec
-  "Execute code and return results. `code` is a string. Acceptable code includes
-  Datalevin functions and Clojure core functions."
-  [code]
-  (let [reader (sci/reader code)
-        ctx    (sci/init sci-opts)]
-    (sci/with-bindings {sci/ns @sci/ns}
-      (loop []
-        (let [next-form (sci/parse-next ctx reader)]
-          (when-not (= ::sci/eof next-form)
-            (prn (eval-fn ctx next-form))
-            (recur)))))))
+  [arguments]
+  (i/exec-code (s/join (if (seq arguments)
+                         arguments
+                         (doall (line-seq (BufferedReader. *in*)))))))
 
 (defn- dtlv-exec [arguments]
-  (assert (seq arguments) (s/join \newline ["Missing code." exec-help]))
   (try
-    (exec (s/join arguments))
+    (exec arguments)
     (catch Throwable e
       (st/print-cause-trace e)
       (exit 1 (str "Execution error: " (.getMessage e)))))
@@ -368,7 +340,7 @@
   (let [n (l/entries lmdb dbi)]
     (p/pprint {:dbi dbi :entries n})
     (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
-      (p/pprint [(b/binary-ba->str k) (b/binary-ba->str v)]))))
+      (p/pprint [(u/encode-base64 k) (u/encode-base64 v)]))))
 
 (defn- dump-all [lmdb]
   (let [dbis (set (l/list-dbis lmdb))]
@@ -378,7 +350,7 @@
   (let [conn (d/create-conn dir)]
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (p/pprint [(.-e datom) (.-a datom) (.-v datom)]))))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
@@ -421,7 +393,8 @@
 (defn- load-datalog [dir in]
   (try
     (with-open [^PushbackReader r in]
-      (let [read-form #(edn/read {:eof ::EOF} r)
+      (let [read-form #(edn/read {:eof     ::EOF
+                                  :readers d/data-readers} r)
             schema    (read-form)
             datoms    (->> (repeatedly read-form)
                            (take-while #(not= ::EOF %))
@@ -435,7 +408,7 @@
       (raise "Error loading Datalog data: " (ex-message e) {}))))
 
 (defn- load-kv [dbi [k v]]
-  [:put dbi (b/binary-str->ba k) (b/binary-str->ba v) :raw :raw])
+  [:put dbi (u/decode-base64 k) (u/decode-base64 v) :raw :raw])
 
 (defn- load-dbi [lmdb dbi in]
   (try
@@ -488,7 +461,7 @@
   Will load raw data into the named sub-database `dbi` if given. "
   [dir src-file dbi datalog?]
   (let [f    (when src-file (PushbackReader. (io/reader src-file)))
-        in   (or f *in*)
+        in   (or f (PushbackReader. *in*))
         lmdb (l/open-kv dir)]
     (cond
       datalog? (load-datalog dir in)
@@ -530,12 +503,12 @@
     (print (str ns-name "> "))
     (flush)))
 
-(defn- handle-error [_ctx last-error e]
+(defn- handle-error [_ last-error e]
   (binding [*out* *err*] (println (ex-message e)))
   (sci/set! last-error e))
 
-(defn- doc [s]
-  (when-let [f (resolve-var s)]
+(defn- document [s]
+  (when-let [f (i/resolve-var s)]
     (let [m (meta f)]
       (println " -------------------------")
       (println (str (ns-name (:ns m)) "/" (:name m)))
@@ -548,7 +521,7 @@
   (let [reader     (sci/reader *in*)
         last-error (sci/new-dynamic-var '*e nil
                                         {:ns (sci/create-ns 'clojure.core)})
-        ctx        (sci/init (update sci-opts :namespaces
+        ctx        (sci/init (update i/sci-opts :namespaces
                                      merge {'clojure.core {'*e last-error}}))]
     (sci/with-bindings {sci/ns     @sci/ns
                         last-error @last-error}
@@ -563,11 +536,11 @@
             (= next-form '(help))           (do (repl-help) (recur))
 
             (and (list? next-form) (= ((comp name first) next-form) "doc"))
-            (do (doc (first (next next-form))) (recur))
+            (do (document (first (next next-form))) (recur))
 
             :else (when-not (= ::sci/eof next-form)
                     (when-not (= ::err next-form)
-                      (let [res (try (eval-fn ctx next-form)
+                      (let [res (try (i/eval-fn ctx next-form)
                                      (catch Throwable e
                                        (handle-error ctx last-error e)
                                        ::err))]
@@ -581,12 +554,13 @@
     (if exit-message
       (exit (if ok? 0 1) exit-message)
       (case command
-        "pod"  (pod/run)
-        "repl" (dtlv-repl)
-        "exec" (dtlv-exec arguments)
         "copy" (dtlv-copy options arguments)
         "drop" (dtlv-drop options arguments)
         "dump" (dtlv-dump options arguments)
+        "exec" (dtlv-exec arguments)
+        "help" (dtlv-help arguments summary)
         "load" (dtlv-load options arguments)
-        "stat" (dtlv-stat options arguments)
-        "help" (dtlv-help arguments summary)))))
+        "pods" (pod/run)
+        "repl" (dtlv-repl)
+        "serv" (srv/start (srv/create options))
+        "stat" (dtlv-stat options arguments)))))

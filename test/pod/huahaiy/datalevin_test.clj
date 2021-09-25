@@ -36,7 +36,8 @@
                      [?e :aka ?alias]]
                    (pd/db conn)
                    "fred")))
-      (pd/close conn)))
+      (pd/close conn)
+      (u/delete-files dir)))
 
   (testing "pull"
     (let [datoms [[1 :name  "Petr"]
@@ -109,7 +110,8 @@
       (pd/close-db db)))
 
   (testing "schema"
-    (let [conn1 (pd/get-conn (u/tmp-dir (str "pod-schema-test-" (UUID/randomUUID))))
+    (let [dir   (u/tmp-dir (str "pod-schema-test-" (UUID/randomUUID)))
+          conn1 (pd/get-conn dir)
           s     {:a/b {:db/valueType :db.type/string}}
           s1    {:c/d {:db/valueType :db.type/string}}
           txs   [{:c/d "cd" :db/id -1}]
@@ -119,10 +121,12 @@
       (pd/transact! conn1 txs)
       (is (not (nil? (second (first (pd/datoms (pd/db conn1) :eavt))))))
       (pd/close conn1)
-      (pd/close conn2)))
+      (pd/close conn2)
+      (u/delete-files dir)))
 
   (testing "kv"
-    (let [db         (pd/open-kv (u/tmp-dir (str "pod-kv-test-" (UUID/randomUUID))))
+    (let [dir        (u/tmp-dir (str "pod-kv-test-" (UUID/randomUUID)))
+          db         (pd/open-kv dir)
           misc-table "misc-test-table"
           date-table "date-test-table"]
       (is (not (pd/closed-kv? db)))
@@ -142,5 +146,6 @@
       (is (= [[#inst "1989-11-09T00:00:00.000-00:00" "The fall of the Berlin Wall"]
               [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
              (pd/get-range db date-table [:closed (Date. 0) (Date.)] :instant)))
-      (pd/close-kv db)))
+      (pd/close-kv db)
+      (u/delete-files dir)))
   )

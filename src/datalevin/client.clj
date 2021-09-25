@@ -1,0 +1,426 @@
+(ns datalevin.client
+  "Blocking network client with a connection pool"
+  (:require [datalevin.util :as u]
+            [datalevin.constants :as c]
+            [clojure.string :as s]
+            [datalevin.bits :as b]
+            [datalevin.protocol :as p])
+  (:import [java.nio.charset StandardCharsets]
+           [java.nio ByteBuffer BufferOverflowException]
+           [java.nio.channels SocketChannel]
+           [java.util ArrayList UUID Collection]
+           [java.net InetSocketAddress StandardSocketOptions URI]))
+
+(defprotocol ^:no-doc IConnection
+  (send-n-receive [conn msg]
+    "Send a message to server and return the response, a blocking call")
+  (send-only [conn msg] "Send a message without waiting for a response")
+  (receive [conn] "Receive a message, a blocking call")
+  (close [conn]))
+
+(deftype ^:no-doc Connection [^SocketChannel ch
+                              ^:volatile-mutable ^ByteBuffer bf]
+  IConnection
+  (send-n-receive [this msg]
+    (try
+      (locking bf
+        (p/write-message-blocking ch bf msg)
+        (.clear bf)
+        (let [[resp bf'] (p/receive-ch ch bf)]
+          (when-not (identical? bf' bf) (set! bf bf'))
+          resp))
+      (catch BufferOverflowException _
+        (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
+          (set! bf (b/allocate-buffer size))
+          (send-n-receive this msg)))
+      (catch Exception e
+        (u/raise "Error sending message and receiving response: "
+                 (ex-message e) {:msg msg}))))
+
+  (send-only [this msg]
+    (try
+      (p/write-message-blocking ch bf msg)
+      (catch BufferOverflowException _
+        (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
+          (set! bf (b/allocate-buffer size))
+          (send-only this msg)))
+      (catch Exception e
+        (u/raise "Error sending message: " (ex-message e) {:msg msg}))))
+
+  (receive [this]
+    (try
+      (let [[resp bf'] (p/receive-ch ch bf)]
+        (when-not (identical? bf' bf) (set! bf bf'))
+        resp)
+      (catch Exception e
+        (u/raise "Error receiving data:" (ex-message e) {}))))
+
+  (close [this]
+    (.close ch)))
+
+(defn- ^SocketChannel connect-socket
+  "connect to server and return the client socket channel"
+  [^String host port]
+  (try
+    (doto (SocketChannel/open)
+      (.setOption StandardSocketOptions/SO_KEEPALIVE true)
+      (.setOption StandardSocketOptions/TCP_NODELAY true)
+      (.connect (InetSocketAddress. host ^int port)))
+    (catch Exception e
+      (u/raise "Unable to connect to server: " (ex-message e)
+               {:host host :port port}))))
+
+(defn- new-connection
+  [host port]
+  (->Connection (connect-socket host port)
+                (b/allocate-buffer c/+default-buffer-size+)))
+
+(defn- set-client-id
+  [conn client-id]
+  (let [{:keys [type message]}
+        (send-n-receive conn {:type      :set-client-id
+                              :client-id client-id})]
+    (when-not (= type :set-client-id-ok) (u/raise message {}))))
+
+(defprotocol ^:no-doc IConnectionPool
+  (get-connection [this] "Get a connection from the pool")
+  (release-connection [this connection] "Return the connection back to pool")
+  (close-pool [this])
+  (closed-pool? [this]))
+
+(deftype ^:no-doc ConnectionPool [^ArrayList available
+                                  ^ArrayList used]
+  IConnectionPool
+  (get-connection [this]
+    (let [start (System/currentTimeMillis)]
+      (loop [size (.size available)]
+        (if (> size 0)
+          (locking this
+            (let [conn ^Connection (.remove available (dec size))]
+              (.add used conn)
+              conn))
+          (if (>= (- (System/currentTimeMillis) start) c/connection-timeout)
+            (u/raise "Timeout in obtaining a connection" {})
+            (recur (.size available)))))))
+
+  (release-connection [this conn]
+    (locking this
+      (.remove used conn)
+      (.add available conn)))
+
+  (close-pool [this]
+    (dotimes [i (.size used)] (close ^Connection (.get used i)))
+    (.clear used)
+    (dotimes [i (.size used)] (close ^Connection (.get available i)))
+    (.clear available))
+
+  (closed-pool? [this]
+    (and (.isEmpty used) (.isEmpty available))))
+
+(defn- authenticate
+  "Send an authenticate message to server, and wait to receive the response.
+  If authentication succeeds,  return a client id.
+  Otherwise, close connection, raise exception"
+  [host port username password]
+  (let [conn (new-connection host port)
+
+        {:keys [type client-id message]}
+        (send-n-receive conn {:type     :authentication
+                              :username username
+                              :password password})]
+    (close conn)
+    (if (= type :authentication-ok)
+      client-id
+      (u/raise "Authentication failure: " message {}))))
+
+(defn- new-connectionpool
+  [host port client-id]
+  (let [^ConnectionPool pool (->ConnectionPool (ArrayList.) (ArrayList.))
+        ^ArrayList available (.-available pool)]
+    (dotimes [_ c/connection-pool-size]
+      (let [conn (new-connection host port)]
+        (set-client-id conn client-id)
+        (.add available conn)))
+    pool))
+
+(defprotocol ^:no-doc IClient
+  (request [client req]
+    "Send a request to server and return the response. The response could
+     also initiate a copy out")
+  (copy-in [client req data batch-size]
+    "Copy data to the server. `req` is a request type message,
+     `data` is a sequence, `batch-size` decides how to partition the data
+      so that each batch fits in buffers along the way. The response could
+      also initiate a copy out")
+  (disconnect [client])
+  (disconnected? [client]))
+
+(defn ^:no-doc parse-user-info
+  [^URI uri]
+  (when-let [user-info (.getUserInfo uri)]
+    (when-let [[_ username password] (re-find #"(.+):(.+)" user-info)]
+      {:username username :password password})))
+
+(defn ^:no-doc parse-port
+  [^URI uri]
+  (let [p (.getPort uri)] (if (= -1 p) c/default-port p)))
+
+(defn ^:no-doc parse-db
+  "Extract the identifier of database from URI. A database is uniquely
+  identified by its name (after being converted to its kebab case)."
+  [^URI uri]
+  (let [path (.getPath uri)]
+    (when-not (or (s/blank? path) (= path "/"))
+      (u/lisp-case (subs path 1)))))
+
+(defn ^:no-doc parse-query
+  [^URI uri]
+  (when-let [query (.getQuery uri)]
+    (->> (s/split query #"&")
+         (map #(s/split % #"="))
+         (into {}))))
+
+(defn- copy-out [conn req]
+  (try
+    (let [data (transient [])]
+      (loop []
+        (let [msg (receive conn)]
+          (if (map? msg)
+            (let [{:keys [type]} msg]
+              (if (= type :copy-done)
+                {:type :command-complete :result (persistent! data)}
+                (u/raise "Server error while copying out data" {:msg msg})))
+            (do (doseq [d msg] (conj! data d))
+                (recur))))))
+    (catch Exception e
+      (u/raise "Unable to receive copy:" (ex-message e) {:req req}))))
+
+(defn- copy-in*
+  [conn req data batch-size ]
+  (try
+    (doseq [batch (partition batch-size batch-size nil data)]
+      (send-only conn batch))
+    (let [{:keys [type] :as result} (send-n-receive conn {:type :copy-done})]
+      (if (= type :copy-out-response)
+        (copy-out conn req)
+        result))
+    (catch Exception e
+      (send-n-receive conn {:type :copy-fail})
+      (u/raise "Unable to copy in:" (ex-message e)
+               {:req req :count (count data)}))))
+
+(deftype ^:no-doc Client [^URI uri
+                          ^ConnectionPool pool
+                          ^UUID id]
+  IClient
+  (request [client req]
+    (let [conn (get-connection pool)]
+      (try
+        (let [{:keys [type] :as result} (send-n-receive conn req)]
+          (if (= type :copy-out-response)
+            (copy-out conn req)
+            result))
+        (finally (release-connection pool conn)))))
+
+  (copy-in [client req data batch-size]
+    (let [conn (get-connection pool)]
+      (try
+        (let [{:keys [type]} (send-n-receive conn req)]
+          (if (= type :copy-in-response)
+            (copy-in* conn req data batch-size)
+            (u/raise "Server refuses to accept copy in" {:req req})))
+        (finally (release-connection pool conn)))))
+
+  (disconnect [client]
+    (let [conn (get-connection pool)]
+      (send-only conn {:type :disconnect})
+      (release-connection pool conn))
+    (close-pool pool))
+
+  (disconnected? [client]
+    (closed-pool? pool)))
+
+(defn open-database
+  "Open a database on server. `db-type` can be \"datalog\" or \"kv\""
+  ([client db-name db-type]
+   (open-database client db-name db-type nil))
+  ([client db-name db-type schema]
+   (let [{:keys [type message]}
+         (request client (if (= db-type c/db-store-kv)
+                           {:type :open-kv :db-name db-name}
+                           (cond-> {:type :open :db-name db-name}
+                             schema (assoc :schema schema))))]
+     (when (= type :error-response)
+       (u/raise "Unable to open database:" db-name
+                {:message message})))))
+
+(defn new-client
+  "Create a new client that maintains a pooled connection to a remote
+  Datalevin database server. This operation takes at least 0.5 seconds
+  in order to perform a secure password hashing that defeats cracking.
+
+  Fields in the `uri-str` should be properly URL encoded, e.g. password
+  needs to be URL encoded."
+  [uri-str]
+  (let [uri                         (URI. uri-str)
+        {:keys [username password]} (parse-user-info uri)
+        host                        (.getHost uri)
+        port                        (parse-port uri)
+        client-id                   (authenticate host port username password)
+        pool                        (new-connectionpool host port client-id)]
+    (->Client uri pool client-id)))
+
+(defn ^:no-doc normal-request
+  "Send request to server and returns results. Does not use the
+  copy-in protocol. `call` is a keyword, `args` is a vector"
+  [client call args]
+  (let [{:keys [type message result]}
+        (request client {:type call :args args})]
+    (if (= type :error-response)
+      (u/raise "Request to Datalevin server failed: " message
+               {:call call :args args})
+      result)))
+
+;; we do input validation and normalization in the server, as
+;; 3rd party clients may be written
+
+(defn create-user
+  "Create a user that can login. `username` will be converted to Kebab case
+  (i.e. all lower case and words connected with dashes)."
+  [client username password]
+  (normal-request client :create-user [username password]))
+
+(defn reset-password
+  "Reset a user's password."
+  [client username password]
+  (normal-request client :reset-password [username password]))
+
+(defn drop-user
+  "Delete a user."
+  [client username]
+  (normal-request client :drop-user [username]))
+
+(defn list-users
+  "List all users."
+  [client]
+  (normal-request client :list-users []))
+
+(defn create-role
+  "Create a role. `role-key` is a keyword."
+  [client role-key]
+  (normal-request client :create-role [role-key]))
+
+(defn drop-role
+  "Delete a role. `role-key` is a keyword."
+  [client role-key]
+  (normal-request client :drop-role [role-key]))
+
+(defn list-roles
+  "List all roles."
+  [client]
+  (normal-request client :list-roles []))
+
+(defn create-database
+  "Create a database. `db-type` can be `:datalog` or `:key-value`.
+  `db-name` will be converted to Kebab case (i.e. all lower case and
+  words connected with dashes)."
+  [client db-name db-type]
+  (normal-request client :create-database [db-name db-type]))
+
+(defn close-database
+  "Force close a database. Connected clients that are using it
+  will be disconnected.
+
+  See [[disconnect-client]]"
+  [client db-name]
+  (normal-request client :close-database [db-name]))
+
+(defn drop-database
+  "Delete a database. May not be successful if currently in use.
+
+  See [[close-database]]"
+  [client db-name]
+  (normal-request client :drop-database [db-name]))
+
+(defn list-databases
+  "List all databases."
+  [client]
+  (normal-request client :list-databases []))
+
+(defn list-databases-in-use
+  "List databases that are in use."
+  [client]
+  (normal-request client :list-databases-in-use []))
+
+(defn assign-role
+  "Assign a role to a user. "
+  [client role-key username]
+  (normal-request client :assign-role [role-key username]))
+
+(defn withdraw-role
+  "Withdraw a role from a user. "
+  [client role-key username]
+  (normal-request client :withdraw-role [role-key username]))
+
+(defn list-user-roles
+  "List the roles assigned to a user. "
+  [client username]
+  (normal-request client :list-user-roles [username]))
+
+(defn grant-permission
+  "Grant a permission to a role.
+
+  `perm-act` indicates the permitted action. It can be one of
+  `:datalevin.server/view`, `:datalevin.server/alter`,
+  `:datalevin.server/create`, or `:datalevin.server/control`, with each
+  subsumes the former.
+
+  `perm-obj` indicates the object type of the securable. It can be one of
+  `:datalevin.server/database`, `:datalevin.server/user`,
+  `:datalevin.server/role`, or `:datalevin.server/server`, where the last one
+  subsumes all the others.
+
+  `perm-tgt` indicate the concrete securable target. It can be a database name,
+  a username, or a role key, depending on `perm-obj`. If it is `nil`, the
+  permission applies to all securables in that object type."
+  [client role-key perm-act perm-obj perm-tgt]
+  (normal-request client :grant-permission
+                  [role-key perm-act perm-obj perm-tgt]))
+
+(defn revoke-permission
+  "Revoke a permission from a role.
+
+  See [[grant-permission]]."
+  [client role-key perm-act perm-obj perm-tgt]
+  (normal-request client :revoke-permission
+                  [role-key perm-act perm-obj perm-tgt]))
+
+(defn list-role-permissions
+  "List the permissions granted to a role.
+
+  See [[grant-permission]]."
+  [client role-key]
+  (normal-request client :list-role-permissions [role-key]))
+
+(defn list-user-permissions
+  "List the permissions granted to a user through the roles assigned."
+  [client username]
+  (normal-request client :list-user-permissions [username]))
+
+(defn query-system
+  "Issue arbitrary Datalog query to the system database on the server.
+  Note that unlike `q` function, the arguments here should NOT include db,
+  as the server will supply it."
+  [client query & arguments]
+  (normal-request client :query-system [query arguments]))
+
+(defn show-clients
+  "Show information about the currently connected clients on the server."
+  [client]
+  (normal-request client :show-clients []))
+
+(defn disconnect-client
+  "Force disconnect a client from the server."
+  [client client-id]
+  (assert (instance? UUID client-id) "")
+  (normal-request client :disconnect-client [client-id]))

@@ -1,14 +1,56 @@
 (ns ^:no-doc datalevin.util
+  (:refer-clojure :exclude [seqable?])
   (:require [clojure.walk]
             [clojure.string :as s]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [cognitect.transit :as transit])
   #?(:clj
-     (:import [java.lang System]
-              [java.io File]
-              [org.graalvm.nativeimage ImageInfo]))
-  (:refer-clojure :exclude [seqable?]))
+     (:import
+      [java.io ByteArrayInputStream ByteArrayOutputStream File]
+      [java.nio ByteBuffer]
+      [java.nio.file Files Paths LinkOption AccessDeniedException]
+      [java.nio.file.attribute PosixFilePermissions FileAttribute]
+      [java.net URI]
+      [java.util Base64 Base64$Decoder Base64$Encoder])))
+
+(defn #?@(:clj  [^Boolean seqable?]
+          :cljs [^boolean seqable?])
+  [x]
+  (and (not (string? x))
+       #?(:cljs (cljs.core/seqable? x)
+          :clj  (or (seq? x)
+                    (instance? clojure.lang.Seqable x)
+                    (nil? x)
+                    (instance? Iterable x)
+                    (instance? java.util.Map x)))))
+
+#?(:clj
+   (defmacro cond+ [& clauses]
+     (when-some [[test expr & rest] clauses]
+       (case test
+         :let `(let ~expr (cond+ ~@rest))
+         `(if ~test ~expr (cond+ ~@rest))))))
+
+#?(:clj
+   (defmacro some-of
+     ([] nil)
+     ([x] x)
+     ([x & more]
+      `(let [x# ~x] (if (nil? x#) (some-of ~@more) x#)))))
+
+#?(:clj
+   (defmacro raise [& fragments]
+     (let [msgs (butlast fragments)
+           data (last fragments)]
+       `(throw (ex-info
+                 (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs))
+                 ~data)))))
 
 ;; files
+
+#?(:clj
+   (defn windows? []
+     (s/starts-with? (System/getProperty "os.name") "Windows")))
 
 (defn delete-files
   "Recursively delete file"
@@ -19,15 +61,34 @@
       (do (io/delete-file f)
           (recur (rest fs))))))
 
+(defn file-exists
+  "check if a file exists"
+  [fname]
+  (.exists (io/file fname)))
+
+(defn create-dirs
+  "create all parent directories"
+  [^String path]
+  (if (windows?)
+    (.mkdirs ^File (io/file path))
+    (Files/createDirectories
+      (Paths/get path (into-array String []))
+      (into-array FileAttribute
+                  [(PosixFilePermissions/asFileAttribute
+                     (PosixFilePermissions/fromString "rwxr-x---"))]))))
+
 (defn file
   "Return directory path as File, create it if missing"
-  [path]
-  (let [^File f (io/file path)]
-    (if (.exists f)
-      f
-      (do (io/make-parents path)
-          (.mkdir f)
-          f))))
+  [^String path]
+  (try
+    (let [path' (Paths/get path (into-array String []))]
+      (when-not (Files/exists path' (into-array LinkOption []))
+        (create-dirs path))
+      (io/file path))
+    (catch AccessDeniedException e
+      (raise "Access denied " (ex-message e) {:path path}))
+    (catch Exception e
+      (raise "Error openning file " (ex-message e) {:path path}))))
 
 (defn empty-dir?
   "test if the given File is an empty directory"
@@ -54,6 +115,43 @@
   ([] +tmp+)
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
 
+;; en/decode
+
+(defn read-transit-string
+  "Read a transit+json encoded string into a Clojure value"
+  [^String s]
+  (try
+    (transit/read
+      (transit/reader
+        (ByteArrayInputStream. (.getBytes s "utf-8")) :json))
+    (catch Exception e
+      (raise "Unable to read transit:" (ex-message e) {:string s}))))
+
+(defn write-transit-string
+  "Write a Clojure value as a transit+json encoded string"
+  [v]
+  (try
+    (let [baos (ByteArrayOutputStream.)]
+      (transit/write (transit/writer baos :json) v)
+      (.toString baos "utf-8"))
+    (catch Exception e
+      (raise "Unable to write transit:" (ex-message e) {:value v}))))
+
+(def base64-encoder (.withoutPadding (Base64/getEncoder)))
+
+(def base64-decoder (Base64/getDecoder))
+
+(defn encode-base64
+  "encode bytes into a base64 string"
+  [bs]
+  (.encodeToString ^Base64$Encoder base64-encoder bs))
+
+(defn decode-base64
+  "decode a base64 string to return the bytes"
+  [^String s]
+  (.decode ^Base64$Decoder base64-decoder s))
+
+
 ;; ----------------------------------------------------------------------------
 
 #?(:cljs
@@ -63,39 +161,6 @@
      (def UnsupportedOperationException js/Error)))
 
 ;; ----------------------------------------------------------------------------
-
-#?(:clj
-  (defmacro raise [& fragments]
-    (let [msgs (butlast fragments)
-          data (last fragments)]
-      `(throw (ex-info
-               (str ~@(map (fn [m#] (if (string? m#) m# (list 'pr-str m#))) msgs))
-               ~data)))))
-
-(defn #?@(:clj  [^Boolean seqable?]
-          :cljs [^boolean seqable?])
-  [x]
-  (and (not (string? x))
-       #?(:cljs (cljs.core/seqable? x)
-     :clj  (or (seq? x)
-               (instance? clojure.lang.Seqable x)
-               (nil? x)
-               (instance? Iterable x)
-               (instance? java.util.Map x)))))
-
-#?(:clj
-  (defmacro cond+ [& clauses]
-    (when-some [[test expr & rest] clauses]
-      (case test
-        :let `(let ~expr (cond+ ~@rest))
-        `(if ~test ~expr (cond+ ~@rest))))))
-
-#?(:clj
-(defmacro some-of
-  ([] nil)
-  ([x] x)
-  ([x & more]
-    `(let [x# ~x] (if (nil? x#) (some-of ~@more) x#)))))
 
 ;; ----------------------------------------------------------------------------
 ;; macros and funcs to support writing defrecords and updating
@@ -118,11 +183,7 @@
 
 #?(:clj
    (defn graal? []
-     (ImageInfo/inImageCode)))
-
-#?(:clj
-   (defn windows? []
-     (s/starts-with? (System/getProperty "os.name") "Windows")))
+     (System/getProperty "org.graalvm.nativeimage.kind")))
 
 #?(:clj
    (defn- get-sig [method]
@@ -198,3 +259,37 @@
 
 (defn sym-name-eqs [sym str]
   (and (symbol? sym) (= (name sym) str)))
+
+(defn ensure-vec [x]
+  (cond
+    (vector? x) x
+    (nil? x) []
+    (sequential? x) (vec x)
+    :else [x]))
+
+(defn memoize-1 [f]
+  "Like clojure.core/memoize but only caches the last invocation.
+  Effectively dedupes invocations with same args."
+  (let [cache (atom {})]
+    (fn [& args]
+      (or (get @cache args)
+          (let [ret (apply f args)]
+            (reset! cache {args ret})
+            ret)))))
+
+(defn- split-words [s]
+  (remove
+    empty?
+    (-> s
+        (s/replace #"_|-" " ")
+        (s/replace
+          #"(\p{javaUpperCase})((\p{javaUpperCase})[(\p{javaLowerCase})0-9])"
+          "$1 $2")
+        (s/replace #"(\p{javaLowerCase})(\p{javaUpperCase})" "$1 $2")
+        (s/split #"[^\w0-9]+"))))
+
+(defn lisp-case
+  ^String [^String s]
+  {:pre  [(string? s)]
+   :post [(string? %)]}
+  (s/join "-" (map s/lower-case (split-words s))))

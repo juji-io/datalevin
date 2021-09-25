@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.constants
+  (:refer-clojure :exclude [meta])
   (:import [java.util UUID Arrays]))
 
 ;;---------------------------------------------
@@ -21,6 +22,14 @@
 (def ^:const amax  0x7FFFFFFF)
 
 ;; lmdb
+
+(def default-env-flags [:nordahead :mapasync :writemap])
+
+(def default-dbi-flags [:create])
+
+(def read-dbi-flags [])
+
+(def default-put-flags [])
 
 (def ^:const +max-key-size+     511)   ; in bytes
 
@@ -81,6 +90,7 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const classes "datalevin/classes")
+(def ^:const meta "datalevin/meta")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean
@@ -89,9 +99,35 @@
                                    :db.type/instant :db.type/uuid
                                    :db.type/bytes})
 
+;; server / client
+
+(def ^:const default-port (int 8898))
+
+(def ^:const
+  system-dir "system")
+
+(def ^:const default-username "datalevin")
+(def ^:const default-password "datalevin")
+
+(def ^:const db-store-datalog "datalog")
+(def ^:const db-store-kv "kv")
+
+(def ^:const dl-type :datalog)
+(def ^:const kv-type :key-value)
+
+(def ^:const message-header-size 5) ; bytes, 1 type + 4 length
+
+(def ^:const message-format-transit (unchecked-byte 0x01))
+(def ^:const message-format-nippy (unchecked-byte 0x02))
+
+
 ;;-------------------------------------------------------------
 
 ;; user configurable TODO: make it so
+
+;; general
+
+(def ^:const +buffer-grow-factor+ 10)
 
 ;; lmdb
 
@@ -108,3 +144,12 @@
 ;; query
 
 (def ^:const +cache-limit+ 1000)  ; per Datalog db
+
+;; client/server
+
+(def ^:const +default-buffer-size+ 65536) ; in bytes
+
+(def ^:const +wire-datom-batch-size+ 1000)
+
+(def ^:const connection-pool-size 5)
+(def ^:const connection-timeout 30000) ; in milliseconds
