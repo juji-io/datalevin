@@ -12,17 +12,6 @@
   (put-start-key [this data k-type] "put data in start-key buffer.")
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
-(defprotocol IInvertedList
-  (put-list [this k vs] "put an inverted list by key")
-  (del-list [this k] "delete an inverted list by key")
-  (get-list [this k] "get a list by key")
-  (list-count [this k] "get the number of items in the inverted list")
-  (filter-list [this k pred] "get filtered items of a list")
-  (filter-list-count [this k pred] "get the count of filtered items of a list")
-  (put-list-item [this k item] "put an item in a inverted list")
-  (del-list-item [this k item] "delete an item from a inverted list")
-  (in-list? [this k item] "return true if an item is in an inverted list"))
-
 (defprotocol IRtx
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
@@ -37,13 +26,29 @@
   (dbi-name [this] "Return string name of the dbi")
   (put [this txn] [this txn append?]
     "Put kv pair given in `put-key` and `put-val` of dbi")
-  (del [this txn] "Delete the key given in `put-key` of dbi")
+  (del [this txn] [this txn all?]
+    "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
   (iterate-kv [this rtx range-info] "Return an Iterable given the range"))
 
 (defprotocol IKV
   (k [this] "Key of a key value pair")
   (v [this] "Value of a key value pair"))
+
+(defprotocol IInvertedList
+  (put-list-items [this k vs k-type v-type] "put an inverted list by key")
+  (del-list-items
+    [this k k-type]
+    [this k vs k-type v-type]
+    "delete an inverted list by key")
+  (get-list [this k k-type v-type] "get a list by key")
+  (list-count [this k k-type]
+    "get the number of items in the inverted list")
+  (filter-list [this k pred k-type v-type] "predicate filtered items of a list")
+  (filter-list-count [this k pred k-type]
+    "get the count of predicate filtered items of a list")
+  (in-list? [this k v k-type v-type]
+    "return true if an item is in an inverted list"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
@@ -56,6 +61,7 @@
     [db dbi-name key-size val-size]
     [db dbi-name key-size val-size flags]
     "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env")
+
   (clear-dbi [db dbi-name]
     "Clear data in the DBI (i.e sub-db), but leave it open")
   (drop-dbi [db dbi-name]
@@ -121,3 +127,6 @@
 
 (defmulti open-kv
   (fn [dir] (if (u/graal?) :graal :java)))
+
+(defmulti open-inverted-list
+  (fn [lmdb dbi-name] (if (u/graal?) :graal :java)))

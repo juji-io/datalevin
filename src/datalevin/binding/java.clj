@@ -4,11 +4,12 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IKV
-                                          IRtx IRtxPool IDB ILMDB]])
+            [datalevin.lmdb :as l
+             :refer [open-kv open-inverted-list IBuffer IRange IKV IRtx IRtxPool
+                     IDB IInvertedList ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
-            CursorIterable$KeyVal]
+            Cursor CursorIterable$KeyVal GetOp SeekOp]
            [java.util.concurrent ConcurrentHashMap]
            [java.nio ByteBuffer BufferOverflowException]))
 
@@ -189,7 +190,9 @@
    :overflow-pages (.-overflowPages stat)
    :entries        (.-entries stat)})
 
-(deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
+(deftype DBI [^Dbi db
+              ^ByteBuffer kb
+              ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [this x t]
     (try
@@ -224,14 +227,17 @@
       (.put db txn kb vb (kv-flags :put c/default-put-flags))))
   (put [this txn]
     (.put this txn nil))
-  (del [_ txn]
-    (.delete db txn kb))
+  (del [_ txn all?]
+    (if all?
+      (.delete db txn kb)
+      (.delete db txn kb vb)))
+  (del [this txn]
+    (.del this txn true))
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
   (iterate-kv [_ rtx range-info]
-    (.iterate db (.-txn ^Rtx rtx) range-info))
-  )
+    (.iterate db (.-txn ^Rtx rtx) range-info)))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
@@ -430,6 +436,78 @@
   (range-filter-count [this dbi-name pred k-range k-type]
     (scan/range-filter-count this dbi-name pred k-range k-type)))
 
+(deftype InvertedList [^LMDB lmdb ^DBI dbi]
+  IInvertedList
+  (put-list-items [this k vs kt vt]
+    (try
+      (with-open [txn (.txnWrite ^Env (.-env lmdb))]
+        (.put-key dbi k kt)
+        (doseq [v vs]
+          (.put-val dbi v vt)
+          (.put dbi txn))
+        (.commit txn)
+        :transacted)
+      (catch Exception e
+        (raise "Fail to put an inverted list: " (ex-message e) {}))))
+
+  (del-list-items [this k kt]
+    (try
+      (with-open [txn (.txnWrite ^Env (.-env lmdb))]
+        (.put-key dbi k kt)
+        (.del dbi txn)
+        (.commit txn)
+        :transacted)
+      (catch Exception e
+        (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+  (del-list-items [this k vs kt vt]
+    (try
+      (with-open [txn (.txnWrite ^Env (.-env lmdb))]
+        (.put-key dbi k kt)
+        (doseq [v vs]
+          (.put-val dbi v vt)
+          (.del dbi txn false))
+        (.commit txn)
+        :transacted)
+      (catch Exception e
+        (raise "Fail to delete items from an inverted list: "
+               (ex-message e) {}))))
+
+  (get-list [this k kt vt]
+    (.get-range lmdb (.dbi-name dbi) [:closed k k] kt vt true))
+
+  (list-count [this k kt]
+    (let [rtx ^Rtx (.get-txn lmdb)
+          txn (.-txn rtx)]
+      (try
+        (with-open [cur ^Cursor (.openCursor ^Dbi (.-db dbi) txn)]
+          (.put-start-key rtx k kt)
+          (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (.count cur)
+            0))
+        (catch Exception e
+          (raise "Fail to get count of inverted list: " (ex-message e)
+                 {:dbi (.dbi-name dbi)}))
+        (finally (.reset rtx)))))
+
+  (filter-list [this k pred k-type v-type]
+    (.range-filter lmdb (.dbi-name dbi) pred [:closed k k] k-type v-type))
+
+  (filter-list-count [this k pred k-type]
+    (.range-filter-count lmdb (.dbi-name dbi) pred [:closed k k] k-type))
+
+  (in-list? [this k v kt vt]
+    (let [rtx ^Rtx (.get-txn lmdb)
+          txn (.-txn rtx)]
+      (try
+        (with-open [cur ^Cursor (.openCursor ^Dbi (.-db dbi) txn)]
+          (.put-start-key rtx k kt)
+          (.put-stop-key rtx v vt)
+          (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH))
+        (catch Exception e
+          (raise "Fail to test if an item is in an inverted list: "
+                 (ex-message e) {:dbi (.dbi-name dbi)}))
+        (finally (.reset rtx))))))
+
 (defmethod open-kv :java
   [dir]
   (try
@@ -450,3 +528,9 @@
       (raise
         "Fail to open database: " (ex-message e)
         {:dir dir}))))
+
+(defmethod open-inverted-list :java
+  [^LMDB lmdb dbi-name]
+  (->InvertedList lmdb
+                  (.open-dbi lmdb dbi-name c/+max-key-size+ c/+max-key-size+
+                             (conj c/default-dbi-flags :dupsort))))

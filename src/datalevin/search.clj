@@ -1,24 +1,33 @@
 (ns datalevin.search
-  "Full-text search engine"
+  "Fuzzy full-text search engine"
   (:require [clojure.string :as s]
             [datalevin.lmdb :as l]
+            [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.bits :as b]
             [datalevin.constants :as c]))
 
+(if (u/graal?)
+  (require 'datalevin.binding.graal)
+  (require 'datalevin.binding.java))
+
 (comment
 
-  (def env (l/open-kv "/tmp/search1"))
+  (def env (l/open-kv "/tmp/search2"))
 
-  (def dbi (l/open-dbi env "dict" c/+max-key-size+ c/+max-key-size+
-                       (conj c/default-dbi-flags :dupsort)))
+  (def lst (l/open-inverted-list env "i"))
 
-  (l/transact-kv env [[:put "dict" "a" 1]
-                      [:put "dict" "a" 2]])
+  (l/put-list-items lst "a" [1 2 3 4] :string :long)
+  (l/put-list-items lst "b" [5 6 7] :string :long)
 
-  (l/get-value env "dict" "a")
+  (l/list-count lst "a" :string)
+  (l/list-count lst "b" :string)
 
-  (l/get-range env "dict" [:closed "a" "a"])
+  (l/del-list-items lst "a" :string)
+
+  (l/in-list? lst "b" 7 :string :long)
+
+  (l/get-list lst "a" :string :long)
 
   (l/close-kv env)
 
