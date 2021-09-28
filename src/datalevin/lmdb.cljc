@@ -17,19 +17,17 @@
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
 
-;; (defprotocol IRtxPool
-;;   (close-pool [this] "Close all read-only transactions in the pool")
-;;   (new-rtx [this] "Create a new read-only transaction")
-;;   (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
-
 (defprotocol IDB
+  (dbi [this] "Return the underlying dbi")
   (dbi-name [this] "Return string name of the dbi")
   (put [this txn] [this txn append?]
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] [this txn all?]
     "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-info] "Return an Iterable given the range"))
+  (iterate-kv [this rtx range-info] "Return an Iterable given the range")
+  (get-cursor [this txn] "Get a reusable read-only cursor")
+  (return-cursor [this cur] "Return a read-only cursor after use"))
 
 (defprotocol IKV
   (k [this] "Key of a key value pair")

@@ -58,4 +58,12 @@ public class Cursor {
         Lib.checkRc(Lib.mdb_cursor_count(get(), cPtr));
         return (long)cPtr.read();
     }
+
+    /**
+     * Return count of duplicates for current key.
+     */
+    public Cursor renew(Txn txn) {
+        Lib.checkRc(Lib.mdb_cursor_renew(txn.get(), get()));
+        return this;
+    }
 }

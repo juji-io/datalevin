@@ -151,6 +151,7 @@
    :entries        (.-entries stat)})
 
 (deftype DBI [^Dbi db
+              ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
               ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
@@ -179,6 +180,7 @@
                {:value x :type t :dbi (.dbi-name this)}))))
 
   IDB
+  (dbi [_] db)
   (dbi-name [_]
     (b/text-ba->str (.getName db)))
   (put [_ txn append?]
@@ -197,7 +199,14 @@
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
   (iterate-kv [_ rtx range-info]
-    (.iterate db (.-txn ^Rtx rtx) range-info)))
+    (.iterate db (.-txn ^Rtx rtx) range-info))
+  (get-cursor [_ txn]
+    (or (when-let [^Cursor cur (.poll curs)]
+          (.renew cur txn)
+          cur)
+        (.openCursor db txn)))
+  (return-cursor [this cur]
+    (.add curs cur)))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
@@ -237,7 +246,7 @@
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
-          dbi (->DBI db kb vb)]
+          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
 
@@ -460,18 +469,19 @@
     (.get-range lmdb (.dbi-name dbi) [:closed k k] kt vt true))
 
   (list-count [this k kt]
-    (let [rtx ^Rtx (.get-rtx lmdb)
-          txn (.-txn rtx)]
+    (let [^Rtx rtx    (.get-rtx lmdb)
+          txn         (.-txn rtx)
+          ^Cursor cur (.get-cursor dbi txn)]
       (try
-        (with-open [cur ^Cursor (.openCursor ^Dbi (.-db dbi) txn)]
-          (.put-start-key rtx k kt)
-          (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (.count cur)
-            0))
+        (.put-start-key rtx k kt)
+        (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+          (.count cur)
+          0)
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
                  {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx)))))
+        (finally (.return-rtx lmdb rtx)
+                 (.return-cursor dbi cur)))))
 
   (filter-list [this k pred k-type v-type]
     (.range-filter lmdb (.dbi-name dbi) pred [:closed k k] k-type v-type true))
@@ -480,17 +490,18 @@
     (.range-filter-count lmdb (.dbi-name dbi) pred [:closed k k] k-type))
 
   (in-list? [this k v kt vt]
-    (let [rtx ^Rtx (.get-rtx lmdb)
-          txn (.-txn rtx)]
+    (let [^Rtx rtx    (.get-rtx lmdb)
+          txn         (.-txn rtx)
+          ^Cursor cur (.get-cursor dbi txn)]
       (try
-        (with-open [cur ^Cursor (.openCursor ^Dbi (.-db dbi) txn)]
-          (.put-start-key rtx k kt)
-          (.put-stop-key rtx v vt)
-          (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH))
+        (.put-start-key rtx k kt)
+        (.put-stop-key rtx v vt)
+        (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
         (catch Exception e
           (raise "Fail to test if an item is in an inverted list: "
                  (ex-message e) {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx))))))
+        (finally (.return-rtx lmdb rtx)
+                 (.return-cursor dbi cur))))))
 
 (defmethod open-kv :java
   [dir]
