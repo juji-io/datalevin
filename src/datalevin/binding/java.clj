@@ -5,8 +5,8 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
-             :refer [open-kv open-inverted-list IBuffer IRange IKV IRtx
-                     IDB IInvertedList ILMDB]])
+             :refer [open-kv open-inverted-list IBuffer IRange IRtx
+                     IDB IKV IInvertedList ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
@@ -302,7 +302,7 @@
           "Please do not open multiple LMDB connections to the same DB
            in the same process. Instead, a LMDB connection should be held onto
            and managed like a stateful resource. Refer to the documentation of
-           `datalevin.lmdb/open-kv` for more details." {}))))
+           `datalevin.core/open-kv` for more details." {}))))
 
   (return-rtx [this rtx]
     (.reset ^Rtx rtx)
@@ -501,7 +501,10 @@
                      (.setMaxReaders c/+max-readers+)
                      (.setMaxDbs c/+max-dbs+))
           ^Env env (.open builder file (kv-flags :env c/default-env-flags))
-          lmdb     (->LMDB env dir (ConcurrentLinkedQueue.) (ConcurrentHashMap.))]
+          lmdb     (->LMDB env
+                           dir
+                           (ConcurrentLinkedQueue.)
+                           (ConcurrentHashMap.))]
       (.addShutdownHook (Runtime/getRuntime)
                         (Thread.
                           #(when-not (l/closed-kv? lmdb)
