@@ -474,7 +474,7 @@
         (finally (.return-rtx lmdb rtx)))))
 
   (filter-list [this k pred k-type v-type]
-    (.range-filter lmdb (.dbi-name dbi) pred [:closed k k] k-type v-type))
+    (.range-filter lmdb (.dbi-name dbi) pred [:closed k k] k-type v-type true))
 
   (filter-list-count [this k pred k-type]
     (.range-filter-count lmdb (.dbi-name dbi) pred [:closed k k] k-type))

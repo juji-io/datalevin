@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Added
+- Fuzzy full-text search engine
+### Improved
+- Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
+
 ## 0.4.44
 ### Fixed
 - Backport the dump/load fix from 0.5.20

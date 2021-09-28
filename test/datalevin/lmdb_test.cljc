@@ -435,3 +435,45 @@
                   (l/close-kv lmdb)
                   (u/delete-files dir)
                   (is (and put-ok del-ok)))))
+
+(deftest inverted-list-basic-ops-test
+  (let [dir  (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        lst  (l/open-inverted-list lmdb "inverted")
+        pred (i/inter-fn
+               [kv]
+               (let [^long v (b/read-buffer (l/v kv) :long)]
+                 (odd? v)))]
+
+    (l/put-list-items lst "a" [1 2 3 4] :string :long)
+    (l/put-list-items lst "b" [5 6 7] :string :long)
+
+    (is (= (l/list-count lst "a" :string) 4))
+    (is (= (l/list-count lst "b" :string) 3))
+
+    (is (not (l/in-list? lst "a" 7 :string :long)))
+    (is (l/in-list? lst "b" 7 :string :long))
+
+    (is (= (l/get-list lst "a" :string :long) [1 2 3 4]))
+
+    (l/del-list-items lst "a" :string)
+
+    (is (= (l/list-count lst "a" :string) 0))
+    (is (not (l/in-list? lst "a" 1 :string :long)))
+    (is (= (l/get-list lst "a" :string :long) []))
+
+    (l/put-list-items lst "b" [1 2 3 4] :string :long)
+
+    (is (= (l/list-count lst "b" :string) 7))
+    (is (l/in-list? lst "b" 1 :string :long))
+
+    (l/del-list-items lst "b" [1 2] :string :long)
+
+    (is (= (l/list-count lst "b" :string) 5))
+    (is (not (l/in-list? lst "b" 1 :string :long)))
+
+    (is (= (l/filter-list lst "b" pred :string :long) [3 5 7]))
+    (is (= (l/filter-list-count lst "b" pred :string) 3))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))

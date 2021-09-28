@@ -173,6 +173,12 @@
   (k [this] (.outBuf kp))
   (v [this] (.outBuf vp)))
 
+(defn has?
+  [rc]
+  (if (= ^int rc (Lib/MDB_NOTFOUND))
+    false
+    (do (Lib/checkRc ^int rc) true)))
+
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
     CursorIterable [^Cursor cursor
@@ -210,10 +216,7 @@
       (reify
         Iterator
         (hasNext [this]
-          (let [has?      #(if (= ^int % (Lib/MDB_NOTFOUND))
-                             false
-                             (do (Lib/checkRc ^int %) true))
-                end       #(do (vreset! ended? true) false)
+          (let [end       #(do (vreset! ended? true) false)
                 continue? #(if stop-key?
                              (let [_ (get-cur)
                                    r (Lib/mdb_cmp (.get txn) i (.getVal k)
@@ -307,9 +310,8 @@
   (put [_ txn append?]
     (let [i (.get db)]
       (Lib/checkRc
-        (if append?
-          (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) (Lib/MDB_APPEND))
-          (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp) 0)))))
+        (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp)
+                     (if append? (Lib/MDB_APPEND) 0)))))
 
   (del [_ txn all?]
     (Lib/checkRc
@@ -592,6 +594,180 @@
   (range-filter-count [this dbi-name pred k-range k-type]
     (scan/range-filter-count this dbi-name pred k-range k-type)))
 
+(deftype ^{Retention RetentionPolicy/RUNTIME
+           CContext  {:value Lib$Directives}}
+    InvertedList [^LMDB lmdb ^DBI dbi]
+  IInvertedList
+  (put-list-items [this k vs kt vt]
+    (try
+      (let [^Txn txn (Txn/create (.-env lmdb))]
+        (.put-key dbi k kt)
+        (doseq [v vs]
+          (.put-val dbi v vt)
+          (.put dbi txn))
+        (.commit txn)
+        :transacted)
+      (catch Exception e
+        (raise "Fail to put an inverted list: " (ex-message e) {}))))
+
+  (del-list-items [this k kt]
+    (try
+      (let [^Txn txn (Txn/create (.-env lmdb))]
+        (.put-key dbi k kt)
+        (.del dbi txn)
+        (.commit txn)
+        :transacted)
+      (catch Exception e
+        (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+  (del-list-items [this k vs kt vt]
+    (try
+      (let [^Txn txn (Txn/create (.-env lmdb))]
+        (.put-key dbi k kt)
+        (doseq [v vs]
+          (.put-val dbi v vt)
+          (.del dbi txn false))
+        (.commit txn)
+        :transacted)
+      (catch Exception e
+        (raise "Fail to delete items from an inverted list: "
+               (ex-message e) {}))))
+
+  (get-list [this k kt vt]
+    (let [rtx ^Rtx (.get-rtx lmdb)
+          txn (.-txn rtx)
+          db  (.-db dbi)]
+      (try
+        (with-open [^Cursor cur (Cursor/create txn db) ]
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (let [^BufVal k (.-kp rtx)
+                    ^BufVal v (.-vp rtx)
+                    holder    (transient [])]
+                (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                ;; (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                ;;                     Lib$MDB_cursor_op/MDB_GET_CURRENT)
+                (conj! holder (b/read-buffer (.outBuf v) vt))
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  ;; (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                  ;;                     Lib$MDB_cursor_op/MDB_GET_CURRENT)
+                  (conj! holder (b/read-buffer (.outBuf v) vt)))
+                (persistent! holder))
+              [])))
+        (catch Exception e
+          (raise "Fail to get count of inverted list: " (ex-message e)
+                 {:dbi (.dbi-name dbi)}))
+        (finally (.return-rtx lmdb rtx)))))
+
+  (list-count [this k kt]
+    (let [rtx ^Rtx (.get-rtx lmdb)
+          txn (.-txn rtx)
+          db  (.-db dbi)]
+      (try
+        (with-open [^Cursor cur (Cursor/create txn db) ]
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (.count cur)
+              0)))
+        (catch Exception e
+          (raise "Fail to get count of inverted list: " (ex-message e)
+                 {:dbi (.dbi-name dbi)}))
+        (finally (.return-rtx lmdb rtx)))))
+
+  (filter-list [this k pred kt vt]
+    (let [rtx ^Rtx (.get-rtx lmdb)
+          txn (.-txn rtx)
+          db  (.-db dbi)]
+      (try
+        (with-open [^Cursor cur (Cursor/create txn db) ]
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (let [k      ^BufVal (.-kp rtx)
+                    v      ^BufVal (.-vp rtx)
+                    holder (transient [])
+                    work   #(let [kv (->KV k v)]
+                              (when (pred kv)
+                                (conj! holder (b/read-buffer (.outBuf v) vt))))]
+                (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                (work)
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  (work))
+                (persistent! holder))
+              [])))
+        (catch Exception e
+          (raise "Fail to get count of inverted list: " (ex-message e)
+                 {:dbi (.dbi-name dbi)}))
+        (finally (.return-rtx lmdb rtx)))))
+
+  (filter-list-count [this k pred kt]
+    (let [rtx ^Rtx (.get-rtx lmdb)
+          txn (.-txn rtx)
+          db  (.-db dbi)]
+      (try
+        (with-open [^Cursor cur (Cursor/create txn db) ]
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (let [k    ^BufVal (.-kp rtx)
+                    v    ^BufVal (.-vp rtx)
+                    c    (volatile! 0)
+                    work #(when (pred (->KV k v)) (vswap! c inc))]
+                (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                (work)
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  (work))
+                @c)
+              0)))
+        (catch Exception e
+          (raise "Fail to get count of inverted list: " (ex-message e)
+                 {:dbi (.dbi-name dbi)}))
+        (finally (.return-rtx lmdb rtx)))))
+
+  (in-list? [this k v kt vt]
+    (let [rtx ^Rtx (.get-rtx lmdb)
+          txn (.-txn rtx)
+          db  (.-db dbi)]
+      (try
+        (with-open [^Cursor cur (Cursor/create txn db)]
+          (.put-start-key rtx k kt)
+          (.put-stop-key rtx v vt)
+          (has? (Lib/mdb_cursor_get
+                  (.get cur)
+                  (.getVal ^BufVal (.-start-kp rtx))
+                  (.getVal ^BufVal (.-stop-kp rtx))
+                  Lib$MDB_cursor_op/MDB_GET_BOTH)))
+        (catch Exception e
+          (raise "Fail to test if an item is in an inverted list: "
+                 (ex-message e) {:dbi (.dbi-name dbi)}))
+        (finally (.return-rtx lmdb rtx))))))
+
 (defmethod open-kv :graal
   [dir]
   (try
@@ -616,3 +792,9 @@
       (raise
         "Fail to open database: " (ex-message e)
         {:dir dir}))))
+
+(defmethod open-inverted-list :graal
+  [^LMDB lmdb dbi-name]
+  (->InvertedList lmdb
+                  (.open-dbi lmdb dbi-name c/+max-key-size+ c/+max-key-size+
+                             (conj c/default-dbi-flags :dupsort))))

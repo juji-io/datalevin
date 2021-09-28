@@ -5,6 +5,7 @@ import org.graalvm.nativeimage.UnmanagedMemory;
 import org.graalvm.nativeimage.c.CContext;
 import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.nativeimage.c.type.WordPointer;
+import org.graalvm.nativeimage.c.type.CLongPointer;
 import org.graalvm.nativeimage.c.struct.SizeOf;
 
 /**
@@ -14,9 +15,11 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 public class Cursor {
 
     private WordPointer ptr;
+    private CLongPointer cPtr;
 
-    public Cursor(WordPointer ptr) {
+    public Cursor(WordPointer ptr, CLongPointer cPtr) {
         this.ptr = ptr;
+        this.cPtr = cPtr;
     }
 
     /**
@@ -25,9 +28,11 @@ public class Cursor {
     public static Cursor create(Txn txn, Dbi dbi) {
 
         WordPointer ptr = UnmanagedMemory.malloc(SizeOf.get(WordPointer.class));
+        CLongPointer cPtr = UnmanagedMemory.malloc(SizeOf.get(CLongPointer.class));
+
         Lib.checkRc(Lib.mdb_cursor_open(txn.get(), dbi.get(), ptr));
 
-        return new Cursor(ptr);
+        return new Cursor(ptr, cPtr);
     }
 
     /**
@@ -43,5 +48,14 @@ public class Cursor {
     public void close() {
         Lib.mdb_cursor_close(get());
         UnmanagedMemory.free(ptr);
+        UnmanagedMemory.free(cPtr);
+    }
+
+    /**
+     * Return count of duplicates for current key.
+     */
+    public long count() {
+        Lib.checkRc(Lib.mdb_cursor_count(get(), cPtr));
+        return (long)cPtr.read();
     }
 }
