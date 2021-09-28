@@ -17,10 +17,10 @@
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
 
-(defprotocol IRtxPool
-  (close-pool [this] "Close all read-only transactions in the pool")
-  (new-rtx [this] "Create a new read-only transaction")
-  (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
+;; (defprotocol IRtxPool
+;;   (close-pool [this] "Close all read-only transactions in the pool")
+;;   (new-rtx [this] "Create a new read-only transaction")
+;;   (get-rtx [this] "Obtain a ready-to-use read-only transaction"))
 
 (defprotocol IDB
   (dbi-name [this] "Return string name of the dbi")
@@ -80,7 +80,8 @@
      (i.e. sub-database) as a map")
   (entries [db dbi-name]
     "Get the number of data entries in a DBI (i.e. sub-db)")
-  (get-txn [db])
+  (get-rtx [db])
+  (return-rtx [db rtx])
   (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.")
   (get-value
