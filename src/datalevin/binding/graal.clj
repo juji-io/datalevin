@@ -755,7 +755,8 @@
             (let [k    ^BufVal (.-kp rtx)
                   v    ^BufVal (.-vp rtx)
                   c    (volatile! 0)
-                  work #(when (pred (->KV k v)) (vswap! c inc))]
+                  work #(when (pred (->KV k v))
+                          (vreset! c (inc ^long @c)))]
               (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
                                   Lib$MDB_cursor_op/MDB_FIRST_DUP)
               (work)
@@ -776,14 +777,13 @@
           txn         (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
-        (with-open []
-          (.put-start-key rtx k kt)
-          (.put-stop-key rtx v vt)
-          (has? (Lib/mdb_cursor_get
-                  (.get cur)
-                  (.getVal ^BufVal (.-start-kp rtx))
-                  (.getVal ^BufVal (.-stop-kp rtx))
-                  Lib$MDB_cursor_op/MDB_GET_BOTH)))
+        (.put-start-key rtx k kt)
+        (.put-stop-key rtx v vt)
+        (has? (Lib/mdb_cursor_get
+                (.get cur)
+                (.getVal ^BufVal (.-start-kp rtx))
+                (.getVal ^BufVal (.-stop-kp rtx))
+                Lib$MDB_cursor_op/MDB_GET_BOTH))
         (catch Exception e
           (raise "Fail to test if an item is in an inverted list: "
                  (ex-message e) {:dbi (.dbi-name dbi)}))
