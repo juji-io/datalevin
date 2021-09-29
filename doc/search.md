@@ -14,7 +14,7 @@ and reduces the cost of managing data.
 To support approximate full text search, two levels of mappings are
 used: strings -> tokens -> documents. The first level permits fuzzy
 string match within a threshold. The second level represents the standard
-term-document matrix of a full-text search engine stored in an inverted index.
+term-document matrix stored in an inverted index.
 
 The fuzzy string match uses a variation of SymSpell algorithm [1].
 
