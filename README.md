@@ -526,6 +526,24 @@ Please read
 [this](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) for
 information regarding upgrading your existing database from older versions.
 
+## :earth_americas: Roadmap
+
+These are the tentative goals that we try to reach as soon as we can. We may
+adjust the priorities based on feedback.
+
+* 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
+* 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
+* 0.6.0 As a search engine: fuzzy fulltext search across multiple attributes.
+* 0.7.0 A new Datalog query engine with improved performance.
+* 0.8.0 Composite tuples and persisted transaction functions.
+* 1.0.0 Fit for business in most use cases.
+* 1.1.0 Option to store data in compressed form.
+* 2.0.0 Fully automatic schema migration on write.
+* 3.0.0 As a product rule engine: implementing Rete/UL algorithm.
+* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 5.0.0 Distributed mode with raft based replication.
+
+
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
@@ -560,25 +578,6 @@ five datoms at a time, it takes more or less than that time.
 
 In short, Datalevin is quite capable for small or medium projects right now.
 Large scale projects can be supported when distributed mode is implemented.
-
-## :earth_americas: Roadmap
-
-These are the tentative goals that we try to reach as soon as we can. We may
-adjust the priorities based on feedback.
-
-* 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
-* 0.6.0 As a search engine: fuzzy fulltext search across multiple attributes.
-* 0.7.0 A new Datalog query engine with improved performance.
-* 0.8.0 Composite tuples and persisted transaction functions.
-* 1.0.0 Fit for business in most use cases.
-* 1.1.0 Option to store data in compressed form.
-* 2.0.0 Fully automatic schema migration on write.
-* 3.0.0 As a product rule engine: implementing Rete/UL algorithm.
-* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
-* 5.0.0 Distributed mode with raft based replication.
-
-We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
 
 ## :floppy_disk: Differences from Datascript
 
@@ -656,8 +655,17 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple, fast and versatile durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
+## :arrows_clockwise: Contact
+
+We appreciate and welcome your contribution or suggestion. Please feel free to
+file issues or pull requests.
+
+If commercial support is needed for Datalevin, talk to us.
+
+You can talk to us in the `#datalevin` channel on [Clojurians Slack](https://clojurians.slack.com/join/shared_invite/zt-lsr4rn2f-jealnYXLHVZ61V2vdi15QQ#/shared-invite/email).
+
 ## License
 
-Copyright © 2020-2021 [Juji, Inc.](https://juji.io). Contact us if commercial support is needed for Datalevin.
+Copyright © 2020-2021 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
