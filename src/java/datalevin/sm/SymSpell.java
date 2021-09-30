@@ -34,6 +34,8 @@ import datalevin.sm.SuggestItem;
 import datalevin.sm.DamerauLevenshteinOSA;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static datalevin.sm.Verbosity.*;
@@ -52,17 +54,16 @@ public class SymSpell {
     private final Map<Bigram, Long> bigramLexicon;
     private final Map<String, Long> unigramLexicon;
     private final StringDistance stringDistance;
-    private final int maxDictionaryWordLength;
+    private int maxDictionaryWordLength;
 
     /**
      * Sum of all counts in the dictionary
      */
     private final long n;
 
-    public SymSpell(Map<String, Long> unigrams, Map<Bigram, Long> bigrams,
-                    int distanceThreshold, int prefixLength) {
-        this.unigramLexicon = unigrams;
-        this.bigramLexicon = bigrams;
+    public SymSpell(Map<String, Long> unigrams, Map<Bigram, Long> bigrams, int distanceThreshold, int prefixLength) {
+        this.unigramLexicon = new ConcurrentHashMap<>(unigrams);
+        this.bigramLexicon = new ConcurrentHashMap<>(bigrams);
         this.maxDictionaryEditDistance = distanceThreshold;
         this.prefixLength = prefixLength;
         this.stringDistance = new DamerauLevenshteinOSA();
@@ -205,7 +206,7 @@ public class SymSpell {
                     if (preCalculatedDelete.equals(input) || ((Math.abs(preCalculatedDelete.length() - inputLen) > maxEditDistance2)
                             || (preCalculatedDelete.length() < candidateLength)
                             || (preCalculatedDelete.length() == candidateLength && !preCalculatedDelete.equals(candidate))) || (Math.min(preCalculatedDelete.length(), prefixLength) > inputPrefixLen
-                            && (Math.min(preCalculatedDelete.length(), prefixLength) - candidateLength) > maxEditDistance2)){
+                            && (Math.min(preCalculatedDelete.length(), prefixLength) - candidateLength) > maxEditDistance2)) {
                         continue;
                     }
 
@@ -266,7 +267,6 @@ public class SymSpell {
                     }
                 }
             }
-
         }
         if (suggestions.size() > 1) {
             Collections.sort(suggestions);
@@ -451,12 +451,26 @@ public class SymSpell {
         return bigramLexicon;
     }
 
-    Map<String, Collection<String>> getDeletes() {
+    public Map<String, Collection<String>> getDeletes() {
         return deletes;
     }
 
     public int getMaxDictionaryEditDistance() {
         return maxDictionaryEditDistance;
+    }
+
+    public void addBigrams(Map<Bigram, Long> bigrams) {
+        bigrams.forEach((key, value) -> bigramLexicon.merge(key, value, (v1, v2) -> v1 + v2));
+    }
+
+    public void addUnigrams(Map<String, Long> unigrams) {
+        unigrams.forEach((key, value) -> unigramLexicon.merge(key, value, (v1, v2) -> v1 + v2));
+        unigrams.keySet().parallelStream().forEach(word ->{
+                Map<String, Collection<String>> edits = generateEdits(word);
+                edits.forEach((string, suggestions) -> deletes.merge(string, suggestions, (v1, v2) -> Stream.concat(v1.stream(), v2.stream()).distinct().collect(Collectors.toList())));
+            });
+        int myMaxDictionaryWordLength = unigrams.keySet().stream().map(String::length).max(Integer::compareTo).orElse(0);
+        maxDictionaryWordLength = (myMaxDictionaryWordLength > maxDictionaryWordLength) ? myMaxDictionaryWordLength : maxDictionaryWordLength;
     }
 
 }
