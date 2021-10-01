@@ -1,5 +1,13 @@
 # Change Log
 
+## WIP
+### Improved
+- More robust handling of abrupt network disconnections
+- Automatically maintain the required number of open connections, #68
+### Added
+- Options to specify the number of connections in the client connection pool
+  and to set the time-out for server requests
+
 ## 0.4.44
 ### Fixed
 - Backport the dump/load fix from 0.5.20

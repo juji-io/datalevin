@@ -5,10 +5,10 @@
             [clojure.string :as s]
             [datalevin.bits :as b]
             [datalevin.protocol :as p])
-  (:import [java.nio.charset StandardCharsets]
-           [java.nio ByteBuffer BufferOverflowException]
+  (:import [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels SocketChannel]
-           [java.util ArrayList UUID Collection]
+           [java.util UUID]
+           [java.util.concurrent ConcurrentLinkedQueue]
            [java.net InetSocketAddress StandardSocketOptions URI]))
 
 (defprotocol ^:no-doc IConnection
@@ -88,20 +88,25 @@
   (close-pool [this])
   (closed-pool? [this]))
 
-(deftype ^:no-doc ConnectionPool [^ArrayList available
-                                  ^ArrayList used]
+(deftype ^:no-doc ConnectionPool [host port client-id pool-size time-out
+                                  ^ConcurrentLinkedQueue available
+                                  ^ConcurrentLinkedQueue used]
   IConnectionPool
   (get-connection [this]
     (let [start (System/currentTimeMillis)]
-      (loop [size (.size available)]
-        (if (> size 0)
-          (locking this
-            (let [conn ^Connection (.remove available (dec size))]
-              (.add used conn)
-              conn))
-          (if (>= (- (System/currentTimeMillis) start) c/connection-timeout)
+      (loop []
+        (if (.isEmpty available)
+          (if (>= (- (System/currentTimeMillis) start) ^long time-out)
             (u/raise "Timeout in obtaining a connection" {})
-            (recur (.size available)))))))
+            (recur))
+          (let [^Connection conn (.poll available)]
+            (if (.isOpen ^SocketChannel (.-ch conn))
+              (do (.add used conn)
+                  conn)
+              (let [conn (new-connection host port)]
+                (set-client-id conn client-id)
+                (.add used conn)
+                conn)))))))
 
   (release-connection [this conn]
     (locking this
@@ -109,9 +114,9 @@
       (.add available conn)))
 
   (close-pool [this]
-    (dotimes [i (.size used)] (close ^Connection (.get used i)))
+    (dotimes [_ (.size used)] (close ^Connection (.poll used)))
     (.clear used)
-    (dotimes [i (.size used)] (close ^Connection (.get available i)))
+    (dotimes [_ (.size used)] (close ^Connection (.poll available)))
     (.clear available))
 
   (closed-pool? [this]
@@ -134,10 +139,16 @@
       (u/raise "Authentication failure: " message {}))))
 
 (defn- new-connectionpool
-  [host port client-id]
-  (let [^ConnectionPool pool (->ConnectionPool (ArrayList.) (ArrayList.))
-        ^ArrayList available (.-available pool)]
-    (dotimes [_ c/connection-pool-size]
+  [host port client-id pool-size time-out]
+  (assert (> ^long pool-size 0)
+          "Number of connections must be greater than zero")
+  (let [^ConnectionPool pool             (->ConnectionPool
+                                           host port client-id
+                                           pool-size time-out
+                                           (ConcurrentLinkedQueue.)
+                                           (ConcurrentLinkedQueue.))
+        ^ConcurrentLinkedQueue available (.-available pool)]
+    (dotimes [_ pool-size]
       (let [conn (new-connection host port)]
         (set-client-id conn client-id)
         (.add available conn)))
@@ -255,20 +266,30 @@
                 {:message message})))))
 
 (defn new-client
-  "Create a new client that maintains a pooled connection to a remote
+  "Create a new client that maintains pooled connections to a remote
   Datalevin database server. This operation takes at least 0.5 seconds
   in order to perform a secure password hashing that defeats cracking.
 
-  Fields in the `uri-str` should be properly URL encoded, e.g. password
-  needs to be URL encoded."
-  [uri-str]
-  (let [uri                         (URI. uri-str)
-        {:keys [username password]} (parse-user-info uri)
-        host                        (.getHost uri)
-        port                        (parse-port uri)
-        client-id                   (authenticate host port username password)
-        pool                        (new-connectionpool host port client-id)]
-    (->Client uri pool client-id)))
+  Fields in the `uri-str` should be properly URL encoded, e.g. user and
+  password need to be URL encoded if they contain special characters.
+
+  The following can be set in the optional map:
+  * `:pool-size` determines number of connections maintained in the connection
+  pool, default is 5.
+  * `:time-out` specifies the time (milliseconds) before an exception is thrown
+  when obtaining an open network connection, default is 30000."
+  ([uri-str]
+   (new-client uri-str {:pool-size c/connection-pool-size
+                        :time-out  c/connection-timeout}))
+  ([uri-str {:keys [pool-size time-out]}]
+   (let [uri                         (URI. uri-str)
+         {:keys [username password]} (parse-user-info uri)
+
+         host      (.getHost uri)
+         port      (parse-port uri)
+         client-id (authenticate host port username password)
+         pool      (new-connectionpool host port client-id pool-size time-out)]
+     (->Client uri pool client-id))))
 
 (defn ^:no-doc normal-request
   "Send request to server and returns results. Does not use the

@@ -1624,9 +1624,8 @@
         {:keys [^ByteBuffer read-bf]} @state
         capacity                      (.capacity read-bf)
         ^SocketChannel ch             (.channel skey)
-        readn                         (.read ch read-bf)]
+        ^int readn                    (p/read-ch ch read-bf)]
     (cond
-      (= readn 0)  :continue
       (> readn 0)  (if (= (.position read-bf) capacity)
                      (let [size (* c/+buffer-grow-factor+ capacity)
                            bf   (b/allocate-buffer size)]
@@ -1638,6 +1637,7 @@
                        (fn [fmt msg]
                          (execute server
                                   #(handle-message server skey fmt msg)))))
+      (= readn 0)  :continue
       (= readn -1) (.close ch))))
 
 (defn- handle-registration
