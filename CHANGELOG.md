@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.22
 ### Improved
 - More robust handling of abrupt network disconnections
 - Automatically maintain the required number of open connections, #68
