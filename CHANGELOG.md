@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.23
 ### Improved
 - Bump versions of all dependency
 
