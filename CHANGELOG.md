@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- Bump versions of all dependency
+
 ## 0.5.22
 ### Improved
 - More robust handling of abrupt network disconnections
