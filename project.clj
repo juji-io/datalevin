@@ -13,9 +13,7 @@
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
                          [babashka/babashka.pods "0.0.1"]
                          [com.fasterxml.jackson.core/jackson-core "2.13.0"]
-                         [com.cognitect/transit-clj "1.0.324"
-                          ;; :exclusions [com.fasterxml.jackson.core/jackson-core]
-                          ]
+                         [com.cognitect/transit-clj "1.0.324"]
                          [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.2.0"]
                          [org.graalvm.nativeimage/svm "21.2.0"]
