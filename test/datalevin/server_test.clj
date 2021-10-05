@@ -37,7 +37,7 @@
 
     ;; client send RST packet to server to close connection, will trigger an
     ;; exception on server, but the server should not crash
-    (let [^ConnectionPool pool (.-pool client1)
+    (let [^ConnectionPool pool (cl/get-pool client1)
           ^Connection conn     (cl/get-connection pool)
           ^SocketChannel ch    (.-ch conn)
           ^Socket socket       (.socket ch)]

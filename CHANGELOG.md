@@ -6,6 +6,17 @@
 ### Improved
 - Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
 
+## 0.5.24
+### Fixed
+- Handle scalar result in remote queries
+### Improved
+- Server asks client to reconnect if the server is restarted and client
+  reconnects automatically when doing next request
+
+## 0.5.23
+### Improved
+- Bump versions of all dependency
+
 ## 0.5.22
 ### Improved
 - More robust handling of abrupt network disconnections

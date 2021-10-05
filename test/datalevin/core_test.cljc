@@ -1,6 +1,7 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
             [datalevin.server :as s]
+            [datalevin.client :as cl]
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
             [datalevin.util :as u]
@@ -319,7 +320,14 @@
           :sales/top-product-use "CRM",
           :sales/total           23}]]
     (sut/transact! conn txs)
-    (is (= 83 (count (sut/datoms @conn :eavt))))
+    (is (= (count (sut/datoms @conn :eavt)) 83))
+    (is (= (sut/q '[:find ?st .
+                    :where
+                    [?e :sales/company "Unilever"]
+                    [?e :sales/year 2018]
+                    [?e :sales/total ?st]]
+                  @conn)
+           23))
     (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
                          :in $ ?ns-in
                          :where
@@ -648,11 +656,27 @@
     (sut/close local-conn)
     (s/stop server)))
 
+(deftest restart-server-test
+  (let [root    (u/tmp-dir (str "remote-schema-test-" (UUID/randomUUID)))
+        server1 (s/create {:port c/default-port
+                           :root root})
+        _       (s/start server1)
+        client  (cl/new-client "dtlv://datalevin:datalevin@localhost"
+                               {:time-out 5000})]
+    (is (= (cl/list-databases client) []))
+    (s/stop server1)
+    (is (thrown? Exception (cl/list-databases client)))
+    (let [server2 (s/create {:port c/default-port
+                             :root root})
+          _       (s/start server2)]
+      (is (= (cl/list-databases client) []))
+      (s/stop server2))))
+
 (deftest entity-fn-test
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                     (str "entity-fn-test-"
-                                          (UUID/randomUUID)))})
+                                  (str "entity-fn-test-"
+                                       (UUID/randomUUID)))})
         _      (s/start server)
 
         f1 (i/inter-fn [db eid] (sut/entity db eid))

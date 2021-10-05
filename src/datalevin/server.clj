@@ -478,11 +478,16 @@
 
 (defmacro ^:no-doc wrap-permission
   [req-act req-obj req-tgt message & body]
-  `(let [{:keys [~'client-id]}   @(~'.attachment ~'skey)
-         {:keys [~'permissions]} (get-client ~'server ~'client-id)]
-     (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
-       (do ~@body)
-       (u/raise ~message {}))))
+  `(let [{:keys [~'client-id ~'write-bf]} @(~'.attachment ~'skey)
+         ~'ch                             (~'.channel ~'skey)
+         {:keys [~'permissions]}          (get-client ~'server ~'client-id)]
+     (if ~'permissions
+       (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
+         (do ~@body)
+         (u/raise ~message {}))
+       (do
+         (remove-client ~'server ~'client-id)
+         (p/write-message-blocking ~'ch ~'write-bf {:type :reconnect})))))
 
 (declare event-loop close-conn store->db-name)
 
@@ -1518,9 +1523,11 @@
           db                     (get-db server db-name)
           inputs                 (replace {:remote-db-placeholder db} inputs)
           data                   (apply q/q query inputs)]
-      (if (< (count data) c/+wire-datom-batch-size+)
-        (write-message skey {:type :command-complete :result data})
-        (copy-out skey data c/+wire-datom-batch-size+)))))
+      (if (coll? data)
+        (if (< (count data) c/+wire-datom-batch-size+)
+          (write-message skey {:type :command-complete :result data})
+          (copy-out skey data c/+wire-datom-batch-size+))
+        (write-message skey {:type :command-complete :result data})))))
 
 ;; END message handlers
 

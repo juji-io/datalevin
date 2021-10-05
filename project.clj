@@ -1,4 +1,4 @@
-(def version "0.5.22")
+(def version "0.5.25")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -12,21 +12,19 @@
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
                          [babashka/babashka.pods "0.0.1"]
-                         [com.fasterxml.jackson.core/jackson-core "2.12.5"]
-                         [com.cognitect/transit-clj "1.0.324"
-                          ;; :exclusions [com.fasterxml.jackson.core/jackson-core]
-                          ]
+                         [com.fasterxml.jackson.core/jackson-core "2.13.0"]
+                         [com.cognitect/transit-clj "1.0.324"]
                          [nrepl/bencode "1.1.0"]
-                         [org.graalvm.sdk/graal-sdk "21.1.0"]
-                         [org.graalvm.nativeimage/svm "21.1.0"]
-                         [borkdude/sci "0.2.6"]
+                         [org.graalvm.sdk/graal-sdk "21.2.0"]
+                         [org.graalvm.nativeimage/svm "21.2.0"]
+                         [borkdude/sci "0.2.7"]
                          [com.taoensso/nippy "3.1.1"]
                          [com.taoensso/timbre "5.1.2"]
                          [persistent-sorted-set "0.1.4"]
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
-                         [com.github.clj-easy/graal-build-time "0.1.0"]
-                         [org.lmdbjava/lmdbjava "0.8.1"
+                         [com.github.clj-easy/graal-build-time "0.1.4"]
+                         [org.lmdbjava/lmdbjava "0.8.2"
                           ;; uncomment when run lein codox
                           ;; :exclusions
                           ;; [org.ow2.asm/asm-analysis

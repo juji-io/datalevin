@@ -3,6 +3,7 @@
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
             [clojure.string :as s]
+            [clojure.stacktrace :as st]
             [datalevin.bits :as b]
             [datalevin.protocol :as p])
   (:import [java.nio ByteBuffer BufferOverflowException]
@@ -93,25 +94,28 @@
                                   ^ConcurrentLinkedQueue used]
   IConnectionPool
   (get-connection [this]
-    (let [start (System/currentTimeMillis)]
-      (loop []
-        (if (.isEmpty available)
-          (if (>= (- (System/currentTimeMillis) start) ^long time-out)
-            (u/raise "Timeout in obtaining a connection" {})
-            (recur))
-          (let [^Connection conn (.poll available)]
-            (if (.isOpen ^SocketChannel (.-ch conn))
-              (do (.add used conn)
-                  conn)
-              (let [conn (new-connection host port)]
-                (set-client-id conn client-id)
-                (.add used conn)
-                conn)))))))
+    (if (closed-pool? this)
+      (u/raise "This client is closed" {:client-id client-id})
+      (let [start (System/currentTimeMillis)]
+        (loop []
+          (if (.isEmpty available)
+            (if (>= (- (System/currentTimeMillis) start) ^long time-out)
+              (u/raise "Timeout in obtaining a connection" {})
+              (recur))
+            (let [^Connection conn (.poll available)]
+              (if (.isOpen ^SocketChannel (.-ch conn))
+                (do (.add used conn)
+                    conn)
+                (let [conn (new-connection host port)]
+                  (set-client-id conn client-id)
+                  (.add used conn)
+                  conn))))))))
 
   (release-connection [this conn]
     (locking this
-      (.remove used conn)
-      (.add available conn)))
+      (when (.contains used conn)
+        (.remove used conn)
+        (.add available conn))))
 
   (close-pool [this]
     (dotimes [_ (.size used)] (close ^Connection (.poll used)))
@@ -164,7 +168,9 @@
       so that each batch fits in buffers along the way. The response could
       also initiate a copy out")
   (disconnect [client])
-  (disconnected? [client]))
+  (disconnected? [client])
+  (get-pool [client])
+  (get-id [client]))
 
 (defn ^:no-doc parse-user-info
   [^URI uri]
@@ -220,18 +226,41 @@
       (u/raise "Unable to copy in:" (ex-message e)
                {:req req :count (count data)}))))
 
-(deftype ^:no-doc Client [^URI uri
-                          ^ConnectionPool pool
-                          ^UUID id]
+(deftype ^:no-doc Client [username password host port pool-size time-out
+                          ^:volatile-mutable ^UUID id
+                          ^:volatile-mutable ^ConnectionPool pool]
   IClient
   (request [client req]
-    (let [conn (get-connection pool)]
-      (try
-        (let [{:keys [type] :as result} (send-n-receive conn req)]
-          (if (= type :copy-out-response)
-            (copy-out conn req)
-            result))
-        (finally (release-connection pool conn)))))
+    (let [success? (volatile! false)
+          start    (System/currentTimeMillis)]
+      (loop []
+        (let [conn (get-connection pool)
+              res  (when-let [{:keys [type] :as result}
+                              (try
+                                (send-n-receive conn req)
+                                (catch Exception e
+                                  (st/print-stack-trace e)
+                                  (close conn)
+                                  nil)
+                                (finally (release-connection pool conn)))]
+                     (vreset! success? true)
+                     (case type
+                       :copy-out-response (copy-out conn req)
+                       :command-complete  result
+                       :error-response    result
+                       :reconnect
+                       (let [client-id
+                             (authenticate host port username password)]
+                         (close conn)
+                         (vreset! success? false)
+                         (set! id client-id)
+                         (set! pool (new-connectionpool host port client-id
+                                                        pool-size time-out)))))]
+          (if (>= (- (System/currentTimeMillis) start) ^long (.-time-out pool))
+            (u/raise "Timeout in making request" {})
+            (if @success?
+              res
+              (recur)))))))
 
   (copy-in [client req data batch-size]
     (let [conn (get-connection pool)]
@@ -249,7 +278,11 @@
     (close-pool pool))
 
   (disconnected? [client]
-    (closed-pool? pool)))
+    (closed-pool? pool))
+
+  (get-pool [client] pool)
+
+  (get-id [client] id))
 
 (defn open-database
   "Open a database on server. `db-type` can be \"datalog\" or \"kv\""
@@ -281,7 +314,9 @@
   ([uri-str]
    (new-client uri-str {:pool-size c/connection-pool-size
                         :time-out  c/connection-timeout}))
-  ([uri-str {:keys [pool-size time-out]}]
+  ([uri-str {:keys [pool-size time-out]
+             :or   {pool-size c/connection-pool-size
+                    time-out  c/connection-timeout}}]
    (let [uri                         (URI. uri-str)
          {:keys [username password]} (parse-user-info uri)
 
@@ -289,7 +324,7 @@
          port      (parse-port uri)
          client-id (authenticate host port username password)
          pool      (new-connectionpool host port client-id pool-size time-out)]
-     (->Client uri pool client-id))))
+     (->Client username password host port pool-size time-out client-id pool))))
 
 (defn ^:no-doc normal-request
   "Send request to server and returns results. Does not use the
