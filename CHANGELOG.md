@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.24
 ### Fixed
 - Handle scalar result in remote queries
 ### Improved

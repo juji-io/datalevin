@@ -3,7 +3,7 @@
 <p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.5.23" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.5.24" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -94,14 +94,14 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.5.23"]
+[datalevin "0.5.24"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.5.23"}
+{:deps {datalevin/datalevin {:mvn/version "0.5.24"}
         com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
 ```
 
@@ -157,16 +157,16 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.23/dtlv-0.5.23-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.24/dtlv-0.5.24-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.23/dtlv-0.5.23-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.24/dtlv-0.5.24-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.23/dtlv-0.5.23-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.24/dtlv-0.5.24-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.5.23)
+  Datalevin (version: 0.5.24)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -203,7 +203,7 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.5.23)
+  Datalevin (version: 0.5.24)
 
   Type (help) to see available functions. Clojure core functions are also available.
   Type (exit) to exit.
@@ -283,12 +283,12 @@ nil
 ### JVM Command Line Tool
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.23/datalevin-0.5.23-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.24/datalevin-0.5.24-standalone.jar)
 is downloadable to use as the command line tool, in case a pre-built native
 version is not available for your platform. For example,
 
 ```console
-java -jar datalevin-0.5.23-standalone.jar
+java -jar datalevin-0.5.24-standalone.jar
 ```
 This will start the Datalevin REPL.
 
