@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Fixed
+- Handle scalar result in remote queries
+### Improved
+- Server asks client to reconnect if the server is restarted and client
+  reconnects automatically when doing next request
+
 ## 0.5.23
 ### Improved
 - Bump versions of all dependency

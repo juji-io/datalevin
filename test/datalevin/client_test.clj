@@ -89,11 +89,11 @@
 
           (is (thrown? Exception (sut/list-databases client2)))
 
-          (let [client-id2 (.-id ^Client client2)]
+          (let [client-id2 (sut/get-id ^Client client2)]
             (sut/disconnect-client client client-id2)
-
             (is (= (count (sut/show-clients client)) 1))
-            (is (thrown? Exception (sut/list-user-roles client2 "juji"))))))
+            ;; auto reconnected
+            (is (= (count (sut/list-user-roles client2 "juji")) 2)))))
 
       (testing "db is forcibly closed by superuser, then dropped"
         (let [client3 (sut/new-client "dtlv://juji:new-secret@localhost")]
@@ -103,8 +103,9 @@
 
           (sut/close-database client "hr")
           (is (= (count (sut/list-databases-in-use client)) 1))
-          (is (= (count (sut/show-clients client)) 1))
-          (is (thrown? Exception (sut/list-user-roles client3 "juji")))
+          ;; the old client reconnected
+          (is (= (count (sut/show-clients client)) 2))
+          (is (= (count (sut/list-user-roles client3 "juji")) 2))
 
           (sut/drop-database client "hr")
           (is (= (count (sut/list-databases client)) 1))
