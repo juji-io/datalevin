@@ -662,7 +662,7 @@
                            :root root})
         _       (s/start server1)
         client  (cl/new-client "dtlv://datalevin:datalevin@localhost"
-                               {:time-out 2000})]
+                               {:time-out 5000})]
     (is (= (cl/list-databases client) []))
     (s/stop server1)
     (is (thrown? Exception (cl/list-databases client)))
