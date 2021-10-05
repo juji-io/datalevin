@@ -198,3 +198,18 @@
     (fetch-range-filtered-count dbi rtx pred k-range k-type)
     (raise "Fail to range-filter-count: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))
+
+(defn visit
+  [lmdb dbi-name visitor k-range k-type]
+  (scan
+    (let [[range-type k1 k2] k-range
+          info               (l/range-info rtx range-type k1 k2)]
+      (when k1 (l/put-start-key rtx k1 k-type))
+      (when k2 (l/put-stop-key rtx k2 k-type))
+      (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
+        (loop [^Iterator iter (.iterator ^Iterable iterable)]
+          (when (.hasNext iter)
+            (visitor (.next iter))
+            (recur iter)))))
+    (raise "Fail to visit: " (ex-message e)
+           {:dbi dbi-name :k-range k-range :k-type k-type})))

@@ -617,7 +617,12 @@
   (range-filter-count [this dbi-name pred k-range]
     (.range-filter-count this dbi-name pred k-range :data))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (scan/range-filter-count this dbi-name pred k-range k-type)))
+    (scan/range-filter-count this dbi-name pred k-range k-type))
+
+  (visit [this dbi-name visitor k-range]
+    (.visit this dbi-name visitor k-range :data))
+  (visit [this dbi-name visitor k-range k-type]
+    (scan/visit this dbi-name visitor k-range k-type)))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -817,8 +822,9 @@
 
 (defmethod open-inverted-list :graal
   ([^LMDB lmdb dbi-name item-size]
-   (->InvertedList lmdb
-                   (.open-dbi lmdb dbi-name c/+max-key-size+ item-size
-                              (conj c/default-dbi-flags :dupsort))))
+   (assert (>= c/+max-key-size+ ^long item-size)
+           "Item size cannot be larger than 511 bytes")
+   (->InvertedList lmdb (.open-dbi lmdb dbi-name c/+max-key-size+ item-size
+                                   (conj c/default-dbi-flags :dupsort))))
   ([lmdb dbi-name]
    (open-inverted-list lmdb dbi-name c/+max-key-size+)))

@@ -10,7 +10,7 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
-  (:import [java.util UUID Arrays]
+  (:import [java.util UUID Arrays HashMap]
            [java.lang Long]))
 
 (if (u/graal?)
@@ -345,7 +345,15 @@
       (l/transact-kv lmdb txs)
       (is (= fvs (l/range-filter lmdb "c" pred [:all] :long :long true)))
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
-      (is (= res (l/range-filter lmdb "c" pred [:all] :long :long))))
+      (is (= res (l/range-filter lmdb "c" pred [:all] :long :long)))
+
+      (let [hm      (HashMap.)
+            visitor (i/inter-fn [kv]
+                                (let [^long k (b/read-buffer (l/k kv) :long)
+                                      ^long v (b/read-buffer (l/v kv) :long)]
+                                  (.put hm k v)))]
+        (l/visit lmdb "c" visitor [:closed 11 19] :long)
+        (is (= (into {} res) hm))))
     (l/close-kv lmdb)
     (u/delete-files dir)))
 

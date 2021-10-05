@@ -6,11 +6,24 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b]
             [datalevin.constants :as c])
-  (:import [datalevin.sm SymSpell Bigram]))
+  (:import [datalevin.sm SymSpell Bigram]
+           [datalevin.lmdb ILMDB]
+           [java.util HashMap]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
+
+(defprotocol ISearchEngine
+  (add-doc [this doc] "Add a document to the search engine"))
+
+(deftype SearchEngine [^ILMDB lmdb
+                       ^SymSpell symspell
+
+                       ^:volatile-mutable max-docid
+                       ]
+  ISearchEngine
+  (add-doc [this doc]))
 
 (comment
 

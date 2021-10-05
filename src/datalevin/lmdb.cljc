@@ -110,19 +110,24 @@
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
     [db dbi-name pred k-range k-type v-type ignore-key?]
-    "Return the first kv pair that has logical true value of `(pred x)`")
+    "Return the first kv pair that has logical true value of `(pred kv)`")
   (range-filter
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
     [db dbi-name pred k-range k-type v-type ignore-key?]
     "Return a seq of kv pair in the specified key range, for only those
-     return true value for `(pred x)`.")
+     return true value for `(pred kv)`.")
   (range-filter-count
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     "Return the number of kv pairs in the specified key range, for only those
-     return true value for `(pred x)`"))
+     return true value for `(pred kv)`")
+  (visit
+    [db dbi-name visitor k-range]
+    [db dbi-name visitor k-range k-type]
+    "Call `visitor` function on each kv pairs in the specified key range, presumably
+     for side effects. Return nil."))
 
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 
