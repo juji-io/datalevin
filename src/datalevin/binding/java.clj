@@ -527,7 +527,9 @@
         {:dir dir}))))
 
 (defmethod open-inverted-list :java
-  [^LMDB lmdb dbi-name]
-  (->InvertedList lmdb
-                  (.open-dbi lmdb dbi-name c/+max-key-size+ c/+max-key-size+
-                             (conj c/default-dbi-flags :dupsort))))
+  ([^LMDB lmdb dbi-name item-size]
+   (->InvertedList lmdb
+                   (.open-dbi lmdb dbi-name c/+max-key-size+ item-size
+                              (conj c/default-dbi-flags :dupsort))))
+  ([lmdb dbi-name]
+   (open-inverted-list lmdb dbi-name c/+max-key-size+)))

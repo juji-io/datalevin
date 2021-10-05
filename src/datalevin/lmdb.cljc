@@ -124,8 +124,10 @@
     "Return the number of kv pairs in the specified key range, for only those
      return true value for `(pred x)`"))
 
+(defn- pick-binding [] (if (u/graal?) :graal :java))
+
 (defmulti open-kv
-  (fn [dir] (if (u/graal?) :graal :java)))
+  (constantly (pick-binding)))
 
 (defmulti open-inverted-list
-  (fn [lmdb dbi-name] (if (u/graal?) :graal :java)))
+  (constantly (pick-binding)))

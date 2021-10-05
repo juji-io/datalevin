@@ -32,21 +32,21 @@
 
   (.lookupCompound sm "hell" 2 false)
 
-  (def env (l/open-kv "/tmp/search2"))
+  (def env (l/open-kv "/tmp/search6"))
 
-  (def lst (l/open-inverted-list env "i"))
+  (def lst (l/open-inverted-list env "i" c/+id-bytes+))
 
-  (l/put-list-items lst "a" [1 2 3 4] :string :long)
-  (l/put-list-items lst "b" [5 6 7] :string :long)
+  (l/put-list-items lst "a" [1 2 3 4] :string :id)
+  (l/put-list-items lst "b" [5 6 7] :string :id)
 
   (l/list-count lst "a" :string)
   (l/list-count lst "b" :string)
 
   (l/del-list-items lst "a" :string)
 
-  (l/in-list? lst "b" 7 :string :long)
+  (l/in-list? lst "b" 7 :string :id)
 
-  (l/get-list lst "a" :string :long)
+  (l/get-list lst "a" :string :id)
 
   (l/close-kv env)
 
