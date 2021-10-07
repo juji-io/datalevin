@@ -8,22 +8,72 @@
             [datalevin.constants :as c])
   (:import [datalevin.sm SymSpell Bigram]
            [datalevin.lmdb ILMDB]
-           [java.util HashMap]))
+           [java.util HashMap]
+           [java.lang.reflect Field]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
+(defn analyzer
+  "Datalevin analyzer does the following:
+  - lower-case all words
+  - split on non-word characters (except `-`) and remove them
+  - remove stop words
+  Return a vector of [token, position, offset]"
+  [^String x]
+  (let [x     (s/lower-case x)
+        len   (.length x)
+        len-1 (dec len)]
+    (loop [i     0
+           res   (transient [])
+           pos   0
+           in?   false
+           start 0]
+      (if (< i len)
+        (let [c (.charAt x i)]
+          (if (or (Character/isWhitespace c) (c/punctuations c))
+            (if in?
+              (let [word (subs x start i)]
+                (if (c/english-stop-words word)
+                  (recur (inc i) res (inc pos) false i)
+                  (do
+                    (conj! res [word pos start])
+                    (recur (inc i) res (inc pos) false i))))
+              (recur (inc i) res pos false i))
+            (if in?
+              (recur (inc i) res pos true start)
+              (recur (inc i) res pos true i))))
+        (persistent!
+          (let [c (.charAt x len-1)]
+            (if (or (Character/isWhitespace c) (c/punctuations c))
+              res
+              (let [word (subs x start i)]
+                (if (c/english-stop-words word)
+                  res
+                  (conj! res [word pos start]))))))))))
+
 (defprotocol ISearchEngine
-  (add-doc [this doc] "Add a document to the search engine"))
+  (add-doc [this doc-ref doc-text]
+    "Add a document to the search engine, `doc-ref` can be arbitrary data that
+     uniquely refers to the document in the system, `doc-text` is the content of
+     the document as a string. Return `doc-id`, a long.")
+  (remove-doc [this doc-id]
+    "Remove a document, `doc-id` is a long, as returned by `add-doc`.")
+  (search [this query]
+    "Issue a `query` to the search engine. `query` is a map.
+     Return a lazy sequence of `doc-ref`, ordered by relevance to the query."))
 
-(deftype SearchEngine [^ILMDB lmdb
+(deftype SearchEngine [lmdb
                        ^SymSpell symspell
-
-                       ^:volatile-mutable max-docid
-                       ]
+                       ^:volatile-mutable max-doc
+                       ^:volatile-mutable max-term]
   ISearchEngine
-  (add-doc [this doc]))
+  (add-doc [this doc-ref doc-text]))
+
+(defn new-engine
+  [lmdb]
+  )
 
 (comment
 
