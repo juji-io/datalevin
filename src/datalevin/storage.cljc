@@ -4,8 +4,7 @@
             [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.constants :as c]
-            [datalevin.datom :as d]
-            )
+            [datalevin.datom :as d])
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -228,7 +227,7 @@
                 lmdb
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
-                ^:volatile-mutable attrs
+                ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore

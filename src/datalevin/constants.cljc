@@ -90,11 +90,12 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const meta "datalevin/meta")
-(def ^:const unigrams "datalevin/unigrams")
-(def ^:const bigrams "datalevin/bigrams")
-(def ^:const docs "datalevin/docs")           ; doc-id -> doc-ref
-(def ^:const term-docs "datalevin/term-docs") ; term -> doc-id, inverted
-(def ^:const positions "datalevin/positions") ; doc-id,term -> position,offset
+(def ^:const unigrams "datalevin/unigrams")   ; term -> term-id,freq
+(def ^:const bigrams "datalevin/bigrams")     ; term-id,term-id -> freq
+(def ^:const docs "datalevin/docs")           ; doc-id -> doc-ref | doc-text
+(def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (list)
+(def ^:const positions "datalevin/positions") ; doc-id,term-id -> position,offset (list)
+(def ^:const search-meta "datalevin/search-meta")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean
@@ -102,6 +103,10 @@
                                    :db.type/float :db.type/ref
                                    :db.type/instant :db.type/uuid
                                    :db.type/bytes})
+
+;; search engine
+
+(def ^:const +max-term-length+ (- +max-key-size+ Long/BYTES))
 
 ;; server / client
 
@@ -131,7 +136,7 @@
 
 ;; general
 
-(def +buffer-grow-factor+ 10)
+(def ^long +buffer-grow-factor+ 10)
 
 ;; lmdb
 
@@ -160,11 +165,14 @@
 
 ;;search engine
 
-(def english-stop-words #{"a", "an", "and", "are", "as", "at", "be", "but",
-                          "by", "for", "if", "in", "into", "is", "it",
-                          "no", "not", "of", "on", "or", "such",
-                          "that", "the", "their", "then", "there", "these",
-                          "they", "this", "to", "was", "will", "with"})
+(def en-stop-words (hash-set "a", "an", "and", "are", "as", "at", "be",
+                             "but", "by", "for", "if", "in", "into", "is",
+                             "it", "no", "not", "of", "on", "or", "such",
+                             "that", "the",  "their", "then", "there", "these",
+                             "they", "this", "to", "was", "will", "with"))
 
-(def punctuations #{\; \, \! \" \# \$ \% \& \( \) \* \+ \: \/ \< \. \= \> \? \@
-                    \[ \] \\ \^ \_ \` \{ \} \| \~})
+(def en-punctuations (hash-set \; \, \! \? \" \( \) \: \/ \. \[ \] \{ \}))
+
+(def dict-max-edit-distance 2)
+
+(def dict-prefix-length 10)

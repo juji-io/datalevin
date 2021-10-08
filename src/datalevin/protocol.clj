@@ -142,7 +142,7 @@
                 read-bf   (if (< (.capacity read-bf) length)
                             (let [^ByteBuffer bf
                                   (ByteBuffer/allocateDirect
-                                    (* c/+buffer-grow-factor+ length))]
+                                    (* ^long c/+buffer-grow-factor+ length))]
                               (.rewind read-bf)
                               (b/buffer-transfer read-bf bf)
                               bf)

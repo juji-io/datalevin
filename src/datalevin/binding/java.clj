@@ -170,7 +170,7 @@
       (b/put-buffer vb x t)
       (.flip vb)
       (catch BufferOverflowException _
-        (let [size (* c/+buffer-grow-factor+ ^long (b/measure-size x))]
+        (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
           (b/put-buffer vb x t)
           (.flip vb)))
@@ -209,7 +209,8 @@
     (.add curs cur)))
 
 (defn- up-db-size [^Env env]
-  (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
+  (.setMapSize env
+               (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
 (deftype LMDB [^Env env
                ^String dir
@@ -532,10 +533,13 @@
         {:dir dir}))))
 
 (defmethod open-inverted-list :java
-  ([^LMDB lmdb dbi-name item-size]
-   (assert (>= c/+max-key-size+ ^long item-size)
-           "Item size cannot be larger than 511 bytes")
-   (->InvertedList lmdb (.open-dbi lmdb dbi-name c/+max-key-size+ item-size
+  ([^LMDB lmdb dbi-name key-size item-size]
+   (assert (and (>= c/+max-key-size+ ^long key-size)
+                (>= c/+max-key-size+ ^long item-size))
+           "Data size cannot be larger than 511 bytes")
+   (->InvertedList lmdb (.open-dbi lmdb dbi-name key-size item-size
                                    (conj c/default-dbi-flags :dupsort))))
+  ([lmdb dbi-name item-size]
+   (open-inverted-list lmdb dbi-name c/+max-key-size+ item-size))
   ([lmdb dbi-name]
-   (open-inverted-list lmdb dbi-name c/+max-key-size+)))
+   (open-inverted-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+)))

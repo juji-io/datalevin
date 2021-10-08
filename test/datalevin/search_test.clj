@@ -2,12 +2,14 @@
   (:require [datalevin.search :as sut]
             [clojure.test :refer [is deftest]]))
 
-(deftest analyzer-test
+(deftest english-analyzer-test
   (let [s1 "This is a Datalevin-Analyzers test"
         s2 "This is a Datalevin-Analyzers test. "]
-    (is (= (sut/analyzer s1)
-           (sut/analyzer s2)
-           [["datalevin-analyzers" 3 10] ["test" 4 30]]))))
+    (is (= (sut/en-analyzer s1)
+           (sut/en-analyzer s2)
+           [["datalevin-analyzers" 3 10] ["test" 4 30]]))
+    (is (= (subs s1 10 (+ 10 (.length "datalevin-analyzers")))
+           "Datalevin-Analyzers" ))))
 
 (deftest index-test
   (let [docs ["The quick red fox jumped over the lazy brown dogs.",
