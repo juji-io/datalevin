@@ -622,15 +622,24 @@
   (visit [this dbi-name visitor k-range]
     (.visit this dbi-name visitor k-range :data))
   (visit [this dbi-name visitor k-range k-type]
-    (scan/visit this dbi-name visitor k-range k-type)))
+    (scan/visit this dbi-name visitor k-range k-type))
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
-    InvertedList [^LMDB lmdb ^DBI dbi]
+  (open-inverted-list [this dbi-name key-size item-size]
+    (assert (and (>= c/+max-key-size+ ^long key-size)
+                 (>= c/+max-key-size+ ^long item-size))
+            "Data size cannot be larger than 511 bytes")
+    (.open-dbi this dbi-name key-size item-size
+               (conj c/default-dbi-flags :dupsort)))
+  (open-inverted-list [lmdb dbi-name item-size]
+    (.open-inverted-list lmdb dbi-name c/+max-key-size+ item-size))
+  (open-inverted-list [lmdb dbi-name]
+    (.open-inverted-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
+
   IInvertedList
-  (put-list-items [this k vs kt vt]
+  (put-list-items [this dbi-name k vs kt vt]
     (try
-      (let [^Txn txn (Txn/create (.-env lmdb))]
+      (let [^DBI dbi (.get-dbi this dbi-name false)
+            ^Txn txn (Txn/create env)]
         (.put-key dbi k kt)
         (doseq [v vs]
           (.put-val dbi v vt)
@@ -640,18 +649,20 @@
       (catch Exception e
         (raise "Fail to put an inverted list: " (ex-message e) {}))))
 
-  (del-list-items [this k kt]
+  (del-list-items [this dbi-name k kt]
     (try
-      (let [^Txn txn (Txn/create (.-env lmdb))]
+      (let [^DBI dbi (.get-dbi this dbi-name false)
+            ^Txn txn (Txn/create env)]
         (.put-key dbi k kt)
         (.del dbi txn)
         (.commit txn)
         :transacted)
       (catch Exception e
         (raise "Fail to delete an inverted list: " (ex-message e) {}))))
-  (del-list-items [this k vs kt vt]
+  (del-list-items [this dbi-name k vs kt vt]
     (try
-      (let [^Txn txn (Txn/create (.-env lmdb))]
+      (let [^DBI dbi (.get-dbi this dbi-name false)
+            ^Txn txn (Txn/create env)]
         (.put-key dbi k kt)
         (doseq [v vs]
           (.put-val dbi v vt)
@@ -662,8 +673,9 @@
         (raise "Fail to delete items from an inverted list: "
                (ex-message e) {}))))
 
-  (get-list [this k kt vt]
-    (let [^Rtx rtx    (.get-rtx lmdb)
+  (get-list [this dbi-name k kt vt]
+    (let [^DBI dbi    (.get-dbi this dbi-name false)
+          ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn) ]
       (try
@@ -688,12 +700,13 @@
             []))
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx)
+                 {:dbi dbi-name}))
+        (finally (.return-rtx this rtx)
                  (.return-cursor dbi cur)))))
 
-  (list-count [this k kt]
-    (let [^Rtx rtx    (.get-rtx lmdb)
+  (list-count [this dbi-name k kt]
+    (let [^DBI dbi    (.get-dbi this dbi-name false)
+          ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
@@ -708,12 +721,13 @@
             0))
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx)
+                 {:dbi dbi-name}))
+        (finally (.return-rtx this rtx)
                  (.return-cursor dbi cur)))))
 
-  (filter-list [this k pred kt vt]
-    (let [^Rtx rtx    (.get-rtx lmdb)
+  (filter-list [this dbi-name k pred kt vt]
+    (let [^DBI dbi    (.get-dbi this dbi-name false)
+          ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
@@ -741,12 +755,13 @@
             []))
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx)
+                 {:dbi dbi-name}))
+        (finally (.return-rtx this rtx)
                  (.return-cursor dbi cur)))))
 
-  (filter-list-count [this k pred kt]
-    (let [^Rtx rtx    (.get-rtx lmdb)
+  (filter-list-count [this dbi-name k pred kt]
+    (let [^DBI dbi    (.get-dbi this dbi-name false)
+          ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
@@ -773,12 +788,13 @@
             0))
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx)
+                 {:dbi dbi-name}))
+        (finally (.return-rtx this rtx)
                  (.return-cursor dbi cur)))))
 
-  (in-list? [this k v kt vt]
-    (let [^Rtx rtx    (.get-rtx lmdb)
+  (in-list? [this dbi-name k v kt vt]
+    (let [^DBI dbi    (.get-dbi this dbi-name false)
+          ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
@@ -791,9 +807,10 @@
                 Lib$MDB_cursor_op/MDB_GET_BOTH))
         (catch Exception e
           (raise "Fail to test if an item is in an inverted list: "
-                 (ex-message e) {:dbi (.dbi-name dbi)}))
-        (finally (.return-rtx lmdb rtx)
-                 (.return-cursor dbi cur))))))
+                 (ex-message e) {:dbi dbi-name}))
+        (finally (.return-rtx this rtx)
+                 (.return-cursor dbi cur)))))
+  )
 
 (defmethod open-kv :graal
   [dir]
@@ -819,15 +836,3 @@
       (raise
         "Fail to open database: " (ex-message e)
         {:dir dir}))))
-
-(defmethod open-inverted-list :graal
-  ([^LMDB lmdb dbi-name key-size item-size]
-   (assert (and (>= c/+max-key-size+ ^long key-size)
-                (>= c/+max-key-size+ ^long item-size))
-           "Data size cannot be larger than 511 bytes")
-   (->InvertedList lmdb (.open-dbi lmdb dbi-name key-size item-size
-                                   (conj c/default-dbi-flags :dupsort))))
-  ([lmdb dbi-name item-size]
-   (open-inverted-list lmdb dbi-name c/+max-key-size+ item-size))
-  ([lmdb dbi-name]
-   (open-inverted-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+)))

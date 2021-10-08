@@ -34,18 +34,19 @@
   (v [this] "Value of a key value pair"))
 
 (defprotocol IInvertedList
-  (put-list-items [this k vs k-type v-type] "put an inverted list by key")
+  (put-list-items [db list-name k vs k-type v-type]
+    "put an inverted list by key")
   (del-list-items
-    [this k k-type]
-    [this k vs k-type v-type]
+    [db list-name k k-type]
+    [db list-name k vs k-type v-type]
     "delete an inverted list by key")
-  (get-list [this k k-type v-type] "get a list by key")
-  (list-count [this k k-type]
+  (get-list [db list-name k k-type v-type] "get a list by key")
+  (list-count [db list-name k k-type]
     "get the number of items in the inverted list")
-  (filter-list [this k pred k-type v-type] "predicate filtered items of a list")
-  (filter-list-count [this k pred k-type]
+  (filter-list [db list-name k pred k-type v-type] "predicate filtered items of a list")
+  (filter-list-count [db list-name k pred k-type]
     "get the count of predicate filtered items of a list")
-  (in-list? [this k v k-type v-type]
+  (in-list? [db list-name k v k-type v-type]
     "return true if an item is in an inverted list"))
 
 (defprotocol ILMDB
@@ -59,6 +60,13 @@
     [db dbi-name key-size val-size]
     [db dbi-name key-size val-size flags]
     "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env")
+
+  (open-inverted-list
+    [db list-name]
+    [db list-name item-size]
+    [db list-name key-size item-size]
+    "Open a named inverted list, a special dbi, that permits a list of
+     values for the same key, with some corresponding special functions")
 
   (clear-dbi [db dbi-name]
     "Clear data in the DBI (i.e sub-db), but leave it open")
@@ -132,7 +140,4 @@
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 
 (defmulti open-kv
-  (constantly (pick-binding)))
-
-(defmulti open-inverted-list
   (constantly (pick-binding)))

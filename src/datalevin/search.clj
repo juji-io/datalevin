@@ -78,11 +78,9 @@
                                 1))))
     bigrams))
 
-(for [[k v] (doto (HashMap.) (.put 1 3) (.put 2 3))]
-  [k v])
-
 (deftype SearchEngine [lmdb
-                       ^HashMap unigrams ; term -> term-id,freq
+                       ^HashMap unigrams ; term -> [term-id,freq]
+                       ^HashMap bigrams  ; [term-id,term-id] -> freq
                        ^HashMap terms    ; term-id -> term
                        ^SymSpell symspell
                        ^:volatile-mutable ^long max-doc
@@ -96,8 +94,7 @@
           (set! max-doc doc-id)
           (.add txs [:put c/docs doc-id (or doc-ref doc-text) :id :data])
           (doseq [[term [^long new-freq new-lst]] (collect-terms result)]
-            (let [exists?        (.containsKey unigrams term)
-                  [term-id freq] (if exists?
+            (let [[term-id freq] (if (.containsKey unigrams term)
                                    (let [[t f] (.get unigrams term)]
                                      [t (+ ^long f new-freq)])
                                    (let [t (inc max-term)]
@@ -111,7 +108,15 @@
               (doseq [po new-lst]
                 (.add txs [:put c/positions [doc-id term-id] po
                            :double-id :double-int]))))
-          (doseq [new-bigram (collect-bigrams result)]))))))
+          (doseq [[[t1 t2] ^long new-freq] (collect-bigrams result)]
+            (let [tids [(first (.get unigrams t1))
+                        (first (.get unigrams t2))]
+                  freq (if (.containsKey bigrams tids)
+                         (+ ^long (.get bigrams tids) new-freq)
+                         new-freq)]
+              (.put bigrams tids freq)
+              (.add txs [:put c/bigrams tids freq :double-id :id])))
+          (l/transact-kv lmdb txs))))))
 
 (defn- init-unigrams
   [lmdb]
@@ -151,15 +156,16 @@
   (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+)
   (l/open-dbi lmdb c/search-meta c/+max-key-size+)
   (let [[unigrams ^HashMap terms] (init-unigrams lmdb)
+        bigrams                   (init-bigrams lmdb)
 
         tf (into {} (map (fn [[t [_ f]]] [t f]) unigrams))
-        bg (into {}
-                 (map (fn [[[t1 t2] f]]
-                        [(Bigram. (.get terms t1) (.get terms t2))
-                         f])
-                      (init-bigrams lmdb)))]
+        bg (into {} (map (fn [[[t1 t2] f]]
+                           [(Bigram. (.get terms t1) (.get terms t2))
+                            f])
+                         bigrams))]
     (->SearchEngine lmdb
                     unigrams
+                    bigrams
                     terms
                     (SymSpell. tf bg c/dict-max-edit-distance
                                c/dict-prefix-length)
@@ -168,11 +174,29 @@
 
 (comment
 
-  (def env (l/open-kv "/tmp/search7"))
+  (def env (l/open-kv "/tmp/search12"))
 
   (def engine (new-engine env))
 
   (add-doc engine 0 "The quick red fox jumped over the lazy red dogs.")
+
+  (add-doc engine 1 "Mary had a little lamb whose fleece was red as fire.")
+
+  (.-unigrams engine)
+  {"red" [1 2], "over" [2 1], "quick" [3 1], "lazy" [4 1], "jumped" [5 1], "dogs" [6 1], "fox" [7 1]}
+  (.-terms engine)
+  {1 "red", 2 "over", 3 "quick", 4 "lazy", 5 "jumped", 6 "dogs", 7 "fox"}
+  (.-bigrams engine)
+
+  (l/get-range env c/unigrams [:all] :string :double-id)
+  (l/get-range env c/bigrams [:all] :double-id :id)
+  (l/get-range env c/docs [:all] :id)
+  (l/get-list env c/term-docs 1 :id :id)
+  (l/list-count env c/term-docs 1 :id)
+  (l/in-list? env c/term-docs 1 2 :id :id)
+
+  (l/get-list env c/positions [1 1] :double-id :double-int)
+  (l/list-count env c/positions [1 1] :double-id)
 
   (def unigrams {"hello" 49 "world" 30})
   (def bigrams {(Bigram. "hello" "world") 30})
