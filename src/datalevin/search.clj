@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram]
-           [java.util HashMap ArrayList]))
+           [java.util HashMap ArrayList ArrayDeque PriorityQueue]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
