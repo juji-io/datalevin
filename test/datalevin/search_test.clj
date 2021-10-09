@@ -1,6 +1,11 @@
 (ns datalevin.search-test
   (:require [datalevin.search :as sut]
-            [clojure.test :refer [is deftest]]))
+            [datalevin.lmdb :as l]
+            [datalevin.constants :as c]
+            [datalevin.util :as u]
+            [clojure.test :refer [is deftest]])
+  (:import [java.util UUID HashMap ArrayList]
+           [datalevin.search SearchEngine]))
 
 (deftest english-analyzer-test
   (let [s1 "This is a Datalevin-Analyzers test"
@@ -12,8 +17,50 @@
            "Datalevin-Analyzers" ))))
 
 (deftest index-test
-  (let [docs ["The quick red fox jumped over the lazy brown dogs.",
-              "Mary had a little lamb whose fleece was white as snow.",
-              "Moby Dick is a story of a whale and a man obsessed.",
-              "The robber wore a black fleece jacket and a baseball cap.",
-              "The English Springer Spaniel is the best of all dogs."]]))
+  (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
+        engine ^SearchEngine (sut/new-engine lmdb)]
+    (sut/add-doc engine :doc1
+                 "The quick red fox jumped over the lazy red dogs.")
+    (sut/add-doc engine :doc2
+                 "Mary had a little lamb whose fleece was red as fire.")
+    (sut/add-doc engine :doc3
+                 "Moby Dick is a story of a whale and a man obsessed.")
+    (sut/add-doc engine :doc4
+                 "The robber wore a red fleece jacket and a baseball cap.")
+    (sut/add-doc engine :doc5
+                 "The English Springer Spaniel is the best of all red dogs.")
+    (is (= (count (.-unigrams engine))
+           (l/range-count lmdb c/unigrams [:all] :string)
+           30))
+    (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :double-id true)]
+      (is (= freq 5))
+      (is (= (.get ^HashMap (.-terms engine) tid) "red"))
+      (is (l/in-list? lmdb c/term-docs tid 1 :id :id))
+      (is (= (l/list-count lmdb c/term-docs tid :id) 4))
+      (is (= (l/get-list lmdb c/term-docs tid :id :id) [1 2 4 5]))
+      (is (= (l/list-count lmdb c/positions [1 tid] :double-id) 2))
+      (is (= (l/list-count lmdb c/positions [5 tid] :double-id) 1))
+      (is (= (l/get-list lmdb c/positions [5 tid] :double-id :double-int)
+             [[9 48]]))
+      (is (= (l/range-count lmdb c/positions [:closed [5 0] [5 Long/MAX_VALUE]]
+                            :double-id)
+             7))
+      (let [[tid2 freq2] (l/get-value lmdb c/unigrams "dogs"
+                                      :string :double-id true)]
+        (is (= freq2 2))
+        (is (= (l/get-value lmdb c/bigrams [tid tid2] :double-id :id true) 2)))
+
+      (is (= (l/get-value lmdb c/docs 1 :id :data true) :doc1))
+      (is (= (l/get-value lmdb c/docs 4 :id :data true) :doc4))
+      (is (= (l/get-value lmdb c/rdocs :doc4 :data :id true) 4))
+      (is (= (l/range-count lmdb c/docs [:all]) 5))
+      (is (= (l/range-count lmdb c/rdocs [:all]) 5))
+
+      (sut/remove-doc engine :doc5)
+      (is (= (l/range-count lmdb c/docs [:all]) 4))
+      (is (= (l/range-count lmdb c/rdocs [:all]) 4))
+      (is (= (l/list-count lmdb c/positions [5 tid] :double-id) 0))
+      (is (= (l/get-list lmdb c/positions [5 tid] :double-id :double-int) [])))
+
+    (l/close-kv lmdb)
+    ))

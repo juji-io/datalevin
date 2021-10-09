@@ -5,10 +5,12 @@
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
   (:import [java.util Arrays UUID Date Base64]
-           [java.io Writer]
+           [java.io Writer DataInput DataOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
+            RoaringBitmapWriter$Wizard]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -57,6 +59,29 @@
 (defn ^bytes bytes-from-reader
   [s]
   (u/decode-base64 s))
+
+;; bitmap
+
+(defn bitmap
+  "Create a roaringbitmap. Expect a sorted integer collection"
+  ([]
+   (RoaringBitmap.))
+  ([ints]
+   (let [^RoaringBitmapWriter writer (-> (RoaringBitmapWriter/writer)
+                                         (.initialCapacity (count ints))
+                                         (.get))]
+     (doseq [i ints] (.add writer i))
+     (.get writer))))
+
+(defn bitmap-del
+  "Delete an int from the bitmap"
+  [^RoaringBitmap bm i]
+  (.remove bm ^int i))
+
+(defn bitmap-add
+  "Add an int from the bitmap"
+  [^RoaringBitmap bm i]
+  (.add bm ^int i))
 
 ;; byte buffer
 
@@ -216,13 +241,22 @@
     (instance? Byte x) 1
     :else              (alength ^bytes (nippy/fast-freeze x))))
 
-;; datom
+;; nippy
 
-(defn- put-datom
-  [bf ^Datom x]
+(nippy/extend-freeze RoaringBitmap :datalevin/bitmap
+                     [^RoaringBitmap x ^DataOutput out]
+                     (.serialize x out))
+
+(nippy/extend-thaw :datalevin/bitmap
+                   [^DataInput in]
+                   (doto (RoaringBitmap.)
+                     (.deserialize in)))
+
+(defn- put-nippy
+  [bf x]
   (put-bytes bf (nippy/freeze x)))
 
-(defn- get-datom
+(defn- get-nippy
   [bb]
   (nippy/thaw (get-bytes bb)))
 
@@ -554,7 +588,8 @@
      :uuid       (do (put-byte bf (raw-header x :uuid))
                      (put-uuid bf x))
      :attr       (put-attr bf x)
-     :datom      (put-datom bf x)
+     :datom      (put-nippy bf x)
+     :bitmap     (put-nippy bf x)
      :eav        (put-eav bf x)
      :eavt       (put-eav bf x)
      :ave        (put-ave bf x)
@@ -585,7 +620,8 @@
      :instant    (do (get-byte bf) (Date. ^long (get-long bf)))
      :uuid       (do (get-byte bf) (get-uuid bf))
      :attr       (get-attr bf)
-     :datom      (get-datom bf)
+     :datom      (get-nippy bf)
+     :bitmap     (get-nippy bf)
      :eav        (get-eav bf)
      :eavt       (get-eav bf)
      :ave        (get-ave bf)

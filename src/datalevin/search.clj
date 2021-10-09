@@ -46,18 +46,21 @@
               res)))))))
 
 (defprotocol ISearchEngine
-  (add-doc [this doc-ref doc-text] [this doc-text]
-    "Add a document to the search engine, `doc-ref` can be arbitrary data that
-     uniquely refers to the document in the system. `doc-text` is the content of
-     the document as a string. Return `doc-id`, an auto-increment long
-     integer assigned to the document.")
-  (remove-doc [this doc-id]
-    "Remove a document. `doc-id` is a long, as returned by `add-doc`.")
+  (add-doc [this doc-ref doc-text]
+    "Add a document to the search engine, `doc-ref` can be arbitrary less than
+     511 bytes of data that uniquely refers to the document in the system.
+     `doc-text` is the content of the document as a string. The search engine
+     does not store the original text, and assumes that caller can retrieve them
+     by `doc-ref`.")
+  (remove-doc [this doc-ref]
+    "Remove a document referred to by `doc-ref`. After this function, the
+     remaining traces of this document is its `doc-id` in the term-docs inverted
+     list and the effects on the term frequencies.")
   (search [this query]
     "Issue a `query` to the search engine. `query` is a map.
-     Return a lazy sequence of `[doc-ref doc-id]`, or `[doc-text doc-id]`
-     if `doc-ref` is not given when adding the document. These are ordered by
-     relevance to the query."))
+     Return a lazy sequence of `[doc-ref [term [offset ...]]]`, ordered by
+     relevance to the query. `term` and `offset` can be used to highlight the
+     matched term and their locations in the documents."))
 
 (defn- collect-terms
   [result]
@@ -92,7 +95,8 @@
         (let [txs    (ArrayList.)
               doc-id (inc max-doc)]
           (set! max-doc doc-id)
-          (.add txs [:put c/docs doc-id (or doc-ref doc-text) :id :data])
+          (.add txs [:put c/docs doc-id doc-ref :id :data])
+          (.add txs [:put c/rdocs doc-ref doc-id :data :id])
           (doseq [[term [^long new-freq new-lst]] (collect-terms result)]
             (let [[term-id freq] (if (.containsKey unigrams term)
                                    (let [[t f] (.get unigrams term)]
@@ -109,14 +113,26 @@
                 (.add txs [:put c/positions [doc-id term-id] po
                            :double-id :double-int]))))
           (doseq [[[t1 t2] ^long new-freq] (collect-bigrams result)]
-            (let [tids [(first (.get unigrams t1))
-                        (first (.get unigrams t2))]
+            (let [tids [(first (.get unigrams t1)) (first (.get unigrams t2))]
                   freq (if (.containsKey bigrams tids)
                          (+ ^long (.get bigrams tids) new-freq)
                          new-freq)]
               (.put bigrams tids freq)
               (.add txs [:put c/bigrams tids freq :double-id :id])))
-          (l/transact-kv lmdb txs))))))
+          (l/transact-kv lmdb txs)))))
+
+  (remove-doc [this doc-ref]
+    (if-let [doc-id (l/get-value lmdb c/rdocs doc-ref :data :id true)]
+      (let [txs (ArrayList.)]
+        (.add txs [:del c/docs doc-id :id])
+        (.add txs [:del c/rdocs doc-ref :data])
+        (l/transact-kv lmdb txs)
+        (doseq [[[_ term-id] _] (l/get-range
+                                  lmdb c/positions
+                                  [:closed [doc-id 0] [doc-id Long/MAX_VALUE]]
+                                  :double-id :ignore false)]
+          (l/del-list-items lmdb c/positions [doc-id term-id] :double-id)))
+      (u/raise "Document does not exist." {:doc-ref doc-ref}))))
 
 (defn- init-unigrams
   [lmdb]
@@ -152,6 +168,7 @@
   (l/open-dbi lmdb c/unigrams c/+max-key-size+ (* 2 c/+id-bytes+))
   (l/open-dbi lmdb c/bigrams (* 2 c/+id-bytes+) c/+id-bytes+)
   (l/open-dbi lmdb c/docs c/+id-bytes+)
+  (l/open-dbi lmdb c/rdocs c/+max-key-size+ c/+id-bytes+)
   (l/open-inverted-list lmdb c/term-docs c/+id-bytes+ c/+id-bytes+)
   (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+)
   (l/open-dbi lmdb c/search-meta c/+max-key-size+)
@@ -160,8 +177,7 @@
 
         tf (into {} (map (fn [[t [_ f]]] [t f]) unigrams))
         bg (into {} (map (fn [[[t1 t2] f]]
-                           [(Bigram. (.get terms t1) (.get terms t2))
-                            f])
+                           [(Bigram. (.get terms t1) (.get terms t2)) f])
                          bigrams))]
     (->SearchEngine lmdb
                     unigrams

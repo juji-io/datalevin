@@ -92,7 +92,8 @@
 (def ^:const meta "datalevin/meta")
 (def ^:const unigrams "datalevin/unigrams")   ; term -> term-id,freq
 (def ^:const bigrams "datalevin/bigrams")     ; term-id,term-id -> freq
-(def ^:const docs "datalevin/docs")           ; doc-id -> doc-ref | doc-text
+(def ^:const docs "datalevin/docs")           ; doc-id -> doc-ref
+(def ^:const rdocs "datalevin/rdocs")         ; doc-ref -> doc-id
 (def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (list)
 (def ^:const positions "datalevin/positions") ; doc-id,term-id -> position,offset (list)
 (def ^:const search-meta "datalevin/search-meta")
@@ -136,7 +137,7 @@
 
 ;; general
 
-(def ^long +buffer-grow-factor+ 10)
+(def +buffer-grow-factor+ 10)
 
 ;; lmdb
 

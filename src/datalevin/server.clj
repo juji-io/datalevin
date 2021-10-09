@@ -888,18 +888,13 @@
          (update :permissions
                  #(mapv
                     (fn [{:keys [permission/act permission/obj
-                                permission/tgt]}]
+                                 permission/tgt]}]
                       (if-let [{:keys [db/id]} tgt]
                         [act obj (perm-tgt-name sys-conn obj id)]
                         [act obj]))
                     %))
          (assoc :open-dbs (keys (:dbs m)))
          (select-keys [:ip :username :roles :permissions :open-dbs]))]))
-
-(defn- encode-tx-result
-  "encode transaction report into a vector"
-  [{:keys [tx-data tempids]}]
-  )
 
 ;; BEGIN message handlers
 

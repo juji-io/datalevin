@@ -24,6 +24,7 @@
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.22"]
                          [org.lmdbjava/lmdbjava "0.8.2"
                           ;; uncomment when run lein codox
                           ;; :exclusions
@@ -37,6 +38,7 @@
                  [com.taoensso/nippy]
                  [borkdude/sci]
                  [com.fasterxml.jackson.core/jackson-core]
+                 [org.roaringbitmap/RoaringBitmap]
                  [com.cognitect/transit-clj]
                  [persistent-sorted-set]]
   :source-paths ["src"]

@@ -31,7 +31,7 @@
           (when-not (identical? bf' bf) (set! bf bf'))
           resp))
       (catch BufferOverflowException _
-        (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
+        (let [size (* ^long c/+buffer-grow-factor+ (.capacity bf))]
           (set! bf (b/allocate-buffer size))
           (send-n-receive this msg)))
       (catch Exception e
@@ -42,7 +42,7 @@
     (try
       (p/write-message-blocking ch bf msg)
       (catch BufferOverflowException _
-        (let [size (* c/+buffer-grow-factor+ ^int (.capacity bf))]
+        (let [size (* ^long c/+buffer-grow-factor+ (.capacity bf))]
           (set! bf (b/allocate-buffer size))
           (send-only this msg)))
       (catch Exception e

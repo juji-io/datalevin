@@ -15,6 +15,7 @@
                  [org.clojars.huahaiy/dtlvnative-linux-amd64]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
+                 [org.roaringbitmap/RoaringBitmap]
                  [com.taoensso/timbre]
                  [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
