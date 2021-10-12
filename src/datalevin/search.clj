@@ -4,7 +4,7 @@
             [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.bits :as b])
-  (:import [datalevin.sm SymSpell Bigram]
+  (:import [datalevin.sm SymSpell Bigram SuggestItem]
            [java.util HashMap ArrayList ArrayDeque PriorityQueue]))
 
 (if (u/graal?)
@@ -81,6 +81,12 @@
                                 1))))
     bigrams))
 
+(defn- df
+  "document frequency of a term"
+  [lmdb ^HashMap unigrams term]
+  (let [[term-id _] (.get unigrams term)]
+    (l/list-count lmdb c/term-docs term-id :id)))
+
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> [term-id,freq]
                        ^HashMap bigrams  ; [term-id,term-id] -> freq
@@ -90,12 +96,13 @@
                        ^:volatile-mutable ^long max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
-    (let [result (en-analyzer doc-text)]
+    (let [result (en-analyzer doc-text)
+          unique (count (set (map first result)))
+          txs    (ArrayList.)]
       (locking this
-        (let [txs    (ArrayList.)
-              doc-id (inc max-doc)]
+        (let [doc-id (inc max-doc)]
           (set! max-doc doc-id)
-          (.add txs [:put c/docs doc-id doc-ref :id :data])
+          (.add txs [:put c/docs doc-id {:ref doc-ref :uniq unique} :id :data])
           (.add txs [:put c/rdocs doc-ref doc-id :data :id])
           (doseq [[term [^long new-freq new-lst]] (collect-terms result)]
             (let [[term-id freq] (if (.containsKey unigrams term)
@@ -105,6 +112,7 @@
                                      (set! max-term t)
                                      (.put terms t term)
                                      [t new-freq]))]
+              (.addUnigrams symspell {term new-freq})
               (.put unigrams term [term-id freq])
               (.add txs [:put c/unigrams term [term-id freq]
                          :string :double-id])
@@ -117,9 +125,10 @@
                   freq (if (.containsKey bigrams tids)
                          (+ ^long (.get bigrams tids) new-freq)
                          new-freq)]
+              (.addBigrams symspell {(Bigram. t1 t2) new-freq})
               (.put bigrams tids freq)
-              (.add txs [:put c/bigrams tids freq :double-id :id])))
-          (l/transact-kv lmdb txs)))))
+              (.add txs [:put c/bigrams tids freq :double-id :id]))))
+        (l/transact-kv lmdb txs))))
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (l/get-value lmdb c/rdocs doc-ref :data :id true)]
@@ -132,7 +141,24 @@
                                   [:closed [doc-id 0] [doc-id Long/MAX_VALUE]]
                                   :double-id :ignore false)]
           (l/del-list-items lmdb c/positions [doc-id term-id] :double-id)))
-      (u/raise "Document does not exist." {:doc-ref doc-ref}))))
+      (u/raise "Document does not exist." {:doc-ref doc-ref})))
+
+  (search [this query]
+    (let [tokens (->> (en-analyzer query)
+                      (map first)
+                      (into-array String))
+          terms  (->> (.getSuggestTerms symspell tokens c/dict-max-edit-distance
+                                        false)
+                      (map (juxt #(.getEditDistance ^SuggestItem %)
+                                 #(.getSuggestion ^SuggestItem %)))
+                      (sort-by first))
+          terms  (let [shortest (ffirst terms)]
+                   (->> terms
+                        (take-while #(= (first %) shortest))
+                        (map second)
+                        (sort-by #(df lmdb unigrams %)))
+                   )]
+      terms)))
 
 (defn- init-unigrams
   [lmdb]
@@ -190,7 +216,7 @@
 
 (comment
 
-  (def env (l/open-kv "/tmp/search12"))
+  (def env (l/open-kv "/tmp/search19"))
 
   (def engine (new-engine env))
 
@@ -198,10 +224,12 @@
 
   (add-doc engine 1 "Mary had a little lamb whose fleece was red as fire.")
 
+  (search engine "red fox")
+
+  (en-analyzer "what is it like a rad dog fire")
+
   (.-unigrams engine)
-  {"red" [1 2], "over" [2 1], "quick" [3 1], "lazy" [4 1], "jumped" [5 1], "dogs" [6 1], "fox" [7 1]}
   (.-terms engine)
-  {1 "red", 2 "over", 3 "quick", 4 "lazy", 5 "jumped", 6 "dogs", 7 "fox"}
   (.-bigrams engine)
 
   (l/get-range env c/unigrams [:all] :string :double-id)

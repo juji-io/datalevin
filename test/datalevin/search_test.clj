@@ -4,7 +4,8 @@
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest]])
-  (:import [java.util UUID HashMap ArrayList]
+  (:import [java.util UUID Map ArrayList]
+           [datalevin.sm SymSpell Bigram]
            [datalevin.search SearchEngine]))
 
 (deftest english-analyzer-test
@@ -31,10 +32,13 @@
                  "The English Springer Spaniel is the best of all red dogs.")
     (is (= (count (.-unigrams engine))
            (l/range-count lmdb c/unigrams [:all] :string)
+           (.size ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)))
            30))
     (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :double-id true)]
-      (is (= freq 5))
-      (is (= (.get ^HashMap (.-terms engine) tid) "red"))
+      (is (= freq
+             (.get ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)) "red")
+             5))
+      (is (= (.get ^Map (.-terms engine) tid) "red"))
       (is (l/in-list? lmdb c/term-docs tid 1 :id :id))
       (is (= (l/list-count lmdb c/term-docs tid :id) 4))
       (is (= (l/get-list lmdb c/term-docs tid :id :id) [1 2 4 5]))
@@ -48,10 +52,13 @@
       (let [[tid2 freq2] (l/get-value lmdb c/unigrams "dogs"
                                       :string :double-id true)]
         (is (= freq2 2))
-        (is (= (l/get-value lmdb c/bigrams [tid tid2] :double-id :id true) 2)))
+        (is (= (l/get-value lmdb c/bigrams [tid tid2] :double-id :id true)
+               (.get ^Map (.getBigramLexicon ^SymSpell (.-symspell engine))
+                     (Bigram. "red" "dogs"))
+               2)))
 
-      (is (= (l/get-value lmdb c/docs 1 :id :data true) :doc1))
-      (is (= (l/get-value lmdb c/docs 4 :id :data true) :doc4))
+      (is (= (l/get-value lmdb c/docs 1 :id :data true) {:ref :doc1 :uniq 7}))
+      (is (= (l/get-value lmdb c/docs 4 :id :data true) {:ref :doc4 :uniq 7}))
       (is (= (l/get-value lmdb c/rdocs :doc4 :data :id true) 4))
       (is (= (l/range-count lmdb c/docs [:all]) 5))
       (is (= (l/range-count lmdb c/rdocs [:all]) 5))

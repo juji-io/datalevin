@@ -473,4 +473,39 @@ public class SymSpell {
         maxDictionaryWordLength = (myMaxDictionaryWordLength > maxDictionaryWordLength) ? myMaxDictionaryWordLength : maxDictionaryWordLength;
     }
 
+public List<SuggestItem> getSuggestTerms(String[] termList, int editDistanceMax, boolean includeUnknown) throws RuntimeException {
+        List<SuggestItem> suggestionParts = new ArrayList<>();
+
+        boolean lastCombination = false;
+
+        for (int i = 0; i < termList.length; i++) {
+            String currentToken = termList[i];
+            List<SuggestItem> suggestionsForCurrentToken = lookup(currentToken, TOP, editDistanceMax, includeUnknown);
+
+            if (i > 0 && !lastCombination) {
+                SuggestItem bestSuggestion = suggestionParts.get(suggestionParts.size() - 1);
+                Optional<SuggestItem> newSuggestion = combineWords(editDistanceMax, includeUnknown, currentToken, termList[i - 1], bestSuggestion, suggestionsForCurrentToken.isEmpty() ? null : suggestionsForCurrentToken.get(0));
+
+                if (newSuggestion.isPresent()) {
+                    suggestionParts.set(suggestionParts.size() - 1, newSuggestion.get());
+                    lastCombination = true;
+                    continue;
+                }
+            }
+
+            lastCombination = false;
+
+            if (!suggestionsForCurrentToken.isEmpty()) {
+                boolean firstSuggestionIsPerfect = suggestionsForCurrentToken.get(0).getEditDistance() == 0;
+                if (firstSuggestionIsPerfect || currentToken.length() == 1) {
+                    suggestionParts.add(suggestionsForCurrentToken.get(0));
+                } else {
+                    splitWords(editDistanceMax, termList, suggestionsForCurrentToken, suggestionParts, i);
+                }
+            } else {
+                splitWords(editDistanceMax, termList, suggestionsForCurrentToken, suggestionParts, i);
+            }
+        }
+        return suggestionParts;
+    }
 }
