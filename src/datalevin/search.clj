@@ -159,7 +159,7 @@
                              (take-while #(= (first %) shortest-dist))
                              (map second)
                              (sort-by )))
-          candi-docs ]
+          ]
       terms)))
 
 (defn- init-unigrams

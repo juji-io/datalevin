@@ -54,17 +54,18 @@ so it is very fast and quite accurate.
 
 The second level of mappings represents the term-document matrix stored in inverted
 lists and key-value maps. In addition to the numbers of term occurrences, the
-positions of term occurrences in the documents are also indexed to support
+positions of term occurrences in the documents are also stored to support
 proximity query, phrase query and match highlighting.
 
 In more details, the following LMDB sub-databases are created for search supposes:
 
 * `unigrams`: map of term -> term id and collection term frequency
-* `bigrams`: map of term-id1, term-id2 -> bigram frequency
+* `bigrams`: map of term-id-1, term-id-2 -> bigram frequency
 * `docs`: map of document id -> document reference and number of unique terms in document
 * `rdocs`: map of document reference -> document id
 * `term-docs`: inverted list of term id -> document ids
-* `positions`: inverted list of document id and term id -> positions and offsets of term
+* `positions`: inverted list of document id and term id -> positions and offsets
+  of the term in the document
 
 The inverted list implementation leverages the `DUPSORT` feature of LMDB, where
 multiple values (i.e. the list) of the same key are stored together in sorted
@@ -75,17 +76,17 @@ having to store them separately.
 
 ### Searching
 
-Scoring and ranking of documents implement the standard tf-idf and vector space
+Scoring and ranking of documents implements the standard tf-idf and vector space
 model [2]. The weighting scheme is `lnu.ltc`, i.e. the document vector has
 log-weighted term frequency, no idf, and pivoted unique normalization, while the
 query vector uses log-weighted term frequency, idf weighting, and cosine
 normalization.
 
-The search algorithm implements an original algorithm with inspiration from [3].
+The search algorithm implements an original algorithm inspired by [3].
 Compared with standard algorithm [2], our algorithm prunes documents that are unlikely
 to be relevant due to missing query terms. Not only being more efficient, this pruning
 algorithm also addresses an often felt user frustration with the standard
-algorithm: a document containing all query terms may be ranked lower than
+algorithm: a document containing all query terms may be ranked much lower than
 a document containing only partial query terms. In our algorithm, the documents
 containing more complete query terms are considered first. In a top-K situation
 with a small K, those documents with very poor query term coverage may not even
@@ -97,22 +98,25 @@ distance and the least document frequency (i.e. the most rare term), and use its
 posting document ids as the candidates. We loop over this list of
 candidate documents, for each document, check if it appears in the inverted
 lists of subsequent terms (ordered by document frequency). For each appearance,
-we accumulate the matching score using our weighting scheme. During the process,
-we prune the candidates who are not going to appear in all `n` inverted lists;
-The pruned document ids along with their number of existing appearances are put
-into a backup candidates map. If all candidates are exhausted and user still
-requests more results, the document ids of the second rarest query term are
-added to backup candidates map, which is then promoted to the candidates and are
-checked against the remaining terms to ensure the candidates appear in `n-1`
-inverted lists. If user keeps asking for more results, the process continues
-until there is no inverted list remaining to be checked against.
+we accumulate the matching score using our weighting scheme. When `n`
+appearances is found for a document, it is removed from candidates and added to
+the results, which is a priority queue with relevance score as the priority. During the
+process, we prune the candidates who are not going to appear in all `n` inverted
+lists; The pruned document ids along with their number of existing appearances
+are put into a backup candidates map.
 
-Essentially, this search algorithm processes documents in the order of the
-number of query terms they contains. First those contain all `n` query terms,
-then `n-1` terms, then `n-2`, and so on. The query processing workflow is
-implemented as Clojure transducers, and the results are wrapped in the
-`sequence` function, which performs the calculations incrementally and on
-demand.
+If all candidates are exhausted and user still requests more results, the
+document ids of the second rarest query term are added to backup candidates map,
+which is then promoted to the candidates and are checked against the remaining
+terms to ensure the candidates appear in `n-1` inverted lists. If user keeps
+asking for more results, the process continues until there is no inverted list
+remaining to be checked against. Essentially, this search algorithm processes
+documents in the order of the number of query terms they contains. First those
+contain all `n` query terms, then `n-1` terms, then `n-2`, and so on.
+
+The query processing workflow is implemented as Clojure transducers, and the
+results are wrapped in the `sequence` function, which performs the calculations
+incrementally and on demand.
 
 [1] Garbe, W. SymSpell algorithm https://wolfgarbe.medium.com/1000x-faster-spelling-correction-algorithm-2012-8701fcd87a5f
 
