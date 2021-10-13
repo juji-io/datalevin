@@ -1,4 +1,4 @@
-#!/usr/bin/env clojure
+#!/usr/bin/env clojure -M
 
 "USAGE: ./bench [rebuild]? [<version>|<version-vm> ...]? [<bench-name> ...]?"
 
@@ -72,7 +72,7 @@
 (defn run-benchmarks [version vm benchmarks]
   (case vm
     "datalevin"
-    (apply run "clojure"
+    (apply run "clojure" 
            "-J--add-opens=java.base/java.nio=ALL-UNNAMED"
            "-J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
            "-Sdeps"
@@ -96,7 +96,7 @@
              (re-matches #"[0-9a-fA-F]{40}" version)
              (str "{:paths [\"src\"]"
                   "    :deps {datalevin/datalevin {:git/url \"https://github.com/juji-io\" :sha \"" version "\"}}}"))
-           "-m" "datalevin-bench.datalevin"
+           "-M" "-m" "datalevin-bench.datalevin"
            benchmarks)
 
     "datascript"
@@ -105,7 +105,7 @@
                 " :paths [\"src-datascript\"]"
                 " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.0.0" version) "\"}}"
                 "}")
-           "-m" "datascript-bench.datascript"
+           "-M" "-m" "datascript-bench.datascript"
            benchmarks)
 
     "datomic"
@@ -114,7 +114,7 @@
                 " :paths [\"src\" \"src-datomic\"]"
                 " :deps {com.datomic/datomic-free {:mvn/version \"" (if (= "latest" version) "0.9.5697" version) "\"}}"
                 "}")
-           "-m" "datalevin-bench.datomic"
+           "-M" "-m" "datalevin-bench.datomic"
            benchmarks)
     ))
 
