@@ -105,7 +105,12 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
         com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
 ```
 
-This JVM library supports Java 8 and above.
+This JVM library supports Java 8 and above. For JVM version newer than 11, you may want to add the following JVM options:
+```
+--add-opens=java.base/java.nio=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+```
+Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy". 
 
 ### Native Command Line Tool
 
