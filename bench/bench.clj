@@ -1,4 +1,4 @@
-#!/usr/bin/env clojure -M
+#!/usr/bin/env clojure 
 
 "USAGE: ./bench [rebuild]? [<version>|<version-vm> ...]? [<bench-name> ...]?"
 
