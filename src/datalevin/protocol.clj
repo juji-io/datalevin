@@ -104,7 +104,7 @@
   (try
     (.write ch bf)
     (catch Exception e
-      (st/print-stack-trace e)
+      ;; (st/print-stack-trace e)
       -1)))
 
 (defn send-all
@@ -170,7 +170,7 @@
   (try
     (.read ch bf)
     (catch Exception e
-      (st/print-stack-trace e)
+      ;; (st/print-stack-trace e)
       -1)))
 
 (defn receive-ch

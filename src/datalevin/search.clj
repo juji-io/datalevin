@@ -103,7 +103,8 @@
       (locking this
         (let [doc-id (inc max-doc)]
           (set! max-doc doc-id)
-          (.add txs [:put c/docs doc-id {:ref doc-ref :uniq unique} :id :data])
+          (.add txs [:put c/docs doc-id {:ref doc-ref :uniq unique}
+                     :id :data [:append]])
           (.add txs [:put c/rdocs doc-ref doc-id :data :id])
           (doseq [[term [^long new-freq new-lst]] (collect-terms result)]
             (let [[term-id freq] (if (.containsKey unigrams term)

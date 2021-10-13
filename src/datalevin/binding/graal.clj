@@ -227,11 +227,11 @@
 
   (put [this txn]
     (.put this txn nil))
-  (put [_ txn append?]
+  (put [_ txn flags]
     (let [i (.get db)]
       (Lib/checkRc
         (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp)
-                     (if append? (Lib/MDB_APPEND) 0)))))
+                     (kv-flags flags)))))
 
   (del [_ txn all?]
     (Lib/checkRc

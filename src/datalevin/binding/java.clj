@@ -183,9 +183,9 @@
   (dbi [_] db)
   (dbi-name [_]
     (b/text-ba->str (.getName db)))
-  (put [_ txn append?]
-    (if append?
-      (.put db txn kb vb (kv-flags :put [:append]))
+  (put [_ txn flags]
+    (if flags
+      (.put db txn kb vb (kv-flags :put flags))
       (.put db txn kb vb (kv-flags :put c/default-put-flags))))
   (put [this txn]
     (.put this txn nil))

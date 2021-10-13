@@ -239,7 +239,7 @@
                               (try
                                 (send-n-receive conn req)
                                 (catch Exception e
-                                  (st/print-stack-trace e)
+                                  ;; (st/print-stack-trace e)
                                   (close conn)
                                   nil)
                                 (finally (release-connection pool conn)))]

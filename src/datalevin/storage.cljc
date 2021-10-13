@@ -460,7 +460,7 @@
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
                 [:put c/ave i max-gt :ave :id]
-                [:put c/giants max-gt d :id :datom true]]
+                [:put c/giants max-gt d :id :datom [:append]]]
          ref? (conj [:put c/vea i max-gt :vea :id]))
        true]
       [(cond-> [[:put c/eav i c/normal :eav :id]
