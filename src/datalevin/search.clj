@@ -58,6 +58,7 @@
      list and the effects on the term frequencies.")
   (search [this query]
     "Issue a `query` to the search engine. `query` is a map.
+
      Return a lazy sequence of `[doc-ref [term [offset ...]]]`, ordered by
      relevance to the query. `term` and `offset` can be used to highlight the
      matched term and their locations in the documents."))
@@ -144,20 +145,21 @@
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (search [this query]
-    (let [tokens (->> (en-analyzer query)
-                      (map first)
-                      (into-array String))
-          terms  (->> (.getSuggestTerms symspell tokens c/dict-max-edit-distance
-                                        false)
-                      (map (juxt #(.getEditDistance ^SuggestItem %)
-                                 #(.getSuggestion ^SuggestItem %)))
-                      (sort-by first))
-          terms  (let [shortest (ffirst terms)]
-                   (->> terms
-                        (take-while #(= (first %) shortest))
-                        (map second)
-                        (sort-by #(df lmdb unigrams %)))
-                   )]
+    (let [tokens      (->> (en-analyzer query)
+                           (map first)
+                           (into-array String))
+          terms       (->> (.getSuggestTerms symspell tokens
+                                             c/dict-max-edit-distance false)
+                           (map (juxt #(.getEditDistance ^SuggestItem %)
+                                      #(.getSuggestion ^SuggestItem %)))
+                           (sort-by first))
+          terms-df    (zipmap #(df lmdb unigrams %))
+          first-terms (let [shortest-dist (ffirst terms)]
+                        (->> terms
+                             (take-while #(= (first %) shortest-dist))
+                             (map second)
+                             (sort-by )))
+          candi-docs ]
       terms)))
 
 (defn- init-unigrams
