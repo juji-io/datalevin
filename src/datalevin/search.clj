@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram SuggestItem]
-           [java.util HashMap ArrayList ArrayDeque PriorityQueue]))
+           [java.util HashMap ArrayList PriorityQueue HashSet]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -20,7 +20,7 @@
   [^String x]
   (let [len   (.length x)
         len-1 (dec len)
-        res   (ArrayList.)]
+        res   (ArrayList. 256)]
     (loop [i     0
            pos   0
            in?   false
@@ -57,24 +57,24 @@
      remaining traces of this document is its `doc-id` in the term-docs inverted
      list and the effects on the term frequencies.")
   (search [this query]
-    "Issue a `query` to the search engine. `query` is a map.
+    "Issue a `query` to the search engine. `query` is a map or a string.
 
-     Return a lazy sequence of `[doc-ref [term [offset ...]]]`, ordered by
-     relevance to the query. `term` and `offset` can be used to highlight the
-     matched term and their locations in the documents."))
+     Return a lazy sequence of `[doc-ref [term offset1 offset2 ...] ...]`,
+     ordered by relevance to the query. `term` and `offset` can be used to
+     highlight the matched terms and their locations in the documents."))
 
 (defn- collect-terms
   [result]
-  (let [terms (HashMap.)]
+  (let [terms (HashMap. 256)]
     (doseq [[term position offset] result]
       (.put terms term (if-let [[^long freq ^ArrayList lst] (.get terms term)]
                          [(inc freq) (do (.add lst [position offset]) lst)]
-                         [1 (doto (ArrayList.) (.add [position offset]))])))
+                         [1 (doto (ArrayList. 256) (.add [position offset]))])))
     terms))
 
 (defn- collect-bigrams
   [result]
-  (let [bigrams (HashMap.)]
+  (let [bigrams (HashMap. 256)]
     (doseq [[[t1 p1 _] [t2 p2 _]] (partition 2 1 result)]
       (when (= (inc ^long p1) p2)
         (.put bigrams [t1 t2] (if-let [^long freq (.get bigrams [t1 t2])]
@@ -84,9 +84,18 @@
 
 (defn- df
   "document frequency of a term"
-  [lmdb ^HashMap unigrams term]
-  (let [[term-id _] (.get unigrams term)]
-    (l/list-count lmdb c/term-docs term-id :id)))
+  [lmdb term-id]
+  (l/list-count lmdb c/term-docs term-id :id))
+
+(def doc-comp (comparator (fn [[_ s1] [_ s2]] (compare s1 s2))))
+
+(defn- add-candidates
+  [lmdb tid ^HashSet result ^HashMap candid]
+  (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
+    (when-not (.contains result did)
+      (if-let [seen (.get candid did)]
+        (.put candid did (inc ^long seen))
+        (.put candid did 1)))))
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> [term-id,freq]
@@ -99,7 +108,7 @@
   (add-doc [this doc-ref doc-text]
     (let [result (en-analyzer doc-text)
           unique (count (set (map first result)))
-          txs    (ArrayList.)]
+          txs    (ArrayList. 256)]
       (locking this
         (let [doc-id (inc max-doc)]
           (set! max-doc doc-id)
@@ -134,7 +143,7 @@
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (l/get-value lmdb c/rdocs doc-ref :data :id true)]
-      (let [txs (ArrayList.)]
+      (let [txs (ArrayList. 256)]
         (.add txs [:del c/docs doc-id :id])
         (.add txs [:del c/rdocs doc-ref :data])
         (l/transact-kv lmdb txs)
@@ -146,27 +155,58 @@
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (search [this query]
-    (let [tokens      (->> (en-analyzer query)
-                           (map first)
-                           (into-array String))
-          terms       (->> (.getSuggestTerms symspell tokens
-                                             c/dict-max-edit-distance false)
-                           (map (juxt #(.getEditDistance ^SuggestItem %)
-                                      #(.getSuggestion ^SuggestItem %)))
-                           (sort-by first))
-          terms-df    (zipmap #(df lmdb unigrams %))
-          first-terms (let [shortest-dist (ffirst terms)]
-                        (->> terms
-                             (take-while #(= (first %) shortest-dist))
-                             (map second)
-                             (sort-by )))
-          ]
-      terms)))
+    (let [tokens   (->> (en-analyzer query)
+                        (map first)
+                        (into-array String))
+          terms    (->> (.getSuggestTerms symspell tokens
+                                          c/dict-max-edit-distance false)
+                        (map (fn [^SuggestItem s]
+                               (let [term (.getSuggestion s)
+                                     id   (first (.get unigrams term))]
+                                 [term {:id id
+                                        :ed (.getEditDistance s)
+                                        :df (df lmdb id)}])))
+                        (into {}))
+          term-ids (->> (vals terms)
+                        (sort-by :ed)
+                        (sort-by :df)
+                        (mapv :id))
+          n        (count term-ids)]
+      (let [backup (HashMap. 512)
+            result (HashSet. 32)
+            cache  (HashMap. 512)]
+        (doall
+          (map-indexed
+            (fn [^long i tid]
+              (let [tao    (- n i)
+                    candid (HashMap. backup)]
+                (add-candidates lmdb tid result candid)
+                (doseq [^long k (range (inc i) n)
+                        :let    [kid (nth term-ids k)]]
+                  (doseq [did (.keySet candid)]
+                    (when (if (.containsKey cache [kid did])
+                            (.get cache [kid did])
+                            (let [in? (l/in-list? lmdb c/term-docs kid did
+                                                  :id :id)]
+                              (.put cache [kid did] in?)
+                              in?))
+                      (.put candid did (inc ^long (.get candid did))))
+                    (let [hits ^long (.get candid did)]
+                      (cond
+                        (<= tao hits) (do (.add result did)
+                                          (.remove candid did)
+                                          (.remove backup did))
+                        (< (+ hits ^long (- n k 1)) tao)
+                        (do (.remove candid did)
+                            (.put backup did hits))))))))
+            term-ids))
+        result)
+      )))
 
 (defn- init-unigrams
   [lmdb]
-  (let [unigrams (HashMap.)
-        terms    (HashMap.)
+  (let [unigrams (HashMap. 1024)
+        terms    (HashMap. 1024)
         load     (fn [kv]
                    (let [term          (b/read-buffer (l/k kv) :string)
                          [id _ :as tf] (b/read-buffer (l/v kv) :double-id)]
@@ -177,7 +217,7 @@
 
 (defn- init-bigrams
   [lmdb]
-  (let [m    (HashMap.)
+  (let [m    (HashMap. 1024)
         load (fn [kv]
                (.put m (b/read-buffer (l/k kv) :double-id)
                      (b/read-buffer (l/v kv) :id)))]
@@ -219,7 +259,7 @@
 
 (comment
 
-  (def env (l/open-kv "/tmp/search19"))
+  (def env (l/open-kv "/tmp/search21"))
 
   (def engine (new-engine env))
 
@@ -227,7 +267,9 @@
 
   (add-doc engine 1 "Mary had a little lamb whose fleece was red as fire.")
 
-  (search engine "red fox")
+  (add-doc engine 2 "hello world")
+
+  (search engine "red fox marry fire")
 
   (en-analyzer "what is it like a rad dog fire")
 
