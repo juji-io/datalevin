@@ -87,15 +87,62 @@
   [lmdb term-id]
   (l/list-count lmdb c/term-docs term-id :id))
 
-(def doc-comp (comparator (fn [[_ s1] [_ s2]] (compare s1 s2))))
-
 (defn- add-candidates
-  [lmdb tid ^HashSet result ^HashMap candid]
+  [lmdb tid ^HashSet taken ^HashMap candid ^HashMap cache]
   (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
-    (when-not (.contains result did)
+    (when-not (.contains taken did)
+      (println "taken" taken)
+      (println "did" did)
       (if-let [seen (.get candid did)]
-        (.put candid did (inc ^long seen))
+        (.put candid did (if (.containsKey cache [tid did])
+                           seen
+                           (inc ^long seen)))
         (.put candid did 1)))))
+
+(defn- check-doc
+  [^HashMap cache kid did lmdb ^HashMap candid]
+  (when (if (.containsKey cache [kid did])
+          (.get cache [kid did])
+          (let [in? (l/in-list? lmdb c/term-docs kid did :id :id)]
+            (.put cache [kid did] in?)
+            in?))
+    (.put candid did (inc ^long (.get candid did)))))
+
+(defn- filter-candidates
+  [i n term-ids ^HashMap candid cache lmdb
+   ^HashSet taken ^HashSet result ^HashMap backup]
+  (let [tao (- ^long n ^long i)] ; target number of overlaps
+    (println "tao" tao)
+    (if (= tao 1)
+      (doseq [did (.keySet candid)]
+        (.add result did))
+      (doseq [^long k (range (inc ^long i) n)
+              :let    [kid (nth term-ids k)]]
+        (doseq [did (.keySet candid)]
+          (check-doc cache kid did lmdb candid)
+          (let [hits ^long (.get candid did)]
+            (println "doc" did "term" kid "hits" hits)
+            (cond
+              (<= tao hits) (do (.add taken did)
+                                (.add result did)
+                                (.remove candid did)
+                                (.remove backup did))
+              (< (+ hits ^long (- ^long n k 1)) tao)
+              (do (.remove candid did)
+                  (.put backup did hits)))))))))
+
+(defn- select-docs
+  [n i ^HashMap backup lmdb tid ^HashSet taken term-ids ^HashMap cache]
+  (let [candid (HashMap. backup)]
+    (add-candidates lmdb tid taken candid cache)
+    (println "candidates" candid)
+    (let [result (HashSet. 32)]
+      (filter-candidates i n term-ids candid cache lmdb
+                         taken result backup)
+      (println "result" result)
+      result)))
+
+(def doc-comp (comparator (fn [[_ s1] [_ s2]] (compare s1 s2))))
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> [term-id,freq]
@@ -171,37 +218,23 @@
                         (sort-by :ed)
                         (sort-by :df)
                         (mapv :id))
-          n        (count term-ids)]
-      (let [backup (HashMap. 512)
-            result (HashSet. 32)
-            cache  (HashMap. 512)]
-        (doall
-          (map-indexed
-            (fn [^long i tid]
-              (let [tao    (- n i)
-                    candid (HashMap. backup)]
-                (add-candidates lmdb tid result candid)
-                (doseq [^long k (range (inc i) n)
-                        :let    [kid (nth term-ids k)]]
-                  (doseq [did (.keySet candid)]
-                    (when (if (.containsKey cache [kid did])
-                            (.get cache [kid did])
-                            (let [in? (l/in-list? lmdb c/term-docs kid did
-                                                  :id :id)]
-                              (.put cache [kid did] in?)
-                              in?))
-                      (.put candid did (inc ^long (.get candid did))))
-                    (let [hits ^long (.get candid did)]
-                      (cond
-                        (<= tao hits) (do (.add result did)
-                                          (.remove candid did)
-                                          (.remove backup did))
-                        (< (+ hits ^long (- n k 1)) tao)
-                        (do (.remove candid did)
-                            (.put backup did hits))))))))
-            term-ids))
-        result)
-      )))
+          _        (println "term-ids" term-ids)
+          n        (count term-ids)
+          xform
+          (let [backup (HashMap. 512)
+                taken  (HashSet. 128)
+                cache  (HashMap. 512)]
+            (comp
+              (map-indexed
+                (fn [^long i tid]
+                  (select-docs n i backup lmdb tid taken term-ids cache)))
+              (mapcat
+                (fn [^HashSet docs]
+                  (map
+                    (fn [did]
+                      (l/get-value lmdb c/docs did :id :data true))
+                    docs)))))]
+      (sequence xform term-ids))))
 
 (defn- init-unigrams
   [lmdb]
@@ -259,17 +292,22 @@
 
 (comment
 
-  (def env (l/open-kv "/tmp/search21"))
+  (def env (l/open-kv "/tmp/search26"))
 
   (def engine (new-engine env))
+
+  (search engine "robber red fox cap")
 
   (add-doc engine 0 "The quick red fox jumped over the lazy red dogs.")
 
   (add-doc engine 1 "Mary had a little lamb whose fleece was red as fire.")
 
-  (add-doc engine 2 "hello world")
+  (add-doc engine 2 "The robber wore a red fleece jacket and a baseball cap. ")
 
-  (search engine "red fox marry fire")
+  (add-doc engine 3 "Removes the entry for the specified key only if it is currently mapped to the specified value.")
+
+
+  (search engine "entry value")
 
   (en-analyzer "what is it like a rad dog fire")
 
