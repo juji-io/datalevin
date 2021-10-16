@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram SuggestItem]
-           [java.util HashMap ArrayList PriorityQueue HashSet]))
+           [java.util HashMap ArrayList HashSet]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -54,8 +54,7 @@
      by `doc-ref`.")
   (remove-doc [this doc-ref]
     "Remove a document referred to by `doc-ref`. After this function, the
-     remaining traces of this document is its `doc-id` in the term-docs inverted
-     list and the effects on the term frequencies.")
+     remaining traces of this document is its effects on the term frequencies.")
   (search [this query]
     "Issue a `query` to the search engine. `query` is a map or a string.
 
@@ -82,17 +81,45 @@
                                 1))))
     bigrams))
 
-(defn- df
-  "document frequency of a term"
-  [lmdb term-id]
-  (l/list-count lmdb c/term-docs term-id :id))
+(defn- idf
+  "inverse document frequency of a term"
+  [lmdb term-id ^long N]
+  (Math/log10 (/ N ^long (l/list-count lmdb c/term-docs term-id :id))))
+
+(defn- tf*
+  "log-weighted term frequency"
+  [^long freq]
+  (+ (Math/log10 freq) 1))
+
+(defn- tf
+  [lmdb doc-id term-id]
+  (let [freq (l/list-count lmdb c/positions [doc-id term-id] :double-id)]
+    (if (zero? ^long freq)
+      0
+      (tf* freq))))
+
+(defn- hydrate-query-terms
+  [max-doc ^HashMap unigrams lmdb ^SymSpell symspell tokens]
+  (let [sis   (.getSuggestTerms symspell tokens c/dict-max-edit-distance false)
+        terms (mapv #(.getSuggestion ^SuggestItem %) sis)
+        eds   (zipmap terms (map #(.getEditDistance ^SuggestItem %) sis))]
+    (println "terms" terms)
+    (into {}
+          (map (fn [[term freq]]
+                 (println term freq)
+                 (let [id  (first (.get unigrams term))
+                       idf (idf lmdb id max-doc)]
+                   [term
+                    {:id  id
+                     :ed  (eds term)
+                     :idf idf
+                     :wq  (* ^double (tf* freq) ^double idf)}]))
+               (frequencies terms)))))
 
 (defn- add-candidates
   [lmdb tid ^HashSet taken ^HashMap candid ^HashMap cache]
   (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
     (when-not (.contains taken did)
-      (println "taken" taken)
-      (println "did" did)
       (if-let [seen (.get candid did)]
         (.put candid did (if (.containsKey cache [tid did])
                            seen
@@ -112,16 +139,13 @@
   [i n term-ids ^HashMap candid cache lmdb
    ^HashSet taken ^HashSet result ^HashMap backup]
   (let [tao (- ^long n ^long i)] ; target number of overlaps
-    (println "tao" tao)
     (if (= tao 1)
-      (doseq [did (.keySet candid)]
-        (.add result did))
+      (.addAll result (.keySet candid))
       (doseq [^long k (range (inc ^long i) n)
               :let    [kid (nth term-ids k)]]
         (doseq [did (.keySet candid)]
           (check-doc cache kid did lmdb candid)
           (let [hits ^long (.get candid did)]
-            (println "doc" did "term" kid "hits" hits)
             (cond
               (<= tao hits) (do (.add taken did)
                                 (.add result did)
@@ -135,14 +159,46 @@
   [n i ^HashMap backup lmdb tid ^HashSet taken term-ids ^HashMap cache]
   (let [candid (HashMap. backup)]
     (add-candidates lmdb tid taken candid cache)
-    (println "candidates" candid)
     (let [result (HashSet. 32)]
       (filter-candidates i n term-ids candid cache lmdb
                          taken result backup)
-      (println "result" result)
       result)))
 
-(def doc-comp (comparator (fn [[_ s1] [_ s2]] (compare s1 s2))))
+(defn- doc-info
+  [lmdb doc-id]
+  (l/get-value lmdb c/docs doc-id :id :data true))
+
+(defn- score-docs
+  [lmdb wqs docs]
+  (reduce
+    (fn [scores did]
+      (let [{:keys [ref uniq]} (doc-info lmdb did)]
+        (println "uniq" uniq)
+        (conj! scores
+               [(let [sum   (reduce
+                              +
+                              (mapv (fn [[tid wq]]
+                                      (println tid "wq" wq)
+                                      (let [res (* ^double (tf lmdb did tid) ^double wq)]
+                                        (println "res" res)
+                                        res))
+                                    wqs))
+                      _     (println "sum" sum)
+                      score (/ ^double sum
+                               ^long uniq)]
+                  (println did "score" score)
+                  score)
+                did ref])))
+    (transient [])
+    docs))
+
+(defn- rank-docs
+  "return sorted [score doc-id doc-ref]"
+  [lmdb wqs docs]
+  (->> docs
+       (score-docs lmdb wqs)
+       persistent!
+       (sort-by first >)))
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> [term-id,freq]
@@ -190,14 +246,16 @@
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (l/get-value lmdb c/rdocs doc-ref :data :id true)]
-      (let [txs (ArrayList. 256)]
-        (.add txs [:del c/docs doc-id :id])
-        (.add txs [:del c/rdocs doc-ref :data])
-        (l/transact-kv lmdb txs)
+      (locking this
+        (let [txs (ArrayList. 256)]
+          (.add txs [:del c/docs doc-id :id])
+          (.add txs [:del c/rdocs doc-ref :data])
+          (l/transact-kv lmdb txs))
         (doseq [[[_ term-id] _] (l/get-range
                                   lmdb c/positions
                                   [:closed [doc-id 0] [doc-id Long/MAX_VALUE]]
                                   :double-id :ignore false)]
+          (l/del-list-items lmdb c/term-docs term-id [doc-id] :id :id)
           (l/del-list-items lmdb c/positions [doc-id term-id] :double-id)))
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
@@ -205,36 +263,27 @@
     (let [tokens   (->> (en-analyzer query)
                         (map first)
                         (into-array String))
-          terms    (->> (.getSuggestTerms symspell tokens
-                                          c/dict-max-edit-distance false)
-                        (map (fn [^SuggestItem s]
-                               (let [term (.getSuggestion s)
-                                     id   (first (.get unigrams term))]
-                                 [term {:id id
-                                        :ed (.getEditDistance s)
-                                        :df (df lmdb id)}])))
-                        (into {}))
-          term-ids (->> (vals terms)
+          terms    (hydrate-query-terms max-doc unigrams lmdb symspell tokens)
+          _        (println "terms" terms)
+          term-ms  (vals terms)
+          wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) term-ms))
+          term-ids (->> term-ms
                         (sort-by :ed)
-                        (sort-by :df)
+                        (sort-by :idf >)
                         (mapv :id))
-          _        (println "term-ids" term-ids)
           n        (count term-ids)
           xform
-          (let [backup (HashMap. 512)
-                taken  (HashSet. 128)
-                cache  (HashMap. 512)]
-            (comp
+          (comp
+            (let [backup (HashMap. 512)
+                  taken  (HashSet. 128)
+                  cache  (HashMap. 512)]
               (map-indexed
                 (fn [^long i tid]
-                  (select-docs n i backup lmdb tid taken term-ids cache)))
-              (mapcat
-                (fn [^HashSet docs]
-                  (map
-                    (fn [did]
-                      (l/get-value lmdb c/docs did :id :data true))
-                    docs)))))]
-      (sequence xform term-ids))))
+                  (select-docs n i backup lmdb tid taken term-ids cache))))
+            (mapcat (fn [docs] (rank-docs lmdb wqs docs))))]
+      (sequence
+        (map identity)
+        (sequence xform term-ids)))))
 
 (defn- init-unigrams
   [lmdb]
@@ -292,11 +341,13 @@
 
 (comment
 
-  (def env (l/open-kv "/tmp/search26"))
+  (def env (l/open-kv "/tmp/search27"))
 
   (def engine (new-engine env))
 
-  (search engine "robber red fox cap")
+  (search engine "robber fox lamb dogs ")
+
+  (search engine "little lamb")
 
   (add-doc engine 0 "The quick red fox jumped over the lazy red dogs.")
 

@@ -40,6 +40,7 @@
              5))
       (is (= (.get ^Map (.-terms engine) tid) "red"))
       (is (l/in-list? lmdb c/term-docs tid 1 :id :id))
+      (is (l/in-list? lmdb c/term-docs tid 5 :id :id))
       (is (= (l/list-count lmdb c/term-docs tid :id) 4))
       (is (= (l/get-list lmdb c/term-docs tid :id :id) [1 2 4 5]))
       (is (= (l/list-count lmdb c/positions [1 tid] :double-id) 2))
@@ -66,6 +67,8 @@
       (sut/remove-doc engine :doc5)
       (is (= (l/range-count lmdb c/docs [:all]) 4))
       (is (= (l/range-count lmdb c/rdocs [:all]) 4))
+      (is (not (l/in-list? lmdb c/term-docs tid 5 :id :id)))
+      (is (= (l/list-count lmdb c/term-docs tid :id) 3))
       (is (= (l/list-count lmdb c/positions [5 tid] :double-id) 0))
       (is (= (l/get-list lmdb c/positions [5 tid] :double-id :double-int) [])))
 
