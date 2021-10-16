@@ -110,7 +110,7 @@ This JVM library supports Java 8 and above. For JVM version newer than 11, you m
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
-Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy". 
+Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy".
 
 ### Native Command Line Tool
 
@@ -538,13 +538,14 @@ adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
-* 0.6.0 As a search engine: fuzzy fulltext search across multiple attributes.
+* 0.6.0 As a search engine: fuzzy fulltext search across database.
 * 0.7.0 A new Datalog query engine with improved performance.
 * 0.8.0 Composite tuples.
 * 0.9.0 Persisted transaction functions.
 * 1.0.0 Fit for business in many use cases.
-* 1.1.0 Read-only replicas.
-* 1.2.0 Option to store data in compressed form.
+* 1.1.0 Arbitrary data as attribute.
+* 1.2.0 Read-only replicas.
+* 1.3.0 Option to store data in compressed form.
 * 2.0.0 Fully automatic schema migration on write.
 * 3.0.0 As a product rule engine: implementing Rete/UL algorithm.
 * 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
@@ -555,7 +556,7 @@ adjust the priorities based on feedback.
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io).
+in production at [Juji](https://juji.io) and a few other places.
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu

@@ -94,7 +94,7 @@
 
 (defn- tf
   [lmdb doc-id term-id]
-  (tf* (l/list-count lmdb c/positions [doc-id term-id] :double-id)))
+  (tf* (l/list-count lmdb c/positions [doc-id term-id] :id-id)))
 
 (defn- hydrate-query-terms
   [max-doc ^HashMap unigrams lmdb ^SymSpell symspell tokens]
@@ -166,7 +166,7 @@
                   (.put backup did hits)))))))))
 
 (defn- rank-docs
-  "return a list of [score doc-id doc-ref] sorted by scores"
+  "return a list of [score doc-id doc-ref [term-ids]] sorted by score"
   [selected ^HashMap result]
   (->> selected
        (map (fn [did]
@@ -180,7 +180,7 @@
                [(.get terms tid)
                 (mapv second
                       (l/get-list lmdb c/positions [did tid]
-                                  :double-id :double-int))])
+                                  :id-id :int-int))])
              tids)])
 
 (deftype SearchEngine [lmdb
@@ -212,11 +212,11 @@
               (.addUnigrams symspell {term new-freq})
               (.put unigrams term [term-id freq])
               (.add txs [:put c/unigrams term [term-id freq]
-                         :string :double-id])
+                         :string :id-id])
               (.add txs [:put c/term-docs term-id doc-id :id :id])
               (doseq [po new-lst]
                 (.add txs [:put c/positions [doc-id term-id] po
-                           :double-id :double-int]))))
+                           :id-id :int-int]))))
           (doseq [[[t1 t2] ^long new-freq] (collect-bigrams result)]
             (let [tids [(first (.get unigrams t1)) (first (.get unigrams t2))]
                   freq (if (.containsKey bigrams tids)
@@ -224,7 +224,7 @@
                          new-freq)]
               (.addBigrams symspell {(Bigram. t1 t2) new-freq})
               (.put bigrams tids freq)
-              (.add txs [:put c/bigrams tids freq :double-id :id]))))
+              (.add txs [:put c/bigrams tids freq :id-id :id]))))
         (l/transact-kv lmdb txs))))
 
   (remove-doc [this doc-ref]
@@ -237,9 +237,9 @@
         (doseq [[[_ term-id] _] (l/get-range
                                   lmdb c/positions
                                   [:closed [doc-id 0] [doc-id Long/MAX_VALUE]]
-                                  :double-id :ignore false)]
+                                  :id-id :ignore false)]
           (l/del-list-items lmdb c/term-docs term-id [doc-id] :id :id)
-          (l/del-list-items lmdb c/positions [doc-id term-id] :double-id)))
+          (l/del-list-items lmdb c/positions [doc-id term-id] :id-id)))
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (search [this query]
@@ -280,7 +280,7 @@
         terms    (HashMap. 1024)
         load     (fn [kv]
                    (let [term          (b/read-buffer (l/k kv) :string)
-                         [id _ :as tf] (b/read-buffer (l/v kv) :double-id)]
+                         [id _ :as tf] (b/read-buffer (l/v kv) :id-id)]
                      (.put unigrams term tf)
                      (.put terms id term)))]
     (l/visit lmdb c/unigrams load [:all] :string)
@@ -290,7 +290,7 @@
   [lmdb]
   (let [m    (HashMap. 1024)
         load (fn [kv]
-               (.put m (b/read-buffer (l/k kv) :double-id)
+               (.put m (b/read-buffer (l/k kv) :id-id)
                      (b/read-buffer (l/v kv) :id)))]
     (l/visit lmdb c/bigrams load [:all])
     m))
@@ -327,76 +327,3 @@
                                c/dict-prefix-length)
                     (init-max-doc lmdb)
                     (init-max-term lmdb))))
-
-(comment
-
-  (def env (l/open-kv "/tmp/search27"))
-
-  (def engine (new-engine env))
-
-  (search engine "robber fox lamb dogs ")
-
-  (search engine "little lamb")
-
-  (add-doc engine 0 "The quick red fox jumped over the lazy red dogs.")
-
-  (add-doc engine 1 "Mary had a little lamb whose fleece was red as fire.")
-
-  (add-doc engine 2 "The robber wore a red fleece jacket and a baseball cap. ")
-
-  (add-doc engine 3 "Removes the entry for the specified key only if it is currently mapped to the specified value.")
-
-
-  (search engine "entry value")
-
-  (en-analyzer "what is it like a rad dog fire")
-
-  (.-unigrams engine)
-  (.-terms engine)
-  (.-bigrams engine)
-
-  (l/get-range env c/unigrams [:all] :string :double-id)
-  (l/get-range env c/bigrams [:all] :double-id :id)
-  (l/get-range env c/docs [:all] :id)
-  (l/get-list env c/term-docs 1 :id :id)
-  (l/list-count env c/term-docs 1 :id)
-  (l/in-list? env c/term-docs 1 2 :id :id)
-
-  (l/get-list env c/positions [1 1] :double-id :double-int)
-  (l/list-count env c/positions [1 1] :double-id)
-
-  (def unigrams {"hello" 49 "world" 30})
-  (def bigrams {(Bigram. "hello" "world") 30})
-
-  (def sm (time (SymSpell. unigrams bigrams 2 10)))
-
-  (.getDeletes sm)
-
-  (.addBigrams sm {(Bigram. "hello" "world") 3})
-
-  (.getBigramLexicon sm)
-
-  (.addUnigrams sm {"hello" 3 "datalevin" 1})
-
-  (.getUnigramLexicon sm)
-
-
-  (.lookupCompound sm "hell" 2 false)
-
-  (def lst (l/open-inverted-list env "i" c/+id-bytes+))
-
-  (l/put-list-items lst "a" [1 2 3 4] :string :id)
-  (l/put-list-items lst "b" [5 6 7] :string :id)
-
-  (l/list-count lst "a" :string)
-  (l/list-count lst "b" :string)
-
-  (l/del-list-items lst "a" :string)
-
-  (l/in-list? lst "b" 7 :string :id)
-
-  (l/get-list lst "a" :string :id)
-
-  (l/close-kv env)
-
-  )

@@ -34,7 +34,7 @@
            (l/range-count lmdb c/unigrams [:all] :string)
            (.size ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)))
            30))
-    (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :double-id true)]
+    (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :id-id true)]
       (is (= freq
              (.get ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)) "red")
              5))
@@ -43,17 +43,17 @@
       (is (l/in-list? lmdb c/term-docs tid 5 :id :id))
       (is (= (l/list-count lmdb c/term-docs tid :id) 4))
       (is (= (l/get-list lmdb c/term-docs tid :id :id) [1 2 4 5]))
-      (is (= (l/list-count lmdb c/positions [1 tid] :double-id) 2))
-      (is (= (l/list-count lmdb c/positions [5 tid] :double-id) 1))
-      (is (= (l/get-list lmdb c/positions [5 tid] :double-id :double-int)
+      (is (= (l/list-count lmdb c/positions [1 tid] :id-id) 2))
+      (is (= (l/list-count lmdb c/positions [5 tid] :id-id) 1))
+      (is (= (l/get-list lmdb c/positions [5 tid] :id-id :int-int)
              [[9 48]]))
       (is (= (l/range-count lmdb c/positions [:closed [5 0] [5 Long/MAX_VALUE]]
-                            :double-id)
+                            :id-id)
              7))
       (let [[tid2 freq2] (l/get-value lmdb c/unigrams "dogs"
-                                      :string :double-id true)]
+                                      :string :id-id true)]
         (is (= freq2 2))
-        (is (= (l/get-value lmdb c/bigrams [tid tid2] :double-id :id true)
+        (is (= (l/get-value lmdb c/bigrams [tid tid2] :id-id :id true)
                (.get ^Map (.getBigramLexicon ^SymSpell (.-symspell engine))
                      (Bigram. "red" "dogs"))
                2)))
@@ -69,8 +69,8 @@
       (is (= (l/range-count lmdb c/rdocs [:all]) 4))
       (is (not (l/in-list? lmdb c/term-docs tid 5 :id :id)))
       (is (= (l/list-count lmdb c/term-docs tid :id) 3))
-      (is (= (l/list-count lmdb c/positions [5 tid] :double-id) 0))
-      (is (= (l/get-list lmdb c/positions [5 tid] :double-id :double-int) [])))
+      (is (= (l/list-count lmdb c/positions [5 tid] :id-id) 0))
+      (is (= (l/get-list lmdb c/positions [5 tid] :id-id :int-int) [])))
 
     (l/close-kv lmdb)
     ))
