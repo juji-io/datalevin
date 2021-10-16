@@ -58,7 +58,8 @@
   (search [this query]
     "Issue a `query` to the search engine. `query` is a map or a string.
 
-     Return a lazy sequence of `[doc-ref [term offset1 offset2 ...] ...]`,
+     Return a lazy sequence of
+     `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
      ordered by relevance to the query. `term` and `offset` can be used to
      highlight the matched terms and their locations in the documents."))
 
@@ -93,112 +94,94 @@
 
 (defn- tf
   [lmdb doc-id term-id]
-  (let [freq (l/list-count lmdb c/positions [doc-id term-id] :double-id)]
-    (if (zero? ^long freq)
-      0
-      (tf* freq))))
+  (tf* (l/list-count lmdb c/positions [doc-id term-id] :double-id)))
 
 (defn- hydrate-query-terms
   [max-doc ^HashMap unigrams lmdb ^SymSpell symspell tokens]
   (let [sis   (.getSuggestTerms symspell tokens c/dict-max-edit-distance false)
         terms (mapv #(.getSuggestion ^SuggestItem %) sis)
-        eds   (zipmap terms (map #(.getEditDistance ^SuggestItem %) sis))]
-    (println "terms" terms)
-    (into {}
-          (map (fn [[term freq]]
-                 (println term freq)
-                 (let [id  (first (.get unigrams term))
-                       idf (idf lmdb id max-doc)]
-                   [term
-                    {:id  id
-                     :ed  (eds term)
-                     :idf idf
-                     :wq  (* ^double (tf* freq) ^double idf)}]))
-               (frequencies terms)))))
+        eds   (zipmap terms (mapv #(.getEditDistance ^SuggestItem %) sis))]
+    (map (fn [[term freq]]
+           (let [id  (first (.get unigrams term))
+                 idf (idf lmdb id max-doc)]
+             {:id  id
+              :ed  (eds term)
+              :idf idf
+              :wq  (* ^double (tf* freq) ^double idf)}))
+         (frequencies terms))))
+
+(defn- doc-info
+  [lmdb doc-id]
+  (l/get-value lmdb c/docs doc-id :id :data true))
+
+(defn- inc-score
+  [lmdb tid did wqs ^HashMap result]
+  (let [dot ^double (* ^double (tf lmdb did tid) ^double (wqs tid))]
+    (if-let [res (.get result did)]
+      (.put result did (-> res
+                           (update :score #(+ ^double % dot))
+                           (update :tids conj tid)))
+      (let [res (doc-info lmdb did)]
+        (.put result did (assoc res :score dot :tids [tid]))))))
 
 (defn- add-candidates
-  [lmdb tid ^HashSet taken ^HashMap candid ^HashMap cache]
+  [lmdb tid ^HashSet taken ^HashMap candid ^HashMap cache wqs ^HashMap result]
   (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
     (when-not (.contains taken did)
       (if-let [seen (.get candid did)]
-        (.put candid did (if (.containsKey cache [tid did])
-                           seen
-                           (inc ^long seen)))
-        (.put candid did 1)))))
+        (when-not (.containsKey cache [tid did])
+          (inc-score lmdb tid did wqs result)
+          (.put candid did (inc ^long seen)))
+        (do (.put candid did 1)
+            (inc-score lmdb tid did wqs result))))))
 
 (defn- check-doc
-  [^HashMap cache kid did lmdb ^HashMap candid]
+  [^HashMap cache kid did lmdb ^HashMap candid wqs ^HashMap result]
   (when (if (.containsKey cache [kid did])
           (.get cache [kid did])
           (let [in? (l/in-list? lmdb c/term-docs kid did :id :id)]
             (.put cache [kid did] in?)
+            (when in? (inc-score lmdb kid did wqs result))
             in?))
     (.put candid did (inc ^long (.get candid did)))))
 
 (defn- filter-candidates
   [i n term-ids ^HashMap candid cache lmdb
-   ^HashSet taken ^HashSet result ^HashMap backup]
+   ^HashSet taken ^HashSet selected ^HashMap backup wqs ^HashMap result]
   (let [tao (- ^long n ^long i)] ; target number of overlaps
     (if (= tao 1)
-      (.addAll result (.keySet candid))
+      (.addAll selected (.keySet candid))
       (doseq [^long k (range (inc ^long i) n)
               :let    [kid (nth term-ids k)]]
         (doseq [did (.keySet candid)]
-          (check-doc cache kid did lmdb candid)
+          (check-doc cache kid did lmdb candid wqs result)
           (let [hits ^long (.get candid did)]
             (cond
               (<= tao hits) (do (.add taken did)
-                                (.add result did)
+                                (.add selected did)
                                 (.remove candid did)
                                 (.remove backup did))
               (< (+ hits ^long (- ^long n k 1)) tao)
               (do (.remove candid did)
                   (.put backup did hits)))))))))
 
-(defn- select-docs
-  [n i ^HashMap backup lmdb tid ^HashSet taken term-ids ^HashMap cache]
-  (let [candid (HashMap. backup)]
-    (add-candidates lmdb tid taken candid cache)
-    (let [result (HashSet. 32)]
-      (filter-candidates i n term-ids candid cache lmdb
-                         taken result backup)
-      result)))
-
-(defn- doc-info
-  [lmdb doc-id]
-  (l/get-value lmdb c/docs doc-id :id :data true))
-
-(defn- score-docs
-  [lmdb wqs docs]
-  (reduce
-    (fn [scores did]
-      (let [{:keys [ref uniq]} (doc-info lmdb did)]
-        (println "uniq" uniq)
-        (conj! scores
-               [(let [sum   (reduce
-                              +
-                              (mapv (fn [[tid wq]]
-                                      (println tid "wq" wq)
-                                      (let [res (* ^double (tf lmdb did tid) ^double wq)]
-                                        (println "res" res)
-                                        res))
-                                    wqs))
-                      _     (println "sum" sum)
-                      score (/ ^double sum
-                               ^long uniq)]
-                  (println did "score" score)
-                  score)
-                did ref])))
-    (transient [])
-    docs))
-
 (defn- rank-docs
-  "return sorted [score doc-id doc-ref]"
-  [lmdb wqs docs]
-  (->> docs
-       (score-docs lmdb wqs)
-       persistent!
+  "return a list of [score doc-id doc-ref] sorted by scores"
+  [selected ^HashMap result]
+  (->> selected
+       (map (fn [did]
+              (let [{:keys [ref uniq score tids]} (.get result did)]
+                [(/ ^double score ^long uniq) did ref tids])))
        (sort-by first >)))
+
+(defn- add-positions
+  [lmdb ^HashMap terms [_ did ref tids]]
+  [ref (mapv (fn [tid]
+               [(.get terms tid)
+                (mapv second
+                      (l/get-list lmdb c/positions [did tid]
+                                  :double-id :double-int))])
+             tids)])
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> [term-id,freq]
@@ -263,27 +246,33 @@
     (let [tokens   (->> (en-analyzer query)
                         (map first)
                         (into-array String))
-          terms    (hydrate-query-terms max-doc unigrams lmdb symspell tokens)
-          _        (println "terms" terms)
-          term-ms  (vals terms)
-          wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) term-ms))
-          term-ids (->> term-ms
+          qterms   (hydrate-query-terms max-doc unigrams lmdb symspell tokens)
+          _        (println "qterms" qterms)
+          wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) qterms))
+          term-ids (->> qterms
                         (sort-by :ed)
                         (sort-by :idf >)
                         (mapv :id))
           n        (count term-ids)
+          result   (HashMap. 512)
           xform
           (comp
             (let [backup (HashMap. 512)
-                  taken  (HashSet. 128)
-                  cache  (HashMap. 512)]
+                  cache  (HashMap. 512)
+                  taken  (HashSet. 512)]
               (map-indexed
                 (fn [^long i tid]
-                  (select-docs n i backup lmdb tid taken term-ids cache))))
-            (mapcat (fn [docs] (rank-docs lmdb wqs docs))))]
-      (sequence
-        (map identity)
-        (sequence xform term-ids)))))
+                  (let [candid (HashMap. backup)]
+                    (add-candidates lmdb tid taken candid cache wqs result)
+                    (let [selected (HashSet. 128)]
+                      (filter-candidates i n term-ids candid cache lmdb
+                                         taken selected backup wqs result)
+                      selected)))))
+            (mapcat (fn [selected]
+                      (rank-docs selected result)))
+            (map (fn [doc-info]
+                   (add-positions lmdb terms doc-info))))]
+      (sequence xform term-ids))))
 
 (defn- init-unigrams
   [lmdb]
