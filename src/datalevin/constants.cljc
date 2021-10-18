@@ -172,7 +172,8 @@
                              "that", "the",  "their", "then", "there", "these",
                              "they", "this", "to", "was", "will", "with"))
 
-(def en-punctuations (hash-set \; \, \! \? \" \( \) \: \/ \. \[ \] \{ \}))
+(def en-punctuations (hash-set \: \/ \. \; \, \! \= \? \" \' \( \) \[ \] \{ \}
+                               \| \< \> \& \@ \# \^ \* \\ \~ \`))
 
 (def dict-max-edit-distance 2)
 
