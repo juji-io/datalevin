@@ -11,6 +11,10 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
+(defn- non-token-char?
+  [^Character c]
+  (or (Character/isWhitespace c) (c/en-punctuations c)))
+
 (defn en-analyzer
   "English analyzer does the following:
   - split on white space and punctuation, remove them
@@ -28,7 +32,7 @@
            sb    (StringBuilder.)]
       (if (< i len)
         (let [c (.charAt x i)]
-          (if (or (Character/isWhitespace c) (c/en-punctuations c))
+          (if (non-token-char? c)
             (if in?
               (let [word (.toString sb)]
                 (when-not (c/en-stop-words word)
@@ -38,7 +42,7 @@
             (recur (inc i) pos true (if in? start i)
                    (.append sb (Character/toLowerCase c)))))
         (let [c (.charAt x len-1)]
-          (if (or (Character/isWhitespace c) (c/en-punctuations c))
+          (if (non-token-char? c)
             res
             (let [word (.toString sb)]
               (when-not (c/en-stop-words word)
@@ -125,15 +129,15 @@
         (.put result did (assoc res :score dot :tids [tid]))))))
 
 (defn- add-candidates
-  [lmdb tid ^HashSet taken ^HashMap candid ^HashMap cache wqs ^HashMap result]
+  [lmdb tid ^HashMap candid ^HashMap cache wqs ^HashMap result]
   (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
-    (when-not (.contains taken did)
+    (when-not (.containsKey result did)
       (if-let [seen (.get candid did)]
         (when-not (.containsKey cache [tid did])
           (inc-score lmdb tid did wqs result)
           (.put candid did (inc ^long seen)))
-        (do (.put candid did 1)
-            (inc-score lmdb tid did wqs result))))))
+        (do (inc-score lmdb tid did wqs result)
+            (.put candid did 1))))))
 
 (defn- check-doc
   [^HashMap cache kid did lmdb ^HashMap candid wqs ^HashMap result]
@@ -147,7 +151,7 @@
 
 (defn- filter-candidates
   [i n term-ids ^HashMap candid cache lmdb
-   ^HashSet taken ^HashSet selected ^HashMap backup wqs ^HashMap result]
+   ^HashSet selected ^HashMap backup wqs ^HashMap result]
   (let [tao (- ^long n ^long i)] ; target number of overlaps
     (if (= tao 1)
       (.addAll selected (.keySet candid))
@@ -157,8 +161,7 @@
           (check-doc cache kid did lmdb candid wqs result)
           (let [hits ^long (.get candid did)]
             (cond
-              (<= tao hits) (do (.add taken did)
-                                (.add selected did)
+              (<= tao hits) (do (.add selected did)
                                 (.remove candid did)
                                 (.remove backup did))
               (< (+ hits ^long (- ^long n k 1)) tao)
@@ -247,7 +250,6 @@
                         (map first)
                         (into-array String))
           qterms   (hydrate-query-terms max-doc unigrams lmdb symspell tokens)
-          _        (println "qterms" qterms)
           wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) qterms))
           term-ids (->> qterms
                         (sort-by :ed)
@@ -258,15 +260,14 @@
           xform
           (comp
             (let [backup (HashMap. 512)
-                  cache  (HashMap. 512)
-                  taken  (HashSet. 512)]
+                  cache  (HashMap. 512)]
               (map-indexed
                 (fn [^long i tid]
                   (let [candid (HashMap. backup)]
-                    (add-candidates lmdb tid taken candid cache wqs result)
+                    (add-candidates lmdb tid candid cache wqs result)
                     (let [selected (HashSet. 128)]
                       (filter-candidates i n term-ids candid cache lmdb
-                                         taken selected backup wqs result)
+                                         selected backup wqs result)
                       selected)))))
             (mapcat (fn [selected]
                       (rank-docs selected result)))

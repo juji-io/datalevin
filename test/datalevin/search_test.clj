@@ -17,63 +17,83 @@
     (is (= (subs s1 10 (+ 10 (.length "datalevin-analyzers")))
            "Datalevin-Analyzers" ))))
 
-(deftest basic-ops-test
+(defn- add-docs
+  [engine]
+  (sut/add-doc engine :doc1
+               "The quick red fox jumped over the lazy red dogs.")
+  (sut/add-doc engine :doc2
+               "Mary had a little lamb whose fleece was red as fire.")
+  (sut/add-doc engine :doc3
+               "Moby Dick is a story of a whale and a man obsessed.")
+  (sut/add-doc engine :doc4
+               "The robber wore a red fleece jacket and a baseball cap.")
+  (sut/add-doc engine :doc5
+               "The English Springer Spaniel is the best of all red dogs."))
+
+(deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
         engine ^SearchEngine (sut/new-engine lmdb)]
-    (sut/add-doc engine :doc1
-                 "The quick red fox jumped over the lazy red dogs.")
-    (sut/add-doc engine :doc2
-                 "Mary had a little lamb whose fleece was red as fire.")
-    (sut/add-doc engine :doc3
-                 "Moby Dick is a story of a whale and a man obsessed.")
-    (sut/add-doc engine :doc4
-                 "The robber wore a red fleece jacket and a baseball cap.")
-    (sut/add-doc engine :doc5
-                 "The English Springer Spaniel is the best of all red dogs.")
+    (add-docs engine)
 
-    (testing "indexing"
-      (is (= (count (.-unigrams engine))
-             (l/range-count lmdb c/unigrams [:all] :string)
-             (.size ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)))
-             30))
-      (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :id-id true)]
-        (is (= freq
-               (.get ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)) "red")
-               5))
-        (is (= (.get ^Map (.-terms engine) tid) "red"))
-        (is (l/in-list? lmdb c/term-docs tid 1 :id :id))
-        (is (l/in-list? lmdb c/term-docs tid 5 :id :id))
-        (is (= (l/list-count lmdb c/term-docs tid :id) 4))
-        (is (= (l/get-list lmdb c/term-docs tid :id :id) [1 2 4 5]))
-        (is (= (l/list-count lmdb c/positions [1 tid] :id-id) 2))
-        (is (= (l/list-count lmdb c/positions [5 tid] :id-id) 1))
-        (is (= (l/get-list lmdb c/positions [5 tid] :id-id :int-int)
-               [[9 48]]))
-        (is (= (l/range-count lmdb c/positions [:closed [5 0] [5 Long/MAX_VALUE]]
-                              :id-id)
-               7))
-        (let [[tid2 freq2] (l/get-value lmdb c/unigrams "dogs"
-                                        :string :id-id true)]
-          (is (= freq2 2))
-          (is (= (l/get-value lmdb c/bigrams [tid tid2] :id-id :id true)
-                 (.get ^Map (.getBigramLexicon ^SymSpell (.-symspell engine))
-                       (Bigram. "red" "dogs"))
-                 2)))
+    (is (= (count (.-unigrams engine))
+           (l/range-count lmdb c/unigrams [:all] :string)
+           (.size ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)))
+           30))
+    (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :id-id true)]
+      (is (= freq
+             (.get ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)) "red")
+             5))
+      (is (= (.get ^Map (.-terms engine) tid) "red"))
+      (is (l/in-list? lmdb c/term-docs tid 1 :id :id))
+      (is (l/in-list? lmdb c/term-docs tid 5 :id :id))
+      (is (= (l/list-count lmdb c/term-docs tid :id) 4))
+      (is (= (l/get-list lmdb c/term-docs tid :id :id) [1 2 4 5]))
+      (is (= (l/list-count lmdb c/positions [1 tid] :id-id) 2))
+      (is (= (l/list-count lmdb c/positions [5 tid] :id-id) 1))
+      (is (= (l/get-list lmdb c/positions [5 tid] :id-id :int-int)
+             [[9 48]]))
+      (is (= (l/range-count lmdb c/positions [:closed [5 0] [5 Long/MAX_VALUE]]
+                            :id-id)
+             7))
+      (let [[tid2 freq2] (l/get-value lmdb c/unigrams "dogs"
+                                      :string :id-id true)]
+        (is (= freq2 2))
+        (is (= (l/get-value lmdb c/bigrams [tid tid2] :id-id :id true)
+               (.get ^Map (.getBigramLexicon ^SymSpell (.-symspell engine))
+                     (Bigram. "red" "dogs"))
+               2)))
 
-        (is (= (l/get-value lmdb c/docs 1 :id :data true) {:ref :doc1 :uniq 7}))
-        (is (= (l/get-value lmdb c/docs 4 :id :data true) {:ref :doc4 :uniq 7}))
-        (is (= (l/get-value lmdb c/rdocs :doc4 :data :id true) 4))
-        (is (= (l/range-count lmdb c/docs [:all]) 5))
-        (is (= (l/range-count lmdb c/rdocs [:all]) 5))
+      (is (= (l/get-value lmdb c/docs 1 :id :data true) {:ref :doc1 :uniq 7}))
+      (is (= (l/get-value lmdb c/docs 4 :id :data true) {:ref :doc4 :uniq 7}))
+      (is (= (l/get-value lmdb c/rdocs :doc4 :data :id true) 4))
+      (is (= (l/range-count lmdb c/docs [:all]) 5))
+      (is (= (l/range-count lmdb c/rdocs [:all]) 5))
 
-        (sut/remove-doc engine :doc5)
-        (is (= (l/range-count lmdb c/docs [:all]) 4))
-        (is (= (l/range-count lmdb c/rdocs [:all]) 4))
-        (is (not (l/in-list? lmdb c/term-docs tid 5 :id :id)))
-        (is (= (l/list-count lmdb c/term-docs tid :id) 3))
-        (is (= (l/list-count lmdb c/positions [5 tid] :id-id) 0))
-        (is (= (l/get-list lmdb c/positions [5 tid] :id-id :int-int) [])))
-      )
+      (sut/remove-doc engine :doc5)
+      (is (= (l/range-count lmdb c/docs [:all]) 4))
+      (is (= (l/range-count lmdb c/rdocs [:all]) 4))
+      (is (not (l/in-list? lmdb c/term-docs tid 5 :id :id)))
+      (is (= (l/list-count lmdb c/term-docs tid :id) 3))
+      (is (= (l/list-count lmdb c/positions [5 tid] :id-id) 0))
+      (is (= (l/get-list lmdb c/positions [5 tid] :id-id :int-int) [])))
 
-    (l/close-kv lmdb)
-    ))
+    (l/close-kv lmdb)))
+
+(deftest search-test
+  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-" (UUID/randomUUID))))
+        engine ^SearchEngine (sut/new-engine lmdb)]
+    (add-docs engine)
+
+    (is (= (sut/search engine "cap") [[:doc4 [["cap" [51]]]]]))
+    (is (= (sut/search engine "fleece") [[:doc4 [["fleece" [22]]]]
+                                         [:doc2 [["fleece" [29]]]]]))
+    (is (= (sut/search engine "red fox") [[:doc1 [["fox" [14]] ["red" [10 39]]]]
+                                          [:doc4 [["red" [18]]]]
+                                          [:doc5 [["red" [48]]]]
+                                          [:doc2 [["red" [40]]]]]))
+
+    (is (= (sut/search engine "red dogs") [[:doc1 [["dogs" [43]] ["red" [10 39]]]]
+                                           [:doc5 [["dogs" [52]] ["red" [48]]]]
+                                           [:doc4 [["red" [18]]]]
+                                           [:doc2 [["red" [40]]]]]))
+    (l/close-kv lmdb)))

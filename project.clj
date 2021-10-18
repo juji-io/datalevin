@@ -62,8 +62,7 @@
                               ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
                                "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
                                "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
-                               "-Djdk.attach.allowAttachSelf"
-                               "-Dclojure.compiler.direct-linking=true"]
+                               "-Djdk.attach.allowAttachSelf"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]
@@ -79,6 +78,7 @@
                                *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
+  :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password
