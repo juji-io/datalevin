@@ -5,7 +5,10 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram SuggestItem]
-           [java.util HashMap ArrayList HashSet]))
+           [java.util HashMap ArrayList HashSet]
+           [java.io FileInputStream]
+           [com.fasterxml.jackson.databind ObjectMapper]
+           [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -191,25 +194,27 @@
                        ^HashMap bigrams  ; [term-id,term-id] -> freq
                        ^HashMap terms    ; term-id -> term
                        ^SymSpell symspell
-                       ^:volatile-mutable ^long max-doc
-                       ^:volatile-mutable ^long max-term]
+                       max-doc
+                       max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
-    (let [result (en-analyzer doc-text)
-          unique (count (set (map first result)))
-          txs    (ArrayList. 256)]
+    (let [result      (en-analyzer doc-text)
+          new-terms   (collect-terms result)
+          unique      (count new-terms)
+          new-bigrams (collect-bigrams result)
+          txs         (ArrayList. 512)]
       (locking this
-        (let [doc-id (inc max-doc)]
-          (set! max-doc doc-id)
+        (let [doc-id (inc ^long @max-doc)]
+          (vreset! max-doc doc-id)
           (.add txs [:put c/docs doc-id {:ref doc-ref :uniq unique}
                      :id :data [:append]])
           (.add txs [:put c/rdocs doc-ref doc-id :data :id])
-          (doseq [[term [^long new-freq new-lst]] (collect-terms result)]
+          (doseq [[term [^long new-freq new-lst]] new-terms]
             (let [[term-id freq] (if (.containsKey unigrams term)
                                    (let [[t f] (.get unigrams term)]
                                      [t (+ ^long f new-freq)])
-                                   (let [t (inc max-term)]
-                                     (set! max-term t)
+                                   (let [t (inc ^long @max-term)]
+                                     (vreset! max-term t)
                                      (.put terms t term)
                                      [t new-freq]))]
               (.addUnigrams symspell {term new-freq})
@@ -220,15 +225,15 @@
               (doseq [po new-lst]
                 (.add txs [:put c/positions [doc-id term-id] po
                            :id-id :int-int]))))
-          (doseq [[[t1 t2] ^long new-freq] (collect-bigrams result)]
+          (doseq [[[t1 t2] ^long new-freq] new-bigrams]
             (let [tids [(first (.get unigrams t1)) (first (.get unigrams t2))]
                   freq (if (.containsKey bigrams tids)
                          (+ ^long (.get bigrams tids) new-freq)
                          new-freq)]
               (.addBigrams symspell {(Bigram. t1 t2) new-freq})
               (.put bigrams tids freq)
-              (.add txs [:put c/bigrams tids freq :id-id :id]))))
-        (l/transact-kv lmdb txs))))
+              (.add txs [:put c/bigrams tids freq :id-id :id])))))
+      (l/transact-kv lmdb txs)))
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (l/get-value lmdb c/rdocs doc-ref :data :id true)]
@@ -249,7 +254,7 @@
     (let [tokens   (->> (en-analyzer query)
                         (map first)
                         (into-array String))
-          qterms   (hydrate-query-terms max-doc unigrams lmdb symspell tokens)
+          qterms   (hydrate-query-terms @max-doc unigrams lmdb symspell tokens)
           wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) qterms))
           term-ids (->> qterms
                         (sort-by :ed)
@@ -326,5 +331,40 @@
                     terms
                     (SymSpell. tf bg c/dict-max-edit-distance
                                c/dict-prefix-length)
-                    (init-max-doc lmdb)
-                    (init-max-term lmdb))))
+                    (volatile! (init-max-doc lmdb))
+                    (volatile! (init-max-term lmdb)))))
+
+(comment
+
+  (def OM (ObjectMapper.))
+
+  (def lst (ArrayList.))
+
+  (with-open [f (FileInputStream. "search-bench/output.json")]
+    (let [jf  (JsonFactory.)
+          jp  (.createParser jf f)
+          cls (Class/forName "java.util.HashMap")]
+      (.setCodec jp OM)
+      (.nextToken jp)
+      (loop []
+        (when (.hasCurrentToken jp)
+          (let [m (.readValueAs jp cls)]
+            (.add lst m)
+            (.nextToken jp)
+            (recur))))))
+
+  (.size lst)
+
+  (let [lmdb   (l/open-kv "/tmp/wiki4")
+        engine (new-engine lmdb)]
+    (time (doseq [^HashMap m lst]
+            (add-doc engine (.get m "url") (.get m "text")))))
+
+  (let [lmdb   (l/open-kv "/tmp/wiki11")
+        engine (new-engine lmdb)]
+    (time (doall (pmap
+                   (fn [^HashMap m] (add-doc engine (.get m "url") (.get m "text")))
+                   lst))))
+
+
+  )
