@@ -96,7 +96,6 @@
 (def ^:const rdocs "datalevin/rdocs")         ; doc-ref -> doc-id
 (def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (list)
 (def ^:const positions "datalevin/positions") ; doc-id,term-id -> position,offset (list)
-(def ^:const search-meta "datalevin/search-meta")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean

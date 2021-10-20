@@ -30,9 +30,9 @@
   (sut/add-doc engine :doc5
                "The English Springer Spaniel is the best of all red dogs."))
 
-(deftest index-test
+(deftest fuzzy-index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
-        engine ^SearchEngine (sut/new-engine lmdb)]
+        engine ^SearchEngine (sut/new-engine lmdb {:fuzzy? true})]
     (add-docs engine)
 
     (is (= (count (.-unigrams engine))

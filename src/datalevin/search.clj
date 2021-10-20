@@ -6,6 +6,7 @@
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram SuggestItem]
            [java.util HashMap ArrayList HashSet]
+           [java.util.concurrent Executors]
            [java.io FileInputStream]
            [com.fasterxml.jackson.databind ObjectMapper]
            [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
@@ -76,7 +77,7 @@
     (doseq [[term position offset] result]
       (.put terms term (if-let [[^long freq ^ArrayList lst] (.get terms term)]
                          [(inc freq) (do (.add lst [position offset]) lst)]
-                         [1 (doto (ArrayList. 256) (.add [position offset]))])))
+                         [1 (doto (ArrayList.) (.add [position offset]))])))
     terms))
 
 (defn- collect-bigrams
@@ -105,17 +106,22 @@
 
 (defn- hydrate-query-terms
   [max-doc ^HashMap unigrams lmdb ^SymSpell symspell tokens]
-  (let [sis   (.getSuggestTerms symspell tokens c/dict-max-edit-distance false)
-        terms (mapv #(.getSuggestion ^SuggestItem %) sis)
-        eds   (zipmap terms (mapv #(.getEditDistance ^SuggestItem %) sis))]
-    (map (fn [[term freq]]
-           (let [id  (first (.get unigrams term))
-                 idf (idf lmdb id max-doc)]
-             {:id  id
-              :ed  (eds term)
-              :idf idf
-              :wq  (* ^double (tf* freq) ^double idf)}))
-         (frequencies terms))))
+  (let [sis   (when symspell
+                (.getSuggestTerms symspell tokens c/dict-max-edit-distance false))
+        terms (if sis
+                (mapv #(.getSuggestion ^SuggestItem %) sis)
+                tokens)
+        eds   (if sis
+                (zipmap terms (mapv #(.getEditDistance ^SuggestItem %) sis))
+                (zipmap terms (repeat 0)))]
+    (mapv (fn [[term freq]]
+            (let [id  (first (.get unigrams term))
+                  idf (idf lmdb id max-doc)]
+              {:id  id
+               :ed  (eds term)
+               :idf idf
+               :wq  (* ^double (tf* freq) ^double idf)}))
+          (frequencies terms))))
 
 (defn- doc-info
   [lmdb doc-id]
@@ -199,10 +205,16 @@
   ISearchEngine
   (add-doc [this doc-ref doc-text]
     (let [result      (en-analyzer doc-text)
+          txs         (ArrayList. 512)
           new-terms   (collect-terms result)
           unique      (count new-terms)
-          new-bigrams (collect-bigrams result)
-          txs         (ArrayList. 512)]
+          new-bigrams (when symspell (collect-bigrams result))]
+      (when symspell
+        (.addUnigrams symspell (zipmap (keys new-terms)
+                                       (mapv first (vals new-terms))))
+        (.addBigrams symspell (zipmap (mapv (fn [[t1 t2]] (Bigram. t1 t2))
+                                            (keys new-bigrams))
+                                      (vals new-bigrams))))
       (locking this
         (let [doc-id (inc ^long @max-doc)]
           (vreset! max-doc doc-id)
@@ -210,30 +222,28 @@
                      :id :data [:append]])
           (.add txs [:put c/rdocs doc-ref doc-id :data :id])
           (doseq [[term [^long new-freq new-lst]] new-terms]
-            (let [[term-id freq] (if (.containsKey unigrams term)
-                                   (let [[t f] (.get unigrams term)]
-                                     [t (+ ^long f new-freq)])
-                                   (let [t (inc ^long @max-term)]
-                                     (vreset! max-term t)
-                                     (.put terms t term)
-                                     [t new-freq]))]
-              (.addUnigrams symspell {term new-freq})
-              (.put unigrams term [term-id freq])
-              (.add txs [:put c/unigrams term [term-id freq]
-                         :string :id-id])
+            (let [[term-id _ :as tf]
+                  (if-let [[t f] (.get unigrams term)]
+                    [t (+ ^long f new-freq)]
+                    (let [t (inc ^long @max-term)]
+                      (vreset! max-term t)
+                      (.put terms t term)
+                      [t new-freq]))]
+              (.put unigrams term tf)
+              (.add txs [:put c/unigrams term tf :string :id-id])
               (.add txs [:put c/term-docs term-id doc-id :id :id])
               (doseq [po new-lst]
                 (.add txs [:put c/positions [doc-id term-id] po
                            :id-id :int-int]))))
-          (doseq [[[t1 t2] ^long new-freq] new-bigrams]
-            (let [tids [(first (.get unigrams t1)) (first (.get unigrams t2))]
-                  freq (if (.containsKey bigrams tids)
-                         (+ ^long (.get bigrams tids) new-freq)
-                         new-freq)]
-              (.addBigrams symspell {(Bigram. t1 t2) new-freq})
-              (.put bigrams tids freq)
-              (.add txs [:put c/bigrams tids freq :id-id :id])))))
-      (l/transact-kv lmdb txs)))
+          (when symspell
+            (doseq [[[t1 t2] ^long new-freq] new-bigrams]
+              (let [tids [(first (.get unigrams t1)) (first (.get unigrams t2))]
+                    freq (if (.containsKey bigrams tids)
+                           (+ ^long (.get bigrams tids) new-freq)
+                           new-freq)]
+                (.put bigrams tids freq)
+                (.add txs [:put c/bigrams tids freq :id-id :id])))))
+        (l/transact-kv lmdb txs))))
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (l/get-value lmdb c/rdocs doc-ref :data :id true)]
@@ -282,8 +292,8 @@
 
 (defn- init-unigrams
   [lmdb]
-  (let [unigrams (HashMap. 1024)
-        terms    (HashMap. 1024)
+  (let [unigrams (HashMap. 32768)
+        terms    (HashMap. 32768)
         load     (fn [kv]
                    (let [term          (b/read-buffer (l/k kv) :string)
                          [id _ :as tf] (b/read-buffer (l/v kv) :id-id)]
@@ -294,7 +304,7 @@
 
 (defn- init-bigrams
   [lmdb]
-  (let [m    (HashMap. 1024)
+  (let [m    (HashMap. 32768)
         load (fn [kv]
                (.put m (b/read-buffer (l/k kv) :id-id)
                      (b/read-buffer (l/v kv) :id)))]
@@ -309,30 +319,34 @@
   (or (first (l/get-first lmdb c/term-docs [:all-back] :id :ignore)) 0))
 
 (defn new-engine
-  [lmdb]
-  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-  (l/open-dbi lmdb c/unigrams c/+max-key-size+ (* 2 c/+id-bytes+))
-  (l/open-dbi lmdb c/bigrams (* 2 c/+id-bytes+) c/+id-bytes+)
-  (l/open-dbi lmdb c/docs c/+id-bytes+)
-  (l/open-dbi lmdb c/rdocs c/+max-key-size+ c/+id-bytes+)
-  (l/open-inverted-list lmdb c/term-docs c/+id-bytes+ c/+id-bytes+)
-  (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+)
-  (l/open-dbi lmdb c/search-meta c/+max-key-size+)
-  (let [[unigrams ^HashMap terms] (init-unigrams lmdb)
-        bigrams                   (init-bigrams lmdb)
+  ([lmdb]
+   (new-engine lmdb {}))
+  ([lmdb {:keys [fuzzy?]
+          :or   {fuzzy? false}}]
+   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
+   (l/open-dbi lmdb c/unigrams c/+max-key-size+ (* 2 c/+id-bytes+))
+   (l/open-dbi lmdb c/docs c/+id-bytes+)
+   (l/open-dbi lmdb c/rdocs c/+max-key-size+ c/+id-bytes+)
+   (l/open-inverted-list lmdb c/term-docs c/+id-bytes+ c/+id-bytes+)
+   (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+)
+   (when fuzzy?
+     (l/open-dbi lmdb c/bigrams (* 2 c/+id-bytes+) c/+id-bytes+))
+   (let [[unigrams ^HashMap terms] (init-unigrams lmdb)
+         bigrams                   (when fuzzy? (init-bigrams lmdb))
 
-        tf (into {} (map (fn [[t [_ f]]] [t f]) unigrams))
-        bg (into {} (map (fn [[[t1 t2] f]]
-                           [(Bigram. (.get terms t1) (.get terms t2)) f])
-                         bigrams))]
-    (->SearchEngine lmdb
-                    unigrams
-                    bigrams
-                    terms
-                    (SymSpell. tf bg c/dict-max-edit-distance
-                               c/dict-prefix-length)
-                    (volatile! (init-max-doc lmdb))
-                    (volatile! (init-max-term lmdb)))))
+         tf (when fuzzy? (into {} (map (fn [[t [_ f]]] [t f]) unigrams)))
+         bg (when fuzzy?
+              (into {} (map (fn [[[t1 t2] f]]
+                              [(Bigram. (.get terms t1) (.get terms t2)) f])
+                            bigrams)))]
+     (->SearchEngine lmdb
+                     unigrams
+                     (when fuzzy? bigrams)
+                     terms
+                     (when fuzzy? (SymSpell. tf bg c/dict-max-edit-distance
+                                             c/dict-prefix-length))
+                     (volatile! (init-max-doc lmdb))
+                     (volatile! (init-max-term lmdb))))))
 
 (comment
 
@@ -349,22 +363,39 @@
       (loop []
         (when (.hasCurrentToken jp)
           (let [m (.readValueAs jp cls)]
-            (.add lst m)
+            (.add ^ArrayList lst m)
             (.nextToken jp)
             (recur))))))
 
   (.size lst)
 
-  (let [lmdb   (l/open-kv "/tmp/wiki4")
+  (let [lmdb   (l/open-kv "/tmp/wiki92")
         engine (new-engine lmdb)]
     (time (doseq [^HashMap m lst]
-            (add-doc engine (.get m "url") (.get m "text")))))
+            (add-doc engine (.get m "url") (.get m "text"))))
+    (l/close-kv lmdb))
 
-  (let [lmdb   (l/open-kv "/tmp/wiki11")
+  (let [lmdb   (l/open-kv "/tmp/wiki91")
+        engine (time (new-engine lmdb))]
+    (l/close-kv lmdb))
+
+  (let [lmdb   (l/open-kv "/tmp/wiki92")
         engine (new-engine lmdb)]
     (time (doall (pmap
-                   (fn [^HashMap m] (add-doc engine (.get m "url") (.get m "text")))
-                   lst))))
+                   (fn [^HashMap m]
+                     (add-doc engine (.get m "url") (.get m "text")))
+                   lst)))
+    (l/close-kv lmdb))
+
+  (let [lmdb   (l/open-kv "/tmp/wiki51")
+        engine (new-engine lmdb)
+        pool   (Executors/newWorkStealingPool)]
+    (time (.invokeAll pool
+                      (map
+                        (fn [^HashMap m]
+                          (add-doc engine (.get m "url") (.get m "text")))
+                        lst)))
+    (l/close-kv lmdb))
 
 
   )

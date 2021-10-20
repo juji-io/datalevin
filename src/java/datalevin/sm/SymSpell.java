@@ -460,17 +460,30 @@ public class SymSpell {
     }
 
     public void addBigrams(Map<Bigram, Long> bigrams) {
-        bigrams.forEach((key, value) -> bigramLexicon.merge(key, value, (v1, v2) -> v1 + v2));
+        for (Bigram key : bigrams.keySet()) {
+            Long val = bigrams.get(key);
+            if (bigramLexicon.containsKey(key)) {
+                bigramLexicon.put(key, val + bigramLexicon.get(key));
+            } else {
+                bigramLexicon.put(key, val);
+            }
+        }
     }
 
     public void addUnigrams(Map<String, Long> unigrams) {
-        unigrams.forEach((key, value) -> unigramLexicon.merge(key, value, (v1, v2) -> v1 + v2));
-        unigrams.keySet().parallelStream().forEach(word ->{
-                Map<String, Collection<String>> edits = generateEdits(word);
-                edits.forEach((string, suggestions) -> deletes.merge(string, suggestions, (v1, v2) -> Stream.concat(v1.stream(), v2.stream()).distinct().collect(Collectors.toList())));
-            });
-        int myMaxDictionaryWordLength = unigrams.keySet().stream().map(String::length).max(Integer::compareTo).orElse(0);
-        maxDictionaryWordLength = (myMaxDictionaryWordLength > maxDictionaryWordLength) ? myMaxDictionaryWordLength : maxDictionaryWordLength;
+        for (String key : unigrams.keySet()) {
+            Long val = unigrams.get(key);
+            if (unigramLexicon.containsKey(key)) {
+                unigramLexicon.put(key, val + unigramLexicon.get(key));
+            } else {
+                unigramLexicon.put(key, val);
+                Map<String, Collection<String>> edits = generateEdits(key);
+                edits.forEach((string, suggestions) -> deletes.computeIfAbsent(string, ignored -> new ArrayList<>()).addAll(suggestions));
+
+                int myMaxDictionaryWordLength = unigrams.keySet().stream().map(String::length).max(Integer::compareTo).orElse(0);
+                maxDictionaryWordLength = (myMaxDictionaryWordLength > maxDictionaryWordLength) ? myMaxDictionaryWordLength : maxDictionaryWordLength;
+            }
+        }
     }
 
 public List<SuggestItem> getSuggestTerms(String[] termList, int editDistanceMax, boolean includeUnknown) throws RuntimeException {
