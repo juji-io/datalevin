@@ -85,4 +85,7 @@
                                            [:doc5 [["dogs" [52]] ["red" [48]]]]
                                            [:doc4 [["red" [18]]]]
                                            [:doc2 [["red" [40]]]]]))
+    (is (empty? (sut/search engine "solar")))
+    (is (empty? (sut/search engine "solar wind")))
+    (is (= (sut/search engine "solar cap") [[:doc4 [["cap" [51]]]]]))
     (l/close-kv lmdb)))

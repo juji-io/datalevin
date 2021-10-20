@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram SuggestItem]
-           [java.util HashMap ArrayList HashSet]
+           [java.util HashMap ArrayList HashSet Iterator]
            [java.util.concurrent Executors]
            [java.io FileInputStream]
            [com.fasterxml.jackson.databind ObjectMapper]
@@ -82,12 +82,17 @@
 (defn- idf
   "inverse document frequency of a term"
   [lmdb term-id ^long N]
-  (Math/log10 (/ N ^long (l/list-count lmdb c/term-docs term-id :id))))
+  (let [^long freq (l/list-count lmdb c/term-docs term-id :id)]
+    (if (zero? freq)
+      0
+      (Math/log10 (/ N freq)))))
 
 (defn- tf*
   "log-weighted term frequency"
   [^long freq]
-  (+ (Math/log10 freq) 1))
+  (if (zero? freq)
+    0
+    (+ (Math/log10 freq) 1)))
 
 (defn- tf
   [lmdb doc-id term-id]
@@ -155,16 +160,19 @@
       (.addAll selected (.keySet candid))
       (doseq [^long k (range (inc ^long i) n)
               :let    [kid (nth term-ids k)]]
-        (doseq [did (.keySet candid)]
-          (check-doc cache kid did lmdb candid wqs result)
-          (let [hits ^long (.get candid did)]
-            (cond
-              (<= tao hits) (do (.add selected did)
-                                (.remove candid did)
-                                (.remove backup did))
-              (< (+ hits ^long (- ^long n k 1)) tao)
-              (do (.remove candid did)
-                  (.put backup did hits)))))))))
+        (loop [^Iterator iter (.iterator (.keySet candid))]
+          (when (.hasNext iter)
+            (let [did (.next iter)]
+              (check-doc cache kid did lmdb candid wqs result)
+              (let [hits ^long (.get candid did)]
+                (cond
+                  (<= tao hits) (do (.add selected did)
+                                    (.remove backup did)
+                                    (.remove iter))
+                  (< (+ hits ^long (- ^long n k 1)) tao)
+                  (do (.put backup did hits)
+                      (.remove iter))))
+              (recur iter))))))))
 
 (defn- rank-docs
   "return a list of [score doc-id doc-ref [term-ids]] sorted by score"
@@ -321,15 +329,19 @@
 
   (.size lst)
 
-  (let [lmdb   (l/open-kv "/tmp/wiki100")
+  (let [lmdb   (l/open-kv "/tmp/wiki103")
         engine (new-engine lmdb)]
     (time (doseq [^HashMap m lst]
             (add-doc engine (.get m "url") (.get m "text"))))
     (l/close-kv lmdb))
 
-  (let [lmdb   (l/open-kv "/tmp/wiki91")
-        engine (time (new-engine lmdb))]
-    (l/close-kv lmdb))
+  (let [lmdb   (l/open-kv "/tmp/wiki103")
+        engine (new-engine lmdb)
+        res    (time (search engine "solar system"))
+        ]
+    (println res)
+    (l/close-kv lmdb)
+    )
 
   (let [lmdb   (l/open-kv "/tmp/wiki101")
         engine (new-engine lmdb)]

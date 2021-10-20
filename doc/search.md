@@ -46,24 +46,14 @@ reduces the cost of managing data.
 
 ### Indexing
 
-To support fuzzy full text search, two levels of mappings are encoded in the
-search engine indices: strings -> terms -> documents.
-
-The first level of mappings permits approximate string match within a threshold
-(default: edit distance <= 2), so the search would be typo tolerant. The fuzzy
-string match uses a variation of SymSpell algorithm [1] that pre-computes
-possible typos and leverage frequency information of both unigrams and bigrams,
-so it is very fast and quite accurate.
-
-The second level of mappings represents the term-document matrix stored in inverted
-lists and key-value maps. In addition to the numbers of term occurrences, the
-positions of term occurrences in the documents are also stored to support
-proximity query, phrase query and match highlighting.
+The search engine indices are stored in several inverted lists and key-value maps.
+In addition to the numbers of term occurrences, the positions of term
+occurrences in the documents are also stored to support proximity query, phrase
+query and match highlighting.
 
 In more details, the following LMDB sub-databases are created for search supposes:
 
-* `unigrams`: map of term -> term id and collection term frequency
-* `bigrams`: map of term-id-1, term-id-2 -> bigram frequency
+* `unigrams`: map of term -> term id
 * `docs`: map of document id -> document reference and number of unique terms in document
 * `rdocs`: map of document reference -> document id
 * `term-docs`: inverted list of term id -> document ids
@@ -105,7 +95,8 @@ appears in the inverted lists of subsequent query terms, which are ordered by
 document frequency. When `n` appearances is found, the document is removed
 from the candidate list and added to the result lists. At the same time, we
 remove the candidates that are not going to appear in all `n` inverted lists;
-The pruned documents are put into a backup candidate list to be used later.
+The pruned documents are put into a backup candidate list to be used later in
+case more results are requested.
 
 If all candidates are exhausted and user still requests more results, the
 document ids of the second rarest query term are added to candidates
