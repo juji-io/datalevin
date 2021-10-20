@@ -490,7 +490,7 @@
     (assert (not closed?) "LMDB env is closed.")
     (if (-> dest u/file u/empty-dir?)
       (.copy env dest (if compact? true false))
-      (raise "Destination directory is not empty.")))
+      (raise "Destination directory is not empty." {})))
 
   (stat [this]
     (assert (not closed?) "LMDB env is closed.")
