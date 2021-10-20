@@ -176,12 +176,17 @@
 
 (defn- rank-docs
   "return a list of [score doc-id doc-ref [term-ids]] sorted by score"
-  [selected ^HashMap result]
+  [selected wq-sum ^HashMap result]
   (->> selected
        (map (fn [did]
               (let [{:keys [ref uniq score tids]} (.get result did)]
-                [(/ ^double score ^long uniq) did ref tids])))
+                [(- ^double score
+                    (* ^double wq-sum (Math/log10 uniq)))
+                 did ref tids])))
        (sort-by first >)))
+
+(- (Math/log10 5) (Math/log10 10))
+(Math/log10 0.9)
 
 (defn- add-positions
   [lmdb ^HashMap terms [_ did ref tids]]
@@ -245,6 +250,7 @@
                         (into-array String))
           qterms   (hydrate-query-terms @max-doc unigrams lmdb symspell tokens)
           wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) qterms))
+          wq-sum   (reduce + (map :wq qterms))
           term-ids (->> qterms
                         (sort-by :ed)
                         (sort-by :idf >)
@@ -264,7 +270,7 @@
                                          selected backup wqs result)
                       selected)))))
             (mapcat (fn [selected]
-                      (rank-docs selected result)))
+                      (rank-docs selected wq-sum result)))
             (map (fn [doc-info]
                    (add-positions lmdb terms doc-info))))]
       (sequence xform term-ids))))
@@ -329,7 +335,7 @@
 
   (.size lst)
 
-  (let [lmdb   (l/open-kv "/tmp/wiki103")
+  (let [lmdb   (l/open-kv "/tmp/wiki104")
         engine (new-engine lmdb)]
     (time (doseq [^HashMap m lst]
             (add-doc engine (.get m "url") (.get m "text"))))
@@ -337,7 +343,7 @@
 
   (let [lmdb   (l/open-kv "/tmp/wiki103")
         engine (new-engine lmdb)
-        res    (time (search engine "solar system"))
+        res    (time (take 10 (search engine "solar system")))
         ]
     (println res)
     (l/close-kv lmdb)

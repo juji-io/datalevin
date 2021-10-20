@@ -32,7 +32,7 @@ size of Datalevin library jar is only 120 KB.
 Finally, with a search engine of our own, we avoid unnecessary write
 amplification by storing the original text twice, once in the database, again in
 the search engine. Instead, the embedded search engine only needs to store a
-reference to the original text that is stored in the database.
+reference to the original content that is stored in the database.
 
 ## Usage
 
@@ -74,15 +74,16 @@ model [2]. In order to achieve a good balance between relevance and efficiency,
 the weighting scheme chosen is `lnu.ltn`, i.e. the document vector has
 log-weighted term frequency, no idf, and pivoted unique normalization, while the
 query vector uses log-weighted term frequency, idf weighting, and no
-normalization.
+normalization. Pivoted unique normalization takes into consideration of document
+length, and does not needlessly penalize lengthy documents.
 
-The search algorithm implements an original algorithm inspired by [3].
+The search algorithm implements an original algorithm, with inspiration from [3].
 Compared with standard algorithm [2], our algorithm prunes documents that are unlikely
 to be relevant due to missing query terms. Not only is more efficient, this pruning
 algorithm also addresses an often felt user frustration with the standard
 algorithm: a document containing all query terms may be ranked much lower than
 a document containing only partial query terms. In our algorithm, the documents
-containing more complete query terms are considered first. When returning top-K result
+containing more query terms are considered first. When returning top-K result
 with a small K, those documents with very poor query term coverage may not even
 participate in the ranking.
 
@@ -93,24 +94,28 @@ least edit distance (i.e. with the least typos) and the least document frequency
 loop over this list of candidate documents, for each document, check if it
 appears in the inverted lists of subsequent query terms, which are ordered by
 document frequency. When `n` appearances is found, the document is removed
-from the candidate list and added to the result lists. At the same time, we
+from the candidate list and added to the result list. Critically, we also
 remove the candidates that are not going to appear in all `n` inverted lists;
 The pruned documents are put into a backup candidate list to be used later in
 case more results are requested.
 
 If all candidates are exhausted and user still requests more results, the
-document ids of the second rarest query term are added to candidates
+documents containing the second rarest query term are added to candidates
 list, alone with the backup candidates. They are checked against the
 remaining query terms to select the candidates that appear in `n-1` inverted lists.
 If user keeps asking for more results, the process continues until candidates
 only need to appear in `1` inverted list. Essentially, this search algorithm
 processes documents in tiers. First those documents contain all `n` query terms,
-then `n-1` terms, then `n-2`, and so on. Document scoring and ranking are
-performed within a tier, not cross tiers.
+then `n-1` terms, then `n-2`, and so on. Document ranking is performed within a
+tier, not cross tiers.
 
 The query processing workflow is implemented as Clojure transducers, and the
 results are wrapped in the `sequence` function, which performs the calculations
 incrementally and on demand.
+
+## Benchmark
+
+
 
 [1] Garbe, W. SymSpell algorithm https://wolfgarbe.medium.com/1000x-faster-spelling-correction-algorithm-2012-8701fcd87a5f
 
