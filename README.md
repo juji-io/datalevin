@@ -110,7 +110,7 @@ This JVM library supports Java 8 and above. For JVM version newer than 11, you m
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
-Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy". 
+Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy".
 
 ### Native Command Line Tool
 
@@ -555,7 +555,7 @@ adjust the priorities based on feedback.
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io).
+in production at [Juji](https://juji.io), and a few other projects, e.g. [clojure-lsp](https://github.com/clojure-lsp/clojure-lsp).
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
