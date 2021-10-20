@@ -61,8 +61,7 @@
      does not store the original text, and assumes that caller can retrieve them
      by `doc-ref`.")
   (remove-doc [this doc-ref]
-    "Remove a document referred to by `doc-ref`. After this function, the
-     remaining traces of this document is its effects on the term frequencies.")
+    "Remove a document referred to by `doc-ref`.")
   (search [this query]
     "Issue a `query` to the search engine. `query` is a map or a string.
 
@@ -75,20 +74,10 @@
   [result]
   (let [terms (HashMap. 256)]
     (doseq [[term position offset] result]
-      (.put terms term (if-let [[^long freq ^ArrayList lst] (.get terms term)]
-                         [(inc freq) (do (.add lst [position offset]) lst)]
-                         [1 (doto (ArrayList.) (.add [position offset]))])))
+      (.put terms term (if-let [^ArrayList lst (.get terms term)]
+                         (do (.add lst [position offset]) lst)
+                         (doto (ArrayList.) (.add [position offset])))))
     terms))
-
-(defn- collect-bigrams
-  [result]
-  (let [bigrams (HashMap. 256)]
-    (doseq [[[t1 p1 _] [t2 p2 _]] (partition 2 1 result)]
-      (when (= (inc ^long p1) p2)
-        (.put bigrams [t1 t2] (if-let [^long freq (.get bigrams [t1 t2])]
-                                (inc freq)
-                                1))))
-    bigrams))
 
 (defn- idf
   "inverse document frequency of a term"
@@ -115,7 +104,7 @@
                 (zipmap terms (mapv #(.getEditDistance ^SuggestItem %) sis))
                 (zipmap terms (repeat 0)))]
     (mapv (fn [[term freq]]
-            (let [id  (first (.get unigrams term))
+            (let [id  (.get unigrams term)
                   idf (idf lmdb id max-doc)]
               {:id  id
                :ed  (eds term)
@@ -196,53 +185,35 @@
              tids)])
 
 (deftype SearchEngine [lmdb
-                       ^HashMap unigrams ; term -> [term-id,freq]
-                       ^HashMap bigrams  ; [term-id,term-id] -> freq
+                       ^HashMap unigrams ; term -> term-id
                        ^HashMap terms    ; term-id -> term
                        ^SymSpell symspell
                        max-doc
                        max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
-    (let [result      (en-analyzer doc-text)
-          txs         (ArrayList. 512)
-          new-terms   (collect-terms result)
-          unique      (count new-terms)
-          new-bigrams (when symspell (collect-bigrams result))]
-      (when symspell
-        (.addUnigrams symspell (zipmap (keys new-terms)
-                                       (mapv first (vals new-terms))))
-        (.addBigrams symspell (zipmap (mapv (fn [[t1 t2]] (Bigram. t1 t2))
-                                            (keys new-bigrams))
-                                      (vals new-bigrams))))
+    (let [result    (en-analyzer doc-text)
+          txs       (ArrayList. 512)
+          new-terms (collect-terms result)
+          unique    (count new-terms)]
       (locking this
         (let [doc-id (inc ^long @max-doc)]
           (vreset! max-doc doc-id)
           (.add txs [:put c/docs doc-id {:ref doc-ref :uniq unique}
                      :id :data [:append]])
           (.add txs [:put c/rdocs doc-ref doc-id :data :id])
-          (doseq [[term [^long new-freq new-lst]] new-terms]
-            (let [[term-id _ :as tf]
-                  (if-let [[t f] (.get unigrams term)]
-                    [t (+ ^long f new-freq)]
-                    (let [t (inc ^long @max-term)]
-                      (vreset! max-term t)
-                      (.put terms t term)
-                      [t new-freq]))]
-              (.put unigrams term tf)
-              (.add txs [:put c/unigrams term tf :string :id-id])
+          (doseq [[term new-lst] new-terms]
+            (let [term-id (or (.get unigrams term)
+                              (let [tid (inc ^long @max-term)]
+                                (vreset! max-term tid)
+                                (.put unigrams term tid)
+                                (.put terms tid term)
+                                tid))]
+              (.add txs [:put c/unigrams term term-id :string :id])
               (.add txs [:put c/term-docs term-id doc-id :id :id])
               (doseq [po new-lst]
                 (.add txs [:put c/positions [doc-id term-id] po
-                           :id-id :int-int]))))
-          (when symspell
-            (doseq [[[t1 t2] ^long new-freq] new-bigrams]
-              (let [tids [(first (.get unigrams t1)) (first (.get unigrams t2))]
-                    freq (if (.containsKey bigrams tids)
-                           (+ ^long (.get bigrams tids) new-freq)
-                           new-freq)]
-                (.put bigrams tids freq)
-                (.add txs [:put c/bigrams tids freq :id-id :id])))))
+                           :id-id :int-int])))))
         (l/transact-kv lmdb txs))))
 
   (remove-doc [this doc-ref]
@@ -295,21 +266,12 @@
   (let [unigrams (HashMap. 32768)
         terms    (HashMap. 32768)
         load     (fn [kv]
-                   (let [term          (b/read-buffer (l/k kv) :string)
-                         [id _ :as tf] (b/read-buffer (l/v kv) :id-id)]
-                     (.put unigrams term tf)
+                   (let [term (b/read-buffer (l/k kv) :string)
+                         id   (b/read-buffer (l/v kv) :id)]
+                     (.put unigrams term id)
                      (.put terms id term)))]
     (l/visit lmdb c/unigrams load [:all] :string)
     [unigrams terms]))
-
-(defn- init-bigrams
-  [lmdb]
-  (let [m    (HashMap. 32768)
-        load (fn [kv]
-               (.put m (b/read-buffer (l/k kv) :id-id)
-                     (b/read-buffer (l/v kv) :id)))]
-    (l/visit lmdb c/bigrams load [:all])
-    m))
 
 (defn- init-max-doc
   [lmdb]
@@ -324,26 +286,16 @@
   ([lmdb {:keys [fuzzy?]
           :or   {fuzzy? false}}]
    (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-   (l/open-dbi lmdb c/unigrams c/+max-key-size+ (* 2 c/+id-bytes+))
+   (l/open-dbi lmdb c/unigrams c/+max-key-size+ c/+id-bytes+)
    (l/open-dbi lmdb c/docs c/+id-bytes+)
    (l/open-dbi lmdb c/rdocs c/+max-key-size+ c/+id-bytes+)
    (l/open-inverted-list lmdb c/term-docs c/+id-bytes+ c/+id-bytes+)
    (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+)
-   (when fuzzy?
-     (l/open-dbi lmdb c/bigrams (* 2 c/+id-bytes+) c/+id-bytes+))
-   (let [[unigrams ^HashMap terms] (init-unigrams lmdb)
-         bigrams                   (when fuzzy? (init-bigrams lmdb))
-
-         tf (when fuzzy? (into {} (map (fn [[t [_ f]]] [t f]) unigrams)))
-         bg (when fuzzy?
-              (into {} (map (fn [[[t1 t2] f]]
-                              [(Bigram. (.get terms t1) (.get terms t2)) f])
-                            bigrams)))]
+   (let [[unigrams ^HashMap terms] (init-unigrams lmdb)]
      (->SearchEngine lmdb
                      unigrams
-                     (when fuzzy? bigrams)
                      terms
-                     (when fuzzy? (SymSpell. tf bg c/dict-max-edit-distance
+                     (when fuzzy? (SymSpell. {} {} c/dict-max-edit-distance
                                              c/dict-prefix-length))
                      (volatile! (init-max-doc lmdb))
                      (volatile! (init-max-term lmdb))))))
@@ -369,7 +321,7 @@
 
   (.size lst)
 
-  (let [lmdb   (l/open-kv "/tmp/wiki92")
+  (let [lmdb   (l/open-kv "/tmp/wiki100")
         engine (new-engine lmdb)]
     (time (doseq [^HashMap m lst]
             (add-doc engine (.get m "url") (.get m "text"))))
@@ -379,7 +331,7 @@
         engine (time (new-engine lmdb))]
     (l/close-kv lmdb))
 
-  (let [lmdb   (l/open-kv "/tmp/wiki92")
+  (let [lmdb   (l/open-kv "/tmp/wiki101")
         engine (new-engine lmdb)]
     (time (doall (pmap
                    (fn [^HashMap m]

@@ -30,19 +30,15 @@
   (sut/add-doc engine :doc5
                "The English Springer Spaniel is the best of all red dogs."))
 
-(deftest fuzzy-index-test
+(deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
-        engine ^SearchEngine (sut/new-engine lmdb {:fuzzy? true})]
+        engine ^SearchEngine (sut/new-engine lmdb)]
     (add-docs engine)
 
     (is (= (count (.-unigrams engine))
            (l/range-count lmdb c/unigrams [:all] :string)
-           (.size ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)))
            30))
-    (let [[tid freq] (l/get-value lmdb c/unigrams "red" :string :id-id true)]
-      (is (= freq
-             (.get ^Map (.getUnigramLexicon ^SymSpell (.-symspell engine)) "red")
-             5))
+    (let [tid (l/get-value lmdb c/unigrams "red" :string :id true)]
       (is (= (.get ^Map (.-terms engine) tid) "red"))
       (is (l/in-list? lmdb c/term-docs tid 1 :id :id))
       (is (l/in-list? lmdb c/term-docs tid 5 :id :id))
@@ -55,13 +51,6 @@
       (is (= (l/range-count lmdb c/positions [:closed [5 0] [5 Long/MAX_VALUE]]
                             :id-id)
              7))
-      (let [[tid2 freq2] (l/get-value lmdb c/unigrams "dogs"
-                                      :string :id-id true)]
-        (is (= freq2 2))
-        (is (= (l/get-value lmdb c/bigrams [tid tid2] :id-id :id true)
-               (.get ^Map (.getBigramLexicon ^SymSpell (.-symspell engine))
-                     (Bigram. "red" "dogs"))
-               2)))
 
       (is (= (l/get-value lmdb c/docs 1 :id :data true) {:ref :doc1 :uniq 7}))
       (is (= (l/get-value lmdb c/docs 4 :id :data true) {:ref :doc4 :uniq 7}))

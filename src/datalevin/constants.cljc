@@ -90,8 +90,7 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const meta "datalevin/meta")
-(def ^:const unigrams "datalevin/unigrams")   ; term -> term-id,freq
-(def ^:const bigrams "datalevin/bigrams")     ; term-id,term-id -> freq
+(def ^:const unigrams "datalevin/unigrams")   ; term -> term-id
 (def ^:const docs "datalevin/docs")           ; doc-id -> doc-ref,unique-terms
 (def ^:const rdocs "datalevin/rdocs")         ; doc-ref -> doc-id
 (def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (list)
