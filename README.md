@@ -112,22 +112,38 @@ This JVM library supports Java 8 and above. For JVM version newer than 11, you m
 ```
 Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy".
 
-### Native Command Line Tool
 
-A native command line tool is built to work with Datalevin databases in shell
-scripting, e.g. database backup/compaction, data import/export,
+#### GraalVM Native Image
+
+If your application depends on the Datalevin library and you want to compile your
+application to a GraalVM native image, put `org.clojars.huahaiy/datalevin-native`
+instead  (they have the same version number) in your `project.clj` or `deps.edn` file.
+
+This is necessary because `datelevin-native` artifact contains GraalVM specific
+code that should not appear in a regular JVM library. See also this
+[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
+library supports JVM 11 and above.
+
+### Command Line Tool
+
+A command line tool `dtlv` is built to work with Datalevin databases in shell
+scripting, doing work such as database backup/compaction, data import/export,
 query/transaction execution, server administration, and so on. The same binary
 can also run as a Datalevin server. This tool also includes a REPL with a Clojure
 interpreter, in addition to support all the database functions.
 
-Native Datalevin is built by compiling into [GraalVM native
+Unlike many other database software (e.g. SQLite, Postgres, etc.) that introduces
+a separate language for command line, the same Clojure
+code work in both Datalevin library and Datalevin command line tool.
+
+A native Datalevin is built by compiling into [GraalVM native
 image](https://www.graalvm.org/reference-manual/native-image/). In addition to
 fast starup time, it should also have better database performance, for the
 native image version does not incur JNI overhead and uses a comparator written
 in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
-Here is how to get native Datalevin:
+Here is how to get the Datalevin command line tool:
 
 #### MacOS and Linux Package
 
@@ -259,6 +275,18 @@ user>
 
 You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 
+#### Uberjar
+
+A JVM
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.25/datalevin-0.5.25-standalone.jar)
+is downloadable to use as the command line tool, in case a pre-built native
+version is not available for your platform. For example,
+
+```console
+java -jar datalevin-0.5.25-standalone.jar
+```
+This will start the Datalevin REPL.
+
 ### Babashka Pod
 
 `dtlv` executable can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
@@ -285,31 +313,7 @@ user=> (d/close conn)
 nil
 ```
 
-### JVM Command Line Tool
-
-A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.25/datalevin-0.5.25-standalone.jar)
-is downloadable to use as the command line tool, in case a pre-built native
-version is not available for your platform. For example,
-
-```console
-java -jar datalevin-0.5.25-standalone.jar
-```
-This will start the Datalevin REPL.
-
-### GraalVM Native Image
-
-If your application depends on the Datalevin library and you want to compile your
-application to a GraalVM native image, put `org.clojars.huahaiy/datalevin-native`
-instead of `datalevin/datalevin` (they have the same version number) in your
-`project.clj` or `deps.edn` file.
-
-This is necessary because `datelevin-native` artifact contains GraalVM specific
-code that should not appear in a regular JVM library. See also this
-[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
-library supports JVM 11 and above.
-
-## :tada: Library Usage
+## :tada: Usage
 
 Datalevin is aimed to be a versatile database.
 
@@ -556,7 +560,7 @@ adjust the priorities based on feedback.
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io) and a few other places.
+in production at [Juji](https://juji.io), and a few other projects, e.g. [clojure-lsp](https://github.com/clojure-lsp/clojure-lsp).
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
