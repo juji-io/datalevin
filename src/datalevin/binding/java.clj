@@ -312,7 +312,7 @@
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
         (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
-        (raise "Destination directory is not empty."))))
+        (raise "Destination directory is not empty." {}))))
 
   (stat [this]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
