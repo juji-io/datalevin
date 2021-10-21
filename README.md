@@ -37,7 +37,7 @@ applications to manage state. Because data is persistent on disk in Datalevin,
 application state can survive application restarts, and data size can be larger
 than memory.
 
-Datalevin can also run in an event-driven networked client/server mode (default
+Datalevin can also run in an event-driven networked [client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md) mode (default
 port is 8898). The mode change is transparent. In the local mode, a data
 directory path, e.g. `/data/mydb`, is needed for database location, whereas a
 URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the client/server
@@ -126,7 +126,7 @@ library supports JVM 11 and above.
 
 ### Command Line Tool
 
-A command line tool `dtlv` is built to work with Datalevin databases in shell
+A command line tool [`dtlv`](https://github.com/juji-io/datalevin/blob/master/doc/dtlv.md) is built to work with Datalevin databases in shell
 scripting, doing work such as database backup/compaction, data import/export,
 query/transaction execution, server administration, and so on. The same binary
 can also run as a Datalevin server. This tool also includes a REPL with a Clojure
