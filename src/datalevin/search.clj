@@ -1,4 +1,4 @@
-(ns datalevin.search
+(ns datalevin.search1
   "Fuzzy full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]
@@ -8,6 +8,8 @@
            [java.util HashMap ArrayList HashSet Iterator]
            [java.util.concurrent Executors]
            [java.io FileInputStream]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
+            RoaringBitmapWriter$Wizard]
            [com.fasterxml.jackson.databind ObjectMapper]
            [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
 
@@ -74,7 +76,7 @@
   [result]
   (let [terms (HashMap. 256)]
     (doseq [[term position offset] result]
-      (when (< (count term) 127 ) ; ignore exceedingly long strings
+      (when (< (count term) 128 ) ; ignore exceedingly long strings
         (.put terms term (if-let [^ArrayList lst (.get terms term)]
                            (do (.add lst [position offset]) lst)
                            (doto (ArrayList.) (.add [position offset]))))))
@@ -82,11 +84,10 @@
 
 (defn- idf
   "inverse document frequency of a term"
-  [lmdb term-id ^long N]
-  (let [^long freq (l/list-count lmdb c/term-docs term-id :id)]
-    (if (zero? freq)
-      0
-      (Math/log10 (/ N freq)))))
+  [^long freq ^long N]
+  (if (zero? freq)
+    0
+    (Math/log10 (/ N freq))))
 
 (defn- tf*
   "log-weighted term frequency"
@@ -99,7 +100,7 @@
   [lmdb doc-id term-id]
   (tf* (l/list-count lmdb c/positions [doc-id term-id] :id-id)))
 
-(defn- hydrate-query-terms
+(defn- hydrate-query
   [max-doc ^HashMap unigrams lmdb ^SymSpell symspell tokens]
   (let [sis   (when symspell
                 (.getSuggestTerms symspell tokens c/dict-max-edit-distance false))
@@ -110,12 +111,12 @@
                 (zipmap terms (mapv #(.getEditDistance ^SuggestItem %) sis))
                 (zipmap terms (repeat 0)))]
     (mapv (fn [[term freq]]
-            (let [id  (.get unigrams term)
-                  idf (idf lmdb id max-doc)]
-              {:id  id
-               :ed  (eds term)
-               :idf idf
-               :wq  (* ^double (tf* freq) ^double idf)}))
+            (let [id (.get unigrams term)
+                  df (l/list-count lmdb c/term-docs id :id)]
+              {:id id
+               :ed (eds term)
+               :df df
+               :wq (* ^double (tf* freq) ^double (idf df max-doc))}))
           (frequencies terms))))
 
 (defn- doc-info
@@ -132,9 +133,63 @@
       (let [res (doc-info lmdb did)]
         (.put result did (assoc res :score dot :tids [tid]))))))
 
+(defn- docs-bitmap [lmdb tid]
+  (let [writer  (.get (RoaringBitmapWriter/writer))
+        visitor (fn [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :id)]
+                    (.add ^RoaringBitmapWriter writer (int v))))]
+    (l/visit lmdb c/term-docs visitor [:closed tid tid] :id)
+    (.get writer)))
+
+(defn- select-docs
+  [tao n lmdb term-ids wqs ^HashMap result]
+  (let [z          (inc (- ^long n ^long tao))
+        union-tids (take z term-ids)
+        union-bms  (mapv #(docs-bitmap lmdb %) union-tids)
+        union-bmm  (zipmap union-tids union-bms)
+        inter-tids (set (drop z term-ids))
+        union-bm   (reduce
+                     (fn [^RoaringBitmap res ^RoaringBitmap bm]
+                       (.or res bm)
+                       res)
+                     union-bms)
+        final-bm   (reduce
+                     (fn [^RoaringBitmap res ^RoaringBitmap bm]
+                       (.and res bm)
+                       res)
+                     union-bm
+                     (mapv #(docs-bitmap lmdb %) inter-tids))
+        selected   (ArrayList.)
+        iter       (.iterator ^RoaringBitmap final-bm)]
+    (loop []
+      (when (.hasNext iter)
+        (let [did (long (.next iter))]
+          (when-not (.get result did)
+            (.add selected did)
+            (let [res (doc-info lmdb did)
+                  up  (fn [r tid]
+                        (-> r
+                            (update :score (fnil + 0.0)
+                                    (* ^double (tf lmdb did tid)
+                                       ^double (wqs tid)))
+                            (update :tids (fnil conj []) tid))) ]
+              (.put result did
+                    (reduce
+                      (fn [r tid]
+                        (if (inter-tids tid)
+                          (up r tid)
+                          (if (.contains ^RoaringBitmap (union-bmm tid)
+                                         (int did))
+                            (up r tid)
+                            r)))
+                      res
+                      term-ids)))))
+        (recur)))
+    selected))
+
 (defn- add-candidates
   [lmdb tid ^HashMap candid ^HashMap cache wqs ^HashMap result]
-  (doseq [did (time (l/get-list lmdb c/term-docs tid :id :id))]
+  (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
     (when-not (.containsKey result did)
       (if-let [seen (.get candid did)]
         (when-not (.containsKey cache [tid did])
@@ -154,31 +209,29 @@
     (.put candid did (inc ^long (.get candid did)))))
 
 (defn- filter-candidates
-  [i n term-ids ^HashMap candid cache lmdb
+  [tao n term-ids ^HashMap candid cache lmdb
    ^HashSet selected ^HashMap backup wqs ^HashMap result]
-  (let [tao (- ^long n ^long i)] ; target number of overlaps
-    (if (= tao 1)
-      (.addAll selected (.keySet candid))
-      (doseq [^long k (range (inc ^long i) n)
-              :let    [kid (nth term-ids k)]]
-        (loop [^Iterator iter (.iterator (.keySet candid))]
-          (when (.hasNext iter)
-            (let [did (.next iter)]
-              (check-doc cache kid did lmdb candid wqs result)
-              (let [hits ^long (.get candid did)]
-                (cond
-                  (<= tao hits) (do (.add selected did)
-                                    (.remove backup did)
-                                    (.remove iter))
-                  (< (+ hits ^long (- ^long n k 1)) tao)
-                  (do (.put backup did hits)
-                      (.remove iter))))
-              (recur iter))))))))
+  (if (= tao 1)
+    (.addAll selected (.keySet candid))
+    (doseq [^long k (range (inc ^long (- ^long n ^long tao)) n)
+            :let    [kid (nth term-ids k)]]
+      (loop [^Iterator iter (.iterator (.keySet candid))]
+        (when (.hasNext iter)
+          (let [did (.next iter)]
+            (check-doc cache kid did lmdb candid wqs result)
+            (let [hits ^long (.get candid did)]
+              (cond
+                (<= ^long tao hits) (do (.add selected did)
+                                        (.remove backup did)
+                                        (.remove iter))
+                (< (+ hits ^long (- ^long n k 1)) ^long tao)
+                (do (.put backup did hits)
+                    (.remove iter))))
+            (recur iter)))))))
 
 (defn- rank-docs
   "return a list of [score doc-id doc-ref [term-ids]] sorted by score"
   [selected wq-sum ^HashMap result]
-  (println "selected" (count selected))
   (->> selected
        (map (fn [did]
               (let [{:keys [ref uniq score tids]} (.get result did)]
@@ -188,13 +241,13 @@
        (sort-by first >)))
 
 (defn- add-positions
-  [lmdb ^HashMap terms [_ did ref tids]]
-  [ref (mapv (fn [tid]
-               [(.get terms tid)
-                (mapv second
-                      (l/get-list lmdb c/positions [did tid]
-                                  :id-id :int-int))])
-             tids)])
+  [lmdb ^HashMap terms [score did ref tids]]
+  [score ref (mapv (fn [tid]
+                     [(.get terms tid)
+                      (mapv second
+                            (l/get-list lmdb c/positions [did tid]
+                                        :id-id :int-int))])
+                   tids)])
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> term-id
@@ -245,36 +298,38 @@
 
   (search [this query]
     (let [tokens   (->> (en-analyzer query)
-                        (map first)
+                        (mapv first)
                         (into-array String))
-          qterms   (hydrate-query-terms @max-doc unigrams lmdb symspell tokens)
-          wqs      (into {} (map (fn [{:keys [id wq]}] [id wq]) qterms))
-          wq-sum   (reduce + (map :wq qterms))
-          term-ids (->> qterms
+          qterms   (->> (hydrate-query @max-doc unigrams lmdb symspell tokens)
                         (sort-by :ed)
-                        (sort-by :idf >)
-                        (mapv :id))
+                        (sort-by :df))
+          wqs      (into {} (mapv (fn [{:keys [id wq]}] [id wq]) qterms))
+          wq-sum   (reduce + (mapv :wq qterms))
+          term-ids (mapv :id qterms)
           n        (count term-ids)
           result   (HashMap. 512)
-          xform
-          (comp
-            (let [backup (HashMap. 512)
-                  cache  (HashMap. 512)]
-              (map-indexed
-                (fn [^long i tid]
-                  (println "i" i)
-                  (let [candid (HashMap. backup)]
-                    (add-candidates lmdb tid candid cache wqs result)
-                    (let [selected (HashSet. 128)]
-                      (filter-candidates i n term-ids candid cache lmdb
-                                         selected backup wqs result)
-                      selected)))))
-            (mapcat (fn [selected]
-                      (rank-docs selected wq-sum result)))
-            (map (fn [doc-info]
-                   (add-positions lmdb terms doc-info)))
-            )]
-      (sequence xform [(first term-ids)]))))
+          xform-t  (if (< (quot ^long ((last qterms) :df)
+                                ^long ((first qterms) :df))
+                          64) ; choose algorithm based on df variation
+                     (map (fn [tao] ; target # of overlap between query and doc
+                            (select-docs tao n lmdb term-ids wqs result)))
+                     (let [backup (HashMap. 512)
+                           cache  (HashMap. 512)]
+                       (map
+                         (fn [tao]
+                           (let [tid    (nth term-ids (- n ^long tao))
+                                 candid (HashMap. backup)]
+                             (add-candidates lmdb tid candid cache wqs result)
+                             (let [selected (HashSet. 128)]
+                               (filter-candidates tao n term-ids candid cache lmdb
+                                                  selected backup wqs result)
+                               selected))))))
+          xform-d  (comp
+                     (mapcat (fn [selected]
+                               (rank-docs selected wq-sum result)))
+                     (map (fn [doc-info]
+                            (add-positions lmdb terms doc-info))))]
+      (sequence xform-d (sequence xform-t [n])))))
 
 (defn- init-unigrams
   [lmdb]
@@ -337,10 +392,18 @@
 
   (time (take 10 (search engine "french lick resort and casino")))
   (time (take 10 (search engine "rv solar panels")))
-  (time (take 10 (search engine "devils postpile national monument")))
-  (time (take 10 (search engine "solar system")))
-  (time (take 10 (search engine "weight loss")))
   (time (take 10 (search engine "f1")))
+  (time (take 10 (search engine "solar system")))
+  (time (take 10 (search engine "community service projects for children")))
+  (time (take 10 (search engine "libraries michigan")))
+  (time (take 10 (search engine "roadrunner email")))
+  (time (take 10 (search engine "josephine baker")))
+  (time (take 10 (search engine "tel")))
+  (time (take 10 (search engine "novi expo center")))
+  (time (take 10 (search engine "ocean logos")))
+  (time (take 10 (search engine "can i deduct credit card interest on my taxes")))
+  (time (take 10 (search engine "what california district am i in")))
+  (time (take 10 (search engine "jokes about women turning 40")))
 
   (let [lmdb   (l/open-kv "/tmp/wiki104")
         engine (new-engine lmdb)]
