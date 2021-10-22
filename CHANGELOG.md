@@ -2,9 +2,16 @@
 
 ## WIP
 ### Added
-- Fuzzy full-text search engine
+- Full-text search engine
+
 ### Improved
 - Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
+
+## 0.5.26
+### Improved
+- Update graalvm version
+### Fixed
+- Exception handling in copy
 
 ## 0.5.24
 ### Fixed

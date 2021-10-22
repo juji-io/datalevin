@@ -1,4 +1,4 @@
-(def version "0.5.25")
+(def version "0.5.26")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -15,8 +15,8 @@
                          [com.fasterxml.jackson.core/jackson-core "2.13.0"]
                          [com.cognitect/transit-clj "1.0.324"]
                          [nrepl/bencode "1.1.0"]
-                         [org.graalvm.sdk/graal-sdk "21.2.0"]
-                         [org.graalvm.nativeimage/svm "21.2.0"]
+                         [org.graalvm.sdk/graal-sdk "21.3.0"]
+                         [org.graalvm.nativeimage/svm "21.3.0"]
                          [borkdude/sci "0.2.7"]
                          [com.taoensso/nippy "3.1.1"]
                          [com.taoensso/timbre "5.1.2"]

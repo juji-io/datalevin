@@ -40,7 +40,7 @@ jobs:
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
         with:
-          graalvm-version: '21.2.0.java11'
+          graalvm-version: '21.3.0.java11'
 
       - name: Install Native Image
         run: |
