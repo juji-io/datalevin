@@ -74,9 +74,10 @@
   [result]
   (let [terms (HashMap. 256)]
     (doseq [[term position offset] result]
-      (.put terms term (if-let [^ArrayList lst (.get terms term)]
-                         (do (.add lst [position offset]) lst)
-                         (doto (ArrayList.) (.add [position offset])))))
+      (when (< (count term) 127 ) ; ignore exceedingly long strings
+        (.put terms term (if-let [^ArrayList lst (.get terms term)]
+                           (do (.add lst [position offset]) lst)
+                           (doto (ArrayList.) (.add [position offset]))))))
     terms))
 
 (defn- idf
@@ -133,7 +134,7 @@
 
 (defn- add-candidates
   [lmdb tid ^HashMap candid ^HashMap cache wqs ^HashMap result]
-  (doseq [did (l/get-list lmdb c/term-docs tid :id :id)]
+  (doseq [did (time (l/get-list lmdb c/term-docs tid :id :id))]
     (when-not (.containsKey result did)
       (if-let [seen (.get candid did)]
         (when-not (.containsKey cache [tid did])
@@ -177,6 +178,7 @@
 (defn- rank-docs
   "return a list of [score doc-id doc-ref [term-ids]] sorted by score"
   [selected wq-sum ^HashMap result]
+  (println "selected" (count selected))
   (->> selected
        (map (fn [did]
               (let [{:keys [ref uniq score tids]} (.get result did)]
@@ -184,9 +186,6 @@
                     (* ^double wq-sum (Math/log10 uniq)))
                  did ref tids])))
        (sort-by first >)))
-
-(- (Math/log10 5) (Math/log10 10))
-(Math/log10 0.9)
 
 (defn- add-positions
   [lmdb ^HashMap terms [_ did ref tids]]
@@ -263,6 +262,7 @@
                   cache  (HashMap. 512)]
               (map-indexed
                 (fn [^long i tid]
+                  (println "i" i)
                   (let [candid (HashMap. backup)]
                     (add-candidates lmdb tid candid cache wqs result)
                     (let [selected (HashSet. 128)]
@@ -272,8 +272,9 @@
             (mapcat (fn [selected]
                       (rank-docs selected wq-sum result)))
             (map (fn [doc-info]
-                   (add-positions lmdb terms doc-info))))]
-      (sequence xform term-ids))))
+                   (add-positions lmdb terms doc-info)))
+            )]
+      (sequence xform [(first term-ids)]))))
 
 (defn- init-unigrams
   [lmdb]
@@ -316,24 +317,30 @@
 
 (comment
 
-  (def OM (ObjectMapper.))
+  (def lmdb  (l/open-kv "/tmp/wiki1005"))
 
-  (def lst (ArrayList.))
+  (def engine (time (new-engine lmdb)))
 
-  (with-open [f (FileInputStream. "search-bench/output.json")]
+  (with-open [f (FileInputStream. "search-bench/wiki.json")]
     (let [jf  (JsonFactory.)
           jp  (.createParser jf f)
           cls (Class/forName "java.util.HashMap")]
-      (.setCodec jp OM)
+      (.setCodec jp (ObjectMapper.))
       (.nextToken jp)
-      (loop []
-        (when (.hasCurrentToken jp)
-          (let [m (.readValueAs jp cls)]
-            (.add ^ArrayList lst m)
-            (.nextToken jp)
-            (recur))))))
+      (time
+        (loop []
+          (when (.hasCurrentToken jp)
+            (let [^HashMap m (.readValueAs jp cls)]
+              (add-doc engine (.get m "url") (.get m "text"))
+              (.nextToken jp)
+              (recur)))))))
 
-  (.size lst)
+  (time (take 10 (search engine "french lick resort and casino")))
+  (time (take 10 (search engine "rv solar panels")))
+  (time (take 10 (search engine "devils postpile national monument")))
+  (time (take 10 (search engine "solar system")))
+  (time (take 10 (search engine "weight loss")))
+  (time (take 10 (search engine "f1")))
 
   (let [lmdb   (l/open-kv "/tmp/wiki104")
         engine (new-engine lmdb)]

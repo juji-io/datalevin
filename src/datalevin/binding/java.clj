@@ -162,8 +162,8 @@
       (.flip kb)
       (catch Exception e
         (raise "Error putting r/w key buffer of "
-               (.dbi-name this) ": " (ex-message e)
-               {:value x :type t :dbi (.dbi-name this)}))))
+               (.dbi-name this) "with value" x ": " (ex-message e)
+               {:type t}))))
   (put-val [this x t]
     (try
       (.clear vb)
