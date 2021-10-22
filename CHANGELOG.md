@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Improved
+- Update graalvm version
+### Fixed
+- Exception handling in copy
+
 ## 0.5.24
 ### Fixed
 - Handle scalar result in remote queries
