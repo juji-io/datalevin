@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.26
 ### Improved
 - Update graalvm version
 ### Fixed
