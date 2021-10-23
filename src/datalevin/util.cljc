@@ -24,6 +24,14 @@
                     (instance? Iterable x)
                     (instance? java.util.Map x)))))
 
+(defn unchunk
+  "Unchunked lazy seq, one item at a time"
+  [s]
+  (when (seq s)
+    (lazy-seq
+      (cons (first s)
+            (unchunk (next s))))))
+
 #?(:clj
    (defmacro cond+ [& clauses]
      (when-some [[test expr & rest] clauses]

@@ -30,16 +30,15 @@ compressed artifact size of Lucene alone is north of 80 MB, whereas the total
 size of Datalevin library jar is only 120 KB.
 
 Finally, with a search engine of our own, we avoid unnecessary write
-amplification by storing the original text twice, once in the database, again in
-the search engine. Instead, the embedded search engine only needs to store a
-reference to the original content that is stored in the database.
+amplification introduced by storing the source text twice, once in the database,
+again in the search engine. Instead, the embedded search engine only needs to
+store a reference to the source content that is stored in the database.
 
 ## Usage
 
 ## Implementation
 
-As mentioned, the search engine is implemented from scratch and does not pull in
-additional external dependencies that are not already in Datalevin. Instead of
+As mentioned, the search engine is implemented from scratch. Instead of
 using a separate storage, the search engine indices are stored in the same LMDB
 data file just like other database data. This improves cache locality and
 reduces the cost of managing data.
@@ -70,34 +69,53 @@ having to store them separately.
 ### Searching
 
 Scoring and ranking of documents implements the standard tf-idf and vector space
-model [2]. In order to achieve a good balance between relevance and efficiency,
+model [1]. In order to achieve a good balance between relevance and efficiency,
 the weighting scheme chosen is `lnu.ltn`, i.e. the document vector has
 log-weighted term frequency, no idf, and pivoted unique normalization, while the
 query vector uses log-weighted term frequency, idf weighting, and no
-normalization. Pivoted unique normalization takes into consideration of document
-length, and does not needlessly penalize lengthy documents.
+normalization. Pivoted unique normalization is chosen for it takes document
+lengths into consideration, and does not needlessly penalize lengthy documents.
 
-The search algorithm implements an original algorithm, with inspiration from [3].
-Compared with standard algorithm [2], our algorithm prunes documents that are unlikely
-to be relevant due to missing query terms. Not only is more efficient, this pruning
-algorithm also addresses an often felt user frustration with the standard
-algorithm: a document containing all query terms may be ranked much lower than
-a document containing only partial query terms. In our algorithm, the documents
-containing more query terms are considered first. When returning top-K result
-with a small K, those documents with very poor query term coverage may not even
-participate in the ranking.
+Depending on the query, documents selection uses one of two original algorithms
+that we developed. For cases when the query contains a mixture of very rare term
+and common ones, or when there is only one query term, a candidate pruning
+algorithm is used; for other cases, the inverted lists of the query terms are
+read into bitmaps and documents are found through bitmap union/intersection.
 
-The details of the pruning algorithm is the following: instead of looping over
-all `n` inverted lists of all query terms, we first pick the query term with the
-least edit distance (i.e. with the least typos) and the least document frequency
-(i.e. the most rare term), and use its posting documents as the candidates. We
-loop over this list of candidate documents, for each document, check if it
-appears in the inverted lists of subsequent query terms, which are ordered by
-document frequency. When `n` appearances is found, the document is removed
-from the candidate list and added to the result list. Critically, we also
-remove the candidates that are not going to appear in all `n` inverted lists;
-The pruned documents are put into a backup candidate list to be used later in
-case more results are requested.
+Compared with standard algorithm [1], our algorithms remove early on those
+documents that are unlikely to be relevant due to missing query terms. Not only
+is it more efficient, this approach also addresses an often felt user
+frustration with the standard algorithm: a document containing all query terms
+may be ranked much lower than a document containing only partial query terms. In
+our algorithms, the documents containing more query terms are considered first.
+When returning top-K result with a small K, those documents with very poor query
+term coverage may not even participate in the ranking.
+
+The details of the candidate pruning algorithm is the following: instead of
+looping over all `n` inverted lists of all query terms, we first pick the query
+term with the least edit distance (i.e. with the least typos) and the least
+document frequency (i.e. the most rare term), and use its inverted list of
+documents as the candidates. This is sufficient, because, for a document to
+contain all `n` query terms, it must contains the rarest one among them. More
+generally, there is a mathematical property that can be stated as the
+following [2]:
+
+```
+Let there be a set X with size n and a set Y with any size. For any subset Z in
+X of size (n-t+1), if the size of the intersection of X and Y is greater or equal
+to t, then Z must intersect with Y.
+```
+This property allows us to develop search algorithms that use the inverted lists of any
+ `n-t+1` terms (we will of course choose the rarest ones) as the candidates, in
+ order to find documents that contain `t` terms.
+
+We loop over this list of candidate documents, for each document, check if it
+appears in the inverted lists of subsequent query terms. When there is a very
+rare term in the query, very few candidate documents need to be examined. When
+`n` appearances is found, the document is removed from the candidate list and
+added to the result list. Critically, we also remove the candidates that are not
+going to appear in all `n` inverted lists; The pruned documents are put into a
+backup candidate list to be used later in case more results are requested.
 
 If all candidates are exhausted and user still requests more results, the
 documents containing the second rarest query term are added to candidates
@@ -105,23 +123,41 @@ list, alone with the backup candidates. They are checked against the
 remaining query terms to select the candidates that appear in `n-1` inverted lists.
 If user keeps asking for more results, the process continues until candidates
 only need to appear in `1` inverted list. Essentially, this search algorithm
-processes documents in tiers. First those documents contain all `n` query terms,
-then `n-1` terms, then `n-2`, and so on. Document ranking is performed within a
-tier, not cross tiers.
+processes documents in tiers. First tier are those documents contain all `n`
+query terms, then `n-1` terms, then `n-2`, and so on. Document ranking is
+performed within a tier, not cross tiers.
 
-The query processing workflow is implemented as Clojure transducers, and the
+The bitmap intersection algorithm follows the same process. However, instead of probing
+one pair of document-term at a time, it processes one pair of terms at a time by
+intersecting their inverted lists. However, we avoid the combination explosion
+problem by leveraging the same mathematical property that enables the candidate pruning
+algorithm above. Basically, `t` means the number of required overlaps between
+query terms and a document. For first tier, set `t=n`, second tier, `t=n-1`, and
+so on. For each tier, all we need to do is to union *any* `n-t+1` inverted lists
+and then intersect the result with the intersection of the remaining inverted
+lists.
+
+This bitmap intersection algorithm is efficient for most cases, except for when
+there are very rare terms in the query, then the candidate pruning algorithm is
+more performant. This condition can be easily checked and the system chooses the
+algorithm accordingly.
+
+The ranking and result preparation are implemented as Clojure transducers, and the
 results are wrapped in the `sequence` function, which performs the calculations
 incrementally and on demand.
+
+Fuzzy string match is handled by SymSpell algorithm [3], which pre-builds
+possible typos and considers frequency information, so it is fast and accurate.
 
 ## Benchmark
 
 
 
-[1] Garbe, W. SymSpell algorithm https://wolfgarbe.medium.com/1000x-faster-spelling-correction-algorithm-2012-8701fcd87a5f
-
-[2] Manning, C.D., Raghavan, P. and Schütze, H. Introduction to Information
+[1] Manning, C.D., Raghavan, P. and Schütze, H. Introduction to Information
 Retrieval, Cambridge University Press. 2008.
 
-[3] Okazaki, N. and Tsujii, J., Simple and Efficient Algorithm for Approximate
+[2] Okazaki, N. and Tsujii, J., Simple and Efficient Algorithm for Approximate
 Dictionary Matching. Proceedings of the 23rd International Conference on
 Computational Linguistics (COLING), 2010, pp. 851-859.
+
+[3] Garbe, W. SymSpell algorithm https://wolfgarbe.medium.com/1000x-faster-spelling-correction-algorithm-2012-8701fcd87a5f
