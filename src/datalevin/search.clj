@@ -1,4 +1,4 @@
-(ns datalevin.search1
+(ns datalevin.search
   "Fuzzy full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]
@@ -8,8 +8,7 @@
            [java.util HashMap ArrayList HashSet Iterator]
            [java.util.concurrent Executors]
            [java.io FileInputStream]
-           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
-            RoaringBitmapWriter$Wizard]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
            [com.fasterxml.jackson.databind ObjectMapper]
            [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
 
@@ -136,8 +135,8 @@
 (defn- docs-bitmap [lmdb tid]
   (let [writer  (.get (RoaringBitmapWriter/writer))
         visitor (fn [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :id)]
-                    (.add ^RoaringBitmapWriter writer (int v))))]
+                  (let [did (b/read-buffer (l/v kv) :id)]
+                    (.add ^RoaringBitmapWriter writer (int did))))]
     (l/visit lmdb c/term-docs visitor [:closed tid tid] :id)
     (.get writer)))
 
@@ -163,7 +162,7 @@
         iter       (.iterator ^RoaringBitmap final-bm)]
     (loop []
       (when (.hasNext iter)
-        (let [did (long (.next iter))]
+        (let [did (.next iter)]
           (when-not (.get result did)
             (.add selected did)
             (let [res (doc-info lmdb did)
@@ -241,13 +240,34 @@
        (sort-by first >)))
 
 (defn- add-positions
-  [lmdb ^HashMap terms [score did ref tids]]
-  [score ref (mapv (fn [tid]
-                     [(.get terms tid)
-                      (mapv second
-                            (l/get-list lmdb c/positions [did tid]
-                                        :id-id :int-int))])
-                   tids)])
+  [lmdb ^HashMap terms [_ did ref tids]]
+  [ref (mapv (fn [tid]
+               [(.get terms tid)
+                (mapv second
+                      (l/get-list lmdb c/positions [did tid]
+                                  :id-id :int-int))])
+             tids)])
+
+(defn- select-n-score-docs
+  [lmdb n qterms term-ids wqs result]
+  ;; choose algorithm based on df variation
+  (if (or (= n 1)
+          (> (quot ^long ((peek qterms) :df)
+                   ^long ((nth qterms 0) :df))
+             64))
+    (let [backup (HashMap. 512)
+          cache  (HashMap. 512)]
+      (fn [tao] ; target # of overlaps between query and doc
+        (let [tid    (nth term-ids (- ^long n ^long tao))
+              candid (HashMap. backup)]
+          (add-candidates lmdb tid candid cache wqs result)
+          (let [selected (HashSet. 128)]
+            (filter-candidates
+              tao n term-ids candid cache lmdb selected
+              backup wqs result)
+            selected))))
+    (fn [tao]
+      (select-docs tao n lmdb term-ids wqs result))))
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> term-id
@@ -302,34 +322,23 @@
                         (into-array String))
           qterms   (->> (hydrate-query @max-doc unigrams lmdb symspell tokens)
                         (sort-by :ed)
-                        (sort-by :df))
+                        (sort-by :df)
+                        vec)
           wqs      (into {} (mapv (fn [{:keys [id wq]}] [id wq]) qterms))
           wq-sum   (reduce + (mapv :wq qterms))
           term-ids (mapv :id qterms)
           n        (count term-ids)
           result   (HashMap. 512)
-          xform-t  (if (< (quot ^long ((last qterms) :df)
-                                ^long ((first qterms) :df))
-                          64) ; choose algorithm based on df variation
-                     (map (fn [tao] ; target # of overlap between query and doc
-                            (select-docs tao n lmdb term-ids wqs result)))
-                     (let [backup (HashMap. 512)
-                           cache  (HashMap. 512)]
-                       (map
-                         (fn [tao]
-                           (let [tid    (nth term-ids (- n ^long tao))
-                                 candid (HashMap. backup)]
-                             (add-candidates lmdb tid candid cache wqs result)
-                             (let [selected (HashSet. 128)]
-                               (filter-candidates tao n term-ids candid cache lmdb
-                                                  selected backup wqs result)
-                               selected))))))
-          xform-d  (comp
+          xform    (comp
                      (mapcat (fn [selected]
                                (rank-docs selected wq-sum result)))
                      (map (fn [doc-info]
                             (add-positions lmdb terms doc-info))))]
-      (sequence xform-d (sequence xform-t [n])))))
+      (->> (range n 0 -1)
+           u/unchunk
+           (map (select-n-score-docs lmdb n qterms term-ids wqs result))
+           (sequence xform)))))
+
 
 (defn- init-unigrams
   [lmdb]
@@ -404,38 +413,5 @@
   (time (take 10 (search engine "can i deduct credit card interest on my taxes")))
   (time (take 10 (search engine "what california district am i in")))
   (time (take 10 (search engine "jokes about women turning 40")))
-
-  (let [lmdb   (l/open-kv "/tmp/wiki104")
-        engine (new-engine lmdb)]
-    (time (doseq [^HashMap m lst]
-            (add-doc engine (.get m "url") (.get m "text"))))
-    (l/close-kv lmdb))
-
-  (let [lmdb   (l/open-kv "/tmp/wiki103")
-        engine (new-engine lmdb)
-        res    (time (take 10 (search engine "solar system")))
-        ]
-    (println res)
-    (l/close-kv lmdb)
-    )
-
-  (let [lmdb   (l/open-kv "/tmp/wiki101")
-        engine (new-engine lmdb)]
-    (time (doall (pmap
-                   (fn [^HashMap m]
-                     (add-doc engine (.get m "url") (.get m "text")))
-                   lst)))
-    (l/close-kv lmdb))
-
-  (let [lmdb   (l/open-kv "/tmp/wiki51")
-        engine (new-engine lmdb)
-        pool   (Executors/newWorkStealingPool)]
-    (time (.invokeAll pool
-                      (map
-                        (fn [^HashMap m]
-                          (add-doc engine (.get m "url") (.get m "text")))
-                        lst)))
-    (l/close-kv lmdb))
-
 
   )
