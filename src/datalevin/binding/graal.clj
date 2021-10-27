@@ -380,13 +380,31 @@
    :overflow-pages (.ms_overflow_pages ^Lib$MDB_stat (.get stat))
    :entries        (.ms_entries ^Lib$MDB_stat (.get stat))})
 
+(defn- transact*
+  [txs ^ConcurrentHashMap dbis ^Txn txn]
+  (doseq [[op dbi-name k & r] txs]
+    (let [^DBI dbi (or (.get dbis dbi-name)
+                       (raise dbi-name " is not open" {}))]
+      (case op
+        :put (let [[v kt vt flags] r]
+               (.put-key dbi k kt)
+               (.put-val dbi v vt)
+               (if flags
+                 (.put dbi txn flags)
+                 (.put dbi txn)))
+        :del (let [[kt] r]
+               (.put-key dbi k kt)
+               (.del dbi txn)))))
+  (.commit txn))
+
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
     LMDB [^Env env
           ^String dir
           ^RtxPool pool
           ^ConcurrentHashMap dbis
-          ^:volatile-mutable closed?]
+          ^:volatile-mutable closed?
+          writing?]
   ILMDB
   (close-kv [_]
     (when-not closed?
@@ -526,33 +544,24 @@
 
   (transact-kv [this txs]
     (assert (not closed?) "LMDB env is closed.")
-    (let [^Txn txn (Txn/create env)]
-      (try
-        (doseq [[op dbi-name k & r] txs
-                :let                [^DBI dbi (or (.get dbis dbi-name)
-                                                  (raise dbi-name
-                                                         " is not open" {}))]]
-          (case op
-            :put (let [[v kt vt flags] r]
-                   (.put-key dbi k kt)
-                   (.put-val dbi v vt)
-                   (if flags
-                     (.put dbi txn flags)
-                     (.put dbi txn)))
-            :del (let [[kt] r]
-                   (.put-key dbi k kt)
-                   (.del dbi txn))))
-        (.commit txn)
-        (catch Lib$MapFullException _
-          (.close txn)
-          (let [^Info info (Info/create env)]
-            (.setMapSize env (* c/+buffer-grow-factor+
-                                (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-            (.close info)
-            (.transact-kv this txs)))
-        (catch Exception e
-          (.close txn)
-          (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs})))))
+    (locking writing?
+      (let [^Txn txn (Txn/create env)]
+        (try
+          (vreset! writing? true)
+          (transact* txs dbis txn)
+          :transacted
+          (catch Lib$MapFullException _
+            (.close txn)
+            (let [^Info info (Info/create env)]
+              (.setMapSize env (* c/+buffer-grow-factor+
+                                  (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+              (.close info)
+              (.transact-kv this txs)))
+          (catch Exception e
+            (.close txn)
+            (raise "Fail to transact to LMDB: " (ex-message e) {}))
+          (finally
+            (vreset! writing? false))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -619,16 +628,13 @@
                      c/+max-readers+
                      c/+max-dbs+
                      (kv-flags c/default-env-flags))
-          lmdb     (->LMDB env
-                           dir
-                           (->RtxPool env (ConcurrentHashMap.) 0)
-                           (ConcurrentHashMap.)
-                           false)]
-      (.addShutdownHook (Runtime/getRuntime)
-                        (Thread.
-                          #(when-not (l/closed-kv? lmdb)
-                             (l/close-kv lmdb))))
-      lmdb)
+          ]
+      (->LMDB env
+              dir
+              (->RtxPool env (ConcurrentHashMap.) 0)
+              (ConcurrentHashMap.)
+              false
+              (volatile! false)))
     (catch Exception e
       (raise
         "Fail to open database: " (ex-message e)
