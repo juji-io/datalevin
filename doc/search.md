@@ -5,12 +5,16 @@
 Traditionally, databases and search engines are separate technology fields.
 However, from the point of view of an end user, there is hardly a reason why
 these two should be separated. A database is for storing and querying data, so is
-a search engine. In a Datalog database, a full-text search function can be seen as
+a search engine. Although many databases have some full-text search
+capabilities, their performance (in term of relevance and speed) is limited
+compared with standalone search engines.
+
+In a Datalog database, a full-text search function can be seen as
 just another function or predicate to be used in a query. For example, Datomic
 On-Prem has a `fulltext` function that allows full text search on a single
-attribute, which is implemented with Lucene.
+attribute, which uses the Lucene search engine.
 
-Datalevin has a built-in full text search engine that supports more powerful
+Datalevin has a built-in full-text search engine that supports more powerful
 search across the whole database. The reason why developing a search engine of
 our own for Datalevin, instead of using an existing search engine, is the
 following:
@@ -76,11 +80,12 @@ query vector uses log-weighted term frequency, idf weighting, and no
 normalization. Pivoted unique normalization is chosen for it takes document
 lengths into consideration, and does not needlessly penalize lengthy documents.
 
-Depending on the query, documents selection uses one of two original algorithms
-that we developed. For cases when the query contains a mixture of very rare term
+Depending on the query, documents selection uses one of two algorithms
+that we developed. For cases when the query contains a mixture of very rare terms
 and common ones, or when there is only one query term, a candidate pruning
-algorithm is used; for other cases, the inverted lists of the query terms are
-read into bitmaps and documents are found through bitmap union/intersection.
+algorithm, called `:prune`, is used; for other cases, the inverted lists of the
+query terms are read into bitmaps and documents are found through bitmap
+union/intersection, called `:bitmap`.
 
 Compared with standard algorithm [1], our algorithms remove early on those
 documents that are unlikely to be relevant due to missing query terms. Not only
@@ -91,7 +96,7 @@ our algorithms, the documents containing more query terms are considered first.
 When returning top-K result with a small K, those documents with very poor query
 term coverage may not even participate in the ranking.
 
-The details of the candidate pruning algorithm is the following: instead of
+The details of the `:prune` algorithm is the following: instead of
 looping over all `n` inverted lists of all query terms, we first pick the query
 term with the least edit distance (i.e. with the least typos) and the least
 document frequency (i.e. the most rare term), and use its inverted list of
@@ -127,20 +132,20 @@ processes documents in tiers. First tier are those documents contain all `n`
 query terms, then `n-1` terms, then `n-2`, and so on. Document ranking is
 performed within a tier, not cross tiers.
 
-The bitmap intersection algorithm follows the same process. However, instead of probing
+The `:bitmap` algorithm follows the same process. However, instead of probing
 one pair of document-term at a time, it processes one pair of terms at a time by
 intersecting their inverted lists. However, we avoid the combination explosion
-problem by leveraging the same mathematical property that enables the candidate pruning
+problem by leveraging the same mathematical property that enables the `:prune`
 algorithm above. Basically, `t` means the number of required overlaps between
 query terms and a document. For first tier, set `t=n`, second tier, `t=n-1`, and
 so on. For each tier, all we need to do is to union *any* `n-t+1` inverted lists
 and then intersect the result with the intersection of the remaining inverted
 lists.
 
-This bitmap intersection algorithm is efficient for most cases, except for when
-there are very rare terms in the query, then the candidate pruning algorithm is
-more performant. This condition can be easily checked and the system chooses the
-algorithm accordingly.
+This `:bitmap `algorithm is efficient for most cases, except for when
+there are very rare terms in the query, then the `:prune` algorithm is
+more performant. This condition can be easily checked, and the system can
+choose the algorithm smartly, called `:smart` algorithm (default).
 
 The ranking and result preparation are implemented as Clojure transducers, and the
 results are wrapped in the `sequence` function, which performs the calculations

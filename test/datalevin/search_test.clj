@@ -73,19 +73,36 @@
         engine ^SearchEngine (sut/new-engine lmdb)]
     (add-docs engine)
 
-    (is (= (sut/search engine "cap") [[:doc4 [["cap" [51]]]]]))
-    (is (= (sut/search engine "fleece") [[:doc4 [["fleece" [22]]]]
-                                         [:doc2 [["fleece" [29]]]]]))
-    (is (= (sut/search engine "red fox") [[:doc1 [["fox" [14]] ["red" [10 39]]]]
-                                          [:doc4 [["red" [18]]]]
-                                          [:doc5 [["red" [48]]]]
-                                          [:doc2 [["red" [40]]]]]))
-
-    (is (= (sut/search engine "red dogs") [[:doc1 [["dogs" [43]] ["red" [10 39]]]]
-                                           [:doc5 [["dogs" [52]] ["red" [48]]]]
-                                           [:doc4 [["red" [18]]]]
-                                           [:doc2 [["red" [40]]]]]))
+    (is (= (sut/search engine "cap")
+           (sut/search engine "cap" {:algo :prune})
+           (sut/search engine "cap" {:algo :bitmap})
+           [[:doc4 [["cap" [51]]]]]))
+    (is (= (sut/search engine "fleece")
+           (sut/search engine "fleece" {:algo :prune})
+           (sut/search engine "fleece" {:algo :bitmap})
+           [[:doc4 [["fleece" [22]]]] [:doc2 [["fleece" [29]]]]]))
+    (is (= (sut/search engine "red fox")
+           (sut/search engine "red fox" {:algo :prune})
+           (sut/search engine "red fox" {:algo :bitmap})
+           [[:doc1 [["fox" [14]] ["red" [10 39]]]]
+            [:doc4 [["red" [18]]]]
+            [:doc5 [["red" [48]]]]
+            [:doc2 [["red" [40]]]]]))
+    (is (= (sut/search engine "red dogs")
+           (sut/search engine "red dogs" {:algo :prune})
+           (sut/search engine "red dogs" {:algo :bitmap})
+           [[:doc1 [["dogs" [43]] ["red" [10 39]]]]
+            [:doc5 [["dogs" [52]] ["red" [48]]]]
+            [:doc4 [["red" [18]]]]
+            [:doc2 [["red" [40]]]]]))
     (is (empty? (sut/search engine "solar")))
+    (is (empty? (sut/search engine "solar" {:algo :prune})))
+    (is (empty? (sut/search engine "solar" {:algo :bitmap})))
     (is (empty? (sut/search engine "solar wind")))
-    (is (= (sut/search engine "solar cap") [[:doc4 [["cap" [51]]]]]))
+    (is (empty? (sut/search engine "solar wind" {:algo :prune})))
+    (is (empty? (sut/search engine "solar wind" {:algo :bitmap})))
+    (is (= (sut/search engine "solar cap")
+           (sut/search engine "solar cap" {:algo :prune})
+           (sut/search engine "solar cap" {:algo :bitmap})
+           [[:doc4 [["cap" [51]]]]]))
     (l/close-kv lmdb)))

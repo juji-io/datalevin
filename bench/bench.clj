@@ -81,11 +81,10 @@
              (str "{:paths [\"src\" \"../src\" \"../target/classes\" \"../native/target/classes\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.10.3\"}
-                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"}
+                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}
                   com.taoensso/nippy    {:mvn/version \"3.1.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.324\"}
-                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.2\"}
-                  org.graalvm.nativeimage/svm {:mvn/version \"21.0.0.2\"}
+                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.4\"}
                   }}"
                   )
 

@@ -10,7 +10,8 @@
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
-           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
+           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue
+            ExecutorService Executors Future Callable]
            [java.util Iterator]
            [java.nio ByteBuffer BufferOverflowException]))
 
@@ -212,10 +213,39 @@
   (.setMapSize env
                (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
+(defn- transact*
+  [^Env env txs ^ConcurrentHashMap dbis]
+  (with-open [txn (.txnWrite env)]
+    (doseq [[op dbi-name k & r] txs]
+      (let [^DBI dbi (or (.get dbis dbi-name)
+                         (raise dbi-name " is not open" {}))]
+        (case op
+          :put      (let [[v kt vt flags] r]
+                      (.put-key dbi k kt)
+                      (.put-val dbi v vt)
+                      (if flags
+                        (.put dbi txn flags)
+                        (.put dbi txn)))
+          :del      (let [[kt] r]
+                      (.put-key dbi k kt)
+                      (.del dbi txn))
+          :put-list (let [[vs kt vt] r]
+                      (.put-key dbi k kt)
+                      (doseq [v vs]
+                        (.put-val dbi v vt)
+                        (.put dbi txn)))
+          :del-list (let [[vs kt vt] r]
+                      (.put-key dbi k kt)
+                      (doseq [v vs]
+                        (.put-val dbi v vt)
+                        (.del dbi txn false))))))
+    (.commit txn)))
+
 (deftype LMDB [^Env env
                ^String dir
                ^ConcurrentLinkedQueue pool
-               ^ConcurrentHashMap dbis]
+               ^ConcurrentHashMap dbis
+               writing?]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -351,29 +381,20 @@
 
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (try
-      (with-open [txn (.txnWrite env)]
-        (doseq [[op dbi-name k & r] txs
-                :let                [^DBI dbi (or (.get dbis dbi-name)
-                                                  (raise dbi-name
-                                                         " is not open" {}))]]
-          (case op
-            :put (let [[v kt vt flags] r]
-                   (.put-key dbi k kt)
-                   (.put-val dbi v vt)
-                   (if flags
-                     (.put dbi txn flags)
-                     (.put dbi txn)))
-            :del (let [[kt] r]
-                   (.put-key dbi k kt)
-                   (.del dbi txn))))
-        (.commit txn)
-        :transacted)
-      (catch Env$MapFullException _
-        (up-db-size env)
-        (.transact-kv this txs))
-      (catch Exception e
-        (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
+    (locking writing?
+      (try
+        (vreset! writing? true)
+        (transact* env txs dbis)
+        :transacted
+        (catch Env$MapFullException _
+          (up-db-size env)
+          (.transact-kv this txs))
+        (catch Exception e
+          ;; (.printStackTrace e)
+          (raise "Fail to transact to LMDB: " (ex-message e)
+                 {}))
+        (finally
+          (vreset! writing? false)))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -525,24 +546,24 @@
                  (.return-cursor dbi cur))))))
 
 (defmethod open-kv :java
-  [dir]
-  (try
-    (let [file     (u/file dir)
-          builder  (doto (Env/create)
-                     (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
-                     (.setMaxReaders c/+max-readers+)
-                     (.setMaxDbs c/+max-dbs+))
-          ^Env env (.open builder file (kv-flags :env c/default-env-flags))
-          lmdb     (->LMDB env
-                           dir
-                           (ConcurrentLinkedQueue.)
-                           (ConcurrentHashMap.))]
-      (.addShutdownHook (Runtime/getRuntime)
-                        (Thread.
-                          #(when-not (l/closed-kv? lmdb)
-                             (l/close-kv lmdb))))
-      lmdb)
-    (catch Exception e
-      (raise
-        "Fail to open database: " (ex-message e)
-        {:dir dir}))))
+  ([dir]
+   (open-kv dir {:mapsize c/+init-db-size+}))
+  ([dir {:keys [mapsize]
+         :or   {mapsize c/+init-db-size+}}]
+   (try
+     (let [file     (u/file dir)
+           builder  (doto (Env/create)
+                      (.setMapSize (* ^long mapsize 1024 1024))
+                      (.setMaxReaders c/+max-readers+)
+                      (.setMaxDbs c/+max-dbs+))
+           ^Env env (.open builder file (kv-flags :env c/default-env-flags))
+           lmdb     (->LMDB env
+                            dir
+                            (ConcurrentLinkedQueue.)
+                            (ConcurrentHashMap.)
+                            (volatile! false))]
+       lmdb)
+     (catch Exception e
+       (raise
+         "Fail to open database: " (ex-message e)
+         {:dir dir})))))

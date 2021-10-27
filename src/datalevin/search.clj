@@ -5,10 +5,14 @@
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell Bigram SuggestItem]
-           [java.util HashMap ArrayList HashSet Iterator]
-           [java.util.concurrent Executors]
+           [java.util HashMap ArrayList HashSet Iterator Map$Entry]
+           [java.util.concurrent Executors ExecutorService ConcurrentHashMap
+            TimeUnit CompletionService ExecutorCompletionService Future
+            ArrayBlockingQueue ThreadPoolExecutor ThreadPoolExecutor$CallerRunsPolicy]
+           [java.util.concurrent.atomic AtomicLong ]
            [java.io FileInputStream]
-           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
+            FastAggregation]
            [com.fasterxml.jackson.databind ObjectMapper]
            [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
 
@@ -60,11 +64,16 @@
      511 bytes of data that uniquely refers to the document in the system.
      `doc-text` is the content of the document as a string. The search engine
      does not store the original text, and assumes that caller can retrieve them
-     by `doc-ref`.")
+     by `doc-ref`. This function is for online update of search engine index,
+     for off-line indexing of bulk data, use `index-writer`.")
+  (index-writer [this] "open an `IndexWriter` for bulk writing of documents")
   (remove-doc [this doc-ref]
     "Remove a document referred to by `doc-ref`.")
-  (search [this query]
+  (search [this query] [this query opts]
     "Issue a `query` to the search engine. `query` is a map or a string.
+     `opts` map may have these keys:
+
+      * `:algo` can be one of `:smart` (default), `:prune`, or `:bitmap`.
 
      Return a lazy sequence of
      `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
@@ -75,7 +84,7 @@
   [result]
   (let [terms (HashMap. 256)]
     (doseq [[term position offset] result]
-      (when (< (count term) 128 ) ; ignore exceedingly long strings
+      (when (< (count term) 128) ; ignore exceedingly long strings
         (.put terms term (if-let [^ArrayList lst (.get terms term)]
                            (do (.add lst [position offset]) lst)
                            (doto (ArrayList.) (.add [position offset]))))))
@@ -101,22 +110,27 @@
 
 (defn- hydrate-query
   [max-doc ^HashMap unigrams lmdb ^SymSpell symspell tokens]
-  (let [sis   (when symspell
-                (.getSuggestTerms symspell tokens c/dict-max-edit-distance false))
-        terms (if sis
-                (mapv #(.getSuggestion ^SuggestItem %) sis)
-                tokens)
-        eds   (if sis
-                (zipmap terms (mapv #(.getEditDistance ^SuggestItem %) sis))
-                (zipmap terms (repeat 0)))]
-    (mapv (fn [[term freq]]
-            (let [id (.get unigrams term)
-                  df (l/list-count lmdb c/term-docs id :id)]
-              {:id id
-               :ed (eds term)
-               :df df
-               :wq (* ^double (tf* freq) ^double (idf df max-doc))}))
-          (frequencies terms))))
+  (let [sis (when symspell
+              (.getSuggestTerms symspell tokens c/dict-max-edit-distance false))
+        tms (if sis
+              (mapv #(.getSuggestion ^SuggestItem %) sis)
+              tokens)
+        eds (if sis
+              (zipmap tms (mapv #(.getEditDistance ^SuggestItem %) sis))
+              (zipmap tms (repeat 0)))]
+    (into []
+          (comp
+            (map (fn [[term freq]]
+                   (let [id (.get unigrams term)
+                         df (l/list-count lmdb c/term-docs id :id)]
+                     (if (zero? ^long df)
+                       :to-remove
+                       {:id id
+                        :ed (eds term)
+                        :df df
+                        :wq (* ^double (tf* freq) ^double (idf df max-doc))}))))
+            (filter map?))
+          (frequencies tms))))
 
 (defn- doc-info
   [lmdb doc-id]
@@ -141,25 +155,27 @@
     (.get writer)))
 
 (defn- select-docs
-  [tao n lmdb term-ids wqs ^HashMap result]
+  [tao n lmdb term-ids bms wqs ^HashMap result]
   (let [z          (inc (- ^long n ^long tao))
         union-tids (take z term-ids)
-        union-bms  (mapv #(docs-bitmap lmdb %) union-tids)
-        union-bmm  (zipmap union-tids union-bms)
+        union-bms  (->> (select-keys bms union-tids)
+                        vals
+                        (into-array RoaringBitmap))
         inter-tids (set (drop z term-ids))
-        union-bm   (reduce
-                     (fn [^RoaringBitmap res ^RoaringBitmap bm]
-                       (.or res bm)
-                       res)
-                     union-bms)
-        final-bm   (reduce
-                     (fn [^RoaringBitmap res ^RoaringBitmap bm]
-                       (.and res bm)
-                       res)
-                     union-bm
-                     (mapv #(docs-bitmap lmdb %) inter-tids))
-        selected   (ArrayList.)
-        iter       (.iterator ^RoaringBitmap final-bm)]
+        inter-bms  (->> (select-keys bms inter-tids)
+                        vals
+                        (into-array RoaringBitmap))
+        union-bm   (FastAggregation/or
+                     ^"[Lorg.roaringbitmap.RoaringBitmap;" union-bms)
+        final-bm   (if (seq inter-tids)
+                     (RoaringBitmap/and
+                       union-bm
+                       (FastAggregation/and
+                         ^"[Lorg.roaringbitmap.RoaringBitmap;"
+                         inter-bms))
+                     union-bm)
+        iter       (.iterator ^RoaringBitmap final-bm)
+        selected   (ArrayList.)]
     (loop []
       (when (.hasNext iter)
         (let [did (.next iter)]
@@ -171,18 +187,14 @@
                             (update :score (fnil + 0.0)
                                     (* ^double (tf lmdb did tid)
                                        ^double (wqs tid)))
-                            (update :tids (fnil conj []) tid))) ]
-              (.put result did
-                    (reduce
-                      (fn [r tid]
+                            (update :tids (fnil conj []) tid)))
+                  chk (fn [r tid]
                         (if (inter-tids tid)
                           (up r tid)
-                          (if (.contains ^RoaringBitmap (union-bmm tid)
-                                         (int did))
+                          (if (.contains ^RoaringBitmap (bms tid) (int did))
                             (up r tid)
-                            r)))
-                      res
-                      term-ids)))))
+                            r)))]
+              (.put result did (reduce chk res term-ids)))))
         (recur)))
     selected))
 
@@ -248,26 +260,39 @@
                                   :id-id :int-int))])
              tids)])
 
-(defn- select-n-score-docs
-  [lmdb n qterms term-ids wqs result]
-  ;; choose algorithm based on df variation
-  (if (or (= n 1)
-          (> (quot ^long ((peek qterms) :df)
-                   ^long ((nth qterms 0) :df))
-             64))
-    (let [backup (HashMap. 512)
-          cache  (HashMap. 512)]
-      (fn [tao] ; target # of overlaps between query and doc
-        (let [tid    (nth term-ids (- ^long n ^long tao))
-              candid (HashMap. backup)]
-          (add-candidates lmdb tid candid cache wqs result)
-          (let [selected (HashSet. 128)]
-            (filter-candidates
-              tao n term-ids candid cache lmdb selected
-              backup wqs result)
-            selected))))
+(defn- prune-candidates
+  [term-ids n lmdb wqs result]
+  (let [backup (HashMap. 512)
+        cache  (HashMap. 512)]
+    (fn [tao] ; target # of overlaps between query and doc
+      (let [tid    (nth term-ids (- ^long n ^long tao))
+            candid (HashMap. backup)]
+        (add-candidates lmdb tid candid cache wqs result)
+        (let [selected (HashSet. 128)]
+          (filter-candidates
+            tao n term-ids candid cache lmdb selected
+            backup wqs result)
+          selected)))))
+
+(defn- intersect-bitmaps
+  [term-ids lmdb n wqs result]
+  (let [bms (zipmap term-ids (map #(docs-bitmap lmdb %) term-ids))]
     (fn [tao]
-      (select-docs tao n lmdb term-ids wqs result))))
+      (select-docs tao n lmdb term-ids bms wqs result))))
+
+(defn- select-n-score-docs
+  [lmdb n qterms term-ids wqs result algo]
+  (case algo
+    ;; choose algorithm based on df variation
+    :smart  (if (or (= n 1)
+                    (> (quot ^long ((peek qterms) :df)
+                             ^long ((nth qterms 0) :df))
+                       64))
+              (prune-candidates term-ids n lmdb wqs result)
+              (intersect-bitmaps term-ids lmdb n wqs result))
+    :prune  (prune-candidates term-ids n lmdb wqs result)
+    :bitmap (intersect-bitmaps term-ids lmdb n wqs result)
+    (u/raise "Unknown search algorithm" {:algo algo})))
 
 (deftype SearchEngine [lmdb
                        ^HashMap unigrams ; term -> term-id
@@ -278,9 +303,9 @@
   ISearchEngine
   (add-doc [this doc-ref doc-text]
     (let [result    (en-analyzer doc-text)
-          txs       (ArrayList. 512)
           new-terms (collect-terms result)
-          unique    (count new-terms)]
+          unique    (count new-terms)
+          txs       (ArrayList. 512)]
       (locking this
         (let [doc-id (inc ^long @max-doc)]
           (vreset! max-doc doc-id)
@@ -296,9 +321,8 @@
                                 tid))]
               (.add txs [:put c/unigrams term term-id :string :id])
               (.add txs [:put c/term-docs term-id doc-id :id :id])
-              (doseq [po new-lst]
-                (.add txs [:put c/positions [doc-id term-id] po
-                           :id-id :int-int])))))
+              (.add txs [:put-list c/positions [doc-id term-id] new-lst
+                         :id-id :int-int]))))
         (l/transact-kv lmdb txs))))
 
   (remove-doc [this doc-ref]
@@ -307,16 +331,19 @@
         (let [txs (ArrayList. 256)]
           (.add txs [:del c/docs doc-id :id])
           (.add txs [:del c/rdocs doc-ref :data])
-          (l/transact-kv lmdb txs))
-        (doseq [[[_ term-id] _] (l/get-range
-                                  lmdb c/positions
-                                  [:closed [doc-id 0] [doc-id Long/MAX_VALUE]]
-                                  :id-id :ignore false)]
-          (l/del-list-items lmdb c/term-docs term-id [doc-id] :id :id)
-          (l/del-list-items lmdb c/positions [doc-id term-id] :id-id)))
+          (doseq [[[_ term-id] _] (l/get-range
+                                    lmdb c/positions
+                                    [:closed [doc-id 0] [doc-id Long/MAX_VALUE]]
+                                    :id-id :ignore false)]
+            (.add txs [:del-list c/term-docs term-id [doc-id] :id :id])
+            (.add txs [:del c/positions [doc-id term-id] :id-id]))
+          (l/transact-kv lmdb txs)))
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (search [this query]
+    (.search this query {:algo :smart}))
+  (search [this query {:keys [algo]
+                       :or   {algo :smart}}]
     (let [tokens   (->> (en-analyzer query)
                         (mapv first)
                         (into-array String))
@@ -334,13 +361,14 @@
                                (rank-docs selected wq-sum result)))
                      (map (fn [doc-info]
                             (add-positions lmdb terms doc-info))))]
-      (->> (range n 0 -1)
-           u/unchunk
-           (map (select-n-score-docs lmdb n qterms term-ids wqs result))
-           (sequence xform)))))
+      (if (zero? n)
+        []
+        (->> (range n 0 -1)
+             u/unchunk  ; run one tier at a time
+             (map (select-n-score-docs lmdb n qterms term-ids wqs result algo))
+             (sequence xform))))))
 
-
-(defn- init-unigrams
+(defn- init-unigrams-terms
   [lmdb]
   (let [unigrams (HashMap. 32768)
         terms    (HashMap. 32768)
@@ -352,32 +380,105 @@
     (l/visit lmdb c/unigrams load [:all] :string)
     [unigrams terms]))
 
+(defn- init-unigrams
+  [lmdb]
+  (let [unigrams (HashMap. 32768)
+        load     (fn [kv]
+                   (let [term (b/read-buffer (l/k kv) :string)
+                         id   (b/read-buffer (l/v kv) :id)]
+                     (.put unigrams term id)))]
+    (l/visit lmdb c/unigrams load [:all] :string)
+    unigrams))
+
 (defn- init-max-doc
   [lmdb]
   (or (first (l/get-first lmdb c/docs [:all-back] :id :ignore)) 0))
 
-(defn- init-max-term [lmdb]
+(defn- init-max-term
+  [lmdb]
   (or (first (l/get-first lmdb c/term-docs [:all-back] :id :ignore)) 0))
+
+(defn- open-dbis
+  [lmdb]
+  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
+  (l/open-dbi lmdb c/unigrams c/+max-key-size+ c/+id-bytes+)
+  (l/open-dbi lmdb c/docs c/+id-bytes+)
+  (l/open-dbi lmdb c/rdocs c/+max-key-size+ c/+id-bytes+)
+  (l/open-inverted-list lmdb c/term-docs c/+id-bytes+ c/+id-bytes+)
+  (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+))
 
 (defn new-engine
   ([lmdb]
    (new-engine lmdb {}))
   ([lmdb {:keys [fuzzy?]
           :or   {fuzzy? false}}]
-   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-   (l/open-dbi lmdb c/unigrams c/+max-key-size+ c/+id-bytes+)
-   (l/open-dbi lmdb c/docs c/+id-bytes+)
-   (l/open-dbi lmdb c/rdocs c/+max-key-size+ c/+id-bytes+)
-   (l/open-inverted-list lmdb c/term-docs c/+id-bytes+ c/+id-bytes+)
-   (l/open-inverted-list lmdb c/positions (* 2 c/+id-bytes+) c/+id-bytes+)
-   (let [[unigrams ^HashMap terms] (init-unigrams lmdb)]
+   (open-dbis lmdb)
+   (let [[unigrams ^HashMap terms] (init-unigrams-terms lmdb)]
      (->SearchEngine lmdb
                      unigrams
                      terms
                      (when fuzzy? (SymSpell. {} {} c/dict-max-edit-distance
                                              c/dict-prefix-length))
                      (volatile! (init-max-doc lmdb))
-                     (volatile! (init-max-term lmdb))))))
+                     (volatile! (init-max-term lmdb))
+                     ))))
+
+(defprotocol IIndexWriter
+  (write [this doc-ref doc-text] "Write a document")
+  (commit [this] "Commit the index write"))
+
+(deftype IndexWriter [lmdb
+                      ^ConcurrentHashMap unigrams
+                      max-doc
+                      max-term
+                      ^ExecutorService threadpool
+                      ^CompletionService service
+                      submitted]
+  IIndexWriter
+  (write [this doc-ref doc-text]
+    (let [task (fn []
+                 (let [result    (en-analyzer doc-text)
+                       new-terms ^HashMap (collect-terms result)
+                       unique    (count new-terms)
+                       txs       ^ArrayList (ArrayList. 512)
+                       doc-id    (locking max-doc (vswap! max-doc inc))]
+                   (.add txs [:put c/docs doc-id {:ref doc-ref :uniq unique}
+                              :id :data [:append]])
+                   (.add txs [:put c/rdocs doc-ref doc-id :data :id])
+                   (doseq [^Map$Entry kv (.entrySet new-terms)]
+                     (let [term    (.getKey kv)
+                           new-lst (.getValue kv)
+                           term-id (locking this
+                                     (or (.get unigrams term)
+                                         (let [tid (vswap! max-term inc)]
+                                           (.put unigrams term tid)
+                                           tid)))]
+                       (.add txs [:put c/unigrams term term-id :string :id])
+                       (.add txs [:put c/term-docs term-id doc-id :id :id])
+                       (.add txs [:put-list c/positions [doc-id term-id] new-lst
+                                  :id-id :int-int])))
+                   (l/transact-kv lmdb txs)))]
+      (vswap! submitted inc)
+      (.submit service task)))
+  (commit [this]
+    (dotimes [_ @submitted]
+      (.get ^Future (.take service)))
+    (.shutdown threadpool)
+    (.awaitTermination threadpool 10 TimeUnit/MINUTES)))
+
+(defn index-writer
+  [lmdb]
+  (open-dbis lmdb)
+  (let [pool (ThreadPoolExecutor. 16 16 10 TimeUnit/MINUTES
+                                  (ArrayBlockingQueue. 102400)
+                                  (ThreadPoolExecutor$CallerRunsPolicy.))]
+    (->IndexWriter lmdb
+                   (ConcurrentHashMap. ^HashMap (init-unigrams lmdb))
+                   (volatile! (init-max-doc lmdb))
+                   (volatile! (init-max-term lmdb))
+                   pool
+                   (ExecutorCompletionService. pool)
+                   (volatile! 0))))
 
 (comment
 
