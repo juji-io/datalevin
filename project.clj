@@ -1,4 +1,4 @@
-(def version "0.5.26")
+(def version "0.5.27")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -77,6 +77,7 @@
                                *unchecked-math*       :warn-on-boxed
                                *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal"]
+  :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"

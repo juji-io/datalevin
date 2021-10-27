@@ -7,6 +7,10 @@
 ### Improved
 - Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
 
+## 0.5.27
+### Fixed
+- occasional LMDB crash during multiple threads write or abrupt exit
+
 ## 0.5.26
 ### Improved
 - Update graalvm version

@@ -239,7 +239,7 @@
                       (doseq [v vs]
                         (.put-val dbi v vt)
                         (.del dbi txn false))))))
-    (.commit txn)))
+
 
 (deftype LMDB [^Env env
                ^String dir
@@ -390,9 +390,7 @@
           (up-db-size env)
           (.transact-kv this txs))
         (catch Exception e
-          ;; (.printStackTrace e)
-          (raise "Fail to transact to LMDB: " (ex-message e)
-                 {}))
+          (raise "Fail to transact to LMDB: " (ex-message e) {}))
         (finally
           (vreset! writing? false)))))
 
