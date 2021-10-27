@@ -361,6 +361,18 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest multi-threads-put-test
+  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "a")
+    (let [ks  (shuffle (range 0 10000))
+          vs  (map inc ks)
+          txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
+      (dorun (pmap #(l/transact-kv lmdb [%]) txs))
+      (is (= vs (map #(l/get-value lmdb "a" % :long :long) ks))))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
 ;; generative tests
 
 (test/defspec datom-ops-generative-test

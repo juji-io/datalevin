@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- occasional LMDB crash during multiple threads write or abrupt exit
+
 ## 0.5.26
 ### Improved
 - Update graalvm version

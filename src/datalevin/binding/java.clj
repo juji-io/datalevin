@@ -235,7 +235,29 @@
 (defn- up-db-size [^Env env]
   (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
 
-(deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
+(defn- transact*
+  [^Env env txs ^ConcurrentHashMap dbis]
+  (with-open [txn (.txnWrite env)]
+    (doseq [[op dbi-name k & r] txs]
+      (let [^DBI dbi (or (.get dbis dbi-name)
+                         (raise dbi-name " is not open" {}))]
+        (case op
+          :put (let [[v kt vt flags] r]
+                 (.put-key dbi k kt)
+                 (.put-val dbi v vt)
+                 (if flags
+                   (.put dbi txn flags)
+                   (.put dbi txn)))
+          :del (let [[kt] r]
+                 (.put-key dbi k kt)
+                 (.del dbi txn)))))
+    (.commit txn)))
+
+(deftype LMDB [^Env env
+               ^String dir
+               ^RtxPool pool
+               ^ConcurrentHashMap dbis
+               writing?]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -350,29 +372,18 @@
 
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (try
-      (with-open [txn (.txnWrite env)]
-        (doseq [[op dbi-name k & r] txs
-                :let                [^DBI dbi (or (.get dbis dbi-name)
-                                                  (raise dbi-name
-                                                         " is not open" {}))]]
-          (case op
-            :put (let [[v kt vt flags] r]
-                   (.put-key dbi k kt)
-                   (.put-val dbi v vt)
-                   (if flags
-                     (.put dbi txn flags)
-                     (.put dbi txn)))
-            :del (let [[kt] r]
-                   (.put-key dbi k kt)
-                   (.del dbi txn))))
-        (.commit txn)
-        :transacted)
-      (catch Env$MapFullException _
-        (up-db-size env)
-        (.transact-kv this txs))
-      (catch Exception e
-        (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
+    (locking writing?
+      (try
+        (vreset! writing? true)
+        (transact* env txs dbis)
+        :transacted
+        (catch Env$MapFullException _
+          (up-db-size env)
+          (.transact-kv this txs))
+        (catch Exception e
+          (raise "Fail to transact to LMDB: " (ex-message e) {}))
+        (finally
+          (vreset! writing? false)))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -438,13 +449,8 @@
                           (.setMaxReaders c/+max-readers+)
                           (.setMaxDbs c/+max-dbs+))
           ^Env env      (.open builder file (kv-flags :env c/default-env-flags))
-          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)
-          lmdb          (->LMDB env dir pool (ConcurrentHashMap.))]
-      (.addShutdownHook (Runtime/getRuntime)
-                        (Thread.
-                          #(when-not (l/closed-kv? lmdb)
-                             (l/close-kv lmdb))))
-      lmdb)
+          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)]
+      (->LMDB env dir pool (ConcurrentHashMap.) (volatile! false)))
     (catch Exception e
       (raise
         "Fail to open database: " (ex-message e)
