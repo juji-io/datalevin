@@ -213,6 +213,7 @@
   (.setMapSize env
                (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
+
 (defn- transact*
   [^Env env txs ^ConcurrentHashMap dbis]
   (with-open [txn (.txnWrite env)]
@@ -239,7 +240,7 @@
                       (doseq [v vs]
                         (.put-val dbi v vt)
                         (.del dbi txn false))))))
-
+    (.commit txn)))
 
 (deftype LMDB [^Env env
                ^String dir

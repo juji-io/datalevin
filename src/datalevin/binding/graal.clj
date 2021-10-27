@@ -364,15 +364,15 @@
     (let [^DBI dbi (or (.get dbis dbi-name)
                        (raise dbi-name " is not open" {}))]
       (case op
-        :put (let [[v kt vt flags] r]
-               (.put-key dbi k kt)
-               (.put-val dbi v vt)
-               (if flags
-                 (.put dbi txn flags)
-                 (.put dbi txn)))
-        :del (let [[kt] r]
-               (.put-key dbi k kt)
-               (.del dbi txn))
+        :put      (let [[v kt vt flags] r]
+                    (.put-key dbi k kt)
+                    (.put-val dbi v vt)
+                    (if flags
+                      (.put dbi txn flags)
+                      (.put dbi txn)))
+        :del      (let [[kt] r]
+                    (.put-key dbi k kt)
+                    (.del dbi txn))
         :put-list (let [[vs kt vt] r]
                     (.put-key dbi k kt)
                     (doseq [v vs]
@@ -382,8 +382,7 @@
                     (.put-key dbi k kt)
                     (doseq [v vs]
                       (.put-val dbi v vt)
-                      (.del dbi txn false)))
-        )))
+                      (.del dbi txn false))))))
   (.commit txn))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
@@ -574,7 +573,7 @@
           (catch Lib$MapFullException _
             (.close txn)
             (let [^Info info (Info/create env)]
-              (.setMapSize env (* c/+buffer-grow-factor+
+              (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
               (.close info)
               (.transact-kv this txs)))
@@ -844,7 +843,7 @@
                      (kv-flags c/default-env-flags))]
       (->LMDB env
               dir
-              (->RtxPool env (ConcurrentHashMap.) 0)
+              (ConcurrentLinkedQueue.)
               (ConcurrentHashMap.)
               false
               (volatile! false)))

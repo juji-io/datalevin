@@ -79,7 +79,6 @@
   :jar-exclusions [#"graal"]
   :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
-  :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password

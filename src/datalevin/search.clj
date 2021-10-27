@@ -432,8 +432,7 @@
                       max-doc
                       max-term
                       ^ExecutorService threadpool
-                      ^CompletionService service
-                      submitted]
+                      ^ArrayList tasks]
   IIndexWriter
   (write [this doc-ref doc-text]
     (let [task (fn []
@@ -458,27 +457,30 @@
                        (.add txs [:put-list c/positions [doc-id term-id] new-lst
                                   :id-id :int-int])))
                    (l/transact-kv lmdb txs)))]
-      (vswap! submitted inc)
-      (.submit service task)))
+      (.add tasks task)
+      ;; (when (< 1000000 (.size tasks))
+      ;;   (locking tasks
+      ;;     (let  (.invokeAll threadpool tasks))
+      ;;     (.clear tasks)))
+      ))
   (commit [this]
-    (dotimes [_ @submitted]
-      (.get ^Future (.take service)))
-    (.shutdown threadpool)
-    (.awaitTermination threadpool 10 TimeUnit/MINUTES)))
+    (println "size" (.size tasks))
+    (doseq [^Future f (.invokeAll threadpool tasks)]
+      (.get f))
+
+    ;; (.shutdown threadpool)
+    ;; (.awaitTermination threadpool 10 TimeUnit/MINUTES)
+    ))
 
 (defn index-writer
   [lmdb]
   (open-dbis lmdb)
-  (let [pool (ThreadPoolExecutor. 16 16 10 TimeUnit/MINUTES
-                                  (ArrayBlockingQueue. 102400)
-                                  (ThreadPoolExecutor$CallerRunsPolicy.))]
-    (->IndexWriter lmdb
-                   (ConcurrentHashMap. ^HashMap (init-unigrams lmdb))
-                   (volatile! (init-max-doc lmdb))
-                   (volatile! (init-max-term lmdb))
-                   pool
-                   (ExecutorCompletionService. pool)
-                   (volatile! 0))))
+  (->IndexWriter lmdb
+                 (ConcurrentHashMap. ^HashMap (init-unigrams lmdb))
+                 (volatile! (init-max-doc lmdb))
+                 (volatile! (init-max-term lmdb))
+                 (Executors/newWorkStealingPool)
+                 (ArrayList. 8192)))
 
 (comment
 
