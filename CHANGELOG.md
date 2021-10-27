@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.27
 ### Fixed
 - occasional LMDB crash during multiple threads write or abrupt exit
 
