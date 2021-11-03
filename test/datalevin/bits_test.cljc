@@ -52,6 +52,26 @@
                   (.flip bf)
                   (= k (sut/read-buffer bf :int)))))
 
+(test/defspec int-int-generative-test
+  100
+  (prop/for-all [k1 gen/int
+                 k2 gen/int]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (.clear bf)
+                  (sut/put-buffer bf [k1 k2] :int-int)
+                  (.flip bf)
+                  (= [k1 k2] (sut/read-buffer bf :int-int)))))
+
+(test/defspec int-int-generative-test
+  100
+  (prop/for-all [k1 gen/int
+                 k2 gen/small-integer]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (.clear bf)
+                  (sut/put-buffer bf [k1 k2] :int-short)
+                  (.flip bf)
+                  (= [k1 k2] (sut/read-buffer bf :int-short)))))
+
 (test/defspec long-generative-test
   100
   (prop/for-all [k gen/large-integer]

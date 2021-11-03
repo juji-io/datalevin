@@ -724,25 +724,27 @@
                  (.return-cursor dbi cur)))))
 
   (list-count [this dbi-name k kt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn)]
-      (try
-        (.put-start-key rtx k kt)
-        (let [rc (Lib/mdb_cursor_get
-                   (.get cur)
-                   (.getVal ^BufVal (.-start-kp rtx))
-                   (.getVal ^BufVal (.-stop-kp rtx))
-                   Lib$MDB_cursor_op/MDB_SET)]
-          (if (has? rc)
-            (.count cur)
-            0))
-        (catch Exception e
-          (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+    (if k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (.count cur)
+              0))
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))
+      0))
 
   (filter-list [this dbi-name k pred kt vt]
     (let [^DBI dbi    (.get-dbi this dbi-name false)
@@ -812,23 +814,25 @@
                  (.return-cursor dbi cur)))))
 
   (in-list? [this dbi-name k v kt vt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn)]
-      (try
-        (.put-start-key rtx k kt)
-        (.put-stop-key rtx v vt)
-        (has? (Lib/mdb_cursor_get
-                (.get cur)
-                (.getVal ^BufVal (.-start-kp rtx))
-                (.getVal ^BufVal (.-stop-kp rtx))
-                Lib$MDB_cursor_op/MDB_GET_BOTH))
-        (catch Exception e
-          (raise "Fail to test if an item is in an inverted list: "
-                 (ex-message e) {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+    (if (and k v)
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (.put-stop-key rtx v vt)
+          (has? (Lib/mdb_cursor_get
+                  (.get cur)
+                  (.getVal ^BufVal (.-start-kp rtx))
+                  (.getVal ^BufVal (.-stop-kp rtx))
+                  Lib$MDB_cursor_op/MDB_GET_BOTH))
+          (catch Exception e
+            (raise "Fail to test if an item is in an inverted list: "
+                   (ex-message e) {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))
+      false))
   )
 
 (defmethod open-kv :graal

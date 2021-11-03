@@ -8,6 +8,7 @@
          persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"}
          com.cognitect/transit-clj                   {:mvn/version "1.0.324"}
          org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.22"}
+         org.eclipse.collections/eclipse-collections {:mvn/version "10.4.0"}
          com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.0"}
          com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.13.0"}
          org.apache.lucene/lucene-core               {:mvn/version "8.10.1"}

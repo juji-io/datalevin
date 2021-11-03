@@ -46,7 +46,8 @@
                       [:put "b" :long 1 :data :long]
                       [:put "b" 2 3 :long :long]
                       [:put "b" "ok" 42 :string :int]
-                      [:put "d" 3.14 :pi :double :keyword]]))
+                      [:put "d" 3.14 :pi :double :keyword]
+                      [:put "d" [1 2] [3 4] :int-int :int-short]]))
 
     (testing "entries"
       (is (= 4 (:entries (l/stat lmdb))))
@@ -75,7 +76,8 @@
       (is (= 1 (l/get-value lmdb "b" :long :data :long)))
       (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
       (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
-      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword))))
+      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+      (is (= [3 4] (l/get-value lmdb "d" [1 2] :int-int :int-short))))
 
     (testing "delete"
       (l/transact-kv lmdb [[:del "a" 1]
@@ -457,12 +459,17 @@
                   (is (and put-ok del-ok)))))
 
 (deftest inverted-list-basic-ops-test
-  (let [dir  (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)
-        pred (i/inter-fn
-               [kv]
-               (let [^long v (b/read-buffer (l/v kv) :long)]
-                 (odd? v)))]
+  (let [dir     (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
+        lmdb    (l/open-kv dir)
+        pred    (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (odd? v)))
+        sum     (volatile! 0)
+        visitor (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
     (l/open-inverted-list lmdb "inverted")
 
     (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
@@ -476,11 +483,14 @@
 
     (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
 
+    (l/visit-list lmdb "inverted" visitor "a" :string)
+    (is (= @sum 10))
+
     (l/del-list-items lmdb "inverted" "a" :string)
 
     (is (= (l/list-count lmdb "inverted" "a" :string) 0))
     (is (not (l/in-list? lmdb "inverted" "a" 1 :string :long)))
-    (is (= (l/get-list lmdb "inverted" "a" :string :long) []))
+    (is (nil? (l/get-list lmdb "inverted" "a" :string :long)))
 
     (l/put-list-items lmdb "inverted" "b" [1 2 3 4] :string :long)
 

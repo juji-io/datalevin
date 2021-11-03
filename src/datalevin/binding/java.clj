@@ -245,8 +245,7 @@
 (deftype LMDB [^Env env
                ^String dir
                ^ConcurrentLinkedQueue pool
-               ^ConcurrentHashMap dbis
-               writing?]
+               ^ConcurrentHashMap dbis]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -382,18 +381,14 @@
 
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (locking writing?
-      (try
-        (vreset! writing? true)
-        (transact* env txs dbis)
-        :transacted
-        (catch Env$MapFullException _
-          (up-db-size env)
-          (.transact-kv this txs))
-        (catch Exception e
-          (raise "Fail to transact to LMDB: " (ex-message e) {}))
-        (finally
-          (vreset! writing? false)))))
+    (try
+      (transact* env txs dbis)
+      :transacted
+      (catch Env$MapFullException _
+        (up-db-size env)
+        (.transact-kv this txs))
+      (catch Exception e
+        (raise "Fail to transact to LMDB: " (ex-message e) {}))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -505,23 +500,67 @@
                (ex-message e) {}))))
 
   (get-list [this dbi-name k kt vt]
-    (.get-range this dbi-name [:closed k k] kt vt true))
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (let [holder (transient [])]
+              (.seek cur SeekOp/MDB_FIRST_DUP)
+              (conj! holder (b/read-buffer (.val cur) vt))
+              (dotimes [_ (dec (.count cur))]
+                (.seek cur SeekOp/MDB_NEXT_DUP)
+                (conj! holder (b/read-buffer (.val cur) vt)))
+              (persistent! holder)))
+          (catch Exception e
+            (raise "Fail to get inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))))
+
+  (visit-list [this dbi-name visitor k kt]
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)
+            kv          (reify IKV
+                          (k [_] (.key cur))
+                          (v [_] (.val cur)))]
+        (try
+          (.put-start-key rtx k kt)
+          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (.seek cur SeekOp/MDB_FIRST_DUP)
+            (visitor kv)
+            (dotimes [_ (dec (.count cur))]
+              (.seek cur SeekOp/MDB_NEXT_DUP)
+              (visitor kv)))
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))))
 
   (list-count [this dbi-name k kt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn)]
-      (try
-        (.put-start-key rtx k kt)
-        (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-          (.count cur)
-          0)
-        (catch Exception e
-          (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+    (if k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (.count cur)
+            0)
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))
+      0))
 
   (filter-list [this dbi-name k pred k-type v-type]
     (.range-filter this dbi-name pred [:closed k k] k-type v-type true))
@@ -530,19 +569,21 @@
     (.range-filter-count this dbi-name pred [:closed k k] k-type))
 
   (in-list? [this dbi-name k v kt vt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn)]
-      (try
-        (.put-start-key rtx k kt)
-        (.put-stop-key rtx v vt)
-        (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
-        (catch Exception e
-          (raise "Fail to test if an item is in an inverted list: "
-                 (ex-message e) {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur))))))
+    (if (and k v)
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (.put-stop-key rtx v vt)
+          (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
+          (catch Exception e
+            (raise "Fail to test if an item is in an inverted list: "
+                   (ex-message e) {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))
+      false)))
 
 (defmethod open-kv :java
   ([dir]
@@ -559,8 +600,7 @@
            lmdb     (->LMDB env
                             dir
                             (ConcurrentLinkedQueue.)
-                            (ConcurrentHashMap.)
-                            (volatile! false))]
+                            (ConcurrentHashMap.))]
        lmdb)
      (catch Exception e
        (raise

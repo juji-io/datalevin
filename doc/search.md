@@ -58,7 +58,6 @@ In more details, the following LMDB sub-databases are created for search suppose
 
 * `unigrams`: map of term -> term id
 * `docs`: map of document id -> document reference and number of unique terms in document
-* `rdocs`: map of document reference -> document id
 * `term-docs`: inverted list of term id -> document ids
 * `positions`: inverted list of document id and term id -> positions and offsets
   of the term in the document

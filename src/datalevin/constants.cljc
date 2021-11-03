@@ -90,9 +90,9 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const meta "datalevin/meta")
-(def ^:const unigrams "datalevin/unigrams")   ; term -> term-id
-(def ^:const docs "datalevin/docs")           ; doc-id -> doc-ref,unique-terms
-(def ^:const rdocs "datalevin/rdocs")         ; doc-ref -> doc-id
+(def ^:const terms "datalevin/terms")         ; term-id -> term
+(def ^:const docs "datalevin/docs")           ; doc-ref -> doc-id,norm
+(def ^:const term-freq "datalevin/term-freq") ; term-id,doc-id -> freq
 (def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (list)
 (def ^:const positions "datalevin/positions") ; doc-id,term-id -> position,offset (list)
 
@@ -105,7 +105,7 @@
 
 ;; search engine
 
-(def ^:const +max-term-length+ (- +max-key-size+ Long/BYTES))
+(def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
 
 ;; server / client
 

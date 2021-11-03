@@ -41,6 +41,8 @@
     [db list-name k vs k-type v-type]
     "delete an inverted list by key")
   (get-list [db list-name k k-type v-type] "get a list by key")
+  (visit-list [db list-name visitor k k-type]
+    "visit a list, presumably for side effects")
   (list-count [db list-name k k-type]
     "get the number of items in the inverted list")
   (filter-list [db list-name k pred k-type v-type] "predicate filtered items of a list")

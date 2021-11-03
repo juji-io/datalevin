@@ -16,6 +16,7 @@
                  [nrepl/bencode]
                  [com.taoensso/nippy]
                  [org.roaringbitmap/RoaringBitmap]
+                 [org.eclipse.collections/eclipse-collections]
                  [com.taoensso/timbre]
                  [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
