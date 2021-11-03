@@ -70,7 +70,7 @@
       (println "max:" (aget result (dec n))))))
 
 (defn run [opts]
-  ;; (index-wiki-json "data/wiki-datalevin-2" "output.json")
+  (index-wiki-json "data/wiki-datalevin-2" "output.json")
   ;; (index-wiki-json "data/wiki-datalevin-odd1" "wiki-odd.json")
-  (query (s/new-engine (l/open-kv "data/wiki-datalevin-odd1"))
-         "queries40k.txt" 40000))
+  #_(query (s/new-engine (l/open-kv "data/wiki-datalevin-odd1"))
+           "queries40k.txt" 40000))

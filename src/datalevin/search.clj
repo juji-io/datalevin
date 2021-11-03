@@ -11,6 +11,7 @@
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntObjectHashMap ObjectIntHashMap]
            [org.eclipse.collections.impl.list.mutable FastList]
+           [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]
            [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
             FastAggregation]))
 
@@ -93,28 +94,32 @@
 (defn- idf
   "inverse document frequency of a term"
   [^long freq N]
-  (if (zero? freq)
-    0
-    (Math/log10 (/ ^int N freq))))
+  (if (zero? freq) 0 (Math/log10 (/ ^int N freq))))
 
 (defn- tf*
   "log-weighted term frequency"
   [freq]
-  (if (zero? ^short freq)
-    0
-    (+ (Math/log10 ^short freq) 1)))
+  (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1)))
 
 (defn- tf
   [lmdb doc-id term-id]
-  (if-let [^short freq (l/get-value lmdb c/term-freq [term-id doc-id]
-                                    :int-int :short true)]
-    (tf* freq
-         #_(l/list-count lmdb c/positions [doc-id term-id] :int-int))
+  (if-let [freq (l/get-value lmdb c/term-freq [term-id doc-id]
+                             :int-int :short true)]
+    (tf* freq)
     0))
 
+#_(defn- docs-bitmap [lmdb tid]
+   (l/get-value lmdb c/term-docs tid :int :bitmap true)
+   #_(let [writer  (.get (RoaringBitmapWriter/writer))
+           visitor (fn [kv]
+                     (let [did (b/read-buffer (l/v kv) :int)]
+                       (.add ^RoaringBitmapWriter writer (int did))))]
+       (l/visit-list lmdb c/term-docs visitor tid :int)
+       (.get writer)))
+
 (defn- hydrate-query
-  [^AtomicInteger max-doc ^ObjectIntHashMap unigrams lmdb
-   ^SymSpell symspell tokens]
+  [^AtomicInteger max-doc ^ObjectIntHashMap unigrams
+   ^SymSpell symspell tokens ^IntObjectHashMap td-bms]
   (let [sis (when symspell
               (.getSuggestTerms symspell tokens c/dict-max-edit-distance false))
         tms (if sis
@@ -128,7 +133,8 @@
             (map (fn [[term freq]]
                    (let [id (.getIfAbsent unigrams term -1)]
                      (when-not (= id -1)
-                       (let [df (l/list-count lmdb c/term-docs id :int)]
+                       (let [df (.getCardinality
+                                  ^RoaringBitmap (.get td-bms id))]
                          {:tm term
                           :id id
                           :ed (eds term)
@@ -145,17 +151,9 @@
       (.put result did (+ ^double res dot))
       (.put result did dot))))
 
-(defn- docs-bitmap [lmdb tid]
-  (let [writer  (.get (RoaringBitmapWriter/writer))
-        visitor (fn [kv]
-                  (let [did (b/read-buffer (l/v kv) :int)]
-                    (.add ^RoaringBitmapWriter writer (int did))))]
-    (l/visit-list lmdb c/term-docs visitor tid :int)
-    (.get writer)))
-
 (defn- add-candidates
-  [lmdb tid ^HashMap candid ^HashMap cache ^HashMap result]
-  (doseq [did (l/get-list lmdb c/term-docs tid :int :int)]
+  [tid ^HashMap candid ^HashMap cache ^HashMap result ^IntObjectHashMap td-bms]
+  (doseq [did (.get td-bms tid)]
     (when-not (.containsKey result did)
       (if-let [seen (.get candid did)]
         (when-not (.containsKey cache [tid did])
@@ -163,10 +161,11 @@
         (.put candid did 1)))))
 
 (defn- check-doc
-  [^HashMap cache kid did lmdb ^HashMap candid wqs ^HashMap result]
+  [^HashMap cache kid did lmdb ^HashMap candid wqs ^HashMap result
+   ^IntObjectHashMap td-bms]
   (when (if (.containsKey cache [kid did])
           (.get cache [kid did])
-          (let [in? (l/in-list? lmdb c/term-docs kid did :int :int)]
+          (let [in? (.contains ^RoaringBitmap (.get td-bms kid))]
             (.put cache [kid did] in?)
             (when in? (inc-score lmdb kid did wqs result))
             in?))
@@ -217,28 +216,28 @@
 (defn- add-offsets
   [lmdb terms [_ did doc-ref]]
   [doc-ref (sequence
-             (comp (mapv (fn [tid]
-                        (let [lst (l/get-list lmdb c/positions [did tid]
-                                              :int-int :int-int)]
-                          (when (seq lst)
-                            [(terms tid) (mapv #(nth % 1) lst)]))))
+             (comp (map (fn [tid]
+                       (let [lst (l/get-list lmdb c/positions [did tid]
+                                             :int-int :int-int)]
+                         (when (seq lst)
+                           [(terms tid) (mapv #(nth % 1) lst)]))))
                 (remove nil? ))
              (keys terms))])
 
 (defn- get-doc-ref [doc-info] (nth doc-info 2))
 
 (defn- prune-candidates
-  [term-ids n lmdb wqs result]
+  [term-ids n lmdb wqs result td-bms]
   (let [backup (HashMap.)
         cache  (HashMap.)]
     (fn [tao] ; target # of overlaps between query and doc
       (let [tid    (nth term-ids (- ^long n ^long tao))
             candid (HashMap. backup)]
-        (add-candidates lmdb tid candid cache result)
+        (add-candidates tid candid cache result td-bms)
         (let [selected (FastList.)]
           (filter-candidates
             tao n term-ids candid cache lmdb selected
-            backup wqs result)
+            backup wqs result td-bms)
           (doseq [did selected] (inc-score lmdb tid did wqs result))
           selected)))))
 
@@ -286,17 +285,17 @@
         selected))))
 
 (defn- score-docs
-  [lmdb n qterms term-ids wqs result algo]
+  [lmdb n qterms term-ids wqs result algo td-bms]
   (case algo
     ;; choose algorithm based on df variation
     :smart  (if (or (= n 1)
                     (> (quot ^long ((peek qterms) :df)
                              ^long ((nth qterms 0) :df))
                        16))
-              (prune-candidates term-ids n lmdb wqs result)
-              (intersect-bitmaps term-ids lmdb n wqs result))
-    :prune  (prune-candidates term-ids n lmdb wqs result)
-    :bitmap (intersect-bitmaps term-ids lmdb n wqs result)
+              (prune-candidates term-ids n lmdb wqs result td-bms)
+              (intersect-bitmaps term-ids lmdb n wqs result td-bms))
+    :prune  (prune-candidates term-ids n lmdb wqs result td-bms)
+    :bitmap (intersect-bitmaps term-ids lmdb n wqs result td-bms)
     (u/raise "Unknown search algorithm" {:algo algo})))
 
 (defn- display-xf
@@ -311,11 +310,12 @@
 (defn- add-doc-txs
   [doc-text ^AtomicInteger max-doc ^FastList txs doc-ref
    ^IntObjectHashMap rdocs ^IntShortHashMap norms ^ObjectIntHashMap unigrams
-   ^AtomicInteger max-term positions?]
+   ^AtomicInteger max-term positions? ^IntObjectHashMap td-bms]
   (let [result    (en-analyzer doc-text)
         new-terms ^HashMap (collect-terms result)
         unique    (count new-terms)
-        doc-id    (.incrementAndGet max-doc)]
+        doc-id    (.incrementAndGet max-doc)
+        term-ids  (ArrayList.)]
     (.add txs [:put c/docs doc-ref [doc-id unique] :data :int-short])
     (when rdocs (.put rdocs doc-id doc-ref))
     (when norms (.put norms doc-id unique))
@@ -324,16 +324,22 @@
             new-lst (.getValue kv)
             term-id (.getIfAbsentPut unigrams term
                                      (.incrementAndGet max-term))]
+        (.add term-ids term-id)
+        (if (.containsKey td-bms term-id)
+          (.put td-bms term-id
+                (b/bitmap-add (.get td-bms term-id) doc-id))
+          (.put td-bms term-id (b/bitmap-add (b/bitmap) doc-id)))
         (.add txs [:put c/terms term-id term :int :string])
         (.add txs [:put c/term-freq [term-id doc-id] (count new-lst)
                    :int-int :short])
-        (.add txs [:put c/term-docs term-id doc-id :int :int])
         (when positions?
           (.add txs [:put-list c/positions [doc-id term-id] new-lst
-                     :int-int :int-int]))))))
+                     :int-int :int-int]))))
+    term-ids))
 
 (deftype SearchEngine [lmdb
                        ^ObjectIntHashMap unigrams ; term -> term-id
+                       ^IntObjectHashMap td-bms   ; term-id -> doc-ids
                        ^IntShortHashMap norms     ; doc-id -> norm
                        ^IntObjectHashMap rdocs    ; doc-id -> doc-ref
                        ^SymSpell symspell
@@ -344,8 +350,9 @@
     (.add-doc this doc-ref doc-text false))
   (add-doc [this doc-ref doc-text positions?]
     (let [txs (FastList.)]
-      (add-doc-txs doc-text max-doc txs doc-ref rdocs norms unigrams max-term
-                   positions?)
+      (doseq [tid (add-doc-txs doc-text max-doc txs doc-ref rdocs norms
+                               unigrams max-term positions? td-bms)]
+        (.add txs [:put c/term-docs tid (.get td-bms tid) :int :bitmap]))
       (l/transact-kv lmdb txs)))
 
   (remove-doc [this doc-ref]
@@ -370,7 +377,7 @@
     (let [tokens (->> (en-analyzer query)
                       (mapv first)
                       (into-array String))
-          qterms (->> (hydrate-query max-doc unigrams lmdb symspell tokens)
+          qterms (->> (hydrate-query max-doc unigrams symspell tokens td-bms)
                       (sort-by :ed)
                       (sort-by :df)
                       vec)
@@ -379,7 +386,8 @@
         (let [term-ids  (mapv :id qterms)
               wqs       (into {} (mapv (fn [{:keys [id wq]}] [id wq]) qterms))
               result    (HashMap.)
-              select-fn (score-docs lmdb n qterms term-ids wqs result algo)]
+              select-fn (score-docs lmdb n qterms term-ids wqs result
+                                    algo td-bms)]
           (sequence
             (display-xf display lmdb term-ids qterms)
             (persistent!
@@ -419,6 +427,16 @@
     (l/visit lmdb c/docs load [:all] :data)
     [rdocs norms]))
 
+(defn- init-td-bms
+  [lmdb]
+  (let [td-bms (IntObjectHashMap.)
+        load   (fn [kv]
+                 (let [term-id (b/read-buffer (l/k kv) :int)
+                       bm      (b/read-buffer (l/v kv) :bitmap)]
+                   (.put td-bms term-id bm)))]
+    (l/visit lmdb c/term-docs load [:all] :int)
+    td-bms))
+
 (defn- init-max-doc
   [lmdb]
   (if-let [doc-id (ffirst (l/get-first lmdb c/positions [:all-back]
@@ -436,7 +454,7 @@
   (l/open-dbi lmdb c/terms Integer/BYTES c/+max-term-length+)
   (l/open-dbi lmdb c/docs c/+max-key-size+ (+ Integer/BYTES Short/BYTES))
   (l/open-dbi lmdb c/term-freq (* 2 Integer/BYTES) Short/BYTES)
-  (l/open-inverted-list lmdb c/term-docs Integer/BYTES Integer/BYTES)
+  (l/open-dbi lmdb c/term-docs Integer/BYTES)
   (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES)
                         (* 2 Integer/BYTES)))
 
@@ -449,6 +467,7 @@
    (let [[rdocs norms] (init-docs lmdb)]
      (->SearchEngine lmdb
                      (init-unigrams lmdb)
+                     (init-td-bms lmdb)
                      norms
                      rdocs
                      (when fuzzy? (SymSpell. {} {} c/dict-max-edit-distance
@@ -463,6 +482,7 @@
 
 (deftype IndexWriter [lmdb
                       ^ObjectIntHashMap unigrams
+                      ^IntObjectHashMap td-bms
                       ^AtomicInteger max-doc
                       ^AtomicInteger max-term
                       ^FastList txs]
@@ -470,8 +490,9 @@
   (write [this doc-ref doc-text]
     (.write this doc-ref doc-text false))
   (write [this doc-ref doc-text positions?]
-    (add-doc-txs doc-text max-doc txs doc-ref nil nil unigrams max-term
-                 positions?)
+    (doseq [tid (add-doc-txs doc-text max-doc txs doc-ref nil nil
+                             unigrams max-term positions? td-bms)]
+      (.add txs [:put c/term-docs tid (.get td-bms tid) :int :bitmap]))
     (when (< 1000000 (.size txs))
       (.commit this)
       (.clear txs)))
@@ -484,6 +505,7 @@
   (open-dbis lmdb)
   (->IndexWriter lmdb
                  (init-unigrams lmdb)
+                 (init-td-bms lmdb)
                  (AtomicInteger. (init-max-doc lmdb))
                  (AtomicInteger. (init-max-term lmdb))
                  (FastList.)))
@@ -495,7 +517,8 @@
   (l/open-dbi lmdb c/docs)
 
   (def engine (time (new-engine lmdb)))
-  (l/get-range lmdb c/terms [:all] :int :string false)
+  (l/get-range lmdb c/term-docs [:all] :int :bitmap false)
+
   (let [m (volatile! 0)
         f (fn [kv]
             (let [[p _] (b/read-buffer (l/v kv) :int-int)]
@@ -504,7 +527,7 @@
     (l/visit-list lmdb c/positions f [1 1] :int-int)
     @m)
 
-  (time (l/get-value lmdb c/term-freq [17655 11] :int-int :short ))
+  (time (.getCardinality (l/get-value lmdb c/term-docs 1 :int :bitmap)))
   (time (l/list-count lmdb c/positions [11 17655 ] :int-int ))
 
   (l/get-range lmdb c/positions [:all] :int-int :int-int)

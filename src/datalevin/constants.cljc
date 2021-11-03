@@ -93,7 +93,7 @@
 (def ^:const terms "datalevin/terms")         ; term-id -> term
 (def ^:const docs "datalevin/docs")           ; doc-ref -> doc-id,norm
 (def ^:const term-freq "datalevin/term-freq") ; term-id,doc-id -> freq
-(def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (list)
+(def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (bitmap)
 (def ^:const positions "datalevin/positions") ; doc-id,term-id -> position,offset (list)
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol

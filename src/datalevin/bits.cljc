@@ -76,12 +76,14 @@
 (defn bitmap-del
   "Delete an int from the bitmap"
   [^RoaringBitmap bm i]
-  (.remove bm ^int i))
+  (.remove bm ^int i)
+  bm)
 
 (defn bitmap-add
   "Add an int from the bitmap"
   [^RoaringBitmap bm i]
-  (.add bm ^int i))
+  (.add bm ^int i)
+  bm)
 
 ;; byte buffer
 
