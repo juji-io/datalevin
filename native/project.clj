@@ -8,7 +8,7 @@
                              :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
-                 [borkdude/sci]
+                 [org.babashka/sci]
                  [com.cognitect/transit-clj]
                  [org.clojars.huahaiy/dtlvnative-macos-amd64]
                  [org.clojars.huahaiy/dtlvnative-windows-amd64]

@@ -12,6 +12,7 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [org.roaringbitmap RoaringBitmap]
+           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [datalevin.bits Indexable Retrieved]))
 
 ;; buffer read/write
@@ -62,15 +63,26 @@
                   (.flip bf)
                   (= [k1 k2] (sut/read-buffer bf :int-int)))))
 
-(test/defspec int-int-generative-test
+(test/defspec short-data-generative-test
   100
-  (prop/for-all [k1 gen/int
-                 k2 gen/small-integer]
+  (prop/for-all [k1 gen/small-integer
+                 k2 gen/any-equatable]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 k2] :int-short)
+                  (sut/put-buffer bf [k1 k2] :short-data)
                   (.flip bf)
-                  (= [k1 k2] (sut/read-buffer bf :int-short)))))
+                  (= [k1 k2] (sut/read-buffer bf :short-data)))))
+
+(test/defspec int-bitmap-generative-test
+  100
+  (prop/for-all [k1 gen/int
+                 k2 (gen/vector gen/int)]
+                (let [^ByteBuffer bf    (sut/allocate-buffer 16384)
+                      ^RoaringBitmap bm (sut/bitmap k2)]
+                  (.clear bf)
+                  (sut/put-buffer bf [k1 bm] :int-bitmap)
+                  (.flip bf)
+                  (= [k1 bm] (sut/read-buffer bf :int-bitmap)))))
 
 (test/defspec long-generative-test
   100
@@ -695,3 +707,17 @@
     (is (= 4 (.select rr 3)))
     (sut/bitmap-del rr 4)
     (is (= 1000 (.select rr 3)))))
+
+(deftest int-short-map-roundtrip-test
+  (let [ishm (IntShortHashMap.)
+        _    (.put ishm 1 2)
+        _    (.put ishm 3 4)
+        bf   (sut/allocate-buffer 8192)]
+    (is (= (.get ishm 1) 2))
+    (is (= (.get ishm 3) 4))
+    (sut/put-buffer bf ishm :int-short-map)
+    (.flip bf)
+    (let [^IntShortHashMap ishm1 (sut/read-buffer bf :int-short-map)]
+      (is (= (.get ishm1 1) 2))
+      (is (= (.get ishm1 3) 4))
+      (is (.equals ishm ishm1)))))

@@ -1,12 +1,14 @@
 (ns datalevin.search-test
   (:require [datalevin.search :as sut]
             [datalevin.lmdb :as l]
+            [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Map ArrayList]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntObjectHashMap ObjectIntHashMap]
+           [org.roaringbitmap RoaringBitmap]
            [datalevin.sm SymSpell Bigram]
            [datalevin.search SearchEngine]))
 
@@ -38,16 +40,14 @@
         engine ^SearchEngine (sut/new-engine lmdb)]
     (add-docs engine)
 
-    (let [unigrams ^ObjectIntHashMap (.-unigrams engine)
-          tid      (.get unigrams "red")]
-      (is (= (.size unigrams)
-             (l/range-count lmdb c/terms [:all] :int)
-             32))
-      (is (= (l/get-value lmdb c/terms tid :int :string) "red"))
-      (is (l/in-list? lmdb c/term-docs tid 1 :int :int))
-      (is (l/in-list? lmdb c/term-docs tid 5 :int :int))
-      (is (= (l/list-count lmdb c/term-docs tid :int) 4))
-      (is (= (l/get-list lmdb c/term-docs tid :int :int) [1 2 4 5]))
+    (let [[tid ^RoaringBitmap bm] (l/get-value lmdb c/terms "red"
+                                               :string :int-bitmap true)]
+      (is (= (l/range-count lmdb c/terms [:all] :string) 32))
+      (is (= (l/get-value lmdb c/terms "red" :string :int) tid))
+      (is (.contains bm 1))
+      (is (.contains bm 5))
+      (is (= (.getCardinality bm) 4))
+      (is (= (seq bm) [1 2 4 5]))
       (is (= (l/list-count lmdb c/positions [1 tid] :int-int) 2))
       (is (= (l/list-count lmdb c/positions [5 tid] :int-int) 1))
       (is (= (l/get-list lmdb c/positions [5 tid] :int-int :int-int)
@@ -56,16 +56,18 @@
                             :int-int)
              9))
 
-      (is (= (l/get-value lmdb c/docs :doc1 :data :int-short true) [1 7]))
-      (is (= (l/get-value lmdb c/docs :doc4 :data :int-short true) [4 7]))
+      (is (= (l/get-value lmdb c/docs 1 :int :short-data true) [7 :doc1]))
+      (is (= (l/get-value lmdb c/docs 4 :int :short-data true) [7 :doc4]))
       (is (= (l/range-count lmdb c/docs [:all]) 5))
 
       (sut/remove-doc engine :doc5)
-      (is (= (l/range-count lmdb c/docs [:all]) 4))
-      (is (not (l/in-list? lmdb c/term-docs tid 5 :int :int)))
-      (is (= (l/list-count lmdb c/term-docs tid :int) 3))
-      (is (= (l/list-count lmdb c/positions [5 tid] :int-id) 0))
-      (is (= (l/get-list lmdb c/positions [5 tid] :int-id :int-int) [])))
+      (let [[tid ^RoaringBitmap bm] (l/get-value lmdb c/terms "red"
+                                                 :string :int-bitmap true)]
+        (is (= (l/range-count lmdb c/docs [:all]) 4))
+        (is (not (.contains bm 5)))
+        (is (= (.getCardinality bm) 3))
+        (is (= (l/list-count lmdb c/positions [5 tid] :int-id) 0))
+        (is (nil? (l/get-list lmdb c/positions [5 tid] :int-id :int-int)))))
 
     (l/close-kv lmdb)))
 

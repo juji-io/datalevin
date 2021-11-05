@@ -1,5 +1,9 @@
 # Datalevin Search Benchmark
 
+To measure the performance of Datalevin search engine, we stacked it up against
+the most prominent full-text search library in the Java word, the venerable
+Apache Lucene.
+
 ## Test Data
 
 The data source is [Wikipedia database backup dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2), over 18GB XML compressed.
@@ -10,8 +14,6 @@ extract all articles into a JSON file. Furthermore, we use
 [jq](https://stedolan.github.io/jq/) to remove articles containing less than 500
 characters (e.g. those only refer to other articles) and strip away unneeded
 meta data, just leaving article content as the text and url as the identifier.
-To speed up things a little, about half of articles were sampled (those with odd
-number of characters) and used in the subsequent tests.
 
 ```console
 wget https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2
@@ -19,10 +21,9 @@ wget https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.
 wikiextractor -o - --json --no-templates enwiki-latest-pages-articles.xml.bz2 |
 jq -s '.[] | select((.text | length) > 500) | {url, text}' > wiki.json
 
-cat wiki.json | jq -s '.[] | select(((.text | length) % 2) != 0)' > wiki-odd.json
 ```
-This may take a few hours to run, depending on your hardware. It produces a JSON
-file containing about 2 million articles with about 800 million words, totaling 6.8GB.
+This may take a few of hours to run, depending on your hardware. It produces a JSON
+file containing over 6.3 million articles, totaling 15GB of text.
 
 ## Test Queries
 
@@ -45,18 +46,20 @@ The same conditions were applied to both Datalevin and Lucene:
 
 * A single thread was used to add documents during indexing.
 
-* Indices were stored on disk.
+* Indices were stored on the same disk as input data.
 
-* Punctuation and stop words were removed. The same stop words list was used in
-  both Datalevin and Lucene. No stemming was performed.
+* Punctuation and stop words were removed; the same stop words list was used in
+  both Datalevin and Lucene; stemming was not performed, as per the
+  default settings of Lucene `ClassicAnalyzer`.
 
-* Query terms were `AND` together.
+* Query terms were `OR`ed together, per Lucene default.
 
 * Top 10 results were returned for each query, only URLs of the articles were returned.
 
 * Concurrent searches were performed by submitting each search query to a thread pool.
 
-* Tests were conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores, 64GB RAM, 1TB SSD, running Ubuntu 20.04 and OpenJDK 17 (2021-09-14), with Clojure 1.10.3.
+* Tests were conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores (12
+  virtual cores), 64GB RAM, 1TB SSD, running Ubuntu 20.04 and OpenJDK 17 (2021-09-14), with Clojure 1.10.3.
 
 Run benchmarks:
 
@@ -65,129 +68,367 @@ clj -X:datalevin
 clj -X:lucene
 ```
 
-The benchmarks took a few hours to run.
+The benchmarks took a couple of hours to run.
 
 ## Result
 
-|   | Datalevin | Lucene |
+### Indexing
+
+Indexing performance is in the following table.
+
+|Measure   | Datalevin | Lucene |
 |----|--------|--------|
-| Indexing time (hrs)  | 0.98  | 0.15  |
-| Index size (GB)  | 41  |  6.3      |
+| Index time (Hours)  | 0.99  | 0.32  |
+| Index size (GB)  | 13  |  13      |
+| Index Speed (GB/Hour)  | 13.1  |  40.6      |
 
+Lucene is 3 times faster than Datalevin at indexing, and the resulting index has the same size.
 
-Indexing took 3558.14 seconds
-mean: 70
-10 percentile: 0
-median: 14
-75 percentile: 53
-90 percentile: 148
-95 percentile: 267
-99 percentile: 981
-99.9 percentile: 3394
-max: 12120
+### Searching
 
-Querying took 193.10 seconds
-mean: 57
-10 percentile: 0
-median: 16
-75 percentile: 55
-90 percentile: 139
-95 percentile: 233
-99 percentile: 644
-99.9 percentile: 1718
-max: 5926
+We varied the number of threads used for performing concurrent searching. The
+results are the following:
 
-Querying took 181.93 seconds
-mean: 54
-10 percentile: 0
-median: 14
-75 percentile: 52
-90 percentile: 132
-95 percentile: 220
-99 percentile: 599
-99.9 percentile: 1652
-max: 5744
+|Number of threads |Measure   | Datalevin | Lucene |
+|1 |Search Throughput (QPS)  | | 202 |
+| |Search Latency Median (ms)  | |        |
+| | &nbsp;&nbsp;&nbsp; 75 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
+|2 |Search Throughput (QPS)  | |        |
+| |Search Latency Median (ms)  | |        |
+| | &nbsp;&nbsp;&nbsp; 75 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
+|3 |Search Throughput (QPS)  | |        |
+| |Search Latency Median (ms)  | |        |
+| | &nbsp;&nbsp;&nbsp; 75 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
+|4 |Search Throughput (QPS)  | |        |
+| |Search Latency Median (ms)  | |        |
+| | &nbsp;&nbsp;&nbsp; 75 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
+|5 |Search Throughput (QPS)  | |        |
+| |Search Latency Median (ms)  | |        |
+| | &nbsp;&nbsp;&nbsp; 75 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
+|6 |Search Throughput (QPS)  | |        |
+| |Search Latency Median (ms)  | |        |
+| | &nbsp;&nbsp;&nbsp; 75 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
+| | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
 
-Indexing took 3531.95 seconds
-Querying took 155.46 seconds
-mean: 46
-10 percentile: 0
-median: 15
-75 percentile: 50
-90 percentile: 116
-95 percentile: 188
-99 percentile: 459
-99.9 percentile: 1096
-max: 3467
+Datalevin:
 
-Querying took 138.55 seconds
-mean: 41
-10 percentile: 0
-median: 12
-75 percentile: 44
-90 percentile: 108
-95 percentile: 171
-99 percentile: 405
-99.9 percentile: 947
-max: 3355
+Querying with 0 threads took 221.56 secondsLatency (ms):
+mean: 5
+median: 2
+75 percentile: 4
+90 percentile: 10
+95 percentile: 20
+99 percentile: 79
+99.9 percentile: 231
+max: 782
 
-Querying took 114.72 seconds
-mean: 34
-10 percentile: 0
-median: 9
-75 percentile: 33
-90 percentile: 83
-95 percentile: 137
-99 percentile: 379
-99.9 percentile: 1026
-max: 3749
+Querying with 1 threads took 130.73 secondsLatency (ms):
+mean: 6
+median: 2
+75 percentile: 5
+90 percentile: 11
+95 percentile: 25
+99 percentile: 100
+99.9 percentile: 288
+max: 998
 
-Querying took 110.02 seconds
-mean: 32
-10 percentile: 0
-median: 9
-75 percentile: 31
-90 percentile: 78
-95 percentile: 132
-99 percentile: 373
-99.9 percentile: 1028
-max: 3637
+Querying with 2 threads took 96.72 secondsLatency (ms):
+mean: 7
+median: 2
+75 percentile: 5
+90 percentile: 12
+95 percentile: 29
+99 percentile: 113
+99.9 percentile: 322
+max: 966
 
-Lucene crashed when submitting search tasks to a default `(Executors/newWorkStealingPool)`, which uses a thread pool that has the same number of threads as the number
-of virtual cores (12 in our case).
+Querying with 3 threads took 77.62 secondsLatency (ms):
+mean: 7
+median: 2
+75 percentile: 5
+90 percentile: 13
+95 percentile: 30
+99 percentile: 125
+99.9 percentile: 335
+max: 994
 
-Lucene query parser seems to be rather picky. We had to manually fix some
-queries for the test to run. E.g. Lucene crashed with the query "\"ground beef
-recipes\'" for the mismatched quotes.
+Querying with 4 threads took 67.46 secondsLatency (ms):
+mean: 8
+median: 2
+75 percentile: 5
+90 percentile: 14
+95 percentile: 33
+99 percentile: 140
+99.9 percentile: 378
+max: 1258
+
+Querying with 5 threads took 60.70 secondsLatency (ms):
+mean: 9
+median: 2
+75 percentile: 5
+90 percentile: 15
+95 percentile: 35
+99 percentile: 156
+99.9 percentile: 414
+max: 1210
+
+Querying with 6 threads took 58.82 secondsLatency (ms):
+mean: 10
+median: 2
+75 percentile: 6
+90 percentile: 16
+95 percentile: 40
+99 percentile: 176
+99.9 percentile: 486
+max: 1434
+
+Querying with 7 threads took 58.46 secondsLatency (ms):
+mean: 11
+median: 2
+75 percentile: 6
+90 percentile: 19
+95 percentile: 47
+99 percentile: 197
+99.9 percentile: 543
+max: 2016
+
+Querying with 8 threads took 56.48 secondsLatency (ms):
+mean: 12
+median: 3
+75 percentile: 7
+90 percentile: 20
+95 percentile: 50
+99 percentile: 212
+99.9 percentile: 600
+max: 2243
+
+Querying with 9 threads took 55.23 secondsLatency (ms):
+mean: 13
+median: 3
+75 percentile: 7
+90 percentile: 22
+95 percentile: 56
+99 percentile: 232
+99.9 percentile: 652
+max: 2379
+
+Querying with 10 threads took 54.44 secondsLatency (ms):
+mean: 14
+median: 3
+75 percentile: 8
+90 percentile: 24
+95 percentile: 60
+99 percentile: 251
+99.9 percentile: 715
+max: 2480
+
+Querying with 11 threads took 54.06 secondsLatency (ms):
+mean: 16
+median: 3
+75 percentile: 8
+90 percentile: 26
+95 percentile: 65
+99 percentile: 273
+99.9 percentile: 791
+max: 2586
+
+hyang@neo:~/workspace/datalevin/search-bench$ clj -X:datalevin
+
+Datalevin:
+Work stealing thread pool:
+
+Querying with 0 threads took 47.53 secondsLatency (ms):
+mean: 14
+median: 3
+75 percentile: 8
+90 percentile: 24
+95 percentile: 57
+99 percentile: 230
+99.9 percentile: 641
+max: 1646
+
+Lucene:
+Fixed thread pool:
+
+Querying with 1 threads took 191.59 seconds
+Latency (ms):
+mean: 4
+median: 3
+75 percentile: 6
+90 percentile: 11
+95 percentile: 16
+99 percentile: 30
+99.9 percentile: 60
+max: 144
+
+Querying with 2 threads took 97.10 seconds
+Latency (ms):
+mean: 4
+median: 3
+75 percentile: 6
+90 percentile: 11
+95 percentile: 16
+99 percentile: 31
+99.9 percentile: 61
+max: 114
+
+Querying with 3 threads took 66.15 seconds
+Latency (ms):
+mean: 4
+median: 3
+75 percentile: 6
+90 percentile: 12
+95 percentile: 17
+99 percentile: 32
+99.9 percentile: 63
+max: 120
+
+Querying with 4 threads took 49.76 seconds
+Latency (ms):
+mean: 4
+median: 3
+75 percentile: 6
+90 percentile: 12
+95 percentile: 17
+99 percentile: 32
+99.9 percentile: 63
+max: 121
+
+Querying with 5 threads took 39.95 seconds
+Latency (ms):
+mean: 4
+median: 3
+75 percentile: 6
+90 percentile: 12
+95 percentile: 17
+99 percentile: 32
+99.9 percentile: 63
+max: 121
+
+Querying with 6 threads took 33.92 seconds
+Latency (ms):
+mean: 5
+median: 3
+75 percentile: 6
+90 percentile: 12
+95 percentile: 17
+99 percentile: 33
+99.9 percentile: 65
+max: 128
+
+Querying with 7 threads took 33.18 seconds
+Latency (ms):
+mean: 5
+median: 3
+75 percentile: 7
+90 percentile: 14
+95 percentile: 20
+99 percentile: 40
+99.9 percentile: 78
+max: 165
+
+Querying with 8 threads took 32.46 seconds
+Latency (ms):
+mean: 6
+median: 3
+75 percentile: 8
+90 percentile: 16
+95 percentile: 22
+99 percentile: 44
+99.9 percentile: 85
+max: 190
+
+Querying with 9 threads took 31.81 seconds
+Latency (ms):
+mean: 7
+median: 4
+75 percentile: 9
+90 percentile: 17
+95 percentile: 25
+99 percentile: 49
+99.9 percentile: 101
+max: 260
+
+Querying with 10 threads took 32.66 seconds
+Latency (ms):
+mean: 8
+median: 4
+75 percentile: 10
+90 percentile: 19
+95 percentile: 28
+99 percentile: 57
+99.9 percentile: 133
+max: 307
+
+Querying with 11 threads took 31.28 seconds
+Latency (ms):
+mean: 8
+median: 4
+75 percentile: 11
+90 percentile: 21
+95 percentile: 30
+99 percentile: 58
+99.9 percentile: 117
+max: 253
+
+Querying with 12 threads took 30.69 seconds
+Latency (ms):
+mean: 9
+median: 5
+75 percentile: 11
+90 percentile: 22
+95 percentile: 32
+99 percentile: 61
+99.9 percentile: 124
+max: 266
+Work stealing thread pool:
+
+Querying with 0 threads took 30.63 seconds
+Latency (ms):
+mean: 9
+median: 5
+75 percentile: 11
+90 percentile: 22
+95 percentile: 32
+99 percentile: 62
+99.9 percentile: 123
+max: 272
 
 ## Remarks
 
 The design of Lucene and Datalevin search engine differs significantly, lending
 to different use cases.
 
-Lucene indices data into multiple independent segments, so it supports great
-parallelism while indexing data. It also compress the data very well and has
-very small index size. However, because search results need to be merged from
-multiple segments during query, complicating the code path, results in poor
-query concurrency. It seems that significant engineering effort is needed to
-make Lucene suitable for fielding a large number end users searching
-simultaneously. In addition, the added documents are not immediately searchable.
-It is therefore suitable for data analytic work, which it excels, but would be
-challenging to support online operations.
+Lucene query parser seems to be rather picky. We had to manually fix some
+queries for the test to run. E.g. Lucene crashed with the query "\"ground beef
+recipes\'" for the mismatched quotes. The parser did not support concurrent
+querying. A new parser has to be created for each query, otherwise the program
+would crash if there were more than one thread searching.
 
 Datalevin is designed as an operational database, not for analytics. Datalevin
 search engine stores search indices by transacting them into a LMDB database. The
 documents are immediately searchable once added. Since LMDB has a single writer,
 having multiple indexing threads does little to improve the data ingestion
-speed. In addition, data in Datalevin is not currently compressed, so the index
-size is significantly larger. Therefore, some Lucene's common use cases would
-not be appropriate for the Datalevin search engine, e.g. log ingestion. On the
-other hand, Datalevin query performance scales linearly with the number of CPU
-cores, and performs on par with Lucene on a single core.
-
-Obviously, Lucene has thousands of man hour behind its development and is extremely
-configurable, while Datalevin search engine is embedded in a new database with
-"simplicity" as its motto, it is currently just less than 500 lines of Clojure
+speed. Obviously, Lucene has thousands of man hour behind its development and is
+extremely configurable, while Datalevin search engine is embedded in a new database with
+"simplicity" as its motto, it is currently just less than 600 lines of Clojure
 code, so it does not offer any bells and whistles but the core search features.
 On the other hand, Datalevin search engine performs well and is nicely
 integrated with other Datalevin database features, so it supports our goal of

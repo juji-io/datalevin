@@ -90,10 +90,9 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const meta "datalevin/meta")
-(def ^:const terms "datalevin/terms")         ; term-id -> term
-(def ^:const docs "datalevin/docs")           ; doc-ref -> doc-id,norm
-(def ^:const term-freq "datalevin/term-freq") ; term-id,doc-id -> freq
-(def ^:const term-docs "datalevin/term-docs") ; term-id -> doc-id (bitmap)
+(def ^:const terms "datalevin/terms")         ; term -> term-id,doc-id-bitmap
+(def ^:const docs "datalevin/docs")           ; doc-id -> norm,doc-ref
+(def ^:const term-freq "datalevin/term-freq") ; term-id -> {doc-id -> freq}
 (def ^:const positions "datalevin/positions") ; doc-id,term-id -> position,offset (list)
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol

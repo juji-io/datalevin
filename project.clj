@@ -5,7 +5,8 @@
   :url "https://github.com/juji-io/datalevin"
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
-  :managed-dependencies [[org.bouncycastle/bcprov-jdk15on "1.69"]
+  :managed-dependencies [[org.babashka/sci "0.2.7"]
+                         [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.0"]
@@ -25,7 +26,6 @@
                           ]
                          [org.roaringbitmap/RoaringBitmap "0.9.22"]
                          [babashka/babashka.pods "0.0.1"]
-                         [borkdude/sci "0.2.7"]
                          [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
                          [com.cognitect/transit-clj "1.0.324"]
                          [com.fasterxml.jackson.core/jackson-core "2.13.0"]
@@ -37,7 +37,7 @@
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
-                 [borkdude/sci]
+                 [org.babashka/sci]
                  [com.fasterxml.jackson.core/jackson-core]
                  [org.roaringbitmap/RoaringBitmap]
                  [org.eclipse.collections/eclipse-collections]
