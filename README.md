@@ -52,7 +52,7 @@ global configuration distribution. LMDB also [performs
 well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB).
 Therefore, it is fine to store documents in Datalevin.
 
-Datalevin uses cover index and has no write-ahead log, so once the data are
+Datalevin uses a covering index and has no write-ahead log, so once the data are
 written, they are indexed. There are no separate processes or threads for
 indexing, compaction or doing any database maintenance work that compete with
 your applications for resources. Since Datalog is simply a more ergonomic query
