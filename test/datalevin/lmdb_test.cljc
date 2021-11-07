@@ -11,6 +11,7 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays HashMap]
+           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [java.lang Long]))
 
 (if (u/graal?)
@@ -47,7 +48,10 @@
                       [:put "b" 2 3 :long :long]
                       [:put "b" "ok" 42 :string :int]
                       [:put "d" 3.14 :pi :double :keyword]
-                      [:put "d" [1 2] [3 4] :int-int :int-short]]))
+                      [:put "d" [1 2] [3 4] :int-int :int-short]
+                      [:put "d" 42 (doto (IntShortHashMap.)
+                                     (.put 1 2)
+                                     (.put 3 4)) :int :int-short-map]]))
 
     (testing "entries"
       (is (= 4 (:entries (l/stat lmdb))))
@@ -77,7 +81,9 @@
       (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
       (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
       (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
-      (is (= [3 4] (l/get-value lmdb "d" [1 2] :int-int :int-short))))
+      (is (= [3 4] (l/get-value lmdb "d" [1 2] :int-int :int-short)))
+      (let [m (l/get-value lmdb "d" 42 :int :int-short-map)]
+        (is (= (.get ^IntShortHashMap m 1) 2))))
 
     (testing "delete"
       (l/transact-kv lmdb [[:del "a" 1]

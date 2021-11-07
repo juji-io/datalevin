@@ -63,26 +63,28 @@
                   (.flip bf)
                   (= [k1 k2] (sut/read-buffer bf :int-int)))))
 
-(test/defspec short-data-generative-test
+(test/defspec doc-info-generative-test
   100
   (prop/for-all [k1 gen/small-integer
                  k2 gen/any-equatable]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 k2] :short-data)
+                  (sut/put-buffer bf [k1 k2] :doc-info)
                   (.flip bf)
-                  (= [k1 k2] (sut/read-buffer bf :short-data)))))
+                  (= [k1 k2] (sut/read-buffer bf :doc-info)))))
 
-(test/defspec int-bitmap-generative-test
+(test/defspec term-info-generative-test
   100
   (prop/for-all [k1 gen/int
-                 k2 (gen/vector gen/int)]
+                 k2 (gen/double* {:NaN? false})
+                 k3 (gen/vector gen/int)]
                 (let [^ByteBuffer bf    (sut/allocate-buffer 16384)
-                      ^RoaringBitmap bm (sut/bitmap k2)]
+                      ^RoaringBitmap bm (sut/bitmap k3)
+                      k2                (float k2)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 bm] :int-bitmap)
+                  (sut/put-buffer bf [k1 k2 bm] :term-info)
                   (.flip bf)
-                  (= [k1 bm] (sut/read-buffer bf :int-bitmap)))))
+                  (= [k1 k2 bm] (sut/read-buffer bf :term-info)))))
 
 (test/defspec long-generative-test
   100
@@ -699,25 +701,23 @@
         bf  (sut/allocate-buffer 16384)]
     (is (= rr rr1))
     (is (= 1000 (.select rr 3)))
-    (sut/put-buffer bf rr :bitmap)
+    (is (= (.getCardinality rr) 4))
+    (sut/put-buffer bf rr)
     (.flip bf)
-    (let [^RoaringBitmap rr1 (sut/read-buffer bf :bitmap)]
+    (let [^RoaringBitmap rr1 (sut/read-buffer bf)]
       (is (.equals rr rr1)))
     (sut/bitmap-add rr 4)
     (is (= 4 (.select rr 3)))
     (sut/bitmap-del rr 4)
     (is (= 1000 (.select rr 3)))))
 
-(deftest int-short-map-roundtrip-test
-  (let [ishm (IntShortHashMap.)
-        _    (.put ishm 1 2)
-        _    (.put ishm 3 4)
-        bf   (sut/allocate-buffer 8192)]
-    (is (= (.get ishm 1) 2))
-    (is (= (.get ishm 3) 4))
-    (sut/put-buffer bf ishm :int-short-map)
+(deftest short-array-roundtrip-test
+  (let [ar  (short-array [1 2 3 1000])
+        ar1 (short-array [1 2 3 1000])
+        bf  (sut/allocate-buffer 16384)]
+    (is (Arrays/equals ar ar1))
+    (is (= 1000 (aget ar 3)))
+    (sut/put-buffer bf ar :short-array)
     (.flip bf)
-    (let [^IntShortHashMap ishm1 (sut/read-buffer bf :int-short-map)]
-      (is (= (.get ishm1 1) 2))
-      (is (= (.get ishm1 3) 4))
-      (is (.equals ishm ishm1)))))
+    (let [^shorts ar1 (sut/read-buffer bf :short-array)]
+      (is (Arrays/equals ar ar1)))))

@@ -66,11 +66,11 @@
 (defn query
   "`n` is the total number of queries"
   [dir filename n]
-  (println "Fixed thread pool:")
-  (dotimes [threads 12]
-    (let [threads (inc threads)
-          pool    (Executors/newFixedThreadPool threads)]
-      (search threads pool dir filename n)))
+  ;; (println "Fixed thread pool:")
+  ;; (dotimes [threads 12]
+  ;;   (let [threads (inc threads)
+  ;;         pool    (Executors/newFixedThreadPool threads)]
+  ;;     (search threads pool dir filename n)))
   (println "Work stealing thread pool:")
   (let [pool (Executors/newWorkStealingPool)]
     (search 0 pool dir filename n)))
@@ -78,7 +78,8 @@
 (defn run [opts]
   (println)
   (println "Datalevin:")
+  ;; (index-wiki-json "data/wiki-datalevin-odd" "wiki-odd.json")
   ;; (index-wiki-json "data/wiki-datalevin-all" "wiki.json")
-  ;; (index-wiki-json "data/wiki-datalevin-3" "output.json")
-  (query (s/new-engine (l/open-kv "data/wiki-datalevin-all"))
+  ;; (index-wiki-json "data/wiki-datalevin-5" "output.json")
+  (query (s/new-engine (l/open-kv "data/wiki-datalevin-odd"))
          "queries40k.txt" 40000))

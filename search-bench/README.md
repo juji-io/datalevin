@@ -52,7 +52,8 @@ The same conditions were applied to both Datalevin and Lucene:
   both Datalevin and Lucene; stemming was not performed, as per the
   default settings of Lucene `ClassicAnalyzer`.
 
-* Query terms were `OR`ed together, per Lucene default.
+* Query terms were `OR`ed together, per Lucene default. That is, documents matching
+  any of the query terms are potential results.
 
 * Top 10 results were returned for each query, only URLs of the articles were returned.
 
@@ -126,6 +127,8 @@ results are the following:
 | | &nbsp;&nbsp;&nbsp; 90 percentile  | |        |
 | | &nbsp;&nbsp;&nbsp; 95 percentile  | |        |
 | | &nbsp;&nbsp;&nbsp; 99 percentile  | |        |
+
+Performance when Datalevin does exhaustive search is the following:
 
 Datalevin:
 
@@ -410,6 +413,11 @@ median: 5
 99 percentile: 62
 99.9 percentile: 123
 max: 272
+
+At this point, Datalevin achieved about 65%
+overall speed of Lucene. Its median speed is actually faster than Lucene, but the long
+tail query time is way slower. This is because Lucene does early termination, so it's
+long tail is very short.
 
 ## Remarks
 

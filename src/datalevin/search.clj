@@ -100,17 +100,12 @@
   (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1)))
 
 (defn- tf
-  [tfs doc-id term-id]
-  (if-let [m (tfs term-id)]
-    (.getIfAbsent ^IntShortHashMap m doc-id 0)
-    0))
-
-(defn- get-tfs [lmdb term-id]
-  (l/get-value lmdb c/term-freq term-id :int :int-short-map))
+  [lmdb doc-id term-id]
+  (tf* (l/list-count lmdb c/positions [term-id doc-id] :int-int)))
 
 (defn- get-term-info
   [lmdb term]
-  (l/get-value lmdb c/terms term :string :int-bitmap true))
+  (l/get-value lmdb c/terms term :string :term-info))
 
 (defn- hydrate-query
   [lmdb ^AtomicInteger max-doc ^SymSpell symspell tokens]
@@ -119,31 +114,31 @@
         tms (if sis
               (mapv #(.getSuggestion ^SuggestItem %) sis)
               tokens)
-        eds (if sis
-              (zipmap tms (mapv #(.getEditDistance ^SuggestItem %) sis))
-              (zipmap tms (repeat 0)))]
+        eds (zipmap tms (if sis
+                          (mapv #(.getEditDistance ^SuggestItem %) sis)
+                          (repeat 0)))]
     (into []
           (comp
             (map (fn [[term freq]]
-                   (when-let [[id bm] (get-term-info lmdb term)]
+                   (when-let [[id mw bm] (get-term-info lmdb term)]
                      (let [df (.getCardinality ^RoaringBitmap bm)]
-                       {:bm bm
-                        :df df
-                        :ed (eds term)
-                        :id id
-                        :tf (get-tfs lmdb id)
-                        :tm term
-                        :wq (* ^double (tf* freq)
-                               ^double (idf df (.get max-doc)))}))))
+                       {:bm  bm
+                        :df  df
+                        :ed  (eds term)
+                        :id  id
+                        :idf (idf df (.get max-doc))
+                        :mw  mw
+                        :tm  term
+                        :wq  (tf* freq)}))))
             (filter map?))
           (frequencies tms))))
 
 (defn- inc-score
-  [tfs tid did wqs ^HashMap result]
-  (let [dot ^double (* ^double (tf tfs did tid) ^double (wqs tid))]
+  [lmdb tid did idfs ^HashMap result]
+  (let [tf-idf ^double (* ^double (tf lmdb did tid) ^double (idfs tid))]
     (if-let [res (.get result did)]
-      (.put result did (+ ^double res dot))
-      (.put result did dot))))
+      (.put result did (+ ^double res tf-idf))
+      (.put result did tf-idf))))
 
 (defn- add-candidates
   [tid ^HashMap candid ^HashMap cache ^HashMap result bms]
@@ -206,7 +201,7 @@
 
 (defn- get-doc-ref
   [lmdb [_ doc-id]]
-  (nth (l/get-value lmdb c/docs doc-id :int :short-data) 1))
+  (nth (l/get-value lmdb c/docs doc-id :int :doc-info) 1))
 
 (defn- add-offsets
   [lmdb terms [_ doc-id :as info]]
@@ -302,7 +297,7 @@
         new-terms ^HashMap (collect-terms result)
         unique    (count new-terms)
         doc-id    (.incrementAndGet max-doc)]
-    (.add txs [:put c/docs doc-id [unique doc-ref] :int :short-data])
+    (.add txs [:put c/docs doc-id [unique doc-ref] :int :doc-info])
     (when norms (.put norms doc-id unique))
     (doseq [^Map$Entry kv (.entrySet new-terms)]
       (let [term         (.getKey kv)
@@ -316,8 +311,9 @@
                              (when pre-freqs (.get pre-freqs term-id))
                              (get-tfs lmdb term-id)
                              (IntShortHashMap.))
-            term-freqs   (.put ^IntShortHashMap term-freqs doc-id
-                               (count new-lst))]
+            term-freqs   (doto ^IntShortHashMap term-freqs
+                           (.put doc-id (count new-lst)))
+            ]
         (.put hit-terms term term-info)
         (.put hit-freqs term-id term-freqs)
         (when positions?
@@ -327,13 +323,13 @@
 (defn- doc-ref->id
   [lmdb doc-ref]
   (let [is-ref? (fn [kv]
-                  (= doc-ref (nth (b/read-buffer (l/v kv) :short-data) 1)))]
-    (nth (l/get-some lmdb c/docs is-ref? [:all] :int :short-data) 0)))
+                  (= doc-ref (nth (b/read-buffer (l/v kv) :doc-info) 1)))]
+    (nth (l/get-some lmdb c/docs is-ref? [:all] :int :doc-info) 0)))
 
 (defn- term-id->info
   [lmdb term-id]
   (let [is-id? (fn [kv] (= term-id (b/read-buffer (l/v kv) :int)))]
-    (l/get-some lmdb c/terms is-id? [:all] :string :int-bitmap false)))
+    (l/get-some lmdb c/terms is-id? [:all] :string :term-info false)))
 
 (defn- term-id->freq
   [lmdb term-id doc-id]
@@ -357,7 +353,7 @@
       (doseq [^Map$Entry kv (.entrySet hit-terms)]
         (let [term (.getKey kv)
               info (.getValue kv)]
-          (.add txs [:put c/terms term info :string :int-bitmap])))
+          (.add txs [:put c/terms term info :string :term-info])))
       (doseq [^Map$Entry kv (.entrySet hit-freqs)]
         (let [term-id (.getKey kv)
               freqs   (.getValue kv)]
@@ -375,7 +371,7 @@
                                   :int-int :ignore false)]
           (let [[term [_ bm]] (term-id->info lmdb term-id)]
             (.add txs [:put c/terms term [term-id (b/bitmap-del bm doc-id)]
-                       :string :int-bitmap]))
+                       :string :term-info]))
           (let [tf (term-id->freq lmdb term-id doc-id)]
             (.add txs [:del-list c/term-freq term-id [tf] :int :int-short]))
           (.add txs [:del c/positions [doc-id term-id] :int-int]))
@@ -425,7 +421,7 @@
   (let [pre-terms (HashMap.)
         load      (fn [kv]
                     (let [term (b/read-buffer (l/k kv) :string)
-                          info (b/read-buffer (l/v kv) :int-bitmap)]
+                          info (b/read-buffer (l/v kv) :term-info)]
                       (.put pre-terms term info)))]
     (l/visit lmdb c/terms load [:all] :int)
     pre-terms))
@@ -463,7 +459,6 @@
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
   (l/open-dbi lmdb c/terms c/+max-key-size+)
   (l/open-dbi lmdb c/docs Integer/BYTES)
-  (l/open-dbi lmdb c/term-freq Integer/BYTES)
   (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES)
                         (* 2 Integer/BYTES)))
 
@@ -506,7 +501,7 @@
     (doseq [^Map$Entry kv (.entrySet hit-terms)]
       (let [term (.getKey kv)
             info (.getValue kv)]
-        (.add txs [:put c/terms term info :string :int-bitmap])))
+        (.add txs [:put c/terms term info :string :term-info])))
     (doseq [^Map$Entry kv (.entrySet hit-freqs)]
       (let [term-id (.getKey kv)
             freqs   (.getValue kv)]
@@ -532,11 +527,12 @@
 
 (comment
 
-  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-odd"))
+  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-5"))
 
   (def engine (time (new-engine lmdb)))
 
-  (l/get-first lmdb c/term-freq [:all-back] :int :ignore)
+  (l/get-first lmdb c/term-freq [:all-back] :int :int-short-map false)
+
   (let [m (volatile! 0)
         f (fn [kv]
             (let [[p _] (b/read-buffer (l/v kv) :int-int)]

@@ -56,8 +56,8 @@
                             :int-int)
              9))
 
-      (is (= (l/get-value lmdb c/docs 1 :int :short-data true) [7 :doc1]))
-      (is (= (l/get-value lmdb c/docs 4 :int :short-data true) [7 :doc4]))
+      (is (= (l/get-value lmdb c/docs 1 :int :doc-info true) [7 :doc1]))
+      (is (= (l/get-value lmdb c/docs 4 :int :doc-info true) [7 :doc4]))
       (is (= (l/range-count lmdb c/docs [:all]) 5))
 
       (sut/remove-doc engine :doc5)
