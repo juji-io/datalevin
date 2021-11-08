@@ -710,14 +710,3 @@
     (is (= 4 (.select rr 3)))
     (sut/bitmap-del rr 4)
     (is (= 1000 (.select rr 3)))))
-
-(deftest short-array-roundtrip-test
-  (let [ar  (short-array [1 2 3 1000])
-        ar1 (short-array [1 2 3 1000])
-        bf  (sut/allocate-buffer 16384)]
-    (is (Arrays/equals ar ar1))
-    (is (= 1000 (aget ar 3)))
-    (sut/put-buffer bf ar :short-array)
-    (.flip bf)
-    (let [^shorts ar1 (sut/read-buffer bf :short-array)]
-      (is (Arrays/equals ar ar1)))))

@@ -4,13 +4,14 @@
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [taoensso.nippy :as nippy])
-  (:import [java.util Arrays UUID Date Base64]
+  (:import [java.util ArrayList Arrays UUID Date Base64]
            [java.io Writer DataInput DataOutput ObjectInput ObjectOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
-           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
+            FastRankRoaringBitmap]
+           [org.eclipse.collections.impl.list.mutable.primitive ShortArrayList]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -150,12 +151,14 @@
   ([^ByteBuffer bb]
    (when-let [bs (get-bytes bb)]
      (binding [nippy/*thaw-serializable-allowlist*
-               #{"org.roaringbitmap.*"}]
+               #{"org.roaringbitmap.*"
+                 "org.eclipse.collections.impl.list.mutable.primitive.*"}]
        (nippy/fast-thaw bs))))
   ([^ByteBuffer bb n]
    (when-let [bs (get-bytes-val bb n)]
      (binding [nippy/*thaw-serializable-allowlist*
-               #{"org.roaringbitmap.*"}]
+               #{"org.roaringbitmap.*"
+                 "org.eclipse.collections.impl.list.mutable.primitive.*"}]
        (nippy/fast-thaw bs)))))
 
 (def ^:no-doc ^:const float-sign-idx 31)

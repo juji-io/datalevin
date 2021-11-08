@@ -11,6 +11,7 @@
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntObjectHashMap]
            [org.eclipse.collections.impl.list.mutable FastList]
+           [org.eclipse.collections.impl.list.mutable.primitive ShortArrayList]
            [org.roaringbitmap RoaringBitmap FastAggregation]))
 
 (if (u/graal?)
