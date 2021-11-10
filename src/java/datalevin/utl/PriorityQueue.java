@@ -213,6 +213,11 @@ public abstract class PriorityQueue<T> implements Iterable<T> {
     return size;
   }
 
+  /** Returns the max size of PriorityQueue. */
+  public final int maxSize() {
+        return maxSize;
+  }
+
   /** Removes all entries from the PriorityQueue. */
   public final void clear() {
     for (int i = 0; i <= size; i++) {

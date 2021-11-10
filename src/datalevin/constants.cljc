@@ -105,6 +105,8 @@
 
 (def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
 
+(def ^:const +doc-id-block-size+ 64)
+
 ;; server / client
 
 (def ^:const default-port (int 8898))

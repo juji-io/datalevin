@@ -1,6 +1,7 @@
 (ns datalevin.bits-test
   (:require [datalevin.bits :as sut]
             [datalevin.datom :as d]
+            [datalevin.sslist :as sl]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
             [clojure.test :refer [deftest is]]
@@ -13,7 +14,9 @@
            [java.nio.charset StandardCharsets]
            [org.roaringbitmap RoaringBitmap]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
-           [datalevin.bits Indexable Retrieved]))
+           [datalevin.bits Indexable Retrieved]
+           [datalevin.sslist SparseShortArrayList]
+           ))
 
 ;; buffer read/write
 
@@ -76,15 +79,17 @@
 (test/defspec term-info-generative-test
   100
   (prop/for-all [k1 gen/int
-                 k2 (gen/double* {:NaN? false})
-                 k3 (gen/vector gen/int)]
-                (let [^ByteBuffer bf    (sut/allocate-buffer 16384)
-                      ^RoaringBitmap bm (sut/bitmap k3)
-                      k2                (float k2)]
+                 k2 (gen/vector gen/int)
+                 k3 (gen/vector gen/int)
+                 k4 (gen/vector gen/small-integer)]
+                (let [^ByteBuffer bf            (sut/allocate-buffer 16384)
+                      ^RoaringBitmap bm         (sut/bitmap k2)
+                      k3                        (sort k3)
+                      ^SparseShortArrayList ssl (sl/sparse-short-arraylist k3 k4)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 k2 bm] :term-info)
+                  (sut/put-buffer bf [k1 bm ssl] :term-info)
                   (.flip bf)
-                  (= [k1 k2 bm] (sut/read-buffer bf :term-info)))))
+                  (= [k1 bm ssl] (sut/read-buffer bf :term-info)))))
 
 (test/defspec long-generative-test
   100
@@ -174,7 +179,7 @@
     (.clear bf)
     (sut/put-buffer bf d1 :datom)
     (.flip bf)
-    (is (= d1 (nippy/thaw (nippy/freeze d1))))
+    (is (= d1 (nippy/fast-thaw (nippy/fast-freeze d1))))
     (is (= d1 (sut/read-buffer bf :datom)))))
 
 (test/defspec datom-generative-test
@@ -663,7 +668,7 @@
 
 (defn data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/freeze data)) limit))
+  (< (alength ^bytes (nippy/fast-freeze data)) limit))
 
 (test/defspec data-eav-generative-test
   50

@@ -354,6 +354,8 @@
       (is (= fvs (l/range-filter lmdb "c" pred [:all] :long :long true)))
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
       (is (= res (l/range-filter lmdb "c" pred [:all] :long :long)))
+      (is (= fks (map first
+                      (l/range-filter lmdb "c" pred [:all] :long :ignore false))))
 
       (let [hm      (HashMap.)
             visitor (i/inter-fn [kv]
@@ -412,7 +414,7 @@
 
 (defn- data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/fast-freeze data)) limit))
+  (< (alength ^bytes (nippy/freeze data)) limit))
 
 (test/defspec data-ops-generative-test
   100

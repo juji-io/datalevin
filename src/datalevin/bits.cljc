@@ -227,13 +227,6 @@
   [^ByteBuffer bb n]
   (.putShort bb ^short (short n)))
 
-(defn put-short-array
-  [^ByteBuffer bb ^shorts sa]
-  (let [len (alength sa)]
-    (.putInt bb (int len))
-    (dotimes [i len]
-      (.putShort bb (aget sa i)))))
-
 (defn put-bytes
   "Put bytes into a bytebuffer"
   [^ByteBuffer bb ^bytes bs]
@@ -573,49 +566,47 @@
    (put-buffer bf x :data))
   ([bf x x-type]
    (case x-type
-     :string      (do (put-byte bf (raw-header x :string))
+     :string    (do (put-byte bf (raw-header x :string))
                       (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
-     :int         (put-int bf x)
-     :short       (put-short bf x)
-     :short-array (put-short-array bf x)
-     :int-int     (let [[i1 i2] x]
+     :int       (put-int bf x)
+     :short     (put-short bf x)
+     :int-int   (let [[i1 i2] x]
                     (put-int bf i1)
                     (put-int bf i2))
-     :term-info   (let [[i1 i2 i3] x]
+     :term-info (let [[i1 i2 i3] x]
                     (put-int bf i1)
-                    (put-float bf i2)
-                    (put-data bf i3))
-     :doc-info    (let [[i1 i2] x]
+                    (put-data bf [i2 i3]))
+     :doc-info  (let [[i1 i2] x]
                     (put-short bf i1)
                     (put-data bf i2))
-     :long        (do (put-byte bf (raw-header x :long))
+     :long      (do (put-byte bf (raw-header x :long))
                       (put-long bf x))
-     :id          (put-long bf x)
-     :float       (do (put-byte bf (raw-header x :float))
+     :id        (put-long bf x)
+     :float     (do (put-byte bf (raw-header x :float))
                       (put-float bf x))
-     :double      (do (put-byte bf (raw-header x :double))
+     :double    (do (put-byte bf (raw-header x :double))
                       (put-double bf x))
-     :byte        (put-byte bf x)
-     :bytes       (do (put-byte bf (raw-header x :bytes))
+     :byte      (put-byte bf x)
+     :bytes     (do (put-byte bf (raw-header x :bytes))
                       (put-bytes bf x))
-     :keyword     (do (put-byte bf (raw-header x :keyword))
+     :keyword   (do (put-byte bf (raw-header x :keyword))
                       (put-bytes bf (key-sym-bytes x)))
-     :symbol      (do (put-byte bf (raw-header x :symbol))
+     :symbol    (do (put-byte bf (raw-header x :symbol))
                       (put-bytes bf (key-sym-bytes x)))
-     :boolean     (do (put-byte bf (raw-header x :boolean))
+     :boolean   (do (put-byte bf (raw-header x :boolean))
                       (put-byte bf (if x c/true-value c/false-value)))
-     :instant     (do (put-byte bf (raw-header x :instant))
+     :instant   (do (put-byte bf (raw-header x :instant))
                       (put-long bf (.getTime ^Date x)))
-     :uuid        (do (put-byte bf (raw-header x :uuid))
+     :uuid      (do (put-byte bf (raw-header x :uuid))
                       (put-uuid bf x))
-     :attr        (put-attr bf x)
-     :eav         (put-eav bf x)
-     :eavt        (put-eav bf x)
-     :ave         (put-ave bf x)
-     :avet        (put-ave bf x)
-     :vea         (put-vea bf x)
-     :veat        (put-vea bf x)
-     :raw         (put-bytes bf x)
+     :attr      (put-attr bf x)
+     :eav       (put-eav bf x)
+     :eavt      (put-eav bf x)
+     :ave       (put-ave bf x)
+     :avet      (put-ave bf x)
+     :vea       (put-vea bf x)
+     :veat      (put-vea bf x)
+     :raw       (put-bytes bf x)
      (put-data bf x))))
 
 (defn read-buffer
@@ -623,30 +614,31 @@
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
    (case v-type
-     :string      (do (get-byte bf) (get-string bf))
-     :short       (get-short bf)
-     :short-array (get-short-array bf)
-     :int         (get-int bf)
-     :int-int     [(get-int bf) (get-int bf)]
-     :term-info   [(get-int bf) (get-float bf) (get-data bf)]
-     :doc-info    [(get-short bf) (get-data bf)]
-     :long        (do (get-byte bf) (get-long bf))
-     :id          (get-long bf)
-     :float       (do (get-byte bf) (get-float bf))
-     :double      (do (get-byte bf) (get-double bf))
-     :byte        (get-byte bf)
-     :bytes       (do (get-byte bf) (get-bytes bf))
-     :keyword     (do (get-byte bf) (get-keyword bf 0))
-     :symbol      (do (get-byte bf) (get-symbol bf 0))
-     :boolean     (do (get-byte bf) (get-boolean bf))
-     :instant     (do (get-byte bf) (Date. ^long (get-long bf)))
-     :uuid        (do (get-byte bf) (get-uuid bf))
-     :attr        (get-attr bf)
-     :eav         (get-eav bf)
-     :eavt        (get-eav bf)
-     :ave         (get-ave bf)
-     :avet        (get-ave bf)
-     :vea         (get-vea bf)
-     :veat        (get-vea bf)
-     :raw         (get-bytes bf)
+     :string    (do (get-byte bf) (get-string bf))
+     :short     (get-short bf)
+     :int       (get-int bf)
+     :int-int   [(get-int bf) (get-int bf)]
+     :term-info (let [i1      (get-int bf)
+                      [i2 i3] (get-data bf)] ; consecutive get-data doesn't work
+                  [i1 i2 i3])
+     :doc-info  [(get-short bf) (get-data bf)]
+     :long      (do (get-byte bf) (get-long bf))
+     :id        (get-long bf)
+     :float     (do (get-byte bf) (get-float bf))
+     :double    (do (get-byte bf) (get-double bf))
+     :byte      (get-byte bf)
+     :bytes     (do (get-byte bf) (get-bytes bf))
+     :keyword   (do (get-byte bf) (get-keyword bf 0))
+     :symbol    (do (get-byte bf) (get-symbol bf 0))
+     :boolean   (do (get-byte bf) (get-boolean bf))
+     :instant   (do (get-byte bf) (Date. ^long (get-long bf)))
+     :uuid      (do (get-byte bf) (get-uuid bf))
+     :attr      (get-attr bf)
+     :eav       (get-eav bf)
+     :eavt      (get-eav bf)
+     :ave       (get-ave bf)
+     :avet      (get-ave bf)
+     :vea       (get-vea bf)
+     :veat      (get-vea bf)
+     :raw       (get-bytes bf)
      (get-data bf))))

@@ -4,12 +4,14 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [clojure.test :refer [is deftest testing]])
+            [clojure.test :refer [is deftest testing]]
+            [datalevin.sslist :as sl])
   (:import [java.util UUID Map ArrayList]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntObjectHashMap ObjectIntHashMap]
            [org.roaringbitmap RoaringBitmap]
            [datalevin.sm SymSpell Bigram]
+           [datalevin.sslist SparseShortArrayList]
            [datalevin.search SearchEngine]))
 
 (deftest english-analyzer-test
@@ -24,50 +26,53 @@
 (defn- add-docs
   [engine]
   (sut/add-doc engine :doc1
-               "The quick red fox jumped over the lazy red dogs." true)
+               "The quick red fox jumped over the lazy red dogs.")
   (sut/add-doc engine :doc2
-               "Mary had a little lamb whose fleece was red as fire." true)
+               "Mary had a little lamb whose fleece was red as fire.")
   (sut/add-doc engine :doc3
-               "Moby Dick is a story of a whale and a man obsessed." true)
+               "Moby Dick is a story of a whale and a man obsessed.")
   (sut/add-doc engine :doc4
-               "The robber wore a red fleece jacket and a baseball cap." true)
+               "The robber wore a red fleece jacket and a baseball cap.")
   (sut/add-doc engine :doc5
-               "The English Springer Spaniel is the best of all red dogs I know."
-               true))
+               "The English Springer Spaniel is the best of all red dogs I know."))
 
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
         engine ^SearchEngine (sut/new-engine lmdb)]
     (add-docs engine)
 
-    (let [[tid ^RoaringBitmap bm] (l/get-value lmdb c/terms "red"
-                                               :string :int-bitmap true)]
+    (let [[tid ^RoaringBitmap bm ^SparseShortArrayList ssl]
+          (l/get-value lmdb c/terms "red" :string :term-info true)]
       (is (= (l/range-count lmdb c/terms [:all] :string) 32))
       (is (= (l/get-value lmdb c/terms "red" :string :int) tid))
+
       (is (.contains bm 1))
       (is (.contains bm 5))
       (is (= (.getCardinality bm) 4))
       (is (= (seq bm) [1 2 4 5]))
-      (is (= (l/list-count lmdb c/positions [1 tid] :int-int) 2))
-      (is (= (l/list-count lmdb c/positions [5 tid] :int-int) 1))
-      (is (= (l/get-list lmdb c/positions [5 tid] :int-int :int-int)
+
+      (is (= (sl/size ssl) 1))
+      (is (= (sl/get ssl 0) 2))
+
+      (is (= (l/list-count lmdb c/positions [tid 1] :int-int) 2))
+      (is (= (l/list-count lmdb c/positions [tid 5] :int-int) 1))
+      (is (= (l/get-list lmdb c/positions [tid 5] :int-int :int-int)
              [[9 48]]))
-      (is (= (l/range-count lmdb c/positions [:closed [5 0] [5 Long/MAX_VALUE]]
-                            :int-int)
-             9))
 
       (is (= (l/get-value lmdb c/docs 1 :int :doc-info true) [7 :doc1]))
       (is (= (l/get-value lmdb c/docs 4 :int :doc-info true) [7 :doc4]))
       (is (= (l/range-count lmdb c/docs [:all]) 5))
 
-      (sut/remove-doc engine :doc5)
-      (let [[tid ^RoaringBitmap bm] (l/get-value lmdb c/terms "red"
-                                                 :string :int-bitmap true)]
+      (sut/remove-doc engine :doc1)
+      (let [[tid ^RoaringBitmap bm ^SparseShortArrayList ssl]
+            (l/get-value lmdb c/terms "red" :string :term-info true)]
         (is (= (l/range-count lmdb c/docs [:all]) 4))
-        (is (not (.contains bm 5)))
+        (is (not (.contains bm 1)))
         (is (= (.getCardinality bm) 3))
-        (is (= (l/list-count lmdb c/positions [5 tid] :int-id) 0))
-        (is (nil? (l/get-list lmdb c/positions [5 tid] :int-id :int-int)))))
+        (is (= (sl/size ssl) 1))
+        (is (= (sl/get ssl 0) 1))
+        (is (= (l/list-count lmdb c/positions [tid 1] :int-id) 0))
+        (is (nil? (l/get-list lmdb c/positions [tid 1] :int-id :int-int)))))
 
     (l/close-kv lmdb)))
 
@@ -78,38 +83,38 @@
 
     (is (= (sut/search engine "cap" {:display :offsets})
            (sut/search engine "cap" {:algo :prune :display :offsets})
-           (sut/search engine "cap" {:algo :bitmap :display :offsets})
+           ;; (sut/search engine "cap" {:algo :bitmap :display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (is (= (sut/search engine "notaword cap" {:display :offsets})
            (sut/search engine "notaword cap" {:algo :prune :display :offsets})
-           (sut/search engine "notaword cap" {:algo :bitmap :display :offsets})
+           ;; (sut/search engine "notaword cap" {:algo :bitmap :display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (is (= (sut/search engine "fleece" {:display :offsets})
            (sut/search engine "fleece" {:algo :prune :display :offsets})
-           (sut/search engine "fleece" {:algo :bitmap :display :offsets})
+           ;; (sut/search engine "fleece" {:algo :bitmap :display :offsets})
            [[:doc4 [["fleece" [22]]]] [:doc2 [["fleece" [29]]]]]))
     (is (= (sut/search engine "red fox" {:display :offsets})
            (sut/search engine "red fox" {:algo :prune :display :offsets})
-           (sut/search engine "red fox" {:algo :bitmap :display :offsets})
+           ;; (sut/search engine "red fox" {:algo :bitmap :display :offsets})
            [[:doc1 [["fox" [14]] ["red" [10 39]]]]
             [:doc4 [["red" [18]]]]
             [:doc2 [["red" [40]]]]
             [:doc5 [["red" [48]]]]]))
     (is (= (sut/search engine "red dogs" {:display :offsets})
            (sut/search engine "red dogs" {:algo :prune :display :offsets})
-           (sut/search engine "red dogs" {:algo :bitmap :display :offsets})
+           ;; (sut/search engine "red dogs" {:algo :bitmap :display :offsets})
            [[:doc1 [["dogs" [43]] ["red" [10 39]]]]
             [:doc5 [["dogs" [52]] ["red" [48]]]]
             [:doc4 [["red" [18]]]]
             [:doc2 [["red" [40]]]]]))
     (is (empty? (sut/search engine "solar")))
     (is (empty? (sut/search engine "solar" {:algo :prune})))
-    (is (empty? (sut/search engine "solar" {:algo :bitmap})))
+    ;; (is (empty? (sut/search engine "solar" {:algo :bitmap})))
     (is (empty? (sut/search engine "solar wind")))
     (is (empty? (sut/search engine "solar wind" {:algo :prune})))
-    (is (empty? (sut/search engine "solar wind" {:algo :bitmap})))
+    ;; (is (empty? (sut/search engine "solar wind" {:algo :bitmap})))
     (is (= (sut/search engine "solar cap" {:display :offsets})
            (sut/search engine "solar cap" {:algo :prune :display :offsets})
-           (sut/search engine "solar cap" {:algo :bitmap :display :offsets})
+           ;; (sut/search engine "solar cap" {:algo :bitmap :display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (l/close-kv lmdb)))
