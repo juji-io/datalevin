@@ -4,14 +4,12 @@
             [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [clojure.test :refer [is deftest testing]]
-            [datalevin.sslist :as sl])
+            [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Map ArrayList]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntObjectHashMap ObjectIntHashMap]
            [org.roaringbitmap RoaringBitmap]
            [datalevin.sm SymSpell Bigram]
-           [datalevin.sslist SparseShortArrayList]
            [datalevin.search SearchEngine]))
 
 (deftest english-analyzer-test

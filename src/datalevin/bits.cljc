@@ -205,7 +205,7 @@
 
 (defn- put-float
   [^ByteBuffer bb x]
-  (.putInt bb (encode-float x)))
+  (.putInt bb (encode-float (float x))))
 
 (defn- encode-double
   [^double x]
@@ -217,7 +217,7 @@
 
 (defn- put-double
   [^ByteBuffer bb x]
-  (.putLong bb (encode-double x)))
+  (.putLong bb (encode-double (double x))))
 
 (defn put-int
   [^ByteBuffer bb n]
@@ -564,41 +564,42 @@
 (defn put-buffer
   ([bf x]
    (put-buffer bf x :data))
-  ([bf x x-type]
+  ([^ByteBuffer bf x x-type]
    (case x-type
      :string    (do (put-byte bf (raw-header x :string))
-                      (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
+                    (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
      :int       (put-int bf x)
      :short     (put-short bf x)
      :int-int   (let [[i1 i2] x]
-                    (put-int bf i1)
-                    (put-int bf i2))
+                  (put-int bf i1)
+                  (put-int bf i2))
      :term-info (let [[i1 i2 i3] x]
-                    (put-int bf i1)
-                    (put-data bf [i2 i3]))
+                  (put-int bf i1)
+                  (.putFloat bf (float i2))
+                  (put-data bf i3))
      :doc-info  (let [[i1 i2] x]
-                    (put-short bf i1)
-                    (put-data bf i2))
+                  (put-short bf i1)
+                  (put-data bf i2))
      :long      (do (put-byte bf (raw-header x :long))
-                      (put-long bf x))
+                    (put-long bf x))
      :id        (put-long bf x)
      :float     (do (put-byte bf (raw-header x :float))
-                      (put-float bf x))
+                    (put-float bf x))
      :double    (do (put-byte bf (raw-header x :double))
-                      (put-double bf x))
+                    (put-double bf x))
      :byte      (put-byte bf x)
      :bytes     (do (put-byte bf (raw-header x :bytes))
-                      (put-bytes bf x))
+                    (put-bytes bf x))
      :keyword   (do (put-byte bf (raw-header x :keyword))
-                      (put-bytes bf (key-sym-bytes x)))
+                    (put-bytes bf (key-sym-bytes x)))
      :symbol    (do (put-byte bf (raw-header x :symbol))
-                      (put-bytes bf (key-sym-bytes x)))
+                    (put-bytes bf (key-sym-bytes x)))
      :boolean   (do (put-byte bf (raw-header x :boolean))
-                      (put-byte bf (if x c/true-value c/false-value)))
+                    (put-byte bf (if x c/true-value c/false-value)))
      :instant   (do (put-byte bf (raw-header x :instant))
-                      (put-long bf (.getTime ^Date x)))
+                    (put-long bf (.getTime ^Date x)))
      :uuid      (do (put-byte bf (raw-header x :uuid))
-                      (put-uuid bf x))
+                    (put-uuid bf x))
      :attr      (put-attr bf x)
      :eav       (put-eav bf x)
      :eavt      (put-eav bf x)
@@ -618,9 +619,7 @@
      :short     (get-short bf)
      :int       (get-int bf)
      :int-int   [(get-int bf) (get-int bf)]
-     :term-info (let [i1      (get-int bf)
-                      [i2 i3] (get-data bf)] ; consecutive get-data doesn't work
-                  [i1 i2 i3])
+     :term-info [(get-int bf) (.getFloat bf) (get-data bf)]
      :doc-info  [(get-short bf) (get-data bf)]
      :long      (do (get-byte bf) (get-long bf))
      :id        (get-long bf)

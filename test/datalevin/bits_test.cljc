@@ -1,7 +1,6 @@
 (ns datalevin.bits-test
   (:require [datalevin.bits :as sut]
             [datalevin.datom :as d]
-            [datalevin.sslist :as sl]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
             [clojure.test :refer [deftest is]]
@@ -13,10 +12,7 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [org.roaringbitmap RoaringBitmap]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
-           [datalevin.bits Indexable Retrieved]
-           [datalevin.sslist SparseShortArrayList]
-           ))
+           [datalevin.bits Indexable Retrieved]))
 
 ;; buffer read/write
 
@@ -77,19 +73,17 @@
                   (= [k1 k2] (sut/read-buffer bf :doc-info)))))
 
 (test/defspec term-info-generative-test
-  100
+  10000
   (prop/for-all [k1 gen/int
-                 k2 (gen/vector gen/int)
-                 k3 (gen/vector gen/int)
-                 k4 (gen/vector gen/small-integer)]
-                (let [^ByteBuffer bf            (sut/allocate-buffer 16384)
-                      ^RoaringBitmap bm         (sut/bitmap k2)
-                      k3                        (sort k3)
-                      ^SparseShortArrayList ssl (sl/sparse-short-arraylist k3 k4)]
+                 k2 (gen/double* {:NaN? false})
+                 k3 (gen/vector gen/int)]
+                (let [^ByteBuffer bf    (sut/allocate-buffer 16384)
+                      k2                (float k2)
+                      ^RoaringBitmap bm (sut/bitmap k3)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 bm ssl] :term-info)
+                  (sut/put-buffer bf [k1 k2 bm] :term-info)
                   (.flip bf)
-                  (= [k1 bm ssl] (sut/read-buffer bf :term-info)))))
+                  (= [k1 k2 bm] (sut/read-buffer bf :term-info)))))
 
 (test/defspec long-generative-test
   100
@@ -108,6 +102,16 @@
                   (sut/put-buffer bf k :double)
                   (.flip bf)
                   (= k (sut/read-buffer bf :double)))))
+
+(test/defspec float-generative-test
+  100
+  (prop/for-all [k (gen/double* {:NaN? false})]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)
+                      k              (float k)]
+                  (.clear bf)
+                  (sut/put-buffer bf k :float)
+                  (.flip bf)
+                  (= k (sut/read-buffer bf :float)))))
 
 (test/defspec bytes-generative-test
   100

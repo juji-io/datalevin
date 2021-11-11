@@ -2,18 +2,14 @@
   "Full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]
-            [datalevin.sslist :as sl]
             [datalevin.constants :as c]
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell SuggestItem]
            [datalevin.utl PriorityQueue]
-           [datalevin.sslist SparseShortArrayList]
-           [java.util HashMap ArrayList Iterator Map$Entry]
+           [java.util HashSet HashMap ArrayList Map$Entry]
            [java.util.concurrent.atomic AtomicInteger]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
-            IntObjectHashMap]
+           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [org.eclipse.collections.impl.list.mutable FastList]
-           [org.eclipse.collections.impl.list.mutable.primitive ShortArrayList]
            [org.roaringbitmap RoaringBitmap FastAggregation]))
 
 (if (u/graal?)
@@ -72,39 +68,37 @@
   [lmdb term]
   (l/get-value lmdb c/terms term :string :term-info))
 
-(defn- get-block-max-tf
-  [ssl doc-id]
-  (sl/get ssl (int (/ ^int doc-id c/+doc-id-block-size+))))
-
-(defn- add-block-max-tf
-  [ssl doc-id tf]
-  (let [block-id (int (/ ^int doc-id c/+doc-id-block-size+))]
-    (if-let [cur-max (sl/get ssl block-id)]
-      (if (< ^short cur-max ^short tf)
-        (sl/set ssl block-id tf)
-        ssl)
-      (sl/set ssl block-id tf))))
-
 (defn- get-tf
   [lmdb doc-id term-id]
   (l/list-count lmdb c/positions [term-id doc-id] :int-int))
 
-(defn- del-block-max-tf
-  [lmdb term-id ssl doc-id tf]
-  (let [block-id (int (/ ^int doc-id c/+doc-id-block-size+))
-        cur-max  (sl/get ssl block-id)]
-    (if (= ^short cur-max ^short tf)
-      (let [start-did (inc (* block-id c/+doc-id-block-size+))
-            tfs       (sequence
-                        (comp (remove #(= % doc-id))
-                           (remove #(not (get-block-max-tf ssl %)))
-                           (map #(get-tf lmdb % term-id))
-                           (remove zero?))
-                        (range start-did (+ start-did c/+doc-id-block-size+)))]
-        (if (seq tfs)
-          (sl/set ssl block-id (apply max tfs))
-          (sl/remove ssl block-id)))
-      ssl)))
+(defn- idf
+  "inverse document frequency of a term"
+  [^long freq N]
+  (float (if (zero? freq) 0 (Math/log10 (/ ^int N freq)))))
+
+(defn- tf*
+  "log-weighted term frequency"
+  [freq]
+  (float (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1))))
+
+(defn- tf
+  [lmdb doc-id term-id]
+  (tf* (get-tf lmdb doc-id term-id)))
+
+(defn- add-max-weight
+  [mw tf norm]
+  (let [w (float (/ ^float (tf* tf) ^short norm))]
+    (if (< ^float mw w) w mw)))
+
+(defn- del-max-weight
+  [lmdb ^RoaringBitmap bm doc-id term-id mw tf norm]
+  (let [w (float (/ ^float (tf* tf) ^short norm))]
+    (if (= mw w)
+      (apply max (map #(float (/ ^float (tf* (get-tf lmdb % term-id))
+                                 ^short norm))
+                      (doto bm (.remove doc-id))))
+      mw)))
 
 (defn- add-doc-txs
   [lmdb doc-text ^AtomicInteger max-doc ^FastList txs doc-ref ^HashMap pre-terms
@@ -116,34 +110,17 @@
     (.add txs [:put c/docs doc-id [unique doc-ref] :int :doc-info])
     (when norms (.put norms doc-id unique))
     (doseq [^Map$Entry kv (.entrySet new-terms)]
-      (let [term         (.getKey kv)
-            new-lst      ^ArrayList (.getValue kv)
-            tf           (.size new-lst)
-            [tid bm ssl] (or (.get hit-terms term)
-                             (when pre-terms (.get pre-terms term))
-                             (get-term-info lmdb term)
-                             [(.incrementAndGet max-term)
-                              (b/bitmap)
-                              (sl/sparse-short-arraylist)])]
-        (.put hit-terms term [tid
-                              (b/bitmap-add bm doc-id)
-                              (add-block-max-tf ssl doc-id tf)])
+      (let [term        (.getKey kv)
+            new-lst     ^ArrayList (.getValue kv)
+            tf          (.size new-lst)
+            [tid mw bm] (or (.get hit-terms term)
+                            (when pre-terms (.get pre-terms term))
+                            (get-term-info lmdb term)
+                            [(.incrementAndGet max-term) (float 0.0) (b/bitmap)])]
+        (.put hit-terms term [tid (add-max-weight mw tf unique)
+                              (b/bitmap-add bm doc-id)])
         (.add txs [:put-list c/positions [tid doc-id] new-lst
                    :int-int :int-int])))))
-
-(defn- idf
-  "inverse document frequency of a term"
-  [^long freq N]
-  (if (zero? freq) 0 (Math/log10 (/ ^int N freq))))
-
-(defn- tf*
-  "log-weighted term frequency"
-  [freq]
-  (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1)))
-
-(defn- tf
-  [lmdb doc-id term-id]
-  (tf* (get-tf lmdb doc-id term-id)))
 
 (defn- hydrate-query
   [lmdb ^AtomicInteger max-doc ^SymSpell symspell tokens]
@@ -158,16 +135,16 @@
     (into []
           (comp
             (map (fn [[term freq]]
-                   (when-let [[id bm mtf] (get-term-info lmdb term)]
+                   (when-let [[id mw bm] (get-term-info lmdb term)]
                      (let [df (.getCardinality ^RoaringBitmap bm)]
-                       {:bm  bm
-                        :df  df
-                        :ed  (eds term)
-                        :id  id
-                        :mtf mtf
-                        :tm  term
-                        :wq  (* ^double (tf* freq)
-                                ^double (idf df (.get max-doc)))}))))
+                       {:bm bm
+                        :df df
+                        :ed (eds term)
+                        :id id
+                        :mw mw
+                        :tm term
+                        :wq (* ^float (tf* freq)
+                               ^float (idf df (.get max-doc)))}))))
             (filter map?))
           (frequencies tms))))
 
@@ -175,112 +152,197 @@
   [top]
   (proxy [PriorityQueue] [top]
     (lessThan [a b]
-      (< ^double (nth a 0) ^double (nth b 0)))))
+      (< ^float (nth a 0) ^float (nth b 0)))))
 
 (defn- pour
-  [coll ^PriorityQueue pq ^HashMap backup ^HashMap result]
+  [coll ^PriorityQueue pq ^HashSet result]
   (let [lst (ArrayList.)]
     (dotimes [_ (.size pq)]
       (let [[_ did :as res] (.pop pq)]
         (.add lst 0 res)
-        (.put result did (.get backup did))
-        (.remove backup did)))
+        (.add result did)))
     (println "lst" lst)
     (reduce conj! coll lst)))
 
-(defn- opt-score
-  [score tids n i did term-ids mtfs wqs norm]
-  (println "i" i "tids" tids "term-ids" term-ids "did" did)
-  (+ ^double score
-     (/ ^double (reduce
-                  (fn [^double s j]
-                    (let [tid (term-ids j)]
-                      (if (tids tid)
-                        (if-let [block-max-ref (sl/get (mtfs tid) did)]
-                          (+ s (* ^double (wqs tid)
-                                  ^double (tf* block-max-ref)))
-                          s)
-                        s)))
-                  0.0
-                  (range i n))
-        ^short norm)))
-
 (defn- real-score
-  [lmdb score tids i did term-ids wqs norm]
-  (let [tid (term-ids i)]
-    (println "real score for did" did "tid" tid)
-    (if (tids tid)
-      (+ ^double score
-         (/ (* ^double (wqs tid) ^double (tf lmdb did tid))
-            ^short norm))
-      score)))
+  [lmdb tid did wqs norms]
+  (/ (* ^float (wqs tid) ^float (tf lmdb did tid))
+     ^short (.get ^IntShortHashMap norms did)))
+
+(defn- max-score [wqs mws tid] (* ^float (wqs tid) ^float (mws tid)))
+
+(defn- find-pivot
+  [mxs tao-1 minimal-score candidates]
+  (let [n-1 (dec (count candidates))]
+    (loop [s (float 0.0) p 0 cs candidates]
+      (let [[tid did] (nth cs 0)]
+        (if (< p n-1)
+          (let [s (+ s ^float (mxs tid))]
+            (if (and (<= ^long tao-1 p) (< ^float minimal-score s))
+              [s p did]
+              (recur s (inc p) (rest cs))))
+          [s p did])))))
+
+(defn- score-pivot
+  [wqs mxs lmdb norms pivot-did minimal-score mxscore tao n candidates]
+  (let [res (reduce-kv
+              (fn [[score ^long hits] ^long k [tid did]]
+                (println "score" score "hits" hits)
+                (if (= did pivot-did)
+                  (let [hits (inc hits)]
+                    (if (< ^long (+ hits ^long (- ^long n k 1)) ^long tao)
+                      (reduced :prune)
+                      (let [s (+ (- ^float score ^float (mxs tid))
+                                 ^float (real-score lmdb tid did wqs norms))]
+                        (if (< s ^float minimal-score)
+                          (reduced :prune)
+                          [s hits]))))
+                  [score hits]))
+              [mxscore 0]
+              candidates)]
+    (if (= res :prune) res (nth res 0))))
+
+(defn- fresh-did
+  [^RoaringBitmap bm ^HashSet result init-did]
+  (loop [did ^int init-did]
+    (if (.contains result did)
+      (recur (.nextValue bm (inc did)))
+      did)))
+
+(defn- first-candidates
+  [bms term-ids result]
+  (persistent!
+    (reduce (fn [cs tid]
+              (let [bm   ^RoaringBitmap (bms tid)
+                    ndid (fresh-did bm result (.first bm))]
+                (if (= ndid -1)
+                  cs
+                  (conj! cs [tid ndid]))))
+            (transient [])
+            term-ids)))
+
+(defn- next-candidates
+  [bms did term-ids result]
+  (println "everyone moves beyond" did)
+  (persistent!
+    (reduce (fn [cs tid]
+              (let [bm   ^RoaringBitmap (bms tid)
+                    ndid (fresh-did bm result (.nextValue bm (inc ^int did)))]
+                (if (= ndid -1)
+                  cs
+                  (conj! cs [tid ndid]))))
+            (transient [])
+            term-ids)))
+
+(defn- skip-candidates
+  [pivot bms pivot-did candidates result]
+  (println "some skips to" pivot-did)
+  (persistent!
+    (reduce-kv
+      (fn [cs t [tid _ :as ct]]
+        (if (< ^long t ^long pivot)
+          (let [bm   ^RoaringBitmap (bms tid)
+                ndid (fresh-did bm result (.nextValue bm pivot-did))]
+            (if (= ndid -1)
+              cs
+              (conj! cs [tid ndid])))
+          (conj! cs ct)))
+      (transient [])
+      candidates)))
+
+(defn- current-threshold
+  [^PriorityQueue pq]
+  (if (< (.size pq) (.maxSize pq))
+    (float 0.0)
+    (nth (.top pq) 0)))
 
 (defn- prune-candidates
-  [lmdb n term-ids bms mtfs wqs ^IntShortHashMap norms ^HashMap result
-   ^HashMap backup]
+  [lmdb n term-ids bms mxs wqs ^IntShortHashMap norms ^HashSet result]
   (fn [^PriorityQueue pq ^long tao] ; target # of overlaps between query and doc
-    (let [n          ^long n
-          base       (- n tao)
-          base-tid   (nth term-ids base)
-          candidates (HashMap. backup)]
-      (doseq [did (bms base-tid)]
-        (when-not (.containsKey result did)
-          (if-let [{:keys [^long reach] :as seen} (.get candidates did)]
-            (when (< reach base)
-              (.put candidates did (-> seen
-                                       (assoc :reach base)
-                                       (update :hits inc)
-                                       (update :tids conj base-tid))))
-            (.put candidates did {:reach base :hits 1 :tids #{base-tid}}))))
-      (when-not (= tao 1)
-        (doseq [^long k (range (inc base) n)
-                :let    [ktid (nth term-ids k)]]
-          (loop [^Iterator iter (.iterator (.entrySet candidates))]
-            (when (.hasNext iter)
-              (let [^Map$Entry entry              (.next iter)
-                    ^int did                      (.getKey entry)
-                    {:keys [^long reach] :as res} (.getValue entry)]
-                (when (and (< reach k)
-                           (.contains ^RoaringBitmap (bms ktid) did))
-                  (.setValue entry (-> res
-                                       (assoc :reach k)
-                                       (update :hits inc)
-                                       (update :tids conj ktid))))
-                (let [{:keys [hits] :as res} (.getValue entry)]
-                  (when (< (+ ^long hits ^long (- n k 1)) tao)
-                    (.put backup did res)
-                    (.remove iter)))
-                (recur iter))))))
-      (println "candidates:" (.size candidates))
-      (println "backups:" (.size backup))
-      (loop [^Iterator iter (.iterator (.entrySet candidates))]
-        (when (.hasNext iter)
-          (let [^Map$Entry entry (.next iter)
-                ^int did         (.getKey entry)
-                norm             (.get norms did)
-                {:keys [tids computed score]
-                 :or   {computed 0 score 0.0}
-                 :as   res}      (.getValue entry)
-                minimal-score    (if (< (.size pq) (.maxSize pq))
-                                   0.0
-                                   (nth (.top pq) 0))
-                prune?           (volatile! false)]
-            (loop [^long i computed score score]
-              (if (< i n)
-                (if (< ^double
-                       (opt-score score tids n i did term-ids mtfs wqs norm)
-                       ^double minimal-score)
-                  (do (vreset! prune? true)
-                      (println "pruned" did)
-                      (.setValue entry (assoc res :computed i :score score)))
-                  (recur (inc i)
-                         (real-score lmdb score tids i did term-ids wqs norm)))
-                (.setValue entry (assoc res :computed i :score score))))
-            (let [{:keys [score] :as res} (.getValue entry)]
-              (.put backup did res)
-              (when-not @prune?
-                (.insertWithOverflow pq [score did])))
-            (recur iter)))))))
+    (println "working on tao" tao)
+    (loop [candidates (first-candidates bms term-ids result)]
+      (println "candidates" candidates)
+      (when (seq candidates)
+        (let [candidates          (vec (sort-by peek candidates))
+              _                   (println "sorted candidates" candidates)
+              minimal-score       ^float (current-threshold pq)
+              _                   (println "minimal-score" minimal-score)
+              [mxscore pivot did] (find-pivot mxs (dec tao) minimal-score
+                                              candidates)]
+          (println "found pivot" did)
+          (if (= ^int did (peek (nth candidates 0)))
+            (let [score (score-pivot wqs mxs lmdb norms did minimal-score
+                                     mxscore tao n candidates)]
+              (println "real score" score)
+              (when-not (= score :prune)
+                (.insertWithOverflow pq [score did]))
+              (recur (next-candidates bms did term-ids result)))
+            (recur (skip-candidates pivot bms did candidates result))))))))
+
+#_(defn- prune-candidates
+    [lmdb n term-ids bms mtfs wqs ^IntShortHashMap norms ^HashMap result
+     ^HashMap backup]
+    (fn [^PriorityQueue pq ^long tao] ; target # of overlaps between query and doc
+      (let [n          ^long n
+            base       (- n tao)
+            base-tid   (nth term-ids base)
+            candidates (HashMap. backup)]
+        (doseq [did (bms base-tid)]
+          (when-not (.containsKey result did)
+            (if-let [{:keys [^long reach] :as seen} (.get candidates did)]
+              (when (< reach base)
+                (.put candidates did (-> seen
+                                         (assoc :reach base)
+                                         (update :hits inc)
+                                         (update :tids conj base-tid))))
+              (.put candidates did {:reach base :hits 1 :tids #{base-tid}}))))
+        (when-not (= tao 1)
+          (doseq [^long k (range (inc base) n)
+                  :let    [ktid (nth term-ids k)]]
+            (loop [^Iterator iter (.iterator (.entrySet candidates))]
+              (when (.hasNext iter)
+                (let [^Map$Entry entry              (.next iter)
+                      ^int did                      (.getKey entry)
+                      {:keys [^long reach] :as res} (.getValue entry)]
+                  (when (and (< reach k)
+                             (.contains ^RoaringBitmap (bms ktid) did))
+                    (.setValue entry (-> res
+                                         (assoc :reach k)
+                                         (update :hits inc)
+                                         (update :tids conj ktid))))
+                  (let [{:keys [hits] :as res} (.getValue entry)]
+                    (when (< (+ ^long hits ^long (- n k 1)) tao)
+                      (.put backup did res)
+                      (.remove iter)))
+                  (recur iter))))))
+        (loop [^Iterator iter (.iterator (.entrySet candidates))]
+          (when (.hasNext iter)
+            (let [^Map$Entry entry (.next iter)
+                  ^int did         (.getKey entry)
+                  norm             (.get norms did)
+                  {:keys [tids computed score]
+                   :or   {computed 0 score 0.0}
+                   :as   res}      (.getValue entry)
+                  minimal-score    (if (< (.size pq) (.maxSize pq))
+                                     0.0
+                                     (nth (.top pq) 0))
+                  prune?           (volatile! false)]
+              (loop [^long i computed score score]
+                (if (< i n)
+                  (if (< ^double
+                         (opt-score score tids n i did term-ids mtfs wqs norm)
+                         ^double minimal-score)
+                    (do (vreset! prune? true)
+                        (println "pruned" did)
+                        (.setValue entry (assoc res :computed i :score score)))
+                    (recur (inc i)
+                           (real-score lmdb score tids i did term-ids wqs norm)))
+                  (.setValue entry (assoc res :computed i :score score))))
+              (let [{:keys [score] :as res} (.getValue entry)]
+                (.put backup did res)
+                (when-not @prune?
+                  (.insertWithOverflow pq [score did])))
+              (recur iter)))))))
 
 (defn- intersect-bitmaps
   [term-ids tfs n wqs ^HashMap result bms]
@@ -325,17 +387,17 @@
       selected)))
 
 (defn- score-docs
-  [lmdb n term-ids dfs bms mtfs wqs norms result backup algo]
+  [lmdb n term-ids dfs bms mxs wqs norms result algo]
   (case algo
     :smart
     (if (or (= n 1)
             (> (quot ^long (peek dfs) ^long (nth dfs 0)) 128))
-      (prune-candidates lmdb n term-ids bms mtfs wqs norms result backup)
-      (intersect-bitmaps lmdb n term-ids bms mtfs wqs norms result backup))
+      (prune-candidates lmdb n term-ids bms mxs wqs norms result)
+      (intersect-bitmaps lmdb n term-ids bms mxs wqs norms result))
     :prune
-    (prune-candidates lmdb n term-ids bms mtfs wqs norms result backup)
+    (prune-candidates lmdb n term-ids bms mxs wqs norms result)
     :bitmap
-    (intersect-bitmaps lmdb n term-ids bms mtfs wqs norms result backup)
+    (intersect-bitmaps lmdb n term-ids bms mxs wqs norms result)
     (u/raise "Unknown search algorithm" {:algo algo})))
 
 (defn- get-doc-ref
@@ -368,12 +430,13 @@
 
 (defn- doc-id->term-ids
   [lmdb doc-id]
-  (map ffirst
-       (l/range-filter lmdb c/positions
-                       (fn [kv]
-                         (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
-                           (= did doc-id)))
-                       [:all] :int-int :ignore false)))
+  (dedupe
+    (map ffirst
+         (l/range-filter lmdb c/positions
+                         (fn [kv]
+                           (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
+                             (= did doc-id)))
+                         [:all] :int-int :ignore false))))
 
 (defn- term-id->info
   [lmdb term-id]
@@ -422,16 +485,17 @@
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (doc-ref->id lmdb doc-ref)]
-      (let [txs (FastList.)]
+      (let [txs  (FastList.)
+            norm (.get norms doc-id)]
         (.remove norms doc-id)
         (.add txs [:del c/docs doc-id :int])
         (doseq [term-id (doc-id->term-ids lmdb doc-id)]
-          (let [[term [_ bm ssl]] (term-id->info lmdb term-id)
-                tf                (get-tf lmdb doc-id term-id)]
+          (let [[term [_ mw bm]] (term-id->info lmdb term-id)
+                tf               (get-tf lmdb doc-id term-id)]
             (.add txs [:put c/terms term
                        [term-id
-                        (b/bitmap-del bm doc-id)
-                        (del-block-max-tf lmdb term-id ssl doc-id tf)]
+                        (del-max-weight lmdb bm doc-id term-id mw tf norm)
+                        (b/bitmap-del bm doc-id)]
                        :string :term-info]))
           (.add txs [:del c/positions [term-id doc-id] :int-int]))
         (l/transact-kv lmdb txs))
@@ -450,16 +514,16 @@
                       vec)
           n      (count qterms)]
       (when-not (zero? n)
-        (let [term-ids  (mapv :id qterms)
-              dfs       (mapv :df qterms)
-              bms       (zipmap term-ids (mapv :bm qterms))
-              wqs       (zipmap term-ids (mapv :wq qterms))
-              tms       (zipmap term-ids (mapv :tm qterms))
-              mtfs      (zipmap term-ids (mapv :mtf qterms))
-              result    (HashMap.)
-              backup    (HashMap.)
-              select-fn (score-docs lmdb n term-ids dfs bms mtfs wqs norms
-                                    result backup algo)]
+        (let [term-ids (mapv :id qterms)
+              dfs      (mapv :df qterms)
+              bms      (zipmap term-ids (mapv :bm qterms))
+              wqs      (zipmap term-ids (mapv :wq qterms))
+              tms      (zipmap term-ids (mapv :tm qterms))
+              mws      (zipmap term-ids (mapv :mw qterms))
+              mxs      (zipmap term-ids (map #(max-score wqs mws %) term-ids))
+              result   (HashSet.)
+              score-fn (score-docs lmdb n term-ids dfs bms mxs wqs norms
+                                   result algo)]
           (sequence
             (display-xf display lmdb tms)
             (persistent!
@@ -469,8 +533,8 @@
                         to-get (- top so-far)]
                     (if (< 0 to-get)
                       (let [^PriorityQueue pq (priority-queue to-get)]
-                        (select-fn pq tao)
-                        (pour coll pq backup result))
+                        (score-fn pq tao)
+                        (pour coll pq result))
                       (reduced coll))))
                 (transient[])
                 (range n 0 -1)))))))))
@@ -563,13 +627,9 @@
 
 (comment
 
-  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-8"))
+  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-1"))
 
   (def engine (time (new-engine lmdb)))
-
-  (l/get-range lmdb c/terms [:all] :string :term-info)
-
-  (time (l/list-count lmdb c/positions [17655 11 ] :int-int ))
 
   (time (search engine "french lick resort and casino"))
   (time (search engine "rv solar panels"))

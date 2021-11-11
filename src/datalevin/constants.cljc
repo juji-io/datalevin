@@ -90,7 +90,7 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const meta "datalevin/meta")
-(def ^:const terms "datalevin/terms")         ; term -> term-id,doc-bitmap,block-max-tf
+(def ^:const terms "datalevin/terms")         ; term -> term-id,max-weight,doc-bitmap
 (def ^:const docs "datalevin/docs")           ; doc-id -> norm,doc-ref
 (def ^:const positions "datalevin/positions") ; term-id,doc-id -> position,offset (list)
 
@@ -105,7 +105,7 @@
 
 (def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
 
-(def ^:const +doc-id-block-size+ 64)
+(def ^:const +doc-id-block-size+ 128)
 
 ;; server / client
 
