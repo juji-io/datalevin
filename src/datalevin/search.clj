@@ -6,11 +6,14 @@
             [datalevin.bits :as b])
   (:import [datalevin.sm SymSpell SuggestItem]
            [datalevin.utl PriorityQueue]
-           [java.util HashSet HashMap ArrayList Map$Entry]
+           [java.util HashMap ArrayList Map$Entry]
+           [java.util Collections]
            [java.util.concurrent.atomic AtomicInteger]
+           [java.io Writer]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [org.eclipse.collections.impl.list.mutable FastList]
-           [org.roaringbitmap RoaringBitmap FastAggregation]))
+           [org.roaringbitmap RoaringBitmap FastAggregation
+            IntIteratorFlyweight]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -95,9 +98,12 @@
   [lmdb ^RoaringBitmap bm doc-id term-id mw tf norm]
   (let [w (float (/ ^float (tf* tf) ^short norm))]
     (if (= mw w)
-      (apply max (map #(float (/ ^float (tf* (get-tf lmdb % term-id))
-                                 ^short norm))
-                      (doto bm (.remove doc-id))))
+      (let [bm (doto bm (.remove doc-id))]
+        (if (zero? (.getCardinality bm))
+          (float 0.0)
+          (apply max (map #(float (/ ^float (tf* (get-tf lmdb % term-id))
+                                     ^short norm))
+                          bm))))
       mw)))
 
 (defn- add-doc-txs
@@ -155,100 +161,132 @@
       (< ^float (nth a 0) ^float (nth b 0)))))
 
 (defn- pour
-  [coll ^PriorityQueue pq ^HashSet result]
+  [coll ^PriorityQueue pq ^RoaringBitmap result]
   (let [lst (ArrayList.)]
     (dotimes [_ (.size pq)]
       (let [[_ did :as res] (.pop pq)]
         (.add lst 0 res)
-        (.add result did)))
-    (println "lst" lst)
+        (.add result (int did))))
+    ;; (println "lst" lst)
     (reduce conj! coll lst)))
 
 (defn- real-score
   [lmdb tid did wqs norms]
-  (/ (* ^float (wqs tid) ^float (tf lmdb did tid))
-     ^short (.get ^IntShortHashMap norms did)))
+  (let [res (/ (* ^float (wqs tid) ^float (tf lmdb did tid))
+               ^short (.get ^IntShortHashMap norms did))]
+    ;; (println "compute real score for tid" tid "did" did "got" res)
+    res))
 
 (defn- max-score [wqs mws tid] (* ^float (wqs tid) ^float (mws tid)))
 
+(defprotocol ICandidate
+  (skip-before [this limit] "move the iterator to just before the limit")
+  (advance [this] "move the iterator to the next position, return its value")
+  (has-next? [this] "return true if there's next in iterator")
+  (get-did [this] "return the current did the iterator points to"))
+
+(deftype Candidate [tid
+                    ^:volatile-mutable did
+                    ^IntIteratorFlyweight iter]
+  ICandidate
+  (skip-before [_ limit]
+    (.advanceIfNeeded iter limit))
+  (has-next? [_]
+    (.hasNext iter))
+  (advance [_]
+    (set! did (.next iter))
+    did)
+  (get-did [_]
+    did))
+
+(defmethod print-method Candidate [^Candidate c, ^Writer w]
+  (.write w
+          (pr-str {:tid       (.-tid c)
+                   :did       (get-did c)
+                   :has-next? (has-next? c)})))
+
 (defn- find-pivot
   [mxs tao-1 minimal-score candidates]
-  (let [n-1 (dec (count candidates))]
-    (loop [s (float 0.0) p 0 cs candidates]
-      (let [[tid did] (nth cs 0)]
-        (if (< p n-1)
-          (let [s (+ s ^float (mxs tid))]
-            (if (and (<= ^long tao-1 p) (< ^float minimal-score s))
-              [s p did]
-              (recur s (inc p) (rest cs))))
-          [s p did])))))
+  (let [res (reduce-kv
+              (fn [score ^long p ^Candidate candidate]
+                (let [s (+ ^float score ^float (mxs (.-tid candidate)))]
+                  (if (and (<= ^long tao-1 p) (< ^float minimal-score s))
+                    (reduced [s p (get-did candidate)])
+                    s)))
+              (float 0.0)
+              candidates)]
+    (if (vector? res)
+      res
+      [res (dec (count candidates)) (get-did (peek candidates))])))
 
 (defn- score-pivot
   [wqs mxs lmdb norms pivot-did minimal-score mxscore tao n candidates]
   (let [res (reduce-kv
-              (fn [[score ^long hits] ^long k [tid did]]
-                (println "score" score "hits" hits)
-                (if (= did pivot-did)
-                  (let [hits (inc hits)]
-                    (if (< ^long (+ hits ^long (- ^long n k 1)) ^long tao)
-                      (reduced :prune)
-                      (let [s (+ (- ^float score ^float (mxs tid))
-                                 ^float (real-score lmdb tid did wqs norms))]
-                        (if (< s ^float minimal-score)
-                          (reduced :prune)
-                          [s hits]))))
-                  [score hits]))
+              (fn [[score ^long hits] ^long k ^Candidate candidate]
+                (let [tid (.-tid candidate)
+                      did (get-did candidate)]
+                  (if (= did pivot-did)
+                    (let [h (inc hits)]
+                      (if (< ^long (+ h ^long (- ^long n k 1)) ^long tao)
+                        (reduced :prune)
+                        (let [s (+ (- ^float score ^float (mxs tid))
+                                   ^float (real-score lmdb tid did wqs norms))]
+                          (if (< s ^float minimal-score)
+                            (reduced :prune)
+                            [s h]))))
+                    (reduced [score hits]))))
               [mxscore 0]
               candidates)]
     (if (= res :prune) res (nth res 0))))
 
-(defn- fresh-did
-  [^RoaringBitmap bm ^HashSet result init-did]
-  (loop [did ^int init-did]
-    (if (.contains result did)
-      (recur (.nextValue bm (inc did)))
-      did)))
+(def candidate-comp
+  (comparator
+    (fn [^Candidate a ^Candidate b]
+      (compare (get-did a) (get-did b)))))
 
 (defn- first-candidates
-  [bms term-ids result]
-  (persistent!
-    (reduce (fn [cs tid]
-              (let [bm   ^RoaringBitmap (bms tid)
-                    ndid (fresh-did bm result (.first bm))]
-                (if (= ndid -1)
-                  cs
-                  (conj! cs [tid ndid]))))
-            (transient [])
-            term-ids)))
+  [bms term-ids ^RoaringBitmap result tao n]
+  (let [z          (inc (- ^long n ^long tao))
+        union-tids (set (take z term-ids))
+        union-bms  (->> (select-keys bms union-tids)
+                        vals
+                        (into-array RoaringBitmap))
+        union-bm   (FastAggregation/or
+                     ^"[Lorg.roaringbitmap.RoaringBitmap;" union-bms)]
+    (reduce
+      (fn [cs tid]
+        (let [bm (bms tid)
+              bm (if (or (union-tids tid) (= tao 1))
+                   bm
+                   (RoaringBitmap/and ^RoaringBitmap bm
+                                      ^RoaringBitmap union-bm))]
+          (.andNot ^RoaringBitmap bm result)
+          (let [iter (IntIteratorFlyweight. bm)]
+            (when (.hasNext iter)
+              (let [candidate (->Candidate tid -1 iter)]
+                (advance candidate)
+                (conj cs candidate))))))
+      []
+      term-ids)))
 
 (defn- next-candidates
-  [bms did term-ids result]
-  (println "everyone moves beyond" did)
-  (persistent!
-    (reduce (fn [cs tid]
-              (let [bm   ^RoaringBitmap (bms tid)
-                    ndid (fresh-did bm result (.nextValue bm (inc ^int did)))]
-                (if (= ndid -1)
-                  cs
-                  (conj! cs [tid ndid]))))
-            (transient [])
-            term-ids)))
+  [did candidates]
+  ;; (println "everyone moves beyond" did)
+  (doseq [candidate candidates]
+    (skip-before candidate (inc ^int did)))
+  (let [live-cs (vec (filter #(has-next? %) candidates))]
+    (doseq [candidate live-cs] (advance candidate))
+    live-cs))
 
 (defn- skip-candidates
-  [pivot bms pivot-did candidates result]
-  (println "some skips to" pivot-did)
-  (persistent!
-    (reduce-kv
-      (fn [cs t [tid _ :as ct]]
-        (if (< ^long t ^long pivot)
-          (let [bm   ^RoaringBitmap (bms tid)
-                ndid (fresh-did bm result (.nextValue bm pivot-did))]
-            (if (= ndid -1)
-              cs
-              (conj! cs [tid ndid])))
-          (conj! cs ct)))
-      (transient [])
-      candidates)))
+  [pivot pivot-did ^ArrayList candidates]
+  ;; (println pivot "iterators skip to" pivot-did)
+  (let [prev-cs (take pivot candidates)]
+    (doseq [candidate prev-cs]
+      (skip-before candidate pivot-did))
+    (let [prev-live-cs (vec (filter #(has-next? %) prev-cs))]
+      (doseq [candidate prev-live-cs] (advance candidate))
+      (into prev-live-cs (drop pivot candidates)))))
 
 (defn- current-threshold
   [^PriorityQueue pq]
@@ -257,27 +295,24 @@
     (nth (.top pq) 0)))
 
 (defn- prune-candidates
-  [lmdb n term-ids bms mxs wqs ^IntShortHashMap norms ^HashSet result]
+  [lmdb n term-ids bms mxs wqs ^IntShortHashMap norms ^RoaringBitmap result]
   (fn [^PriorityQueue pq ^long tao] ; target # of overlaps between query and doc
-    (println "working on tao" tao)
-    (loop [candidates (first-candidates bms term-ids result)]
-      (println "candidates" candidates)
-      (when (seq candidates)
-        (let [candidates          (vec (sort-by peek candidates))
-              _                   (println "sorted candidates" candidates)
-              minimal-score       ^float (current-threshold pq)
-              _                   (println "minimal-score" minimal-score)
+    ;; (println "working on tao" tao "with result" result)
+    (loop [candidates (first-candidates bms term-ids result tao n)]
+      (when (and (seq candidates) (<= tao (count candidates)))
+        (let [minimal-score       ^float (current-threshold pq)
+              candidates          (vec (sort-by get-did candidates))
               [mxscore pivot did] (find-pivot mxs (dec tao) minimal-score
-                                              candidates)]
-          (println "found pivot" did)
-          (if (= ^int did (peek (nth candidates 0)))
+                                              candidates)
+              did0                (get-did (nth candidates 0))]
+          ;; (println "found pivot" did "when did0 is" did0)
+          (if (= ^int did ^int did0)
             (let [score (score-pivot wqs mxs lmdb norms did minimal-score
                                      mxscore tao n candidates)]
-              (println "real score" score)
-              (when-not (= score :prune)
-                (.insertWithOverflow pq [score did]))
-              (recur (next-candidates bms did term-ids result)))
-            (recur (skip-candidates pivot bms did candidates result))))))))
+              ;; (println "real score" score)
+              (when-not (= score :prune) (.insertWithOverflow pq [score did]))
+              (recur (next-candidates did candidates)))
+            (recur (skip-candidates pivot did candidates))))))))
 
 #_(defn- prune-candidates
     [lmdb n term-ids bms mtfs wqs ^IntShortHashMap norms ^HashMap result
@@ -521,7 +556,7 @@
               tms      (zipmap term-ids (mapv :tm qterms))
               mws      (zipmap term-ids (mapv :mw qterms))
               mxs      (zipmap term-ids (map #(max-score wqs mws %) term-ids))
-              result   (HashSet.)
+              result   (RoaringBitmap.)
               score-fn (score-docs lmdb n term-ids dfs bms mxs wqs norms
                                    result algo)]
           (sequence
@@ -627,7 +662,7 @@
 
 (comment
 
-  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-1"))
+  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-odd"))
 
   (def engine (time (new-engine lmdb)))
 

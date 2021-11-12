@@ -39,7 +39,7 @@
         engine ^SearchEngine (sut/new-engine lmdb)]
     (add-docs engine)
 
-    (let [[tid ^RoaringBitmap bm ^SparseShortArrayList ssl]
+    (let [[tid mw ^RoaringBitmap bm]
           (l/get-value lmdb c/terms "red" :string :term-info true)]
       (is (= (l/range-count lmdb c/terms [:all] :string) 32))
       (is (= (l/get-value lmdb c/terms "red" :string :int) tid))
@@ -49,26 +49,24 @@
       (is (= (.getCardinality bm) 4))
       (is (= (seq bm) [1 2 4 5]))
 
-      (is (= (sl/size ssl) 1))
-      (is (= (sl/get ssl 0) 2))
-
       (is (= (l/list-count lmdb c/positions [tid 1] :int-int) 2))
       (is (= (l/list-count lmdb c/positions [tid 5] :int-int) 1))
       (is (= (l/get-list lmdb c/positions [tid 5] :int-int :int-int)
              [[9 48]]))
 
       (is (= (l/get-value lmdb c/docs 1 :int :doc-info true) [7 :doc1]))
+      (is (= (l/get-value lmdb c/docs 2 :int :doc-info true) [8 :doc2]))
+      (is (= (l/get-value lmdb c/docs 3 :int :doc-info true) [6 :doc3]))
       (is (= (l/get-value lmdb c/docs 4 :int :doc-info true) [7 :doc4]))
+      (is (= (l/get-value lmdb c/docs 5 :int :doc-info true) [9 :doc5]))
       (is (= (l/range-count lmdb c/docs [:all]) 5))
 
       (sut/remove-doc engine :doc1)
-      (let [[tid ^RoaringBitmap bm ^SparseShortArrayList ssl]
+      (let [[tid mw ^RoaringBitmap bm]
             (l/get-value lmdb c/terms "red" :string :term-info true)]
         (is (= (l/range-count lmdb c/docs [:all]) 4))
         (is (not (.contains bm 1)))
         (is (= (.getCardinality bm) 3))
-        (is (= (sl/size ssl) 1))
-        (is (= (sl/get ssl 0) 1))
         (is (= (l/list-count lmdb c/positions [tid 1] :int-id) 0))
         (is (nil? (l/get-list lmdb c/positions [tid 1] :int-id :int-int)))))
 
@@ -92,7 +90,7 @@
            ;; (sut/search engine "fleece" {:algo :bitmap :display :offsets})
            [[:doc4 [["fleece" [22]]]] [:doc2 [["fleece" [29]]]]]))
     (is (= (sut/search engine "red fox" {:display :offsets})
-           (sut/search engine "red fox" {:algo :prune :display :offsets})
+           ;; (sut/search engine "red fox" {:algo :prune :display :offsets})
            ;; (sut/search engine "red fox" {:algo :bitmap :display :offsets})
            [[:doc1 [["fox" [14]] ["red" [10 39]]]]
             [:doc4 [["red" [18]]]]
