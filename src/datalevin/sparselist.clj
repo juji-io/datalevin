@@ -9,6 +9,7 @@
    [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]))
 
 (defprotocol ISparseIntArrayList
+  (contains-index? [this index] "return true if containing index")
   (get [this index] "get the item by index")
   (set [this index item] "set an item by index")
   (remove [this index] "remove an item by index")
@@ -18,6 +19,9 @@
 (deftype SparseIntArrayList [^FastRankRoaringBitmap indices
                              ^IntArrayList items]
   ISparseIntArrayList
+  (contains-index? [_ index]
+    (.contains indices (int index)))
+
   (get [_ index]
     (when (.contains indices (int index))
       (.get items (dec (.rank indices index)))))
@@ -66,23 +70,25 @@
   (binding [*out* w]
     (pr (for [i (.-indices s)] [i (get s i)]))))
 
-(nippy/extend-freeze SparseIntArrayList :datalevin/silist
+(defonce compressor (IntCompressor.))
+
+(nippy/extend-freeze SparseIntArrayList :dtlv/sial
                      [^SparseIntArrayList x ^DataOutput out]
                      (nippy/freeze-to-out! out (.-indices x))
                      (let [ar   (.toArray ^IntArrayList (.-items x))
-                           car  (.compress (IntCompressor.) ar)
+                           car  (.compress ^IntCompressor compressor ar)
                            size (alength car)]
                        (.writeInt out size)
                        (dotimes [i size]
                          (.writeInt out (aget car i)))))
 
-(nippy/extend-thaw :datalevin/silist
+(nippy/extend-thaw :dtlv/sial
                    [^DataInput in]
                    (let [indices (nippy/thaw-from-in! in)
                          size    (.readInt in)
                          car     (int-array size)]
                      (dotimes [i size]
                        (aset car i (.readInt in)))
-                     (let [ar    (.uncompress (IntCompressor.) car)
+                     (let [ar    (.uncompress ^IntCompressor compressor car)
                            items (IntArrayList. ar)]
                        (->SparseIntArrayList indices items))))

@@ -1,5 +1,6 @@
 (ns datalevin.bits-test
   (:require [datalevin.bits :as sut]
+            [datalevin.sparselist :as sl]
             [datalevin.datom :as d]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
@@ -12,6 +13,7 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [org.roaringbitmap RoaringBitmap]
+           [datalevin.sparselist SparseIntArrayList]
            [datalevin.bits Indexable Retrieved]))
 
 ;; buffer read/write
@@ -73,17 +75,19 @@
                   (= [k1 k2] (sut/read-buffer bf :doc-info)))))
 
 (test/defspec term-info-generative-test
-  10000
+  100
   (prop/for-all [k1 gen/int
                  k2 (gen/double* {:NaN? false})
-                 k3 (gen/vector gen/int)]
-                (let [^ByteBuffer bf    (sut/allocate-buffer 16384)
-                      k2                (float k2)
-                      ^RoaringBitmap bm (sut/bitmap k3)]
+                 k3 (gen/vector gen/int)
+                 k4 (gen/vector gen/int)]
+                (let [^ByteBuffer bf         (sut/allocate-buffer 16384)
+                      k2                     (float k2)
+                      k3                     (sort k3)
+                      ^SparseIntArrayList sl (sl/sparse-arraylist k3 k4)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 k2 bm] :term-info)
+                  (sut/put-buffer bf [k1 k2 sl] :term-info)
                   (.flip bf)
-                  (= [k1 k2 bm] (sut/read-buffer bf :term-info)))))
+                  (= [k1 k2 sl] (sut/read-buffer bf :term-info)))))
 
 (test/defspec long-generative-test
   100

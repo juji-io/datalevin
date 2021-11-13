@@ -184,12 +184,17 @@
   [^ByteBuffer bb]
   (decode-double (.getLong bb)))
 
-(defn- get-boolean
-  [^ByteBuffer bb]
-  (case (short (get-byte bb))
+(defn boolean-value
+  "Datalevin's boolean value in byte"
+  [b]
+  (case (short b)
     2 true
     1 false
-    (u/raise "Illegal value in buffer, expecting a boolean" {})))
+    (u/raise "Illegal value, expecting a Datalevin boolean value" {})))
+
+(defn- get-boolean
+  [^ByteBuffer bb]
+  (boolean-value (get-byte bb)))
 
 (defn- put-long
   [^ByteBuffer bb n]

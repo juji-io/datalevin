@@ -90,7 +90,7 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const meta "datalevin/meta")
-(def ^:const terms "datalevin/terms")         ; term -> term-id,max-weight,doc-bitmap
+(def ^:const terms "datalevin/terms")         ; term -> term-id,max-weight,doc-freq
 (def ^:const docs "datalevin/docs")           ; doc-id -> norm,doc-ref
 (def ^:const positions "datalevin/positions") ; term-id,doc-id -> position,offset (list)
 
