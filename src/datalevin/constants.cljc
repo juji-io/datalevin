@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
-  (:import [java.util UUID Arrays]))
+  (:import [java.util UUID Arrays HashSet]))
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -164,14 +164,26 @@
 
 ;;search engine
 
-(def en-stop-words (hash-set "a", "an", "and", "are", "as", "at", "be",
-                             "but", "by", "for", "if", "in", "into", "is",
-                             "it", "no", "not", "of", "on", "or", "such",
-                             "that", "the",  "their", "then", "there", "these",
-                             "they", "this", "to", "was", "will", "with"))
+(def en-stop-words-set
+  (let [s (HashSet.)]
+    (doseq [w ["a",    "an",   "and",   "are",  "as",    "at",   "be",
+               "but",  "by",   "for",   "if",   "in",    "into", "is",
+               "it",   "no",   "not",   "of",   "on",    "or",   "such",
+               "that", "the",  "their", "then", "there", "these",
+               "they", "this", "to",    "was",  "will",  "with"]]
+      (.add s w))
+    s))
 
-(def en-punctuations (hash-set \: \/ \. \; \, \! \= \? \" \' \( \) \[ \] \{ \}
-                               \| \< \> \& \@ \# \^ \* \\ \~ \`))
+(defn en-stop-words? [w] (.contains ^HashSet en-stop-words-set w))
+
+(def en-punctuations-set
+  (let [s (HashSet.)]
+    (doseq [c [\: \/ \. \; \, \! \= \? \" \' \( \) \[ \] \{ \}
+               \| \< \> \& \@ \# \^ \* \\ \~ \`]]
+      (.add s c))
+    s))
+
+(defn en-punctuations? [c] (.contains ^HashSet en-punctuations-set c))
 
 (def dict-max-edit-distance 2)
 

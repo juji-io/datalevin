@@ -5,18 +5,18 @@
   (:import
    [java.io Writer DataInput DataOutput]
    [me.lemire.integercompression IntCompressor]
-   [org.roaringbitmap FastRankRoaringBitmap]
+   [org.roaringbitmap RoaringBitmap]
    [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]))
 
 (defprotocol ISparseIntArrayList
   (contains-index? [this index] "return true if containing index")
-  (get [this index] "get the item by index")
+  (get [this index] "get item by index")
   (set [this index item] "set an item by index")
   (remove [this index] "remove an item by index")
   (size [this] "return the size")
   (select [this nth] "return the nth item"))
 
-(deftype SparseIntArrayList [^FastRankRoaringBitmap indices
+(deftype SparseIntArrayList [^RoaringBitmap indices
                              ^IntArrayList items]
   ISparseIntArrayList
   (contains-index? [_ index]
@@ -43,7 +43,7 @@
     (.getCardinality indices))
 
   (select [this nth]
-    (.get this (.select indices nth)))
+    (.get items nth))
 
   Object
   (equals [this other]
@@ -53,7 +53,7 @@
 
 (defn sparse-arraylist
   ([]
-   (->SparseIntArrayList (FastRankRoaringBitmap.)
+   (->SparseIntArrayList (RoaringBitmap.)
                          (IntArrayList.)))
   ([m]
    (let [ssl (sparse-arraylist)]
