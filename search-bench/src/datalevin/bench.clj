@@ -79,7 +79,7 @@
   (println)
   (println "Datalevin:")
   ;; (index-wiki-json "data/wiki-datalevin-odd" "wiki-odd.json")
-  ;; (index-wiki-json "data/wiki-datalevin-all" "wiki.json")
+  (index-wiki-json "data/wiki-datalevin-all" "wiki.json")
   ;; (index-wiki-json "data/wiki-datalevin-2" "output.json")
   (query (s/new-engine (l/open-kv "data/wiki-datalevin-odd"))
          "queries40k.txt" 40000))
