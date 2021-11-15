@@ -80,20 +80,20 @@ Indexing performance is in the following table.
 
 |Measure   | Datalevin | Lucene |
 |----|--------|--------|
-| Index time (Hours)  | 1.9  | 0.3  |
-| Index size (GB)  | 80  |  13      |
-| Index Speed (GB/Hour)  | 7.9  |  40.6      |
+| Index time (Hours)  | 1.6  | 0.3  |
+| Index size (GB)  | 79  |  13      |
+| Index Speed (GB/Hour)  | 9.4  |  40.6      |
 
 Lucene is more than 5 times faster than Datalevin at bulk indexing, and the resulting
 index size is also similarly smaller.
 
-This is expected, as Datalevin stores the indices in a transactional database,
+This is expected, as Datalevin transact the indices to the database,
 with all its integrity checks and so on. Datalevin data is also not presently
-compressed (this is on the roadmap), so the data size is large.
+compressed (this is on the roadmap), so the data size is larger.
 
 One benefit of storing search index in a transactional database, is that the
-documents become immediately searchable upon adding, while Lucene commits
-documents in very large batches, so they are not immediately searchable.
+documents become immediately searchable, while Lucene commits documents in very
+large batches, so they are not immediately searchable.
 
 ### Searching
 

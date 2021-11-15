@@ -66,9 +66,9 @@
   (let [terms (HashMap.)]
     (doseq [[term position offset] result]
       (when (< (count term) c/+max-term-length+)
-        (.put terms term (if-let [^ArrayList lst (.get terms term)]
+        (.put terms term (if-let [^FastList lst (.get terms term)]
                            (do (.add lst [position offset]) lst)
-                           (doto (ArrayList.) (.add [position offset]))))))
+                           (doto (FastList.) (.add [position offset]))))))
     terms))
 
 (defn- get-term-info
@@ -114,7 +114,7 @@
     (when norms (.put norms doc-id unique))
     (doseq [^Map$Entry kv (.entrySet new-terms)]
       (let [term        (.getKey kv)
-            new-lst     ^ArrayList (.getValue kv)
+            new-lst     ^FastList (.getValue kv)
             tf          (.size new-lst)
             [tid mw sl] (or (.get hit-terms term)
                             ;; (when pre-terms (.get pre-terms term))
@@ -178,18 +178,18 @@
      (double (.get norms did))))
 
 (defn- max-score
-  [^IntDoubleHashMap wqs mws tid]
-  (* ^double (.get wqs tid) ^double (mws tid)))
+  [^IntDoubleHashMap wqs ^IntDoubleHashMap mws tid]
+  (* ^double (.get wqs tid) ^double (.get mws tid)))
 
-(defn- get-wqs
-  [tids qterms]
+(defn- get-ws
+  [tids qterms k]
   (let [m (IntDoubleHashMap.)]
-    (doall (map (fn [tid qterm] (.put m tid (qterm :wq))) tids qterms))
+    (dorun (map (fn [tid qterm] (.put m tid (qterm k))) tids qterms))
     m))
 
 (defn- get-mxs [tids wqs mws]
   (let [m (IntDoubleHashMap.)]
-    (doall (map (fn [tid] (.put m tid (max-score wqs mws tid) )) tids))
+    (doseq [tid tids] (.put m tid (max-score wqs mws tid)))
     m))
 
 (defprotocol ICandidate
@@ -261,9 +261,9 @@
               (if (< ^long (+ h ^long (- ^long n k 1)) ^long tao)
                 :prune
                 (let [tid (.-tid candidate)
-                      tf  (get-tf candidate)
                       s   (+ (- ^double score ^double (.get mxs tid))
-                             ^double (real-score tid did tf wqs norms))]
+                             ^double (real-score tid did (get-tf candidate)
+                                                 wqs norms))]
                   (if (< s ^double minimal-score)
                     :prune
                     (recur s h (inc k))))))
@@ -298,7 +298,7 @@
 
 (defn- next-candidates
   [did ^"[Ldatalevin.search.Candidate;" candidates]
-  (let [lst (ArrayList.)]
+  (let [lst (FastList.)]
     (dotimes [i (alength candidates)]
       (let [candidate (aget candidates i)]
         (skip-before candidate (inc ^int did))
@@ -307,7 +307,7 @@
 
 (defn- skip-candidates
   [pivot pivot-did ^"[Ldatalevin.search.Candidate;" candidates]
-  (let [lst (ArrayList.)]
+  (let [lst (FastList.)]
     (dotimes [i (alength candidates)]
       (let [candidate (aget candidates i)]
         (if (< i ^long pivot)
@@ -324,9 +324,8 @@
 
 (defn- score-term
   [^Candidate candidate ^IntDoubleHashMap mxs wqs norms minimal-score pq]
-  (let [tid     (.-tid candidate)
-        mxscore (.get mxs tid)]
-    (when (< ^double minimal-score mxscore)
+  (let [tid (.-tid candidate)]
+    (when (< ^double minimal-score (.get mxs tid))
       (loop [did (get-did candidate) minscore minimal-score]
         (let [score (real-score tid did (get-tf candidate) wqs norms)]
           (when (< ^double minscore ^double score)
@@ -348,9 +347,8 @@
           :else
           (let [_                   (Arrays/sort candidates candidate-comp)
                 [mxscore pivot did] (find-pivot mxs (dec tao) minimal-score
-                                                candidates)
-                did0                (get-did (aget candidates 0))]
-            (if (= ^int did ^int did0)
+                                                candidates)]
+            (if (= ^int did ^int (get-did (aget candidates 0)))
               (let [score (score-pivot wqs mxs norms did minimal-score
                                        mxscore tao n candidates)]
                 (when-not (= score :prune) (.insertWithOverflow pq [score did]))
@@ -477,8 +475,8 @@
                                           sls))
               sls      (zipmap tids sls)
               tms      (zipmap tids (mapv :tm qterms))
-              mws      (zipmap tids (mapv :mw qterms))
-              wqs      (get-wqs tids qterms)
+              mws      (get-ws tids qterms :mw)
+              wqs      (get-ws tids qterms :wq)
               mxs      (get-mxs tids wqs mws)
               result   (RoaringBitmap.)
               score-fn (score-docs n tids sls bms mxs wqs norms result)]
@@ -575,10 +573,12 @@
 
 (comment
 
-  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-odd"))
+  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-all"))
 
   (def engine (time (new-engine lmdb)))
+  (.size (peek (l/get-value lmdb c/terms "s" :string :term-info))) ; over 3 mil.
 
+  (time (search engine "s"))
   (time (search engine "french lick resort and casino"))
   (time (search engine "rv solar panels"))
   (time (search engine "f1"))

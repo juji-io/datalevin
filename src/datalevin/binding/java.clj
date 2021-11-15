@@ -13,6 +13,7 @@
            [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue
             ExecutorService Executors Future Callable]
            [java.util Iterator]
+           [org.eclipse.collections.impl.map.mutable UnifiedMap]
            [java.nio ByteBuffer BufferOverflowException]))
 
 (extend-protocol IKV
@@ -215,7 +216,7 @@
 
 
 (defn- transact*
-  [^Env env txs ^ConcurrentHashMap dbis]
+  [^Env env txs ^UnifiedMap dbis]
   (with-open [txn (.txnWrite env)]
     (doseq [[op dbi-name k & r] txs]
       (let [^DBI dbi (or (.get dbis dbi-name)
@@ -245,7 +246,7 @@
 (deftype LMDB [^Env env
                ^String dir
                ^ConcurrentLinkedQueue pool
-               ^ConcurrentHashMap dbis]
+               ^UnifiedMap dbis]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -600,7 +601,7 @@
            lmdb     (->LMDB env
                             dir
                             (ConcurrentLinkedQueue.)
-                            (ConcurrentHashMap.))]
+                            (UnifiedMap.))]
        lmdb)
      (catch Exception e
        (raise

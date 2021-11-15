@@ -46,6 +46,6 @@
                       ks                      (sort ks)
                       ^SparseIntArrayList ssl (sut/sparse-arraylist ks vs)]
                   (.clear bf)
-                  (b/put-buffer bf ssl)
+                  (b/put-buffer bf ssl :sial)
                   (.flip bf)
-                  (= ssl (b/read-buffer bf)))))
+                  (= ssl (b/read-buffer bf :sial)))))

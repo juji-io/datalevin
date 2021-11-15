@@ -1,12 +1,14 @@
 (ns datalevin.sparselist
   "Sparse array list of integers"
   (:refer-clojure :exclude [get set remove])
-  (:require [taoensso.nippy :as nippy])
   (:import
-   [java.io Writer DataInput DataOutput]
+   [java.nio ByteBuffer]
+   [java.io Writer]
    [me.lemire.integercompression IntCompressor]
    [org.roaringbitmap RoaringBitmap]
    [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]))
+
+(defonce compressor (IntCompressor.))
 
 (defprotocol ISparseIntArrayList
   (contains-index? [this index] "return true if containing index")
@@ -14,7 +16,9 @@
   (set [this index item] "set an item by index")
   (remove [this index] "remove an item by index")
   (size [this] "return the size")
-  (select [this nth] "return the nth item"))
+  (select [this nth] "return the nth item")
+  (serialize [this bf] "serialize to a bytebuffer")
+  (deserialize [this bf] "serialize from a bytebuffer"))
 
 (deftype SparseIntArrayList [^RoaringBitmap indices
                              ^IntArrayList items]
@@ -45,6 +49,21 @@
   (select [this nth]
     (.get items nth))
 
+  (serialize [this bf]
+    (let [ar   (.toArray items)
+          car  (.compress ^IntCompressor compressor ar)
+          size (alength car)]
+      (.putInt ^ByteBuffer bf size)
+      (dotimes [i size] (.putInt ^ByteBuffer bf (aget car i))))
+    (.serialize indices ^ByteBuffer bf))
+
+  (deserialize [this bf]
+    (let [size (.getInt ^ByteBuffer bf)
+          car  (int-array size)]
+      (dotimes [i size] (aset car i (.getInt ^ByteBuffer bf)))
+      (.addAll items (.uncompress ^IntCompressor compressor car)))
+    (.deserialize indices ^ByteBuffer bf))
+
   Object
   (equals [this other]
     (and (instance? SparseIntArrayList other)
@@ -68,27 +87,3 @@
   (.write w (str "#datalevin/SparseList "))
   (binding [*out* w]
     (pr (for [i (.-indices s)] [i (get s i)]))))
-
-(defonce compressor (IntCompressor.))
-
-(nippy/extend-freeze
-  SparseIntArrayList :dtlv/sial
-  [^SparseIntArrayList x ^DataOutput out]
-  (let [^RoaringBitmap bm (.-indices x)]
-    (.runOptimize bm)
-    (nippy/freeze-to-out! out bm))
-  (let [ar         (.toArray ^IntArrayList (.-items x))
-        car        (.compress ^IntCompressor compressor ar)
-        write-size (alength car)]
-    (.writeInt out write-size)
-    (dotimes [i write-size] (.writeInt out (aget car i)))))
-
-(nippy/extend-thaw
-  :dtlv/sial
-  [^DataInput in]
-  (let [indices    (nippy/thaw-from-in! in)
-        write-size (.readInt in)
-        car        (int-array write-size)]
-    (dotimes [i write-size] (aset car i (.readInt in)))
-    (let [ar (.uncompress ^IntCompressor compressor car)]
-      (->SparseIntArrayList indices (IntArrayList. ar)))))

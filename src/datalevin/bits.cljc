@@ -3,15 +3,14 @@
   (:require [datalevin.datom :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
+            [datalevin.sparselist :as sl]
             [taoensso.nippy :as nippy])
   (:import [java.util ArrayList Arrays UUID Date Base64]
            [java.io Writer DataInput DataOutput ObjectInput ObjectOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
-           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
-            FastRankRoaringBitmap]
-           [org.eclipse.collections.impl.list.mutable.primitive ShortArrayList]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -86,6 +85,12 @@
   (.add bm ^int i)
   bm)
 
+(defn- get-bitmap
+  [^ByteBuffer bf]
+  (let [bm (RoaringBitmap.)] (.deserialize bm bf) bm))
+
+(defn- put-bitmap [^ByteBuffer bf ^RoaringBitmap x] (.serialize x bf))
+
 ;; byte buffer
 
 (defn ^ByteBuffer allocate-buffer
@@ -149,15 +154,9 @@
 (defn- get-data
   "Read data from a ByteBuffer"
   ([^ByteBuffer bb]
-   (when-let [bs (get-bytes bb)]
-     (binding [nippy/*thaw-serializable-allowlist*
-               #{"org.roaringbitmap.RoaringBitmap"}]
-       (nippy/fast-thaw bs))))
+   (when-let [bs (get-bytes bb)] (nippy/fast-thaw bs)))
   ([^ByteBuffer bb n]
-   (when-let [bs (get-bytes-val bb n)]
-     (binding [nippy/*thaw-serializable-allowlist*
-               #{"org.roaringbitmap.RoaringBitmap"}]
-       (nippy/fast-thaw bs)))))
+   (when-let [bs (get-bytes-val bb n)] (nippy/fast-thaw bs))))
 
 (def ^:no-doc ^:const float-sign-idx 31)
 (def ^:no-doc ^:const double-sign-idx 63)
@@ -564,6 +563,10 @@
     :long    (long-header v)
     nil))
 
+(defn- put-sparse-list
+  [bf x]
+  (sl/serialize x bf))
+
 (defn put-buffer
   ([bf x]
    (put-buffer bf x :data))
@@ -576,10 +579,12 @@
      :int-int   (let [[i1 i2] x]
                   (put-int bf i1)
                   (put-int bf i2))
+     :sial      (put-sparse-list bf x)
+     :bitmap    (put-bitmap bf x)
      :term-info (let [[i1 i2 i3] x]
                   (put-int bf i1)
                   (.putFloat bf (float i2))
-                  (put-data bf i3))
+                  (put-sparse-list bf i3))
      :doc-info  (let [[i1 i2] x]
                   (put-short bf i1)
                   (put-data bf i2))
@@ -613,6 +618,12 @@
      :raw       (put-bytes bf x)
      (put-data bf x))))
 
+(defn- get-sparse-list
+  [bf]
+  (let [sl (sl/sparse-arraylist)]
+    (sl/deserialize sl bf)
+    sl))
+
 (defn read-buffer
   ([bf]
    (read-buffer bf :data))
@@ -622,7 +633,9 @@
      :short     (get-short bf)
      :int       (get-int bf)
      :int-int   [(get-int bf) (get-int bf)]
-     :term-info [(get-int bf) (.getFloat bf) (get-data bf)]
+     :bitmap    (get-bitmap bf)
+     :sial      (get-sparse-list bf)
+     :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
      :doc-info  [(get-short bf) (get-data bf)]
      :long      (do (get-byte bf) (get-long bf))
      :id        (get-long bf)
