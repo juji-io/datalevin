@@ -11,7 +11,8 @@
            [java.util HashMap ArrayList Map$Entry Arrays]
            [java.util.concurrent.atomic AtomicInteger]
            [java.io Writer]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
+           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
+            IntDoubleHashMap]
            [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]
            [org.eclipse.collections.impl.list.mutable FastList]
            [org.eclipse.collections.impl.map.mutable UnifiedMap]
@@ -77,27 +78,27 @@
 (defn- idf
   "inverse document frequency of a term"
   [^long freq N]
-  (float (if (zero? freq) 0 (Math/log10 (/ ^int N freq)))))
+  (if (zero? freq) 0 (Math/log10 (/ ^long N freq))))
 
 (defn- tf*
   "log-weighted term frequency"
   [freq]
-  (float (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1))))
+  (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1)))
 
 (defn- add-max-weight
   [mw tf norm]
-  (let [w (float (/ ^float (tf* tf) ^short norm))]
-    (if (< ^float mw w) w mw)))
+  (let [w (/ ^double (tf* tf) ^short norm)]
+    (if (< ^double mw w) w mw)))
 
 (defn- del-max-weight
   [^SparseIntArrayList sl doc-id mw tf norm]
-  (let [w (float (/ ^float (tf* tf) ^short norm))]
+  (let [w (/ ^double (tf* tf) ^short norm)]
     (if (= mw w)
       (if (= (sl/size sl) 1)
-        (float 0.0)
-        (apply max (map #(/ (float (if (= doc-id %)
-                                     0.0
-                                     (tf* (sl/get sl %))))
+        0.0
+        (apply max (map #(/ (if (= doc-id %)
+                              0.0
+                              ^double (tf* (sl/get sl %)))
                             ^short norm)
                         (.-indices sl))))
       mw)))
@@ -118,7 +119,7 @@
             [tid mw sl] (or (.get hit-terms term)
                             ;; (when pre-terms (.get pre-terms term))
                             (get-term-info lmdb term)
-                            [(.incrementAndGet max-term) (float 0.0)
+                            [(.incrementAndGet max-term) 0.0
                              (sl/sparse-arraylist)])]
         (.put hit-terms term [tid (add-max-weight mw tf unique)
                               (sl/set sl doc-id tf)])
@@ -151,8 +152,8 @@
                         :mw mw
                         :sl sl
                         :tm term
-                        :wq (* ^float (tf* freq)
-                               ^float (idf df (.get max-doc)))}))))
+                        :wq (* ^double (tf* freq)
+                               ^double (idf df (.get max-doc)))}))))
             (filter map?))
           (frequencies tms))))
 
@@ -160,7 +161,7 @@
   [top]
   (proxy [PriorityQueue] [top]
     (lessThan [a b]
-      (< ^float (nth a 0) ^float (nth b 0)))))
+      (< ^double (nth a 0) ^double (nth b 0)))))
 
 (defn- pour
   [coll ^PriorityQueue pq ^RoaringBitmap result]
@@ -172,11 +173,24 @@
     (reduce conj! coll lst)))
 
 (defn- real-score
-  [tid did tf wqs norms]
-  (/ (* ^float (wqs tid) ^float (tf* tf))
-     ^short (.get ^IntShortHashMap norms did)))
+  [tid did tf ^IntDoubleHashMap wqs ^IntShortHashMap norms]
+  (/ (* ^double (.get wqs tid) ^double (tf* tf))
+     (double (.get norms did))))
 
-(defn- max-score [wqs mws tid] (* ^float (wqs tid) ^float (mws tid)))
+(defn- max-score
+  [^IntDoubleHashMap wqs mws tid]
+  (* ^double (.get wqs tid) ^double (mws tid)))
+
+(defn- get-wqs
+  [tids qterms]
+  (let [m (IntDoubleHashMap.)]
+    (doall (map (fn [tid qterm] (.put m tid (qterm :wq))) tids qterms))
+    m))
+
+(defn- get-mxs [tids wqs mws]
+  (let [m (IntDoubleHashMap.)]
+    (doall (map (fn [tid] (.put m tid (max-score wqs mws tid) )) tids))
+    m))
 
 (defprotocol ICandidate
   (skip-before [this limit] "move the iterator to just before the limit")
@@ -210,7 +224,7 @@
 
 (def candidate-comp
   (comparator (fn [^Candidate a ^Candidate b]
-                (compare (get-did a) (get-did b)))))
+                (- ^int (get-did a) ^int (get-did b)))))
 
 (defmethod print-method Candidate [^Candidate c, ^Writer w]
   (.write w
@@ -221,40 +235,40 @@
                    :has-next? (has-next? c)})))
 
 (defn- find-pivot
-  [mxs tao-1 minimal-score ^"[Ldatalevin.search.Candidate;" candidates]
+  [^IntDoubleHashMap mxs tao-1 minimal-score
+   ^"[Ldatalevin.search.Candidate;" candidates]
   (let [n (alength candidates)]
-    (loop [score (float 0.0) p 0]
+    (loop [score 0.0 p 0]
       (if (< p n)
         (let [candidate ^Candidate (aget candidates p)
-              s         (+ score ^float (mxs (.-tid candidate)))]
-          (if (and (<= ^long tao-1 p) (< ^float minimal-score s))
+              s         (+ score ^double (.get mxs (.-tid candidate)))]
+          (if (and (<= ^long tao-1 p) (< ^double minimal-score s))
             [s p (get-did candidate)]
             (recur s (inc p))))
         (let [n-1 (dec n)]
           [score n-1 (get-did (aget candidates n-1))])))))
 
 (defn- score-pivot
-  [wqs mxs norms pivot-did minimal-score mxscore tao n
+  [wqs ^IntDoubleHashMap mxs norms pivot-did minimal-score mxscore tao n
    ^"[Ldatalevin.search.Candidate;" candidates]
-  (let [c   (alength candidates)
-        res (loop [[score ^long hits] [mxscore 0] k 0]
-              (if (< k c)
-                (let [candidate ^Candidate (aget candidates k)
-                      did       (get-did candidate)]
-                  (if (= did pivot-did)
-                    (let [h (inc hits)]
-                      (if (< ^long (+ h ^long (- ^long n k 1)) ^long tao)
-                        :prune
-                        (let [tid (.-tid candidate)
-                              tf  (get-tf candidate)
-                              s   (+ (- ^float score ^float (mxs tid))
-                                     ^float (real-score tid did tf wqs norms))]
-                          (if (< s ^float minimal-score)
-                            :prune
-                            (recur [s h] (inc k))))))
-                    [score hits]))
-                [score hits]))]
-    (if (= res :prune) res (nth res 0))))
+  (let [c (alength candidates)]
+    (loop [score mxscore hits 0 k 0]
+      (if (< k c)
+        (let [candidate ^Candidate (aget candidates k)
+              did       (get-did candidate)]
+          (if (= ^int did ^int pivot-did)
+            (let [h (inc hits)]
+              (if (< ^long (+ h ^long (- ^long n k 1)) ^long tao)
+                :prune
+                (let [tid (.-tid candidate)
+                      tf  (get-tf candidate)
+                      s   (+ (- ^double score ^double (.get mxs tid))
+                             ^double (real-score tid did tf wqs norms))]
+                  (if (< s ^double minimal-score)
+                    :prune
+                    (recur s h (inc k))))))
+            score))
+        score))))
 
 (defn- first-candidates
   [sls bms tids ^RoaringBitmap result tao n]
@@ -268,9 +282,8 @@
         lst        (ArrayList.)]
     (doseq [tid tids]
       (let [sl   (sls tid)
-            bm   (bms tid)
-            bm'  (let [iter-bm (doto (RoaringBitmap.)
-                                 (.or ^RoaringBitmap bm))]
+            bm   ^RoaringBitmap (bms tid)
+            bm'  (let [iter-bm (.clone bm)]
                    (if (or (union-tids tid) (= tao 1))
                      iter-bm
                      (doto ^RoaringBitmap iter-bm
@@ -306,17 +319,17 @@
 (defn- current-threshold
   [^PriorityQueue pq]
   (if (< (.size pq) (.maxSize pq))
-    (float 0.0)
+    0.0
     (nth (.top pq) 0)))
 
 (defn- score-term
-  [^Candidate candidate mxs wqs norms minimal-score pq]
+  [^Candidate candidate ^IntDoubleHashMap mxs wqs norms minimal-score pq]
   (let [tid     (.-tid candidate)
-        mxscore (mxs tid)]
-    (when (< ^float minimal-score ^float mxscore)
+        mxscore (.get mxs tid)]
+    (when (< ^double minimal-score mxscore)
       (loop [did (get-did candidate) minscore minimal-score]
         (let [score (real-score tid did (get-tf candidate) wqs norms)]
-          (when (< ^float minscore ^float score)
+          (when (< ^double minscore ^double score)
             (.insertWithOverflow ^PriorityQueue pq [score did])))
         (when (has-next? candidate)
           (recur (get-did (advance candidate)) (current-threshold pq)))))))
@@ -327,7 +340,7 @@
     (loop [^"[Ldatalevin.search.Candidate;" candidates
            (first-candidates sls bms tids result tao n)]
       (let [nc            (alength candidates)
-            minimal-score ^float (current-threshold pq)]
+            minimal-score ^double (current-threshold pq)]
         (cond
           (or (= nc 0) (< nc tao)) :finish
           (= nc 1)
@@ -336,7 +349,7 @@
           (let [_                   (Arrays/sort candidates candidate-comp)
                 [mxscore pivot did] (find-pivot mxs (dec tao) minimal-score
                                                 candidates)
-                did0                (get-did (nth candidates 0))]
+                did0                (get-did (aget candidates 0))]
             (if (= ^int did ^int did0)
               (let [score (score-pivot wqs mxs norms did minimal-score
                                        mxscore tao n candidates)]
@@ -463,10 +476,10 @@
               bms      (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
                                           sls))
               sls      (zipmap tids sls)
-              wqs      (zipmap tids (mapv :wq qterms))
               tms      (zipmap tids (mapv :tm qterms))
               mws      (zipmap tids (mapv :mw qterms))
-              mxs      (zipmap tids (map #(max-score wqs mws %) tids))
+              wqs      (get-wqs tids qterms)
+              mxs      (get-mxs tids wqs mws)
               result   (RoaringBitmap.)
               score-fn (score-docs n tids sls bms mxs wqs norms result)]
           (sequence

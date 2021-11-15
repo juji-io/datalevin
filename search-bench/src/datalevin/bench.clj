@@ -51,6 +51,7 @@
     (printf "Querying with %d threads took %.2f seconds"
             threads
             (float (/ (- (System/currentTimeMillis) begin) 1000)))
+    (println)
     (println "Latency (ms):")
     (let [result (.toArray times)]
       (Arrays/sort result)
@@ -79,7 +80,7 @@
   (println)
   (println "Datalevin:")
   ;; (index-wiki-json "data/wiki-datalevin-odd" "wiki-odd.json")
-  (index-wiki-json "data/wiki-datalevin-all" "wiki.json")
-  ;; (index-wiki-json "data/wiki-datalevin-2" "output.json")
-  (query (s/new-engine (l/open-kv "data/wiki-datalevin-odd"))
+  ;; (index-wiki-json "data/wiki-datalevin-all" "wiki.json")
+  ;; (index-wiki-json "data/wiki-datalevin-1" "output.json")
+  (query (s/new-engine (l/open-kv "data/wiki-datalevin-all"))
          "queries40k.txt" 40000))

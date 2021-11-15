@@ -151,14 +151,12 @@
   ([^ByteBuffer bb]
    (when-let [bs (get-bytes bb)]
      (binding [nippy/*thaw-serializable-allowlist*
-               #{"org.roaringbitmap.*"
-                 "org.eclipse.collections.impl.list.mutable.primitive.*"}]
+               #{"org.roaringbitmap.RoaringBitmap"}]
        (nippy/fast-thaw bs))))
   ([^ByteBuffer bb n]
    (when-let [bs (get-bytes-val bb n)]
      (binding [nippy/*thaw-serializable-allowlist*
-               #{"org.roaringbitmap.*"
-                 "org.eclipse.collections.impl.list.mutable.primitive.*"}]
+               #{"org.roaringbitmap.RoaringBitmap"}]
        (nippy/fast-thaw bs)))))
 
 (def ^:no-doc ^:const float-sign-idx 31)

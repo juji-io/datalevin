@@ -99,5 +99,5 @@
 (defn run [opts]
   (println)
   (println "Lucene:")
-  ;; (index-wiki-json "data/wiki-lucene-all" "wiki.json")
+  (index-wiki-json "data/wiki-lucene-all" "wiki.json")
   (query "data/wiki-lucene-all" "queries40k.txt" 40000))

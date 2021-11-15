@@ -53,8 +53,7 @@
 
 (defn sparse-arraylist
   ([]
-   (->SparseIntArrayList (RoaringBitmap.)
-                         (IntArrayList.)))
+   (->SparseIntArrayList (RoaringBitmap.) (IntArrayList.)))
   ([m]
    (let [ssl (sparse-arraylist)]
      (doseq [[k v] m] (set ssl k v))
@@ -65,30 +64,31 @@
      ssl)) )
 
 (defmethod print-method SparseIntArrayList
-  [^SparseIntArrayList s, ^Writer w]
+  [^SparseIntArrayList s ^Writer w]
   (.write w (str "#datalevin/SparseList "))
   (binding [*out* w]
     (pr (for [i (.-indices s)] [i (get s i)]))))
 
 (defonce compressor (IntCompressor.))
 
-(nippy/extend-freeze SparseIntArrayList :dtlv/sial
-                     [^SparseIntArrayList x ^DataOutput out]
-                     (nippy/freeze-to-out! out (.-indices x))
-                     (let [ar   (.toArray ^IntArrayList (.-items x))
-                           car  (.compress ^IntCompressor compressor ar)
-                           size (alength car)]
-                       (.writeInt out size)
-                       (dotimes [i size]
-                         (.writeInt out (aget car i)))))
+(nippy/extend-freeze
+  SparseIntArrayList :dtlv/sial
+  [^SparseIntArrayList x ^DataOutput out]
+  (let [^RoaringBitmap bm (.-indices x)]
+    (.runOptimize bm)
+    (nippy/freeze-to-out! out bm))
+  (let [ar         (.toArray ^IntArrayList (.-items x))
+        car        (.compress ^IntCompressor compressor ar)
+        write-size (alength car)]
+    (.writeInt out write-size)
+    (dotimes [i write-size] (.writeInt out (aget car i)))))
 
-(nippy/extend-thaw :dtlv/sial
-                   [^DataInput in]
-                   (let [indices (nippy/thaw-from-in! in)
-                         size    (.readInt in)
-                         car     (int-array size)]
-                     (dotimes [i size]
-                       (aset car i (.readInt in)))
-                     (let [ar    (.uncompress ^IntCompressor compressor car)
-                           items (IntArrayList. ar)]
-                       (->SparseIntArrayList indices items))))
+(nippy/extend-thaw
+  :dtlv/sial
+  [^DataInput in]
+  (let [indices    (nippy/thaw-from-in! in)
+        write-size (.readInt in)
+        car        (int-array write-size)]
+    (dotimes [i write-size] (aset car i (.readInt in)))
+    (let [ar (.uncompress ^IntCompressor compressor car)]
+      (->SparseIntArrayList indices (IntArrayList. ar)))))
