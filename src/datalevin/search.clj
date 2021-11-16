@@ -163,7 +163,7 @@
     (lessThan [a b]
       (< ^double (nth a 0) ^double (nth b 0)))))
 
-(defn- puring
+(defn- pouring
   [coll ^PriorityQueue pq ^RoaringBitmap result]
   (let [lst (ArrayList.)]
     (dotimes [_ (.size pq)]
@@ -227,12 +227,11 @@
                 (- ^int (get-did a) ^int (get-did b)))))
 
 (defmethod print-method Candidate [^Candidate c, ^Writer w]
-  (.write w
-          (pr-str {:tid       (.-tid c)
-                   :did       (get-did c)
-                   :tf        (get-tf c)
-                   :sl        (.-sl c)
-                   :has-next? (has-next? c)})))
+  (.write w (pr-str {:tid       (.-tid c)
+                     :did       (get-did c)
+                     :tf        (get-tf c)
+                     :sl        (.-sl c)
+                     :has-next? (has-next? c)})))
 
 (defn- find-pivot
   [^IntDoubleHashMap mxs tao-1 minimal-score
@@ -489,9 +488,9 @@
                     (if (< 0 to-get)
                       (let [^PriorityQueue pq (priority-queue to-get)]
                         (scoring pq tao)
-                        (puring coll pq result))
+                        (pouring coll pq result))
                       (reduced coll))))
-                (transient[])
+                (transient [])
                 (range n 0 -1)))))))))
 
 (defn- init-norms
