@@ -181,7 +181,7 @@ the other hand, Lucene writes to multiple independent index segments and support
 concurrency while indexing. Therefore, some use cases that Lucene family of
 search engines excel in, such as log ingestion, are not suitable for Datalevin.
 
-Lucene has perhaps hundreds of man hour behind its development and is extremely
+Lucene has perhaps hundreds of man-years behind its development and is extremely
 configurable, while Datalevin search engine is embedded in a newly developed
 database with *simplicity* as its motto, so it does not offer any bells and
 whistles other than the core search features.
