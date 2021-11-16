@@ -139,7 +139,7 @@ that idiomatic Clojure loses to optimized Java code here.
 
 |Number of threads | Datalevin | Lucene |
 |----|--------|--------|
-|1 |310 | 2012 |
+|1 |310 | 206 |
 |2 |597 |    404           |
 |3 |870 |  588            |
 |4 |1143 |  784      |
