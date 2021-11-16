@@ -46,11 +46,11 @@ store a reference to the source content that is stored in the database.
 
 ## Implementation
 
-As mentioned, the search engine is implemented from scratch. Instead of
+As mentioned, the search engine is implemented from scratch, see [blog](https://yyhh.org/blog/2021/11/t-wand-beat-lucene-in-less-than-600-lines-of-code/). Instead of
 using a separate storage, the search engine indices are stored in the same
 file along with other database data, i.e. all Datalevin data is stored in a
 single [LMDB](http://www.lmdb.tech/doc/) data file. This improves cache locality
-and reduces the complexity of managing data.
+and reduces the complexity of managing data. F
 
 ### Indexing
 
