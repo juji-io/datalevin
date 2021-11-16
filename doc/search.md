@@ -204,8 +204,8 @@ possible typos and considers frequency information.
 
 ## Benchmark
 
-The detail of benchmark comparison with Lucene is [here](search-bench/). It is
-sufficient to say that we beat Lucene in search speed, but lags in write speed,
+The detail of benchmark comparison with Lucene is [here](../search-bench/). The
+summary is that we beat Lucene in search speed, but lags in write speed,
 as expected.
 
 ## References

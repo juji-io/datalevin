@@ -163,7 +163,7 @@
     (lessThan [a b]
       (< ^double (nth a 0) ^double (nth b 0)))))
 
-(defn- pour
+(defn- puring
   [coll ^PriorityQueue pq ^RoaringBitmap result]
   (let [lst (ArrayList.)]
     (dotimes [_ (.size pq)]
@@ -409,10 +409,9 @@
   (remove-doc [this doc-ref]
     "Remove a document referred to by `doc-ref`. A slow operation.")
   (search [this query] [this query opts]
-    "Issue a `query` to the search engine. `query` is a map or a string.
+    "Issue a `query` to the search engine. `query` is a string.
      `opts` map may have these keys:
 
-      * `:algo` can be one of `:smart` (default), `:prune`, or `:bitmap`.
       * `:display` can be one of `:refs` (default), `:offsets`.
       * `:top` is an integer (default 10), the number of results desired.
 
@@ -469,17 +468,17 @@
                       vec)
           n      (count qterms)]
       (when-not (zero? n)
-        (let [tids     (mapv :id qterms)
-              sls      (mapv :sl qterms)
-              bms      (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
-                                          sls))
-              sls      (zipmap tids sls)
-              tms      (zipmap tids (mapv :tm qterms))
-              mws      (get-ws tids qterms :mw)
-              wqs      (get-ws tids qterms :wq)
-              mxs      (get-mxs tids wqs mws)
-              result   (RoaringBitmap.)
-              score-fn (score-docs n tids sls bms mxs wqs norms result)]
+        (let [tids    (mapv :id qterms)
+              sls     (mapv :sl qterms)
+              bms     (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
+                                         sls))
+              sls     (zipmap tids sls)
+              tms     (zipmap tids (mapv :tm qterms))
+              mws     (get-ws tids qterms :mw)
+              wqs     (get-ws tids qterms :wq)
+              mxs     (get-mxs tids wqs mws)
+              result  (RoaringBitmap.)
+              scoring (score-docs n tids sls bms mxs wqs norms result)]
           (sequence
             (display-xf display lmdb tms)
             (persistent!
@@ -489,8 +488,8 @@
                         to-get (- top so-far)]
                     (if (< 0 to-get)
                       (let [^PriorityQueue pq (priority-queue to-get)]
-                        (score-fn pq tao)
-                        (pour coll pq result))
+                        (scoring pq tao)
+                        (puring coll pq result))
                       (reduced coll))))
                 (transient[])
                 (range n 0 -1)))))))))

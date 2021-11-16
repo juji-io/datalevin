@@ -106,38 +106,60 @@ Here's the average and percentile break-down of search latency (ms) for one
 search thread:
 
 |Percentile | Datalevin | Lucene |
-|median | | 206 |
-|75 | |    404           |
-|90 | |  588            |
-|95 | |  748      |
-|99 | |   975           |
-|99.9 | |  1143            |
-|max | | 1176 |
-|mean | |    1212           |
+|----|--------|--------|
+|median | 1 | 3 |
+|75 |3 |    4           |
+|90 |6 |  6            |
+|95 |11 |  11      |
+|99 |37 |   16           |
+|99.9 |170 |  31            |
+|max |659 | 138 |
+|mean | 3 |    4  |
 
 Search latency are similar across the number of threads, with slightly longer
-time when more threads are used (with about 1 ms mean difference).
+time when more threads are used (with about 1 ms mean difference between 1 and
+12 threads).
+
+Datalevin is 75% faster on average, while 3 times faster at median. Datalevin
+has much longer query time for outliers than Lucene, bringing down the mean
+considerably.
+
+This should be attributed to the fact that we use idiomatic Clojure for the most
+part of the code at the moment. It is known that idiomatic Clojure are slower
+than Java due to pervasive use of immutable data structures.
+
+For queries with huge candidate set, the fixed cost of slower code adds up to
+overcome the superiority in algorithm. For example, the slowest query is
+"s", there's not much room for algorithmic cleverness here, the only
+solution is brutal-force iterating the whole 3 million matching documents. So
+basically, the contest here is raw iteration speed, it should not be a surprise
+that idiomatic Clojure loses to optimized Java code here.
 
 #### Search Throughput (Query per Second)
 
 |Number of threads | Datalevin | Lucene |
-|1 | | 206 |
-|2 | |    404           |
-|3 | |  588            |
-|4 | |  748      |
-|5 | |   975           |
-|6 | |  1143            |
-|7 | | 1176 |
-|8 | |    1212           |
-|9 | |  1250            |
-|10 | |  1290      |
-|11 | |   1333           |
-|12 | | 1333       |
-|forkjoin | | 1333       |
+|----|--------|--------|
+|1 |310 | 2012 |
+|2 |597 |    404           |
+|3 |870 |  588            |
+|4 |1143 |  784      |
+|5 |1379 |   975           |
+|6 |1600 |  1143            |
+|7 |1667 | 1176 |
+|8 |1739 |    1212           |
+|9 |1818 |  1250            |
+|10 |1818 |  1290      |
+|11 |1904 |   1333           |
+|12 |1904 | 1333       |
+|forkjoin |2000 | 1379       |
 
-As can be seen, for both search engines, search throughput grows linearly with the
+Datalevin has about 75% higher search throughput, as expected from the means.
+
+For both search engines, search throughput grows linearly with the
 number of real CPU cores, so search is a CPU bound task. Past the number of real
-cores, adding more threads improves search throughput very little.
+cores, adding more threads improves search throughput very little. Using a work
+stealing thread pool does improve the throughput a bit than the maximum number of
+fixed thread pool.
 
 ## Remarks
 
@@ -159,12 +181,12 @@ the other hand, Lucene writes to multiple independent index segments and support
 concurrency while indexing. Therefore, some use cases that Lucene family of
 search engines excel in, such as log ingestion, are not suitable for Datalevin.
 
-Lucene has thousands of man hour behind its development and is extremely
+Lucene has perhaps hundreds of man hour behind its development and is extremely
 configurable, while Datalevin search engine is embedded in a newly developed
-database with "simplicity" as its motto, so it does not offer any bells and
+database with *simplicity* as its motto, so it does not offer any bells and
 whistles other than the core search features.
 
 On the other hand, Datalevin search engine already performs very well, and still
-has many low-hanging fruits for performance improvement. It will be nicely
+has some low-hanging fruits for performance improvement. It will be nicely
 integrated with other Datalevin database features to supports our goal of
 simplifying data access.
