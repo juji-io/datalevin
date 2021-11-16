@@ -180,7 +180,7 @@ is to say, we have left many search speed optimization opportunities on the
 table, by writing idiomatic Clojure for the most part.
 
 As can be seen, the implementation of *T-Wand* relies heavily on intersection
-and union of document ids. Our implementation is helped by [Raoring
+and union of document ids. Our implementation is helped by [Roaring
 Bitmaps](https://roaringbitmap.org/), a fast compressed bitmap library used in
 many projects. The parallel walking of document ids of different terms required
 by *Wand* is achieved by iterating the bitmaps.
@@ -190,7 +190,7 @@ list, indexed by a bitmap of document ids. The access of a term frequency is
 through the `rank` method of Roaring Bitmaps, which seems to be an innovation,
 as far as I can tell. When stored, the integer list is compressed with
 [JavaFastPFOR](https://github.com/lemire/JavaFastPFOR), another excellent
-library by Prof. Daniel Lemire, the same author of Raoring Bitmaps.
+library by Prof. Daniel Lemire, the same author of Roaring Bitmaps.
 
 [Eclipse Collections](https://www.eclipse.org/collections/) is used to reduce
 memory footprint whenever appropriate.
@@ -204,7 +204,7 @@ possible typos and considers frequency information.
 
 ## Benchmark
 
-The detail of benchmark comparison with Lucene is [here](../search-bench/). The
+The details of benchmark comparison with Lucene is [here](../search-bench/). The
 summary is that we beat Lucene in search speed, but lags in write speed,
 as expected.
 
