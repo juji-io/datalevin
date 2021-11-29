@@ -11,7 +11,7 @@
 
 (defn index-wiki-json
   [dir ^String filename]
-  (let [start  (System/currentTimeMillis)
+  (let [start  (System/nanoTime)
         lmdb   (l/open-kv dir {:mapsize 100000})
         writer (s/search-index-writer lmdb)]
     (with-open [f (FileInputStream. filename)]
@@ -30,27 +30,27 @@
               (recur))))))
     (s/commit writer)
     (l/close-kv lmdb)
-    (printf "Indexing took %.2f seconds"
-            (float (/ (- (System/currentTimeMillis) start) 1000)))
+    (printf "Indexing took %.5f seconds"
+            (/ (/ (- (System/nanoTime) start) 1000.0) 1000000.0))
     (println)))
 
 (defn- search
   [threads ^ExecutorService pool engine filename n]
   (let [n     ^long n
         times (ConcurrentLinkedQueue.)
-        begin (System/currentTimeMillis)]
+        begin (System/nanoTime)]
     (with-open [rdr (io/reader filename)]
       (doseq [query (line-seq rdr)]
         (.execute pool
-                  #(let [start (System/currentTimeMillis)]
+                  #(let [start (System/nanoTime)]
                      (s/search engine query)
-                     (.add times (- (System/currentTimeMillis) start)))))
+                     (.add times (- (System/nanoTime) start)))))
       (.shutdown pool)
       (.awaitTermination pool 1 TimeUnit/HOURS))
     (println)
-    (printf "Querying with %d threads took %.2f seconds"
+    (printf "Querying with %d threads took %.5f seconds"
             threads
-            (float (/ (- (System/currentTimeMillis) begin) 1000)))
+            (/ (/ (- (System/nanoTime) begin) 1000.0) 1000000.0))
     (println)
     (println "Latency (ms):")
     (let [result (.toArray times)]

@@ -17,7 +17,7 @@
 
 (defn index-wiki-json
   [dir ^String filename]
-  (let [start     (System/currentTimeMillis)
+  (let [start     (System/nanoTime)
         analyzer  (ClassicAnalyzer.)
         directory (FSDirectory/open (Paths/get dir (into-array String [])))
         config    (IndexWriterConfig. analyzer)
@@ -39,15 +39,15 @@
               (recur))))))
     (.commit writer)
     (.close writer)
-    (printf "Indexing took %.2f seconds"
-            (float (/ (- (System/currentTimeMillis) start) 1000)))
+    (printf "Indexing took %.5f seconds"
+            (/ (/ (- (System/nanoTime) start) 1000.0) 1000000.0))
     (println)))
 
 (defn- search
   [threads pool dir filename n]
   (let [n        ^long n
         times    (ConcurrentLinkedQueue.)
-        begin    (System/currentTimeMillis)
+        begin    (System/nanoTime)
         index    (FSDirectory/open (Paths/get dir (into-array String [])))
         reader   (DirectoryReader/open index)
         searcher (IndexSearcher. reader)
@@ -55,7 +55,7 @@
     (with-open [rdr (io/reader filename)]
       (doseq [query (line-seq rdr)]
         (.execute pool
-                  #(let [start  (System/currentTimeMillis)
+                  #(let [start  (System/nanoTime)
                          parser (QueryParser. "text" analyzer)
                          q      (.parse parser query)
                          docs   (.search searcher q 10)
@@ -64,13 +64,13 @@
                        (let [did (.-doc hit)
                              d   (.doc searcher did)]
                          (.get d "url")))
-                     (.add times (- (System/currentTimeMillis) start)))))
+                     (.add times (- (System/nanoTime) start)))))
       (.shutdown pool)
       (.awaitTermination pool 1 TimeUnit/HOURS))
     (println)
-    (printf "Querying with %d threads took %.2f seconds"
+    (printf "Querying with %d threads took %.5f seconds"
             threads
-            (float (/ (- (System/currentTimeMillis) begin) 1000)))
+            (/ (/ (- (System/nanoTime) begin) 1000.0) 1000000.0))
     (println)
     (println "Latency (ms):")
     (let [result (.toArray times)]
