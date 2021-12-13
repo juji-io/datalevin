@@ -42,7 +42,7 @@ port is 8898). The mode change is transparent. In the local mode, a data
 directory path, e.g. `/data/mydb`, is needed for database location, whereas a
 URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the client/server
 mode. The same set of core functions work in both modes. In addition,
-full-fledged role based access control (RBAC) is provided on the server.
+full-fledged role-based access control (RBAC) is provided on the server.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,
@@ -133,12 +133,12 @@ can also run as a Datalevin server. This tool also includes a REPL with a Clojur
 interpreter, in addition to support all the database functions.
 
 Unlike many other database software (e.g. SQLite, Postgres, etc.) that introduces
-a separate language for command line, the same Clojure
-code work in both Datalevin library and Datalevin command line tool.
+a separate language for the command line, the same Clojure
+code works in both Datalevin library and Datalevin command line tool.
 
 A native Datalevin is built by compiling into [GraalVM native
 image](https://www.graalvm.org/reference-manual/native-image/). In addition to
-fast starup time, it should also have better database performance, for the
+fast startup times, it should also have better database performance, for the
 native image version does not incur JNI overhead and uses a comparator written
 in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
@@ -658,7 +658,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need an in-memory graph database, [Asami](https://github.com/threatgrid/asami) is fast.
 
-* If you need features such as bi-temporal graph queries, you may try [Crux](https://github.com/juxt/crux).
+* If you need features such as bi-temporal graph queries, you may try [XTDB](https://github.com/xtdb/xtdb).
 
 * If you need a durable store with some storage choices, you may try [Datahike](https://github.com/replikativ/datahike).
 
