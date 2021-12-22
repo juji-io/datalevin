@@ -13,6 +13,7 @@
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
+                         [org.clojars.huahaiy/symspell-clj "0.2.4"]
                          [org.eclipse.collections/eclipse-collections "10.4.0"]
                          [org.graalvm.sdk/graal-sdk "21.3.0"]
                          [org.graalvm.nativeimage/svm "21.3.0"]
