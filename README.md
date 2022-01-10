@@ -56,7 +56,7 @@ Datalevin uses a covering index and has no write-ahead log, so once the data are
 written, they are indexed. There are no separate processes or threads for
 indexing, compaction or doing any database maintenance work that compete with
 your applications for resources. Since Datalog is simply a more ergonomic query
-language than SQL, Datalevin can serves the role of an easier-to-use and
+language than SQL, Datalevin can serve the role of an easier-to-use and
 more lightweight relational database (RDBMS), e.g. where SQLite or Firebird is called for.
 
 Independent from Datalog, Datalevin can be used as a fast key-value store for
