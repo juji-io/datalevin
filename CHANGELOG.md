@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- Updated dependencies, particularly fixed sci version (thx @borkdude)
+
 ## 0.5.27
 ### Fixed
 - occasional LMDB crash during multiple threads write or abrupt exit
