@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.28
 ### Improved
 - Updated dependencies, particularly fixed sci version (thx @borkdude)
 
