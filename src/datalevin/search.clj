@@ -1,11 +1,11 @@
 (ns datalevin.search
   "Full-text search engine"
   (:require [datalevin.lmdb :as l]
-            [datalevin.spell :as sp]
             [datalevin.util :as u]
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
-            [datalevin.bits :as b])
+            [datalevin.bits :as b]
+            [symspell-clj.core :as sp])
   (:import [datalevin.utl PriorityQueue]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]

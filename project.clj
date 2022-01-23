@@ -40,6 +40,7 @@
                  [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
                  [org.babashka/sci]
+                 [org.clojars.huahaiy/symspell-clj]
                  [com.fasterxml.jackson.core/jackson-core]
                  [org.roaringbitmap/RoaringBitmap]
                  [org.eclipse.collections/eclipse-collections]

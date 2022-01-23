@@ -2,7 +2,7 @@
 <h1 align="center">Datalevin</h1>
 <p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone 💽 </p>
 <p align="center">
-<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
+<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
 <a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.5.27" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
