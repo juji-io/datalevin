@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.5.29
+### Fixed
+- Update `max-aid` after schema update (thx @den1k)
+
 ## 0.5.28
 ### Improved
 - Updated dependencies, particularly fixed sci version (thx @borkdude)
