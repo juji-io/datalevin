@@ -266,6 +266,7 @@
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
+    (set! max-aid (init-max-aid lmdb))
     schema)
 
   (attrs [_]
