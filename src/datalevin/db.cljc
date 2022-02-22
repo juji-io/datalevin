@@ -730,225 +730,222 @@
 
 (defn- local-transact-tx-data
   [initial-report initial-es]
-  (let [pstore (.-store ^DB (:db-after initial-report))]
-    (locking pstore
-      (let [rp (loop [report (-> initial-report
-                                 (update :db-after transient))
-                      es     initial-es]
-                 (let [[entity & entities] es
-                       db                  (:db-after report)
-                       {:keys [tempids]}   report]
+  (let [rp (loop [report (-> initial-report
+                             (update :db-after transient))
+                  es     initial-es]
+             (let [[entity & entities] es
+                   db                  (:db-after report)
+                   {:keys [tempids]}   report]
+               (cond
+                 (empty? es)
+                 (-> report
+                     (assoc-in  [:tempids :db/current-tx] (current-tx report))
+                     (update-in [:db-after :max-tx] inc)
+                     (update :db-after persistent!))
+
+                 (nil? entity)
+                 (recur report entities)
+
+                 (@de-entity? entity)
+                 (recur report
+                        (into entities (reverse (@de-entity->txs entity))))
+
+                 (map? entity)
+                 (let [old-eid (:db/id entity)]
+                   (cond+
+                     ;; :db/current-tx / "datomic.tx" => tx
+                     (tx-id? old-eid)
+                     (let [id (current-tx report)]
+                       (recur (allocate-eid report old-eid id)
+                              (cons (assoc entity :db/id id) entities)))
+
+                     ;; lookup-ref => resolved | error
+                     (sequential? old-eid)
+                     (let [id (entid-strict db old-eid)]
+                       (recur report
+                              (cons (assoc entity :db/id id) entities)))
+
+                     ;; upserted => explode | error
+                     :let [upserted-eid (upsert-eid db entity)]
+
+                     (some? upserted-eid)
+                     (if (and (tempid? old-eid)
+                              (contains? tempids old-eid)
+                              (not= upserted-eid (get tempids old-eid)))
+                       (retry-with-tempid initial-report report initial-es old-eid upserted-eid)
+                       (recur (allocate-eid report old-eid upserted-eid)
+                              (concat (explode db (assoc entity :db/id upserted-eid)) entities)))
+
+                     ;; resolved | allocated-tempid | tempid | nil => explode
+                     (or (number? old-eid)
+                         (nil?    old-eid)
+                         (string? old-eid))
+                     (let [new-eid    (cond
+                                        (nil? old-eid)    (next-eid db)
+                                        (tempid? old-eid) (or (get tempids old-eid)
+                                                              (next-eid db))
+                                        :else             old-eid)
+                           new-entity (assoc entity :db/id new-eid)]
+                       (recur (allocate-eid report old-eid new-eid)
+                              (concat (explode db new-entity) entities)))
+
+                     ;; trash => error
+                     :else
+                     (raise "Expected number, string or lookup ref for :db/id, got " old-eid
+                            { :error :entity-id/syntax, :entity entity })))
+
+                 (sequential? entity)
+                 (let [[op e a v] entity]
                    (cond
-                     (empty? es)
-                     (-> report
-                         (assoc-in  [:tempids :db/current-tx] (current-tx report))
-                         (update-in [:db-after :max-tx] inc)
-                         (update :db-after persistent!))
+                     (= op :db.fn/call)
+                     (let [[_ f & args] entity]
+                       (recur report (concat (apply f db args) entities)))
 
-                     (nil? entity)
-                     (recur report entities)
+                     (and (keyword? op)
+                          (not (builtin-fn? op)))
+                     (if-some [ident (or (:e
+                                          (first
+                                            (set/slice
+                                              (get db :avet)
+                                              (d/datom e0 op nil tx0)
+                                              (d/datom emax op nil txmax))))
+                                         (entid db op))]
+                       (let [fun  (or (-> (set/slice
+                                            (get db :eavt)
+                                            (d/datom ident :db/fn nil tx0)
+                                            (d/datom ident :db/fn nil txmax))
+                                          first :v)
+                                      (:v (-first db [ident :db/fn])))
+                             args (next entity)]
+                         (if (fn? fun)
+                           (recur report (concat (apply fun db args) entities))
+                           (raise "Entity " op " expected to have :db/fn attribute with fn? value"
+                                  {:error :transact/syntal, :operation :db.fn/call, :tx-data entity})))
+                       (raise "Can’t find entity for transaction fn " op
+                              {:error :transact/syntax, :operation :db.fn/call, :tx-data entity}))
 
-                     (@de-entity? entity)
-                     (recur report
-                            (into entities (reverse (@de-entity->txs entity))))
+                     (and (tempid? e) (not= op :db/add))
+                     (raise "Can't use tempid in '" entity "'. Tempids are allowed in :db/add only"
+                            { :error :transact/syntax, :op entity })
 
-                     (map? entity)
-                     (let [old-eid (:db/id entity)]
-                       (cond+
-                         ;; :db/current-tx / "datomic.tx" => tx
-                         (tx-id? old-eid)
-                         (let [id (current-tx report)]
-                           (recur (allocate-eid report old-eid id)
-                                  (cons (assoc entity :db/id id) entities)))
+                     (or (= op :db.fn/cas)
+                         (= op :db/cas))
+                     (let [[_ e a ov nv] entity
+                           e             (entid-strict db e)
+                           _             (validate-attr a entity)
+                           ov            (if (ref? db a) (entid-strict db ov) ov)
+                           nv            (if (ref? db a) (entid-strict db nv) nv)
+                           _             (validate-val nv entity)
+                           datoms        (clojure.set/union
+                                           (set/slice
+                                             (get db :eavt)
+                                             (datom e a nil tx0)
+                                             (datom e a nil txmax))
+                                           (-search db [e a]))]
+                       (if (multival? db a)
+                         (if (some (fn [^Datom d] (= (.-v d) ov)) datoms)
+                           (recur (transact-add report [:db/add e a nv]) entities)
+                           (raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms) "], expected " ov
+                                  {:error :transact/cas, :old datoms, :expected ov, :new nv}))
+                         (let [v (:v (nth datoms 0))]
+                           (if (= v ov)
+                             (recur (transact-add report [:db/add e a nv]) entities)
+                             (raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
+                                    {:error :transact/cas, :old (first datoms), :expected ov, :new nv })))))
 
-                         ;; lookup-ref => resolved | error
-                         (sequential? old-eid)
-                         (let [id (entid-strict db old-eid)]
-                           (recur report
-                                  (cons (assoc entity :db/id id) entities)))
+                     (tx-id? e)
+                     (recur (allocate-eid report e (current-tx report)) (cons [op (current-tx report) a v] entities))
 
-                         ;; upserted => explode | error
-                         :let [upserted-eid (upsert-eid db entity)]
+                     (and (ref? db a) (tx-id? v))
+                     (recur (allocate-eid report v (current-tx report)) (cons [op e a (current-tx report)] entities))
 
-                         (some? upserted-eid)
-                         (if (and (tempid? old-eid)
-                                  (contains? tempids old-eid)
-                                  (not= upserted-eid (get tempids old-eid)))
-                           (retry-with-tempid initial-report report initial-es old-eid upserted-eid)
-                           (recur (allocate-eid report old-eid upserted-eid)
-                                  (concat (explode db (assoc entity :db/id upserted-eid)) entities)))
+                     (and (ref? db a) (tempid? v))
+                     (if-some [vid (get tempids v)]
+                       (recur report (cons [op e a vid] entities))
+                       (recur (allocate-eid report v (next-eid db)) es))
 
-                         ;; resolved | allocated-tempid | tempid | nil => explode
-                         (or (number? old-eid)
-                             (nil?    old-eid)
-                             (string? old-eid))
-                         (let [new-eid    (cond
-                                            (nil? old-eid)    (next-eid db)
-                                            (tempid? old-eid) (or (get tempids old-eid)
-                                                                  (next-eid db))
-                                            :else             old-eid)
-                               new-entity (assoc entity :db/id new-eid)]
-                           (recur (allocate-eid report old-eid new-eid)
-                                  (concat (explode db new-entity) entities)))
+                     (tempid? e)
+                     (let [upserted-eid  (when (is-attr? db a :db.unique/identity)
+                                           (or (:e
+                                                (first
+                                                  (set/slice
+                                                    (get db :avet)
+                                                    (d/datom e0 a v tx0)
+                                                    (d/datom emax a v txmax))))
+                                               (:e (-first-datom db :avet [a v]))))
+                           allocated-eid (get tempids e)]
+                       (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
+                         (retry-with-tempid initial-report report initial-es e upserted-eid)
+                         (let [eid (or upserted-eid allocated-eid (next-eid db))]
+                           (recur (allocate-eid report e eid) (cons [op eid a v] entities)))))
 
-                         ;; trash => error
-                         :else
-                         (raise "Expected number, string or lookup ref for :db/id, got " old-eid
-                                { :error :entity-id/syntax, :entity entity })))
+                     (= op :db/add)
+                     (recur (transact-add report entity) entities)
 
-                     (sequential? entity)
-                     (let [[op e a v] entity]
-                       (cond
-                         (= op :db.fn/call)
-                         (let [[_ f & args] entity]
-                           (recur report (concat (apply f db args) entities)))
+                     (and (= op :db/retract) v)
+                     (if-some [e (entid db e)]
+                       (let [v (if (ref? db a) (entid-strict db v) v)]
+                         (validate-attr a entity)
+                         (validate-val v entity)
+                         (if-some [old-datom (or
+                                               (first (set/slice
+                                                        (get db :eavt)
+                                                        (datom e a v tx0)
+                                                        (datom e a v txmax)))
+                                               (-first db [e a v]))]
+                           (recur (transact-retract-datom report old-datom) entities)
+                           (recur report entities)))
+                       (recur report entities))
 
-                         (and (keyword? op)
-                              (not (builtin-fn? op)))
-                         (if-some [ident (or (:e
-                                              (first
-                                                (set/slice
-                                                  (get db :avet)
-                                                  (d/datom e0 op nil tx0)
-                                                  (d/datom emax op nil txmax))))
-                                             (entid db op))]
-                           (let [fun  (or (-> (set/slice
-                                                (get db :eavt)
-                                                (d/datom ident :db/fn nil tx0)
-                                                (d/datom ident :db/fn nil txmax))
-                                              first :v)
-                                          (:v (-first db [ident :db/fn])))
-                                 args (next entity)]
-                             (if (fn? fun)
-                               (recur report (concat (apply fun db args) entities))
-                               (raise "Entity " op " expected to have :db/fn attribute with fn? value"
-                                      {:error :transact/syntal, :operation :db.fn/call, :tx-data entity})))
-                           (raise "Can’t find entity for transaction fn " op
-                                  {:error :transact/syntax, :operation :db.fn/call, :tx-data entity}))
+                     (or (= op :db.fn/retractAttribute)
+                         (= op :db/retract))
+                     (if-some [e (entid db e)]
+                       (let [_      (validate-attr a entity)
+                             datoms (vec
+                                      (concat
+                                        (set/slice (get db :eavt)
+                                                   (datom e a nil tx0)
+                                                   (datom e a nil txmax))
+                                        (-search db [e a])))]
+                         (recur (reduce transact-retract-datom report datoms)
+                                (concat (retract-components db datoms) entities)))
+                       (recur report entities))
 
-                         (and (tempid? e) (not= op :db/add))
-                         (raise "Can't use tempid in '" entity "'. Tempids are allowed in :db/add only"
-                                { :error :transact/syntax, :op entity })
-
-                         (or (= op :db.fn/cas)
-                             (= op :db/cas))
-                         (let [[_ e a ov nv] entity
-                               e             (entid-strict db e)
-                               _             (validate-attr a entity)
-                               ov            (if (ref? db a) (entid-strict db ov) ov)
-                               nv            (if (ref? db a) (entid-strict db nv) nv)
-                               _             (validate-val nv entity)
-                               datoms        (clojure.set/union
-                                               (set/slice
-                                                 (get db :eavt)
-                                                 (datom e a nil tx0)
-                                                 (datom e a nil txmax))
-                                               (-search db [e a]))]
-                           (if (multival? db a)
-                             (if (some (fn [^Datom d] (= (.-v d) ov)) datoms)
-                               (recur (transact-add report [:db/add e a nv]) entities)
-                               (raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms) "], expected " ov
-                                      {:error :transact/cas, :old datoms, :expected ov, :new nv}))
-                             (let [v (:v (nth datoms 0))]
-                               (if (= v ov)
-                                 (recur (transact-add report [:db/add e a nv]) entities)
-                                 (raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
-                                        {:error :transact/cas, :old (first datoms), :expected ov, :new nv })))))
-
-                         (tx-id? e)
-                         (recur (allocate-eid report e (current-tx report)) (cons [op (current-tx report) a v] entities))
-
-                         (and (ref? db a) (tx-id? v))
-                         (recur (allocate-eid report v (current-tx report)) (cons [op e a (current-tx report)] entities))
-
-                         (and (ref? db a) (tempid? v))
-                         (if-some [vid (get tempids v)]
-                           (recur report (cons [op e a vid] entities))
-                           (recur (allocate-eid report v (next-eid db)) es))
-
-                         (tempid? e)
-                         (let [upserted-eid  (when (is-attr? db a :db.unique/identity)
-                                               (or (:e
-                                                    (first
-                                                      (set/slice
-                                                        (get db :avet)
-                                                        (d/datom e0 a v tx0)
-                                                        (d/datom emax a v txmax))))
-                                                   (:e (-first-datom db :avet [a v]))))
-                               allocated-eid (get tempids e)]
-                           (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
-                             (retry-with-tempid initial-report report initial-es e upserted-eid)
-                             (let [eid (or upserted-eid allocated-eid (next-eid db))]
-                               (recur (allocate-eid report e eid) (cons [op eid a v] entities)))))
-
-                         (= op :db/add)
-                         (recur (transact-add report entity) entities)
-
-                         (and (= op :db/retract) v)
-                         (if-some [e (entid db e)]
-                           (let [v (if (ref? db a) (entid-strict db v) v)]
-                             (validate-attr a entity)
-                             (validate-val v entity)
-                             (if-some [old-datom (or
-                                                   (first (set/slice
-                                                            (get db :eavt)
-                                                            (datom e a v tx0)
-                                                            (datom e a v txmax)))
-                                                   (-first db [e a v]))]
-                               (recur (transact-retract-datom report old-datom) entities)
-                               (recur report entities)))
-                           (recur report entities))
-
-                         (or (= op :db.fn/retractAttribute)
-                             (= op :db/retract))
-                         (if-some [e (entid db e)]
-                           (let [_      (validate-attr a entity)
-                                 datoms (vec
-                                          (concat
-                                            (set/slice (get db :eavt)
-                                                       (datom e a nil tx0)
-                                                       (datom e a nil txmax))
-                                            (-search db [e a])))]
-                             (recur (reduce transact-retract-datom report datoms)
-                                    (concat (retract-components db datoms) entities)))
-                           (recur report entities))
-
-                         (or (= op :db.fn/retractEntity)
-                             (= op :db/retractEntity))
-                         (if-some [e (entid db e)]
-                           (let [e-datoms (vec
-                                            (concat
-                                              (set/slice (get db :eavt)
-                                                         (datom e nil nil tx0)
-                                                         (datom e nil nil txmax))
-                                              (-search db [e])))
-                                 v-datoms (vec
-                                            (concat
-                                              (set/slice (get db :veat)
-                                                         (datom e0 nil e tx0)
-                                                         (datom emax nil e txmax))
-                                              (-search db [nil nil e])))]
-                             (recur (reduce transact-retract-datom report (concat e-datoms v-datoms))
-                                    (concat (retract-components db e-datoms) entities)))
-                           (recur report entities))
-
-                         :else
-                         (raise "Unknown operation at " entity ", expected :db/add, :db/retract, :db.fn/call, :db.fn/retractAttribute, :db.fn/retractEntity or an ident corresponding to an installed transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of :db/ident requires {:db/unique :db.unique/identity} in schema)" {:error :transact/syntax, :operation op, :tx-data entity})))
-
-                     (datom? entity)
-                     (let [[e a v tx added] entity]
-                       (if added
-                         (recur (transact-add report [:db/add e a v tx]) entities)
-                         (recur report (cons [:db/retract e a v] entities))))
+                     (or (= op :db.fn/retractEntity)
+                         (= op :db/retractEntity))
+                     (if-some [e (entid db e)]
+                       (let [e-datoms (vec
+                                        (concat
+                                          (set/slice (get db :eavt)
+                                                     (datom e nil nil tx0)
+                                                     (datom e nil nil txmax))
+                                          (-search db [e])))
+                             v-datoms (vec
+                                        (concat
+                                          (set/slice (get db :veat)
+                                                     (datom e0 nil e tx0)
+                                                     (datom emax nil e txmax))
+                                          (-search db [nil nil e])))]
+                         (recur (reduce transact-retract-datom report (concat e-datoms v-datoms))
+                                (concat (retract-components db e-datoms) entities)))
+                       (recur report entities))
 
                      :else
-                     (raise "Bad entity type at " entity ", expected map or vector"
-                            {:error :transact/syntax, :tx-data entity}))))
-            ;; pstore (.-store ^DB (:db-after rp))
-            ]
-        (s/load-datoms pstore (:tx-data rp))
-        (refresh-cache pstore)
-        rp))))
+                     (raise "Unknown operation at " entity ", expected :db/add, :db/retract, :db.fn/call, :db.fn/retractAttribute, :db.fn/retractEntity or an ident corresponding to an installed transaction function (e.g. {:db/ident <keyword> :db/fn <Ifn>}, usage of :db/ident requires {:db/unique :db.unique/identity} in schema)" {:error :transact/syntax, :operation op, :tx-data entity})))
+
+                 (datom? entity)
+                 (let [[e a v tx added] entity]
+                   (if added
+                     (recur (transact-add report [:db/add e a v tx]) entities)
+                     (recur report (cons [:db/retract e a v] entities))))
+
+                 :else
+                 (raise "Bad entity type at " entity ", expected map or vector"
+                        {:error :transact/syntax, :tx-data entity}))))
+        pstore (.-store ^DB (:db-after rp))]
+    (s/load-datoms pstore (:tx-data rp))
+    (refresh-cache pstore)
+    rp))
 
 (defn transact-tx-data
   [initial-report initial-es]

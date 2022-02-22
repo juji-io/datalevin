@@ -8,8 +8,7 @@
    [datalevin.test.core :as tdc]))
 
 (deftest test-multi-threads-transact
-  ;; serialize write, so later overwrites former
-  ;; rather than violating uniqueness constraint
+  ;; we serialize writes, so as not to violate uniqueness constraint
   (let [conn (d/create-conn
                nil
                {:instance/id
@@ -19,8 +18,11 @@
     (dorun (pmap #(d/transact! conn [{:instance/id %}])
                  (range 2)))
     (let [res (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)]
-      (is (#{#{[1 :instance/id 1]} #{[1 :instance/id 0]}} res))
-      (is (thrown? Exception (d/transact! conn res))))))
+      (is (or (= #{[2 :instance/id 0] [1 :instance/id 1]} res)
+              (= #{[1 :instance/id 0] [2 :instance/id 1]} res)))
+      (is (thrown-with-msg? Exception #"unique constraint"
+                            (d/transact! conn [(into [:db/add 3]
+                                                     (next (first res)))]))))))
 
 (deftest test-with-1
   (let [db (-> (d/empty-db nil {:aka {:db/cardinality :db.cardinality/many}})
