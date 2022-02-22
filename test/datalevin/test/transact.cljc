@@ -18,9 +18,9 @@
                      :cardinality :db.cardinality/one}})]
     (dorun (pmap #(d/transact! conn [{:instance/id %}])
                  (range 2)))
-    (is (#{#{[1 :instance/id 1]}
-           #{[1 :instance/id 0]}}
-          (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)))))
+    (let [res (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)]
+      (is (#{#{[1 :instance/id 1]} #{[1 :instance/id 0]}} res))
+      (is (thrown? Exception (d/transact! conn res))))))
 
 (deftest test-with-1
   (let [db (-> (d/empty-db nil {:aka {:db/cardinality :db.cardinality/many}})
