@@ -656,7 +656,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need an in-memory graph database, [Asami](https://github.com/threatgrid/asami) is fast.
+* If you need a graph database, you may try [Asami](https://github.com/threatgrid/asami).
 
 * If you need features such as bi-temporal graph queries, you may try [XTDB](https://github.com/xtdb/xtdb).
 
@@ -677,6 +677,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](https://clo
 
 ## License
 
-Copyright © 2020-2021 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2022 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
