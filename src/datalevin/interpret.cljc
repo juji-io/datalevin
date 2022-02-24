@@ -77,7 +77,7 @@
 
 (defn exec-code
   "Execute code and print results. `code` is a string. Acceptable code includes
-  Datalevin functions and Clojure core functions."
+  Datalevin functions and some Clojure core functions."
   [code]
   (let [reader (sci/reader code)]
     (sci/with-bindings {sci/ns @sci/ns}
@@ -130,6 +130,11 @@
   [x]
   (and ;(instance? clojure.lang.AFn x)
     (= (:type (meta x)) :datalevin/inter-fn)))
+
+(defmacro definterfn
+  "Create a named `inter-fn`"
+  [fn-name args & body]
+  `(def ~fn-name (inter-fn ~args ~@body)))
 
 (defn- source->inter-fn
   "Convert a source form to get an inter-fn"

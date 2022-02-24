@@ -516,8 +516,7 @@
 
 (defn- context-resolve-val [context sym]
   (when-some [rel (rel-with-attr context sym)]
-    (when-some [tuple (first (:tuples rel))
-                ]
+    (when-some [tuple (first (:tuples rel))]
       (let [tg (if (da/array? tuple) typed-aget get)]
         (tg tuple ((:attrs rel) sym))))))
 
@@ -608,16 +607,22 @@
                                (assoc production :tuples []))]
     (update context :rels conj new-rel)))
 
+(defonce pod-fns (atom {}))
+
 (defn bind-by-fn [context clause]
-  (let [[[f & args] out]     clause
-        binding              (dp/parse-binding out)
-        fun                  (or (get built-ins f)
-                                 (context-resolve-val context f)
-                                 (resolve-sym f)
-                                 (dot-form f)
-                                 (when (nil? (rel-with-attr context f))
-                                   (raise "Unknown function '" f " in " clause
-                                          {:error :query/where, :form clause, :var f})))
+  (let [[[f & args] out] clause
+        binding          (dp/parse-binding out)
+        fun              (or (get built-ins f)
+                             (context-resolve-val context f)
+                             (resolve-sym f)
+                             (dot-form f)
+                             (when (nil? (rel-with-attr context f))
+                               (raise "Unknown function '" f " in " clause
+                                      {:error :query/where, :form clause, :var f})))
+        fun              (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
+                           (@pod-fns s)
+                           fun)
+
         [context production] (rel-prod-by-attrs context (filter symbol? args))
         new-rel              (if fun
                                (let [tuple-fn (-call-fn context production fun args)

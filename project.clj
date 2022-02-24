@@ -56,12 +56,12 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              ;; :jvm-opts
-                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
-                              ;;  "-Djdk.attach.allowAttachSelf"]
+                              :jvm-opts
+                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+                               "-Djdk.attach.allowAttachSelf"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]

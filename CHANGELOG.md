@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+###  Fixed
+- Serialized writes for concurrent transactions, #83
+
 ## 0.5.29
 ### Fixed
 - Update `max-aid` after schema update (thx @den1k)

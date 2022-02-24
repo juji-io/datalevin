@@ -2,6 +2,8 @@
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
             [datalevin.core :as d]
+            [datalevin.interpret :as i]
+            [datalevin.query :as q]
             [datalevin.util :as u]
             [datalevin.datom :as dd]
             [clojure.java.io :as io]
@@ -44,6 +46,10 @@
 (defonce ^:private kv-dbs (atom {}))
 
 ;; exposed functions
+
+(defn definterfn [fn-name args body]
+  (i/definterfn fn-name args body)
+  {::inter-fn fn-name})
 
 (defn entid [{:keys [::db]} eid]
   (when-let [d (get @dl-dbs db)]
@@ -342,7 +348,8 @@
 ;; pods
 
 (def ^:private exposed-vars
-  {'entid              entid
+  {'definterfn         definterfn
+   'entid              entid
    'pull               pull
    'pull-many          pull-many
    'empty-db           empty-db

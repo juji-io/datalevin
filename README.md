@@ -226,12 +226,12 @@ Starting `dtlv` without any arguments goes into the console:
 ```console
   Datalevin (version: 0.5.29)
 
-  Type (help) to see available functions. Clojure core functions are also available.
+  Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
 
 user> (help)
 
-In addition to Clojure core functions, the following functions are available:
+In addition to some Clojure core functions, the following functions are available:
 
 In namespace datalevin.core
 
