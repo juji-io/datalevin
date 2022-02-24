@@ -588,8 +588,10 @@
 
 (defn- resolve-sym [sym]
   #?(:cljs nil
-     :clj (when (namespace sym)
-            (when-some [v (resolve sym)] @v))))
+     :clj (if (namespace sym)
+            (when-some [v (resolve sym)] @v)
+            ;; handle babashka pod fn
+            (when-some [v (ns-resolve 'pod.huahaiy.datalevin sym)] @v))))
 
 (defn filter-by-pred [context clause]
   (let [[[f & args]]         clause

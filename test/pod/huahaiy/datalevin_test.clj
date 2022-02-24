@@ -10,7 +10,7 @@
 
 (require '[pod.huahaiy.datalevin :as pd])
 
-(def custom-fn (pd/inter-fn [] "hello"))
+(pd/defpodfn custom-fn [n] (str "hello " n))
 
 (deftest pod-test
   (testing "datalog readme"
@@ -45,11 +45,11 @@
     (let [dir  (u/tmp-dir (str "datalevin-pod-test-" (UUID/randomUUID)))
           conn (pd/get-conn dir)]
 
-      (is (= "hello"
+      (is (= #{["hello world"]}
              (pd/q '[:find ?greeting
                      :in $
                      :where
-                     [(custom-fn) ?greeting]]
+                     [(custom-fn "world") ?greeting]]
                    (pd/db conn))))
       (pd/close conn)
       (u/delete-files dir)))

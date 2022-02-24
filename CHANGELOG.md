@@ -3,6 +3,8 @@
 ## WIP
 ###  Fixed
 - Serialized writes for concurrent transactions, #83
+### Added
+- `defpodfn` macro to define a query function that can be used in babashka pod, #85
 
 ## 0.5.29
 ### Fixed

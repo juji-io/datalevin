@@ -1,9 +1,10 @@
 (ns pod.huahaiy.datalevin
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
+            [sci.core :as sci]
             [datalevin.core :as d]
-            [datalevin.interpret :as i]
             [datalevin.query :as q]
+            [datalevin.interpret :as i]
             [datalevin.util :as u]
             [datalevin.datom :as dd]
             [clojure.java.io :as io]
@@ -47,8 +48,9 @@
 
 ;; exposed functions
 
-(defn definterfn [fn-name args body]
-  (i/definterfn fn-name args body)
+(defn pod-fn [fn-name args & body]
+  (intern 'pod.huahaiy.datalevin (symbol fn-name)
+           (sci/eval-form i/ctx (apply list 'fn args body)))
   {::inter-fn fn-name})
 
 (defn entid [{:keys [::db]} eid]
@@ -345,10 +347,14 @@
    (when-let [d (get @kv-dbs kv-db)]
      (d/range-count d dbi-name pred k-range k-type))))
 
+(defmacro defpodfn
+  [fn-name args & body]
+  `(pod-fn '~fn-name '~args '~@body))
+
 ;; pods
 
 (def ^:private exposed-vars
-  {'definterfn         definterfn
+  {'pod-fn             pod-fn
    'entid              entid
    'pull               pull
    'pull-many          pull-many
@@ -421,6 +427,7 @@
                                 args (-> (get message "args")
                                          read-string
                                          u/read-transit-string)]
+                            ;; (debug "var" var "args" args)
                             (if-let [f (lookup var)]
                               (let [value (u/write-transit-string
                                             (apply f args))
