@@ -652,7 +652,7 @@ are applicable to Datascript.
 
 If you are interested in using the dialect of Datalog pioneered by Datomic®, here are your current options:
 
-* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
+* If you need time travel and features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
 
 * If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
 
