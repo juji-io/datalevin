@@ -2,6 +2,7 @@
   (:require [datalevin.main :as sut]
             [datalevin.util :as u]
             [datalevin.core :as d]
+            [datalevin.lmdb :as l]
             [clojure.test.check.generators :as gen]
             [clojure.string :as s]
             #?(:clj [clojure.test :refer [is deftest]]
@@ -43,7 +44,7 @@
     (is (s/includes? res "#{[1 \"Datalevin\"]}"))
     (u/delete-files dir)))
 
-(deftest copy-test
+(deftest copy-stat-test
   (let [src (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
         dst (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
         db  (d/open-kv src)
@@ -51,6 +52,14 @@
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
     (sut/copy src dst true)
+    (is (= (l/stat db)
+           {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
+            :overflow-pages 0,    :entries 1}))
+    (doseq [i (l/list-dbis db)]
+      (println i)
+      (is (= (l/stat db i)
+             {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
+              :overflow-pages 0,    :entries 1})))
     (let [db-copied (d/open-kv dst)]
       (d/open-dbi db-copied dbi)
       (is (= (d/get-value db-copied dbi "Hello") "Datalevin"))
