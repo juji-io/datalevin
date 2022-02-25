@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.30
 ###  Fixed
 - Serialized writes for concurrent transactions, #83
 ### Added
