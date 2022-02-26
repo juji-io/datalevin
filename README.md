@@ -255,7 +255,8 @@ with-conn
 
 In namespace datalevin.interpret
 
-exec-code             inter-fn              inter-fn?
+definterfn            exec-code             inter-fn              inter-fn?
+load-edn
 
 In namespace datalevin.client
 
