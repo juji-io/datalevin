@@ -2,6 +2,7 @@
   "Code interpreter."
   (:require [clojure.walk :as w]
             [clojure.set :as set]
+            [clojure.java.io :as io]
             [sci.core :as sci]
             [sci.impl.vars :as vars]
             [taoensso.nippy :as nippy]
@@ -64,16 +65,22 @@
         x))
     x))
 
+(declare ctx)
+
 (defn ^:no-doc eval-fn [ctx form]
   (sci/eval-form ctx (if (coll? form)
                        (w/postwalk qualify-fn form)
                        form)))
 
-(def ^:no-doc sci-opts
-  {:namespaces (user-facing-vars)
-   :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
-
-(def ^:no-doc ctx (sci/init sci-opts))
+(defn load-edn
+  "Same as [`clojure.core/load-file`](https://clojuredocs.org/clojure.core/load-file),
+   useful for e.g. loading schema from a file"
+  [f]
+  (let [f (io/file f)
+        s (slurp f)]
+    (sci/with-bindings {sci/ns   @sci/ns
+                        sci/file (.getAbsolutePath f)}
+      (sci/eval-string* ctx s))))
 
 (defn exec-code
   "Execute code and print results. `code` is a string. Acceptable code includes
@@ -154,3 +161,9 @@
                    [^DataInput in]
                    (let [src (nippy/thaw-from-in! in)]
                      (source->inter-fn src)))
+
+(def ^:no-doc sci-opts
+  {:namespaces (user-facing-vars)
+   :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
+
+(def ^:no-doc ctx (sci/init sci-opts))

@@ -50,7 +50,7 @@
 
 (defn pod-fn [fn-name args & body]
   (intern 'pod.huahaiy.datalevin (symbol fn-name)
-           (sci/eval-form i/ctx (apply list 'fn args body)))
+          (sci/eval-form i/ctx (apply list 'fn args body)))
   {::inter-fn fn-name})
 
 (defn entid [{:keys [::db]} eid]
@@ -347,9 +347,6 @@
    (when-let [d (get @kv-dbs kv-db)]
      (d/range-count d dbi-name pred k-range k-type))))
 
-(defmacro defpodfn
-  [fn-name args & body]
-  `(pod-fn '~fn-name '~args '~@body))
 
 ;; pods
 
@@ -398,6 +395,10 @@
    'range-filter-count range-filter-count
    })
 
+(defmacro defpodfn
+  [fn-name args & body]
+  `(pod-fn '~fn-name '~args '~@body))
+
 (def ^:private lookup
   (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
           (vals exposed-vars)))
@@ -411,46 +412,55 @@
         (let [op (-> message (get "op") read-string keyword)
               id (or (some-> message (get "id") read-string) "unknown")]
           (case op
-            :describe (do (write {"format"     "transit+json"
-                                  "namespaces" [{"name" "pod.huahaiy.datalevin"
-                                                 "vars"
-                                                 (mapv (fn [k] {"name" (name k)})
-                                                       (keys exposed-vars))}]
-                                  "id"         id
-                                  "ops"        {"shutdown" {}}})
-                          (recur))
-            :invoke   (do
-                        (try
-                          (let [var  (-> (get message "var")
-                                         read-string
-                                         symbol)
-                                args (-> (get message "args")
-                                         read-string
-                                         u/read-transit-string)]
-                            ;; (debug "var" var "args" args)
-                            (if-let [f (lookup var)]
-                              (let [value (u/write-transit-string
-                                            (apply f args))
-                                    reply {"value"  value
-                                           "id"     id
-                                           "status" ["done"]}]
-                                (write reply))
-                              (throw (ex-info (str "Var not found: " var) {}))))
-                          (catch Throwable e
-                            (binding [*out* *err*]
-                              (println e))
-                            (let [reply {"ex-message" (.getMessage e)
-                                         "ex-data"    (u/write-transit-string
-                                                        (assoc (ex-data e)
-                                                               :type
-                                                               (str (class e))))
-                                         "id"         id
-                                         "status"     ["done" "error"]}]
-                              (write reply))))
-                        (recur))
-            :shutdown (do (doseq [conn (vals @dl-conns)] (d/close conn))
-                          (doseq [db (vals @kv-dbs)] (d/close-kv db))
-                          (System/exit 0))
+            :describe
+            (do (write {"format"     "transit+json"
+                        "namespaces" [{"name" "pod.huahaiy.datalevin"
+                                       "vars"
+                                       (conj (mapv (fn [k] {"name" (name k)})
+                                                   (keys exposed-vars))
+                                             {"name" "defpodfn"
+                                              "code"
+                                              "(defmacro defpodfn
+                                                 [fn-name args & body]
+                                                 `(pod-fn '~fn-name
+                                                          '~args
+                                                          '~@body))"})}]
+                        "id"         id
+                        "ops"        {"shutdown" {}}})
+                (recur))
+            :invoke
+            (do (try
+                  (let [var  (-> (get message "var")
+                                 read-string
+                                 symbol)
+                        args (-> (get message "args")
+                                 read-string
+                                 u/read-transit-string)]
+                    ;; (debug "var" var "args" args)
+                    (if-let [f (lookup var)]
+                      (let [value (u/write-transit-string
+                                    (apply f args))
+                            reply {"value"  value
+                                   "id"     id
+                                   "status" ["done"]}]
+                        (write reply))
+                      (throw (ex-info (str "Var not found: " var) {}))))
+                  (catch Throwable e
+                    (binding [*out* *err*]
+                      (println e))
+                    (let [reply {"ex-message" (.getMessage e)
+                                 "ex-data"    (u/write-transit-string
+                                                (assoc (ex-data e)
+                                                       :type
+                                                       (str (class e))))
+                                 "id"         id
+                                 "status"     ["done" "error"]}]
+                      (write reply))))
+                (recur))
+            :shutdown
+            (do (doseq [conn (vals @dl-conns)] (d/close conn))
+                (doseq [db (vals @kv-dbs)] (d/close-kv db))
+                (System/exit 0))
             (do
               (write {"err" (str "unknown op:" (name op))})
               (recur))))))))
