@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.5.31
 ### Fixed
 - Create pod client side `defpodfn` so it works in non-JVM.
 ### Added
