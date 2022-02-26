@@ -1,5 +1,5 @@
 (ns datalevin.interpret
-  "Code interpreter."
+  "Code interpreter, including functions and macros useful for dtlv command line."
   (:require [clojure.walk :as w]
             [clojure.set :as set]
             [clojure.java.io :as io]
