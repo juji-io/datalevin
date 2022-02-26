@@ -289,11 +289,25 @@ This will start the Datalevin REPL.
 
 ### Babashka Pod
 
-`dtlv` executable can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
+The `dtlv` executable can also run as a
+[Babashka](https://github.com/babashka/babashka)
+[pod](https://github.com/babashka/pods). It is also possible to download
+Datalevin directly from [pod registry](https://github.com/babashka/pod-registry) within a Babashka script:
+
+```
+#!/usr/bin/env bb
+
+(require '[babashka.pods :as pods])
+(pods/load-pod 'huahaiy/datalevin "0.5.30")
+
+```
+
+For pod usage, an extra macro `defpodfn` is provided to define a custom function
+that can be used in a query, e.g.:
 
 ```console
 $ rlwrap bb
-Babashka v0.4.0 REPL.
+Babashka v0.7.6 REPL.
 Use :repl/quit or :repl/exit to quit the REPL.
 Clojure rocks, Bash reaches.
 
@@ -301,8 +315,12 @@ user=> (require '[babashka.pods :as pods])
 nil
 user=> (pods/load-pod "dtlv")
 #:pod{:id "pod.huahaiy.datalevin"}
-user=> (require '[pod.huahaiy.datalevin :as d])
+user=>  (require '[pod.huahaiy.datalevin :as d])
 nil
+user=> (d/defpodfn custom-fn [n] (str "hello " n))
+#:pod.huahaiy.datalevin{:inter-fn custom-fn}
+user=> (d/q '[:find ?greeting :where [(custom-fn "world") ?greeting]])
+#{["hello world"]}
 user=> (def conn (d/get-conn "/tmp/bb-test"))
 #'user/conn
 user=> (d/transact! conn [{:name "hello"}])
@@ -311,6 +329,7 @@ user=> (d/q '[:find ?n :where [_ :name ?n]] (d/db conn))
 #{["hello"]}
 user=> (d/close conn)
 nil
+user=>
 ```
 
 ## :tada: Usage

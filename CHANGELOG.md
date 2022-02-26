@@ -3,7 +3,6 @@
 ## WIP
 ### Fixed
 - Create pod client side `defpodfn` so it works in non-JVM.
-
 ### Added
 - `load-edn` for dtlv, useful for e.g. loading schema from a file, #101
 

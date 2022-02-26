@@ -44,13 +44,8 @@
   (testing "function"
     (let [dir  (u/tmp-dir (str "datalevin-pod-test-" (UUID/randomUUID)))
           conn (pd/get-conn dir)]
-
       (is (= #{["hello world"]}
-             (pd/q '[:find ?greeting
-                     :in $
-                     :where
-                     [(custom-fn "world") ?greeting]]
-                   (pd/db conn))))
+             (pd/q '[:find ?greeting :where [(custom-fn "world") ?greeting]])))
       (pd/close conn)
       (u/delete-files dir)))
 
