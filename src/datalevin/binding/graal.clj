@@ -693,35 +693,64 @@
                (ex-message e) {}))))
 
   (get-list [this dbi-name k kt vt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn) ]
-      (try
-        (.put-start-key rtx k kt)
-        (let [rc (Lib/mdb_cursor_get
-                   (.get cur)
-                   (.getVal ^BufVal (.-start-kp rtx))
-                   (.getVal ^BufVal (.-stop-kp rtx))
-                   Lib$MDB_cursor_op/MDB_SET)]
-          (if (has? rc)
-            (let [^BufVal k (.-kp rtx)
-                  ^BufVal v (.-vp rtx)
-                  holder    (transient [])]
-              (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
-                                  Lib$MDB_cursor_op/MDB_FIRST_DUP)
-              (conj! holder (b/read-buffer (.outBuf v) vt))
-              (dotimes [_ (dec (.count cur))]
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn) ]
+        (try
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (when (has? rc)
+              (let [^BufVal k (.-kp rtx)
+                    ^BufVal v (.-vp rtx)
+                    holder    (transient [])]
                 (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
-                                    Lib$MDB_cursor_op/MDB_NEXT_DUP)
-                (conj! holder (b/read-buffer (.outBuf v) vt)))
-              (persistent! holder))
-            []))
-        (catch Exception e
-          (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                (conj! holder (b/read-buffer (.outBuf v) vt))
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  (conj! holder (b/read-buffer (.outBuf v) vt)))
+                (persistent! holder))))
+          (catch Exception e
+            (raise "Fail to get inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))))
+
+  (visit-list [this dbi-name visitor k kt]
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (when (has? rc)
+              (let [k ^BufVal (.-kp rtx)
+                    v ^BufVal (.-vp rtx)]
+                (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                (visitor (->KV k v))
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  (visitor (->KV k v))))))
+          (catch Exception e
+            (raise "Fail to visit inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))))
 
   (list-count [this dbi-name k kt]
     (if k
@@ -836,22 +865,25 @@
   )
 
 (defmethod open-kv :graal
-  [dir]
-  (try
-    (u/file dir)
-    (let [^Env env (Env/create
-                     dir
-                     (* ^long c/+init-db-size+ 1024 1024)
-                     c/+max-readers+
-                     c/+max-dbs+
-                     (kv-flags c/default-env-flags))]
-      (->LMDB env
-              dir
-              (ConcurrentLinkedQueue.)
-              (ConcurrentHashMap.)
-              false
-              (volatile! false)))
-    (catch Exception e
-      (raise
-        "Fail to open database: " (ex-message e)
-        {:dir dir}))))
+  ([dir]
+   (open-kv dir {:mapsize c/+init-db-size+}))
+  ([dir {:keys [mapsize]
+         :or   {mapsize c/+init-db-size+}}]
+   (try
+     (u/file dir)
+     (let [^Env env (Env/create
+                      dir
+                      (* ^long mapsize 1024 1024)
+                      c/+max-readers+
+                      c/+max-dbs+
+                      (kv-flags c/default-env-flags))]
+       (->LMDB env
+               dir
+               (ConcurrentLinkedQueue.)
+               (ConcurrentHashMap.)
+               false
+               (volatile! false)))
+     (catch Exception e
+       (raise
+         "Fail to open database: " (ex-message e)
+         {:dir dir})))))
