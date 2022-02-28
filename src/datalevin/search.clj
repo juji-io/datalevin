@@ -4,8 +4,7 @@
             [datalevin.util :as u]
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
-            [datalevin.bits :as b]
-            [symspell-clj.core :as sp])
+            [datalevin.bits :as b])
   (:import [datalevin.utl PriorityQueue]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]
@@ -127,35 +126,26 @@
                    :int-int :int-int])))))
 
 (defn- hydrate-query
-  [lmdb ^AtomicInteger max-doc ^SymSpell symspell tokens]
-  (let [sis (when symspell
-              (.getSuggestTerms symspell tokens c/dict-max-edit-distance false))
-        tms (if sis
-              (mapv #(.getSuggestion ^SuggestItem %) sis)
-              tokens)
-        eds (zipmap tms (if sis
-                          (mapv #(.getEditDistance ^SuggestItem %) sis)
-                          (repeat 0)))]
-    (into []
-          (comp
-            (map (fn [[term freq]]
-                   (when-let [[id mw ^SparseIntArrayList sl]
-                              (get-term-info lmdb term)]
-                     (let [df (sl/size sl)
-                           sl (sl/->SparseIntArrayList
-                                (doto (FastRankRoaringBitmap.)
-                                  (.or ^RoaringBitmap (.-indices sl)))
-                                (.-items sl))]
-                       {:df df
-                        :ed (eds term)
-                        :id id
-                        :mw mw
-                        :sl sl
-                        :tm term
-                        :wq (* ^double (tf* freq)
-                               ^double (idf df (.get max-doc)))}))))
-            (filter map?))
-          (frequencies tms))))
+  [lmdb ^AtomicInteger max-doc tokens]
+  (into []
+        (comp
+          (map (fn [[term freq]]
+                 (when-let [[id mw ^SparseIntArrayList sl]
+                            (get-term-info lmdb term)]
+                   (let [df (sl/size sl)
+                         sl (sl/->SparseIntArrayList
+                              (doto (FastRankRoaringBitmap.)
+                                (.or ^RoaringBitmap (.-indices sl)))
+                              (.-items sl))]
+                     {:df df
+                      :id id
+                      :mw mw
+                      :sl sl
+                      :tm term
+                      :wq (* ^double (tf* freq)
+                             ^double (idf df (.get max-doc)))}))))
+          (filter map?))
+        (frequencies tokens)))
 
 (defn- priority-queue
   [top]
@@ -363,11 +353,11 @@
   [(get-doc-ref lmdb result)
    (sequence
      (comp (map (fn [tid]
-               (let [lst (l/get-list lmdb c/positions [tid doc-id]
-                                     :int-int :int-int)]
-                 (when (seq lst)
-                   [(terms tid) (mapv #(nth % 1) lst)]))))
-        (remove nil? ))
+                  (let [lst (l/get-list lmdb c/positions [tid doc-id]
+                                        :int-int :int-int)]
+                    (when (seq lst)
+                      [(terms tid) (mapv #(nth % 1) lst)]))))
+           (remove nil? ))
      (keys terms))])
 
 (defn- display-xf
@@ -421,7 +411,6 @@
 
 (deftype SearchEngine [lmdb
                        ^IntShortHashMap norms ; doc-id -> norm
-                       ^SymSpell symspell
                        ^AtomicInteger max-doc
                        ^AtomicInteger max-term]
   ISearchEngine
@@ -461,8 +450,7 @@
     (let [tokens (->> (en-analyzer query)
                       (mapv first)
                       (into-array String))
-          qterms (->> (hydrate-query lmdb max-doc symspell tokens)
-                      (sort-by :ed)
+          qterms (->> (hydrate-query lmdb max-doc tokens)
                       (sort-by :df)
                       vec)
           n      (count qterms)]
@@ -526,8 +514,6 @@
    (open-dbis lmdb)
    (->SearchEngine lmdb
                    (init-norms lmdb)
-                   (when fuzzy? (SymSpell. {} {} c/dict-max-edit-distance
-                                           c/dict-prefix-length))
                    (AtomicInteger. (init-max-doc lmdb))
                    (AtomicInteger. (init-max-term lmdb)))))
 

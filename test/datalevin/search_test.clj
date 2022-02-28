@@ -10,7 +10,6 @@
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntObjectHashMap ObjectIntHashMap]
            [org.roaringbitmap RoaringBitmap]
-           [datalevin.sm SymSpell Bigram]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.search SearchEngine]))
 

@@ -184,7 +184,3 @@
     s))
 
 (defn en-punctuations? [c] (.contains ^HashSet en-punctuations-set c))
-
-(def dict-max-edit-distance 2)
-
-(def dict-prefix-length 10)
