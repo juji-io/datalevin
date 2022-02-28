@@ -3,9 +3,28 @@
 ## WIP
 ### Added
 - Full-text search engine
-
 ### Improved
 - Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
+
+## 0.5.31
+### Fixed
+- Create pod client side `defpodfn` so it works in non-JVM.
+### Added
+- `load-edn` for dtlv, useful for e.g. loading schema from a file, #101
+
+## 0.5.30
+###  Fixed
+- Serialized writes for concurrent transactions, #83
+### Added
+- `defpodfn` macro to define a query function that can be used in babashka pod, #85
+
+## 0.5.29
+### Fixed
+- Update `max-aid` after schema update (thx @den1k)
+
+## 0.5.28
+### Improved
+- Updated dependencies, particularly fixed sci version (thx @borkdude)
 
 ## 0.5.27
 ### Fixed

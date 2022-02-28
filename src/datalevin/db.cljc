@@ -941,10 +941,10 @@
 
                  :else
                  (raise "Bad entity type at " entity ", expected map or vector"
-                        {:error :transact/syntax, :tx-data entity}))))]
-    (let [pstore (.-store ^DB (:db-after rp))]
-      (s/load-datoms pstore (:tx-data rp))
-      (refresh-cache pstore))
+                        {:error :transact/syntax, :tx-data entity}))))
+        pstore (.-store ^DB (:db-after rp))]
+    (s/load-datoms pstore (:tx-data rp))
+    (refresh-cache pstore)
     rp))
 
 (defn transact-tx-data

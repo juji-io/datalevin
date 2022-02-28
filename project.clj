@@ -1,4 +1,4 @@
-(def version "0.5.27")
+(def version "0.5.31")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -9,14 +9,25 @@
                          [org.bouncycastle/bcprov-jdk15on "1.69"]
                          [org.clojure/clojure "1.10.3"]
                          [org.clojure/tools.cli "1.0.206"]
-                         [org.clojure/test.check "1.1.0"]
+                         [org.clojure/test.check "1.1.1"]
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
                          [org.clojars.huahaiy/symspell-clj "0.2.4"]
                          [org.eclipse.collections/eclipse-collections "10.4.0"]
+                         [babashka/babashka.pods "0.1.0"]
+                         [com.fasterxml.jackson.core/jackson-core "2.13.1"]
+                         [com.cognitect/transit-clj "1.0.324"]
+                         [nrepl/bencode "1.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.3.0"]
                          [org.graalvm.nativeimage/svm "21.3.0"]
+                         [org.babashka/sci "0.2.8"]
+                         [com.taoensso/nippy "3.1.1"]
+                         [com.taoensso/timbre "5.1.2"]
+                         [persistent-sorted-set "0.1.4"]
+                         [org.bouncycastle/bcprov-jdk15on "1.70"]
+                         [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
+                         [com.github.clj-easy/graal-build-time "0.1.4"]
                          [org.lmdbjava/lmdbjava "0.8.2"
                           ;; uncomment when run lein codox
                           ;; :exclusions

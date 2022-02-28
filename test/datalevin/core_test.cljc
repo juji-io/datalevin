@@ -858,3 +858,13 @@
       (is (Arrays/equals bs1 ^bytes (first (second res)))))
     (sut/close-db db)
     (u/delete-files dir)))
+
+(deftest float-transact-test
+  (let [schema {:name   {:db/valueType :db.type/string}
+                :height {:db/valueType :db.type/float}}
+        dir    (u/tmp-dir (str "datalevin-float-test-" (UUID/randomUUID)))
+        conn   (sut/get-conn dir schema)]
+    (sut/transact! conn [{:name "John" :height 1.73}
+                         {:name "Peter" :height 1.92}])
+    (is (= (sut/pull (sut/db conn) '[*] 1)
+           {:name "John" :height (float 1.73) :db/id 1}))))

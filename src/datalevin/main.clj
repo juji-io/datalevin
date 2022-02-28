@@ -25,7 +25,7 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.5.27")
+(def ^:private version "0.5.31")
 
 (def ^:private version-str
   (str
@@ -147,7 +147,7 @@
 
 (defn- repl-help []
   (println "")
-  (println "In addition to Clojure core functions, the following functions are available:")
+  (println "In addition to some Clojure core functions, the following functions are available:")
   (doseq [ns   i/user-facing-ns
           :let [fs (->> ns
                         ns-publics
@@ -170,7 +170,7 @@
 
 (def ^:private repl-header
   "
-  Type (help) to see available functions. Clojure core functions are also available.
+  Type (help) to see available functions. some Clojure core functions are also available.
   Type (exit) to exit.
   ")
 

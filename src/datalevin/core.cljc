@@ -474,12 +474,13 @@ Only usable for debug output.
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
-  (let [report (atom nil)]
-    (swap! conn (fn [db]
-                  (let [r (with db tx-data tx-meta)]
-                    (reset! report r)
-                    (:db-after r))))
-    @report))
+  (locking conn
+    (let [report (atom nil)]
+      (swap! conn (fn [db]
+                    (let [r (with db tx-data tx-meta)]
+                      (reset! report r)
+                      (:db-after r))))
+      @report)))
 
 
 (defn transact!
@@ -569,7 +570,7 @@ Only usable for debug output.
                        {:db/add 296 :friend -1]])"
   ([conn tx-data] (transact! conn tx-data nil))
   ([conn tx-data tx-meta]
-   {:pre [(conn? conn)]}
+   ;; {:pre [(conn? conn)]}
    (let [report (-transact! conn tx-data tx-meta)]
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
        (callback report))

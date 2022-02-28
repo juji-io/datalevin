@@ -110,12 +110,12 @@
 (test/defspec float-generative-test
   100
   (prop/for-all [k (gen/double* {:NaN? false})]
-                (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-                      k              (float k)]
+                (let [f              (float k)
+                      ^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (.clear bf)
-                  (sut/put-buffer bf k :float)
+                  (sut/put-buffer bf f :float)
                   (.flip bf)
-                  (= k (sut/read-buffer bf :float)))))
+                  (= f (sut/read-buffer bf :float)))))
 
 (test/defspec bytes-generative-test
   100
@@ -329,20 +329,31 @@
 (test/defspec double-extrema-generative-test
   100
   (prop/for-all
-   [v (gen/double* {:NaN? false})]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/double)
-                 (sut/indexable e a c/v0 :db.type/double)
-                 (sut/indexable e a c/vmax :db.type/double))))
+    [v (gen/double* {:NaN? false})]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/double)
+                  (sut/indexable e a c/v0 :db.type/double)
+                  (sut/indexable e a c/vmax :db.type/double))))
+
+
+(test/defspec float-extrema-generative-test
+  100
+  (prop/for-all
+    [v (gen/double* {:NaN? false})]
+    (let [f (float v)]
+      (test-extrema f
+                    (sut/indexable e a f :db.type/float)
+                    (sut/indexable e a c/v0 :db.type/float)
+                    (sut/indexable e a c/vmax :db.type/float)))))
 
 (test/defspec ref-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/nat]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/ref)
-                 (sut/indexable e a c/v0 :db.type/ref)
-                 (sut/indexable e a c/vmax :db.type/ref))))
+    [v  gen/nat]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/ref)
+                  (sut/indexable e a c/v0 :db.type/ref)
+                  (sut/indexable e a c/vmax :db.type/ref))))
 
 (test/defspec uuid-extrema-generative-test
   100
@@ -614,7 +625,18 @@
               (sut/indexable e a v :db.type/double)
               (sut/indexable e1 a1 v1 :db.type/double))))
 
-;; TODO test-check doesn't have a float generator yet
+(test/defspec float-ave-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 (gen/double* {:NaN? false})
+     v  (gen/double* {:NaN? false})]
+    (let [f1 (float v1)
+          f  (float v)]
+      (ave-test f e1 a1 f1
+                (sut/indexable e a f :db.type/float)
+                (sut/indexable e1 a1 f1 :db.type/float)))))
 
 (test/defspec uuid-eav-generative-test
   50
