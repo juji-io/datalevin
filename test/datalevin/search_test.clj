@@ -105,6 +105,8 @@
             [:doc4 [["red" [18]]]]
             [:doc2 [["red" [40]]]]
             [:doc5 [["red" [48]]]]]))
+    (is (= (sut/search engine "red fox" {:doc-filter #(not= % :doc2)})
+           [:doc1 :doc4 :doc5]))
     (is (= (sut/search engine "red dogs" {:display :offsets})
            [[:doc1 [["dogs" [43]] ["red" [10 39]]]]
             [:doc5 [["dogs" [52]] ["red" [48]]]]

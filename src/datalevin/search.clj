@@ -345,26 +345,30 @@
               (recur (skip-candidates pivot did candidates)))))))))
 
 (defn- get-doc-ref
-  [lmdb [_ doc-id]]
-  (nth (l/get-value lmdb c/docs doc-id :int :doc-info) 1))
+  [doc-filter lmdb [_ doc-id]]
+  (when-let [doc-ref (nth (l/get-value lmdb c/docs doc-id :int :doc-info) 1)]
+    (when (doc-filter doc-ref) doc-ref)))
 
 (defn- add-offsets
-  [lmdb terms [_ doc-id :as result]]
-  [(get-doc-ref lmdb result)
-   (sequence
-     (comp (map (fn [tid]
-                  (let [lst (l/get-list lmdb c/positions [tid doc-id]
-                                        :int-int :int-int)]
-                    (when (seq lst)
-                      [(terms tid) (mapv #(nth % 1) lst)]))))
-           (remove nil? ))
-     (keys terms))])
+  [doc-filter lmdb terms [_ doc-id :as result]]
+  (when-let [doc-ref (get-doc-ref doc-filter lmdb result)]
+    [doc-ref
+     (sequence
+       (comp (map (fn [tid]
+                 (let [lst (l/get-list lmdb c/positions [tid doc-id]
+                                       :int-int :int-int)]
+                   (when (seq lst)
+                     [(terms tid) (mapv #(nth % 1) lst)]))))
+          (remove nil? ))
+       (keys terms))]))
 
 (defn- display-xf
-  [display lmdb tms]
+  [doc-filter display lmdb tms]
   (case display
-    :offsets (map #(add-offsets lmdb tms %))
-    :refs    (map #(get-doc-ref lmdb %))))
+    :offsets (comp (map #(add-offsets doc-filter lmdb tms %))
+                (remove nil?))
+    :refs    (comp (map #(get-doc-ref doc-filter lmdb %))
+                (remove nil?))))
 
 (defn- doc-ref->id
   [lmdb doc-ref]
@@ -403,6 +407,9 @@
 
       * `:display` can be one of `:refs` (default), `:offsets`.
       * `:top` is an integer (default 10), the number of results desired.
+      * `:doc-filter` is a boolean function that takes a `doc-ref` and
+         determines whether or not to include the corresponding document in the
+         results (default is `(constantly true)`)
 
      Return a lazy sequence of
      `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
@@ -445,8 +452,10 @@
 
   (search [this query]
     (.search this query {:display :refs :top 10}))
-  (search [this query {:keys [display ^long top]
-                       :or   {display :refs top 10}}]
+  (search [this query {:keys [display ^long top doc-filter]
+                       :or   {display    :refs
+                              top        10
+                              doc-filter (constantly true)}}]
     (let [tokens (->> (en-analyzer query)
                       (mapv first)
                       (into-array String))
@@ -467,7 +476,7 @@
               result  (RoaringBitmap.)
               scoring (score-docs n tids sls bms mxs wqs norms result)]
           (sequence
-            (display-xf display lmdb tms)
+            (display-xf doc-filter display lmdb tms)
             (persistent!
               (reduce
                 (fn [coll tao]

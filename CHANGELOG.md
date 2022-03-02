@@ -3,6 +3,8 @@
 ## WIP
 ### Added
 - Full-text search engine
+- LMDB `visit`  function to do arbitrary things upon seeing a value in a range
+
 ### Improved
 - Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
 
