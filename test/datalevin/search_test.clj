@@ -11,7 +11,7 @@
             IntObjectHashMap ObjectIntHashMap]
            [org.roaringbitmap RoaringBitmap]
            [datalevin.sparselist SparseIntArrayList]
-           [datalevin.search SearchEngine]))
+           [datalevin.search SearchEngine IndexWriter]))
 
 (deftest english-analyzer-test
   (let [s1 "This is a Datalevin-Analyzers test"
@@ -23,22 +23,22 @@
            "Datalevin-Analyzers" ))))
 
 (defn- add-docs
-  [engine]
-  (sut/add-doc engine :doc1
-               "The quick red fox jumped over the lazy red dogs.")
-  (sut/add-doc engine :doc2
-               "Mary had a little lamb whose fleece was red as fire.")
-  (sut/add-doc engine :doc3
-               "Moby Dick is a story of a whale and a man obsessed.")
-  (sut/add-doc engine :doc4
-               "The robber wore a red fleece jacket and a baseball cap.")
-  (sut/add-doc engine :doc5
-               "The English Springer Spaniel is the best of all red dogs I know."))
+  [f engine]
+  (f engine :doc1
+     "The quick red fox jumped over the lazy red dogs.")
+  (f engine :doc2
+     "Mary had a little lamb whose fleece was red as fire.")
+  (f engine :doc3
+     "Moby Dick is a story of a whale and a man obsessed.")
+  (f engine :doc4
+     "The robber wore a red fleece jacket and a baseball cap.")
+  (f engine :doc5
+     "The English Springer Spaniel is the best of all red dogs I know."))
 
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
         engine ^SearchEngine (sut/new-engine lmdb)]
-    (add-docs engine)
+    (add-docs sut/add-doc engine)
 
     (let [[tid mw ^SparseIntArrayList sl]
           (l/get-value lmdb c/terms "red" :string :term-info true)]
@@ -92,7 +92,7 @@
 (deftest search-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "search-" (UUID/randomUUID))))
         engine ^SearchEngine (sut/new-engine lmdb)]
-    (add-docs engine)
+    (add-docs sut/add-doc engine)
 
     (is (= (sut/search engine "cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
@@ -116,4 +116,15 @@
     (is (empty? (sut/search engine "solar wind")))
     (is (= (sut/search engine "solar cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
+    (l/close-kv lmdb)))
+
+(deftest index-writer-test
+  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-" (UUID/randomUUID))))
+        writer ^IndexWriter (sut/search-index-writer lmdb)]
+    (add-docs sut/write writer)
+    (sut/commit writer)
+
+    (let [engine (sut/new-engine lmdb)]
+      (is (= (sut/search engine "cap" {:display :offsets})
+             [[:doc4 [["cap" [51]]]]])))
     (l/close-kv lmdb)))

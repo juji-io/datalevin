@@ -451,7 +451,7 @@
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (search [this query]
-    (.search this query {:display :refs :top 10}))
+    (.search this query {}))
   (search [this query {:keys [display ^long top doc-filter]
                        :or   {display    :refs
                               top        10
@@ -516,15 +516,12 @@
   (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) c/+max-key-size+))
 
 (defn new-engine
-  ([lmdb]
-   (new-engine lmdb {}))
-  ([lmdb {:keys [fuzzy?]
-          :or   {fuzzy? false}}]
-   (open-dbis lmdb)
-   (->SearchEngine lmdb
-                   (init-norms lmdb)
-                   (AtomicInteger. (init-max-doc lmdb))
-                   (AtomicInteger. (init-max-term lmdb)))))
+  [lmdb]
+  (open-dbis lmdb)
+  (->SearchEngine lmdb
+                  (init-norms lmdb)
+                  (AtomicInteger. (init-max-doc lmdb))
+                  (AtomicInteger. (init-max-term lmdb))))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text] "Write a document")
