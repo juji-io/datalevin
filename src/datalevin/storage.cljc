@@ -459,7 +459,7 @@
         :id))))
 
 (defn- insert-data
-  [^Store store ^Datom d ft-adds]
+  [^Store store ^Datom d ft-ds]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
@@ -467,7 +467,7 @@
         i      (b/indexable (.-e d) (:db/aid props) (.-v d)
                             (:db/valueType props))
         max-gt (max-gt store)]
-    (when (:db/fulltext props) (vswap! ft-adds conj [:a d]))
+    (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
                 [:put c/ave i max-gt :ave :id]
@@ -480,7 +480,7 @@
        false])))
 
 (defn- delete-data
-  [^Store store ^Datom d ft-dels]
+  [^Store store ^Datom d ft-ds]
   (let [props  ((schema store) (.-a d))
         ref?   (= :db.type/ref (:db/valueType props))
         i      (b/indexable (.-e d) (:db/aid props) (.-v d)
@@ -488,7 +488,7 @@
         giant? (b/giant? i)
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (when (:db/fulltext props) (vswap! ft-dels conj [:d d]))
+    (when (:db/fulltext props) (vswap! ft-ds conj [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])

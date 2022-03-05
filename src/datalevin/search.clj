@@ -406,15 +406,15 @@
      `opts` map may have these keys:
 
       * `:display` can be one of `:refs` (default), `:offsets`.
+        - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
+        - `:offsets` return a lazy sequence of
+          `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
+          ordered by relevance. `term` and `offset` can be used to
+          highlight the matched terms and their locations in the documents.
       * `:top` is an integer (default 10), the number of results desired.
       * `:doc-filter` is a boolean function that takes a `doc-ref` and
          determines whether or not to include the corresponding document in the
-         results (default is `(constantly true)`)
-
-     Return a lazy sequence of
-     `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
-     ordered by relevance to the query. `term` and `offset` can be used to
-     highlight the matched terms and their locations in the documents."))
+         results (default is `(constantly true)`)"))
 
 (deftype SearchEngine [lmdb
                        ^IntShortHashMap norms ; doc-id -> norm
@@ -565,6 +565,7 @@
 
   (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-all"))
 
+  (time (search-index-writer lmdb))
   (def engine (time (new-engine lmdb)))
   (.size (peek (l/get-value lmdb c/terms "s" :string :term-info))) ; over 3 mil.
 
