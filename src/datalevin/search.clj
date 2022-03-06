@@ -182,17 +182,17 @@
     (doseq [tid tids] (.put m tid (max-score wqs mws tid)))
     m))
 
-(defprotocol ICandidate
+(defprotocol ^:no-doc ICandidate
   (skip-before [this limit] "move the iterator to just before the limit")
   (advance [this] "move the iterator to the next position")
   (has-next? [this] "return true if there's next in iterator")
   (get-did [this] "return the current did the iterator points to")
   (get-tf [this] "return tf of the current did"))
 
-(deftype Candidate [tid
-                    ^:volatile-mutable did
-                    ^SparseIntArrayList sl
-                    ^PeekableIntIterator iter]
+(deftype ^:no-doc Candidate [tid
+                             ^:volatile-mutable did
+                             ^SparseIntArrayList sl
+                             ^PeekableIntIterator iter]
   ICandidate
   (skip-before [this limit]
     (.advanceIfNeeded iter limit)
@@ -212,7 +212,7 @@
     (.get ^IntArrayList (.-items sl)
           (dec (.rank ^FastRankRoaringBitmap (.-indices sl) did)))))
 
-(def candidate-comp
+(def ^:no-doc candidate-comp
   (comparator (fn [^Candidate a ^Candidate b]
                 (- ^int (get-did a) ^int (get-did b)))))
 
@@ -416,10 +416,10 @@
          determines whether or not to include the corresponding document in the
          results (default is `(constantly true)`)"))
 
-(deftype SearchEngine [lmdb
-                       ^IntShortHashMap norms ; doc-id -> norm
-                       ^AtomicInteger max-doc
-                       ^AtomicInteger max-term]
+(deftype ^:no-doc SearchEngine [lmdb
+                                ^IntShortHashMap norms ; doc-id -> norm
+                                ^AtomicInteger max-doc
+                                ^AtomicInteger max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
     (let [txs       (FastList.)
@@ -515,7 +515,9 @@
   (l/open-dbi lmdb c/docs Integer/BYTES)
   (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) c/+max-key-size+))
 
-(defn new-engine
+(defn new-search-engine
+  "Create a search engine. The search index is stored in the passed-in
+  key-value database opened by [[datalevin.core/open-kv]]."
   [lmdb]
   (open-dbis lmdb)
   (->SearchEngine lmdb
@@ -524,14 +526,14 @@
                   (AtomicInteger. (init-max-term lmdb))))
 
 (defprotocol IIndexWriter
-  (write [this doc-ref doc-text] "Write a document")
-  (commit [this] "Commit writes"))
+  (write [this doc-ref doc-text] "Write a document.")
+  (commit [this] "Commit writes, must be called after writing all documents."))
 
-(deftype IndexWriter [lmdb
-                      ^AtomicInteger max-doc
-                      ^AtomicInteger max-term
-                      ^FastList txs
-                      ^UnifiedMap hit-terms]
+(deftype ^:no=doc IndexWriter [lmdb
+                               ^AtomicInteger max-doc
+                               ^AtomicInteger max-term
+                               ^FastList txs
+                               ^UnifiedMap hit-terms]
   IIndexWriter
   (write [this doc-ref doc-text]
     (add-doc-txs lmdb doc-text max-doc txs doc-ref nil max-term
@@ -553,6 +555,9 @@
     (.clear txs)))
 
 (defn search-index-writer
+  "Create a writer for writing documents to the search index in bulk.
+  The search index is stored in the passed-in key value database.
+  See also [[write]] and [[commit]]"
   [lmdb]
   (open-dbis lmdb)
   (->IndexWriter lmdb
@@ -566,7 +571,7 @@
   (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-all"))
 
   (time (search-index-writer lmdb))
-  (def engine (time (new-engine lmdb)))
+  (def engine (time (new-search-engine lmdb)))
   (.size (peek (l/get-value lmdb c/terms "s" :string :term-info))) ; over 3 mil.
 
   (time (search engine "s"))

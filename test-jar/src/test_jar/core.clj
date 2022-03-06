@@ -9,19 +9,24 @@
              ;; :db/valueType is optional, if unspecified, the attribute will be
              ;; treated as EDN blobs, and may not be optimal for range queries
              :name {:db/valueType :db.type/string
-                    :db/unique    :db.unique/identity}})
+                    :db/unique    :db.unique/identity}
+             ;; :height {:db/valueType :db.type/float}
+             })
 
 ;; Create DB on disk and connect to it, assume write permission to create given dir
-(def conn (d/get-conn "/tmp/datalevin/mydb" schema))
+(def conn (d/get-conn "/tmp/datalevin/mydb1" schema))
 ;; or if you have a Datalevin server running on myhost with default port 8898
 ;; (def conn (d/get-conn "dtlv://myname:mypasswd@myhost/mydb" schema))
 
 
 (defn run [opts]
   (d/transact! conn
-               [{:name "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]}
-                {:name "Peirce", :db/id -2, :nation "france"}
-                {:name "De Morgan", :db/id -3, :nation "English"}])
+               [{:name   "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]
+                 :height 1.73 }
+                {:name   "Peirce", :db/id -2, :nation "france"
+                 :height 1.82 }
+                {:name   "De Morgan", :db/id -3, :nation "English"
+                 :height 1.76 }])
 
   ;; Query the data
   (d/q '[:find ?nation

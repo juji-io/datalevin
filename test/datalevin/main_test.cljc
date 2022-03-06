@@ -44,6 +44,19 @@
     (is (s/includes? res "#{[1 \"Datalevin\"]}"))
     (u/delete-files dir)))
 
+(deftest exec-kv-search-test
+  (let [dir  (u/tmp-dir (str "datalevin-exec-kv-search-test-" (UUID/randomUUID)))
+        code (str "(def lmdb (open-kv \"" dir "\"))"
+                  "(def engine (new-search-engine lmdb))"
+                  "(open-dbi lmdb \"raw\")"
+                  "(transact-kv lmdb [[:put \"raw\" 1 \"The quick red fox jumped over the lazy red dogs.\"] [:put \"raw\" 2 \"Mary had a little lamb whose fleece was red as fire.\"] [:put \"raw\" 3 \"Moby Dick is a story of a whale and a man obsessed.\"]])"
+                  "(doseq [i [1 2 3]] (add-doc engine i (get-value lmdb \"raw\" i)))"
+                  "(search engine \"lazy\")"
+                  "(close-kv lmdb)")
+        res (with-out-str (with-in-str code (sut/exec nil)))]
+    (is (s/includes? res "(1)"))
+    (u/delete-files dir)))
+
 (deftest copy-stat-test
   (let [src (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
         dst (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))

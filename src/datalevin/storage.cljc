@@ -514,7 +514,7 @@
      (let [schema (init-schema lmdb schema)]
        (->Store db-name
                 lmdb
-                (s/new-engine lmdb)
+                (s/new-search-engine lmdb)
                 schema
                 (schema->rschema schema)
                 (init-attrs schema)

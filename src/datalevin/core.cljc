@@ -859,8 +859,6 @@ Only usable for debug output.
 
   `dir` is a directory path or a dtlv connection URI string.
 
-  Will detect the platform this code is running in, and dispatch accordingly.
-
   Please note:
 
   > LMDB uses POSIX locks on files, and these locks have issues if one process
@@ -1285,3 +1283,16 @@ one of the following data types:
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
+
+
+(comment
+
+  (def schema {:name   {:db/valueType :db.type/string}
+               :height {:db/valueType :db.type/float}})
+
+  (def conn (get-conn "/tmp/mydb1" schema))
+
+  (transact! conn [{:name "John" :height 1.73}
+                   {:name "Peter" :height 1.92}])
+
+  )

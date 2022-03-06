@@ -20,7 +20,7 @@
   (require 'datalevin.binding.java))
 
 (def ^:no-doc user-facing-ns
-  #{'datalevin.core 'datalevin.client 'datalevin.interpret})
+  #{'datalevin.core 'datalevin.client 'datalevin.interpret 'datalevin.search})
 
 (defn- user-facing? [v]
   (let [m (meta v)

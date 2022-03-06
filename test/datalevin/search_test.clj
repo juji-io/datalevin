@@ -37,7 +37,7 @@
 
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
-        engine ^SearchEngine (sut/new-engine lmdb)]
+        engine ^SearchEngine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
     (let [[tid mw ^SparseIntArrayList sl]
@@ -91,7 +91,7 @@
 
 (deftest search-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "search-" (UUID/randomUUID))))
-        engine ^SearchEngine (sut/new-engine lmdb)]
+        engine ^SearchEngine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
     (is (= (sut/search engine "cap" {:display :offsets})
@@ -124,7 +124,21 @@
     (add-docs sut/write writer)
     (sut/commit writer)
 
-    (let [engine (sut/new-engine lmdb)]
+    (let [engine (sut/new-search-engine lmdb)]
       (is (= (sut/search engine "cap" {:display :offsets})
              [[:doc4 [["cap" [51]]]]])))
+    (l/close-kv lmdb)))
+
+(deftest search-kv-test
+  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-kv-" (UUID/randomUUID))))
+        engine (sut/new-search-engine lmdb)]
+    (l/open-dbi lmdb "raw")
+    (l/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
+    (doseq [i [1 2 3]]
+      (sut/add-doc engine i (l/get-value lmdb "raw" i)))
+    (is (= (sut/search engine "lazy") [1]))
     (l/close-kv lmdb)))
