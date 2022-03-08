@@ -11,7 +11,7 @@
             [datalevin.util :as u]
             [datalevin.test.core :refer [server-fixture]]
             [clojure.test :refer [is testing deftest use-fixtures]])
-  (:import [java.util UUID Arrays]
+  (:import [java.util UUID Arrays HashMap]
            [datalevin.datom Datom]))
 
 (use-fixtures :each server-fixture)

@@ -637,7 +637,7 @@
     (try
       (p/write-message-blocking ch write-bf msg)
       (catch BufferOverflowException _
-        (let [size (* c/+buffer-grow-factor+ ^int (.capacity write-bf))]
+        (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
           (vswap! state assoc :write-bf (b/allocate-buffer size))
           (write-message skey msg))))))
 
@@ -1309,7 +1309,7 @@
               rp  (d/with db txs)
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (select-keys rp [:tx-data :tempids])]
-          (if (< ct c/+wire-datom-batch-size+)
+          (if (< ct ^long c/+wire-datom-batch-size+)
             (write-message skey {:type :command-complete :result res})
             (let [{:keys [tx-data tempids]} res]
               (copy-out skey (into tx-data tempids)
@@ -1340,7 +1340,7 @@
   (wrap-error
     (let [datoms (apply st/slice
                         (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1349,7 +1349,7 @@
   (wrap-error
     (let [datoms (apply st/rslice
                         (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1382,7 +1382,7 @@
 
           datoms (apply st/slice-filter
                         (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1393,7 +1393,7 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)
           datoms (apply st/rslice-filter
                         (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1478,7 +1478,7 @@
   (wrap-error
     (let [data (apply l/get-range
                       (kv-store server skey (nth args 0)) (rest args))]
-      (if (< (count data) c/+wire-datom-batch-size+)
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
@@ -1500,7 +1500,7 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)
           data   (apply l/range-filter
                         (kv-store server skey (nth args 0)) (rest args))]
-      (if (< (count data) c/+wire-datom-batch-size+)
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
@@ -1511,6 +1511,19 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)]
       (normal-kv-store-handler range-filter-count))))
 
+(defn- visit
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace
+                   {frozen
+                    (binding [nippy/*thaw-serializable-allowlist*
+                              (conj nippy/default-thaw-serializable-allowlist
+                                    "java.util.*")]
+                      (nippy/fast-thaw frozen))}
+                   args)]
+      (normal-kv-store-handler visit))))
+
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
@@ -1519,7 +1532,7 @@
           inputs                 (replace {:remote-db-placeholder db} inputs)
           data                   (apply q/q query inputs)]
       (if (coll? data)
-        (if (< (count data) c/+wire-datom-batch-size+)
+        (if (< (count data) ^long c/+wire-datom-batch-size+)
           (write-message skey {:type :command-complete :result data})
           (copy-out skey data c/+wire-datom-batch-size+))
         (write-message skey {:type :command-complete :result data})))))
@@ -1596,6 +1609,7 @@
    'get-some
    'range-filter
    'range-filter-count
+   'visit
    'q])
 
 (defmacro ^:no-doc message-cases
@@ -1629,7 +1643,7 @@
         ^int readn                    (p/read-ch ch read-bf)]
     (cond
       (> readn 0)  (if (= (.position read-bf) capacity)
-                     (let [size (* c/+buffer-grow-factor+ capacity)
+                     (let [size (* ^long c/+buffer-grow-factor+ capacity)
                            bf   (b/allocate-buffer size)]
                        (.flip read-bf)
                        (b/buffer-transfer read-bf bf)

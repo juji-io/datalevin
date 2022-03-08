@@ -56,12 +56,12 @@
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
-    [db]
+    ;; [db]
     [db dbi-name]
     [db dbi-name key-size]
     [db dbi-name key-size val-size]
     [db dbi-name key-size val-size flags]
-    "Open a named DBI (i.e. sub-db) or unamed main DBI in the LMDB env")
+    "Open a named DBI (i.e. sub-db) in the LMDB env")
 
   (open-inverted-list
     [db list-name]

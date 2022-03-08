@@ -141,4 +141,7 @@
     (doseq [i [1 2 3]]
       (sut/add-doc engine i (l/get-value lmdb "raw" i)))
     (is (= (sut/search engine "lazy") [1]))
+    (is (= (sut/search engine "red" ) [1 2]))
+    (is (= (sut/search engine "red" {:display :offsets})
+           [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
     (l/close-kv lmdb)))

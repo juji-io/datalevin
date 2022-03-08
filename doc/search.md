@@ -1,6 +1,6 @@
 # Datalevin Search Engine
 
-Datalevin now includes a built-in full-text search engine.
+Datalevin includes a built-in full-text search engine.
 
 ## Rationale
 
@@ -44,13 +44,104 @@ store a reference to the source content that is stored in the database.
 
 ## Usage
 
+The full-text search functionalities are available to use in all supported
+Datalevin modes: key-value store, Datalog store, embedded, client/server, or
+Babashka pods.
+
+### Standalone search
+
+Datalevin can be used as a standalone search engine. The standalone search API
+involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
+`search`.
+
+```Clojure
+(require '[datalevin.core :as d])
+(require '[datalevin.search :as s])
+
+;; A search engine depends on a key-value store to store the indices.
+(def lmdb (d/open-kv "/tmp/search-db"))
+(def engine (s/new-search-engine lmdb))
+
+;; Here are the documents to be indxed, keyed by doc-id
+(def docs
+  {1 "The quick red fox jumped over the lazy red dogs."
+   2 "Mary had a little lamb whose fleece was red as fire."
+   3 "Moby Dick is a story of a whale and a man obsessed."})
+
+;; Add the documents into the search index. `add-doc` takes a `doc-ref`, which
+;; can be anything that uniquely identify a document, in this case, a doc-id
+(s/add-doc engine 1 (docs 1))
+(s/add-doc engine 2 (docs 2))
+(s/add-doc engine 3 (docs 3))
+
+;; Search engine does not store the raw documents themselves.
+;; If we want to retrieve the found documents, we can optionally store them in
+;; a key-value sub-database
+(d/open-dbi lmdb "raw")
+(d/transact-kv lmdb
+      [[:put "raw" 1 (docs 1)]
+       [:put "raw" 2 (docs 2)]
+       [:put "raw" 3 (docs 3)]])
+
+;; search by default return a list of `doc-ref` ordered by relevance to query
+(s/search engine "red")
+;=> (1 2)
+
+;; we can alter the display to show offets of term occurrences as well, useful
+;; e.g. to highlight matched terms in documents
+(s/search engine "red" {:display :offsets})
+;=> ([1 (["red" [10 39]])] [2 (["red" [40]])])
+
+```
+
+### Search in Datalog
+
+Searchable values of the Datalog attributes need to be declared in the
+schema, with the `:db/fulltext true` property. The value does not have to be of
+ string type, as the indexer will call `str` function on it to convert it to string.
+
+A query function `fulltext` is provided to allow full-text search in Datalog
+queries. This function takes the db, the query and an optional options (same as
+`search`), and returns a sequence of matching datoms, ordered by relevance to
+the query.
+
+```Clojure
+(let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
+                                     :db/fulltext  true}})
+             (d/db-with
+                 [{:db/id 1,
+                   :text  "The quick red fox jumped over the lazy red dogs."}
+                  {:db/id 2,
+                   :text  "Mary had a little lamb whose fleece was red as fire."}
+                  {:db/id 3,
+                   :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (d/q '[:find ?e ?a ?v
+           :in $ ?q
+           :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+          db
+          "red fox"))
+;=> #{[1 :text "The quick red fox jumped over the lazy red dogs."]
+;     [2 :text "Mary had a little lamb whose fleece was red as fire."]}
+```
+In the above example, we destructure the returned datoms into three variables,
+`?e`, `?a` and `?v`.
+
+As can be seen, the search is across the whole database, not limited to an
+individual attribute.
+
+To further filter the search results,
+a `doc-filter` function can be supplied in the search option, that takes the
+`doc-ref` and return true or false, e.g. `{:doc-filter #(= (:a %) :text)}` will
+only return datoms that have attribute `:text`. Or one can opt to put this
+constraint in the Datalog where clause instead.
+
 ## Implementation
 
 As mentioned, the search engine is implemented from scratch, see [blog](https://yyhh.org/blog/2021/11/t-wand-beat-lucene-in-less-than-600-lines-of-code/). Instead of
 using a separate storage, the search engine indices are stored in the same
 file along with other database data, i.e. all Datalevin data is stored in a
 single [LMDB](http://www.lmdb.tech/doc/) data file. This improves cache locality
-and reduces the complexity of managing data. F
+and reduces the complexity of managing data.
 
 ### Indexing
 
@@ -199,14 +290,10 @@ The query result preparation are implemented as Clojure transducers, and the
 results are wrapped in the `sequence` function, which returns results
 incrementally and on demand.
 
-Fuzzy string match for terms is handled by [SymSpell algorithm](https://wolfgarbe.medium.com/1000x-faster-spelling-correction-algorithm-2012-8701fcd87a5f), which pre-computes
-possible typos and considers frequency information.
-
 ## Benchmark
 
 The details of benchmark comparison with Lucene is [here](../search-bench/). The
-summary is that we beat Lucene in search speed, but lags in write speed,
-as expected.
+summary is that Datalevin search engine beats Lucene in search speed, but lags in write speed, as expected.
 
 ## References
 
