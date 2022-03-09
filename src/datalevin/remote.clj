@@ -299,11 +299,10 @@
 
   (visit [db dbi-name visitor k-range]
     (l/visit db dbi-name visitor k-range :data))
-  (visit [this dbi-name visitor k-range k-type]
+  (visit [db dbi-name visitor k-range k-type]
     (let [frozen-visitor (nippy/fast-freeze visitor)]
       (cl/normal-request client :visit
-                         [db-name dbi-name frozen-visitor k-range k-type])))
-  )
+                         [db-name dbi-name frozen-visitor k-range k-type]))))
 
 (defn open-kv
   "Open a remote kv store."
@@ -337,7 +336,10 @@
     (cl/normal-request (.-client store) :search
                        [(.-db-name store) query opts])))
 
-(defn new-search-engine [store] (->SearchEngine store))
+(defn new-search-engine [^KVStore store]
+  (cl/normal-request (.-client store) :new-search-engine
+                     [(.-db-name store)])
+  (->SearchEngine store))
 
 (deftype IndexWriter [^KVStore store]
   IIndexWriter
@@ -347,3 +349,8 @@
 
   (commit [this]
     (cl/normal-request (.-client store) :commit [(.-db-name store)])))
+
+(defn search-index-writer [^KVStore store]
+  (cl/normal-request (.-client store) :search-index-writer
+                     [(.-db-name store)])
+  (->IndexWriter store))

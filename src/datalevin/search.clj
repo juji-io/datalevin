@@ -392,29 +392,9 @@
     (l/get-some lmdb c/terms is-id? [:all] :string :term-info false)))
 
 (defprotocol ISearchEngine
-  (add-doc [this doc-ref doc-text]
-    "Add a document to the search engine, `doc-ref` can be arbitrary Clojure data
-     that uniquely refers to the document in the system.
-     `doc-text` is the content of the document as a string. The search engine
-     does not store the original text, and assumes that caller can retrieve them
-     by `doc-ref`. This function is for online update of search engine index,
-     for index creation of bulk data, use `search-index-writer`.")
-  (remove-doc [this doc-ref]
-    "Remove a document referred to by `doc-ref`. A slow operation.")
-  (search [this query] [this query opts]
-    "Issue a `query` to the search engine. `query` is a string.
-     `opts` map may have these keys:
-
-      * `:display` can be one of `:refs` (default), `:offsets`.
-        - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
-        - `:offsets` return a lazy sequence of
-          `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
-          ordered by relevance. `term` and `offset` can be used to
-          highlight the matched terms and their locations in the documents.
-      * `:top` is an integer (default 10), the number of results desired.
-      * `:doc-filter` is a boolean function that takes a `doc-ref` and
-         determines whether or not to include the corresponding document in the
-         results (default is `(constantly true)`)"))
+  (add-doc [this doc-ref doc-text])
+  (remove-doc [this doc-ref])
+  (search [this query] [this query opts]))
 
 (deftype ^:no-doc SearchEngine [lmdb
                                 ^IntShortHashMap norms ; doc-id -> norm
@@ -526,8 +506,8 @@
                   (AtomicInteger. (init-max-term lmdb))))
 
 (defprotocol IIndexWriter
-  (write [this doc-ref doc-text] "Write a document.")
-  (commit [this] "Commit writes, must be called after writing all documents."))
+  (write [this doc-ref doc-text])
+  (commit [this]))
 
 (deftype ^:no=doc IndexWriter [lmdb
                                ^AtomicInteger max-doc
@@ -555,9 +535,6 @@
     (.clear txs)))
 
 (defn search-index-writer
-  "Create a writer for writing documents to the search index in bulk.
-  The search index is stored in the passed-in key value database.
-  See also [[write]] and [[commit]]"
   [lmdb]
   (open-dbis lmdb)
   (->IndexWriter lmdb

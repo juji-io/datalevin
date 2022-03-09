@@ -710,8 +710,8 @@
 (deftest datalog-larger-tx-test
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                     (str "large-tx-test-"
-                                          (UUID/randomUUID)))})
+                                  (str "large-tx-test-"
+                                       (UUID/randomUUID)))})
         _      (s/start server)
         dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
         end    100000
@@ -724,6 +724,30 @@
                   @conn)
            [[end]]))
     (sut/close conn)
+    (s/stop server)))
+
+(deftest remote-search-kv-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-search-kv-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-search-kv-test"
+        lmdb   (sut/open-kv dir)
+        engine (sut/new-search-engine lmdb)]
+    (sut/open-dbi lmdb "raw")
+    (sut/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
+    (doseq [i [1 2 3]]
+      (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+    (is (= (sut/search engine "lazy") [1]))
+    (is (= (sut/search engine "red" ) [1 2]))
+    (is (= (sut/search engine "red" {:display :offsets})
+           [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
+    (sut/close-kv lmdb)
     (s/stop server)))
 
 (deftest instant-update-test

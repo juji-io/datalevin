@@ -4,6 +4,7 @@
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.util :as u]
    [datalevin.remote :as r]
+   [datalevin.search :as sc]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
@@ -19,7 +20,7 @@
    [datalevin.storage Store]
    [datalevin.db DB]
    [datalevin.datom Datom]
-   [datalevin.remote DatalogStore]
+   [datalevin.remote DatalogStore KVStore]
    [java.util UUID]))
 
 (if (u/graal?)
@@ -1176,14 +1177,15 @@ Only usable for debug output.
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type])
-       :doc      "Return the number of kv pairs in the specified key range in the key-value store, for only those
-     return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IKV`, with both key and value fields being a `ByteBuffer`.
-     Does not process the kv pairs.
+       :doc      "Return the number of kv pairs in the specified key range in the
+key-value store, for only those return true value for `(pred x)`, where `pred` is a
+function, and `x`is an `IKV`, with both key and value fields being a `ByteBuffer`.
+Does not process the kv pairs.
 
      `pred` can use [[read-buffer]] to read the buffer content.
 
-      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+      To access store on a server, [[interpret.inter-fn]] should be used to define
+the `pred`.
 
     `k-type` indicates data type of `k` and the allowed data types are described
     in [[read-buffer]].
@@ -1215,6 +1217,68 @@ Only usable for debug output.
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
 
+;; -------------------------------------
+;; Search API
+
+(defn new-search-engine
+  "Create a search engine. The search index is stored in the passed-in
+  key-value database opened by [[open-kv]]."
+  [lmdb]
+  (if (instance? datalevin.remote.KVStore lmdb)
+    (r/new-search-engine lmdb)
+    (sc/new-search-engine lmdb)))
+
+(def ^{:arglists '([engine doc-ref doc-text])
+       :doc      "Add a document to the search engine, `doc-ref` can be
+     arbitrary Clojure data that uniquely refers to the document in the system.
+     `doc-text` is the content of the document as a string. The search engine
+     does not store the original text, and assumes that caller can retrieve them
+     by `doc-ref`. This function is for online update of search engine index,
+     for index creation of bulk data, use `search-index-writer`."}
+  add-doc sc/add-doc)
+
+(def ^{:arglists '([engine doc-ref])
+       :doc      "Remove a document referred to by `doc-ref` from the search
+engine index. A slow operation."}
+  remove-doc sc/remove-doc)
+
+(def ^{:arglists '([engine query] [engine query opts])
+       :doc      "Issue a `query` to the search engine. `query` is a string of
+words.
+
+     `opts` map may have these keys:
+
+      * `:display` can be one of `:refs` (default), `:offsets`.
+        - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
+        - `:offsets` return a lazy sequence of
+          `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
+          ordered by relevance. `term` and `offset` can be used to
+          highlight the matched terms and their locations in the documents.
+      * `:top` is an integer (default 10), the number of results desired.
+      * `:doc-filter` is a boolean function that takes a `doc-ref` and
+         determines whether or not to include the corresponding document in the
+         results (default is `(constantly true)`)"}
+  search sc/search)
+
+(defn search-index-writer
+  "Create a writer for writing documents to the search index in bulk.
+  The search index is stored in the passed-in key value database opened
+  by [[open-kv]]. See also [[write]] and [[commit]]"
+  [lmdb]
+  (if (instance? datalevin.remote.KVStore lmdb)
+    (r/search-index-writer lmdb)
+    (sc/search-index-writer lmdb)))
+
+(def ^{:arglists '([writer doc-ref doc-text])
+       :doc      "Write a document to search index."}
+  write sc/write)
+
+(def ^{:arglists '([writer])
+       :doc      "Commit writes to search index, must be called after writing
+all documents."}
+  commit sc/commit)
+
+;; -------------------------------------
 ;; byte buffer
 
 (def ^{:arglists '([bf x] [bf x x-type])
