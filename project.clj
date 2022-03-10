@@ -32,7 +32,7 @@
                           ;;  org.ow2.asm/asm-commons
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
-                          ]
+                          ;; ]
                          [org.roaringbitmap/RoaringBitmap "0.9.25"]
                          [persistent-sorted-set "0.1.4"]
                          ]
@@ -65,6 +65,7 @@
                               ;; uncomment on java 11 and above
                               ;; :jvm-opts
                               ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
                               ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
                               ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
                               ;;  "-Djdk.attach.allowAttachSelf"]
@@ -75,7 +76,6 @@
                                [com.taoensso/timbre]
                                [nrepl/bencode]
                                [babashka/babashka.pods]
-                               ;; [com.clojure-goes-fast/clj-memory-meter]
                                [org.graalvm.nativeimage/svm]]
                               :global-vars
                               {*print-namespace-maps* false
