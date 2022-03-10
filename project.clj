@@ -7,7 +7,6 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies [
                          [babashka/babashka.pods "0.1.0"]
-                         ;; [com.clojure-goes-fast/clj-memory-meter "0.1.3"]
                          [com.cognitect/transit-clj "1.0.329"]
                          [com.fasterxml.jackson.core/jackson-core "2.13.2"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
@@ -23,7 +22,6 @@
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.4.2"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.4.2"]
-                         ;; [org.clojars.huahaiy/symspell-clj "0.3.1"]
                          [org.eclipse.collections/eclipse-collections "11.0.0"]
                          [org.graalvm.sdk/graal-sdk "21.3.0"]
                          [org.graalvm.nativeimage/svm "21.3.0"]
@@ -42,7 +40,6 @@
                  [org.lmdbjava/lmdbjava]
                  [com.taoensso/nippy]
                  [org.babashka/sci]
-                 ;; [org.clojars.huahaiy/symspell-clj]
                  [com.fasterxml.jackson.core/jackson-core]
                  [org.roaringbitmap/RoaringBitmap]
                  [org.eclipse.collections/eclipse-collections]
@@ -66,11 +63,11 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              :jvm-opts
-                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
-                               "-Djdk.attach.allowAttachSelf"]
+                              ;; :jvm-opts
+                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+                              ;;  "-Djdk.attach.allowAttachSelf"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]
