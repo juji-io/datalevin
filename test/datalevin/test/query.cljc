@@ -7,6 +7,17 @@
      (:import [clojure.lang ExceptionInfo]
               [java.util UUID])))
 
+;; #94
+(deftest test-instant
+  (let [db (-> (d/empty-db nil {:person/born {:db/valueType :db.type/instant}})
+               (d/db-with [{:person/born #inst "1969-01-01"}
+                           {:person/born #inst "1971-01-01"}]))]
+    (is (= 2 (count (d/datoms db :eav))))
+    (is (= 2 (count
+               (d/q '[:find [?born ...]
+                      :where [?e :person/born ?born]] db))))
+    (d/close-db db)))
+
 ;; #8
 (deftest test-many-joins
   (let [data (->> (range 1000)

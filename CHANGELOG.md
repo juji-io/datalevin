@@ -2,11 +2,18 @@
 
 ## WIP
 ### Added
-- Full-text search engine
-- LMDB `visit`  function to do arbitrary things upon seeing a value in a range
+- Built-in full-text search engine, #27
+- Key-value database `visit` function to do arbitrary things upon seeing a
+  value in a range
+
+### Fixed
+- [**breaking**]`:instant` handles dates before 1970 correctly, #94. The storage
+  format of `:instant` type has changed, requires dump and load for existing data
 
 ### Improved
-- Improve read performance by adding a cursor pool and switching to a more lightweight transaction pool
+- Improve read performance by adding a cursor pool and switch to a more
+  lightweight transaction pool
+- Dependency bump
 
 ## 0.5.31
 ### Fixed
@@ -145,7 +152,7 @@
   and #61
 - `dtlv exec` takes input from stdin when no argument is given.
 ### Improved
-- When open db, throw exception without proper file permission
+- When open db, throw exception when lacking proper file permission
 
 ## 0.4.40
 ### Added

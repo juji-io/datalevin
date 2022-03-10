@@ -48,6 +48,7 @@
                       [:put "b" 2 3 :long :long]
                       [:put "b" "ok" 42 :string :int]
                       [:put "d" 3.14 :pi :double :keyword]
+                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]
                       ]))
 
     (testing "entries"
@@ -78,6 +79,7 @@
       (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
       (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
       (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+      (is (= "nice year" (l/get-value lmdb "d" #inst "1969-01-01" :instant :string)))
       )
 
     (testing "delete"

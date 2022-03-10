@@ -750,6 +750,31 @@
     (sut/close-kv lmdb)
     (s/stop server)))
 
+(deftest remote-fulltext-fns-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-fulltext-fns-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
+        db     (-> (sut/empty-db dir {:text {:db/valueType :db.type/string
+                                             :db/fulltext  true}})
+                   (sut/db-with
+                     [{:db/id 1,
+                       :text  "The quick red fox jumped over the lazy red dogs."}
+                      {:db/id 2,
+                       :text  "Mary had a little lamb whose fleece was red as fire."}
+                      {:db/id 3,
+                       :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (is (= (sut/q '[:find ?e ?a ?v
+                    :in $ ?q
+                    :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                  db "red fox")
+           #{[1 :text "The quick red fox jumped over the lazy red dogs."]
+             [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
+    (sut/close-db db)
+    (s/stop server)))
+
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
         conn  (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity

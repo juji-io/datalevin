@@ -160,6 +160,17 @@
 
 (def ^:no-doc ^:const float-sign-idx 31)
 (def ^:no-doc ^:const double-sign-idx 63)
+(def ^:no-doc ^:const instant-sign-idx 63)
+
+(defn- code-instant [^long x] (bit-flip x instant-sign-idx))
+
+(defn- get-instant
+  [^ByteBuffer bf]
+  (Date. ^long (code-instant (.getLong bf))))
+
+(defn- put-instant
+  [^ByteBuffer bf ^Date x]
+  (.putLong bf (code-instant (.getTime ^Date x))))
 
 (defn- decode-float
   [x]
@@ -408,7 +419,9 @@
                                     Float/POSITIVE_INFINITY val))
     -10 (put-double bf (wrap-extrema val Double/NEGATIVE_INFINITY
                                      Double/POSITIVE_INFINITY val))
-    -9  (put-long bf (wrap-extrema val 0 Long/MAX_VALUE (.getTime ^Date val)))
+    -9  (put-long bf (code-instant
+                       (wrap-extrema val Long/MIN_VALUE Long/MAX_VALUE
+                                     (.getTime ^Date val))))
     -8  (put-long bf (wrap-extrema val c/e0 Long/MAX_VALUE val))
     -7  (put-uuid bf (wrap-extrema val c/min-uuid c/max-uuid val))
     -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
@@ -481,7 +494,7 @@
     -63 (get-long bf)
     -11 (get-float bf)
     -10 (get-double bf)
-    -9  (Date. ^long (get-long bf))
+    -9  (get-instant bf)
     -8  (get-long bf)
     -7  (get-uuid bf)
     -6  (get-string bf post-v)
@@ -605,7 +618,7 @@
      :boolean   (do (put-byte bf (raw-header x :boolean))
                     (put-byte bf (if x c/true-value c/false-value)))
      :instant   (do (put-byte bf (raw-header x :instant))
-                    (put-long bf (.getTime ^Date x)))
+                    (put-instant bf x))
      :uuid      (do (put-byte bf (raw-header x :uuid))
                     (put-uuid bf x))
      :attr      (put-attr bf x)
@@ -646,7 +659,7 @@
      :keyword   (do (get-byte bf) (get-keyword bf 0))
      :symbol    (do (get-byte bf) (get-symbol bf 0))
      :boolean   (do (get-byte bf) (get-boolean bf))
-     :instant   (do (get-byte bf) (Date. ^long (get-long bf)))
+     :instant   (do (get-byte bf) (get-instant bf))
      :uuid      (do (get-byte bf) (get-uuid bf))
      :attr      (get-attr bf)
      :eav       (get-eav bf)

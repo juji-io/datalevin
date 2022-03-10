@@ -164,7 +164,7 @@
 
 (test/defspec instant-generative-test
   100
-  (prop/for-all [k gen/pos-int]
+  (prop/for-all [k gen/int]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (let [d (Date. ^long k)]
                     (.clear bf)
