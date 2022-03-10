@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.0
 ### Added
 - Built-in full-text search engine, #27
 - Key-value database `visit` function to do arbitrary things upon seeing a
