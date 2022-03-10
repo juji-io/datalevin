@@ -292,7 +292,7 @@ incrementally and on demand.
 
 ## Benchmark
 
-The details of benchmark comparison with Lucene is [here](../search-bench/). The
+The details of benchmark comparison with Lucene is [here](https://github.com/juji-io/datalevin/tree/master/search-bench). The
 summary is that Datalevin search engine beats Lucene in search speed, but lags in write speed, as expected.
 
 ## References
