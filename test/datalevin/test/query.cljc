@@ -2,14 +2,17 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
       :clj  [clojure.test :as t :refer        [is deftest testing]])
-   [datalevin.core :as d])
+   [datalevin.core :as d]
+   [datalevin.util :as u]
+   )
   #?(:clj
      (:import [clojure.lang ExceptionInfo]
               [java.util UUID])))
 
 ;; #94
 (deftest test-instant
-  (let [db (-> (d/empty-db nil {:person/born {:db/valueType :db.type/instant}})
+  (let [db (-> (d/empty-db (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+                           {:person/born {:db/valueType :db.type/instant}})
                (d/db-with [{:person/born #inst "1969-01-01"}
                            {:person/born #inst "1971-01-01"}]))]
     (is (= 2 (count (d/datoms db :eav))))

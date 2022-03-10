@@ -106,8 +106,6 @@
 
 (def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
 
-(def ^:const +doc-id-block-size+ 128)
-
 ;; server / client
 
 (def ^:const default-port (int 8898))
@@ -129,10 +127,15 @@
 (def ^:const message-format-transit (unchecked-byte 0x01))
 (def ^:const message-format-nippy (unchecked-byte 0x02))
 
+;;-------------------------------------------------------------
+
+;; dynamic
+
 
 ;;-------------------------------------------------------------
 
 ;; user configurable TODO: make it so
+
 
 ;; general
 

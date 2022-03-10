@@ -13,6 +13,7 @@
             [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
             [datalevin.lmdb :as l]
+            [datalevin.bits :as b]
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
             [datalevin.constants :as c])
@@ -31,6 +32,14 @@
   (str
     "
   Datalevin (version: " version ")"))
+
+(defn- parse-version
+  "return [major minor non-breaking] version numbers"
+  [s]
+  (let [[major minor non-breaking] (s/split s #"\.")]
+    [(Integer/parseInt major)
+     (Integer/parseInt minor)
+     (Integer/parseInt non-breaking)]))
 
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
@@ -337,14 +346,12 @@
   (exit 0))
 
 (defn- dump-dbi [lmdb dbi]
-  (let [n (l/entries lmdb dbi)]
-    (p/pprint {:dbi dbi :entries n})
-    (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
-      (p/pprint [(u/encode-base64 k) (u/encode-base64 v)]))))
+  (p/pprint {:dbi dbi :entries (l/entries lmdb dbi) :ver version})
+  (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
+    (p/pprint [(u/encode-base64 k) (u/encode-base64 v)])))
 
 (defn- dump-all [lmdb]
-  (let [dbis (set (l/list-dbis lmdb))]
-    (doseq [dbi dbis] (dump-dbi lmdb dbi))))
+  (doseq [dbi (set (l/list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
 
 (defn- dump-datalog [dir]
   (let [conn (d/create-conn dir)]
