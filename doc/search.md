@@ -56,11 +56,10 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ```Clojure
 (require '[datalevin.core :as d])
-(require '[datalevin.search :as s])
 
 ;; A search engine depends on a key-value store to store the indices.
 (def lmdb (d/open-kv "/tmp/search-db"))
-(def engine (s/new-search-engine lmdb))
+(def engine (d/new-search-engine lmdb))
 
 ;; Here are the documents to be indxed, keyed by doc-id
 (def docs
@@ -70,9 +69,9 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ;; Add the documents into the search index. `add-doc` takes a `doc-ref`, which
 ;; can be anything that uniquely identify a document, in this case, a doc-id
-(s/add-doc engine 1 (docs 1))
-(s/add-doc engine 2 (docs 2))
-(s/add-doc engine 3 (docs 3))
+(d/add-doc engine 1 (docs 1))
+(d/add-doc engine 2 (docs 2))
+(d/add-doc engine 3 (docs 3))
 
 ;; Search engine does not store the raw documents themselves.
 ;; If we want to retrieve the found documents, we can optionally store them in
@@ -84,12 +83,12 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
        [:put "raw" 3 (docs 3)]])
 
 ;; search by default return a list of `doc-ref` ordered by relevance to query
-(s/search engine "red")
+(d/search engine "red")
 ;=> (1 2)
 
 ;; we can alter the display to show offets of term occurrences as well, useful
 ;; e.g. to highlight matched terms in documents
-(s/search engine "red" {:display :offsets})
+(d/search engine "red" {:display :offsets})
 ;=> ([1 (["red" [10 39]])] [2 (["red" [40]])])
 
 ```
@@ -98,11 +97,12 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 Searchable values of the Datalog attributes need to be declared in the
 schema, with the `:db/fulltext true` property. The value does not have to be of
- string type, as the indexer will call `str` function on it to convert it to string.
+ string type, as the indexer will call `str` function on it to convert it to
+ string.
 
 A query function `fulltext` is provided to allow full-text search in Datalog
-queries. This function takes the db, the query and an optional options (same as
-`search`), and returns a sequence of matching datoms, ordered by relevance to
+queries. This function takes the db, the query and an optional option map (same
+as `search`), and returns a sequence of matching datoms, ordered by relevance to
 the query.
 
 ```Clojure
@@ -147,8 +147,8 @@ and reduces the complexity of managing data.
 
 The search engine indices are stored in one inverted list and two key-value maps.
 In addition to information about each term and each document, the positions of term
-occurrences in the documents are also stored to support proximity query, phrase
-query and match highlighting.
+occurrences in the documents are also stored to support match highlighting,
+proximity query (planned), and phrase query (planned).
 
 Specifically, the following LMDB sub-databases are created for search supposes:
 
@@ -238,8 +238,8 @@ This property allows us to develop search algorithms that use the inverted lists
 We loop over this list of candidate documents, for each document, check if it
 appears in the inverted lists of subsequent query terms.
 
-Critically, during this process, we remove a candidate as soon as the following
-two conditions is met:
+Critically, during this process, we remove a candidate as soon as one of the
+following two conditions is met:
 
 * this document is not going to appear in the required number of inverted lists,
   based on the aforementioned mathematical property;

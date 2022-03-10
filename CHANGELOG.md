@@ -11,7 +11,7 @@
   format of `:instant` type has been changed. For existing Datalog DB containing
   `:db.type/instant`, dumping as a Datalog DB using the old version of dtlv, then
   loading the data is required; For existing key-value DB containing `:instant`
-  type, specify `:instant-pre-6` instead to read the data back in, then write
+  type, specify `:instant-pre-06` instead to read the data back in, then write
   them out as `:instant` to upgrade to the current format.
 
 ### Improved

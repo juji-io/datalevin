@@ -357,7 +357,8 @@
   (let [conn (d/create-conn dir)]
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))
+    ))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
