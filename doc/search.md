@@ -106,8 +106,9 @@ as `search`), and returns a sequence of matching datoms, ordered by relevance to
 the query.
 
 ```Clojure
-(let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
-                                     :db/fulltext  true}})
+(let [db (-> (d/empty-db "/tmp/mydb" 
+               {:text {:db/valueType :db.type/string
+                       :db/fulltext  true}})
              (d/db-with
                  [{:db/id 1,
                    :text  "The quick red fox jumped over the lazy red dogs."}
