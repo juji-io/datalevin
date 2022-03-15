@@ -570,8 +570,8 @@ adjust the priorities based on feedback.
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
-* 0.7.0 Persisted transaction functions.
-* 0.8.0 A new Datalog query engine with improved performance.
+* 0.7.0 A new Datalog query engine with improved performance.
+* 0.8.0 Persisted transaction functions.
 * 1.0.0 First major release.
 * 1.1.0 Read-only replicas.
 * 1.2.0 Option to store data in compressed form.
