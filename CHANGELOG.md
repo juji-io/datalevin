@@ -5,7 +5,7 @@
 - `doc-indexed?` function
 ### Improved
 - `add-doc` can update existing doc
-- Allow LMDB flags for `open-kv` function, #100
+- `open-kv` function allows LMDB flags, #100
 
 ## 0.6.0
 ### Added
