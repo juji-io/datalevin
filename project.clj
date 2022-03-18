@@ -32,7 +32,7 @@
                           ;;  org.ow2.asm/asm-commons
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
-                          ;; ]
+                          ]
                          [org.roaringbitmap/RoaringBitmap "0.9.25"]
                          [persistent-sorted-set "0.1.4"]
                          ]
