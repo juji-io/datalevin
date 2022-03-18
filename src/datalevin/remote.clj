@@ -159,7 +159,7 @@
      (if-let [db-name (cl/parse-db uri)]
        (let [store (or (get (cl/parse-query uri) "store")
                        c/db-store-datalog)]
-         (cl/open-database client db-name store schema)
+         (cl/open-database client db-name store schema nil)
          (->DatalogStore uri-str db-name client))
        (u/raise "URI should contain a database name" {})))))
 
@@ -307,14 +307,16 @@
 (defn open-kv
   "Open a remote kv store."
   ([uri-str]
-   (open-kv (cl/new-client uri-str) uri-str))
-  ([client uri-str]
+   (open-kv uri-str nil))
+  ([uri-str opts]
+   (open-kv (cl/new-client uri-str) uri-str opts))
+  ([client uri-str opts]
    (let [uri     (URI. uri-str)
          uri-str (str uri-str
                       (if (cl/parse-query uri) "&" "?")
                       "store=" c/db-store-kv)]
      (if-let [db-name (cl/parse-db uri)]
-       (do (cl/open-database client db-name c/db-store-kv)
+       (do (cl/open-database client db-name c/db-store-kv opts)
            (->KVStore uri-str db-name client))
        (u/raise "URI should contain a database name" {})))))
 
@@ -328,6 +330,10 @@
 
   (remove-doc [this doc-ref]
     (cl/normal-request (.-client store) :remove-doc
+                       [(.-db-name store) doc-ref]))
+
+  (doc-indexed? [this doc-ref]
+    (cl/normal-request (.-client store) :doc-indexed?
                        [(.-db-name store) doc-ref]))
 
   (search [this query]

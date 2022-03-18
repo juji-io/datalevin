@@ -394,7 +394,25 @@
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text])
   (remove-doc [this doc-ref])
+  (doc-indexed? [this doc-ref])
   (search [this query] [this query opts]))
+
+(defn- remove-doc*
+  [lmdb ^IntShortHashMap norms doc-id]
+  (let [txs  (FastList.)
+        norm (.get norms doc-id)]
+    (.remove norms doc-id)
+    (.add txs [:del c/docs doc-id :int])
+    (doseq [term-id (doc-id->term-ids lmdb doc-id)]
+      (let [[term [_ mw sl]] (term-id->info lmdb term-id)
+            tf               (sl/get sl doc-id)]
+        (.add txs [:put c/terms term
+                   [term-id
+                    (del-max-weight sl doc-id mw tf norm)
+                    (sl/remove sl doc-id)]
+                   :string :term-info]))
+      (.add txs [:del c/positions [term-id doc-id] :int-int]))
+    (l/transact-kv lmdb txs)))
 
 (deftype ^:no-doc SearchEngine [lmdb
                                 ^IntShortHashMap norms ; doc-id -> norm
@@ -402,6 +420,8 @@
                                 ^AtomicInteger max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
+    (when-let [doc-id (doc-ref->id lmdb doc-ref)]
+      (remove-doc* lmdb norms doc-id))
     (let [txs       (FastList.)
           hit-terms (UnifiedMap.)]
       (add-doc-txs lmdb doc-text max-doc txs doc-ref norms max-term
@@ -414,21 +434,11 @@
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (doc-ref->id lmdb doc-ref)]
-      (let [txs  (FastList.)
-            norm (.get norms doc-id)]
-        (.remove norms doc-id)
-        (.add txs [:del c/docs doc-id :int])
-        (doseq [term-id (doc-id->term-ids lmdb doc-id)]
-          (let [[term [_ mw sl]] (term-id->info lmdb term-id)
-                tf               (sl/get sl doc-id)]
-            (.add txs [:put c/terms term
-                       [term-id
-                        (del-max-weight sl doc-id mw tf norm)
-                        (sl/remove sl doc-id)]
-                       :string :term-info]))
-          (.add txs [:del c/positions [term-id doc-id] :int-int]))
-        (l/transact-kv lmdb txs))
+      (remove-doc* lmdb norms doc-id)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
+
+  (doc-indexed? [this doc-ref]
+    (doc-ref->id lmdb doc-ref))
 
   (search [this query]
     (.search this query {}))

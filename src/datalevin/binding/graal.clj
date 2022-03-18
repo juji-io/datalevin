@@ -866,9 +866,10 @@
 
 (defmethod open-kv :graal
   ([dir]
-   (open-kv dir {:mapsize c/+init-db-size+}))
-  ([dir {:keys [mapsize]
-         :or   {mapsize c/+init-db-size+}}]
+   (open-kv dir {}))
+  ([dir {:keys [mapsize flags]
+         :or   {mapsize c/+init-db-size+
+                flags   c/default-env-flags}}]
    (try
      (u/file dir)
      (let [^Env env (Env/create
@@ -876,7 +877,7 @@
                       (* ^long mapsize 1024 1024)
                       c/+max-readers+
                       c/+max-dbs+
-                      (kv-flags c/default-env-flags))]
+                      (kv-flags flags))]
        (->LMDB env
                dir
                (ConcurrentLinkedQueue.)

@@ -874,7 +874,7 @@
 
 (defn- open-server-store
   "Open a store. NB. stores are left open"
-  [^Server server ^SelectionKey skey {:keys [db-name schema]} db-type]
+  [^Server server ^SelectionKey skey {:keys [db-name schema opts]} db-type]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
           {:keys [username]}  (get-client server client-id)
@@ -893,7 +893,7 @@
                           ds)
                         (case db-type
                           :datalog   (st/open dir schema db-name)
-                          :key-value (l/open-kv dir)))]
+                          :key-value (l/open-kv dir opts)))]
           (add-store server dir store)
           (update-client server client-id #(update % :dbs assoc db-name store))
           (when-not existing-db?
@@ -1603,6 +1603,10 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler remove-doc)))
 
+(defn- doc-indexed?
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler doc-indexed?)))
+
 (defn- search
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler search)))
@@ -1692,6 +1696,7 @@
    'new-search-engine
    'add-doc
    'remove-doc
+   'doc-indexed?
    'search
    'search-index-writer
    'write

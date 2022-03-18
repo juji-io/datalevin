@@ -287,11 +287,13 @@
 (defn open-database
   "Open a database on server. `db-type` can be \"datalog\" or \"kv\""
   ([client db-name db-type]
-   (open-database client db-name db-type nil))
-  ([client db-name db-type schema]
+   (open-database client db-name db-type nil nil))
+  ([client db-name db-type opts]
+   (open-database client db-name db-type nil opts))
+  ([client db-name db-type schema opts]
    (let [{:keys [type message]}
          (request client (if (= db-type c/db-store-kv)
-                           {:type :open-kv :db-name db-name}
+                           {:type :open-kv :db-name db-name :opts opts}
                            (cond-> {:type :open :db-name db-name}
                              schema (assoc :schema schema))))]
      (when (= type :error-response)

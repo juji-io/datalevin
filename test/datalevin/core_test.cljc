@@ -5,7 +5,7 @@
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [clojure.test :refer [is deftest]])
+            [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]))
@@ -743,10 +743,15 @@
        [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
     (doseq [i [1 2 3]]
       (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+    (is (not (sut/doc-indexed? engine 0)))
+    (is (sut/doc-indexed? engine 1))
     (is (= (sut/search engine "lazy") [1]))
     (is (= (sut/search engine "red" ) [1 2]))
     (is (= (sut/search engine "red" {:display :offsets})
            [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
+    (testing "update"
+      (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
+      (is (= (sut/search engine "red" ) [2])))
     (sut/close-kv lmdb)
     (s/stop server)))
 

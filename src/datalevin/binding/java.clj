@@ -588,16 +588,17 @@
 
 (defmethod open-kv :java
   ([dir]
-   (open-kv dir {:mapsize c/+init-db-size+}))
-  ([dir {:keys [mapsize]
-         :or   {mapsize c/+init-db-size+}}]
+   (open-kv dir {}))
+  ([dir {:keys [mapsize flags]
+         :or   {mapsize c/+init-db-size+
+                flags   c/default-env-flags}}]
    (try
      (let [file     (u/file dir)
            builder  (doto (Env/create)
                       (.setMapSize (* ^long mapsize 1024 1024))
                       (.setMaxReaders c/+max-readers+)
                       (.setMaxDbs c/+max-dbs+))
-           ^Env env (.open builder file (kv-flags :env c/default-env-flags))
+           ^Env env (.open builder file (kv-flags :env flags))
            lmdb     (->LMDB env
                             dir
                             (ConcurrentLinkedQueue.)

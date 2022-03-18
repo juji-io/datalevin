@@ -859,6 +859,10 @@ Only usable for debug output.
   "Open a LMDB key-value database, return the connection.
 
   `dir` is a directory path or a dtlv connection URI string.
+  `opts` is an option map that may have the following keys:
+  * `:mapsize` is the initial size of the database. This will be expanded as needed
+  * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
+     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB)_NOSUBDIR, and so on.
 
   Please note:
 
@@ -877,10 +881,12 @@ Only usable for debug output.
   [mount](https://github.com/tolitius/mount),
   [integrant](https://github.com/weavejester/integrant), or something similar
   to hold on to and manage the connection. "
-  [dir]
-  (if (r/dtlv-uri? dir)
-    (r/open-kv dir)
-    (l/open-kv dir)))
+  ([dir]
+   (open-kv dir nil))
+  ([dir opts]
+   (if (r/dtlv-uri? dir)
+     (r/open-kv dir opts)
+     (l/open-kv dir opts))))
 
 (def ^{:arglists '([db])
        :doc      "Close this key-value store"}
@@ -1231,16 +1237,21 @@ the `pred`.
 (def ^{:arglists '([engine doc-ref doc-text])
        :doc      "Add a document to the search engine, `doc-ref` can be
      arbitrary Clojure data that uniquely refers to the document in the system.
-     `doc-text` is the content of the document as a string. The search engine
+     `doc-text` is the content of the document as a string.  The search engine
      does not store the original text, and assumes that caller can retrieve them
-     by `doc-ref`. This function is for online update of search engine index,
-     for index creation of bulk data, use `search-index-writer`."}
+     by `doc-ref`. This function is for online update of search engine index.
+     Search index is updated with the new text if the `doc-ref` already exists.
+     For index creation of bulk data, use `search-index-writer`."}
   add-doc sc/add-doc)
 
 (def ^{:arglists '([engine doc-ref])
        :doc      "Remove a document referred to by `doc-ref` from the search
 engine index. A slow operation."}
   remove-doc sc/remove-doc)
+
+(def ^{:arglists '([engine doc-ref])
+       :doc      "Test if a `doc-ref` is already in the search index"}
+  doc-indexed? sc/doc-indexed?)
 
 (def ^{:arglists '([engine query] [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` is a string of

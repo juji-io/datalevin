@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Added
+- `doc-indexed?` function
+### Improved
+- `add-doc` can update existing doc
+- Allow LMDB flags for `open-kv` function, #100
+
 ## 0.6.0
 ### Added
 - Built-in full-text search engine, #27
