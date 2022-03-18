@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.1
 ### Added
 - `doc-indexed?` function
 ### Improved
