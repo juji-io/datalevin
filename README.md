@@ -242,23 +242,25 @@ In addition to some Clojure core functions, the following functions are availabl
 
 In namespace datalevin.core
 
-add                   clear                 clear-dbi             close
-close-db              close-kv              closed-kv?            closed?
-conn-from-datoms      conn-from-db          conn?                 copy
-create-conn           datom                 datom-a               datom-e
-datom-v               datom?                datoms                db
-db?                   dir                   drop-dbi              empty-db
-entid                 entity                entity-db             entries
-get-conn              get-first             get-range             get-some
-get-value             index-range           init-db               k
-list-dbis             listen!               open-dbi              open-kv
-pull                  pull-many             put-buffer            q
-range-count           range-filter          range-filter-count    read-buffer
-reset-conn!           resolve-tempid        retract               rseek-datoms
-schema                seek-datoms           stat                  tempid
+add                   add-doc               clear                 clear-dbi
+close                 close-db              close-kv              closed-kv?
+closed?               commit                conn-from-datoms      conn-from-db
+conn?                 copy                  create-conn           datom
+datom-a               datom-e               datom-v               datom?
+datoms                db                    db?                   dir
+doc-indexed?          drop-dbi              empty-db              entid
+entity                entity-db             entries               get-conn
+get-first             get-range             get-some              get-value
+hexify-string         index-range           init-db               k
+list-dbis             listen!               new-search-engine     open-dbi
+open-kv               pull                  pull-many             put-buffer
+q                     range-count           range-filter          range-filter-count
+read-buffer           remove-doc            reset-conn!           resolve-tempid
+retract               rseek-datoms          schema                search
+search-index-writer   seek-datoms           stat                  tempid
 touch                 transact              transact!             transact-async
-transact-kv           unlisten!             update-schema         v
-with-conn
+transact-kv           unhexify-string       unlisten!             update-schema
+v                     with-conn             write
 
 In namespace datalevin.interpret
 
@@ -271,12 +273,13 @@ assign-role           close-database        create-database       create-role
 create-user           disconnect-client     drop-database         drop-role
 drop-user             grant-permission      list-databases        list-databases-in-use
 list-role-permissions list-roles            list-user-permissions list-user-roles
-list-users            new-client            query-system          reset-password
-revoke-permission     show-clients          withdraw-role
+list-users            new-client            open-database         query-system
+reset-password        revoke-permission     show-clients          withdraw-role
 
 Can call function without namespace: (<function name> <arguments>)
 
 Type (doc <function name>) to read documentation of the function
+
 user>
 
 ```
