@@ -16,7 +16,8 @@ the steps to build native Datalevin binary on your platform.
 
 If the compilation is successful, two binaries will appear in this directory:
 `dtlv ` and `dtlv-test`. The former is the Datalevin command line shell, and the
-latter runs all the Datalevin tests in native mode.
+latter runs all the Datalevin tests in native mode. These are standalone
+executable that you can immediately run.
 
 ### Windows
 
@@ -46,9 +47,11 @@ If you are uncomfortable with writing the default location or lack the write
 permission for that directory, you can set an environment variable
 `DTLV_LIB_EXTRACT_DIR` in the shell doing the native image build, and the native
 libraries will then be put there instead. If so, you must also add
-`-H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR}` option in your native image command
+`-H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR}` option in your native image build command
 line. The directory referred to by the environment variable must exist and is
 writable.
+
+Once built, Datalevin's native dependencies are linked into your image statically.
 
 For CI/CD, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)

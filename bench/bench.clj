@@ -1,4 +1,4 @@
-#!/usr/bin/env clojure
+#!/usr/bin/env clojure 
 
 "USAGE: ./bench [rebuild]? [<version>|<version-vm> ...]? [<bench-name> ...]?"
 
@@ -72,21 +72,19 @@
 (defn run-benchmarks [version vm benchmarks]
   (case vm
     "datalevin"
-    (apply run "clojure"
+    (apply run "clojure" 
            "-J--add-opens=java.base/java.nio=ALL-UNNAMED"
            "-J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-           "-J--illegal-access=permit"
            "-Sdeps"
            (cond
              (= "latest" version)
              (str "{:paths [\"src\" \"../src\" \"../target/classes\" \"../native/target/classes\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.10.3\"}
-                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.1\"}
+                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}
                   com.taoensso/nippy    {:mvn/version \"3.1.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.324\"}
-                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.2\"}
-                  org.graalvm.nativeimage/svm {:mvn/version \"21.0.0.2\"}
+                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.4\"}
                   }}"
                   )
 
@@ -97,7 +95,7 @@
              (re-matches #"[0-9a-fA-F]{40}" version)
              (str "{:paths [\"src\"]"
                   "    :deps {datalevin/datalevin {:git/url \"https://github.com/juji-io\" :sha \"" version "\"}}}"))
-           "-m" "datalevin-bench.datalevin"
+           "-M" "-m" "datalevin-bench.datalevin"
            benchmarks)
 
     "datascript"
@@ -106,7 +104,7 @@
                 " :paths [\"src-datascript\"]"
                 " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.0.0" version) "\"}}"
                 "}")
-           "-m" "datascript-bench.datascript"
+           "-M" "-m" "datascript-bench.datascript"
            benchmarks)
 
     "datomic"
@@ -115,7 +113,7 @@
                 " :paths [\"src\" \"src-datomic\"]"
                 " :deps {com.datomic/datomic-free {:mvn/version \"" (if (= "latest" version) "0.9.5697" version) "\"}}"
                 "}")
-           "-m" "datalevin-bench.datomic"
+           "-M" "-m" "datalevin-bench.datomic"
            benchmarks)
     ))
 

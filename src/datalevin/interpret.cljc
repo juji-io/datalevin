@@ -1,7 +1,8 @@
 (ns datalevin.interpret
-  "Code interpreter."
+  "Code interpreter, including functions and macros useful for dtlv command line."
   (:require [clojure.walk :as w]
             [clojure.set :as set]
+            [clojure.java.io :as io]
             [sci.core :as sci]
             [sci.impl.vars :as vars]
             [taoensso.nippy :as nippy]
@@ -64,20 +65,26 @@
         x))
     x))
 
+(declare ctx)
+
 (defn ^:no-doc eval-fn [ctx form]
   (sci/eval-form ctx (if (coll? form)
                        (w/postwalk qualify-fn form)
                        form)))
 
-(def ^:no-doc sci-opts
-  {:namespaces (user-facing-vars)
-   :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
-
-(def ^:no-doc ctx (sci/init sci-opts))
+(defn load-edn
+  "Same as [`clojure.core/load-file`](https://clojuredocs.org/clojure.core/load-file),
+   useful for e.g. loading schema from a file"
+  [f]
+  (let [f (io/file f)
+        s (slurp f)]
+    (sci/with-bindings {sci/ns   @sci/ns
+                        sci/file (.getAbsolutePath f)}
+      (sci/eval-string* ctx s))))
 
 (defn exec-code
   "Execute code and print results. `code` is a string. Acceptable code includes
-  Datalevin functions and Clojure core functions."
+  Datalevin functions and some Clojure core functions."
   [code]
   (let [reader (sci/reader code)]
     (sci/with-bindings {sci/ns @sci/ns}
@@ -131,6 +138,11 @@
   (and ;(instance? clojure.lang.AFn x)
     (= (:type (meta x)) :datalevin/inter-fn)))
 
+(defmacro definterfn
+  "Create a named `inter-fn`"
+  [fn-name args & body]
+  `(def ~fn-name (inter-fn ~args ~@body)))
+
 (defn- source->inter-fn
   "Convert a source form to get an inter-fn"
   [src]
@@ -149,3 +161,9 @@
                    [^DataInput in]
                    (let [src (nippy/thaw-from-in! in)]
                      (source->inter-fn src)))
+
+(def ^:no-doc sci-opts
+  {:namespaces (user-facing-vars)
+   :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
+
+(def ^:no-doc ctx (sci/init sci-opts))

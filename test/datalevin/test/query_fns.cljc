@@ -6,6 +6,23 @@
   #?(:clj
      (:import [clojure.lang ExceptionInfo])))
 
+(deftest test-fulltext-fns
+  (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
+                                       :db/fulltext  true}})
+               (d/db-with
+                 [{:db/id 1,
+                   :text  "The quick red fox jumped over the lazy red dogs."}
+                  {:db/id 2,
+                   :text  "Mary had a little lamb whose fleece was red as fire."}
+                  {:db/id 3,
+                   :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (is (= (d/q '[:find ?e ?a ?v
+                  :in $ ?q
+                  :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                db "red fox")
+           #{[1 :text "The quick red fox jumped over the lazy red dogs."]
+             [2 :text "Mary had a little lamb whose fleece was red as fire."]}))))
+
 (deftest test-query-fns
   (testing "predicate without free variables"
     (is (= (d/q '[:find ?x
@@ -17,7 +34,6 @@
                (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
                            { :db/id 2, :name "Petr", :age 22, :height 240, :parent 1}
                            { :db/id 3, :name "Slava", :age 37, :parent 2}]))]
-
     (testing "ground"
       (is (= (d/q '[:find ?vowel
                     :where [(ground [:a :e :i :o :u]) [?vowel ...]]])
@@ -87,7 +103,7 @@
                     :where [?e :age ?a]
                     [(?adult ?a)]]
                   db
-                  #(> % 18))
+                  #(> ^long % 18))
              #{[2] [3]})))
 
     (testing "Calling a function"
@@ -267,22 +283,23 @@
                                :where [(fun ?e) ?x]]
                              [1])))
 
-  (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(zero? ?x)]"
-                   (d/q '[:find ?x
-                          :where [(zero? ?x)]])))
+  ;; (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(zero? ?x)]"
+  ;;                  (d/q '[:find ?x
+  ;;                         :where [(zero? ?x)]])))
 
-  (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(inc ?x) ?y]"
-                   (d/q '[:find ?x
-                          :where [(inc ?x) ?y]])))
+  ;; (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(inc ?x) ?y]"
+  ;;                  (d/q '[:find ?x
+  ;;                         :where [(inc ?x) ?y]])))
 
-  (is (thrown-msg? "Where uses unknown source vars: [$2]"
-                   (d/q '[:find ?x
-                          :where [?x] [(zero? $2 ?x)]])))
+  ;; (is (thrown-msg? "Where uses unknown source vars: [$2]"
+  ;;                  (d/q '[:find ?x
+  ;;                         :where [?x] [(zero? $2 ?x)]])))
 
-  (is (thrown-msg? "Where uses unknown source vars: [$]"
-                   (d/q '[:find  ?x
-                          :in    $2
-                          :where [$2 ?x] [(zero? $ ?x)]]))))
+  ;; (is (thrown-msg? "Where uses unknown source vars: [$]"
+  ;;                  (d/q '[:find  ?x
+  ;;                         :in    $2
+  ;;                         :where [$2 ?x] [(zero? $ ?x)]])))
+  )
 
 (deftest test-issue-180
   (is (= #{}

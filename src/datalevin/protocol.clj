@@ -3,9 +3,10 @@
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
+            [datalevin.util :as u]
             [cognitect.transit :as transit]
             [taoensso.nippy :as nippy]
-            [datalevin.util :as u])
+            [clojure.stacktrace :as st])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]
            [java.nio ByteBuffer]
            [java.nio.channels SocketChannel]
@@ -97,12 +98,25 @@
     2 (nippy/fast-thaw bs)))
 
 (defn send-ch
-  "Send all data in buffer to channel, will block if channel is busy"
+  "Send to socket channel, return the number of bytes sent. return -1 if
+  something is wrong"
+  [^SocketChannel ch ^ByteBuffer bf]
+  (try
+    (.write ch bf)
+    (catch Exception e
+      ;; (st/print-stack-trace e)
+      -1)))
+
+(defn send-all
+  "Send all data in buffer to channel, will block if channel is busy.
+  Close the channel and raise exception if something is wrong"
   [^SocketChannel ch ^ByteBuffer bf ]
   (loop []
     (when (.hasRemaining bf)
-      (.write ch bf)
-      (recur))))
+      (if (= (send-ch ch bf) -1)
+        (do (.close ch)
+            (u/raise "Socket channel is closed." {}))
+        (recur)))))
 
 (defn write-message-blocking
   "Write a message in blocking mode"
@@ -111,7 +125,7 @@
     (.clear bf)
     (write-message-bf bf msg)
     (.flip bf)
-    (send-ch ch bf)))
+    (send-all ch bf)))
 
 (defn receive-one-message
   "Consume one message from the read-bf and return it.
@@ -128,7 +142,7 @@
                 read-bf   (if (< (.capacity read-bf) length)
                             (let [^ByteBuffer bf
                                   (ByteBuffer/allocateDirect
-                                    (* c/+buffer-grow-factor+ length))]
+                                    (* ^long c/+buffer-grow-factor+ length))]
                               (.rewind read-bf)
                               (b/buffer-transfer read-bf bf)
                               bf)
@@ -149,6 +163,16 @@
                 [msg read-bf]))))
       [nil read-bf])))
 
+(defn read-ch
+  "Read from the socket channel, return the number of bytes read. Return -1
+  if something is wrong"
+  [^SocketChannel ch ^ByteBuffer bf]
+  (try
+    (.read ch bf)
+    (catch Exception e
+      ;; (st/print-stack-trace e)
+      -1)))
+
 (defn receive-ch
   "Receive one message from channel and put it in buffer, will block
   until one full message is received. When buffer is too small for a
@@ -159,14 +183,14 @@
       (let [[msg ^ByteBuffer bf] (receive-one-message bf)]
         (if msg
           [msg bf]
-          (let [readn (.read ch bf)]
+          (let [^int readn (read-ch ch bf)]
             (cond
               (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                              (if msg [msg bf] (recur bf)))
               (= readn 0)  (recur bf)
               (= readn -1) (do (.close ch)
                                (u/raise "Socket channel is closed." {}))))))
-      (let [readn (.read ch bf)]
+      (let [^int readn (read-ch ch bf)]
         (cond
           (> readn 0)  (let [[msg bf] (receive-one-message bf)]
                          (if msg [msg bf] (recur bf)))

@@ -1,4 +1,4 @@
-(def version "0.5.21")
+(def version "0.6.1")
 
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
@@ -8,13 +8,17 @@
                              :uberjar-exclusions]}
   :dependencies [[org.clojure/clojure]
                  [org.clojure/tools.cli]
-                 [borkdude/sci]
+                 [org.babashka/sci]
                  [com.cognitect/transit-clj]
                  [org.clojars.huahaiy/dtlvnative-macos-amd64]
                  [org.clojars.huahaiy/dtlvnative-windows-amd64]
                  [org.clojars.huahaiy/dtlvnative-linux-amd64]
+                 ;; [org.clojars.huahaiy/symspell-clj]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
+                 [org.roaringbitmap/RoaringBitmap]
+                 [org.eclipse.collections/eclipse-collections]
+                 [me.lemire.integercompression/JavaFastPFOR]
                  [com.taoensso/timbre]
                  [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]

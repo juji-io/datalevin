@@ -27,6 +27,13 @@
     (d/close conn1)
     (d/close conn2)))
 
+(deftest test-update-schema-ensure-no-duplicate-aids
+  (let [conn (d/create-conn)]
+    (d/update-schema conn {:up/a {}})
+    (d/transact! conn [{:foo 1}])
+    (let [aids (map :db/aid (vals (d/schema conn)))]
+      (is (= (count aids) (count (set aids))))
+      (d/close conn))))
 
 (deftest test-ways-to-create-conn-1
   (let [conn (d/create-conn)]

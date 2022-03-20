@@ -13,6 +13,7 @@
             [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
             [datalevin.lmdb :as l]
+            [datalevin.bits :as b]
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
             [datalevin.constants :as c])
@@ -25,12 +26,20 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.5.21")
+(def ^:private version "0.6.1")
 
 (def ^:private version-str
   (str
     "
   Datalevin (version: " version ")"))
+
+(defn- parse-version
+  "return [major minor non-breaking] version numbers"
+  [s]
+  (let [[major minor non-breaking] (s/split s #"\.")]
+    [(Integer/parseInt major)
+     (Integer/parseInt minor)
+     (Integer/parseInt non-breaking)]))
 
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
@@ -147,7 +156,7 @@
 
 (defn- repl-help []
   (println "")
-  (println "In addition to Clojure core functions, the following functions are available:")
+  (println "In addition to some Clojure core functions, the following functions are available:")
   (doseq [ns   i/user-facing-ns
           :let [fs (->> ns
                         ns-publics
@@ -170,7 +179,7 @@
 
 (def ^:private repl-header
   "
-  Type (help) to see available functions. Clojure core functions are also available.
+  Type (help) to see available functions. some Clojure core functions are also available.
   Type (exit) to exit.
   ")
 
@@ -337,20 +346,19 @@
   (exit 0))
 
 (defn- dump-dbi [lmdb dbi]
-  (let [n (l/entries lmdb dbi)]
-    (p/pprint {:dbi dbi :entries n})
-    (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
-      (p/pprint [(u/encode-base64 k) (u/encode-base64 v)]))))
+  (p/pprint {:dbi dbi :entries (l/entries lmdb dbi) :ver version})
+  (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
+    (p/pprint [(u/encode-base64 k) (u/encode-base64 v)])))
 
 (defn- dump-all [lmdb]
-  (let [dbis (set (l/list-dbis lmdb))]
-    (doseq [dbi dbis] (dump-dbi lmdb dbi))))
+  (doseq [dbi (set (l/list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
 
 (defn- dump-datalog [dir]
   (let [conn (d/create-conn dir)]
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))
+    ))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.

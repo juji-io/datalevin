@@ -5,6 +5,7 @@
    #?(:clj [clojure.java.shell :as sh])
    datalevin.lmdb-test
    datalevin.util-test
+   datalevin.search-test
    datalevin.main-test
    datalevin.bits-test
    datalevin.storage-test
@@ -52,6 +53,7 @@
         (t/run-tests
           'datalevin.lmdb-test
           'datalevin.util-test
+          'datalevin.search-test
           'datalevin.main-test
           'datalevin.bits-test
           'datalevin.storage-test

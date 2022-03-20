@@ -134,90 +134,82 @@
               (recur iter c)))
           c)))))
 
+(defmacro scan
+  [call error]
+  `(do
+     (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
+     (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
+           ~'rtx (l/get-rtx ~'lmdb)]
+       (try
+         ~call
+         (catch Exception ~'e
+           ~error)
+         (finally (l/return-rtx ~'lmdb ~'rtx))))))
+
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
-  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi lmdb dbi-name false)
-        rtx (l/get-txn lmdb)]
-    (try
-      (fetch-value dbi rtx k k-type v-type ignore-key?)
-      (catch Exception e
-        (raise "Fail to get-value: " (ex-message e)
-               {:dbi dbi-name :k k :k-type k-type :v-type v-type}))
-      (finally (l/reset rtx)))))
+  (scan
+    (fetch-value dbi rtx k k-type v-type ignore-key?)
+    (raise "Fail to get-value: " (ex-message e)
+           {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
 
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]
-  (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi lmdb dbi-name false)
-        rtx (l/get-txn lmdb)]
-    (try
-      (fetch-first dbi rtx k-range k-type v-type ignore-key?)
-      (catch Exception e
-        (raise "Fail to get-first: " (ex-message e)
-               {:dbi    dbi-name :k-range k-range
-                :k-type k-type   :v-type  v-type}))
-      (finally (l/reset rtx)))))
+  (scan
+    (fetch-first dbi rtx k-range k-type v-type ignore-key?)
+    (raise "Fail to get-first: " (ex-message e)
+           {:dbi    dbi-name :k-range k-range
+            :k-type k-type   :v-type  v-type})))
 
 (defn get-range
-  [this dbi-name k-range k-type v-type ignore-key?]
-  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name false)
-        rtx (l/get-txn this)]
-    (try
-      (fetch-range dbi rtx k-range k-type v-type ignore-key?)
-      (catch Exception e
-        (raise "Fail to get-range: " (ex-message e)
-               {:dbi    dbi-name :k-range k-range
-                :k-type k-type   :v-type  v-type}))
-      (finally (l/reset rtx)))))
+  [lmdb dbi-name k-range k-type v-type ignore-key?]
+  (scan
+    (fetch-range dbi rtx k-range k-type v-type ignore-key?)
+    (raise "Fail to get-range: " (ex-message e)
+           {:dbi    dbi-name :k-range k-range
+            :k-type k-type   :v-type  v-type})))
 
 (defn range-count
-  [this dbi-name k-range k-type]
-  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name false)
-        rtx (l/get-txn this)]
-    (try
-      (fetch-range-count dbi rtx k-range k-type)
-      (catch Exception e
-        (raise "Fail to range-count: " (ex-message e)
-               {:dbi dbi-name :k-range k-range :k-type k-type}))
-      (finally (l/reset rtx)))))
+  [lmdb dbi-name k-range k-type]
+  (scan
+    (fetch-range-count dbi rtx k-range k-type)
+    (raise "Fail to range-count: " (ex-message e)
+           {:dbi dbi-name :k-range k-range :k-type k-type})))
 
 (defn get-some
-  [this dbi-name pred k-range k-type v-type ignore-key?]
-  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name false)
-        rtx (l/get-txn this)]
-    (try
-      (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
-      (catch Exception e
-        (raise "Fail to get-some: " (ex-message e)
-               {:dbi    dbi-name :k-range k-range
-                :k-type k-type   :v-type  v-type}))
-      (finally (l/reset rtx)))))
+  [lmdb dbi-name pred k-range k-type v-type ignore-key?]
+  (scan
+    (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
+    (raise "Fail to get-some: " (ex-message e)
+           {:dbi    dbi-name :k-range k-range
+            :k-type k-type   :v-type  v-type})))
 
 (defn range-filter
-  [this dbi-name pred k-range k-type v-type ignore-key?]
-  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name false)
-        rtx (l/get-txn this)]
-    (try
-      (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
-      (catch Exception e
-        (raise "Fail to range-filter: " (ex-message e)
-               {:dbi    dbi-name :k-range k-range
-                :k-type k-type   :v-type  v-type}))
-      (finally (l/reset rtx)))))
+  [lmdb dbi-name pred k-range k-type v-type ignore-key?]
+  (scan
+    (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
+    (raise "Fail to range-filter: " (ex-message e)
+           {:dbi    dbi-name :k-range k-range
+            :k-type k-type   :v-type  v-type})))
 
 (defn range-filter-count
-  [this dbi-name pred k-range k-type]
-  (assert (not (l/closed-kv? this)) "LMDB env is closed.")
-  (let [dbi (l/get-dbi this dbi-name false)
-        rtx (l/get-txn this)]
-    (try
-      (fetch-range-filtered-count dbi rtx pred k-range k-type)
-      (catch Exception e
-        (raise "Fail to range-filter-count: " (ex-message e)
-               {:dbi dbi-name :k-range k-range :k-type k-type}))
-      (finally (l/reset rtx)))))
+  [lmdb dbi-name pred k-range k-type]
+  (scan
+    (fetch-range-filtered-count dbi rtx pred k-range k-type)
+    (raise "Fail to range-filter-count: " (ex-message e)
+           {:dbi dbi-name :k-range k-range :k-type k-type})))
+
+(defn visit
+  [lmdb dbi-name visitor k-range k-type]
+  (scan
+    (let [[range-type k1 k2] k-range
+          info               (l/range-info rtx range-type k1 k2)]
+      (when k1 (l/put-start-key rtx k1 k-type))
+      (when k2 (l/put-stop-key rtx k2 k-type))
+      (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
+        (loop [^Iterator iter (.iterator ^Iterable iterable)]
+          (when (.hasNext iter)
+            (visitor (.next iter))
+            (recur iter)))))
+    (raise "Fail to visit: " (ex-message e)
+           {:dbi dbi-name :k-range k-range :k-type k-type})))

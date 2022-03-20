@@ -4,12 +4,16 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
-            [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IKV
-                                          IRtx IRtxPool IDB ILMDB]])
+            [datalevin.lmdb :as l
+             :refer [open-kv open-inverted-list IBuffer IRange IRtx
+                     IDB IKV IInvertedList ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
-            CursorIterable$KeyVal]
-           [java.util.concurrent ConcurrentHashMap]
+            Cursor CursorIterable$KeyVal GetOp SeekOp]
+           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue
+            ExecutorService Executors Future Callable]
+           [java.util Iterator]
+           [org.eclipse.collections.impl.map.mutable UnifiedMap]
            [java.nio ByteBuffer BufferOverflowException]))
 
 (extend-protocol IKV
@@ -64,12 +68,12 @@
 (defn- kv-flags
   [type flags]
   (let [t (flag-type type)]
-    (if (seq flags)
-      (into-array t (mapv flag flags))
-      (make-array t 0))))
+    (if (empty? flags)
+      (make-array t 0)
+      (into-array t (mapv flag flags)))))
 
-(deftype Rtx [^Txn txn
-              ^:volatile-mutable ^Boolean use?
+(deftype Rtx [lmdb
+              ^Txn txn
               ^ByteBuffer kb
               ^ByteBuffer start-kb
               ^ByteBuffer stop-kb]
@@ -132,54 +136,13 @@
 
   IRtx
   (close-rtx [_]
-    (.close txn)
-    (set! use? false))
+    (.close txn))
   (reset [this]
     (.reset txn)
-    (set! use? false)
     this)
   (renew [this]
-    (when-not use?
-      (set! use? true)
-      (.renew txn)
-      this)))
-
-(deftype RtxPool [^Env env
-                  ^ConcurrentHashMap rtxs
-                  ^:volatile-mutable ^long cnt]
-  IRtxPool
-  (close-pool [this]
-    (doseq [^Rtx rtx (.values rtxs)] (.close-rtx rtx))
-    (.clear rtxs)
-    (set! cnt 0))
-  (new-rtx [this]
-    (when (< cnt c/+use-readers+)
-      (let [^Rtx rtx (->Rtx (.txnRead env)
-                            false
-                            (b/allocate-buffer c/+max-key-size+)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (b/allocate-buffer c/+max-key-size+))]
-        (.put rtxs cnt rtx)
-        (set! cnt (inc cnt))
-        (.reset rtx)
-        (.renew rtx))))
-  (get-rtx [this]
-    (try
-      (locking this
-        (if (zero? cnt)
-          (.new-rtx this)
-          (loop [i (.getId ^Thread (Thread/currentThread))]
-            (let [^long i' (mod i cnt)
-                  ^Rtx rtx (.get rtxs i')]
-              (or (.renew rtx)
-                  (.new-rtx this)
-                  (recur (long (inc i'))))))))
-      (catch Txn$BadReaderLockException _
-        (raise
-          "Please do not open multiple LMDB connections to the same DB
-           in the same process. Instead, a LMDB connection should be held onto
-           and managed like a stateful resource. Refer to the documentation of
-           `datalevin.lmdb/open-kv` for more details." {})))))
+    (.renew txn)
+    this))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.-pageSize stat)
@@ -189,7 +152,10 @@
    :overflow-pages (.-overflowPages stat)
    :entries        (.-entries stat)})
 
-(deftype DBI [^Dbi db ^ByteBuffer kb ^:volatile-mutable ^ByteBuffer vb]
+(deftype DBI [^Dbi db
+              ^ConcurrentLinkedQueue curs
+              ^ByteBuffer kb
+              ^:volatile-mutable ^ByteBuffer vb]
   IBuffer
   (put-key [this x t]
     (try
@@ -198,15 +164,15 @@
       (.flip kb)
       (catch Exception e
         (raise "Error putting r/w key buffer of "
-               (.dbi-name this) ": " (ex-message e)
-               {:value x :type t :dbi (.dbi-name this)}))))
+               (.dbi-name this) "with value" x ": " (ex-message e)
+               {:type t}))))
   (put-val [this x t]
     (try
       (.clear vb)
       (b/put-buffer vb x t)
       (.flip vb)
       (catch BufferOverflowException _
-        (let [size (* c/+buffer-grow-factor+ ^long (b/measure-size x))]
+        (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
           (b/put-buffer vb x t)
           (.flip vb)))
@@ -216,31 +182,80 @@
                {:value x :type t :dbi (.dbi-name this)}))))
 
   IDB
+  (dbi [_] db)
   (dbi-name [_]
     (b/text-ba->str (.getName db)))
-  (put [_ txn append?]
-    (if append?
-      (.put db txn kb vb (kv-flags :put [:append]))
+  (put [_ txn flags]
+    (if flags
+      (.put db txn kb vb (kv-flags :put flags))
       (.put db txn kb vb (kv-flags :put c/default-put-flags))))
   (put [this txn]
     (.put this txn nil))
-  (del [_ txn]
-    (.delete db txn kb))
+  (del [_ txn all?]
+    (if all?
+      (.delete db txn kb)
+      (.delete db txn kb vb)))
+  (del [this txn]
+    (.del this txn true))
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
   (iterate-kv [_ rtx range-info]
-    (.iterate db (.-txn ^Rtx rtx) range-info)))
+    (.iterate db (.-txn ^Rtx rtx) range-info))
+  (get-cursor [_ txn]
+    (or (when-let [^Cursor cur (.poll curs)]
+          (.renew cur txn)
+          cur)
+        (.openCursor db txn)))
+  (return-cursor [this cur]
+    (.add curs cur)))
 
 (defn- up-db-size [^Env env]
-  (.setMapSize env (* c/+buffer-grow-factor+ (-> env .info .mapSize))))
+  (.setMapSize env
+               (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
-(deftype LMDB [^Env env ^String dir ^RtxPool pool ^ConcurrentHashMap dbis]
+
+(defn- transact*
+  [^Env env txs ^UnifiedMap dbis]
+  (with-open [txn (.txnWrite env)]
+    (doseq [[op dbi-name k & r] txs]
+      (let [^DBI dbi (or (.get dbis dbi-name)
+                         (raise dbi-name " is not open" {}))]
+        (case op
+          :put      (let [[v kt vt flags] r]
+                      (.put-key dbi k kt)
+                      (.put-val dbi v vt)
+                      (if flags
+                        (.put dbi txn flags)
+                        (.put dbi txn)))
+          :del      (let [[kt] r]
+                      (.put-key dbi k kt)
+                      (.del dbi txn))
+          :put-list (let [[vs kt vt] r]
+                      (.put-key dbi k kt)
+                      (doseq [v vs]
+                        (.put-val dbi v vt)
+                        (.put dbi txn)))
+          :del-list (let [[vs kt vt] r]
+                      (.put-key dbi k kt)
+                      (doseq [v vs]
+                        (.put-val dbi v vt)
+                        (.del dbi txn false))))))
+    (.commit txn)))
+
+(deftype LMDB [^Env env
+               ^String dir
+               ^ConcurrentLinkedQueue pool
+               ^UnifiedMap dbis]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
+      (loop [^Iterator iter (.iterator pool)]
+        (when (.hasNext iter)
+          (.close-rtx ^Rtx (.next iter))
+          (.remove iter)
+          (recur iter)))
       (.sync env true)
-      (.close-pool pool)
       (.close env))
     nil)
 
@@ -263,7 +278,7 @@
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
-          dbi (->DBI db kb vb)]
+          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb)]
       (.put dbis dbi-name dbi)
       dbi))
 
@@ -312,7 +327,27 @@
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
         (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
-        (raise "Destination directory is not empty."))))
+        (raise "Destination directory is not empty." {}))))
+
+  (get-rtx [this]
+    (try
+      (or (when-let [^Rtx rtx (.poll pool)]
+            (.renew rtx))
+          (->Rtx this
+                 (.txnRead env)
+                 (b/allocate-buffer c/+max-key-size+)
+                 (b/allocate-buffer c/+max-key-size+)
+                 (b/allocate-buffer c/+max-key-size+)))
+      (catch Txn$BadReaderLockException _
+        (raise
+          "Please do not open multiple LMDB connections to the same DB
+           in the same process. Instead, a LMDB connection should be held onto
+           and managed like a stateful resource. Refer to the documentation of
+           `datalevin.core/open-kv` for more details." {}))))
+
+  (return-rtx [this rtx]
+    (.reset ^Rtx rtx)
+    (.add pool rtx))
 
   (stat [this]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -323,7 +358,7 @@
   (stat [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (if dbi-name
-      (let [^Rtx rtx (.get-rtx pool)]
+      (let [^Rtx rtx (.get-rtx this)]
         (try
           (let [^DBI dbi (.get-dbi this dbi-name false)
                 ^Dbi db  (.-db dbi)
@@ -331,48 +366,30 @@
             (stat-map (.stat db txn)))
           (catch Exception e
             (raise "Fail to get stat: " (ex-message e) {:dbi dbi-name}))
-          (finally (.reset rtx))))
+          (finally (.return-rtx this rtx))))
       (l/stat this)))
 
   (entries [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [^DBI dbi (.get-dbi this dbi-name false)
-          ^Rtx rtx (.get-rtx pool)]
+          ^Rtx rtx (.get-rtx this)]
       (try
         (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))
         (catch Exception e
           (raise "Fail to get entries: " (ex-message e)
                  {:dbi dbi-name}))
-        (finally (.reset rtx)))))
-
-  (get-txn [this]
-    (.get-rtx pool))
+        (finally (.return-rtx this rtx)))))
 
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
-      (with-open [txn (.txnWrite env)]
-        (doseq [[op dbi-name k & r] txs
-                :let                [^DBI dbi (or (.get dbis dbi-name)
-                                                  (raise dbi-name
-                                                         " is not open" {}))]]
-          (case op
-            :put (let [[v kt vt flags] r]
-                   (.put-key dbi k kt)
-                   (.put-val dbi v vt)
-                   (if flags
-                     (.put dbi txn flags)
-                     (.put dbi txn)))
-            :del (let [[kt] r]
-                   (.put-key dbi k kt)
-                   (.del dbi txn))))
-        (.commit txn)
-        :transacted)
+      (transact* env txs dbis)
+      :transacted
       (catch Env$MapFullException _
         (up-db-size env)
         (.transact-kv this txs))
       (catch Exception e
-        (raise "Fail to transact to LMDB: " (ex-message e) {:txs txs}))))
+        (raise "Fail to transact to LMDB: " (ex-message e) {}))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -427,25 +444,167 @@
   (range-filter-count [this dbi-name pred k-range]
     (.range-filter-count this dbi-name pred k-range :data))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (scan/range-filter-count this dbi-name pred k-range k-type)))
+    (scan/range-filter-count this dbi-name pred k-range k-type))
+
+  (visit [this dbi-name visitor k-range]
+    (.visit this dbi-name visitor k-range :data))
+  (visit [this dbi-name visitor k-range k-type]
+    (scan/visit this dbi-name visitor k-range k-type))
+
+  (open-inverted-list [this dbi-name key-size item-size]
+    (assert (and (>= c/+max-key-size+ ^long key-size)
+                 (>= c/+max-key-size+ ^long item-size))
+            "Data size cannot be larger than 511 bytes")
+    (.open-dbi this dbi-name key-size item-size
+               (conj c/default-dbi-flags :dupsort)))
+  (open-inverted-list [lmdb dbi-name item-size]
+    (.open-inverted-list lmdb dbi-name c/+max-key-size+ item-size))
+  (open-inverted-list [lmdb dbi-name]
+    (.open-inverted-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
+
+  IInvertedList
+  (put-list-items [this dbi-name k vs kt vt]
+    (try
+      (let [^DBI dbi (.get-dbi this dbi-name false)]
+        (with-open [txn (.txnWrite env)]
+          (.put-key dbi k kt)
+          (doseq [v vs]
+            (.put-val dbi v vt)
+            (.put dbi txn))
+          (.commit txn)
+          :transacted))
+      (catch Exception e
+        (raise "Fail to put an inverted list: " (ex-message e) {}))))
+
+  (del-list-items [this dbi-name k kt]
+    (try
+      (let [^DBI dbi (.get-dbi this dbi-name false)]
+        (with-open [txn (.txnWrite env)]
+          (.put-key dbi k kt)
+          (.del dbi txn)
+          (.commit txn)
+          :transacted))
+      (catch Exception e
+        (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+  (del-list-items [this dbi-name k vs kt vt]
+    (try
+      (let [^DBI dbi (.get-dbi this dbi-name false)]
+        (with-open [txn (.txnWrite env)]
+          (.put-key dbi k kt)
+          (doseq [v vs]
+            (.put-val dbi v vt)
+            (.del dbi txn false))
+          (.commit txn)
+          :transacted))
+      (catch Exception e
+        (raise "Fail to delete items from an inverted list: "
+               (ex-message e) {}))))
+
+  (get-list [this dbi-name k kt vt]
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (let [holder (transient [])]
+              (.seek cur SeekOp/MDB_FIRST_DUP)
+              (conj! holder (b/read-buffer (.val cur) vt))
+              (dotimes [_ (dec (.count cur))]
+                (.seek cur SeekOp/MDB_NEXT_DUP)
+                (conj! holder (b/read-buffer (.val cur) vt)))
+              (persistent! holder)))
+          (catch Exception e
+            (raise "Fail to get inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))))
+
+  (visit-list [this dbi-name visitor k kt]
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)
+            kv          (reify IKV
+                          (k [_] (.key cur))
+                          (v [_] (.val cur)))]
+        (try
+          (.put-start-key rtx k kt)
+          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (.seek cur SeekOp/MDB_FIRST_DUP)
+            (visitor kv)
+            (dotimes [_ (dec (.count cur))]
+              (.seek cur SeekOp/MDB_NEXT_DUP)
+              (visitor kv)))
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))))
+
+  (list-count [this dbi-name k kt]
+    (if k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (.count cur)
+            0)
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))
+      0))
+
+  (filter-list [this dbi-name k pred k-type v-type]
+    (.range-filter this dbi-name pred [:closed k k] k-type v-type true))
+
+  (filter-list-count [this dbi-name k pred k-type]
+    (.range-filter-count this dbi-name pred [:closed k k] k-type))
+
+  (in-list? [this dbi-name k v kt vt]
+    (if (and k v)
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (.put-stop-key rtx v vt)
+          (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
+          (catch Exception e
+            (raise "Fail to test if an item is in an inverted list: "
+                   (ex-message e) {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur))))
+      false)))
 
 (defmethod open-kv :java
-  [dir]
-  (try
-    (let [file          (u/file dir)
-          builder       (doto (Env/create)
-                          (.setMapSize (* ^long c/+init-db-size+ 1024 1024))
-                          (.setMaxReaders c/+max-readers+)
-                          (.setMaxDbs c/+max-dbs+))
-          ^Env env      (.open builder file (kv-flags :env c/default-env-flags))
-          ^RtxPool pool (->RtxPool env (ConcurrentHashMap.) 0)
-          lmdb          (->LMDB env dir pool (ConcurrentHashMap.))]
-      (.addShutdownHook (Runtime/getRuntime)
-                        (Thread.
-                          #(when-not (l/closed-kv? lmdb)
-                             (l/close-kv lmdb))))
-      lmdb)
-    (catch Exception e
-      (raise
-        "Fail to open database: " (ex-message e)
-        {:dir dir}))))
+  ([dir]
+   (open-kv dir {}))
+  ([dir {:keys [mapsize flags]
+         :or   {mapsize c/+init-db-size+
+                flags   c/default-env-flags}}]
+   (try
+     (let [file     (u/file dir)
+           builder  (doto (Env/create)
+                      (.setMapSize (* ^long mapsize 1024 1024))
+                      (.setMaxReaders c/+max-readers+)
+                      (.setMaxDbs c/+max-dbs+))
+           ^Env env (.open builder file (kv-flags :env flags))
+           lmdb     (->LMDB env
+                            dir
+                            (ConcurrentLinkedQueue.)
+                            (UnifiedMap.))]
+       lmdb)
+     (catch Exception e
+       (raise
+         "Fail to open database: " (ex-message e)
+         {:dir dir})))))

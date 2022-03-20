@@ -1,10 +1,11 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
             [datalevin.server :as s]
+            [datalevin.client :as cl]
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [clojure.test :refer [is deftest]])
+            [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]))
@@ -319,7 +320,14 @@
           :sales/top-product-use "CRM",
           :sales/total           23}]]
     (sut/transact! conn txs)
-    (is (= 83 (count (sut/datoms @conn :eavt))))
+    (is (= (count (sut/datoms @conn :eavt)) 83))
+    (is (= (sut/q '[:find ?st .
+                    :where
+                    [?e :sales/company "Unilever"]
+                    [?e :sales/year 2018]
+                    [?e :sales/total ?st]]
+                  @conn)
+           23))
     (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
                          :in $ ?ns-in
                          :where
@@ -648,11 +656,27 @@
     (sut/close local-conn)
     (s/stop server)))
 
+(deftest restart-server-test
+  (let [root    (u/tmp-dir (str "remote-schema-test-" (UUID/randomUUID)))
+        server1 (s/create {:port c/default-port
+                           :root root})
+        _       (s/start server1)
+        client  (cl/new-client "dtlv://datalevin:datalevin@localhost"
+                               {:time-out 5000})]
+    (is (= (cl/list-databases client) []))
+    (s/stop server1)
+    (is (thrown? Exception (cl/list-databases client)))
+    (let [server2 (s/create {:port c/default-port
+                             :root root})
+          _       (s/start server2)]
+      (is (= (cl/list-databases client) []))
+      (s/stop server2))))
+
 (deftest entity-fn-test
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                     (str "entity-fn-test-"
-                                          (UUID/randomUUID)))})
+                                  (str "entity-fn-test-"
+                                       (UUID/randomUUID)))})
         _      (s/start server)
 
         f1 (i/inter-fn [db eid] (sut/entity db eid))
@@ -686,8 +710,8 @@
 (deftest datalog-larger-tx-test
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                     (str "large-tx-test-"
-                                          (UUID/randomUUID)))})
+                                  (str "large-tx-test-"
+                                       (UUID/randomUUID)))})
         _      (s/start server)
         dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
         end    100000
@@ -700,6 +724,60 @@
                   @conn)
            [[end]]))
     (sut/close conn)
+    (s/stop server)))
+
+(deftest remote-search-kv-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-search-kv-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-search-kv-test"
+        lmdb   (sut/open-kv dir)
+        engine (sut/new-search-engine lmdb)]
+    (sut/open-dbi lmdb "raw")
+    (sut/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
+    (doseq [i [1 2 3]]
+      (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+    (is (not (sut/doc-indexed? engine 0)))
+    (is (sut/doc-indexed? engine 1))
+    (is (= (sut/search engine "lazy") [1]))
+    (is (= (sut/search engine "red" ) [1 2]))
+    (is (= (sut/search engine "red" {:display :offsets})
+           [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
+    (testing "update"
+      (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
+      (is (= (sut/search engine "red" ) [2])))
+    (sut/close-kv lmdb)
+    (s/stop server)))
+
+(deftest remote-fulltext-fns-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-fulltext-fns-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
+        db     (-> (sut/empty-db dir {:text {:db/valueType :db.type/string
+                                             :db/fulltext  true}})
+                   (sut/db-with
+                     [{:db/id 1,
+                       :text  "The quick red fox jumped over the lazy red dogs."}
+                      {:db/id 2,
+                       :text  "Mary had a little lamb whose fleece was red as fire."}
+                      {:db/id 3,
+                       :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (is (= (sut/q '[:find ?e ?a ?v
+                    :in $ ?q
+                    :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                  db "red fox")
+           #{[1 :text "The quick red fox jumped over the lazy red dogs."]
+             [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
+    (sut/close-db db)
     (s/stop server)))
 
 (deftest instant-update-test
@@ -834,3 +912,13 @@
       (is (Arrays/equals bs1 ^bytes (first (second res)))))
     (sut/close-db db)
     (u/delete-files dir)))
+
+(deftest float-transact-test
+  (let [schema {:name   {:db/valueType :db.type/string}
+                :height {:db/valueType :db.type/float}}
+        dir    (u/tmp-dir (str "datalevin-float-test-" (UUID/randomUUID)))
+        conn   (sut/get-conn dir schema)]
+    (sut/transact! conn [{:name "John" :height 1.73}
+                         {:name "Peter" :height 1.92}])
+    (is (= (sut/pull (sut/db conn) '[*] 1)
+           {:name "John" :height (float 1.73) :db/id 1}))))

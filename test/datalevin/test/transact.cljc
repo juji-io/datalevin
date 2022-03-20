@@ -1,11 +1,28 @@
 (ns datalevin.test.transact
   (:require
-    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.constants :refer [tx0]]
-    [datalevin.test.core :as tdc]))
+   #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer [is are deftest testing]])
+   [datalevin.core :as d]
+   [datalevin.db :as db]
+   [datalevin.constants :refer [tx0]]
+   [datalevin.test.core :as tdc]))
+
+(deftest test-multi-threads-transact
+  ;; we serialize writes, so as not to violate uniqueness constraint
+  (let [conn (d/create-conn
+               nil
+               {:instance/id
+                #:db{:valueType   :db.type/long
+                     :unique      :db.unique/identity
+                     :cardinality :db.cardinality/one}})]
+    (dorun (pmap #(d/transact! conn [{:instance/id %}])
+                 (range 2)))
+    (let [res (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)]
+      (is (or (= #{[2 :instance/id 0] [1 :instance/id 1]} res)
+              (= #{[1 :instance/id 0] [2 :instance/id 1]} res)))
+      (is (thrown-with-msg? Exception #"unique constraint"
+                            (d/transact! conn [(into [:db/add 3]
+                                                     (next (first res)))]))))))
 
 (deftest test-with-1
   (let [db (-> (d/empty-db nil {:aka {:db/cardinality :db.cardinality/many}})

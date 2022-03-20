@@ -4,6 +4,7 @@
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.util :as u]
    [datalevin.remote :as r]
+   [datalevin.search :as sc]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.storage :as s]
@@ -19,7 +20,7 @@
    [datalevin.storage Store]
    [datalevin.db DB]
    [datalevin.datom Datom]
-   [datalevin.remote DatalogStore]
+   [datalevin.remote DatalogStore KVStore]
    [java.util UUID]))
 
 (if (u/graal?)
@@ -474,12 +475,13 @@ Only usable for debug output.
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
-  (let [report (atom nil)]
-    (swap! conn (fn [db]
-                  (let [r (with db tx-data tx-meta)]
-                    (reset! report r)
-                    (:db-after r))))
-    @report))
+  (locking conn
+    (let [report (atom nil)]
+      (swap! conn (fn [db]
+                    (let [r (with db tx-data tx-meta)]
+                      (reset! report r)
+                      (:db-after r))))
+      @report)))
 
 
 (defn transact!
@@ -569,7 +571,7 @@ Only usable for debug output.
                        {:db/add 296 :friend -1]])"
   ([conn tx-data] (transact! conn tx-data nil))
   ([conn tx-data tx-meta]
-   {:pre [(conn? conn)]}
+   ;; {:pre [(conn? conn)]}
    (let [report (-transact! conn tx-data tx-meta)]
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
        (callback report))
@@ -857,8 +859,10 @@ Only usable for debug output.
   "Open a LMDB key-value database, return the connection.
 
   `dir` is a directory path or a dtlv connection URI string.
-
-  Will detect the platform this code is running in, and dispatch accordingly.
+  `opts` is an option map that may have the following keys:
+  * `:mapsize` is the initial size of the database. This will be expanded as needed
+  * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
+     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB)_NOSUBDIR, and so on.
 
   Please note:
 
@@ -877,10 +881,12 @@ Only usable for debug output.
   [mount](https://github.com/tolitius/mount),
   [integrant](https://github.com/weavejester/integrant), or something similar
   to hold on to and manage the connection. "
-  [dir]
-  (if (r/dtlv-uri? dir)
-    (r/open-kv dir)
-    (l/open-kv dir)))
+  ([dir]
+   (open-kv dir nil))
+  ([dir opts]
+   (if (r/dtlv-uri? dir)
+     (r/open-kv dir opts)
+     (l/open-kv dir opts))))
 
 (def ^{:arglists '([db])
        :doc      "Close this key-value store"}
@@ -1177,14 +1183,15 @@ Only usable for debug output.
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type])
-       :doc      "Return the number of kv pairs in the specified key range in the key-value store, for only those
-     return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IKV`, with both key and value fields being a `ByteBuffer`.
-     Does not process the kv pairs.
+       :doc      "Return the number of kv pairs in the specified key range in the
+key-value store, for only those return true value for `(pred x)`, where `pred` is a
+function, and `x`is an `IKV`, with both key and value fields being a `ByteBuffer`.
+Does not process the kv pairs.
 
      `pred` can use [[read-buffer]] to read the buffer content.
 
-      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+      To access store on a server, [[interpret.inter-fn]] should be used to define
+the `pred`.
 
     `k-type` indicates data type of `k` and the allowed data types are described
     in [[read-buffer]].
@@ -1216,6 +1223,73 @@ Only usable for debug output.
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
 
+;; -------------------------------------
+;; Search API
+
+(defn new-search-engine
+  "Create a search engine. The search index is stored in the passed-in
+  key-value database opened by [[open-kv]]."
+  [lmdb]
+  (if (instance? datalevin.remote.KVStore lmdb)
+    (r/new-search-engine lmdb)
+    (sc/new-search-engine lmdb)))
+
+(def ^{:arglists '([engine doc-ref doc-text])
+       :doc      "Add a document to the search engine, `doc-ref` can be
+     arbitrary Clojure data that uniquely refers to the document in the system.
+     `doc-text` is the content of the document as a string.  The search engine
+     does not store the original text, and assumes that caller can retrieve them
+     by `doc-ref`. This function is for online update of search engine index.
+     Search index is updated with the new text if the `doc-ref` already exists.
+     For index creation of bulk data, use `search-index-writer`."}
+  add-doc sc/add-doc)
+
+(def ^{:arglists '([engine doc-ref])
+       :doc      "Remove a document referred to by `doc-ref` from the search
+engine index. A slow operation."}
+  remove-doc sc/remove-doc)
+
+(def ^{:arglists '([engine doc-ref])
+       :doc      "Test if a `doc-ref` is already in the search index"}
+  doc-indexed? sc/doc-indexed?)
+
+(def ^{:arglists '([engine query] [engine query opts])
+       :doc      "Issue a `query` to the search engine. `query` is a string of
+words.
+
+     `opts` map may have these keys:
+
+      * `:display` can be one of `:refs` (default), `:offsets`.
+        - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
+        - `:offsets` return a lazy sequence of
+          `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
+          ordered by relevance. `term` and `offset` can be used to
+          highlight the matched terms and their locations in the documents.
+      * `:top` is an integer (default 10), the number of results desired.
+      * `:doc-filter` is a boolean function that takes a `doc-ref` and
+         determines whether or not to include the corresponding document in the
+         results (default is `(constantly true)`)"}
+  search sc/search)
+
+(defn search-index-writer
+  "Create a writer for writing documents to the search index in bulk.
+  The search index is stored in the passed-in key value database opened
+  by [[open-kv]]. See also [[write]] and [[commit]]"
+  [lmdb]
+  (if (instance? datalevin.remote.KVStore lmdb)
+    (r/search-index-writer lmdb)
+    (sc/search-index-writer lmdb)))
+
+(def ^{:arglists '([writer doc-ref doc-text])
+       :doc      "Write a document to search index."}
+  write sc/write)
+
+(def ^{:arglists '([writer])
+       :doc      "Commit writes to search index, must be called after writing
+all documents."}
+  commit sc/commit)
+
+;; -------------------------------------
 ;; byte buffer
 
 (def ^{:arglists '([bf x] [bf x x-type])
@@ -1276,3 +1350,16 @@ one of the following data types:
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
+
+
+(comment
+
+  (def schema {:name   {:db/valueType :db.type/string}
+               :height {:db/valueType :db.type/float}})
+
+  (def conn (get-conn "/tmp/mydb1" schema))
+
+  (transact! conn [{:name "John" :height 1.73}
+                   {:name "Peter" :height 1.92}])
+
+  )

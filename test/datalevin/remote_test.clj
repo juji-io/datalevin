@@ -11,7 +11,7 @@
             [datalevin.util :as u]
             [datalevin.test.core :refer [server-fixture]]
             [clojure.test :refer [is testing deftest use-fixtures]])
-  (:import [java.util UUID Arrays]
+  (:import [java.util UUID Arrays HashMap]
            [datalevin.datom Datom]))
 
 (use-fixtures :each server-fixture)
@@ -311,7 +311,7 @@
 (deftest same-client-multiple-dbs-test
   (let [uri-str "dtlv://datalevin:datalevin@localhost"
         client  (cl/new-client uri-str)
-        store1  (sut/open-kv client (str uri-str "/mykv"))
+        store1  (sut/open-kv client (str uri-str "/mykv") nil)
         store2  (sut/open client (str uri-str "/mydt") nil)]
     (is (instance? datalevin.remote.KVStore store1))
     (is (instance? datalevin.remote.DatalogStore store2))

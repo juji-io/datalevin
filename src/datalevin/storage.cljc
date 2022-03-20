@@ -3,9 +3,9 @@
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
             [datalevin.bits :as b]
+            [datalevin.search :as s]
             [datalevin.constants :as c]
-            [datalevin.datom :as d]
-            )
+            [datalevin.datom :as d])
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -359,9 +359,10 @@
 
 (deftype Store [db-name
                 lmdb
+                search-engine
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
-                ^:volatile-mutable attrs
+                ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore
@@ -399,6 +400,7 @@
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
+    (set! max-aid (init-max-aid lmdb))
     schema)
 
   (classes [_]
@@ -445,11 +447,31 @@
 
   (load-datoms [this datoms]
     (locking this
-      (doseq [batch (partition c/+tx-datom-batch-size+
-                               c/+tx-datom-batch-size+
-                               nil
-                               datoms)]
-        (load-batch store batch))))
+      (let [ft-ds    (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
+            add-fn   (fn [holder datom]
+                       (let [conj-fn (fn [h d] (conj! h d))]
+                         (if (d/datom-added datom)
+                           (let [[data giant?] (insert-data this datom ft-ds)]
+                             (when giant? (advance-max-gt this))
+                             (reduce conj-fn holder data))
+                           (reduce conj-fn holder
+                                   (delete-data this datom ft-ds)))))
+            batch-fn (fn [batch]
+                       (lmdb/transact-kv
+                         lmdb
+                         (conj (persistent! (reduce add-fn (transient []) batch))
+                               [:put c/meta :last-modified
+                                (System/currentTimeMillis) :attr :long])))]
+        (doseq [batch (partition c/+tx-datom-batch-size+
+                                 c/+tx-datom-batch-size+
+                                 nil
+                                 datoms)]
+          (batch-fn batch))
+        (doseq [[op ^Datom d] @ft-ds
+                :let          [v (str (.-v d))]]
+          (case op
+            :a (s/add-doc search-engine d v)
+            :d (s/remove-doc search-engine d))))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -579,6 +601,42 @@
         index
         :id))))
 
+(defn- insert-data
+  [^Store store ^Datom d ft-ds]
+  (let [attr   (.-a d)
+        props  (or ((schema store) attr)
+                   (swap-attr store attr identity))
+        ref?   (= :db.type/ref (:db/valueType props))
+        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
+                            (:db/valueType props))
+        max-gt (max-gt store)]
+    (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
+    (if (b/giant? i)
+      [(cond-> [[:put c/eav i max-gt :eav :id]
+                [:put c/ave i max-gt :ave :id]
+                [:put c/giants max-gt d :id :datom [:append]]]
+         ref? (conj [:put c/vea i max-gt :vea :id]))
+       true]
+      [(cond-> [[:put c/eav i c/normal :eav :id]
+                [:put c/ave i c/normal :ave :id]]
+         ref? (conj [:put c/vea i c/normal :vea :id]))
+       false])))
+
+(defn- delete-data
+  [^Store store ^Datom d ft-ds]
+  (let [props  ((schema store) (.-a d))
+        ref?   (= :db.type/ref (:db/valueType props))
+        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
+                            (:db/valueType props))
+        giant? (b/giant? i)
+        gt     (when giant?
+                 (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
+    (when (:db/fulltext props) (vswap! ft-ds conj [:d d]))
+    (cond-> [[:del c/eav i :eav]
+             [:del c/ave i :ave]]
+      ref? (conj [:del c/vea i :vea])
+      gt   (conj [:del c/giants gt :id]))))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -599,6 +657,7 @@
      (let [schema (init-schema lmdb schema)]
        (->Store db-name
                 lmdb
+                (s/new-search-engine lmdb)
                 schema
                 (schema->rschema schema)
                 (init-attrs schema)

@@ -10,7 +10,8 @@
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
-  (:import [java.util UUID Arrays]
+  (:import [java.util UUID Arrays HashMap]
+           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [java.lang Long]))
 
 (if (u/graal?)
@@ -46,7 +47,9 @@
                       [:put "b" :long 1 :data :long]
                       [:put "b" 2 3 :long :long]
                       [:put "b" "ok" 42 :string :int]
-                      [:put "d" 3.14 :pi :double :keyword]]))
+                      [:put "d" 3.14 :pi :double :keyword]
+                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]
+                      ]))
 
     (testing "entries"
       (is (= 4 (:entries (l/stat lmdb))))
@@ -75,7 +78,9 @@
       (is (= 1 (l/get-value lmdb "b" :long :data :long)))
       (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
       (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
-      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword))))
+      (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
+      (is (= "nice year" (l/get-value lmdb "d" #inst "1969-01-01" :instant :string)))
+      )
 
     (testing "delete"
       (l/transact-kv lmdb [[:del "a" 1]
@@ -345,7 +350,17 @@
       (l/transact-kv lmdb txs)
       (is (= fvs (l/range-filter lmdb "c" pred [:all] :long :long true)))
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
-      (is (= res (l/range-filter lmdb "c" pred [:all] :long :long))))
+      (is (= res (l/range-filter lmdb "c" pred [:all] :long :long)))
+      (is (= fks (map first
+                      (l/range-filter lmdb "c" pred [:all] :long :ignore false))))
+
+      (let [hm      (HashMap.)
+            visitor (i/inter-fn [kv]
+                                (let [^long k (b/read-buffer (l/k kv) :long)
+                                      ^long v (b/read-buffer (l/v kv) :long)]
+                                  (.put hm k v)))]
+        (l/visit lmdb "c" visitor [:closed 11 19] :long)
+        (is (= (into {} res) hm))))
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
@@ -361,7 +376,17 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest bitmap-test)
+(deftest multi-threads-put-test
+  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "a")
+    (let [ks  (shuffle (range 0 10000))
+          vs  (map inc ks)
+          txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
+      (dorun (pmap #(l/transact-kv lmdb [%]) txs))
+      (is (= vs (map #(l/get-value lmdb "a" % :long :long) ks))))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 ;; generative tests
 
@@ -386,7 +411,7 @@
 
 (defn- data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/fast-freeze data)) limit))
+  (< (alength ^bytes (nippy/freeze data)) limit))
 
 (test/defspec data-ops-generative-test
   100
@@ -437,3 +462,53 @@
                   (l/close-kv lmdb)
                   (u/delete-files dir)
                   (is (and put-ok del-ok)))))
+
+(deftest inverted-list-basic-ops-test
+  (let [dir     (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
+        lmdb    (l/open-kv dir)
+        pred    (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (odd? v)))
+        sum     (volatile! 0)
+        visitor (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
+    (l/open-inverted-list lmdb "inverted")
+
+    (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
+    (l/put-list-items lmdb "inverted" "b" [5 6 7] :string :long)
+
+    (is (= (l/list-count lmdb "inverted" "a" :string) 4))
+    (is (= (l/list-count lmdb "inverted" "b" :string) 3))
+
+    (is (not (l/in-list? lmdb "inverted" "a" 7 :string :long)))
+    (is (l/in-list? lmdb "inverted" "b" 7 :string :long))
+
+    (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
+
+    (l/visit-list lmdb "inverted" visitor "a" :string)
+    (is (= @sum 10))
+
+    (l/del-list-items lmdb "inverted" "a" :string)
+
+    (is (= (l/list-count lmdb "inverted" "a" :string) 0))
+    (is (not (l/in-list? lmdb "inverted" "a" 1 :string :long)))
+    (is (nil? (l/get-list lmdb "inverted" "a" :string :long)))
+
+    (l/put-list-items lmdb "inverted" "b" [1 2 3 4] :string :long)
+
+    (is (= (l/list-count lmdb "inverted" "b" :string) 7))
+    (is (l/in-list? lmdb "inverted" "b" 1 :string :long))
+
+    (l/del-list-items lmdb "inverted" "b" [1 2] :string :long)
+
+    (is (= (l/list-count lmdb "inverted" "b" :string) 5))
+    (is (not (l/in-list? lmdb "inverted" "b" 1 :string :long)))
+
+    (is (= (l/filter-list lmdb "inverted" "b" pred :string :long) [3 5 7]))
+    (is (= (l/filter-list-count lmdb "inverted" "b" pred :string) 3))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))

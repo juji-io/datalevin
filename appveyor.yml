@@ -16,7 +16,7 @@ configuration:
 clone_folder: C:\projects\datalevin
 
 environment:
-  GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-21.1.0
+  GRAALVM_HOME: C:\projects\datalevin\graalvm\graalvm-ce-java11-21.3.0
   DTVL_NATIVE_EXTRACT_DIR: C:\projects\datalevin
 
 clone_script:
@@ -41,7 +41,7 @@ build_script:
 - cmd: >-
     call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
 
-    powershell -Command "if (Test-Path('graalvm')) { return } else { (New-Object Net.WebClient).DownloadFile('https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-21.1.0/graalvm-ce-java11-windows-amd64-21.1.0.zip', 'graalvm.zip') }"
+    powershell -Command "if (Test-Path('graalvm')) { return } else { (New-Object Net.WebClient).DownloadFile('https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-21.3.0/graalvm-ce-java11-windows-amd64-21.3.0.zip', 'graalvm.zip') }"
 
     powershell -Command "if (Test-Path('graalvm')) { return } else { Expand-Archive graalvm.zip graalvm }"
 

@@ -3,14 +3,14 @@
   (:require [datalevin.datom :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
+            [datalevin.sparselist :as sl]
             [taoensso.nippy :as nippy])
-  (:import [java.util Arrays UUID Date Base64]
-           [java.io Writer DataInput DataOutput]
+  (:import [java.util ArrayList Arrays UUID Date Base64]
+           [java.io Writer DataInput DataOutput ObjectInput ObjectOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
-           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter
-            RoaringBitmapWriter$Wizard]
+           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
            [datalevin.datom Datom]))
 
 ;; bytes <-> text
@@ -70,18 +70,26 @@
    (let [^RoaringBitmapWriter writer (-> (RoaringBitmapWriter/writer)
                                          (.initialCapacity (count ints))
                                          (.get))]
-     (doseq [i ints] (.add writer i))
+     (doseq [^int i ints] (.add writer i))
      (.get writer))))
 
 (defn bitmap-del
   "Delete an int from the bitmap"
   [^RoaringBitmap bm i]
-  (.remove bm ^int i))
+  (.remove bm ^int i)
+  bm)
 
 (defn bitmap-add
   "Add an int from the bitmap"
   [^RoaringBitmap bm i]
-  (.add bm ^int i))
+  (.add bm ^int i)
+  bm)
+
+(defn- get-bitmap
+  [^ByteBuffer bf]
+  (let [bm (RoaringBitmap.)] (.deserialize bm bf) bm))
+
+(defn- put-bitmap [^ByteBuffer bf ^RoaringBitmap x] (.serialize x bf))
 
 ;; byte buffer
 
@@ -106,6 +114,20 @@
   "Get an int from a ByteBuffer"
   [^ByteBuffer bb]
   (.getInt bb))
+
+(defn get-short
+  "Get a short from a ByteBuffer"
+  [^ByteBuffer bb]
+  (.getShort bb))
+
+(defn get-short-array
+  "Get a short array from a ByteBuffer"
+  [^ByteBuffer bb]
+  (let [len (.getInt bb)
+        sa  (short-array len)]
+    (dotimes [i len]
+      (aset sa i (.getShort bb)))
+    sa))
 
 (defn- get-byte
   "Get a byte from a ByteBuffer"
@@ -132,14 +154,26 @@
 (defn- get-data
   "Read data from a ByteBuffer"
   ([^ByteBuffer bb]
-   (when-let [bs (get-bytes bb)]
-     (nippy/fast-thaw bs)))
+   (when-let [bs (get-bytes bb)] (nippy/fast-thaw bs)))
   ([^ByteBuffer bb n]
-   (when-let [bs (get-bytes-val bb n)]
-     (nippy/fast-thaw bs))))
+   (when-let [bs (get-bytes-val bb n)] (nippy/fast-thaw bs))))
 
 (def ^:no-doc ^:const float-sign-idx 31)
 (def ^:no-doc ^:const double-sign-idx 63)
+(def ^:no-doc ^:const instant-sign-idx 63)
+
+(defn- code-instant [^long x] (bit-flip x instant-sign-idx))
+
+(defn- get-instant
+  [^ByteBuffer bf]
+  (Date. ^long (code-instant (.getLong bf))))
+
+(defn- put-instant
+  [^ByteBuffer bf x]
+  (.putLong bf (code-instant
+                 (if (inst? x)
+                   (inst-ms x)
+                   (u/raise "Expect an inst? value" {:value x})))))
 
 (defn- decode-float
   [x]
@@ -161,12 +195,17 @@
   [^ByteBuffer bb]
   (decode-double (.getLong bb)))
 
-(defn- get-boolean
-  [^ByteBuffer bb]
-  (case (short (get-byte bb))
+(defn boolean-value
+  "Datalevin's boolean value in byte"
+  [b]
+  (case (short b)
     2 true
     1 false
-    (u/raise "Illegal value in buffer, expecting a boolean" {})))
+    (u/raise "Illegal value, expecting a Datalevin boolean value" {})))
+
+(defn- get-boolean
+  [^ByteBuffer bb]
+  (boolean-value (get-byte bb)))
 
 (defn- put-long
   [^ByteBuffer bb n]
@@ -182,7 +221,7 @@
 
 (defn- put-float
   [^ByteBuffer bb x]
-  (.putInt bb (encode-float x)))
+  (.putInt bb (encode-float (float x))))
 
 (defn- encode-double
   [^double x]
@@ -194,11 +233,15 @@
 
 (defn- put-double
   [^ByteBuffer bb x]
-  (.putLong bb (encode-double x)))
+  (.putLong bb (encode-double (double x))))
 
 (defn put-int
   [^ByteBuffer bb n]
   (.putInt bb ^int (int n)))
+
+(defn put-short
+  [^ByteBuffer bb n]
+  (.putShort bb ^short (short n)))
 
 (defn put-bytes
   "Put bytes into a bytebuffer"
@@ -401,7 +444,9 @@
                                     Float/POSITIVE_INFINITY val))
     -10 (put-double bf (wrap-extrema val Double/NEGATIVE_INFINITY
                                      Double/POSITIVE_INFINITY val))
-    -9  (put-long bf (wrap-extrema val 0 Long/MAX_VALUE (.getTime ^Date val)))
+    -9  (put-long bf (code-instant
+                       (wrap-extrema val Long/MIN_VALUE Long/MAX_VALUE
+                                     (.getTime ^Date val))))
     -8  (put-long bf (wrap-extrema val c/e0 Long/MAX_VALUE val))
     -7  (put-uuid bf (wrap-extrema val c/min-uuid c/max-uuid val))
     -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
@@ -474,7 +519,7 @@
     -63 (get-long bf)
     -11 (get-float bf)
     -10 (get-double bf)
-    -9  (Date. ^long (get-long bf))
+    -9  (get-instant bf)
     -8  (get-long bf)
     -7  (get-uuid bf)
     -6  (get-string bf post-v)
@@ -570,6 +615,10 @@
     :long    (long-header v)
     nil))
 
+(defn- put-sparse-list
+  [bf x]
+  (sl/serialize x bf))
+
 (defn put-buffer
   "In addition to the user facing data types, x-type can be one of the
   following internal data types:
@@ -585,44 +634,64 @@
   "
   ([bf x]
    (put-buffer bf x :data))
-  ([bf x x-type]
+  ([^ByteBuffer bf x x-type]
    (case x-type
-     :string  (do (put-byte bf (raw-header x :string))
-                  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
-     :int     (put-int bf x)
-     :long    (do (put-byte bf (raw-header x :long))
-                  (put-long bf x))
-     :id      (put-long bf x)
-     :float   (do (put-byte bf (raw-header x :float))
-                  (put-float bf x))
-     :double  (do (put-byte bf (raw-header x :double))
-                  (put-double bf x))
-     :byte    (put-byte bf x)
-     :bytes   (do (put-byte bf (raw-header x :bytes))
-                  (put-bytes bf x))
-     :keyword (do (put-byte bf (raw-header x :keyword))
-                  (put-bytes bf (key-sym-bytes x)))
-     :symbol  (do (put-byte bf (raw-header x :symbol))
-                  (put-bytes bf (key-sym-bytes x)))
-     :boolean (do (put-byte bf (raw-header x :boolean))
-                  (put-byte bf (if x c/true-value c/false-value)))
-     :instant (do (put-byte bf (raw-header x :instant))
-                  (put-long bf (.getTime ^Date x)))
-     :uuid    (do (put-byte bf (raw-header x :uuid))
-                  (put-uuid bf x))
-     :attr    (put-attr bf x)
-     :datom   (put-nippy bf x)
-     :bitmap  (put-nippy bf x)
-     :link    (put-link bf x)
-     :eav     (put-eav bf x)
-     :eav-a   (put-eav bf x)
-     :eavt    (put-eav bf x)
-     :ave     (put-ave bf x)
-     :avet    (put-ave bf x)
-     :vea     (put-vea bf x)
-     :veat    (put-vea bf x)
-     :raw     (put-bytes bf x)
+     :string         (do (put-byte bf (raw-header x :string))
+                         (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
+     :int            (put-int bf x)
+     :short          (put-short bf x)
+     :int-int        (let [[i1 i2] x]
+                       (put-int bf i1)
+                       (put-int bf i2))
+     :sial           (put-sparse-list bf x)
+     :bitmap         (put-bitmap bf x)
+     :term-info      (let [[i1 i2 i3] x]
+                       (put-int bf i1)
+                       (.putFloat bf (float i2))
+                       (put-sparse-list bf i3))
+     :doc-info       (let [[i1 i2] x]
+                       (put-short bf i1)
+                       (put-data bf i2))
+     :long           (do (put-byte bf (raw-header x :long))
+                         (put-long bf x))
+     :id             (put-long bf x)
+     :float          (do (put-byte bf (raw-header x :float))
+                         (put-float bf x))
+     :double         (do (put-byte bf (raw-header x :double))
+                         (put-double bf x))
+     :byte           (put-byte bf x)
+     :bytes          (do (put-byte bf (raw-header x :bytes))
+                         (put-bytes bf x))
+     :keyword        (do (put-byte bf (raw-header x :keyword))
+                         (put-bytes bf (key-sym-bytes x)))
+     :symbol         (do (put-byte bf (raw-header x :symbol))
+                         (put-bytes bf (key-sym-bytes x)))
+     :boolean        (do (put-byte bf (raw-header x :boolean))
+                         (put-byte bf (if x c/true-value c/false-value)))
+     :instant        (do (put-byte bf (raw-header x :instant))
+                         (put-instant bf x))
+     :instant-pre-06 (do (put-byte bf (raw-header x :instant))
+                         (.putLong bf (.getTime ^Date x)))
+     :uuid           (do (put-byte bf (raw-header x :uuid))
+                         (put-uuid bf x))
+     :attr           (put-attr bf x)
+     :datom          (put-nippy bf x)
+     :bitmap         (put-nippy bf x)
+     :link           (put-link bf x)
+     :eav            (put-eav bf x)
+     :eavt           (put-eav bf x)
+     :ave            (put-ave bf x)
+     :avet           (put-ave bf x)
+     :vea            (put-vea bf x)
+     :veat           (put-vea bf x)
+     :raw            (put-bytes bf x)
      (put-data bf x))))
+
+(defn- get-sparse-list
+  [bf]
+  (let [sl (sl/sparse-arraylist)]
+    (sl/deserialize sl bf)
+    sl))
 
 (defn read-buffer
   "In addition to the user facing data types, v-type can be one of the
@@ -640,29 +709,35 @@
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
    (case v-type
-     :string  (do (get-byte bf) (get-string bf))
-     :int     (get-int bf)
-     :long    (do (get-byte bf) (get-long bf))
-     :id      (get-long bf)
-     :float   (do (get-byte bf) (get-float bf))
-     :double  (do (get-byte bf) (get-double bf))
-     :byte    (get-byte bf)
-     :bytes   (do (get-byte bf) (get-bytes bf))
-     :keyword (do (get-byte bf) (get-keyword bf 0))
-     :symbol  (do (get-byte bf) (get-symbol bf 0))
-     :boolean (do (get-byte bf) (get-boolean bf))
-     :instant (do (get-byte bf) (Date. ^long (get-long bf)))
-     :uuid    (do (get-byte bf) (get-uuid bf))
-     :attr    (get-attr bf)
-     :datom   (get-nippy bf)
-     :bitmap  (get-nippy bf)
-     :link    (get-link bf)
-     :eav     (get-eav bf)
-     :eav-a   (get-eav-a bf)
-     :eavt    (get-eav bf)
-     :ave     (get-ave bf)
-     :avet    (get-ave bf)
-     :vea     (get-vea bf)
-     :veat    (get-vea bf)
-     :raw     (get-bytes bf)
+     :string         (do (get-byte bf) (get-string bf))
+     :short          (get-short bf)
+     :int            (get-int bf)
+     :int-int        [(get-int bf) (get-int bf)]
+     :bitmap         (get-bitmap bf)
+     :sial           (get-sparse-list bf)
+     :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
+     :doc-info       [(get-short bf) (get-data bf)]
+     :long           (do (get-byte bf) (get-long bf))
+     :id             (get-long bf)
+     :float          (do (get-byte bf) (get-float bf))
+     :double         (do (get-byte bf) (get-double bf))
+     :byte           (get-byte bf)
+     :bytes          (do (get-byte bf) (get-bytes bf))
+     :keyword        (do (get-byte bf) (get-keyword bf 0))
+     :symbol         (do (get-byte bf) (get-symbol bf 0))
+     :boolean        (do (get-byte bf) (get-boolean bf))
+     :instant        (do (get-byte bf) (get-instant bf))
+     :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
+     :uuid           (do (get-byte bf) (get-uuid bf))
+     :attr           (get-attr bf)
+     :datom          (get-nippy bf)
+     :bitmap         (get-nippy bf)
+     :link           (get-link bf)
+     :eav            (get-eav bf)
+     :eavt           (get-eav bf)
+     :ave            (get-ave bf)
+     :avet           (get-ave bf)
+     :vea            (get-vea bf)
+     :veat           (get-vea bf)
+     :raw            (get-bytes bf)
      (get-data bf))))

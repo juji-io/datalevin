@@ -2,8 +2,8 @@
 <h1 align="center">Datalevin</h1>
 <p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone 💽 </p>
 <p align="center">
-<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=sucess" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.5.21" alt="datalevin linux/macos build status"></img></a>
+<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.1" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -37,12 +37,12 @@ applications to manage state. Because data is persistent on disk in Datalevin,
 application state can survive application restarts, and data size can be larger
 than memory.
 
-Datalevin can also run in an event-driven networked client/server mode (default
+Datalevin can also run in an event-driven networked [client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md) mode (default
 port is 8898). The mode change is transparent. In the local mode, a data
 directory path, e.g. `/data/mydb`, is needed for database location, whereas a
 URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the client/server
 mode. The same set of core functions work in both modes. In addition,
-full-fledged role based access control (RBAC) is provided on the server.
+full-fledged role-based access control (RBAC) is provided on the server.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,
@@ -52,11 +52,11 @@ global configuration distribution. LMDB also [performs
 well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB).
 Therefore, it is fine to store documents in Datalevin.
 
-Datalevin uses cover index and has no write-ahead log, so once the data are
+Datalevin uses a covering index and has no write-ahead log, so once the data are
 written, they are indexed. There are no separate processes or threads for
 indexing, compaction or doing any database maintenance work that compete with
 your applications for resources. Since Datalog is simply a more ergonomic query
-language than SQL, Datalevin can serves the role of an easier-to-use and
+language than SQL, Datalevin can serve the role of an easier-to-use and
 more lightweight relational database (RDBMS), e.g. where SQLite or Firebird is called for.
 
 Independent from Datalog, Datalevin can be used as a fast key-value store for
@@ -64,6 +64,13 @@ Independent from Datalog, Datalevin can be used as a fast key-value store for
 for range queries, predicate filtering and more. The native EDN data capability
 of Datalevin should be beneficial for Clojure programs. One can use this feature
 in situations where something like Redis is called for, for instance.
+
+In addition, Datalevin has a [built-in full-text search
+engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
+[competitive](https://github.com/juji-io/datalevin/tree/master/search-bench)
+search performance. It integrates nicely with other database features, and works in
+all modes of Datalevin operation: embedded library, client/server, native
+command line and as a [Babashka](https://github.com/babashka/babashka) Pod.
 
 Our goal is to simplify data storage and access by supporting diverse use cases
 and paradigms, because maximal flexibility is the core strength of a Datalog
@@ -73,9 +80,9 @@ coherent and elegant manner.
 
 Using one data store for different use cases simplifies and reduces the cost of
 software development, deployment and maintenance. Therefore, we plan to
-implement necessary extensions to make Datalevin also a search engine, a
-production rule engine, a graph database, and a document database, since the
-storage and index structure of Datalevin is already compatible with all of them.
+implement necessary extensions to make Datalevin also a production rule engine,
+a graph database, and a document database, since the storage and index structure
+of Datalevin is already compatible with all of them.
 
 Presentation:
 
@@ -94,35 +101,56 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.5.21"]
+[datalevin "0.6.1"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.5.21"}
+{:deps {datalevin/datalevin {:mvn/version "0.6.1"}
         com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
 ```
 
-This JVM library supports Java 8 and above.
+This JVM library supports Java 8 and above. For JVM version newer than 11, you may want to add the following JVM options:
+```
+--add-opens=java.base/java.nio=ALL-UNNAMED
+--add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+```
+Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy".
 
-### Native Command Line Tool
 
-A native command line tool is built to work with Datalevin databases in shell
-scripting, e.g. database backup/compaction, data import/export,
+#### GraalVM Native Image
+
+If your application depends on the Datalevin library and you want to compile your
+application to a GraalVM native image, put `org.clojars.huahaiy/datalevin-native`
+instead  (they have the same version number) in your `project.clj` or `deps.edn` file.
+
+This is necessary because `datelevin-native` artifact contains GraalVM specific
+code that should not appear in a regular JVM library. See also this
+[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
+library supports JVM 11 and above.
+
+### Command Line Tool
+
+A command line tool [`dtlv`](https://github.com/juji-io/datalevin/blob/master/doc/dtlv.md) is built to work with Datalevin databases in shell
+scripting, doing work such as database backup/compaction, data import/export,
 query/transaction execution, server administration, and so on. The same binary
 can also run as a Datalevin server. This tool also includes a REPL with a Clojure
 interpreter, in addition to support all the database functions.
 
-Native Datalevin is built by compiling into [GraalVM native
+Unlike many other database software (e.g. SQLite, Postgres, etc.) that introduces
+a separate language for the command line, the same Clojure
+code works in both Datalevin library and Datalevin command line tool.
+
+A native Datalevin is built by compiling into [GraalVM native
 image](https://www.graalvm.org/reference-manual/native-image/). In addition to
-fast starup time, it should also have better database performance, for the
+fast startup times, it should also have better database performance, for the
 native image version does not incur JNI overhead and uses a comparator written
 in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
 
-Here is how to get native Datalevin:
+Here is how to get the Datalevin command line tool:
 
 #### MacOS and Linux Package
 
@@ -157,16 +185,16 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.1/dtlv-0.6.1-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.1/dtlv-0.6.1-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.5.21/dtlv-0.5.21-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.1/dtlv-0.6.1-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.5.21)
+  Datalevin (version: 0.6.1)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -203,38 +231,41 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.5.21)
+  Datalevin (version: 0.6.1)
 
-  Type (help) to see available functions. Clojure core functions are also available.
+  Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
 
 user> (help)
 
-In addition to Clojure core functions, the following functions are available:
+In addition to some Clojure core functions, the following functions are available:
 
 In namespace datalevin.core
 
-add                   clear                 clear-dbi             close
-close-db              close-kv              closed-kv?            closed?
-conn-from-datoms      conn-from-db          conn?                 copy
-create-conn           datom                 datom-a               datom-e
-datom-v               datom?                datoms                db
-db?                   dir                   drop-dbi              empty-db
-entid                 entity                entity-db             entries
-get-conn              get-first             get-range             get-some
-get-value             index-range           init-db               k
-list-dbis             listen!               open-dbi              open-kv
-pull                  pull-many             put-buffer            q
-range-count           range-filter          range-filter-count    read-buffer
-reset-conn!           resolve-tempid        retract               rseek-datoms
-schema                seek-datoms           stat                  tempid
+add                   add-doc               clear                 clear-dbi
+close                 close-db              close-kv              closed-kv?
+closed?               commit                conn-from-datoms      conn-from-db
+conn?                 copy                  create-conn           datom
+datom-a               datom-e               datom-v               datom?
+datoms                db                    db?                   dir
+doc-indexed?          drop-dbi              empty-db              entid
+entity                entity-db             entries               get-conn
+get-first             get-range             get-some              get-value
+hexify-string         index-range           init-db               k
+list-dbis             listen!               new-search-engine     open-dbi
+open-kv               pull                  pull-many             put-buffer
+q                     range-count           range-filter          range-filter-count
+read-buffer           remove-doc            reset-conn!           resolve-tempid
+retract               rseek-datoms          schema                search
+search-index-writer   seek-datoms           stat                  tempid
 touch                 transact              transact!             transact-async
-transact-kv           unlisten!             update-schema         v
-with-conn
+transact-kv           unhexify-string       unlisten!             update-schema
+v                     with-conn             write
 
 In namespace datalevin.interpret
 
-exec-code             inter-fn              inter-fn?
+definterfn            exec-code             inter-fn              inter-fn?
+load-edn
 
 In namespace datalevin.client
 
@@ -242,25 +273,52 @@ assign-role           close-database        create-database       create-role
 create-user           disconnect-client     drop-database         drop-role
 drop-user             grant-permission      list-databases        list-databases-in-use
 list-role-permissions list-roles            list-user-permissions list-user-roles
-list-users            new-client            query-system          reset-password
-revoke-permission     show-clients          withdraw-role
+list-users            new-client            open-database         query-system
+reset-password        revoke-permission     show-clients          withdraw-role
 
 Can call function without namespace: (<function name> <arguments>)
 
 Type (doc <function name>) to read documentation of the function
+
 user>
 
 ```
 
 You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 
+#### Uberjar
+
+A JVM
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.1/datalevin-0.6.1-standalone.jar)
+is downloadable to use as the command line tool, in case a pre-built native
+version is not available for your platform. For example,
+
+```console
+java -jar datalevin-0.6.1-standalone.jar
+```
+This will start the Datalevin REPL.
+
 ### Babashka Pod
 
-`dtlv` executable can also run as a [Babashka](https://github.com/babashka/babashka) [pod](https://github.com/babashka/pods), e.g.:
+The `dtlv` executable can also run as a
+[Babashka](https://github.com/babashka/babashka)
+[pod](https://github.com/babashka/pods). It is also possible to download
+Datalevin directly from [pod registry](https://github.com/babashka/pod-registry) within a Babashka script:
+
+```
+#!/usr/bin/env bb
+
+(require '[babashka.pods :as pods])
+(pods/load-pod 'huahaiy/datalevin "0.6.1")
+
+```
+
+For pod usage, an extra macro `defpodfn` is provided to define a custom function
+that can be used in a query, e.g.:
 
 ```console
 $ rlwrap bb
-Babashka v0.4.0 REPL.
+Babashka v0.7.6 REPL.
 Use :repl/quit or :repl/exit to quit the REPL.
 Clojure rocks, Bash reaches.
 
@@ -268,8 +326,12 @@ user=> (require '[babashka.pods :as pods])
 nil
 user=> (pods/load-pod "dtlv")
 #:pod{:id "pod.huahaiy.datalevin"}
-user=> (require '[pod.huahaiy.datalevin :as d])
+user=>  (require '[pod.huahaiy.datalevin :as d])
 nil
+user=> (d/defpodfn custom-fn [n] (str "hello " n))
+#:pod.huahaiy.datalevin{:inter-fn custom-fn}
+user=> (d/q '[:find ?greeting :where [(custom-fn "world") ?greeting]])
+#{["hello world"]}
 user=> (def conn (d/get-conn "/tmp/bb-test"))
 #'user/conn
 user=> (d/transact! conn [{:name "hello"}])
@@ -278,33 +340,10 @@ user=> (d/q '[:find ?n :where [_ :name ?n]] (d/db conn))
 #{["hello"]}
 user=> (d/close conn)
 nil
+user=>
 ```
 
-### JVM Command Line Tool
-
-A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.5.21/datalevin-0.5.21-standalone.jar)
-is downloadable to use as the command line tool, in case a pre-built native
-version is not available for your platform. For example,
-
-```console
-java -jar datalevin-0.5.21-standalone.jar
-```
-This will start the Datalevin REPL.
-
-### GraalVM Native Image
-
-If your application depends on the Datalevin library and you want to compile your
-application to a GraalVM native image, put `org.clojars.huahaiy/datalevin-native`
-instead of `datalevin/datalevin` (they have the same version number) in your
-`project.clj` or `deps.edn` file.
-
-This is necessary because `datelevin-native` artifact contains GraalVM specific
-code that should not appear in a regular JVM library. See also this
-[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
-library supports JVM 11 and above.
-
-## :tada: Library Usage
+## :tada: Usage
 
 Datalevin is aimed to be a versatile database.
 
@@ -526,11 +565,34 @@ Please read
 [this](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) for
 information regarding upgrading your existing database from older versions.
 
+## :earth_americas: Roadmap
+
+These are the tentative goals that we try to reach as soon as we can. We may
+adjust the priorities based on feedback.
+
+* 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
+* 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
+* 0.6.1 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
+* 0.7.0 A new Datalog query engine with improved performance.
+* 0.8.0 Persisted transaction functions.
+* 1.0.0 First major release.
+* 1.1.0 Read-only replicas.
+* 1.2.0 Option to store data in compressed form.
+* 1.3.0 Arbitrary data as attribute.
+* 1.4.0 Composite tuples.
+* 1.5.0 Fully automatic schema migration on write.
+* 2.0.0 Second major release.
+* 3.0.0 As a document store: automatic indexing.
+* 4.0.0 As a product rule engine: implementing Rete/UL algorithm.
+* 5.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 6.0.0 Distributed mode with raft based replication.
+
+
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io).
+in production at [Juji](https://juji.io) and a few other projects, e.g. [clojure-lsp](https://github.com/clojure-lsp/clojure-lsp) replaced SQLite with Datalevin to gain some caching speedups.
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
@@ -560,25 +622,6 @@ five datoms at a time, it takes more or less than that time.
 
 In short, Datalevin is quite capable for small or medium projects right now.
 Large scale projects can be supported when distributed mode is implemented.
-
-## :earth_americas: Roadmap
-
-These are the tentative goals that we try to reach as soon as we can. We may
-adjust the priorities based on feedback.
-
-* 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
-* 0.6.0 As a search engine: fuzzy fulltext search across multiple attributes.
-* 0.7.0 A new Datalog query engine with improved performance.
-* 0.8.0 Composite tuples and persisted transaction functions.
-* 1.0.0 Fit for business in most use cases.
-* 1.1.0 Option to store data in compressed form.
-* 2.0.0 Fully automatic schema migration on write.
-* 3.0.0 As a product rule engine: implementing Rete/UL algorithm.
-* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
-* 5.0.0 Distributed mode with raft based replication.
-
-We appreciate and welcome your contribution or suggestion. Please file issues or pull requests.
 
 ## :floppy_disk: Differences from Datascript
 
@@ -642,13 +685,13 @@ are applicable to Datascript.
 
 If you are interested in using the dialect of Datalog pioneered by Datomic®, here are your current options:
 
-* If you need time travel and rich features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
+* If you need time travel and features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
 
 * If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
 
-* If you need an in-memory graph database, [Asami](https://github.com/threatgrid/asami) is fast.
+* If you need a graph database, you may try [Asami](https://github.com/threatgrid/asami).
 
-* If you need features such as bi-temporal graph queries, you may try [Crux](https://github.com/juxt/crux).
+* If you need features such as bi-temporal graph queries, you may try [XTDB](https://github.com/xtdb/xtdb).
 
 * If you need a durable store with some storage choices, you may try [Datahike](https://github.com/replikativ/datahike).
 
@@ -656,8 +699,17 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 * If you need a simple, fast and versatile durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
 
+## :arrows_clockwise: Contact
+
+We appreciate and welcome your contribution or suggestion. Please feel free to
+file issues or pull requests.
+
+If commercial support is needed for Datalevin, talk to us.
+
+You can talk to us in the `#datalevin` channel on [Clojurians Slack](https://clojurians.slack.com/join/shared_invite/zt-lsr4rn2f-jealnYXLHVZ61V2vdi15QQ#/shared-invite/email).
+
 ## License
 
-Copyright © 2020-2021 [Juji, Inc.](https://juji.io). Contact us if commercial support is needed for Datalevin.
+Copyright © 2020-2022 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).

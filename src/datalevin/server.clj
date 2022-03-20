@@ -8,6 +8,7 @@
             [datalevin.lmdb :as l]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
+            [datalevin.search :as sc]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log]
@@ -478,11 +479,16 @@
 
 (defmacro ^:no-doc wrap-permission
   [req-act req-obj req-tgt message & body]
-  `(let [{:keys [~'client-id]}   @(~'.attachment ~'skey)
-         {:keys [~'permissions]} (get-client ~'server ~'client-id)]
-     (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
-       (do ~@body)
-       (u/raise ~message {}))))
+  `(let [{:keys [~'client-id ~'write-bf]} @(~'.attachment ~'skey)
+         ~'ch                             (~'.channel ~'skey)
+         {:keys [~'permissions]}          (get-client ~'server ~'client-id)]
+     (if ~'permissions
+       (if (has-permission? ~req-act ~req-obj ~req-tgt ~'permissions)
+         (do ~@body)
+         (u/raise ~message {}))
+       (do
+         (remove-client ~'server ~'client-id)
+         (p/write-message-blocking ~'ch ~'write-bf {:type :reconnect})))))
 
 (declare event-loop close-conn store->db-name)
 
@@ -536,6 +542,8 @@
                     :uid         (user-eid sys-conn username)
                     :username    username
                     :dbs         {}
+                    :engines     {}
+                    :writers     {}
                     :roles       roles
                     :permissions perms}))
       (log/info "Added client from:" ip
@@ -632,7 +640,7 @@
     (try
       (p/write-message-blocking ch write-bf msg)
       (catch BufferOverflowException _
-        (let [size (* c/+buffer-grow-factor+ ^int (.capacity write-bf))]
+        (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
           (vswap! state assoc :write-bf (b/allocate-buffer size))
           (write-message skey msg))))))
 
@@ -757,7 +765,7 @@
       :else                    (u/raise "Unknown store type" {}))))
 
 
-(defn- dt-store
+(defn- db-store
   [^Server server ^SelectionKey skey db-name]
   (get-in (get-client server (@(.attachment skey) :client-id))
           [:dbs db-name]))
@@ -790,13 +798,8 @@
      {:type   :command-complete
       :result (apply
                 ~(symbol "datalevin.storage" (str f))
-                (dt-store ~'server ~'skey (nth ~'args 0))
+                (db-store ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
-
-(defn- kv-store
-  [^Server server ^SelectionKey skey db-name]
-  (get-in (get-client server (@(.attachment skey) :client-id))
-          [:dbs db-name]))
 
 (defmacro ^:no-doc normal-kv-store-handler
   "Handle request to key-value store that needs no copy-in or copy-out"
@@ -806,12 +809,72 @@
      {:type   :command-complete
       :result (apply
                 ~(symbol "datalevin.lmdb" (str f))
-                (kv-store ~'server ~'skey (nth ~'args 0))
+                (db-store ~'server ~'skey (nth ~'args 0))
+                (rest ~'args))}))
+
+(defn- search-engine
+  [^Server server ^SelectionKey skey db-name]
+  (get-in (get-client server (@(.attachment skey) :client-id))
+          [:engines db-name]))
+
+(defn- new-search-engine
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name             (nth args 0)
+          dir                 (db-dir server db-name)
+          store               (get-store server dir)
+          {:keys [client-id]} @(.attachment skey)
+          engine              (or (get-in (get-client server client-id)
+                                          [:engines db-name])
+                                  (sc/new-search-engine store))]
+      (update-client server client-id
+                     #(update % :engines assoc db-name engine))
+      (write-message skey {:type :command-complete}))))
+
+(defmacro ^:no-doc search-handler
+  "Handle request to search engine"
+  [f]
+  `(write-message
+     ~'skey
+     {:type   :command-complete
+      :result (apply
+                ~(symbol "datalevin.search" (str f))
+                (search-engine ~'server ~'skey (nth ~'args 0))
+                (rest ~'args))}))
+
+(defn- index-writer
+  [^Server server ^SelectionKey skey db-name]
+  (get-in (get-client server (@(.attachment skey) :client-id))
+          [:writers db-name]))
+
+(defn- search-index-writer
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name             (nth args 0)
+          dir                 (db-dir server db-name)
+          store               (get-store server dir)
+          {:keys [client-id]} @(.attachment skey)
+          writer              (or (get-in (get-client server client-id)
+                                          [:writers db-name])
+                                  (sc/search-index-writer store))]
+      (update-client server client-id
+                     #(update % :writers assoc db-name writer))
+      (write-message skey {:type :command-complete}))))
+
+(defmacro ^:no-doc index-writer-handler
+  "Handle request to index writer"
+  [f]
+  `(write-message
+     ~'skey
+     {:type   :command-complete
+      :result (apply
+                ~(symbol "datalevin.search" (str f))
+                (index-writer ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
 (defn- open-server-store
   "Open a store. NB. stores are left open"
-  [^Server server ^SelectionKey skey {:keys [db-name schema]} db-type]
+  [^Server server ^SelectionKey skey {:keys [db-name schema opts]} db-type]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
           {:keys [username]}  (get-client server client-id)
@@ -830,7 +893,7 @@
                           ds)
                         (case db-type
                           :datalog   (st/open dir schema db-name)
-                          :key-value (l/open-kv dir)))]
+                          :key-value (l/open-kv dir opts)))]
           (add-store server dir store)
           (update-client server client-id #(update % :dbs assoc db-name store))
           (when-not existing-db?
@@ -883,18 +946,13 @@
          (update :permissions
                  #(mapv
                     (fn [{:keys [permission/act permission/obj
-                                permission/tgt]}]
+                                 permission/tgt]}]
                       (if-let [{:keys [db/id]} tgt]
                         [act obj (perm-tgt-name sys-conn obj id)]
                         [act obj]))
                     %))
          (assoc :open-dbs (keys (:dbs m)))
          (select-keys [:ip :username :roles :permissions :open-dbs]))]))
-
-(defn- encode-tx-result
-  "encode transaction report into a vector"
-  [{:keys [tx-data tempids]}]
-  )
 
 ;; BEGIN message handlers
 
@@ -1255,7 +1313,7 @@
       ::alter ::database (db-eid (.-sys-conn server)
                                  (store->db-name
                                    server
-                                   (dt-store server skey (nth args 0))))
+                                   (db-store server skey (nth args 0))))
       "Don't have permission to alter the database"
       (normal-dt-store-handler set-schema))))
 
@@ -1309,7 +1367,7 @@
               rp  (d/with db txs)
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (select-keys rp [:tx-data :tempids])]
-          (if (< ct c/+wire-datom-batch-size+)
+          (if (< ct ^long c/+wire-datom-batch-size+)
             (write-message skey {:type :command-complete :result res})
             (let [{:keys [tx-data tempids]} res]
               (copy-out skey (into tx-data tempids)
@@ -1339,8 +1397,8 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [datoms (apply st/slice
-                        (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+                        (db-store server skey (nth args 0)) (rest args))]
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1348,8 +1406,8 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [datoms (apply st/rslice
-                        (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+                        (db-store server skey (nth args 0)) (rest args))]
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1381,8 +1439,8 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)
 
           datoms (apply st/slice-filter
-                        (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+                        (db-store server skey (nth args 0)) (rest args))]
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1392,8 +1450,8 @@
     (let [frozen (nth args 2)
           args   (replace {frozen (nippy/fast-thaw frozen)} args)
           datoms (apply st/rslice-filter
-                        (dt-store server skey (nth args 0)) (rest args))]
-      (if (< (count datoms) c/+wire-datom-batch-size+)
+                        (db-store server skey (nth args 0)) (rest args))]
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
@@ -1412,7 +1470,7 @@
 (defn- open-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (apply l/open-dbi (kv-store server skey (nth args 0)) (rest args))
+    (apply l/open-dbi (db-store server skey (nth args 0)) (rest args))
     (write-message skey {:type :command-complete})))
 
 (defn- clear-dbi
@@ -1436,7 +1494,7 @@
           tf                 (u/tmp-dir (str "copy-" (UUID/randomUUID)))
           path               (Paths/get (str tf u/+separator+ "data.mdb")
                                         (into-array String []))]
-      (l/copy (kv-store server skey db-name) tf compact?)
+      (l/copy (db-store server skey db-name) tf compact?)
       (copy-out skey
                 (u/encode-base64 (Files/readAllBytes path))
                 8192))))
@@ -1477,8 +1535,8 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [data (apply l/get-range
-                      (kv-store server skey (nth args 0)) (rest args))]
-      (if (< (count data) c/+wire-datom-batch-size+)
+                      (db-store server skey (nth args 0)) (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
@@ -1499,8 +1557,8 @@
     (let [frozen (nth args 2)
           args   (replace {frozen (nippy/fast-thaw frozen)} args)
           data   (apply l/range-filter
-                        (kv-store server skey (nth args 0)) (rest args))]
-      (if (< (count data) c/+wire-datom-batch-size+)
+                        (db-store server skey (nth args 0)) (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
@@ -1511,6 +1569,19 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)]
       (normal-kv-store-handler range-filter-count))))
 
+(defn- visit
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace
+                   {frozen
+                    (binding [nippy/*thaw-serializable-allowlist*
+                              (conj nippy/default-thaw-serializable-allowlist
+                                    "java.util.*")]
+                      (nippy/fast-thaw frozen))}
+                   args)]
+      (normal-kv-store-handler visit))))
+
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
@@ -1518,9 +1589,35 @@
           db                     (get-db server db-name)
           inputs                 (replace {:remote-db-placeholder db} inputs)
           data                   (apply q/q query inputs)]
-      (if (< (count data) c/+wire-datom-batch-size+)
-        (write-message skey {:type :command-complete :result data})
-        (copy-out skey data c/+wire-datom-batch-size+)))))
+      (if (coll? data)
+        (if (< (count data) ^long c/+wire-datom-batch-size+)
+          (write-message skey {:type :command-complete :result data})
+          (copy-out skey data c/+wire-datom-batch-size+))
+        (write-message skey {:type :command-complete :result data})))))
+
+(defn- add-doc
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler add-doc)))
+
+(defn- remove-doc
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler remove-doc)))
+
+(defn- doc-indexed?
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler doc-indexed?)))
+
+(defn- search
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler search)))
+
+(defn- write
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (index-writer-handler write)))
+
+(defn- commit
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (index-writer-handler commit)))
 
 ;; END message handlers
 
@@ -1594,7 +1691,16 @@
    'get-some
    'range-filter
    'range-filter-count
-   'q])
+   'visit
+   'q
+   'new-search-engine
+   'add-doc
+   'remove-doc
+   'doc-indexed?
+   'search
+   'search-index-writer
+   'write
+   'commit])
 
 (defmacro ^:no-doc message-cases
   "Message handler function should have the same name as the incoming message
@@ -1624,11 +1730,10 @@
         {:keys [^ByteBuffer read-bf]} @state
         capacity                      (.capacity read-bf)
         ^SocketChannel ch             (.channel skey)
-        readn                         (.read ch read-bf)]
+        ^int readn                    (p/read-ch ch read-bf)]
     (cond
-      (= readn 0)  :continue
       (> readn 0)  (if (= (.position read-bf) capacity)
-                     (let [size (* c/+buffer-grow-factor+ capacity)
+                     (let [size (* ^long c/+buffer-grow-factor+ capacity)
                            bf   (b/allocate-buffer size)]
                        (.flip read-bf)
                        (b/buffer-transfer read-bf bf)
@@ -1638,6 +1743,7 @@
                        (fn [fmt msg]
                          (execute server
                                   #(handle-message server skey fmt msg)))))
+      (= readn 0)  :continue
       (= readn -1) (.close ch))))
 
 (defn- handle-registration

@@ -40,6 +40,12 @@
         "allPublicClasses" : true
     },
     {
+        "name":"java.util.concurrent.ConcurrentLinkedQueue",
+        "methods":[
+            {"name":"iterator","parameterTypes":[] }
+        ]
+    },
+    {
         "name":"sun.security.provider.NativePRNG",
         "methods":[{"name":"<init>","parameterTypes":[] }]
     },
@@ -53,6 +59,17 @@
       "allPublicFields" : true,
       "allDeclaredFields" : true,
       "allPublicClasses" : true
+    },
+    {
+        "name":"datalevin.binding.graal.DBI",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
     },
     {
         "name":"datalevin.entity.Entity",

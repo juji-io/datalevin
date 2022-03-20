@@ -1,3 +1,6 @@
+search-bench/data
+search-bench/*.json
+search-bench/*.txt
 /test-jar/tmp
 /target
 /bench/target

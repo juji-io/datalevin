@@ -4,12 +4,14 @@
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.storage :as s]
+            [datalevin.search :as sc]
             [datalevin.lmdb :as l]
             [taoensso.nippy :as nippy]
             [clojure.string :as str])
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
            [datalevin.lmdb ILMDB]
+           [datalevin.search ISearchEngine IIndexWriter]
            [java.nio.file Files Paths StandardOpenOption LinkOption]
            [java.net URI]))
 
@@ -30,7 +32,7 @@
             :tx-data
             :load-datoms)
         {:keys [type message]}
-        (if (< (count datoms) c/+wire-datom-batch-size+)
+        (if (< (count datoms) ^long c/+wire-datom-batch-size+)
           (cl/request client {:type t
                               :mode :request
                               :args [db-name datoms]})
@@ -157,7 +159,7 @@
      (if-let [db-name (cl/parse-db uri)]
        (let [store (or (get (cl/parse-query uri) "store")
                        c/db-store-datalog)]
-         (cl/open-database client db-name store schema)
+         (cl/open-database client db-name store schema nil)
          (->DatalogStore uri-str db-name client))
        (u/raise "URI should contain a database name" {})))))
 
@@ -167,8 +169,6 @@
                   ^String db-name
                   ^Client client]
   ILMDB
-  (dir [_] uri)
-
   (close-kv [_]
     (when-not (cl/disconnected? client)
       (cl/normal-request client :close-kv [db-name])))
@@ -178,12 +178,18 @@
       true
       (cl/normal-request client :closed-kv? [db-name])))
 
+  (dir [_] uri)
+
   (open-dbi [db dbi-name]
-    (l/open-dbi db dbi-name c/+max-key-size+ c/+default-val-size+))
+    (l/open-dbi db dbi-name c/+max-key-size+ c/+default-val-size+
+                c/default-dbi-flags))
   (open-dbi [db dbi-name key-size]
-    (l/open-dbi db dbi-name key-size c/+default-val-size+))
-  (open-dbi [_ dbi-name key-size val-size]
-    (cl/normal-request client :open-dbi [db-name dbi-name key-size val-size]))
+    (l/open-dbi db dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
+  (open-dbi [db dbi-name key-size val-size]
+    (l/open-dbi db dbi-name key-size val-size c/default-dbi-flags))
+  (open-dbi [_ dbi-name key-size val-size flags]
+    (cl/normal-request client :open-dbi
+                       [db-name dbi-name key-size val-size flags]))
 
   (clear-dbi [db dbi-name]
     (cl/normal-request client :clear-dbi [db-name dbi-name]))
@@ -214,7 +220,7 @@
 
   (transact-kv [db txs]
     (let [{:keys [type message]}
-          (if (< (count txs) c/+wire-datom-batch-size+)
+          (if (< (count txs) ^long c/+wire-datom-batch-size+)
             (cl/request client {:type :transact-kv
                                 :mode :request
                                 :args [db-name txs]})
@@ -289,18 +295,68 @@
   (range-filter-count [db dbi-name pred k-range k-type]
     (let [frozen-pred (nippy/fast-freeze pred)]
       (cl/normal-request client :range-filter-count
-                         [db-name dbi-name frozen-pred k-range k-type]))))
+                         [db-name dbi-name frozen-pred k-range k-type])))
+
+  (visit [db dbi-name visitor k-range]
+    (l/visit db dbi-name visitor k-range :data))
+  (visit [db dbi-name visitor k-range k-type]
+    (let [frozen-visitor (nippy/fast-freeze visitor)]
+      (cl/normal-request client :visit
+                         [db-name dbi-name frozen-visitor k-range k-type]))))
 
 (defn open-kv
   "Open a remote kv store."
   ([uri-str]
-   (open-kv (cl/new-client uri-str) uri-str))
-  ([client uri-str]
+   (open-kv uri-str nil))
+  ([uri-str opts]
+   (open-kv (cl/new-client uri-str) uri-str opts))
+  ([client uri-str opts]
    (let [uri     (URI. uri-str)
          uri-str (str uri-str
                       (if (cl/parse-query uri) "&" "?")
                       "store=" c/db-store-kv)]
      (if-let [db-name (cl/parse-db uri)]
-       (do (cl/open-database client db-name c/db-store-kv)
+       (do (cl/open-database client db-name c/db-store-kv opts)
            (->KVStore uri-str db-name client))
        (u/raise "URI should contain a database name" {})))))
+
+;; remote search
+
+(deftype SearchEngine [^KVStore store]
+  ISearchEngine
+  (add-doc [this doc-ref doc-text]
+    (cl/normal-request (.-client store) :add-doc
+                       [(.-db-name store) doc-ref doc-text]))
+
+  (remove-doc [this doc-ref]
+    (cl/normal-request (.-client store) :remove-doc
+                       [(.-db-name store) doc-ref]))
+
+  (doc-indexed? [this doc-ref]
+    (cl/normal-request (.-client store) :doc-indexed?
+                       [(.-db-name store) doc-ref]))
+
+  (search [this query]
+    (sc/search this query {}))
+  (search [this query opts]
+    (cl/normal-request (.-client store) :search
+                       [(.-db-name store) query opts])))
+
+(defn new-search-engine [^KVStore store]
+  (cl/normal-request (.-client store) :new-search-engine
+                     [(.-db-name store)])
+  (->SearchEngine store))
+
+(deftype IndexWriter [^KVStore store]
+  IIndexWriter
+  (write [this doc-ref doc-text]
+    (cl/normal-request (.-client store) :write
+                       [(.-db-name store) doc-ref doc-text]))
+
+  (commit [this]
+    (cl/normal-request (.-client store) :commit [(.-db-name store)])))
+
+(defn search-index-writer [^KVStore store]
+  (cl/normal-request (.-client store) :search-index-writer
+                     [(.-db-name store)])
+  (->IndexWriter store))

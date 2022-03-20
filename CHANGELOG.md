@@ -1,5 +1,80 @@
 # Change Log
 
+## 0.6.1
+### Added
+- `doc-indexed?` function
+### Improved
+- `add-doc` can update existing doc
+- `open-kv` function allows LMDB flags, #100
+
+## 0.6.0
+### Added
+- Built-in full-text search engine, #27
+- Key-value database `visit` function to do arbitrary things upon seeing a
+  value in a range
+
+### Fixed
+- [**breaking**]`:instant` handles dates before 1970 correctly, #94. The storage
+  format of `:instant` type has been changed. For existing Datalog DB containing
+  `:db.type/instant`, dumping as a Datalog DB using the old version of dtlv, then
+  loading the data is required; For existing key-value DB containing `:instant`
+  type, specify `:instant-pre-06` instead to read the data back in, then write
+  them out as `:instant` to upgrade to the current format.
+
+### Improved
+- Improve read performance by adding a cursor pool and switch to a more
+  lightweight transaction pool
+- Dependency bump
+
+## 0.5.31
+### Fixed
+- Create pod client side `defpodfn` so it works in non-JVM.
+### Added
+- `load-edn` for dtlv, useful for e.g. loading schema from a file, #101
+
+## 0.5.30
+###  Fixed
+- Serialized writes for concurrent transactions, #83
+### Added
+- `defpodfn` macro to define a query function that can be used in babashka pod, #85
+
+## 0.5.29
+### Fixed
+- Update `max-aid` after schema update (thx @den1k)
+
+## 0.5.28
+### Improved
+- Updated dependencies, particularly fixed sci version (thx @borkdude)
+
+## 0.5.27
+### Fixed
+- occasional LMDB crash during multiple threads write or abrupt exit
+
+## 0.5.26
+### Improved
+- Update graalvm version
+### Fixed
+- Exception handling in copy
+
+## 0.5.24
+### Fixed
+- Handle scalar result in remote queries
+### Improved
+- Server asks client to reconnect if the server is restarted and client
+  reconnects automatically when doing next request
+
+## 0.5.23
+### Improved
+- Bump versions of all dependency
+
+## 0.5.22
+### Improved
+- More robust handling of abrupt network disconnections
+- Automatically maintain the required number of open connections, #68
+### Added
+- Options to specify the number of connections in the client connection pool
+  and to set the time-out for server requests
+
 ## 0.4.44
 ### Fixed
 - Backport the dump/load fix from 0.5.20
@@ -88,7 +163,7 @@
   and #61
 - `dtlv exec` takes input from stdin when no argument is given.
 ### Improved
-- When open db, throw exception without proper file permission
+- When open db, throw exception when lacking proper file permission
 
 ## 0.4.40
 ### Added

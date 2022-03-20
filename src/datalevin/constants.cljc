@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
-  (:import [java.util UUID Arrays]))
+  (:import [java.util UUID Arrays HashSet]))
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -92,12 +92,20 @@
 (def ^:const classes "datalevin/classes")
 (def ^:const meta "datalevin/meta")
 
+(def ^:const terms "datalevin/terms")         ; term -> term-id,max-weight,doc-freq
+(def ^:const docs "datalevin/docs")           ; doc-id -> norm,doc-ref
+(def ^:const positions "datalevin/positions") ; term-id,doc-id -> position,offset (list)
+
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean
                                    :db.type/long :db.type/double
                                    :db.type/float :db.type/ref
                                    :db.type/instant :db.type/uuid
                                    :db.type/bytes})
+
+;; search engine
+
+(def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
 
 ;; server / client
 
@@ -120,36 +128,64 @@
 (def ^:const message-format-transit (unchecked-byte 0x01))
 (def ^:const message-format-nippy (unchecked-byte 0x02))
 
+;;-------------------------------------------------------------
+
+;; dynamic
+
 
 ;;-------------------------------------------------------------
 
 ;; user configurable TODO: make it so
 
+
 ;; general
 
-(def ^:const +buffer-grow-factor+ 10)
+(def +buffer-grow-factor+ 10)
 
 ;; lmdb
 
-(def ^:const +max-dbs+          128)
-(def ^:const +max-readers+      126)
-(def ^:const +use-readers+      32)    ; leave the rest to others
-(def ^:const +init-db-size+     100)   ; in megabytes
-(def ^:const +default-val-size+ 16384) ; in bytes
+(def +max-dbs+          128)
+(def +max-readers+      126)
+(def +use-readers+      32)    ; leave the rest to others
+(def +init-db-size+     100)   ; in megabytes
+(def +default-val-size+ 16384) ; in bytes
 
 ;; storage
 
-(def ^:const +tx-datom-batch-size+ 100000)
+(def +tx-datom-batch-size+ 100000)
 
 ;; query
 
-(def ^:const +cache-limit+ 1000)  ; per Datalog db
+(def +cache-limit+ 1000)  ; per Datalog db
 
 ;; client/server
 
-(def ^:const +default-buffer-size+ 65536) ; in bytes
+(def +default-buffer-size+ 65536) ; in bytes
 
-(def ^:const +wire-datom-batch-size+ 1000)
+(def +wire-datom-batch-size+ 1000)
 
-(def ^:const connection-pool-size 5)
-(def ^:const connection-timeout 30000) ; in milliseconds
+(def connection-pool-size 5)
+(def connection-timeout 30000) ; in milliseconds
+
+;;search engine
+
+(def en-stop-words-set
+  (let [s (HashSet.)]
+    (doseq [w ["a",    "an",   "and",   "are",  "as",    "at",   "be",
+               "but",  "by",   "for",   "if",   "in",    "into", "is",
+               "it",   "no",   "not",   "of",   "on",    "or",   "such",
+               "that", "the",  "their", "then", "there", "these",
+               "they", "this", "to",    "was",  "will",  "with"]]
+      (.add s w))
+    s))
+
+(defn en-stop-words? [w] (.contains ^HashSet en-stop-words-set w))
+
+(def en-punctuations-set
+  (let [s (HashSet.)]
+    (doseq [c [\: \/ \. \; \, \! \= \? \" \' \( \) \[ \] \{ \}
+               \| \< \> \& \@ \# \^ \* \\ \~ \`]]
+      (.add s c))
+    s))
+
+(defn en-punctuations? [c] (.contains ^HashSet en-punctuations-set c))

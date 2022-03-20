@@ -12,10 +12,12 @@
 
 (deftest exec-test
   (let [dir  (u/tmp-dir (str "datalevin-exec-test-" (UUID/randomUUID)))
-        code (str "(def conn (get-conn \"" dir "\"))"
-                  "(transact! conn [{:name \"Datalevin\"}])"
-                  "(q (quote [:find ?e ?n :where [?e :name ?n]]) @conn)"
-                  "(close conn)")
+        code (str
+               "(def schema (load-edn \"simple-schema.edn\"))"
+               "(def conn (get-conn \"" dir "\" schema))"
+               "(transact! conn [{:name \"Datalevin\"}])"
+               "(q (quote [:find ?e ?n :where [?e :name ?n]]) @conn)"
+               "(close conn)")
         res  (with-out-str (sut/exec-code code))]
     (is (s/includes? res "#{[1 \"Datalevin\"]}"))
     (u/delete-files dir)))

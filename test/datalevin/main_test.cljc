@@ -2,6 +2,7 @@
   (:require [datalevin.main :as sut]
             [datalevin.util :as u]
             [datalevin.core :as d]
+            [datalevin.lmdb :as l]
             [clojure.test.check.generators :as gen]
             [clojure.string :as s]
             #?(:clj [clojure.test :refer [is deftest]]
@@ -43,7 +44,20 @@
     (is (s/includes? res "#{[1 \"Datalevin\"]}"))
     (u/delete-files dir)))
 
-(deftest copy-test
+(deftest exec-kv-search-test
+  (let [dir  (u/tmp-dir (str "datalevin-exec-kv-search-test-" (UUID/randomUUID)))
+        code (str "(def lmdb (open-kv \"" dir "\"))"
+                  "(def engine (new-search-engine lmdb))"
+                  "(open-dbi lmdb \"raw\")"
+                  "(transact-kv lmdb [[:put \"raw\" 1 \"The quick red fox jumped over the lazy red dogs.\"] [:put \"raw\" 2 \"Mary had a little lamb whose fleece was red as fire.\"] [:put \"raw\" 3 \"Moby Dick is a story of a whale and a man obsessed.\"]])"
+                  "(doseq [i [1 2 3]] (add-doc engine i (get-value lmdb \"raw\" i)))"
+                  "(search engine \"lazy\")"
+                  "(close-kv lmdb)")
+        res (with-out-str (with-in-str code (sut/exec nil)))]
+    (is (s/includes? res "(1)"))
+    (u/delete-files dir)))
+
+(deftest copy-stat-test
   (let [src (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
         dst (u/tmp-dir (str "datalevin-copy-test-" (UUID/randomUUID)))
         db  (d/open-kv src)
@@ -51,6 +65,14 @@
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
     (sut/copy src dst true)
+    (is (= (l/stat db)
+           {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
+            :overflow-pages 0,    :entries 1}))
+    (doseq [i (l/list-dbis db)]
+      (println i)
+      (is (= (l/stat db i)
+             {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
+              :overflow-pages 0,    :entries 1})))
     (let [db-copied (d/open-kv dst)]
       (d/open-dbi db-copied dbi)
       (is (= (d/get-value db-copied dbi "Hello") "Datalevin"))

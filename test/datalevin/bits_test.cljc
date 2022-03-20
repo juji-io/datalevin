@@ -1,5 +1,6 @@
 (ns datalevin.bits-test
   (:require [datalevin.bits :as sut]
+            [datalevin.sparselist :as sl]
             [datalevin.datom :as d]
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
@@ -12,7 +13,30 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [org.roaringbitmap RoaringBitmap]
+           [datalevin.sparselist SparseIntArrayList]
            [datalevin.bits Indexable Retrieved]))
+
+;; binary index preserves the order of values
+
+(def e 123456)
+(def a 235)
+
+(defn- bf-compare
+  "Jave ByteBuffer compareTo is byte-wise signed comparison, not good"
+  [^ByteBuffer bf1 ^ByteBuffer bf2]
+  (loop []
+    (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
+          v2  (short (bit-and (.get bf2) (short 0xFF)))
+          res (- v1 v2)]
+      (if (not (zero? res))
+        res
+        (let [r1 (.remaining bf1)
+              r2 (.remaining bf2)]
+          (cond
+            (= r1 r2 0)             0
+            (and (< 0 r1) (= 0 r2)) 1
+            (and (= 0 r1) (< 0 r2)) -1
+            :else                   (recur)))))))
 
 ;; buffer read/write
 
@@ -52,6 +76,41 @@
                   (.flip bf)
                   (= k (sut/read-buffer bf :int)))))
 
+(test/defspec int-int-generative-test
+  100
+  (prop/for-all [k1 gen/int
+                 k2 gen/int]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (.clear bf)
+                  (sut/put-buffer bf [k1 k2] :int-int)
+                  (.flip bf)
+                  (= [k1 k2] (sut/read-buffer bf :int-int)))))
+
+(test/defspec doc-info-generative-test
+  100
+  (prop/for-all [k1 gen/small-integer
+                 k2 gen/any-equatable]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (.clear bf)
+                  (sut/put-buffer bf [k1 k2] :doc-info)
+                  (.flip bf)
+                  (= [k1 k2] (sut/read-buffer bf :doc-info)))))
+
+(test/defspec term-info-generative-test
+  100
+  (prop/for-all [k1 gen/int
+                 k2 (gen/double* {:NaN? false})
+                 k3 (gen/vector gen/int)
+                 k4 (gen/vector gen/int)]
+                (let [^ByteBuffer bf         (sut/allocate-buffer 16384)
+                      k2                     (float k2)
+                      k3                     (sort k3)
+                      ^SparseIntArrayList sl (sl/sparse-arraylist k3 k4)]
+                  (.clear bf)
+                  (sut/put-buffer bf [k1 k2 sl] :term-info)
+                  (.flip bf)
+                  (= [k1 k2 sl] (sut/read-buffer bf :term-info)))))
+
 (test/defspec long-generative-test
   100
   (prop/for-all [k gen/large-integer]
@@ -69,6 +128,16 @@
                   (sut/put-buffer bf k :double)
                   (.flip bf)
                   (= k (sut/read-buffer bf :double)))))
+
+(test/defspec float-generative-test
+  100
+  (prop/for-all [k (gen/double* {:NaN? false})]
+                (let [f              (float k)
+                      ^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (.clear bf)
+                  (sut/put-buffer bf f :float)
+                  (.flip bf)
+                  (= f (sut/read-buffer bf :float)))))
 
 (test/defspec bytes-generative-test
   100
@@ -117,13 +186,34 @@
 
 (test/defspec instant-generative-test
   100
-  (prop/for-all [k gen/pos-int]
-                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (let [d (Date. ^long k)]
-                    (.clear bf)
-                    (sut/put-buffer bf d :instant)
-                    (.flip bf)
-                    (= d (sut/read-buffer bf :instant))))))
+  (prop/for-all [k gen/int]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)
+                      d              (Date. ^long k)]
+                  (.clear bf)
+                  (sut/put-buffer bf d :instant)
+                  (.flip bf)
+                  (= d (sut/read-buffer bf :instant)))))
+
+(test/defspec instant-compare-test
+  100
+  (prop/for-all [k gen/int
+                 k1 gen/int]
+                (let [^ByteBuffer bf  (sut/allocate-buffer (inc Long/BYTES))
+                      ^ByteBuffer bf1 (sut/allocate-buffer (inc Long/BYTES))
+                      d               (Date. ^long k)
+                      d1              (Date. ^long k1)
+                      sign            (fn [^long diff]
+                                        (cond
+                                          (< 0 diff) 1
+                                          (= 0 diff) 0
+                                          (< diff 0) -1))]
+                  (.clear bf)
+                  (sut/put-buffer bf d :instant)
+                  (.flip bf)
+                  (.clear bf1)
+                  (sut/put-buffer bf1 d1 :instant)
+                  (.flip bf1)
+                  (= (sign (- ^long k ^long k1)) (sign (bf-compare bf bf1))))))
 
 (test/defspec uuid-generative-test
   100
@@ -140,7 +230,7 @@
     (.clear bf)
     (sut/put-buffer bf d1 :datom)
     (.flip bf)
-    (is (= d1 (nippy/thaw (nippy/freeze d1))))
+    (is (= d1 (nippy/fast-thaw (nippy/fast-freeze d1))))
     (is (= d1 (sut/read-buffer bf :datom)))))
 
 (test/defspec datom-generative-test
@@ -164,28 +254,6 @@
                   (sut/put-buffer bf k :attr)
                   (.flip bf)
                   (= k (sut/read-buffer bf :attr)))))
-
-;; binary index preserves the order of values
-
-(def e 123456)
-(def a 235)
-
-(defn- bf-compare
-  "Jave ByteBuffer compareTo is byte-wise signed comparison, not good"
-  [^ByteBuffer bf1 ^ByteBuffer bf2]
-  (loop []
-    (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
-          v2  (short (bit-and (.get bf2) (short 0xFF)))
-          res (- v1 v2)]
-      (if (not (zero? res))
-        res
-        (let [r1 (.remaining bf1)
-              r2 (.remaining bf2)]
-          (cond
-            (= r1 r2 0)             0
-            (and (< 0 r1) (= 0 r2)) 1
-            (and (= 0 r1) (< 0 r2)) -1
-            :else                   (recur)))))))
 
 ;; extrema bounds
 
@@ -282,20 +350,31 @@
 (test/defspec double-extrema-generative-test
   100
   (prop/for-all
-   [v (gen/double* {:NaN? false})]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/double)
-                 (sut/indexable e a c/v0 :db.type/double)
-                 (sut/indexable e a c/vmax :db.type/double))))
+    [v (gen/double* {:NaN? false})]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/double)
+                  (sut/indexable e a c/v0 :db.type/double)
+                  (sut/indexable e a c/vmax :db.type/double))))
+
+
+(test/defspec float-extrema-generative-test
+  100
+  (prop/for-all
+    [v (gen/double* {:NaN? false})]
+    (let [f (float v)]
+      (test-extrema f
+                    (sut/indexable e a f :db.type/float)
+                    (sut/indexable e a c/v0 :db.type/float)
+                    (sut/indexable e a c/vmax :db.type/float)))))
 
 (test/defspec ref-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/nat]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/ref)
-                 (sut/indexable e a c/v0 :db.type/ref)
-                 (sut/indexable e a c/vmax :db.type/ref))))
+    [v  gen/nat]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/ref)
+                  (sut/indexable e a c/v0 :db.type/ref)
+                  (sut/indexable e a c/vmax :db.type/ref))))
 
 (test/defspec uuid-extrema-generative-test
   100
@@ -424,15 +503,28 @@
 (test/defspec instant-eav-generative-test
   100
   (prop/for-all
-   [e1 (gen/large-integer* {:min c/e0})
-    a1 gen/nat
-    v1 gen/pos-int
-    v gen/pos-int]
-   (let [v' (Date. ^long v)
-         v1' (Date. ^long v1)]
-     (eav-test v' e1 a1 v1'
-              (sut/indexable e a v' :db.type/instant)
-              (sut/indexable e1 a1 v1' :db.type/instant)))))
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 gen/int
+     v gen/int]
+    (let [v'  (Date. ^long v)
+          v1' (Date. ^long v1)]
+      (eav-test v' e1 a1 v1'
+                (sut/indexable e a v' :db.type/instant)
+                (sut/indexable e1 a1 v1' :db.type/instant)))))
+
+(test/defspec instant-vea-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 gen/int
+     v gen/int]
+    (let [v'  (Date. ^long v)
+          v1' (Date. ^long v1)]
+      (ave-test v' e1 a1 v1'
+                (sut/indexable e a v' :db.type/instant)
+                (sut/indexable e1 a1 v1' :db.type/instant)))))
 
 (test/defspec keyword-eav-generative-test
   100
@@ -567,7 +659,18 @@
               (sut/indexable e a v :db.type/double)
               (sut/indexable e1 a1 v1 :db.type/double))))
 
-;; TODO test-check doesn't have a float generator yet
+(test/defspec float-ave-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 (gen/double* {:NaN? false})
+     v  (gen/double* {:NaN? false})]
+    (let [f1 (float v1)
+          f  (float v)]
+      (ave-test f e1 a1 f1
+                (sut/indexable e a f :db.type/float)
+                (sut/indexable e1 a1 f1 :db.type/float)))))
 
 (test/defspec uuid-eav-generative-test
   50
@@ -629,7 +732,7 @@
 
 (defn data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/freeze data)) limit))
+  (< (alength ^bytes (nippy/fast-freeze data)) limit))
 
 (test/defspec data-eav-generative-test
   50
@@ -667,6 +770,7 @@
         bf  (sut/allocate-buffer 16384)]
     (is (= rr rr1))
     (is (= 1000 (.select rr 3)))
+    (is (= (.getCardinality rr) 4))
     (sut/put-buffer bf rr :bitmap)
     (.flip bf)
     (let [^RoaringBitmap rr1 (sut/read-buffer bf :bitmap)]
