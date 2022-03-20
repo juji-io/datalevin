@@ -5,7 +5,9 @@
             [datalevin.bits :as b]
             [datalevin.search :as s]
             [datalevin.constants :as c]
-            [datalevin.datom :as d])
+            [datalevin.datom :as d]
+            [clojure.set :as set]
+            )
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -219,143 +221,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(defn- insert-datom
-  [store ^Datom d]
-  (let [props  ((schema store) (.-a d))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
-        max-gt (max-gt store)]
-    (if (b/giant? i)
-      [(cond-> [[:put c/eav i max-gt :eav :id]
-                [:put c/ave i max-gt :ave :id]
-                [:put c/giants max-gt d :id :datom true]]
-         ref? (conj [:put c/vea i max-gt :vea :id]))
-       true]
-      [(cond-> [[:put c/eav i c/normal :eav :id]
-                [:put c/ave i c/normal :ave :id]]
-         ref? (conj [:put c/vea i c/normal :vea :id]))
-       false])))
-
-(defn- delete-datom
-  [store ^Datom d]
-  (let [props  ((schema store) (.-a d))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
-        giant? (b/giant? i)
-        gt     (when giant?
-                 (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (cond-> [[:del c/eav i :eav]
-             [:del c/ave i :ave]]
-      ref? (conj [:del c/vea i :vea])
-      gt   (conj [:del c/giants gt :id]))))
-
-(defn- handle-datom
-  [store holder datom]
-  (if (d/datom-added datom)
-    (let [[data giant?] (insert-datom store datom)]
-      (when giant? (advance-max-gt store))
-      (reduce conj! holder data))
-    (reduce conj! holder (delete-datom store datom))))
-
-(defn- entity-aids
-  "Return the set of attribute ids of an entity"
-  [^Store store eid]
-  (let [lmdb   (.-lmdb store)
-        schema (schema store)
-        datom  (d/datom eid nil nil)]
-    (into #{}
-          (map first)
-          (lmdb/get-range lmdb
-                          c/eav
-                          [:closed
-                           (datom->indexable schema datom false)
-                           (datom->indexable schema datom true)]
-                          :eav-a
-                          :ignore))))
-
-(defn entity-attrs
-  "Return the set of attributes of an entity"
-  [^Store store eid]
-  (set (map (attrs store) (entity-aids store eid))))
-
-(defn- del-attr
-  [old-attrs del-attrs schema]
-  (reduce (fn [s a]
-            (if (= (:db/cardinality (schema a)) :db.cardinality/many)
-              s
-              (set/difference s #{a})))
-          old-attrs
-          del-attrs))
-
-(defn- attr->aid
-  [schema attr]
-  (some-> attr schema :db/aid))
-
-(defn- attrs->aids
-  [schema attrs]
-  (->> attrs
-       (map (partial attr->aid schema))
-       sort
-       b/bitmap))
-
-(defn- entity-class
-  [new-cls ^Store store cur-eid add-attrs del-attrs]
-  (let [schema    (schema store)
-        old-attrs (entity-attrs store cur-eid)
-        new-attrs (cond-> old-attrs
-                    (seq del-attrs) (del-attr del-attrs schema)
-                    (seq add-attrs) (set/union add-attrs))]
-    (if (= new-attrs old-attrs)
-      new-cls
-      (let [old-aids  (attrs->aids schema old-attrs)
-            new-aids  (attrs->aids schema new-attrs)
-            classes   (classes store)
-            old-props (get classes old-aids)
-            new-props (get classes new-aids)]
-        (cond-> new-cls
-          ;; old-props (assoc! old-aids (update old-props :eids
-          ;;                                    #(b/bitmap-del % cur-eid)))
-          true      (assoc! new-aids (update new-props :eids
-                                             (fnil #(b/bitmap-add % cur-eid)
-                                                   (b/bitmap)))))))))
-
-(defn- collect-classes
-  [^Store store batch]
-  (persistent!
-    (loop [new-cls   (transient {})
-           cur-eid   nil
-           add-attrs #{}
-           del-attrs #{}
-           remain    batch]
-      (if-let [^Datom datom (first remain)]
-        (let [eid  (.-e datom)
-              attr (.-a datom)
-              add? (d/datom-added datom)
-              add  #(if add? (conj % attr) %)
-              del  #(if-not add? (conj % attr) %)
-              rr   (rest remain)]
-          (or ((schema store) attr) (swap-attr store attr identity))
-          (if (= cur-eid eid)
-            (recur new-cls cur-eid (add add-attrs) (del del-attrs) rr)
-            (if cur-eid
-              (recur (entity-class new-cls store cur-eid add-attrs del-attrs)
-                     eid (add #{}) (del #{}) rr)
-              (recur new-cls eid (add add-attrs) (del del-attrs) rr))))
-        (entity-class new-cls store cur-eid add-attrs del-attrs)))))
-
-(defn- transact-datoms
-  [^Store store batch]
-  (lmdb/transact-kv (.-lmdb store)
-                    (persistent!
-                      (reduce (partial handle-datom store) (transient []) batch))))
-
-(defn- load-batch
-  [^Store store batch]
-  (let [batch (sort-by d/datom-e batch)]
-    (transact-classes (.-lmdb store) (collect-classes store batch))
-    (transact-datoms store batch)))
+(declare load-batch)
 
 (deftype Store [db-name
                 lmdb
@@ -447,26 +313,12 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [ft-ds    (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
-            add-fn   (fn [holder datom]
-                       (let [conj-fn (fn [h d] (conj! h d))]
-                         (if (d/datom-added datom)
-                           (let [[data giant?] (insert-data this datom ft-ds)]
-                             (when giant? (advance-max-gt this))
-                             (reduce conj-fn holder data))
-                           (reduce conj-fn holder
-                                   (delete-data this datom ft-ds)))))
-            batch-fn (fn [batch]
-                       (lmdb/transact-kv
-                         lmdb
-                         (conj (persistent! (reduce add-fn (transient []) batch))
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))]
+      (let [ft-ds (volatile! [])] ; fulltext datoms
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
                                  datoms)]
-          (batch-fn batch))
+          (load-batch this ft-ds batch))
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op
@@ -601,7 +453,7 @@
         index
         :id))))
 
-(defn- insert-data
+(defn- insert-datom
   [^Store store ^Datom d ft-ds]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
@@ -622,7 +474,7 @@
          ref? (conj [:put c/vea i c/normal :vea :id]))
        false])))
 
-(defn- delete-data
+(defn- delete-datom
   [^Store store ^Datom d ft-ds]
   (let [props  ((schema store) (.-a d))
         ref?   (= :db.type/ref (:db/valueType props))
@@ -636,6 +488,115 @@
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
       gt   (conj [:del c/giants gt :id]))))
+
+(defn- handle-datom
+  [store ft-ds holder datom]
+  (if (d/datom-added datom)
+    (let [[data giant?] (insert-datom store datom ft-ds)]
+      (when giant? (advance-max-gt store))
+      (reduce conj! holder data))
+    (reduce conj! holder (delete-datom store datom ft-ds))))
+
+(defn- entity-aids
+  "Return the set of attribute ids of an entity"
+  [^Store store eid]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        datom  (d/datom eid nil nil)]
+    (into #{}
+          (map first)
+          (lmdb/get-range lmdb
+                          c/eav
+                          [:closed
+                           (datom->indexable schema datom false)
+                           (datom->indexable schema datom true)]
+                          :eav-a
+                          :ignore))))
+
+(defn entity-attrs
+  "Return the set of attributes of an entity"
+  [^Store store eid]
+  (set (map (attrs store) (entity-aids store eid))))
+
+(defn- del-attr
+  [old-attrs del-attrs schema]
+  (reduce (fn [s a]
+            (if (= (:db/cardinality (schema a)) :db.cardinality/many)
+              s
+              (set/difference s #{a})))
+          old-attrs
+          del-attrs))
+
+(defn- attr->aid
+  [schema attr]
+  (some-> attr schema :db/aid))
+
+(defn- attrs->aids
+  [schema attrs]
+  (->> attrs
+       (map (partial attr->aid schema))
+       sort
+       b/bitmap))
+
+(defn- entity-class
+  [new-cls ^Store store cur-eid add-attrs del-attrs]
+  (let [schema    (schema store)
+        old-attrs (entity-attrs store cur-eid)
+        new-attrs (cond-> old-attrs
+                    (seq del-attrs) (del-attr del-attrs schema)
+                    (seq add-attrs) (set/union add-attrs))]
+    (if (= new-attrs old-attrs)
+      new-cls
+      (let [old-aids  (attrs->aids schema old-attrs)
+            new-aids  (attrs->aids schema new-attrs)
+            classes   (classes store)
+            old-props (get classes old-aids)
+            new-props (get classes new-aids)]
+        (cond-> new-cls
+          ;; old-props (assoc! old-aids (update old-props :eids
+          ;;                                    #(b/bitmap-del % cur-eid)))
+          true (assoc! new-aids (update new-props :eids
+                                             (fnil #(b/bitmap-add % cur-eid)
+                                                   (b/bitmap)))))))))
+
+(defn- collect-classes
+  [^Store store batch]
+  (persistent!
+    (loop [new-cls   (transient {})
+           cur-eid   nil
+           add-attrs #{}
+           del-attrs #{}
+           remain    batch]
+      (if-let [^Datom datom (first remain)]
+        (let [eid  (.-e datom)
+              attr (.-a datom)
+              add? (d/datom-added datom)
+              add  #(if add? (conj % attr) %)
+              del  #(if-not add? (conj % attr) %)
+              rr   (rest remain)]
+          (or ((schema store) attr) (swap-attr store attr identity))
+          (if (= cur-eid eid)
+            (recur new-cls cur-eid (add add-attrs) (del del-attrs) rr)
+            (if cur-eid
+              (recur (entity-class new-cls store cur-eid add-attrs del-attrs)
+                     eid (add #{}) (del #{}) rr)
+              (recur new-cls eid (add add-attrs) (del del-attrs) rr))))
+        (entity-class new-cls store cur-eid add-attrs del-attrs)))))
+
+(defn- transact-datoms
+  [^Store store ft-ds batch]
+  (lmdb/transact-kv
+    (.-lmdb store)
+    (conj (persistent!
+            (reduce (partial handle-datom store ft-ds) (transient []) batch))
+          [:put c/meta :last-modified
+           (System/currentTimeMillis) :attr :long])))
+
+(defn- load-batch
+  [^Store store ft-ds batch]
+  (let [batch (sort-by d/datom-e batch)]
+    ;; (transact-classes (.-lmdb store) (collect-classes store batch))
+    (transact-datoms store ft-ds batch)))
 
 (defn open
   "Open and return the storage."
