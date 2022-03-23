@@ -921,7 +921,7 @@ Only usable for debug output.
   list-dbis l/list-dbis)
 
 (def ^{:arglists '([db dest] [db dest compact?])
-       :doc      "Copy the database to a destination directory path, optionally compact while copying, default not compact. "}
+       :doc      "Copy the key-value database to a destination directory path, optionally compact while copying, default not compact. "}
   copy l/copy)
 
 (def ^{:arglists '([db] [db dbi-name])
