@@ -233,11 +233,11 @@ Only usable for debug output.
   datom-e dd/datom-e)
 
 (def ^{:arglists '([d])
-       :doc      "Return the attribute id of a datom"}
+       :doc      "Return the attribute of a datom"}
   datom-a dd/datom-a)
 
 (def ^{:arglists '([d])
-       :doc      "Return the value id of a datom"}
+       :doc      "Return the value of a datom"}
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
