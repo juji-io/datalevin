@@ -920,9 +920,17 @@ Only usable for debug output.
        :doc      "List the names of the sub-databases in the key-value store"}
   list-dbis l/list-dbis)
 
-(def ^{:arglists '([db dest] [db dest compact?])
-       :doc      "Copy the key-value database to a destination directory path, optionally compact while copying, default not compact. "}
-  copy l/copy)
+(defn copy
+  "Copy a database to a destination directory path, optionally compact while copying, default not compact. "
+  ([db dest]
+   (copy db dest false))
+  ([db dest compact?]
+   (cond
+     (instance? datalevin.db.DB db)
+     (l/copy (.-lmdb ^Store (.-store ^DB db)) dest compact?)
+     (satisfies? l/ILMDB db)
+     (l/copy db dest compact?)
+     :else (u/raise "Can only copy a local database." {}))))
 
 (def ^{:arglists '([db] [db dbi-name])
        :doc      "Return the statitics of the unnamed top level database or a named DBI (i.e. sub-database) of the key-value store as a map:
@@ -1252,6 +1260,14 @@ engine index. A slow operation."}
 (def ^{:arglists '([engine doc-ref])
        :doc      "Test if a `doc-ref` is already in the search index"}
   doc-indexed? sc/doc-indexed?)
+
+(def ^{:arglists '([engine])
+       :doc      "Return the number of documents in the search index"}
+  doc-count sc/doc-count)
+
+(def ^{:arglists '([engine])
+       :doc      "Return a seq of `doc-ref` in the search index"}
+  doc-refs sc/doc-refs)
 
 (def ^{:arglists '([engine query] [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` is a string of

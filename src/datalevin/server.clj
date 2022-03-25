@@ -1607,6 +1607,14 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler doc-indexed?)))
 
+(defn- doc-count
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler doc-count)))
+
+(defn- doc-refs
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler doc-refs)))
+
 (defn- search
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler search)))
@@ -1697,6 +1705,8 @@
    'add-doc
    'remove-doc
    'doc-indexed?
+   'doc-count
+   'doc-refs
    'search
    'search-index-writer
    'write
