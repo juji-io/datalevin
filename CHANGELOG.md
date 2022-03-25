@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.2
 ## Added
 - `doc-count` function returns the number of documents in the search index
 - `doc-refs` function returns a seq of `doc-ref` in the search index
