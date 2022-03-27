@@ -116,7 +116,6 @@
             new-lst     ^FastList (.getValue kv)
             tf          (.size new-lst)
             [tid mw sl] (or (.get hit-terms term)
-                            ;; (when pre-terms (.get pre-terms term))
                             (get-term-info lmdb term)
                             [(.incrementAndGet max-term) 0.0
                              (sl/sparse-arraylist)])]
@@ -395,6 +394,8 @@
   (add-doc [this doc-ref doc-text])
   (remove-doc [this doc-ref])
   (doc-indexed? [this doc-ref])
+  (doc-count [this])
+  (doc-refs [this])
   (search [this query] [this query opts]))
 
 (defn- remove-doc*
@@ -437,8 +438,12 @@
       (remove-doc* lmdb norms doc-id)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
-  (doc-indexed? [this doc-ref]
-    (doc-ref->id lmdb doc-ref))
+  (doc-indexed? [this doc-ref] (doc-ref->id lmdb doc-ref))
+
+  (doc-count [_] (l/entries lmdb c/docs))
+
+  (doc-refs [_]
+    (map second (l/get-range lmdb c/docs [:all] :int :doc-info true)))
 
   (search [this query]
     (.search this query {}))

@@ -336,6 +336,12 @@
     (cl/normal-request (.-client store) :doc-indexed?
                        [(.-db-name store) doc-ref]))
 
+  (doc-count [this]
+    (cl/normal-request (.-client store) :doc-count [(.-db-name store)]))
+
+  (doc-refs [this]
+    (cl/normal-request (.-client store) :doc-refs [(.-db-name store)]))
+
   (search [this query]
     (sc/search this query {}))
   (search [this query opts]

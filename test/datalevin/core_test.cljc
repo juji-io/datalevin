@@ -743,8 +743,13 @@
        [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
     (doseq [i [1 2 3]]
       (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+
     (is (not (sut/doc-indexed? engine 0)))
     (is (sut/doc-indexed? engine 1))
+
+    (is (= 3 (sut/doc-count engine)))
+    (is (= [1 2 3] (sut/doc-refs engine)))
+
     (is (= (sut/search engine "lazy") [1]))
     (is (= (sut/search engine "red" ) [1 2]))
     (is (= (sut/search engine "red" {:display :offsets})
@@ -922,3 +927,43 @@
                          {:name "Peter" :height 1.92}])
     (is (= (sut/pull (sut/db conn) '[*] 1)
            {:name "John" :height (float 1.73) :db/id 1}))))
+
+(deftest copy-test
+  (testing "kv db copy"
+    (let [src (u/tmp-dir (str "kv-copy-test-" (UUID/randomUUID)))
+          dst (u/tmp-dir (str "kv-copy-test-" (UUID/randomUUID)))
+          db  (sut/open-kv src)
+          dbi "a"]
+      (sut/open-dbi db dbi)
+      (sut/transact-kv db [[:put dbi "Hello" "Datalevin"]])
+      (sut/copy db dst true)
+      (is (= (sut/stat db)
+             {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
+              :overflow-pages 0,    :entries 1}))
+      (doseq [i (sut/list-dbis db)]
+        (is (= (sut/stat db i)
+               {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
+                :overflow-pages 0,    :entries 1})))
+      (let [db-copied (sut/open-kv dst)]
+        (sut/open-dbi db-copied dbi)
+        (is (= (sut/get-value db-copied dbi "Hello") "Datalevin"))
+        (sut/close-kv db-copied))
+      (sut/close-kv db)
+      (u/delete-files src)
+      (u/delete-files dst)))
+  (testing "dl db copy"
+    (let [src  (u/tmp-dir (str "dl-copy-test-" (UUID/randomUUID)))
+          dst  (u/tmp-dir (str "dl-copy-test-" (UUID/randomUUID)))
+          conn (sut/create-conn src)]
+      (sut/transact! conn [{:name "datalevin"}])
+      (sut/copy (sut/db conn) dst true)
+      (let [conn-copied (sut/create-conn dst)]
+        (is (= (sut/q '[:find ?n .
+                        :in $
+                        :where [_ :name ?n]]
+                      (sut/db conn-copied))
+               "datalevin"))
+        (sut/close conn-copied))
+      (sut/close conn)
+      (u/delete-files src)
+      (u/delete-files dst))))
