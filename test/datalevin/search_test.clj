@@ -38,6 +38,11 @@
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
         engine ^SearchEngine (sut/new-search-engine lmdb)]
+
+    (is (= (sut/doc-count engine) 0))
+    (is (not (sut/doc-indexed? engine :doc4)))
+    (is (= (sut/doc-refs engine) []))
+
     (add-docs sut/add-doc engine)
 
     (is (sut/doc-indexed? engine :doc4))

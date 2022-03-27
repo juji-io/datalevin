@@ -101,7 +101,8 @@
           (if (.isEmpty available)
             (if (>= (- (System/currentTimeMillis) start) ^long time-out)
               (u/raise "Timeout in obtaining a connection" {})
-              (recur))
+              (do (Thread/sleep 1000)
+                  (recur)))
             (let [^Connection conn (.poll available)]
               (if (.isOpen ^SocketChannel (.-ch conn))
                 (do (.add used conn)
