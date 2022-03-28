@@ -16,7 +16,7 @@
                          [nrepl/bencode "1.1.0"]
                          [org.babashka/sci "0.3.4"]
                          [org.bouncycastle/bcprov-jdk15on "1.70"]
-                         [org.clojure/clojure "1.10.3"]
+                         [org.clojure/clojure "1.11.0"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.1"]
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]

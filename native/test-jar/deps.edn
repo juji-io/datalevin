@@ -1,10 +1,10 @@
 {:aliases {:uberjar
-           {:replace-deps {com.github.seancorfield/depstar {:mvn/version "2.1.297"}}
+           {:replace-deps {com.github.seancorfield/depstar {:mvn/version "2.1.303"}}
             :exec-fn      hf.depstar/uberjar
             :exec-args    {:aot true
                            :compile-ns [test-jar.core]
                            :main-class "test-jar.core" }}}
- :deps    {org.clojure/clojure {:mvn/version "1.10.3"}
+ :deps    {org.clojure/clojure {:mvn/version "1.11.0"}
            org.clojars.huahaiy/datalevin-native
            {:local/root "./../target/datalevin-native-0.6.3.jar"} 
            }}
