@@ -1,11 +1,11 @@
 {
  :deps {
-        org.clojure/clojure   {:mvn/version "1.10.3"}
-        org.lmdbjava/lmdbjava {:mvn/version "0.8.1"}
-        com.taoensso/nippy    {:mvn/version "3.1.1"} 
-        persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.2"}
-        org.graalvm.nativeimage/svm {:mvn/version "21.0.0.2"}
-        
+        org.clojure/clojure   {:mvn/version "1.11.0"}
+        org.lmdbjava/lmdbjava {:mvn/version "0.8.2"}
+        com.taoensso/nippy    {:mvn/version "3.1.1"}
+        persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"}
+        org.graalvm.nativeimage/svm {:mvn/version "21.3.0"}
+
         }
 
  :aliases {
@@ -24,7 +24,7 @@
            :dev {
                  :extra-paths ["dev" "target/classes"]
                  :extra-deps  {
-                               org.clojure/tools.namespace {:mvn/version "0.2.11"}
+                               org.clojure/tools.namespace {:mvn/version "1.2.0"}
                                }
                  }
 
@@ -36,9 +36,9 @@
 
            :repl {
                   :extra-deps {
-                               cider/cider-nrepl           {:mvn/version "0.21.1"}
-                               nrepl/nrepl                 {:mvn/version "0.6.0"}
-                               org.clojure/tools.namespace {:mvn/version "0.2.11"}
+                               cider/cider-nrepl           {:mvn/version "0.28.0"}
+                               nrepl/nrepl                 {:mvn/version "0.9.0"}
+                               org.clojure/tools.namespace {:mvn/version "1.2.0"}
                                }
                   :main-opts  [
                                "-m" "nrepl.cmdline" "--middleware" "[cider.nrepl/cider-middleware]"

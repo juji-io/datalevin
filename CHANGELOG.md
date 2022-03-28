@@ -1,10 +1,14 @@
 # Change Log
 
+## WIP
+### Improved
+- Update deps
+
 ## 0.6.3
-## Added
+### Added
 - `doc-count` function returns the number of documents in the search index
 - `doc-refs` function returns a seq of `doc-ref` in the search index
-## Improved
+### Improved
 - `datalevin.core/copy` function can copy Datalog database directly.
 
 ## 0.6.1

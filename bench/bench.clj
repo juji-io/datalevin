@@ -1,4 +1,4 @@
-#!/usr/bin/env clojure 
+#!/usr/bin/env clojure
 
 "USAGE: ./bench [rebuild]? [<version>|<version-vm> ...]? [<bench-name> ...]?"
 
@@ -72,7 +72,7 @@
 (defn run-benchmarks [version vm benchmarks]
   (case vm
     "datalevin"
-    (apply run "clojure" 
+    (apply run "clojure"
            "-J--add-opens=java.base/java.nio=ALL-UNNAMED"
            "-J--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
            "-Sdeps"
@@ -80,7 +80,7 @@
              (= "latest" version)
              (str "{:paths [\"src\" \"../src\" \"../target/classes\" \"../native/target/classes\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
-                  org.clojure/clojure   {:mvn/version \"1.10.3\"}
+                  org.clojure/clojure   {:mvn/version \"1.11.0\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}
                   com.taoensso/nippy    {:mvn/version \"3.1.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.324\"}

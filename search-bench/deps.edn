@@ -1,23 +1,23 @@
 {
  :paths ["src" "../src" "../target/classes"]
  :deps  {
-         datalevin/datalevin                         {:local/root ".."}
-         org.clojure/clojure                         {:mvn/version "1.10.3"}
-         org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
+         com.cognitect/transit-clj                   {:mvn/version "1.0.329"}
+         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.2"}
+         com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.13.2"}
          com.taoensso/nippy                          {:mvn/version "3.1.1"}
-         persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"}
-         com.cognitect/transit-clj                   {:mvn/version "1.0.324"}
-         org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.22"}
+         datalevin/datalevin                         {:local/root ".."}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
+         org.clojure/clojure                         {:mvn/version "1.11.0"}
+         org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
+         org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.22"}
          org.eclipse.collections/eclipse-collections {:mvn/version "10.4.0"}
-         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.0"}
-         com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.13.0"}
          org.apache.lucene/lucene-core               {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-analyzers-common   {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-queryparser        {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-queries            {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-highlighter        {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-codecs             {:mvn/version "8.10.1"}
+         persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"}
          }
 
  :aliases {
@@ -31,35 +31,14 @@
                        :exec-fn  lucene.bench/run
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
                        }
-           :1.10      {
-                       :override-deps {
-                                       org.clojure/clojure {:mvn/version "1.10.0"}
-                                       }
+           :dev       {
+                       :extra-paths ["dev" "target/classes"]
                        }
-
-           :dev {
-                 :extra-paths ["dev" "target/classes"]
-                 :extra-deps  {
-                               org.clojure/tools.namespace {:mvn/version "0.2.11"}
-                               }
-                 }
 
            :test {
                   :extra-paths ["test"]
                   :extra-deps  {
                                 }
                   }
-
-           :repl {
-                  :extra-deps {
-                               cider/cider-nrepl           {:mvn/version "0.21.1"}
-                               nrepl/nrepl                 {:mvn/version "0.6.0"}
-                               org.clojure/tools.namespace {:mvn/version "0.2.11"}
-                               }
-                  :main-opts  [
-                               "-m" "nrepl.cmdline" "--middleware" "[cider.nrepl/cider-middleware]"
-                               ]
-                  }
-
            }
  }

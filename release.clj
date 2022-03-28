@@ -128,6 +128,7 @@
   (github-release)
   (sh "./deploy")
   (sh "script/deploy" :dir "native")
-  (System/exit 0))
+  (System/exit 0)
+  )
 
 (-main)
