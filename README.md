@@ -109,7 +109,7 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps {datalevin/datalevin {:mvn/version "0.6.3"}
-        com.cognitect/transit-clj {:mvn/version "1.0.324"}}}
+        com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
 This JVM library supports Java 8 and above. For JVM version newer than 11, you may want to add the following JVM options:
