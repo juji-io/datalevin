@@ -228,11 +228,11 @@
                 search-engine
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
+                ^:volatile-mutable classes
                 ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore
-
   (db-name [_] db-name)
 
   (dir [_]
@@ -595,7 +595,7 @@
 (defn- load-batch
   [^Store store ft-ds batch]
   (let [batch (sort-by d/datom-e batch)]
-    ;; (transact-classes (.-lmdb store) (collect-classes store batch))
+    (transact-classes (.-lmdb store) (collect-classes store batch))
     (transact-datoms store ft-ds batch)))
 
 (defn open
@@ -614,6 +614,7 @@
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/classes c/+max-key-size+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
      (let [schema (init-schema lmdb schema)]
        (->Store db-name
@@ -621,6 +622,7 @@
                 (s/new-search-engine lmdb)
                 schema
                 (schema->rschema schema)
+                (load-classes lmdb)
                 (init-attrs schema)
                 (init-max-aid lmdb)
                 (init-max-gt lmdb))))))
