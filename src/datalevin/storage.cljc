@@ -7,6 +7,7 @@
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.set :as set]
+            [taoensso.timbre :as log]
             )
   (:import [java.util UUID]
            [datalevin.datom Datom]
@@ -538,50 +539,55 @@
        sort
        b/bitmap))
 
-(defn- entity-class
-  [new-cls ^Store store cur-eid add-attrs del-attrs]
-  (let [schema    (schema store)
-        old-attrs (entity-attrs store cur-eid)
-        new-attrs (cond-> old-attrs
-                    (seq del-attrs) (del-attr del-attrs schema)
-                    (seq add-attrs) (set/union add-attrs))]
-    (if (= new-attrs old-attrs)
-      new-cls
-      (let [old-aids  (attrs->aids schema old-attrs)
-            new-aids  (attrs->aids schema new-attrs)
-            classes   (classes store)
-            old-props (get classes old-aids)
-            new-props (get classes new-aids)]
-        (cond-> new-cls
-          ;; old-props (assoc! old-aids (update old-props :eids
-          ;;                                    #(b/bitmap-del % cur-eid)))
-          true (assoc! new-aids (update new-props :eids
-                                             (fnil #(b/bitmap-add % cur-eid)
-                                                   (b/bitmap)))))))))
+#_(defn- entity-class
+    [new-cls ^Store store cur-eid add-attrs del-attrs]
+    (let [schema    (schema store)
+          old-attrs (entity-attrs store cur-eid)
+          new-attrs (cond-> old-attrs
+                      (seq del-attrs) (del-attr del-attrs schema)
+                      (seq add-attrs) (set/union add-attrs))]
+      (if (= new-attrs old-attrs)
+        new-cls
+        (let [old-aids  (attrs->aids schema old-attrs)
+              new-aids  (attrs->aids schema new-attrs)
+              classes   (classes store)
+              old-props (get classes old-aids)
+              new-props (get classes new-aids)]
+          (cond-> new-cls
+            old-props (assoc! old-aids (update old-props :eids
+                                               #(b/bitmap-del % cur-eid)))
+            true      (assoc! new-aids (update new-props :eids
+                                               (fnil #(b/bitmap-add % cur-eid)
+                                                     (b/bitmap)))))))))
+
+#_(defn- collect-classes
+    [^Store store batch]
+    (persistent!
+      (loop [new-cls   (transient {})
+             cur-eid   nil
+             add-attrs #{}
+             del-attrs #{}
+             remain    batch]
+        (if-let [^Datom datom (first remain)]
+          (let [eid  (.-e datom)
+                attr (.-a datom)
+                add? (d/datom-added datom)
+                add  #(if add? (conj % attr) %)
+                del  #(if-not add? (conj % attr) %)
+                rr   (rest remain)]
+            (or ((schema store) attr) (swap-attr store attr identity))
+            (if (= cur-eid eid)
+              (recur new-cls cur-eid (add add-attrs) (del del-attrs) rr)
+              (if cur-eid
+                (recur (entity-class new-cls store cur-eid add-attrs del-attrs)
+                       eid (add #{}) (del #{}) rr)
+                (recur new-cls eid (add add-attrs) (del del-attrs) rr))))
+          (entity-class new-cls store cur-eid add-attrs del-attrs)))))
 
 (defn- collect-classes
   [^Store store batch]
-  (persistent!
-    (loop [new-cls   (transient {})
-           cur-eid   nil
-           add-attrs #{}
-           del-attrs #{}
-           remain    batch]
-      (if-let [^Datom datom (first remain)]
-        (let [eid  (.-e datom)
-              attr (.-a datom)
-              add? (d/datom-added datom)
-              add  #(if add? (conj % attr) %)
-              del  #(if-not add? (conj % attr) %)
-              rr   (rest remain)]
-          (or ((schema store) attr) (swap-attr store attr identity))
-          (if (= cur-eid eid)
-            (recur new-cls cur-eid (add add-attrs) (del del-attrs) rr)
-            (if cur-eid
-              (recur (entity-class new-cls store cur-eid add-attrs del-attrs)
-                     eid (add #{}) (del #{}) rr)
-              (recur new-cls eid (add add-attrs) (del del-attrs) rr))))
-        (entity-class new-cls store cur-eid add-attrs del-attrs)))))
+  (->> batch
+       (map (fn [^Datom d]))))
 
 (defn- transact-datoms
   [^Store store ft-ds batch]
@@ -595,7 +601,7 @@
 (defn- load-batch
   [^Store store ft-ds batch]
   (let [batch (sort-by d/datom-e batch)]
-    (transact-classes (.-lmdb store) (collect-classes store batch))
+    ;; (transact-classes (.-lmdb store) (log/spy (collect-classes store batch)))
     (transact-datoms store ft-ds batch)))
 
 (defn open
