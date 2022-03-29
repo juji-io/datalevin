@@ -42,7 +42,7 @@
 (defn wrap-res [f]
   #?(:cljs (do (f) (clj->js @test-summary))
      :clj  (let [res (f)]
-             (when (pos? (+ (:fail res) (:error res)))
+             (when (pos? ^long (+ ^long (:fail res) ^long (:error res)))
                (System/exit 1)))))
 
 ;; utils

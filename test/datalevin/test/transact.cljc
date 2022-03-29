@@ -3,6 +3,7 @@
    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer [is are deftest testing]])
    [datalevin.core :as d]
+   [datalevin.interpret :as i]
    [datalevin.db :as db]
    [datalevin.constants :refer [tx0]]
    [datalevin.test.core :as tdc]))
@@ -344,32 +345,30 @@
       (is (:had-birthday e)))
     (d/close conn)))
 
-;; TODO persist transaction function
-#_(deftest test-db-ident-fn
-    (let [conn    (d/create-conn nil {:name {:db/unique :db.unique/identity}})
-          inc-age (fn [db name]
-                    (if-some [ent (d/entity db [:name name])]
-                      [{:db/id (:db/id ent)
-                        :age   (inc ^long (:age ent))}
-                       [:db/add (:db/id ent) :had-birthday true]]
-                      (throw (ex-info (str "No entity with name: " name) {}))))]
-      (d/transact! conn [{:db/id    1
-                          :name     "Petr"
-                          :age      31
-                          :db/ident :Petr}
-                         {:db/ident :inc-age
-                          :db/fn    inc-age}])
-      (is (thrown-msg? "Can’t find entity for transaction fn :unknown-fn"
-                       (d/transact! conn [[:unknown-fn]])))
-      (is (thrown-msg? "Entity :Petr expected to have :db/fn attribute with fn? value"
-                       (d/transact! conn [[:Petr]])))
-      (is (thrown-msg? "No entity with name: Bob"
-                       (d/transact! conn [[:inc-age "Bob"]])))
-      (d/transact! conn [[:inc-age "Petr"]])
-      (let [e (d/entity @conn 1)]
-        (is (= (:age e) 32))
-        (is (:had-birthday e)))
-      ))
+(deftest test-db-ident-fn
+  (let [conn    (d/create-conn nil {:name {:db/unique :db.unique/identity}})
+        inc-age (i/inter-fn [db name]
+                            (if-some [ent (d/entity db [:name name])]
+                              [{:db/id (:db/id ent)
+                                :age   (inc ^long (:age ent))}
+                               [:db/add (:db/id ent) :had-birthday true]]
+                              (throw (ex-info (str "No entity with name: " name) {}))))]
+    (d/transact! conn [{:db/id    1
+                        :name     "Petr"
+                        :age      31
+                        :db/ident :Petr}
+                       {:db/ident :inc-age
+                        :db/fn    inc-age}])
+    (is (thrown-msg? "Can’t find entity for transaction fn :unknown-fn"
+                     (d/transact! conn [[:unknown-fn]])))
+    (is (thrown-msg? "Entity :Petr expected to have :db/fn attribute with fn? value"
+                     (d/transact! conn [[:Petr]])))
+    (is (thrown-msg? "No entity with name: Bob"
+                     (d/transact! conn [[:inc-age "Bob"]])))
+    (d/transact! conn [[:inc-age "Petr"]])
+    (let [e (d/entity @conn 1)]
+      (is (= (:age e) 32))
+      (is (:had-birthday e)))))
 
 (deftest test-resolve-eid
   (let [conn (d/create-conn)

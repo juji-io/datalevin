@@ -1,5 +1,6 @@
 (ns datalevin.interpret
-  "Code interpreter, including functions and macros useful for dtlv command line."
+  "Code interpreter, including functions and macros useful for command line
+  and query/transaction functions."
   (:require [clojure.walk :as w]
             [clojure.set :as set]
             [clojure.java.io :as io]
@@ -123,9 +124,10 @@
 
 (defmacro inter-fn
   "Same signature as `fn`. Create a function that can be used as an input in
-  Datalevin queries, e.g. as a filtering predicate. This function will be sent
-  over the wire if the database is on a remote server. It runs in a sandboxed
-  interpreter whether the database is remote or local."
+  Datalevin queries or transactions, e.g. as a filtering predicate or as a
+  transaction function. This function will be sent over the wire if the database
+  is on a remote server. It runs in a sandboxed interpreter whether the database
+  is remote or local."
   [args & body]
   `(with-meta
      (sci/eval-form ctx (fn ~args (do ~@body)))
