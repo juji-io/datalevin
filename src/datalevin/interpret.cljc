@@ -123,9 +123,9 @@
 
 (defmacro inter-fn
   "Same signature as `fn`. Create a function that can be used as an input in
-  Datalevin queries, e.g. as a filtering predicate. This function will be sent
-  over the wire if the database is on a remote server. It runs in a sandboxed
-  interpreter whether the database is remote or local."
+  Datalevin queries, e.g. as a filtering predicate or a transaction function.
+  This function will be sent over the wire if the database is on a remote server.
+  It runs in a sandboxed interpreter whether the database is remote or local."
   [args & body]
   `(with-meta
      (sci/eval-form ctx (fn ~args (do ~@body)))

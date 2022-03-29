@@ -572,10 +572,9 @@ adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
-* 0.6.3 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
+* 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 A new Datalog query engine with improved performance.
 * 0.8.0 As a product rule engine: implementing Rete/UL algorithm.
-* 0.9.0 Persisted transaction functions.
 * 1.0.0 First major release.
 * 1.1.0 Read-only replicas.
 * 1.2.0 Option to store data in compressed form.
@@ -648,6 +647,9 @@ than just the difference in data durability and running mode:
   The attribute and value leading index (AVE) is enabled for all datoms, so
   there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
   have AEV index, in order to save storage and improve write speed.
+
+* Transaction functions should be defined with `intern-fn`, for
+  function serialization requires special care in order to support GraalVM.
 
 * Attributes are stored in indices as integer ids, thus attributes in index
   access are returned in attribute creation order, not in lexicographic order

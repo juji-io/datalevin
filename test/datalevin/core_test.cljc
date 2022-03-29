@@ -5,6 +5,7 @@
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
             [datalevin.util :as u]
+            [datalevin.test.core]
             [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
@@ -783,6 +784,40 @@
            #{[1 :text "The quick red fox jumped over the lazy red dogs."]
              [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
     (sut/close-db db)
+    (s/stop server)))
+
+(deftest remote-db-ident-fn
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir (str "remote-fn-test-"
+                                                (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-fn-test"
+
+        conn    (sut/create-conn dir
+                                 {:name {:db/unique :db.unique/identity}})
+        inc-age (i/inter-fn [db name]
+                            (if-some [ent (sut/entity db [:name name])]
+                              [{:db/id (:db/id ent)
+                                :age   (inc ^long (:age ent))}
+                               [:db/add (:db/id ent) :had-birthday true]]
+                              (throw (ex-info (str "No entity with name: " name) {}))))]
+    (sut/transact! conn [{:db/id    1
+                          :name     "Petr"
+                          :age      31
+                          :db/ident :Petr}
+                         {:db/ident :inc-age
+                          :db/fn    inc-age}])
+    (is (thrown-msg? "Can’t find entity for transaction fn :unknown-fn"
+                     (sut/transact! conn [[:unknown-fn]])))
+    (is (thrown-msg? "Entity :Petr expected to have :db/fn attribute with fn? value"
+                     (sut/transact! conn [[:Petr]])))
+    (is (thrown-msg? "No entity with name: Bob"
+                     (sut/transact! conn [[:inc-age "Bob"]])))
+    (sut/transact! conn [[:inc-age "Petr"]])
+    (let [e (sut/entity @conn 1)]
+      (is (= (:age e) 32))
+      (is (:had-birthday e)))
+    (sut/close conn)
     (s/stop server)))
 
 (deftest instant-update-test
