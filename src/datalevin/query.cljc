@@ -655,17 +655,17 @@
 
 (defn- resolve-sym [sym]
   #?(:cljs nil
-     :clj (if (namespace sym)
-            (when-some [v (resolve sym)] @v)
-            ;; handle babashka pod fn
-            (when-some [v (ns-resolve 'pod.huahaiy.datalevin sym)] @v))))
+     :clj (when-let [v (or (resolve sym)
+                           (when (find-ns 'pod.huahaiy.datalevin)
+                             (ns-resolve 'pod.huahaiy.datalevin sym)))]
+            @v)))
 
 (defn filter-by-pred [context clause]
   (let [[[f & args]]         clause
         pred                 (or (get built-ins f)
                                  (context-resolve-val context f)
-                                 (resolve-sym f)
                                  (dot-form f)
+                                 (resolve-sym f)
                                  (when (nil? (rel-with-attr context f))
                                    (raise "Unknown predicate '" f " in " clause
                                           {:error :query/where, :form clause, :var f})))
