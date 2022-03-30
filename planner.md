@@ -39,89 +39,42 @@ they are often specialized, e.g. the namespaces of attributes encode
 information about entities. Therefore, leveraging grouping of attributes could
 have greater benefits in query processing.
 
-## New Indices
+## New index: entity classes
 
-Based on these observations, we introduce two new type of indices.
-
-### Entity classes
-
-First we introduce a concept of entity class, which refers to the type of
-entities. Similar to characteristic sets [8] in RDF stores or tables in
-relational DB,  this concept captures the defining combination of attributes for
-a class of entities.
+Based on these observations, we introduce a new type of indices. First we
+introduce a concept of entity class, which refers to the type of entities.
+Similar to characteristic sets [8] in RDF stores or tables in relational DB,
+this concept captures the defining combination of attributes for a class of
+entities.
 
 In Datomic-like stores, the set of attributes for a class of entities are often unique.
 There might be overlapping attributes between entity classes, but many
 attributes are used by only one class of entities, and these are often prefixed
 by namespace unique to that entity class.
 
-An additional "classes" LMDB DBI will be used to store entity classes. The key
-is a bitmap of attribute ids (AIDs) that define the class. The value is a map
-containing information related to the class. One key of the map is `:eids`, its
-value is a bitmap of the entity ids in the class. This allows us to quickly
-identified relevant entity classes in the query and find relevant entities
-associated with them.
+A "classes" LMDB DBI will be used to store entity classes. The key
+is an unique integer id of the class. The value is a map about the class,
+containing these keys:
 
-For use cases that produces huge number of attributes, e.g. [numbered
-attributes](https://github.com/tonsky/datascript/issues/351#issuecomment-654738949),
-such attributes should be excluded from entity classes consideration. One may
-also want to exclude some common attributes that appear in too many entity
-classes to be useful for narrowing down entities. For such attributes that do
-not contribute to the defintion of entity classes, user can include them in a
-`:exclude-attributes-from-class` option, which is a vector of regex of
-attributes names, as part of the option map given when openning the DB.
+* `:aids`, a set of attribute ids that define the class.
+* `:eids`, a bitmap of the entity ids in the class.
 
-
-### Class links
-
-We further introduce a notion of entity class link that represents a pair of entity
-classes that are connected by triples with `:db.type/ref` type attributes.
-Similar to extended characteristic sets [7] or foreign key relation in
-relational DB, this concept captures the long range relationship in data.  We
-will leverage such declaration and store the resulting graph.
-
-Specifically, we add a `:links` key to the aforementioned value map of `classes`
-DBI, which would be source of class link. The value is a map of AIDs bitmap of
-the target class link, with corresponding value of bitmap of entity ids of
-referred entities (V), so that we can look up the link triples quickly in the
-"VEA" LMDB DBI, which contains link triples only. The links also form a graph that
-captures the overall structure of the data. We will use this graph to pre-filter
-entities for those complex queries spanning multiple related entity classes.
+This DBI is loaded into memory at system initialization. This allow us to
+quickly identified relevant entity classes in the query and find relevant
+entities associated with them.
 
 ## Optimizations
 
 The query engine will employs multiple optimizations.
 
-### Leverage links and classes
+### Leverage classes
 
-Our engine will first leverage the entity classes and the links between them
-to generate the skeleton of the execution plan.  Essentially, we leverage the
-set of attributes and their relationships in the query to:
-
-    a. break up the query into sub-queries that can be independently executed.
-
-    b. pre-filter the entities involved in each sub-query.
-
-This pre-filtering significantly reduces the amount of work we have to do, especially for
-complex queries that involves long chains of where clauses.
-
-The engine first considers long range relationships. The reason to avoid
-starting with local star-like relationships is because they are often
-unselective, due to high correlation between attributes of an entity class.
-
-Entity classes and links form a directed graph, so querying can be considered
-matching query graph with the stored data graph.  After the engine identifies
-the entity classes as well as their linkage in the query, the query link graph is
-then matched to the data link graph, producing a set of link chains.
-
-Each chain can be considered a sub-query, and sub-queries can be processed
-by different thread in parallel, so large query can be performed more quickly on
-a multi-core system. The results of the sub-queries are then joined together.
-
-For joins within a sub-query, we start with clause with least cardinality.
-"classes" and "links" based index scans will also participate in this search for
-least cardinality as if they are normal pattern clauses, as they may not be
-the cheapest.  This addresses the limitation of [7], which does not have other indices.
+ Essentially, we leverage the classes to pre-filter entities. This pre-filter
+ can significantly reduces the amount of work we have to do. For joins, we start
+ with clause with least cardinality. "classes" based index scans will also
+ participate in this search for least cardinality as if they are normal pattern
+ clauses, as they may not be the cheapest.  This addresses the limitation of
+ [7], which does not have other indices.
 
 ### Pivot scan
 

@@ -51,22 +51,18 @@
   [lmdb]
   (into {} (lmdb/get-range lmdb c/schema [:all] :attr :data)))
 
-(defn- init-max-aid
-  [lmdb]
-  (lmdb/entries lmdb c/schema))
+(defn- init-max-aid [lmdb] (lmdb/entries lmdb c/schema))
 
 ;; TODO schema migration
 (defn- update-schema
   [lmdb old schema]
-  (let [^long init-aid (init-max-aid lmdb)
-        i              (atom 0)]
+  (let [aid (volatile! (dec ^long (init-max-aid lmdb)))]
     (into {}
           (map (fn [[attr props]]
-                 (if-let [old-props (old attr)]
-                   [attr (merge old-props props)]
-                   (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
-                     (swap! i inc)
-                     res))))
+                 [attr
+                  (if-let [old-props (old attr)]
+                    (merge old-props props)
+                    (assoc props :db/aid (vswap! aid #(inc ^long %))))]))
           schema)))
 
 (defn- init-schema
@@ -74,8 +70,7 @@
   (when (empty? (load-schema lmdb))
     (transact-schema lmdb c/implicit-schema))
   (when schema
-    (let [now (load-schema lmdb)]
-      (transact-schema lmdb (update-schema lmdb now schema))))
+    (transact-schema lmdb (update-schema lmdb (load-schema lmdb) schema)))
   (load-schema lmdb))
 
 (defn- load-classes
@@ -587,7 +582,9 @@
 (defn- collect-classes
   [^Store store batch]
   (->> batch
-       (map (fn [^Datom d]))))
+       (map (fn [^Datom d] [(.-e d) (.-a d)]))
+       distinct
+       ))
 
 (defn- transact-datoms
   [^Store store ft-ds batch]
@@ -620,7 +617,7 @@
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/classes c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
      (let [schema (init-schema lmdb schema)]
        (->Store db-name
