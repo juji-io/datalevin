@@ -5,6 +5,7 @@
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
             [datalevin.util :as u]
+            [clojure.string :as s]
             [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Map ArrayList]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
@@ -34,6 +35,19 @@
      "The robber wore a red fleece jacket and a baseball cap.")
   (f engine :doc5
      "The English Springer Spaniel is the best of all red dogs I know."))
+
+(deftest blank-analyzer-test
+  (let [blank-analyzer (fn [^String text]
+                         (map-indexed (fn [i ^String t]
+                                        [t i (.indexOf text t)])
+                                      (s/split text #"\s")))
+        lmdb           (l/open-kv (u/tmp-dir (str "analyzer-" (UUID/randomUUID))))
+        engine         ^SearchEngine (sut/new-search-engine
+                                       lmdb {:analyzer blank-analyzer})]
+    (add-docs sut/add-doc engine)
+    (is (= [[:doc1 [["dogs." [43]]]]]
+           (sut/search engine "dogs." {:display :offsets})))
+    (is (= [:doc5] (sut/search engine "dogs")))))
 
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))

@@ -892,7 +892,7 @@
                             (st/set-schema ds schema))
                           ds)
                         (case db-type
-                          :datalog   (st/open dir schema db-name)
+                          :datalog   (st/open dir schema opts)
                           :key-value (l/open-kv dir opts)))]
           (add-store server dir store)
           (update-client server client-id #(update % :dbs assoc db-name store))

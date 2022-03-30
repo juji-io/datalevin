@@ -225,6 +225,7 @@
 (declare insert-data delete-data)
 
 (deftype Store [db-name
+                auto-entity-time?
                 lmdb
                 search-engine
                 ^:volatile-mutable schema
@@ -502,7 +503,9 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema db-name]
+  ([dir schema {:keys [db-name auto-entity-time?]
+                :or   {db-name           nil
+                       auto-entity-time? false}}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
@@ -513,6 +516,7 @@
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
      (let [schema (init-schema lmdb schema)]
        (->Store db-name
+                auto-entity-time?
                 lmdb
                 (s/new-search-engine lmdb)
                 schema

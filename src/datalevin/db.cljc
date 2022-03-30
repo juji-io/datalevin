@@ -302,7 +302,7 @@
                          #{true false})))
 
 (defn- open-store
-  [dir schema db-name]
+  [dir schema {:keys [db-name]}]
   (if (r/dtlv-uri? dir)
     (let [uri     (URI. dir)
           db-name (cl/parse-db uri)
@@ -329,19 +329,19 @@
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
   ([dir schema] (empty-db dir schema nil))
-  ([dir schema db-name]
+  ([dir schema opts]
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
-   (new-db (open-store dir schema db-name))))
+   (new-db (open-store dir schema opts))))
 
 (defn ^DB init-db
   ([datoms] (init-db datoms nil nil nil))
   ([datoms dir] (init-db datoms dir nil nil))
   ([datoms dir schema] (init-db datoms dir schema nil))
-  ([datoms dir schema db-name]
+  ([datoms dir schema opts]
    {:pre [(or (nil? schema) (map? schema))]}
    (validate-schema schema)
-   (let [store (open-store dir schema db-name)]
+   (let [store (open-store dir schema opts)]
      (s/load-datoms store datoms)
      (new-db store))))
 
