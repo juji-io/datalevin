@@ -1,6 +1,12 @@
 # Change Log
 
 ## WIP
+### Fixed
+- Can use dot form Java interop in query, #103
+### Added
+- Can pass an analyzer to search engine, #102
+- Datalog entities can optionally have `:db/created-at` and `:db/updated-at` added
+  automatically by the system, #86
 ### Improved
 - Update deps
 

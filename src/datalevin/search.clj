@@ -103,9 +103,9 @@
       mw)))
 
 (defn- add-doc-txs
-  [lmdb doc-text ^AtomicInteger max-doc ^FastList txs doc-ref
+  [lmdb analyzer doc-text ^AtomicInteger max-doc ^FastList txs doc-ref
    ^IntShortHashMap norms ^AtomicInteger max-term ^UnifiedMap hit-terms]
-  (let [result    (en-analyzer doc-text)
+  (let [result    (analyzer doc-text)
         new-terms ^HashMap (collect-terms result)
         unique    (.size new-terms)
         doc-id    (.incrementAndGet max-doc)]
@@ -416,6 +416,7 @@
     (l/transact-kv lmdb txs)))
 
 (deftype ^:no-doc SearchEngine [lmdb
+                                analyzer
                                 ^IntShortHashMap norms ; doc-id -> norm
                                 ^AtomicInteger max-doc
                                 ^AtomicInteger max-term]
@@ -425,7 +426,7 @@
       (remove-doc* lmdb norms doc-id))
     (let [txs       (FastList.)
           hit-terms (UnifiedMap.)]
-      (add-doc-txs lmdb doc-text max-doc txs doc-ref norms max-term
+      (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref norms max-term
                    hit-terms)
       (doseq [^Map$Entry kv (.entrySet hit-terms)]
         (let [term (.getKey kv)
@@ -451,7 +452,7 @@
                        :or   {display    :refs
                               top        10
                               doc-filter (constantly true)}}]
-    (let [tokens (->> (en-analyzer query)
+    (let [tokens (->> (analyzer query)
                       (mapv first)
                       (into-array String))
           qterms (->> (hydrate-query lmdb max-doc tokens)
@@ -513,25 +514,30 @@
 (defn new-search-engine
   "Create a search engine. The search index is stored in the passed-in
   key-value database opened by [[datalevin.core/open-kv]]."
-  [lmdb]
-  (open-dbis lmdb)
-  (->SearchEngine lmdb
-                  (init-norms lmdb)
-                  (AtomicInteger. (init-max-doc lmdb))
-                  (AtomicInteger. (init-max-term lmdb))))
+  ([lmdb]
+   (new-search-engine lmdb nil))
+  ([lmdb {:keys [analyzer]
+          :or   {analyzer en-analyzer}}]
+   (open-dbis lmdb)
+   (->SearchEngine lmdb
+                   analyzer
+                   (init-norms lmdb)
+                   (AtomicInteger. (init-max-doc lmdb))
+                   (AtomicInteger. (init-max-term lmdb)))))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])
   (commit [this]))
 
 (deftype ^:no=doc IndexWriter [lmdb
+                               analyzer
                                ^AtomicInteger max-doc
                                ^AtomicInteger max-term
                                ^FastList txs
                                ^UnifiedMap hit-terms]
   IIndexWriter
   (write [this doc-ref doc-text]
-    (add-doc-txs lmdb doc-text max-doc txs doc-ref nil max-term
+    (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref nil max-term
                  hit-terms)
     (when (< 10000000 (.size txs))
       (.commit this)))
@@ -550,13 +556,17 @@
     (.clear txs)))
 
 (defn search-index-writer
-  [lmdb]
-  (open-dbis lmdb)
-  (->IndexWriter lmdb
-                 (AtomicInteger. (init-max-doc lmdb))
-                 (AtomicInteger. (init-max-term lmdb))
-                 (FastList.)
-                 (UnifiedMap.)))
+  ([lmdb]
+   (search-index-writer lmdb nil))
+  ([lmdb {:keys [analyzer]
+          :or   {analyzer en-analyzer}}]
+   (open-dbis lmdb)
+   (->IndexWriter lmdb
+                  analyzer
+                  (AtomicInteger. (init-max-doc lmdb))
+                  (AtomicInteger. (init-max-term lmdb))
+                  (FastList.)
+                  (UnifiedMap.))))
 
 (comment
 
