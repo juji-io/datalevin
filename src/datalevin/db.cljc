@@ -12,8 +12,7 @@
     :refer [combine-hashes case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
    [datalevin.remote :as r]
-   [datalevin.client :as cl]
-   [taoensso.timbre :as log])
+   [datalevin.client :as cl])
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
