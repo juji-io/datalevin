@@ -66,32 +66,15 @@
                      res))))
           schema)))
 
-(defn- init-schema*
-  [lmdb]
-  (when (empty? (load-schema lmdb))
-    (transact-schema
-      lmdb
-      (let [aid (volatile! 0)]
-        (merge
-          c/implicit-schema
-          (update-vals
-            c/entity-time-schema
-            (fn [props]
-              (assoc props :db/aid (vswap! aid #(inc ^long %))))))))))
-
 (defn- init-schema
   [lmdb schema]
-  (init-schema* lmdb)
+  (when (empty? (load-schema lmdb))
+    (transact-schema lmdb c/implicit-schema))
   (when schema
-    (let [now (load-schema lmdb)]
-      (transact-schema
-        lmdb
-        (update-schema
-          lmdb
-          now
-          (if (:db/created-at now)
-            schema
-            (merge schema c/entity-time-schema))))))
+    (transact-schema lmdb (update-schema lmdb (load-schema lmdb) schema)))
+  (let [now (load-schema lmdb)]
+    (when-not (:db/created-at now)
+      (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
   (load-schema lmdb))
 
 (defn- init-attrs [schema]
@@ -242,7 +225,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare update-entity-time insert-data delete-data)
+(declare insert-data delete-data)
 
 (deftype Store [lmdb
                 search-engine
@@ -347,9 +330,7 @@
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
-                                 (if (:auto-entity-time? opts)
-                                   (update-entity-time tx-time datoms)
-                                   datoms))]
+                                 datoms)]
           (batch-fn batch))
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
@@ -483,13 +464,6 @@
          (low-datom->indexable schema low-datom)]
         index
         :id))))
-
-(defn- update-entity-time
-  [tx-time datoms]
-  (let [xf (comp (map d/datom-e)
-              (distinct)
-              (map (fn [e] (d/datom e :db/updated-at tx-time))))]
-    (transduce xf conj datoms datoms)))
 
 (defn- insert-data
   [^Store store ^Datom d ft-ds]

@@ -6,8 +6,8 @@
 ### Added
 - Option to pass an analyzer to search engine, #102
 - `:auto-entity-time?` Datalog DB creation option, so entities can optionally have
-  `:db/created-at` and `:db/updated-at` values added automatically by the system
-  during transaction, #86
+  `:db/created-at` and `:db/updated-at` values added and maintained
+  automatically by the system during transaction, #86
 ### Improved
 - Dependency bump
 

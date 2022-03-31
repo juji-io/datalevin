@@ -11,22 +11,29 @@
 (def ^:const tx0   0x20000000)
 (def ^:const emax  0x7FFFFFFF)
 (def ^:const txmax 0x7FFFFFFF)
+(def ^:const v0    :db.value/sysMin)
+(def ^:const vmax  :db.value/sysMax)
+(def ^:const a0    0)
+(def ^:const amax  0x7FFFFFFF)
+
+;; schema
 
 (def ^:const implicit-schema
-  {:db/ident {:db/unique    :db.unique/identity
-              :db/valueType :db.type/keyword
-              :db/aid       0}})
+  {:db/ident      {:db/unique    :db.unique/identity
+                   :db/valueType :db.type/keyword
+                   :db/aid       0}
+   :db/created-at {:db/valueType   :db.type/long
+                   :db/cardinality :db.cardinality/one
+                   :db/aid         1}
+   :db/updated-at {:db/valueType   :db.type/long
+                   :db/cardinality :db.cardinality/one
+                   :db/aid         2}})
 
 (def ^:const entity-time-schema
   {:db/created-at {:db/valueType   :db.type/long
                    :db/cardinality :db.cardinality/one}
    :db/updated-at {:db/valueType   :db.type/long
                    :db/cardinality :db.cardinality/one}})
-
-(def ^:const v0    :db.value/sysMin)
-(def ^:const vmax  :db.value/sysMax)
-(def ^:const a0    0)
-(def ^:const amax  0x7FFFFFFF)
 
 ;; lmdb
 

@@ -450,7 +450,7 @@ Only usable for debug output.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
-   * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+   * `:auto-entity-time?`, a boolean indicating whether to add and maintain `:db/created-at` and `:db/updated-at` unix timestamp values for each entity. Default is `false`.
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening

@@ -5,26 +5,30 @@
    [datalevin.core :as d]
    [datalevin.interpret :as i]
    [datalevin.db :as db]
+   [datalevin.util :as u]
    [datalevin.constants :refer [tx0]]
    [datalevin.test.core :as tdc]))
 
-#_(deftest test-auto-update-entity-time
-   (let [conn (d/create-conn
-                nil
-                {:value {:db/valueType :db.type/long}
-                 :no    {:db/valueType :db.type/long
-                         :db/unique    :db.unique/identity}}
-                {:auto-entity-time? true})]
-     (doseq [n (range 10)]
-       (d/transact! conn [{:no n :value n}]))
-     (d/transact! conn [{:no 0 :value 10}])
-     (let [{:keys [db/created-at db/updated-at] :as res}
-           (d/pull (d/db conn) '[*] 1)]
-       (is (= (d/datoms (d/db conn) :eav) []))
-       (is (= res {}))
-       (is created-at)
-       (is updated-at)
-       (is (<= created-at updated-at)))))
+(deftest test-auto-update-entity-time
+  (let [conn (d/create-conn
+               (u/tmp-dir (str "auto-entity-time-" (random-uuid)))
+               {:value {:db/valueType :db.type/long}
+                :no    {:db/valueType :db.type/long
+                        :db/unique    :db.unique/identity}}
+               {:auto-entity-time? true})]
+    (doseq [n (range 10)]
+      (d/transact! conn [{:no n :value n}]))
+    (d/transact! conn [{:no 0 :value 10}])
+    (let [{:keys [db/created-at db/updated-at]}
+          (d/pull (d/db conn) '[*] 1)]
+      (is created-at)
+      (is updated-at)
+      (is (<= created-at updated-at)))
+    (let [{:keys [db/created-at db/updated-at]}
+          (d/pull (d/db conn) '[*] 2)]
+      (is created-at)
+      (is updated-at)
+      (is (= created-at updated-at)))))
 
 (deftest test-multi-threads-transact
   ;; we serialize writes, so as not to violate uniqueness constraint

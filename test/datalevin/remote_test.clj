@@ -43,17 +43,17 @@
       (let [a  :a/b
             v  (UUID/randomUUID)
             d  (d/datom c/e0 a v)
-            s  (assoc (st/schema store) a {:db/aid 1})
+            s  (assoc (st/schema store) a {:db/aid 3})
             b  :b/c
             p1 {:db/valueType :db.type/uuid}
             v1 (UUID/randomUUID)
             d1 (d/datom c/e0 b v1)
-            s1 (assoc s b (merge p1 {:db/aid 2}))
+            s1 (assoc s b (merge p1 {:db/aid 4}))
             c  :c/d
             p2 {:db/valueType :db.type/ref}
             v2 (long (rand c/emax))
             d2 (d/datom c/e0 c v2)
-            s2 (assoc s1 c (merge p2 {:db/aid 3}))
+            s2 (assoc s1 c (merge p2 {:db/aid 5}))
             t1 (st/last-modified store)]
         (st/load-datoms store [d])
         (is (<= t1 (st/last-modified store)))
@@ -133,8 +133,8 @@
           (st/close store))
         (let [d     :d/e
               p3    {:db/valueType :db.type/long}
-              s3    (assoc s2 d (merge p3 {:db/aid 4}))
-              s4    (assoc s3 :f/g {:db/aid 5 :db/valueType :db.type/string})
+              s3    (assoc s2 d (merge p3 {:db/aid 6}))
+              s4    (assoc s3 :f/g {:db/aid 7 :db/valueType :db.type/string})
               store (sut/open dir {d p3})]
           (is (= s3 (st/schema store)))
           (st/set-schema store {:f/g {:db/valueType :db.type/string}})

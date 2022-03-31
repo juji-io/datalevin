@@ -47,7 +47,8 @@
   (let [db  (-> (d/empty-db nil {:user/handle  #:db {:valueType :db.type/string
                                                      :unique    :db.unique/identity}
                                  :user/friends #:db{:valueType   :db.type/ref
-                                                    :cardinality :db.cardinality/many}})
+                                                    :cardinality :db.cardinality/many}}
+                            {:auto-entity-time? true})
                 (d/db-with [{:user/handle  "ava"
                              :user/friends [{:user/handle "fred"}
                                             {:user/handle "jane"}]}]))
@@ -104,8 +105,8 @@
           (is (nil? (find-fred ava-db-no-fred-friend)) "fred is not a friend anymore :(")
           ;; ava and fred make up
           (let [ava-friends-with-fred (d/add ava-db-no-fred-friend :user/friends fred)]
-            ; tx-stage does not handle cardinality properly yet:
-            ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
+                                        ; tx-stage does not handle cardinality properly yet:
+                                        ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
             (let [db-with-friends (d/db-with db [ava-friends-with-fred])
                   ava             (d/entity db-with-friends [:user/handle "ava"])]
               (is (some? (find-fred ava)) "officially friends again"))))))
@@ -168,13 +169,14 @@
 (deftest test-transactable-entity-with-remote-store
   (let [server (s/create {:port c/default-port
                           :root (u/tmp-dir
-                                     (str "entity-test-" (UUID/randomUUID)))})
+                                  (str "entity-test-" (UUID/randomUUID)))})
         _      (s/start server)
         db     (-> (d/empty-db "dtlv://datalevin:datalevin@localhost/entity-test"
                                {:user/handle  #:db {:valueType :db.type/string
                                                     :unique    :db.unique/identity}
                                 :user/friends #:db{:valueType   :db.type/ref
-                                                   :cardinality :db.cardinality/many}})
+                                                   :cardinality :db.cardinality/many}}
+                               {:auto-entity-time? true})
                    (d/db-with [{:user/handle  "ava"
                                 :user/friends [{:user/handle "fred"}
                                                {:user/handle "jane"}]}]))
