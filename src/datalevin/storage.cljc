@@ -66,13 +66,32 @@
                      res))))
           schema)))
 
+(defn- init-schema*
+  [lmdb]
+  (when (empty? (load-schema lmdb))
+    (transact-schema
+      lmdb
+      (let [aid (volatile! 0)]
+        (merge
+          c/implicit-schema
+          (update-vals
+            c/entity-time-schema
+            (fn [props]
+              (assoc props :db/aid (vswap! aid #(inc ^long %))))))))))
+
 (defn- init-schema
   [lmdb schema]
-  (when (empty? (load-schema lmdb))
-    (transact-schema lmdb c/implicit-schema))
+  (init-schema* lmdb)
   (when schema
     (let [now (load-schema lmdb)]
-      (transact-schema lmdb (update-schema lmdb now schema))))
+      (transact-schema
+        lmdb
+        (update-schema
+          lmdb
+          now
+          (if (:db/created-at now)
+            schema
+            (merge schema c/entity-time-schema))))))
   (load-schema lmdb))
 
 (defn- init-attrs [schema]
@@ -174,6 +193,7 @@
       (pred d))))
 
 (defprotocol IStore
+  (opts [this] "Return the opts map")
   (db-name [this] "Return the db-name, if it is a remote or server store")
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
@@ -222,12 +242,11 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare insert-data delete-data)
+(declare update-entity-time insert-data delete-data)
 
-(deftype Store [db-name
-                auto-entity-time?
-                lmdb
+(deftype Store [lmdb
                 search-engine
+                opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
                 ^:volatile-mutable attrs    ; aid -> attr
@@ -235,7 +254,11 @@
                 ^:volatile-mutable max-gt]
   IStore
 
-  (db-name [_] db-name)
+  (opts [_]
+    opts)
+
+  (db-name [_]
+    (:db-name opts))
 
   (dir [_]
     (lmdb/dir lmdb))
@@ -315,16 +338,18 @@
                              (reduce conj-fn holder data))
                            (reduce conj-fn holder
                                    (delete-data this datom ft-ds)))))
+            tx-time  (System/currentTimeMillis)
             batch-fn (fn [batch]
                        (lmdb/transact-kv
                          lmdb
                          (conj (persistent! (reduce add-fn (transient []) batch))
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))]
+                               [:put c/meta :last-modified tx-time :attr :long])))]
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
-                                 datoms)]
+                                 (if (:auto-entity-time? opts)
+                                   (update-entity-time tx-time datoms)
+                                   datoms))]
           (batch-fn batch))
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
@@ -459,6 +484,13 @@
         index
         :id))))
 
+(defn- update-entity-time
+  [tx-time datoms]
+  (let [xf (comp (map d/datom-e)
+              (distinct)
+              (map (fn [e] (d/datom e :db/updated-at tx-time))))]
+    (transduce xf conj datoms datoms)))
+
 (defn- insert-data
   [^Store store ^Datom d ft-ds]
   (let [attr   (.-a d)
@@ -495,6 +527,17 @@
       ref? (conj [:del c/vea i :vea])
       gt   (conj [:del c/giants gt :id]))))
 
+(defn- transact-opts
+  [lmdb opts]
+  (lmdb/transact-kv lmdb (conj (for [[k v] opts]
+                                 [:put c/opts k v :attr :data])
+                               [:put c/meta :last-modified
+                                (System/currentTimeMillis) :attr :long])))
+
+(defn- load-opts
+  [lmdb]
+  (into {} (lmdb/get-range lmdb c/opts [:all] :attr :data)))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -503,9 +546,7 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [db-name auto-entity-time?]
-                :or   {db-name           nil
-                       auto-entity-time? false}}]
+  ([dir schema opts]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
@@ -514,11 +555,12 @@
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/opts c/+max-key-size+)
+     (when opts (transact-opts lmdb opts))
      (let [schema (init-schema lmdb schema)]
-       (->Store db-name
-                auto-entity-time?
-                lmdb
+       (->Store lmdb
                 (s/new-search-engine lmdb)
+                (load-opts lmdb)
                 schema
                 (schema->rschema schema)
                 (init-attrs schema)

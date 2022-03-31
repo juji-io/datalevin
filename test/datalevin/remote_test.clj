@@ -312,7 +312,7 @@
   (let [uri-str "dtlv://datalevin:datalevin@localhost"
         client  (cl/new-client uri-str)
         store1  (sut/open-kv client (str uri-str "/mykv") nil)
-        store2  (sut/open client (str uri-str "/mydt") nil)]
+        store2  (sut/open client (str uri-str "/mydt") nil nil)]
     (is (instance? datalevin.remote.KVStore store1))
     (is (instance? datalevin.remote.DatalogStore store2))
 

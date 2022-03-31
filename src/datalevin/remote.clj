@@ -54,8 +54,11 @@
 
 (deftype DatalogStore [^String uri
                        ^String db-name
+                       opts
                        ^Client client]
   IStore
+
+  (opts [_] opts)
 
   (db-name [_] db-name)
 
@@ -153,14 +156,16 @@
   ([uri-str]
    (open uri-str nil))
   ([uri-str schema]
-   (open (cl/new-client uri-str) uri-str schema))
-  ([client uri-str schema]
+   (open (cl/new-client uri-str) uri-str schema nil))
+  ([uri-str schema opts]
+   (open (cl/new-client uri-str) uri-str schema opts))
+  ([client uri-str schema opts]
    (let [uri (URI. uri-str)]
      (if-let [db-name (cl/parse-db uri)]
        (let [store (or (get (cl/parse-query uri) "store")
                        c/db-store-datalog)]
-         (cl/open-database client db-name store schema nil)
-         (->DatalogStore uri-str db-name client))
+         (cl/open-database client db-name store schema opts)
+         (->DatalogStore uri-str db-name opts client))
        (u/raise "URI should contain a database name" {})))))
 
 ;; remote kv store

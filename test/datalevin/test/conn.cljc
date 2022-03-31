@@ -38,7 +38,7 @@
 (deftest test-ways-to-create-conn-1
   (let [conn (d/create-conn)]
     (is (= #{} (set (d/datoms @conn :eavt))))
-    (is (= c/implicit-schema (db/-schema @conn)))
+    (is (= (merge c/entity-time-schema c/implicit-schema) (db/-schema @conn)))
     (d/close conn)))
 
 (deftest test-ways-to-create-conn-2

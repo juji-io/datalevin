@@ -52,6 +52,7 @@
 
 (def server-schema
   (merge c/implicit-schema
+         c/entity-time-schema
          {:user/name    {:db/doc       "User name, must be unique"
                          :db/unique    :db.unique/identity
                          :db/valueType :db.type/string}

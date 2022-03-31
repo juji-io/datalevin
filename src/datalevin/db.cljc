@@ -302,14 +302,14 @@
                          #{true false})))
 
 (defn- open-store
-  [dir schema {:keys [db-name]}]
+  [dir schema {:keys [db-name] :as opts}]
   (if (r/dtlv-uri? dir)
     (let [uri     (URI. dir)
           db-name (cl/parse-db uri)
-          store   (r/open dir schema)]
+          store   (r/open dir schema opts)]
       (swap! dbs assoc db-name store)
       store)
-    (let [store (s/open dir schema db-name)]
+    (let [store (s/open dir schema opts)]
       (when db-name (swap! dbs assoc db-name store))
       store)))
 
@@ -346,7 +346,7 @@
      (new-db store))))
 
 (defn close-db [^DB db]
-  (s/close ^Store (.-store db))
+  (s/close ^IStore (.-store db))
   nil)
 
 (defn db-from-reader [{:keys [schema datoms]}]
@@ -506,13 +506,21 @@
    (cond-> report
      (tx-id? e)
      (assoc-in [:tempids e] eid)
+
      (tempid? e)
      (assoc-in [:tempids e] eid)
+
      (and (not (tempid? e))
           (new-eid? (:db-after report) eid))
      (assoc-in [:tempids eid] eid)
+
+     (:auto-entity-time? (s/opts (.-store ^DB (:db-after report))))
+     (update :tx-data conj
+             (d/datom eid :db/created-at (System/currentTimeMillis)))
+
      true
-     (update :db-after advance-max-eid eid))))
+     (update :db-after advance-max-eid eid)
+     )))
 
 ;; In context of `with-datom` we can use faster comparators which
 ;; do not check for nil (~10-15% performance gain in `transact`)
@@ -961,7 +969,7 @@
     (raise "Bad transaction data " initial-es ", expected sequential collection"
            {:error :transact/syntax, :tx-data initial-es}))
   (let [store (.-store ^DB (:db-before initial-report))]
-    (if (instance? DatalogStore store)
+    (if (instance? datalevin.remote.DatalogStore store)
       (try
         (let [res            (r/tx-data store initial-es)
               [datoms pairs] (split-with datom? res)]

@@ -18,7 +18,7 @@
         store (sut/open dir)]
     (is (= c/gt0 (sut/max-gt store)))
     (is (= 1 (sut/max-aid store)))
-    (is (= c/implicit-schema (sut/schema store)))
+    (is (= (merge c/entity-time-schema c/implicit-schema) (sut/schema store)))
     (is (= c/e0 (sut/init-max-eid store)))
     (let [a   :a/b
           v   (UUID/randomUUID)
