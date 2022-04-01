@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.4
 ### Fixed
 - Dot form Java interop regression in query, #103
 ### Added
