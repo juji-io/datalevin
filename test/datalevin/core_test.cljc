@@ -6,6 +6,7 @@
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [datalevin.test.core]
+            [clojure.string :as str]
             [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
@@ -768,6 +769,33 @@
     (testing "update"
       (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
       (is (= (sut/search engine "red" ) [2])))
+    (sut/close-kv lmdb)
+    (s/stop server)))
+
+(deftest remote-blank-analyzer-test
+  (let [server         (s/create {:port c/default-port
+                                  :root (u/tmp-dir
+                                          (str "remote-blank-analyzer-test-"
+                                               (UUID/randomUUID)))})
+        _              (s/start server)
+        dir            "dtlv://datalevin:datalevin@localhost/remote-blank-analyzer-test"
+        lmdb           (sut/open-kv dir)
+        blank-analyzer (i/inter-fn [^String text]
+                                   (map-indexed (fn [i ^String t]
+                                                  [t i (.indexOf text t)])
+                                                (str/split text #"\s")))
+        engine         (sut/new-search-engine lmdb {:analyzer blank-analyzer})]
+    (sut/open-dbi lmdb "raw")
+    (sut/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of some dogs and a whale."]])
+    (doseq [i [1 2 3]]
+      (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+    (is (= [[1 [["dogs." [43]]]]]
+           (sut/search engine "dogs." {:display :offsets})))
+    (is (= [3] (sut/search engine "dogs")))
     (sut/close-kv lmdb)
     (s/stop server)))
 

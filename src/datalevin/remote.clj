@@ -353,10 +353,13 @@
     (cl/normal-request (.-client store) :search
                        [(.-db-name store) query opts])))
 
-(defn new-search-engine [^KVStore store]
-  (cl/normal-request (.-client store) :new-search-engine
-                     [(.-db-name store)])
-  (->SearchEngine store))
+(defn new-search-engine
+  ([store]
+   (new-search-engine store nil))
+  ([^KVStore store opts]
+   (cl/normal-request (.-client store) :new-search-engine
+                      [(.-db-name store) opts])
+   (->SearchEngine store)))
 
 (deftype IndexWriter [^KVStore store]
   IIndexWriter
@@ -367,7 +370,10 @@
   (commit [this]
     (cl/normal-request (.-client store) :commit [(.-db-name store)])))
 
-(defn search-index-writer [^KVStore store]
-  (cl/normal-request (.-client store) :search-index-writer
-                     [(.-db-name store)])
-  (->IndexWriter store))
+(defn search-index-writer
+  ([store]
+   (search-index-writer store nil))
+  ([^KVStore store opts]
+   (cl/normal-request (.-client store) :search-index-writer
+                      [(.-db-name store) opts])
+   (->IndexWriter store)))

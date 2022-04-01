@@ -1252,11 +1252,18 @@ the `pred`.
 
 (defn new-search-engine
   "Create a search engine. The search index is stored in the passed-in
-  key-value database opened by [[open-kv]]."
-  [lmdb]
-  (if (instance? datalevin.remote.KVStore lmdb)
-    (r/new-search-engine lmdb)
-    (sc/new-search-engine lmdb)))
+  key-value database opened by [[open-kv]].
+  `opts` is an option map that may contains keys:
+  * `:analyzer` is a function that takes a text string and return a seq of
+    [term, position, offset], where term is a word, position is the sequence
+     number of the term, and offset is the character offset of this term.
+  "
+  ([lmdb]
+   (new-search-engine lmdb nil))
+  ([lmdb opts]
+   (if (instance? datalevin.remote.KVStore lmdb)
+     (r/new-search-engine lmdb opts)
+     (sc/new-search-engine lmdb opts))))
 
 (def ^{:arglists '([engine doc-ref doc-text])
        :doc      "Add a document to the search engine, `doc-ref` can be
@@ -1306,11 +1313,19 @@ words.
 (defn search-index-writer
   "Create a writer for writing documents to the search index in bulk.
   The search index is stored in the passed-in key value database opened
-  by [[open-kv]]. See also [[write]] and [[commit]]"
-  [lmdb]
-  (if (instance? datalevin.remote.KVStore lmdb)
-    (r/search-index-writer lmdb)
-    (sc/search-index-writer lmdb)))
+  by [[open-kv]]. See also [[write]] and [[commit]].
+
+  `opts` is an option map that may contains keys:
+  * `:analyzer` is a function that takes a text string and return a seq of
+    [term, position, offset], where term is a word, position is the sequence
+     number of the term, and offset is the character offset of this term.
+  "
+  ([lmdb]
+   (search-index-writer lmdb nil))
+  ([lmdb opts]
+   (if (instance? datalevin.remote.KVStore lmdb)
+     (r/search-index-writer lmdb opts)
+     (sc/search-index-writer lmdb opts))))
 
 (def ^{:arglists '([writer doc-ref doc-text])
        :doc      "Write a document to search index."}
