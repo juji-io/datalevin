@@ -230,6 +230,7 @@
                 ^:volatile-mutable rschema
                 ^:volatile-mutable classes
                 ^:volatile-mutable attrs    ; aid -> attr
+                ^:volatile-mutable max-cid
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore
@@ -317,21 +318,7 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [ft-ds    (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
-            add-fn   (fn [holder datom]
-                       (let [conj-fn (fn [h d] (conj! h d))]
-                         (if (d/datom-added datom)
-                           (let [[data giant?] (insert-data this datom ft-ds)]
-                             (when giant? (advance-max-gt this))
-                             (reduce conj-fn holder data))
-                           (reduce conj-fn holder
-                                   (delete-data this datom ft-ds)))))
-            tx-time  (System/currentTimeMillis)
-            batch-fn (fn [batch]
-                       (lmdb/transact-kv
-                         lmdb
-                         (conj (persistent! (reduce add-fn (transient []) batch))
-                               [:put c/meta :last-modified tx-time :attr :long])))]
+      (let [ft-ds (volatile! [])] ;; fulltext datoms, [:a d] or [:d d]
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
