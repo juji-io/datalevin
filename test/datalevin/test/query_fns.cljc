@@ -6,6 +6,35 @@
   #?(:clj
      (:import [clojure.lang ExceptionInfo])))
 
+(deftest test-string-fn
+  (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string}})
+               (d/db-with
+                 [{:db/id 1,
+                   :text  "The quick red fox jumped over the lazy red dogs."}
+                  {:db/id 2,
+                   :text  "Mary had a little lamb whose fleece was red as fire."}
+                  {:db/id 3,
+                   :text  "Moby Dick is a story of a whale and a man obsessed?"}]))]
+    (is (= (d/q '[:find ?e .
+                  :in $ ?ext
+                  :where
+                  [?e :text ?v]
+                  [(.endsWith ^String ?v ?ext)]]
+                db "?") 3))
+    (is (= (d/q '[:find ?e .
+                  :in $ ?ext
+                  :where
+                  [?e :text ?v]
+                  [(clojure.string/ends-with? ?v ?ext)]]
+                db "?") 3))
+    (is (thrown-with-msg? Exception #"Unknown predicate"
+                          (d/q '[:find ?e .
+                                 :in $ ?ext
+                                 :where
+                                 [?e :text ?v]
+                                 [(ends-with? ?v ?ext)]]
+                               db "?") 3))))
+
 (deftest test-fulltext-fns
   (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
                                        :db/fulltext  true}})

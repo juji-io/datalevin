@@ -237,7 +237,8 @@
       (parse-bind-tuple form)
       (parse-bind-ignore form)
       (parse-bind-scalar form)
-      (raise "Cannot parse binding, expected (bind-scalar | bind-tuple | bind-coll | bind-rel)"
+      (raise "Cannot parse binding, expected
+(bind-scalar | bind-tuple | bind-coll | bind-rel)"
              {:error :parser/binding, :form form})))
 
 

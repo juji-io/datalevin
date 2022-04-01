@@ -17,23 +17,23 @@
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store (sut/open dir)]
     (is (= c/gt0 (sut/max-gt store)))
-    (is (= 1 (sut/max-aid store)))
-    (is (= c/implicit-schema (sut/schema store)))
+    (is (= 3 (sut/max-aid store)))
+    (is (= (merge c/entity-time-schema c/implicit-schema) (sut/schema store)))
     (is (= c/e0 (sut/init-max-eid store)))
     (let [a   :a/b
           v   (UUID/randomUUID)
           d   (d/datom c/e0 a v)
-          s   (assoc (sut/schema store) a {:db/aid 1})
+          s   (assoc (sut/schema store) a {:db/aid 3})
           b   :b/c
           p1  {:db/valueType :db.type/uuid}
           v1  (UUID/randomUUID)
           d1  (d/datom c/e0 b v1)
-          s1  (assoc s b (merge p1 {:db/aid 2}))
+          s1  (assoc s b (merge p1 {:db/aid 4}))
           c   :c/d
           p2  {:db/valueType :db.type/ref}
           v2  (long (rand c/emax))
           d2  (d/datom c/e0 c v2)
-          s2  (assoc s1 c (merge p2 {:db/aid 3}))
+          s2  (assoc s1 c (merge p2 {:db/aid 5}))
           dir (lmdb/dir (.-lmdb ^Store store))
           t1  (sut/last-modified store)]
       (sut/load-datoms store [d])
@@ -120,8 +120,8 @@
         (sut/close store))
       (let [d     :d/e
             p3    {:db/valueType :db.type/long}
-            s3    (assoc s2 d (merge p3 {:db/aid 4}))
-            s4    (assoc s3 :f/g {:db/aid 5 :db/valueType :db.type/string})
+            s3    (assoc s2 d (merge p3 {:db/aid 6}))
+            s4    (assoc s3 :f/g {:db/aid 7 :db/valueType :db.type/string})
             store (sut/open dir {d p3})]
         (is (= s3 (sut/schema store)))
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})

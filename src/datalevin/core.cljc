@@ -196,8 +196,11 @@ Only usable for debug output.
 
 ;; Creating DB
 
-(def ^{:arglists '([] [dir] [dir schema])
+(def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
        :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
+
+ `opts` map has keys:
+   * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
   Usage:
 
@@ -207,7 +210,7 @@ Only usable for debug output.
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (empty-db \"dtlv://datalevin:secret@example.host/mydb\")"}
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true})"}
   empty-db db/empty-db)
 
 
@@ -240,8 +243,12 @@ Only usable for debug output.
        :doc      "Return the value of a datom"}
   datom-v dd/datom-v)
 
-(def ^{:arglists '([datoms] [datoms dir] [datoms dir schema])
+(def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
        :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+
+ `opts` map has keys:
+   * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+
 
              See also [[datom]]."}
   init-db db/init-db)
@@ -425,10 +432,15 @@ Only usable for debug output.
 
 (defn conn-from-datoms
   "Create a mutable reference to a database with the given datoms added to it.
-  `dir` could be a local directory path or a dtlv connection URI string."
+  `dir` could be a local directory path or a dtlv connection URI string.
+
+  `opts` map has keys:
+   * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+  "
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
-  ([datoms dir schema] (conn-from-db (init-db datoms dir schema))))
+  ([datoms dir schema] (conn-from-db (init-db datoms dir schema)))
+  ([datoms dir schema opts] (conn-from-db (init-db datoms dir schema opts))))
 
 
 (defn create-conn
@@ -436,6 +448,9 @@ Only usable for debug output.
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
   `dir` could be a local directory path or a dtlv connection URI string.
+
+  `opts` map has keys:
+   * `:auto-entity-time?`, a boolean indicating whether to add and maintain `:db/created-at` and `:db/updated-at` unix timestamp values for each entity. Default is `false`.
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -455,10 +470,11 @@ Only usable for debug output.
 
              (create-conn \"/tmp/test-create-conn\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (create-conn \"dtlv://datalevin:secret@example.host/mydb\")"
+             (create-conn \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true})"
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
-  ([dir schema] (conn-from-db (empty-db dir schema))))
+  ([dir schema] (conn-from-db (empty-db dir schema)))
+  ([dir schema opts] (conn-from-db (empty-db dir schema opts))))
 
 (defn close
   "Close the connection"

@@ -52,6 +52,7 @@
 
 (def server-schema
   (merge c/implicit-schema
+         c/entity-time-schema
          {:user/name    {:db/doc       "User name, must be unique"
                          :db/unique    :db.unique/identity
                          :db/valueType :db.type/string}
@@ -892,7 +893,7 @@
                             (st/set-schema ds schema))
                           ds)
                         (case db-type
-                          :datalog   (st/open dir schema db-name)
+                          :datalog   (st/open dir schema opts)
                           :key-value (l/open-kv dir opts)))]
           (add-store server dir store)
           (update-client server client-id #(update % :dbs assoc db-name store))

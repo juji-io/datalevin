@@ -42,7 +42,7 @@
     (d/close conn)))
 
 (deftest test-ways-to-create-conn-2
-  (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
+  (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 3}}
         conn   (d/create-conn nil schema)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= (db/-schema @conn) (merge schema c/implicit-schema)))

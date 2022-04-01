@@ -296,7 +296,8 @@
          (request client (if (= db-type c/db-store-kv)
                            {:type :open-kv :db-name db-name :opts opts}
                            (cond-> {:type :open :db-name db-name}
-                             schema (assoc :schema schema))))]
+                             schema (assoc :schema schema)
+                             opts   (assoc :opts (assoc opts :db-name db-name)))))]
      (when (= type :error-response)
        (u/raise "Unable to open database:" db-name
                 {:message message})))))

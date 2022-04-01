@@ -71,6 +71,9 @@
     (transact-schema lmdb c/implicit-schema))
   (when schema
     (transact-schema lmdb (update-schema lmdb (load-schema lmdb) schema)))
+  (let [now (load-schema lmdb)]
+    (when-not (:db/created-at now)
+      (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
   (load-schema lmdb))
 
 (defn- load-classes
@@ -166,6 +169,7 @@
       (pred d))))
 
 (defprotocol IStore
+  (opts [this] "Return the opts map")
   (db-name [this] "Return the db-name, if it is a remote or server store")
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
@@ -219,9 +223,9 @@
 
 (declare load-batch)
 
-(deftype Store [db-name
-                lmdb
+(deftype Store [lmdb
                 search-engine
+                opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
                 ^:volatile-mutable classes
@@ -229,7 +233,11 @@
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt]
   IStore
-  (db-name [_] db-name)
+  (opts [_]
+    opts)
+
+  (db-name [_]
+    (:db-name opts))
 
   (dir [_]
     (lmdb/dir lmdb))
@@ -309,7 +317,21 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [ft-ds (volatile! [])] ; fulltext datoms
+      (let [ft-ds    (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
+            add-fn   (fn [holder datom]
+                       (let [conj-fn (fn [h d] (conj! h d))]
+                         (if (d/datom-added datom)
+                           (let [[data giant?] (insert-data this datom ft-ds)]
+                             (when giant? (advance-max-gt this))
+                             (reduce conj-fn holder data))
+                           (reduce conj-fn holder
+                                   (delete-data this datom ft-ds)))))
+            tx-time  (System/currentTimeMillis)
+            batch-fn (fn [batch]
+                       (lmdb/transact-kv
+                         lmdb
+                         (conj (persistent! (reduce add-fn (transient []) batch))
+                               [:put c/meta :last-modified tx-time :attr :long])))]
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
@@ -601,6 +623,17 @@
     ;; (transact-classes (.-lmdb store) (log/spy (collect-classes store batch)))
     (transact-datoms store ft-ds batch)))
 
+(defn- transact-opts
+  [lmdb opts]
+  (lmdb/transact-kv lmdb (conj (for [[k v] opts]
+                                 [:put c/opts k v :attr :data])
+                               [:put c/meta :last-modified
+                                (System/currentTimeMillis) :attr :long])))
+
+(defn- load-opts
+  [lmdb]
+  (into {} (lmdb/get-range lmdb c/opts [:all] :attr :data)))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -609,7 +642,7 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema db-name]
+  ([dir schema opts]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
      (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
@@ -619,10 +652,12 @@
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
      (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/opts c/+max-key-size+)
+     (when opts (transact-opts lmdb opts))
      (let [schema (init-schema lmdb schema)]
-       (->Store db-name
-                lmdb
+       (->Store lmdb
                 (s/new-search-engine lmdb)
+                (load-opts lmdb)
                 schema
                 (schema->rschema schema)
                 (load-classes lmdb)

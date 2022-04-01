@@ -1,8 +1,15 @@
 # Change Log
 
-## WIP
+## 0.6.4
+### Fixed
+- Dot form Java interop regression in query, #103
+### Added
+- Option to pass an analyzer to search engine, #102
+- `:auto-entity-time?` Datalog DB creation option, so entities can optionally have
+  `:db/created-at` and `:db/updated-at` values added and maintained
+  automatically by the system during transaction, #86
 ### Improved
-- Update deps
+- Dependency bump
 
 ## 0.6.3
 ### Added
