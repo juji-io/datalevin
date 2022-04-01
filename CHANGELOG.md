@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.5
 ### Fixed
 - Make configurable analyzer available to client/server
 
