@@ -512,8 +512,6 @@
   (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) c/+max-key-size+))
 
 (defn new-search-engine
-  "Create a search engine. The search index is stored in the passed-in
-  key-value database opened by [[datalevin.core/open-kv]]."
   ([lmdb]
    (new-search-engine lmdb nil))
   ([lmdb {:keys [analyzer]

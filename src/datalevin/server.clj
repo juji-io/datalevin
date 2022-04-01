@@ -821,13 +821,13 @@
 (defn- new-search-engine
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [db-name             (nth args 0)
+    (let [[db-name opts]      args
           dir                 (db-dir server db-name)
           store               (get-store server dir)
           {:keys [client-id]} @(.attachment skey)
           engine              (or (get-in (get-client server client-id)
                                           [:engines db-name])
-                                  (sc/new-search-engine store))]
+                                  (sc/new-search-engine store opts))]
       (update-client server client-id
                      #(update % :engines assoc db-name engine))
       (write-message skey {:type :command-complete}))))
@@ -851,13 +851,13 @@
 (defn- search-index-writer
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (let [db-name             (nth args 0)
+    (let [[db-name opts]      args
           dir                 (db-dir server db-name)
           store               (get-store server dir)
           {:keys [client-id]} @(.attachment skey)
           writer              (or (get-in (get-client server client-id)
                                           [:writers db-name])
-                                  (sc/search-index-writer store))]
+                                  (sc/search-index-writer store opts))]
       (update-client server client-id
                      #(update % :writers assoc db-name writer))
       (write-message skey {:type :command-complete}))))
