@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.6
 ### Improved
 - Dump and load Datalog option map
 - Dump and load `inter-fn`
