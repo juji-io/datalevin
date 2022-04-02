@@ -799,22 +799,48 @@
     (sut/close-kv lmdb)
     (s/stop server)))
 
+(deftest fulltext-fns-test
+  (let [analyzer (i/inter-fn [^String text]
+                             (map-indexed (fn [i ^String t]
+                                            [t i (.indexOf text t)])
+                                          (str/split text #"\s")))
+        conn     (sut/create-conn (u/tmp-dir (str "fulltext-fns-" (UUID/randomUUID)))
+                                  {:a/string {:db/valueType :db.type/string
+                                              :db/fulltext  true}}
+                                  {:auto-entity-time? true
+                                   :search-engine     {:analyzer analyzer}})
+        s        "The quick brown fox jumps over the lazy dog"]
+    (sut/transact! conn [{:a/string s}])
+    (is (= (sut/q '[:find ?v .
+                    :in $ ?q
+                    :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                  (sut/db conn) "brown fox") s))
+    (sut/close conn)))
+
 (deftest remote-fulltext-fns-test
-  (let [server (s/create {:port c/default-port
-                          :root (u/tmp-dir
-                                  (str "remote-fulltext-fns-test-"
-                                       (UUID/randomUUID)))})
-        _      (s/start server)
-        dir    "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
-        db     (-> (sut/empty-db dir {:text {:db/valueType :db.type/string
-                                             :db/fulltext  true}})
-                   (sut/db-with
-                     [{:db/id 1,
-                       :text  "The quick red fox jumped over the lazy red dogs."}
-                      {:db/id 2,
-                       :text  "Mary had a little lamb whose fleece was red as fire."}
-                      {:db/id 3,
-                       :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+  (let [server   (s/create {:port c/default-port
+                            :root (u/tmp-dir
+                                    (str "remote-fulltext-fns-test-"
+                                         (UUID/randomUUID)))})
+        _        (s/start server)
+        dir      "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
+        analyzer (i/inter-fn [^String text]
+                             (map-indexed (fn [i ^String t]
+                                            [t i (.indexOf text t)])
+                                          (str/split text #"\s")))
+        db       (-> (sut/empty-db
+                       dir
+                       {:text {:db/valueType :db.type/string
+                               :db/fulltext  true}}
+                       {:auto-entity-time? true
+                        :search-engine     {:analyzer analyzer}})
+                     (sut/db-with
+                       [{:db/id 1,
+                         :text  "The quick red fox jumped over the lazy red dogs."}
+                        {:db/id 2,
+                         :text  "Mary had a little lamb whose fleece was red as fire."}
+                        {:db/id 3,
+                         :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
     (is (= (sut/q '[:find ?e ?a ?v
                     :in $ ?q
                     :where [(fulltext $ ?q) [[?e ?a ?v]]]]

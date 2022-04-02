@@ -4,8 +4,10 @@
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [datalevin.sparselist :as sl]
+            [clojure.string :as s]
             [taoensso.nippy :as nippy])
   (:import [java.util ArrayList Arrays UUID Date Base64]
+           [java.util.regex Pattern]
            [java.io Writer DataInput DataOutput ObjectInput ObjectOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
@@ -59,6 +61,17 @@
 (defn ^bytes bytes-from-reader
   [s]
   (u/decode-base64 s))
+
+(defmethod print-method Pattern
+  [^Pattern p, ^Writer w]
+  (.write w "#datalevin/regex ")
+  (.write w "\"")
+  (.write w ^String (s/escape (.toString p) {\\ "\\\\"}))
+  (.write w "\""))
+
+(defn ^Pattern regex-from-reader
+  [s]
+  (Pattern/compile s))
 
 ;; bitmap
 

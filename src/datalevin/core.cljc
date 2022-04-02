@@ -200,7 +200,10 @@ Only usable for debug output.
        :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
  `opts` map has keys:
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+
+   * `:search-engine`, a option map that will be passed to the search engine
 
   Usage:
 
@@ -210,7 +213,7 @@ Only usable for debug output.
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true})"}
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true :search-engine {:analyzer blank-space-analyzer}})"}
   empty-db db/empty-db)
 
 
@@ -247,10 +250,12 @@ Only usable for debug output.
        :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
+   * `:search-engine`, an option map that will be passed to the search engine
 
-             See also [[datom]]."}
+             See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
 
 (def ^{:arglists '([db])
@@ -450,7 +455,10 @@ Only usable for debug output.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
-   * `:auto-entity-time?`, a boolean indicating whether to add and maintain `:db/created-at` and `:db/updated-at` unix timestamp values for each entity. Default is `false`.
+
+   * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+
+   * `:search-engine`, an option map that will be passed to the search engine
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -639,22 +647,9 @@ Only usable for debug output.
   {:pre [(conn? conn) (atom? (:listeners (meta conn)))]}
   (swap! (:listeners (meta conn)) dissoc key))
 
-
-;; Data Readers
-
-(def ^{:no-doc true}
-  data-readers {'datalevin/Datom dd/datom-from-reader
-                'datalevin/DB    db/db-from-reader
-                'datalevin/bytes b/bytes-from-reader})
-
-#?(:cljs
-   (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))
-
-
 ;; Datomic compatibility layer
 
 (def ^:private last-tempid (atom -1000000))
-
 
 (defn tempid
   "Allocates and returns an unique temporary id (a negative integer). Ignores `part`. Returns `x` if it is specified.
@@ -686,10 +681,16 @@ Only usable for debug output.
   {:pre [(conn? conn)]}
   @conn)
 
-;; schema
+;; datalog db
+
+(defn opts
+  "Return the option map of the Datalog DB"
+  [conn]
+  {:pre [(conn? conn)]}
+  (s/opts ^Store (.-store ^DB @conn)))
 
 (defn schema
-  "Return the schema"
+  "Return the schema of Datalog DB"
   [conn]
   {:pre [(conn? conn)]}
   (s/schema ^Store (.-store ^DB @conn)))
@@ -1253,10 +1254,15 @@ the `pred`.
 (defn new-search-engine
   "Create a search engine. The search index is stored in the passed-in
   key-value database opened by [[open-kv]].
+
   `opts` is an option map that may contains keys:
-  * `:analyzer` is a function that takes a text string and return a seq of
+
+   * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence
-     number of the term, and offset is the character offset of this term.
+     number of the term in the document, and offset is the character offset of
+     the term in the document. E.g. for a blank space analyzer and the document
+    \"The quick brown fox jumps over the lazy dog\", [\"quick\" 1 4] would be
+    the second entry of the resulting seq.
   "
   ([lmdb]
    (new-search-engine lmdb nil))

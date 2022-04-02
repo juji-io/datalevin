@@ -533,7 +533,7 @@
      (when opts (transact-opts lmdb opts))
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
-                (s/new-search-engine lmdb)
+                (s/new-search-engine lmdb (:search-engine opts))
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)
