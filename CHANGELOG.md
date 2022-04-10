@@ -1,5 +1,12 @@
 # Change Log
 
+## 0.6.6
+### Improved
+- Dump and load Datalog option map
+- Dump and load `inter-fn`
+- Dump and load regex
+- Pass search engine option map to Datalog store
+
 ## 0.6.5
 ### Fixed
 - Make configurable analyzer available to client/server

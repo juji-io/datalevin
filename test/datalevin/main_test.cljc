@@ -2,6 +2,7 @@
   (:require [datalevin.main :as sut]
             [datalevin.util :as u]
             [datalevin.core :as d]
+            [datalevin.interpret :as i]
             [datalevin.lmdb :as l]
             [clojure.test.check.generators :as gen]
             [clojure.string :as s]
@@ -116,10 +117,14 @@
       (d/close-kv db-load))))
 
 (deftest dump-load-datalog-test
-  (let [src-dir  (u/tmp-dir (str "datalevin-dump-dl-" (UUID/randomUUID)))
-        schema   {:a/keyword {:db/valueType :db.type/keyword}
+  (let [analyzer (i/inter-fn [^String text]
+                             (map-indexed (fn [i ^String t]
+                                            [t i (.indexOf text t)])
+                                          (s/split text #"\s")))
+        schema   {:a/string  {:db/valueType :db.type/string
+                              :db/fulltext  true}
+                  :a/keyword {:db/valueType :db.type/keyword}
                   :a/symbol  {:db/valueType :db.type/symbol}
-                  :a/string  {:db/valueType :db.type/string}
                   :a/boolean {:db/valueType :db.type/boolean}
                   :a/long    {:db/valueType :db.type/long}
                   :a/double  {:db/valueType :db.type/double}
@@ -128,56 +133,67 @@
                   :a/instant {:db/valueType :db.type/instant}
                   :a/uuid    {:db/valueType :db.type/uuid}
                   :a/bytes   {:db/valueType :db.type/bytes}}
-        src-conn (d/get-conn src-dir schema)
+        opts     {:auto-entity-time? true
+                  :search-engine     {:analyzer analyzer}}
+        src-dir  (u/tmp-dir (str "src-dump-dl-" (UUID/randomUUID)))
+        conn     (d/create-conn src-dir schema opts)
+        dest-dir (u/tmp-dir (str "dest-load-dl-" (UUID/randomUUID)))
+        dl-file  (str (u/tmp-dir) "dl")
+        s        "The quick brown fox jumps over the lazy dog"
         now      (Date.)
         uuid     (UUID/randomUUID)
-        s        (apply str (range 1000))
         bs       (.getBytes ^String s)
         vs       (repeatedly 10 #(gen/generate gen/any-printable-equatable 1000))
-        txs      (into
-                   [{:db/id -1
-                     :hello "Datalevin"}
-                    {:a/keyword :something/nice
-                     :a/symbol  'wonderful/life
-                     :a/string  s}
-                    {:a/boolean true
-                     :a/long    42}
-                    {:a/double (double 3.141592)
-                     :a/float  (float 2.71828)
-                     :a/ref    -1}
-                    {:a/instant now
-                     :a/uuid    uuid
-                     :a/bytes   bs}]
-                   (mapv (fn [a v] {a v})
-                         (repeat :large/random)
-                         vs))
-        dest-dir (u/tmp-dir (str "datalevin-load-dl-" (UUID/randomUUID)))
-        dl-file  (str (u/tmp-dir) "dl" #_(UUID/randomUUID))]
-    (d/transact! src-conn txs)
-    (d/close src-conn)
+        txs      (into [{:db/id -1
+                         :hello "Datalevin"}
+                        {:a/keyword :something/nice
+                         :a/symbol  'wonderful/life
+                         :a/string  s}
+                        {:a/boolean true
+                         :a/long    42}
+                        {:a/double (double 3.141592)
+                         :a/float  (float 2.71828)
+                         :a/ref    -1}
+                        {:a/instant now
+                         :a/uuid    uuid
+                         :a/bytes   bs}]
+                       (mapv (fn [a v] {a v})
+                             (repeat :large/random)
+                             vs))]
+    (d/transact! conn txs)
+    (is (= (d/q '[:find ?v .
+                  :in $ ?q
+                  :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                (d/db conn) "brown fox") s))
+    (d/close conn)
     (sut/dump src-dir dl-file nil false true false)
     (sut/load dest-dir dl-file nil true)
-    (let [conn-load (d/get-conn dest-dir)]
-      (is (= (d/q '[:find ?v . :where [_ :hello ?v]] @conn-load) "Datalevin" ))
-      (is (= (d/q '[:find ?v . :where [_ :a/keyword ?v]] @conn-load)
+    (let [conn1 (d/create-conn dest-dir nil opts)]
+      (is (= (d/q '[:find ?v .
+                    :in $ ?q
+                    :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                  (d/db conn1) "brown fox") s))
+
+      (is (= (d/q '[:find ?v . :where [_ :hello ?v]] @conn1) "Datalevin" ))
+      (is (= (d/q '[:find ?v . :where [_ :a/keyword ?v]] @conn1)
              :something/nice))
-      (is (= (d/q '[:find ?v . :where [_ :a/symbol ?v]] @conn-load)
+      (is (= (d/q '[:find ?v . :where [_ :a/symbol ?v]] @conn1)
              'wonderful/life))
-      (is (= (d/q '[:find ?v . :where [_ :a/string ?v]] @conn-load) s))
-      (is (= (d/q '[:find ?v . :where [_ :a/boolean ?v]] @conn-load) true))
-      (is (= (d/q '[:find ?v . :where [_ :a/long ?v]] @conn-load) 42))
-      (is (= (d/q '[:find ?v . :where [_ :a/double ?v]] @conn-load)
+      (is (= (d/q '[:find ?v . :where [_ :a/string ?v]] @conn1) s))
+      (is (= (d/q '[:find ?v . :where [_ :a/boolean ?v]] @conn1) true))
+      (is (= (d/q '[:find ?v . :where [_ :a/long ?v]] @conn1) 42))
+      (is (= (d/q '[:find ?v . :where [_ :a/double ?v]] @conn1)
              (double 3.141592)))
-      (is (= (d/q '[:find ?v . :where [_ :a/float ?v]] @conn-load)
+      (is (= (d/q '[:find ?v . :where [_ :a/float ?v]] @conn1)
              (float 2.71828)))
-      (is (= (d/q '[:find ?v . :where [_ :a/ref ?v]] @conn-load)
-             (d/q '[:find ?e . :where [?e :hello]] @conn-load)))
-      (is (= (d/q '[:find ?v . :where [_ :a/instant ?v]] @conn-load) now))
-      (is (= (d/q '[:find ?v . :where [_ :a/uuid ?v]] @conn-load) uuid))
+      (is (= (d/q '[:find ?v . :where [_ :a/ref ?v]] @conn1)
+             (d/q '[:find ?e . :where [?e :hello]] @conn1)))
+      (is (= (d/q '[:find ?v . :where [_ :a/instant ?v]] @conn1) now))
+      (is (= (d/q '[:find ?v . :where [_ :a/uuid ?v]] @conn1) uuid))
       (is (Arrays/equals
-            ^bytes (d/q '[:find ?v . :where [_ :a/bytes ?v]] @conn-load)
+            ^bytes (d/q '[:find ?v . :where [_ :a/bytes ?v]] @conn1)
             ^bytes bs))
       (is (= (set
-               (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn-load))
+               (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
              (set vs)))
-      (d/close conn-load))))
+      (d/close conn1))))

@@ -9,10 +9,12 @@
             [clojure.stacktrace :as st]
             [sci.core :as sci]
             [datalevin.core :as d]
+            [datalevin.datom :as dd]
             [datalevin.util :as u]
             [datalevin.interpret :as i]
             [datalevin.util :refer [raise]]
             [datalevin.lmdb :as l]
+            [datalevin.db :as db]
             [datalevin.bits :as b]
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
@@ -26,7 +28,7 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.6.5")
+(def ^:private version "0.6.6")
 
 (def ^:private version-str
   (str
@@ -40,6 +42,18 @@
     [(Integer/parseInt major)
      (Integer/parseInt minor)
      (Integer/parseInt non-breaking)]))
+
+;; Data Readers
+
+(def data-readers {'datalevin/Datom    dd/datom-from-reader
+                   'datalevin/DB       db/db-from-reader
+                   'datalevin/bytes    b/bytes-from-reader
+                   'datalevin/regex    b/regex-from-reader
+                   'datalevin/inter-fn i/inter-fn-from-reader
+                   })
+
+;; #?(:cljs
+;;    (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))
 
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
@@ -355,10 +369,10 @@
 
 (defn- dump-datalog [dir]
   (let [conn (d/create-conn dir)]
+    (p/pprint (d/opts conn))
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (prn [(.-e datom) (.-a datom) (.-v datom)]))
-    ))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
@@ -401,13 +415,17 @@
 (defn- load-datalog [dir in]
   (try
     (with-open [^PushbackReader r in]
-      (let [read-form #(edn/read {:eof     ::EOF
-                                  :readers d/data-readers} r)
-            schema    (read-form)
-            datoms    (->> (repeatedly read-form)
-                           (take-while #(not= ::EOF %))
-                           (map #(apply d/datom %)))]
-        (d/init-db datoms dir schema)))
+      (let [read-form     #(edn/read {:eof     ::EOF
+                                      :readers data-readers} r)
+            read-maps     #(let [m1 (read-form)]
+                             (if (:db/ident m1)
+                               [nil m1]
+                               [m1 (read-form)]))
+            [opts schema] (read-maps)
+            datoms        (->> (repeatedly read-form)
+                               (take-while #(not= ::EOF %))
+                               (map #(apply d/datom %)))]
+        (d/init-db datoms dir schema opts)))
     (catch IOException e
       (raise "IO error while loading Datalog data: " (ex-message e) {}))
     (catch RuntimeException e

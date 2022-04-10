@@ -3,6 +3,7 @@
   and query/transaction functions."
   (:require [clojure.walk :as w]
             [clojure.set :as set]
+            [clojure.pprint :as p]
             [clojure.java.io :as io]
             [sci.core :as sci]
             [sci.impl.vars :as vars]
@@ -14,7 +15,7 @@
             [clojure.string :as s])
   (:import [clojure.lang AFn]
            [datalevin.datom Datom]
-           [java.io DataInput DataOutput]))
+           [java.io DataInput DataOutput Writer]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -163,6 +164,15 @@
                    [^DataInput in]
                    (let [src (nippy/thaw-from-in! in)]
                      (source->inter-fn src)))
+
+(defmethod print-method :datalevin/inter-fn [f, ^java.io.Writer w]
+  (.write w "#datalevin/inter-fn ")
+  (binding [*out* w] (p/pprint (:source (meta f)))))
+
+(defn inter-fn-from-reader
+  "Read a printed `inter-fn` back in."
+  [x]
+  (source->inter-fn x))
 
 (def ^:no-doc sci-opts
   {:namespaces (user-facing-vars)
