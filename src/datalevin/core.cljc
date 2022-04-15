@@ -1415,4 +1415,11 @@ one of the following data types:
   (transact! conn [{:name "John" :height 1.73}
                    {:name "Peter" :height 1.92}])
 
+  (def *dbs (atom []))
+
+  (doseq [i (range 2000)]
+    (prn "Creating" i)
+    (swap! *dbs conj (create-conn (str "/tmp/dl-" i))))
+
+
   )
