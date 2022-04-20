@@ -1,6 +1,8 @@
 (ns pod.huahaiy.datalevin-test
   (:require [datalevin.util :as u]
+            [datalevin.interpret :as i]
             [babashka.pods :as pods]
+            [clojure.string :as s]
             [clojure.test :refer [deftest is testing]])
   (:import [java.util UUID Date]))
 
@@ -12,7 +14,27 @@
 
 (pd/defpodfn custom-fn [n] (str "hello " n))
 
+(pd/defpodfn age [birthday today]
+  (quot (-  (.getTime today) (.getTime birthday))
+        (* 1000 60 60 24 365)))
+
 (deftest pod-test
+  (testing "defpodfn"
+    (let [dir    (u/tmp-dir (str "datalevin-podfn-test-" (UUID/randomUUID)))
+          schema (i/load-edn "movie-schema.edn")
+          data   (i/load-edn "movie-data.edn")
+          conn   (pd/get-conn dir schema)
+          q      '[:find ?age .
+                   :in $ ?today
+                   :where
+                   [?e :person/name ?name]
+                   [?e :person/born ?dob]
+                   [(age ?dob ?today) ?age]] ]
+      (pd/transact! conn data)
+      (is (= (pd/q q (pd/db conn) #inst "2013-08-02T00:00:00.000-00:00") 72))
+      (pd/close conn)
+      (u/delete-files dir)))
+
   (testing "datalog readme"
     (let [dir  (u/tmp-dir (str "datalevin-pod-test-" (UUID/randomUUID)))
           conn (pd/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
@@ -157,5 +179,4 @@
               [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
              (pd/get-range db date-table [:closed (Date. 0) (Date.)] :instant)))
       (pd/close-kv db)
-      (u/delete-files dir)))
-  )
+      (u/delete-files dir))))

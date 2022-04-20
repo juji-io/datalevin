@@ -5,12 +5,12 @@
 ;; Note that pre-defined schema is optional, as Datalevin does schema-on-write.
 ;; However, attributes requiring special handling need to be defined in schema,
 ;; e.g. many cardinality, uniqueness constraint, reference type, and so on.
-(def schema {:aka  {:db/cardinality :db.cardinality/many}
+(def schema {:aka    {:db/cardinality :db.cardinality/many}
              ;; :db/valueType is optional, if unspecified, the attribute will be
              ;; treated as EDN blobs, and may not be optimal for range queries
-             :name {:db/valueType :db.type/string
-                    :db/unique    :db.unique/identity}
-             ;; :height {:db/valueType :db.type/float}
+             :name   {:db/valueType :db.type/string
+                      :db/unique    :db.unique/identity}
+             :height {:db/valueType :db.type/float}
              })
 
 ;; Create DB on disk and connect to it, assume write permission to create given dir
