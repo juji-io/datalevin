@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+## Improved
+- add more kv functions to `core` namespace
+
 ## 0.6.7
 ## Fixed
 - Handle Datalog float data type, #88
