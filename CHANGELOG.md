@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.7
 ## Fixed
 - Handle Datalog float data type, #88
 ### Improved
