@@ -13,7 +13,8 @@
            [java.nio.charset StandardCharsets]
            [java.lang String Character]
            [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
-           [datalevin.datom Datom]))
+           [datalevin.datom Datom]
+           [datalevin.utl BitOps]))
 
 ;; bytes <-> text
 
@@ -191,8 +192,8 @@
 (defn- decode-float
   [x]
   (if (bit-test x float-sign-idx)
-    (Float/intBitsToFloat (bit-flip x float-sign-idx))
-    (Float/intBitsToFloat (bit-not ^int x))))
+    (Float/intBitsToFloat (BitOps/intFlip x float-sign-idx))
+    (Float/intBitsToFloat (BitOps/intNot ^int x))))
 
 (defn- get-float
   [^ByteBuffer bb]
@@ -229,8 +230,8 @@
   (assert (not (Float/isNaN x)) "Cannot index NaN")
   (let [x (if (= x -0.0) 0.0 x)]
     (if (neg? ^float x)
-      (bit-not (Float/floatToRawIntBits x))
-      (bit-flip (Float/floatToRawIntBits x) float-sign-idx))))
+      (BitOps/intNot (Float/floatToIntBits x))
+      (BitOps/intFlip (Float/floatToIntBits x) ^long float-sign-idx))))
 
 (defn- put-float
   [^ByteBuffer bb x]
@@ -241,8 +242,8 @@
   (assert (not (Double/isNaN x)) "Cannot index NaN")
   (let [x (if (= x -0.0) 0.0 x)]
     (if (neg? x)
-      (bit-not (Double/doubleToRawLongBits x))
-      (bit-flip (Double/doubleToRawLongBits x) double-sign-idx))))
+      (bit-not (Double/doubleToLongBits x))
+      (bit-flip (Double/doubleToLongBits x) double-sign-idx))))
 
 (defn- put-double
   [^ByteBuffer bb x]
@@ -400,8 +401,6 @@
 (defn- val-header
   [v t]
   (case t
-    :db.type/sysMin  c/separator
-    :db.type/sysMax  c/truncator
     :db.type/keyword c/type-keyword
     :db.type/symbol  c/type-symbol
     :db.type/string  c/type-string
@@ -417,8 +416,13 @@
 
 (deftype ^:no-doc Indexable [e a v f b h])
 
-(defn pr-idexable [^Indexable i]
+(defn pr-indexable [^Indexable i]
   [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-h i)])
+
+(defmethod print-method Indexable
+  [^Indexable i, ^Writer w]
+  (.write w "#datalevin/Indexable ")
+  (.write w (pr-str (pr-indexable i))))
 
 (defn ^:no-doc indexable
   "Turn datom parts into a form that is suitable for putting in indices,

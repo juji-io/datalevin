@@ -176,6 +176,6 @@
 
 (def ^:no-doc sci-opts
   {:namespaces (user-facing-vars)
-   :classes    {'datalevin.datom.Datom datalevin.datom.Datom}})
+   :classes    {:allow :all}})
 
 (def ^:no-doc ctx (sci/init sci-opts))

@@ -4,7 +4,7 @@ set -eou pipefail
 
 jvm_version=$(java -version 2>&1 | head -1 | cut -d'"' -f2 | sed '/^1\./s///' | cut -d'.' -f1 )
 
-echo $jvm_version
+echo "Java version $jvm_version"
 
 cd "$(dirname "$0")"
 

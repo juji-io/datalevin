@@ -1,0 +1,33 @@
+{:movie/title {:db/valueType :db.type/string
+               :db/cardinality :db.cardinality/one
+               :db.install/_attribute :db.part/db}
+ :movie/year {:db/valueType :db.type/long
+              :db/cardinality :db.cardinality/one
+              :db.install/_attribute :db.part/db}
+ :movie/director {:db/valueType :db.type/ref
+                  :db/cardinality :db.cardinality/many
+                  :db.install/_attribute :db.part/db}
+ :movie/sequel {:db/valueType :db.type/ref
+                :db/cardinality :db.cardinality/one
+                :db.install/_attribute :db.part/db}
+ :movie/cast {:db/valueType :db.type/ref
+              :db/cardinality :db.cardinality/many
+              :db.install/_attribute :db.part/db}
+ :movie/description {:db/valueType :db.type/string
+                     :db/cardinality :db.cardinality/one
+                     :db.install/_attribute :db.part/db
+                     :db/fulltext true}
+ :person/name {:db/valueType :db.type/string
+               :db/cardinality :db.cardinality/one
+               :db.install/_attribute :db.part/db}
+ :person/born {:db/valueType :db.type/instant
+               :db/cardinality :db.cardinality/one
+               :db.install/_attribute :db.part/db}
+ :person/death {:db/valueType :db.type/instant
+                :db/cardinality :db.cardinality/one
+                :db.install/_attribute :db.part/db}
+ :trivia {:db/valueType :db.type/string
+          :db/cardinality :db.cardinality/many
+          :db.install/_attribute :db.part/db
+          :db/fulltext true}}
+

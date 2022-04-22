@@ -1,5 +1,15 @@
 # Change Log
 
+## WIP
+## Fixed
+- Add `visit` KV function to `core` namespace
+
+## 0.6.7
+## Fixed
+- Handle Datalog float data type, #88
+### Improved
+- Allow to use all classes in Babashka pods
+
 ## 0.6.6
 ### Improved
 - Dump and load Datalog option map

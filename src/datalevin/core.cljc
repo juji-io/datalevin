@@ -1,5 +1,5 @@
 (ns datalevin.core
-  "API for Datalevin database"
+  "User facing API for Datalevin library features"
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.util :as u]
@@ -1232,11 +1232,41 @@ the `pred`.
 
               (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
-                          (> lk 15)))
+                          (> lk 15))))
 
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}
   range-filter-count l/range-filter-count)
+
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type])
+       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return nil. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`.
+
+     `visitor` can use [[read-buffer]] to read the buffer content.
+
+      For client/server usage, [[interpret.inter-fn]] should be used to define the `visitor` function. For babashka pod usage, `defpodfn` should be used.
+
+    `k-type` indicates data type of `k` and the allowed data types are described
+    in [[read-buffer]].
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     Examples:
+
+              (require '[datalevin.interpret :as i])
+              (import '[java.util Hashmap])
+
+              (def hashmap (HashMap.))
+              (def visitor (i/inter-fn [kv]
+                             (let [^long k (b/read-buffer (l/k kv) :long)
+                                   ^long v (b/read-buffer (l/v kv) :long)]
+                                  (.put hashmap k v))))
+              (visit lmdb \"a\" visitor [:closed 11 19] :long)
+              "}
+  visit l/visit)
 
 (defn clear
   "Clear all data in the Datalog database, including schema."
