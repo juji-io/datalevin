@@ -1,8 +1,8 @@
 # Change Log
 
 ## WIP
-## Improved
-- add more kv functions to `core` namespace
+## Fixed
+- Add `visit` KV function to `core` namespace
 
 ## 0.6.7
 ## Fixed
