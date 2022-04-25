@@ -336,7 +336,6 @@ Only usable for debug output.
    Gotchas:
 
    - Index lookup is usually more efficient than doing a query with a single clause.
-   - Resulting iterator is calculated in constant time and small constant memory overhead.
    "
   ([db index]             {:pre [(db/db? db)]} (db/-datoms db index []))
   ([db index c1]          {:pre [(db/db? db)]} (db/-datoms db index [c1]))

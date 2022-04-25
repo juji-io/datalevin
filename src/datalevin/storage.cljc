@@ -636,7 +636,7 @@
      (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
      (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
      (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/classes c/+max-key-size+)
+     (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
      (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
      (lmdb/open-dbi lmdb c/opts c/+max-key-size+)
      (when opts (transact-opts lmdb opts))
