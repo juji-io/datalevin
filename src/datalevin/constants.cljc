@@ -104,6 +104,7 @@
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const classes "datalevin/classes")
+(def ^:const entities "datalevin/entities")
 (def ^:const meta "datalevin/meta")
 (def ^:const opts "datalevin/opts")
 

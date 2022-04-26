@@ -17,7 +17,8 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(defn attr->properties [k v]
+(defn attr->properties
+  [k v]
   (case v
     :db.unique/identity  [:db/unique :db.unique/identity]
     :db.unique/value     [:db/unique :db.unique/value]
@@ -28,7 +29,8 @@
         :db/isComponent [:db/isComponent]
         []))))
 
-(defn schema->rschema [schema]
+(defn schema->rschema
+  [schema]
   (reduce-kv
     (fn [m attr keys->values]
       (reduce-kv
@@ -53,6 +55,8 @@
 
 (defn- init-max-aid [lmdb] (lmdb/entries lmdb c/schema))
 
+(defn- init-max-cid [lmdb] (lmdb/entries lmdb c/classes))
+
 ;; TODO schema migration
 (defn- update-schema
   [lmdb old schema]
@@ -76,14 +80,28 @@
       (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
   (load-schema lmdb))
 
-(defn- load-classes
+(defn- init-classes
   [lmdb]
-  (into {} (lmdb/get-range lmdb c/classes [:all] :bitmap :data)))
+  (into {} (lmdb/get-range lmdb c/classes [:all] :id :data)))
 
 (defn- transact-classes
   [lmdb classes]
-  (lmdb/transact-kv lmdb (for [[bm props] classes]
-                           [:put c/classes bm props :bitmap :data])))
+  (lmdb/transact-kv lmdb (for [[cid props] classes]
+                           [:put c/classes cid props :id :data])))
+
+(defn- classes->rclasses
+  [classes]
+  (reduce-kv
+    (fn [m cid {:keys [aids]}]
+      (reduce
+        (fn [m aid]
+          (assoc m aid (conj (get m aid #{}) cid)))
+        m aids))
+    {} classes))
+
+(defn- init-entities
+  [lmdb]
+  (into {} (lmdb/get-range lmdb c/classes [:all] :id :id)))
 
 (defn- init-attrs [schema]
   (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
@@ -186,9 +204,9 @@
   (attrs [this] "Return the aid -> attr map")
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
-  (classes [this] "Return the classes map")
-  (set-classes [this new-classes]
-    "Update the classes, return updated classes")
+  (classes [this] "Return the cid -> class map")
+  (rclasses [this] "Return the aid -> classes map")
+  (set-classes [this new-classes] "Update the classes, return updated classes")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (load-datoms [this datoms] "Load datams into storage")
@@ -226,12 +244,14 @@
 (deftype Store [lmdb
                 search-engine
                 opts
-                ^:volatile-mutable schema
-                ^:volatile-mutable rschema
-                ^:volatile-mutable classes
+                ^:volatile-mutable schema   ; attr -> props
+                ^:volatile-mutable rschema  ; prop -> attr
+                ^:volatile-mutable classes  ; cid -> {:aids #{}, :entities bitmap}
+                ^:volatile-mutable rclasses ; cid -> {:aids #{}, :entities bitmap}
                 ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
-                ^:volatile-mutable max-gt]
+                ^:volatile-mutable max-gt
+                ^:volatile-mutable max-cid]
   IStore
   (opts [_]
     opts)
@@ -600,8 +620,7 @@
     (.-lmdb store)
     (conj (persistent!
             (reduce (partial handle-datom store ft-ds) (transient []) batch))
-          [:put c/meta :last-modified
-           (System/currentTimeMillis) :attr :long])))
+          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
 
 (defn- load-batch
   [^Store store ft-ds batch]
@@ -620,6 +639,18 @@
   [lmdb]
   (into {} (lmdb/get-range lmdb c/opts [:all] :attr :data)))
 
+(defn- open-dbis
+  [lmdb]
+  (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
+  (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/entities c/+id-bytes+ c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
+  (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -631,22 +662,18 @@
   ([dir schema opts]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
-     (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/opts c/+max-key-size+)
+     (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
-     (let [schema (init-schema lmdb schema)]
+     (let [schema  (init-schema lmdb schema)
+           classes (init-classes lmdb)]
        (->Store lmdb
                 (s/new-search-engine lmdb (:search-engine opts))
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)
-                (load-classes lmdb)
+                classes
+                (classes->rclasses classes)
                 (init-attrs schema)
                 (init-max-aid lmdb)
-                (init-max-gt lmdb))))))
+                (init-max-gt lmdb)
+                (init-max-cid lmdb))))))
