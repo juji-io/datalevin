@@ -507,8 +507,11 @@
 (defn- open-dbis
   [lmdb]
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
+  ;; term -> term-id,max-weight,doc-freq
   (l/open-dbi lmdb c/terms c/+max-key-size+)
+  ;; doc-id -> norm,doc-ref
   (l/open-dbi lmdb c/docs Integer/BYTES)
+  ;; term-id,doc-id -> position,offset (list)
   (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) c/+max-key-size+))
 
 (defn new-search-engine

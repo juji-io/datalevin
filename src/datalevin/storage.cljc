@@ -80,6 +80,9 @@
       (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
   (load-schema lmdb))
 
+(defn- init-attrs [schema]
+  (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
+
 (defn- init-classes
   [lmdb]
   (into {} (lmdb/get-range lmdb c/classes [:all] :id :data)))
@@ -92,7 +95,7 @@
 (defn- classes->rclasses
   [classes]
   (reduce-kv
-    (fn [m cid {:keys [aids]}]
+    (fn [m cid aids]
       (reduce
         (fn [m aid]
           (assoc m aid (conj (get m aid #{}) cid)))
@@ -101,10 +104,14 @@
 
 (defn- init-entities
   [lmdb]
-  (into {} (lmdb/get-range lmdb c/classes [:all] :id :id)))
+  (into {} (lmdb/get-range lmdb c/entities [:all] :id :id)))
 
-(defn- init-attrs [schema]
-  (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
+(defn- entities->rentities
+  [entities]
+  (reduce-kv
+    (fn [m eid cid]
+      (assoc m cid (b/bitmap-add (get m cid (b/bitmap)) eid)))
+    {} entities))
 
 (defn- init-max-gt
   [lmdb]
@@ -239,16 +246,18 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare load-batch)
+(declare transact-datoms update-entity-class)
 
 (deftype Store [lmdb
-                search-engine
                 opts
-                ^:volatile-mutable schema   ; attr -> props
-                ^:volatile-mutable rschema  ; prop -> attr
-                ^:volatile-mutable classes  ; cid -> {:aids #{}, :entities bitmap}
-                ^:volatile-mutable rclasses ; cid -> {:aids #{}, :entities bitmap}
-                ^:volatile-mutable attrs    ; aid -> attr
+                search-engine
+                ^:volatile-mutable attrs     ; aid -> attr
+                ^:volatile-mutable schema    ; attr -> props
+                ^:volatile-mutable rschema   ; prop -> attrs
+                ^:volatile-mutable classes   ; cid -> aids
+                ^:volatile-mutable rclasses  ; aid -> cids
+                ^:volatile-mutable entities  ; eid -> cids
+                ^:volatile-mutable rentities ; cid -> eids bitmap
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cid]
@@ -337,12 +346,15 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [ft-ds (volatile! [])] ;; fulltext datoms, [:a d] or [:d d]
+      (let [ft-ds (volatile! [])  ; fulltext datoms, [:a d] or [:d d]
+            eids  (volatile! #{}) ; touched entity ids
+            ]
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
                                  datoms)]
-          (load-batch this ft-ds batch))
+          (transact-datoms this ft-ds eids batch))
+        (doseq [eid @eids] (update-entity-class this eid))
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op
@@ -514,12 +526,21 @@
       gt   (conj [:del c/giants gt :id]))))
 
 (defn- handle-datom
-  [store ft-ds holder datom]
+  [store ft-ds eids holder datom]
+  (vswap! eids conj (d/datom-e datom))
   (if (d/datom-added datom)
     (let [[data giant?] (insert-datom store datom ft-ds)]
       (when giant? (advance-max-gt store))
       (reduce conj! holder data))
     (reduce conj! holder (delete-datom store datom ft-ds))))
+
+(defn- transact-datoms
+  [^Store store ft-ds eids batch]
+  (lmdb/transact-kv
+    (.-lmdb store)
+    (conj (persistent!
+            (reduce (partial handle-datom store ft-ds eids) (transient []) batch))
+          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
@@ -561,6 +582,11 @@
        (map (partial attr->aid schema))
        sort
        b/bitmap))
+
+
+(defn- update-entity-class
+  [^Store store eid]
+  )
 
 #_(defn- entity-class
     [new-cls ^Store store cur-eid add-attrs del-attrs]
@@ -607,27 +633,6 @@
                 (recur new-cls eid (add add-attrs) (del del-attrs) rr))))
           (entity-class new-cls store cur-eid add-attrs del-attrs)))))
 
-(defn- collect-classes
-  [^Store store batch]
-  (->> batch
-       (map (fn [^Datom d] [(.-e d) (.-a d)]))
-       distinct
-       ))
-
-(defn- transact-datoms
-  [^Store store ft-ds batch]
-  (lmdb/transact-kv
-    (.-lmdb store)
-    (conj (persistent!
-            (reduce (partial handle-datom store ft-ds) (transient []) batch))
-          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
-
-(defn- load-batch
-  [^Store store ft-ds batch]
-  (let [batch (sort-by d/datom-e batch)]
-    ;; (transact-classes (.-lmdb store) (log/spy (collect-classes store batch)))
-    (transact-datoms store ft-ds batch)))
-
 (defn- transact-opts
   [lmdb opts]
   (lmdb/transact-kv lmdb (conj (for [[k v] opts]
@@ -664,16 +669,19 @@
          lmdb (lmdb/open-kv dir)]
      (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
-     (let [schema  (init-schema lmdb schema)
-           classes (init-classes lmdb)]
+     (let [schema   (init-schema lmdb schema)
+           classes  (init-classes lmdb)
+           entities (init-entities lmdb)]
        (->Store lmdb
-                (s/new-search-engine lmdb (:search-engine opts))
                 (load-opts lmdb)
+                (s/new-search-engine lmdb (:search-engine opts))
+                (init-attrs schema)
                 schema
                 (schema->rschema schema)
                 classes
                 (classes->rclasses classes)
-                (init-attrs schema)
+                entities
+                (entities->rentities entities)
                 (init-max-aid lmdb)
                 (init-max-gt lmdb)
                 (init-max-cid lmdb))))))

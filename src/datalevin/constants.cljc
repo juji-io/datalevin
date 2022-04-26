@@ -108,9 +108,9 @@
 (def ^:const meta "datalevin/meta")
 (def ^:const opts "datalevin/opts")
 
-(def ^:const terms "datalevin/terms")         ; term -> term-id,max-weight,doc-freq
-(def ^:const docs "datalevin/docs")           ; doc-id -> norm,doc-ref
-(def ^:const positions "datalevin/positions") ; term-id,doc-id -> position,offset (list)
+(def ^:const terms "datalevin/terms")
+(def ^:const docs "datalevin/docs")
+(def ^:const positions "datalevin/positions")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean
@@ -127,8 +127,7 @@
 
 (def ^:const default-port (int 8898))
 
-(def ^:const
-  system-dir "system")
+(def ^:const system-dir "system")
 
 (def ^:const default-username "datalevin")
 (def ^:const default-password "datalevin")
