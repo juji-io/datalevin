@@ -185,4 +185,11 @@
     (testing "update"
       (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
       (is (= (sut/search engine "red" ) [2])))
+    (testing "parallel update"
+      (dorun (pmap #(sut/add-doc engine %1 %2)
+                   [1 2]
+                   ["The quick red fox jumped over the lazy dogs."
+                    "May has a little lamb."]))
+      (is (= (sut/search engine "red" ) [1])))
+
     (l/close-kv lmdb)))

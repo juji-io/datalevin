@@ -405,13 +405,13 @@
     (.remove norms doc-id)
     (.add txs [:del c/docs doc-id :int])
     (doseq [term-id (doc-id->term-ids lmdb doc-id)]
-      (let [[term [_ mw sl]] (term-id->info lmdb term-id)
-            tf               (sl/get sl doc-id)]
-        (.add txs [:put c/terms term
-                   [term-id
-                    (del-max-weight sl doc-id mw tf norm)
-                    (sl/remove sl doc-id)]
-                   :string :term-info]))
+      (let [[term [_ mw sl]] (term-id->info lmdb term-id)]
+        (when-let [tf (sl/get sl doc-id)]
+          (.add txs [:put c/terms term
+                     [term-id
+                      (del-max-weight sl doc-id mw tf norm)
+                      (sl/remove sl doc-id)]
+                     :string :term-info])))
       (.add txs [:del c/positions [term-id doc-id] :int-int]))
     (l/transact-kv lmdb txs)))
 
@@ -422,17 +422,18 @@
                                 ^AtomicInteger max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
-    (when-let [doc-id (doc-ref->id lmdb doc-ref)]
-      (remove-doc* lmdb norms doc-id))
-    (let [txs       (FastList.)
-          hit-terms (UnifiedMap.)]
-      (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref norms max-term
-                   hit-terms)
-      (doseq [^Map$Entry kv (.entrySet hit-terms)]
-        (let [term (.getKey kv)
-              info (.getValue kv)]
-          (.add txs [:put c/terms term info :string :term-info])))
-      (l/transact-kv lmdb txs)))
+    (locking this
+      (when-let [doc-id (doc-ref->id lmdb doc-ref)]
+        (remove-doc* lmdb norms doc-id))
+      (let [txs       (FastList.)
+            hit-terms (UnifiedMap.)]
+        (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref norms max-term
+                     hit-terms)
+        (doseq [^Map$Entry kv (.entrySet hit-terms)]
+          (let [term (.getKey kv)
+                info (.getValue kv)]
+            (.add txs [:put c/terms term info :string :term-info])))
+        (l/transact-kv lmdb txs))))
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (doc-ref->id lmdb doc-ref)]

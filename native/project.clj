@@ -1,4 +1,4 @@
-(def version "0.6.7")
+(def version "0.6.8")
 
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
@@ -13,7 +13,6 @@
                  [org.clojars.huahaiy/dtlvnative-macos-amd64]
                  [org.clojars.huahaiy/dtlvnative-windows-amd64]
                  [org.clojars.huahaiy/dtlvnative-linux-amd64]
-                 ;; [org.clojars.huahaiy/symspell-clj]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
                  [org.roaringbitmap/RoaringBitmap]

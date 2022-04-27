@@ -1,8 +1,11 @@
 # Change Log
 
-## WIP
+## 0.6.8
 ## Fixed
-- Add `visit` KV function to `core` namespace
+- Add `visit` KV function to `core` name space
+- Handle concurrent `add-doc` for the same doc ref
+## Improved
+- Bump deps
 
 ## 0.6.7
 ## Fixed

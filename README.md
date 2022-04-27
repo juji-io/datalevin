@@ -3,7 +3,7 @@
 <p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone 💽 </p>
 <p align="center">
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.7" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.8" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -101,14 +101,14 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.6.7"]
+[datalevin "0.6.8"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.6.7"}
+{:deps {datalevin/datalevin {:mvn/version "0.6.8"}
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
@@ -185,16 +185,16 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.7/dtlv-0.6.7-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.8/dtlv-0.6.8-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.7/dtlv-0.6.7-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.8/dtlv-0.6.8-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.7/dtlv-0.6.7-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.8/dtlv-0.6.8-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.6.7)
+  Datalevin (version: 0.6.8)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -231,7 +231,7 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.6.7)
+  Datalevin (version: 0.6.8)
 
   Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
@@ -248,24 +248,25 @@ closed?               commit                conn-from-datoms      conn-from-db
 conn?                 copy                  create-conn           datom
 datom-a               datom-e               datom-v               datom?
 datoms                db                    db?                   dir
-doc-indexed?          drop-dbi              empty-db              entid
-entity                entity-db             entries               get-conn
-get-first             get-range             get-some              get-value
-hexify-string         index-range           init-db               k
-list-dbis             listen!               new-search-engine     open-dbi
-open-kv               pull                  pull-many             put-buffer
-q                     range-count           range-filter          range-filter-count
-read-buffer           remove-doc            reset-conn!           resolve-tempid
-retract               rseek-datoms          schema                search
-search-index-writer   seek-datoms           stat                  tempid
-touch                 transact              transact!             transact-async
-transact-kv           unhexify-string       unlisten!             update-schema
-v                     with-conn             write
+doc-count             doc-indexed?          doc-refs              drop-dbi
+empty-db              entid                 entity                entity-db
+entries               get-conn              get-first             get-range
+get-some              get-value             hexify-string         index-range
+init-db               k                     list-dbis             listen!
+new-search-engine     open-dbi              open-kv               opts
+pull                  pull-many             put-buffer            q
+range-count           range-filter          range-filter-count    read-buffer
+remove-doc            reset-conn!           resolve-tempid        retract
+rseek-datoms          schema                search                search-index-writer
+seek-datoms           stat                  tempid                touch
+transact              transact!             transact-async        transact-kv
+unhexify-string       unlisten!             update-schema         v
+visit                 with-conn             write
 
 In namespace datalevin.interpret
 
-definterfn            exec-code             inter-fn              inter-fn?
-load-edn
+definterfn            exec-code             inter-fn              inter-fn-from-reader
+inter-fn?             load-edn
 
 In namespace datalevin.client
 
@@ -289,12 +290,12 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 #### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.7/datalevin-0.6.7-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.8/datalevin-0.6.8-standalone.jar)
 is downloadable to use as the command line tool, in case a pre-built native
 version is not available for your platform. For example,
 
 ```console
-java -jar datalevin-0.6.7-standalone.jar
+java -jar datalevin-0.6.8-standalone.jar
 ```
 This will start the Datalevin REPL.
 
@@ -309,7 +310,7 @@ Datalevin directly from [pod registry](https://github.com/babashka/pod-registry)
 #!/usr/bin/env bb
 
 (require '[babashka.pods :as pods])
-(pods/load-pod 'huahaiy/datalevin "0.6.7")
+(pods/load-pod 'huahaiy/datalevin "0.6.8")
 
 ```
 
