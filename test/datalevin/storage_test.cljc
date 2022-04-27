@@ -131,7 +131,8 @@
 
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
-               :b {:db/valueType :db.type/long}}
+               :b {:db/valueType :db.type/long
+                   :db/unique    :db.unique/value}}
         dir   (u/tmp-dir (str "datalevin-schema-test-" (UUID/randomUUID)))
         store (sut/open dir s)
         s1    (sut/schema store)]
@@ -139,6 +140,9 @@
     (is (sut/closed? store))
     (let [store (sut/open dir s)]
       (is (= s1 (sut/schema store)))
+      (is (= {:db/unique          #{:b :db/ident},
+              :db.unique/value    #{:b},
+              :db.unique/identity #{:db/ident}} (sut/rschema store)))
       (sut/close store))
     (u/delete-files dir)))
 
@@ -273,4 +277,10 @@
     (is (= #{} (sut/entity-attrs store 20)))
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     (is (= #{:name :father} (sut/entity-attrs store 2)))
+    (is (nil? (sut/find-classes store #{})))
+
+    (let [aids (sut/attrs->aids store #{:name :aka})]
+      (is (= (sut/aids->attrs store aids) #{:name :aka}))
+      ;; (is (= #{0} (sut/find-classes store aids)))
+      )
     ))

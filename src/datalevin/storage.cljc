@@ -30,24 +30,29 @@
         []))))
 
 (defn schema->rschema
-  [schema]
-  (reduce-kv
-    (fn [m attr keys->values]
-      (reduce-kv
-        (fn [m key value]
-          (reduce
-            (fn [m prop]
-              (assoc m prop (conj (get m prop #{}) attr)))
-            m (attr->properties key value)))
-        m keys->values))
-    {} schema))
+  ([schema]
+   (schema->rschema {} schema))
+  ([old-rschema new-schema]
+   (persistent!
+     (reduce-kv
+       (fn [m attr keys->values]
+         (reduce-kv
+           (fn [m key value]
+             (reduce
+               (fn [m prop]
+                 (assoc! m prop (conj (get m prop #{}) attr)))
+               m (attr->properties key value)))
+           m keys->values))
+       (transient old-rschema)
+       new-schema))))
 
 (defn- transact-schema
   [lmdb schema]
-  (lmdb/transact-kv lmdb (conj (for [[attr props] schema]
-                                 [:put c/schema attr props :attr :data])
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv
+    lmdb
+    (conj (for [[attr props] schema]
+            [:put c/schema attr props :attr :data])
+          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
 
 (defn- load-schema
   [lmdb]
@@ -94,13 +99,14 @@
 
 (defn- classes->rclasses
   [classes]
-  (reduce-kv
-    (fn [m cid aids]
-      (reduce
-        (fn [m aid]
-          (assoc m aid (conj (get m aid #{}) cid)))
-        m aids))
-    {} classes))
+  (persistent!
+    (reduce-kv
+      (fn [m cid aids]
+        (reduce
+          (fn [m aid]
+            (assoc! m aid (conj (get m aid #{}) cid)))
+          m aids))
+      (transient {}) classes)))
 
 (defn- init-entities
   [lmdb]
@@ -214,9 +220,11 @@
   (classes [this] "Return the cid -> class map")
   (rclasses [this] "Return the aid -> classes map")
   (add-classes [this new-classes] "Add new classes, return updated classes")
+  (max-cid [this])
+  (advance-max-cid [this])
   (entities [this])
   (rentities [this])
-  (update-entities [this entity-classes])
+  (update-entities [this new-entities alt-entities del-entities])
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (load-datoms [this datoms] "Load datams into storage")
@@ -305,14 +313,6 @@
     (set! max-aid (init-max-aid lmdb))
     schema)
 
-  (classes [_]
-    classes)
-
-  (add-classes [_ new-classes]
-    (transact-classes lmdb new-classes)
-    (set! classes (merge classes new-classes))
-    classes)
-
   (attrs [_]
     attrs)
 
@@ -322,6 +322,34 @@
             (.-e ^Datom (lmdb/get-value lmdb c/giants v :id :datom))
             (.-e ^Retrieved k)))
         c/e0))
+
+  (datom-count [_ index]
+    (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
+
+  (classes [_]
+    classes)
+
+  (rclasses [_]
+    rclasses)
+
+  (add-classes [_ new-classes]
+    (transact-classes lmdb new-classes)
+    (set! classes (merge classes new-classes))
+    classes)
+
+  (max-cid [_]
+    max-cid)
+
+  (advance-max-cid [_]
+    (set! max-cid (inc ^long max-cid)))
+
+  (entities [_]
+    entities)
+
+  (rentities [_]
+    rentities)
+
+  (update-entities [_ new-entities alt-entities del-entities])
 
   (swap-attr [this attr f]
     (swap-attr this attr f nil nil))
@@ -336,29 +364,28 @@
               (and x y) (f o x y)
               x         (f o x)
               :else     (f o))]
-      (migrate lmdb attr o p)
+      ;; TODO auto schema migration
+      ;; (migrate lmdb attr o p)
       ;; TODO remove this tx, return tx-data instead
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
-      (set! rschema (schema->rschema schema))
-      (set! attrs (assoc attrs (:db/aid p) attr))
+      (set! rschema (schema->rschema rschema {attr p}))
+      (set! attrs (assoc attrs (p :db/aid) attr))
       p))
-
-  (datom-count [_ index]
-    (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
 
   (load-datoms [this datoms]
     (locking this
-      (let [ft-ds (volatile! [])  ; fulltext datoms, [:a d] or [:d d]
-            eids  (volatile! #{}) ; touched entity ids
-            ]
+      (let [;; fulltext datoms, [:a d] or [:d d]
+            ft-ds (volatile! (transient []))
+            ;; touched entity ids
+            eids  (volatile! (transient #{}))]
         (doseq [batch (partition c/+tx-datom-batch-size+
                                  c/+tx-datom-batch-size+
                                  nil
                                  datoms)]
           (transact-datoms this ft-ds eids batch))
-        (update-entity-classes this @eids)
-        (doseq [[op ^Datom d] @ft-ds
+        ;; (update-entity-classes this (persistent @eids))
+        (doseq [[op ^Datom d] (persistent! @ft-ds)
                 :let          [v (str (.-v d))]]
           (case op
             :a (s/add-doc search-engine d v)
@@ -494,24 +521,23 @@
 
 (defn- insert-datom
   [^Store store ^Datom d ft-ds]
-  (let [attr   (.-a d)
-        props  (or ((schema store) attr)
-                   (swap-attr store attr identity))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
-        max-gt (max-gt store)]
-    (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
+  (let [attr  (.-a d)
+        props (or ((schema store) attr)
+                  (swap-attr store attr identity))
+        ref?  (= :db.type/ref (:db/valueType props))
+        i     (b/indexable (.-e d) (:db/aid props) (.-v d)
+                           (:db/valueType props))]
+    (when (:db/fulltext props) (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
-      [(cond-> [[:put c/eav i max-gt :eav :id]
-                [:put c/ave i max-gt :ave :id]
-                [:put c/giants max-gt d :id :datom [:append]]]
-         ref? (conj [:put c/vea i max-gt :vea :id]))
-       true]
-      [(cond-> [[:put c/eav i c/normal :eav :id]
-                [:put c/ave i c/normal :ave :id]]
-         ref? (conj [:put c/vea i c/normal :vea :id]))
-       false])))
+      (let [max-gt (max-gt store)]
+        (advance-max-gt store)
+        (cond-> [[:put c/eav i max-gt :eav :id]
+                 [:put c/ave i max-gt :ave :id]
+                 [:put c/giants max-gt d :id :datom [:append]]]
+          ref? (conj [:put c/vea i max-gt :vea :id])))
+      (cond-> [[:put c/eav i c/normal :eav :id]
+               [:put c/ave i c/normal :ave :id]]
+        ref? (conj [:put c/vea i c/normal :vea :id])))))
 
 (defn- delete-datom
   [^Store store ^Datom d ft-ds]
@@ -522,7 +548,7 @@
         giant? (b/giant? i)
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (when (:db/fulltext props) (vswap! ft-ds conj [:d d]))
+    (when (:db/fulltext props) (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
@@ -530,55 +556,79 @@
 
 (defn- handle-datom
   [store ft-ds eids holder datom]
-  (vswap! eids conj (d/datom-e datom))
+  (vswap! eids conj! (d/datom-e datom))
   (if (d/datom-added datom)
-    (let [[data giant?] (insert-datom store datom ft-ds)]
-      (when giant? (advance-max-gt store))
-      (reduce conj! holder data))
+    (reduce conj! holder (insert-datom store datom ft-ds))
     (reduce conj! holder (delete-datom store datom ft-ds))))
 
 (defn- transact-datoms
   [^Store store ft-ds eids batch]
   (lmdb/transact-kv
     (.-lmdb store)
-    (conj (persistent!
-            (reduce (partial handle-datom store ft-ds eids) (transient []) batch))
-          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
+    (persistent!
+      (conj!
+        (reduce (partial handle-datom store ft-ds eids) (transient []) batch)
+        [:put c/meta :last-modified (System/currentTimeMillis) :attr :long]))))
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
   [^Store store eid]
   (let [schema (schema store)
         datom  (d/datom eid nil nil)
-        aids   (volatile! #{})
-        add    #(vswap! aids conj (b/read-buffer (lmdb/k %) :eav-a))]
+        aids   (volatile! (transient #{}))
+        add    #(vswap! aids conj! (b/read-buffer (lmdb/k %) :eav-a))]
     (lmdb/visit (.-lmdb store) c/eav add
                 [:closed
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
                 :eav-a)
-    @aids))
+    (persistent! @aids)))
+
+(defn aids->attrs
+  [store aids]
+  (let [attrs (attrs store)]
+    (set (map attrs aids))))
+
+(defn attrs->aids
+  [store attrs]
+  (let [schema (schema store)]
+    (set (map #(-> % schema :db/aid) attrs))))
 
 (defn entity-attrs
   "Return the set of attributes of an entity"
   [^Store store eid]
-  (set (map (attrs store) (entity-aids store eid))))
+  (aids->attrs store (entity-aids store eid)))
+
+(defn find-classes
+  [^Store store aids]
+  (when (seq aids)
+    (let [rclasses (rclasses store)]
+      (reduce (fn [cs new-cs]
+                (let [cs' (set/intersection cs new-cs)]
+                  (if (seq cs')
+                    cs'
+                    (reduced nil))))
+              (map rclasses aids)))))
 
 (defn- collect-updates
   [store new-classes new-entities alt-entities del-entities eid]
   (let [classes  (classes store)
         entities (entities store)
         my-aids  (entity-aids store eid)]
-    (if-let [cid (some (fn [[cid aids]] (when (= aids my-aids) cid))
-                       classes)]
+    (if (seq my-aids)
+      (let [n-cids (count (find-classes store my-aids))]
+        (cond
+          (zero? n-cids)
+          (do (vswap! new-classes assoc! (max-cid store))
+              (advance-max-cid store))))
       ())))
 
 (defn- update-entity-classes
   [^Store store eids]
-  (let [new-classes  (volatile! {})
-        new-entities (volatile! {})
-        alt-entities (volatile! {})
-        del-entities (volatile! {})]
+  (let [new-classes  (volatile! (transient {}))
+        new-entities (volatile! (transient {}))
+        alt-entities (volatile! (transient {}))
+        del-entities (volatile! (transient {}))]
     (doseq [eid eids]
       (collect-updates store new-classes new-entities alt-entities
                        del-entities eid))
@@ -650,10 +700,11 @@
 
 (defn- transact-opts
   [lmdb opts]
-  (lmdb/transact-kv lmdb (conj (for [[k v] opts]
-                                 [:put c/opts k v :attr :data])
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv
+    lmdb
+    (conj (for [[k v] opts]
+            [:put c/opts k v :attr :data])
+          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
 
 (defn- load-opts
   [lmdb]
