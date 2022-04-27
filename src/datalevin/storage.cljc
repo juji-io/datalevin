@@ -213,7 +213,10 @@
   (datom-count [this index] "Return the number of datoms in the index")
   (classes [this] "Return the cid -> class map")
   (rclasses [this] "Return the aid -> classes map")
-  (set-classes [this new-classes] "Update the classes, return updated classes")
+  (add-classes [this new-classes] "Add new classes, return updated classes")
+  (entities [this])
+  (rentities [this])
+  (update-entities [this entity-classes])
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (load-datoms [this datoms] "Load datams into storage")
@@ -246,7 +249,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare transact-datoms update-entity-class)
+(declare transact-datoms update-entity-classes)
 
 (deftype Store [lmdb
                 opts
@@ -305,7 +308,7 @@
   (classes [_]
     classes)
 
-  (set-classes [_ new-classes]
+  (add-classes [_ new-classes]
     (transact-classes lmdb new-classes)
     (set! classes (merge classes new-classes))
     classes)
@@ -354,7 +357,7 @@
                                  nil
                                  datoms)]
           (transact-datoms this ft-ds eids batch))
-        (doseq [eid @eids] (update-entity-class this eid))
+        (update-entity-classes this @eids)
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op
@@ -545,48 +548,60 @@
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
   [^Store store eid]
-  (let [lmdb   (.-lmdb store)
-        schema (schema store)
-        datom  (d/datom eid nil nil)]
-    (into #{}
-          (map first)
-          (lmdb/get-range lmdb
-                          c/eav
-                          [:closed
-                           (datom->indexable schema datom false)
-                           (datom->indexable schema datom true)]
-                          :eav-a
-                          :ignore))))
+  (let [schema (schema store)
+        datom  (d/datom eid nil nil)
+        aids   (volatile! #{})
+        add    #(vswap! aids conj (b/read-buffer (lmdb/k %) :eav-a))]
+    (lmdb/visit (.-lmdb store) c/eav add
+                [:closed
+                 (datom->indexable schema datom false)
+                 (datom->indexable schema datom true)]
+                :eav-a)
+    @aids))
 
 (defn entity-attrs
   "Return the set of attributes of an entity"
   [^Store store eid]
   (set (map (attrs store) (entity-aids store eid))))
 
-(defn- del-attr
-  [old-attrs del-attrs schema]
-  (reduce (fn [s a]
-            (if (= (:db/cardinality (schema a)) :db.cardinality/many)
-              s
-              (set/difference s #{a})))
-          old-attrs
-          del-attrs))
+(defn- collect-updates
+  [store new-classes new-entities alt-entities del-entities eid]
+  (let [classes  (classes store)
+        entities (entities store)
+        my-aids  (entity-aids store eid)]
+    (if-let [cid (some (fn [[cid aids]] (when (= aids my-aids) cid))
+                       classes)]
+      ())))
 
-(defn- attr->aid
-  [schema attr]
-  (some-> attr schema :db/aid))
+(defn- update-entity-classes
+  [^Store store eids]
+  (let [new-classes  (volatile! {})
+        new-entities (volatile! {})
+        alt-entities (volatile! {})
+        del-entities (volatile! {})]
+    (doseq [eid eids]
+      (collect-updates store new-classes new-entities alt-entities
+                       del-entities eid))
+    (add-classes store @new-classes)
+    (update-entities store @new-entities @alt-entities @del-entities)))
 
-(defn- attrs->aids
-  [schema attrs]
-  (->> attrs
-       (map (partial attr->aid schema))
-       sort
-       b/bitmap))
+;; (defn- del-attr
+;;   [old-attrs del-attrs schema]
+;;   (reduce (fn [s a]
+;;             (if (= (:db/cardinality (schema a)) :db.cardinality/many)
+;;               s
+;;               (set/difference s #{a})))
+;;           old-attrs
+;;           del-attrs))
 
+;; (defn- attr->aid
+;;   [schema attr]
+;;   (some-> attr schema :db/aid))
 
-(defn- update-entity-class
-  [^Store store eid]
-  )
+;; (defn- attrs->aids
+;;   [schema attrs]
+;;   (into #{} (map (partial attr->aid schema) attrs)))
+
 
 #_(defn- entity-class
     [new-cls ^Store store cur-eid add-attrs del-attrs]

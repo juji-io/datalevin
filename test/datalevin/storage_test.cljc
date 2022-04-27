@@ -272,4 +272,5 @@
     (sut/load-datoms store datoms)
     (is (= #{} (sut/entity-attrs store 20)))
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
+    (is (= #{:name :father} (sut/entity-attrs store 2)))
     ))
