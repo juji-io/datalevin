@@ -123,11 +123,11 @@
 
 (defn -main []
   (run-tests)
-  (update-version)
-  (make-commit)
-  (github-release)
-  (sh "./deploy")
-  (sh "script/deploy" :dir "native")
+  ;(update-version)
+  ;(make-commit)
+  ;(github-release)
+  ;(sh "./deploy")
+  ;(sh "script/deploy" :dir "native")
   (System/exit 0)
   )
 

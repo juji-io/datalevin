@@ -13,7 +13,6 @@
                  [org.clojars.huahaiy/dtlvnative-macos-amd64]
                  [org.clojars.huahaiy/dtlvnative-windows-amd64]
                  [org.clojars.huahaiy/dtlvnative-linux-amd64]
-                 ;; [org.clojars.huahaiy/symspell-clj]
                  [nrepl/bencode]
                  [com.taoensso/nippy]
                  [org.roaringbitmap/RoaringBitmap]

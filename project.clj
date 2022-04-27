@@ -16,7 +16,7 @@
                          [nrepl/bencode "1.1.0"]
                          [org.babashka/sci "0.3.4"]
                          [org.bouncycastle/bcprov-jdk15on "1.70"]
-                         [org.clojure/clojure "1.11.0"]
+                         [org.clojure/clojure "1.11.1"]
                          [org.clojure/tools.cli "1.0.206"]
                          [org.clojure/test.check "1.1.1"]
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.4.2"]
@@ -33,7 +33,7 @@
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
                           ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.25"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.26"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
@@ -63,12 +63,12 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              :jvm-opts
-                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
-                               "-Djdk.attach.allowAttachSelf"]
+                              ;; :jvm-opts
+                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+                              ;;  "-Djdk.attach.allowAttachSelf"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]

@@ -80,13 +80,13 @@
              (= "latest" version)
              (str "{:paths [\"src\" \"../src\" \"../target/classes\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
-                  org.clojure/clojure   {:mvn/version \"1.11.0\"}
+                  org.clojure/clojure   {:mvn/version \"1.11.1\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}
                   com.taoensso/nippy    {:mvn/version \"3.1.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.324\"}
                   persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.4\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
-                  org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.25\"}
+                  org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.26\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"11.0.0\"}
                   }}"
                   )
