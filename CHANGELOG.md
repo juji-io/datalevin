@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.8
 ## Fixed
 - Add `visit` KV function to `core` name space
 - Handle concurrent `add-doc` for the same doc ref
