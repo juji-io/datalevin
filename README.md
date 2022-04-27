@@ -248,24 +248,25 @@ closed?               commit                conn-from-datoms      conn-from-db
 conn?                 copy                  create-conn           datom
 datom-a               datom-e               datom-v               datom?
 datoms                db                    db?                   dir
-doc-indexed?          drop-dbi              empty-db              entid
-entity                entity-db             entries               get-conn
-get-first             get-range             get-some              get-value
-hexify-string         index-range           init-db               k
-list-dbis             listen!               new-search-engine     open-dbi
-open-kv               pull                  pull-many             put-buffer
-q                     range-count           range-filter          range-filter-count
-read-buffer           remove-doc            reset-conn!           resolve-tempid
-retract               rseek-datoms          schema                search
-search-index-writer   seek-datoms           stat                  tempid
-touch                 transact              transact!             transact-async
-transact-kv           unhexify-string       unlisten!             update-schema
-v                     with-conn             write
+doc-count             doc-indexed?          doc-refs              drop-dbi
+empty-db              entid                 entity                entity-db
+entries               get-conn              get-first             get-range
+get-some              get-value             hexify-string         index-range
+init-db               k                     list-dbis             listen!
+new-search-engine     open-dbi              open-kv               opts
+pull                  pull-many             put-buffer            q
+range-count           range-filter          range-filter-count    read-buffer
+remove-doc            reset-conn!           resolve-tempid        retract
+rseek-datoms          schema                search                search-index-writer
+seek-datoms           stat                  tempid                touch
+transact              transact!             transact-async        transact-kv
+unhexify-string       unlisten!             update-schema         v
+visit                 with-conn             write
 
 In namespace datalevin.interpret
 
-definterfn            exec-code             inter-fn              inter-fn?
-load-edn
+definterfn            exec-code             inter-fn              inter-fn-from-reader
+inter-fn?             load-edn
 
 In namespace datalevin.client
 
