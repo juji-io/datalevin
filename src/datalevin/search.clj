@@ -22,6 +22,8 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
+(set! *unchecked-math* true)
+
 (defn- non-token-char?
   [^Character c]
   (or (Character/isWhitespace c) (c/en-punctuations? c)))

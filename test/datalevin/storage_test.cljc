@@ -278,7 +278,6 @@
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     (is (= #{:name :father} (sut/entity-attrs store 2)))
     (is (nil? (sut/find-classes store #{})))
-
     (let [aids (sut/attrs->aids store #{:name :aka})]
       (is (= (sut/aids->attrs store aids) #{:name :aka}))
       ;; (is (= #{0} (sut/find-classes store aids)))
