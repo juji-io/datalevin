@@ -216,32 +216,30 @@
 
 
 (defn- transact*
-  [^Env env txs ^UnifiedMap dbis]
-  (with-open [txn (.txnWrite env)]
-    (doseq [[op dbi-name k & r] txs]
-      (let [^DBI dbi (or (.get dbis dbi-name)
-                         (raise dbi-name " is not open" {}))]
-        (case op
-          :put      (let [[v kt vt flags] r]
-                      (.put-key dbi k kt)
+  [txs ^UnifiedMap dbis txn]
+  (doseq [[op dbi-name k & r] txs]
+    (let [^DBI dbi (or (.get dbis dbi-name)
+                       (raise dbi-name " is not open" {}))]
+      (case op
+        :put      (let [[v kt vt flags] r]
+                    (.put-key dbi k kt)
+                    (.put-val dbi v vt)
+                    (if flags
+                      (.put dbi txn flags)
+                      (.put dbi txn)))
+        :del      (let [[kt] r]
+                    (.put-key dbi k kt)
+                    (.del dbi txn))
+        :put-list (let [[vs kt vt] r]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
                       (.put-val dbi v vt)
-                      (if flags
-                        (.put dbi txn flags)
-                        (.put dbi txn)))
-          :del      (let [[kt] r]
-                      (.put-key dbi k kt)
-                      (.del dbi txn))
-          :put-list (let [[vs kt vt] r]
-                      (.put-key dbi k kt)
-                      (doseq [v vs]
-                        (.put-val dbi v vt)
-                        (.put dbi txn)))
-          :del-list (let [[vs kt vt] r]
-                      (.put-key dbi k kt)
-                      (doseq [v vs]
-                        (.put-val dbi v vt)
-                        (.del dbi txn false))))))
-    (.commit txn)))
+                      (.put dbi txn)))
+        :del-list (let [[vs kt vt] r]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.del dbi txn false)))))))
 
 (deftype LMDB [^Env env
                ^String dir
@@ -380,10 +378,38 @@
                  {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
 
+  (open-transact-kv [this]
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (try
+      (.txnWrite env)
+      (catch Exception e
+        (raise "Fail to open read/write transaction in LMDB: "
+               (ex-message e) {}))))
+
+  (close-transact-kv [this txn]
+    (try
+      (.commit ^Txn txn)
+      (.close ^Txn txn)
+      :transacted
+      (catch Exception e
+        (raise "Fail to commit read/write transaction in LMDB: "
+               (ex-message e) {}))))
+
+  (transact-kv [this txs txn]
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (try
+      (transact* txs dbis txn)
+      (catch Env$MapFullException _
+        (up-db-size env)
+        (.transact-kv this txs txn))
+      (catch Exception e
+        (raise "Fail to transact to LMDB: " (ex-message e) {}))))
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
-      (transact* env txs dbis)
+      (with-open [txn (.txnWrite env)]
+        (transact* txs dbis txn)
+        (.commit txn))
       :transacted
       (catch Env$MapFullException _
         (up-db-size env)

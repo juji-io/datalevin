@@ -90,7 +90,10 @@
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-rtx [db])
   (return-rtx [db rtx])
-  (transact-kv [db txs]
+  (open-transact-kv [db]
+    "open a read/write transaction, return the transaction context")
+  (close-transact-kv [db ctx] "close and commit a transaction")
+  (transact-kv [db txs] [db txs ctx]
     "Update DB, insert or delete key value pairs.")
   (get-value
     [db dbi-name k]
