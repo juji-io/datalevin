@@ -6,7 +6,6 @@
             [clojure.pprint :as p]
             [clojure.java.io :as io]
             [sci.core :as sci]
-            [sci.impl.vars :as vars]
             [taoensso.nippy :as nippy]
             [datalevin.query :as q]
             [datalevin.util :as u]
@@ -35,15 +34,12 @@
          (not (s/starts-with? d "Positional factory function for class")))))
 
 (defn ^:no-doc user-facing-map [ns var-map]
-  (let [sci-ns (vars/->SciNamespace ns nil)]
+  (let [sci-ns (sci/create-ns ns)]
     (reduce
       (fn [m [k v]]
-        (assoc m k (vars/->SciVar v
-                                  (symbol v)
-                                  (assoc (meta v)
-                                         :sci.impl/built-in true
-                                         :ns sci-ns)
-                                  false)))
+        (assoc m k (sci/new-var (symbol v) v (assoc (meta v)
+                                                    :sci.impl/built-in true
+                                                    :ns sci-ns))))
       {}
       (select-keys var-map
                    (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
