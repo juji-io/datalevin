@@ -647,68 +647,6 @@
                              (persistent! @new-entities)
                              (persistent! @del-entities))))
 
-;; (defn- del-attr
-;;   [old-attrs del-attrs schema]
-;;   (reduce (fn [s a]
-;;             (if (= (:db/cardinality (schema a)) :db.cardinality/many)
-;;               s
-;;               (set/difference s #{a})))
-;;           old-attrs
-;;           del-attrs))
-
-;; (defn- attr->aid
-;;   [schema attr]
-;;   (some-> attr schema :db/aid))
-
-;; (defn- attrs->aids
-;;   [schema attrs]
-;;   (into #{} (map (partial attr->aid schema) attrs)))
-
-
-#_(defn- entity-class
-    [new-cls ^Store store cur-eid add-attrs del-attrs]
-    (let [schema    (schema store)
-          old-attrs (entity-attrs store cur-eid)
-          new-attrs (cond-> old-attrs
-                      (seq del-attrs) (del-attr del-attrs schema)
-                      (seq add-attrs) (set/union add-attrs))]
-      (if (= new-attrs old-attrs)
-        new-cls
-        (let [old-aids  (attrs->aids schema old-attrs)
-              new-aids  (attrs->aids schema new-attrs)
-              classes   (classes store)
-              old-props (get classes old-aids)
-              new-props (get classes new-aids)]
-          (cond-> new-cls
-            old-props (assoc! old-aids (update old-props :eids
-                                               #(b/bitmap-del % cur-eid)))
-            true      (assoc! new-aids (update new-props :eids
-                                               (fnil #(b/bitmap-add % cur-eid)
-                                                     (b/bitmap)))))))))
-
-#_(defn- collect-classes
-    [^Store store batch]
-    (persistent!
-      (loop [new-cls   (transient {})
-             cur-eid   nil
-             add-attrs #{}
-             del-attrs #{}
-             remain    batch]
-        (if-let [^Datom datom (first remain)]
-          (let [eid  (.-e datom)
-                attr (.-a datom)
-                add? (d/datom-added datom)
-                add  #(if add? (conj % attr) %)
-                del  #(if-not add? (conj % attr) %)
-                rr   (rest remain)]
-            (or ((schema store) attr) (swap-attr store attr identity))
-            (if (= cur-eid eid)
-              (recur new-cls cur-eid (add add-attrs) (del del-attrs) rr)
-              (if cur-eid
-                (recur (entity-class new-cls store cur-eid add-attrs del-attrs)
-                       eid (add #{}) (del #{}) rr)
-                (recur new-cls eid (add add-attrs) (del del-attrs) rr))))
-          (entity-class new-cls store cur-eid add-attrs del-attrs)))))
 
 (defn- transact-opts
   [lmdb opts]

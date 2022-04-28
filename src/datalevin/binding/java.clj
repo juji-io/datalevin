@@ -390,7 +390,7 @@
     (try
       (.commit ^Txn txn)
       (.close ^Txn txn)
-      :transacted
+      :committed
       (catch Exception e
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
@@ -398,24 +398,19 @@
   (transact-kv [this txs txn]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
-      (transact* txs dbis txn)
+      (if txn
+        (transact* txs dbis txn)
+        (with-open [txn (.txnWrite env)]
+          (transact* txs dbis txn)
+          (.commit txn)))
+      :transacted
       (catch Env$MapFullException _
         (up-db-size env)
         (.transact-kv this txs txn))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {}))))
   (transact-kv [this txs]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (try
-      (with-open [txn (.txnWrite env)]
-        (transact* txs dbis txn)
-        (.commit txn))
-      :transacted
-      (catch Env$MapFullException _
-        (up-db-size env)
-        (.transact-kv this txs))
-      (catch Exception e
-        (raise "Fail to transact to LMDB: " (ex-message e) {}))))
+    (.transact-kv this txs nil))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))

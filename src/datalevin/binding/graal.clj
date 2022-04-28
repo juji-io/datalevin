@@ -571,48 +571,56 @@
   (close-transact-kv [this txn]
     (try
       (.commit ^Txn txn)
-      :transacted
+      :committed
       (catch Exception e
         (.close ^Txn txn)
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
 
   (transact-kv [this txs txn]
-    (locking writing?
-      (try
-        (vreset! writing? true)
-        (transact* txs dbis ^Txn txn)
-        (catch Lib$MapFullException _
-          (let [^Info info (Info/create env)]
-            (.setMapSize env (* ^long c/+buffer-grow-factor+
-                                (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-            (.close info)
-            (.transact-kv this txs ^Txn txn)))
-        (catch Exception e
-          (raise "Fail to transact to LMDB: " (ex-message e) {}))
-        (finally
-          (vreset! writing? false)))))
-  (transact-kv [this txs]
     (assert (not closed?) "LMDB env is closed.")
     (locking writing?
-      (let [^Txn txn (Txn/create env)]
+      (let [one-shot? (nil? txn)
+            ^Txn txn  (or txn (Txn/create env))]
         (try
           (vreset! writing? true)
           (transact* txs dbis txn)
-          (.commit txn)
+          (when one-shot? (.commit txn))
           :transacted
           (catch Lib$MapFullException _
-            (.close txn)
+            (when one-shot? (.close txn))
             (let [^Info info (Info/create env)]
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
               (.close info)
-              (.transact-kv this txs)))
+              (.transact-kv this txs txn)))
           (catch Exception e
-            (.close txn)
+            (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " (ex-message e) {}))
           (finally
             (vreset! writing? false))))))
+  (transact-kv [this txs]
+    (.transact-kv this txs nil)
+    ;; (assert (not closed?) "LMDB env is closed.")
+    #_(locking writing?
+        (let [^Txn txn (Txn/create env)]
+          (try
+            (vreset! writing? true)
+            (transact* txs dbis txn)
+            (.commit txn)
+            :transacted
+            (catch Lib$MapFullException _
+              (.close txn)
+              (let [^Info info (Info/create env)]
+                (.setMapSize env (* ^long c/+buffer-grow-factor+
+                                    (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+                (.close info)
+                (.transact-kv this txs)))
+            (catch Exception e
+              (.close txn)
+              (raise "Fail to transact to LMDB: " (ex-message e) {}))
+            (finally
+              (vreset! writing? false))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
