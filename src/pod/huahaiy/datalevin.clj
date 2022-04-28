@@ -347,6 +347,12 @@
    (when-let [d (get @kv-dbs kv-db)]
      (d/range-count d dbi-name pred k-range k-type))))
 
+(defn visit
+  ([{:keys [::kv-db]} dbi-name pred k-range]
+   (when-let [d (get @kv-dbs kv-db)] (d/visit d dbi-name pred k-range)))
+  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
+   (when-let [d (get @kv-dbs kv-db)]
+     (d/visit d dbi-name pred k-range k-type))))
 
 ;; pods
 
@@ -393,6 +399,7 @@
    'get-some           get-some
    'range-filter       range-filter
    'range-filter-count range-filter-count
+   'visit              visit
    })
 
 (defmacro defpodfn
