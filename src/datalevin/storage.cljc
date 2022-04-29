@@ -575,7 +575,7 @@
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
-  [^Store store eid]
+  [^Store store eid writing?]
   (let [schema (schema store)
         datom  (d/datom eid nil nil)
         aids   (volatile! (transient #{}))
@@ -584,7 +584,7 @@
                 [:closed
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
-                :eav-a)
+                :eav-a writing?)
     (persistent! @aids)))
 
 (defn aids->attrs
@@ -600,7 +600,7 @@
 (defn entity-attrs
   "Return the set of attributes of an entity"
   [^Store store eid]
-  (aids->attrs store (entity-aids store eid)))
+  (aids->attrs store (entity-aids store eid false)))
 
 (defn find-classes
   [^Store store aids]
@@ -614,10 +614,14 @@
               (map rclasses aids)))))
 
 (defn- collect-updates
-  [store new-classes new-entities del-entities eid]
-  (let [my-aids (entity-aids store eid)]
-    (if (empty? my-aids)
-      (vswap! del-entities conj! eid)                   ; non-existent eid
+  [store new-classes new-entities eid]
+  (let [lmdb         (.-lmdb store)
+        my-aids      (entity-aids store eid true)
+        old-entities (entities store)]
+    (if (empty? my-aids)                                ; deleted eid
+      (let [cid (old-entities eid)]
+        (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
+        )
       (let [num-cids (count (find-classes store my-aids))
             new-cid  (some (fn [[cid aids]]
                              (when (= aids my-aids) cid))
@@ -636,16 +640,15 @@
                            [:put c/classes cid aids :id :data]))
   (lmdb/transact-kv lmdb (for [[eid cid] new-entities]
                            [:put c/entities eid cid :id :id]))
-  (lmdb/transact-kv lmdb (for [[cid props] new-classes]
-                           [:put c/classes cid props :id :data])))
+  (lmdb/transact-kv lmdb (for [eid del-entities]
+                           [:del c/entities eid :id])))
 
 (defn- update-entity-classes
   [^Store store eids]
   (let [new-classes  (volatile! (transient {}))
-        new-entities (volatile! (transient {}))
-        del-entities (volatile! (transient #{}))]
+        new-entities (volatile! (transient {}))]
     (doseq [eid eids]
-      (collect-updates store new-classes new-entities del-entities eid))
+      (collect-updates store new-classes new-entities eid))
     (transact-entity-classes store
                              (persistent! @new-classes)
                              (persistent! @new-entities)

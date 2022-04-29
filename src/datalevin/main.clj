@@ -1,5 +1,5 @@
 (ns datalevin.main
-  "Database management commands"
+  "Command line tool"
   (:refer-clojure :exclude [drop load])
   (:require [clojure.tools.cli :refer [parse-opts]]
             [clojure.string :as s]
