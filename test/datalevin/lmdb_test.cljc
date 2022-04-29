@@ -116,70 +116,44 @@
           (l/close-kv lmdb))))
     (u/delete-files dir)))
 
-(deftest ctx-transaction-test
+(deftest read-during-transaction-test
   (let [dir  (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
-    (l/open-dbi lmdb "b")
     (l/open-dbi lmdb "d")
 
-    (let [ctx (l/open-transact-kv lmdb)]
+    (l/open-transact-kv lmdb)
+
+    (testing "get-value"
+      (is (nil? (l/get-value lmdb "a" 1 :data :data false true)))
       (l/transact-kv lmdb
                      [[:put "a" 1 2]
                       [:put "a" 'a 1]
                       [:put "a" 5 {}]
                       [:put "a" :annunaki/enki true :attr :data]
                       [:put "a" :datalevin ["hello" "world"]]
-                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]]
-                     ctx)
-      (l/transact-kv lmdb
-                     [[:put "b" 2 3]
-                      [:put "b" (byte 0x01) #{1 2} :byte :data]
-                      [:put "b" (byte-array [0x41 0x42]) :bk :bytes :data]
-                      [:put "b" [-1 -235254457N] 5]
-                      [:put "b" :a 4]
-                      [:put "b" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-                      [:put "b" 1 :long :long :data]
-                      [:put "b" :long 1 :data :long]
-                      [:put "b" 2 3 :long :long]
-                      [:put "b" "ok" 42 :string :int]]
-                     ctx)
+                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]])
+
+      (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false true)))
+      ;; non-writing txn will still read pre-transaction values
+      (is (nil? (l/get-value lmdb "a" 1 :data :data false false)))
+
+      (is (nil? (l/get-value lmdb "d" #inst "1969-01-01" :instant :string
+                             true true)))
       (l/transact-kv lmdb
                      [[:put "d" 3.14 :pi :double :keyword]
-                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]]
-                     ctx)
-      (l/close-transact-kv lmdb ctx)
+                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]])
+      (is (= "nice year"
+             (l/get-value lmdb "d" #inst "1969-01-01" :instant :string
+                          true true)))
+      (is (nil? (l/get-value lmdb "d" #inst "1969-01-01" :instant :string
+                             true false))))
 
-      (testing "entries"
-        (is (= 3 (:entries (l/stat lmdb))))
-        (is (= 6 (:entries (l/stat lmdb "a"))))
-        (is (= 6 (l/entries lmdb "a")))
-        (is (= 10 (l/entries lmdb "b"))))
+    (l/close-transact-kv lmdb)
 
-      (testing "get-value"
-        (is (= 2 (l/get-value lmdb "a" 1)))
-        (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false)))
-        (is (= true (l/get-value lmdb "a" :annunaki/enki :attr :data)))
-        (is (= (d/datom 1 :a/b {:id 4}) (l/get-value lmdb "a" 42 :long :datom)))
-        (is (nil? (l/get-value lmdb "a" 2)))
-        (is (nil? (l/get-value lmdb "b" 1)))
-        (is (= 5 (l/get-value lmdb "b" [-1 -235254457N])))
-        (is (= 1 (l/get-value lmdb "a" 'a)))
-        (is (= {} (l/get-value lmdb "a" 5)))
-        (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
-        (is (= 3 (l/get-value lmdb "b" 2)))
-        (is (= 4 (l/get-value lmdb "b" :a)))
-        (is (= #{1 2} (l/get-value lmdb "b" (byte 0x01) :byte)))
-        (is (= :bk (l/get-value lmdb "b" (byte-array [0x41 0x42]) :bytes)))
-        (is (Arrays/equals ^bytes (byte-array [0x41 0x42 0x43])
-                           ^bytes (l/get-value lmdb "b" :bv :data :bytes)))
-        (is (= :long (l/get-value lmdb "b" 1 :long :data)))
-        (is (= 1 (l/get-value lmdb "b" :long :data :long)))
-        (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
-        (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
-        (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
-        (is (= "nice year" (l/get-value lmdb "d" #inst "1969-01-01"
-                                        :instant :string)))))
+    (testing "entries after transaction"
+      (is (= 6 (l/entries lmdb "a")))
+      (is (= 2 (l/entries lmdb "d"))))
     (u/delete-files dir)))
 
 (deftest reentry-test

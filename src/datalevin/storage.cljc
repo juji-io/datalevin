@@ -197,6 +197,14 @@
           ^Datom d     (retrieved->datom lmdb attrs [k v])]
       (pred d))))
 
+(defn- fulltext-index
+  [search-engine ft-ds]
+  (doseq [[op ^Datom d] ft-ds
+          :let          [v (str (.-v d))]]
+    (case op
+      :a (s/add-doc search-engine d v)
+      :d (s/remove-doc search-engine d))))
+
 (defprotocol IStore
   (opts [this] "Return the opts map")
   (db-name [this] "Return the db-name, if it is a remote or server store")
@@ -372,23 +380,19 @@
       p))
 
   (load-datoms [this datoms]
-    (locking this
-      (let [;; fulltext datoms, [:a d] or [:d d]
-            ft-ds (volatile! (transient []))
-            ;; touched entity ids
-            eids  (volatile! (transient #{}))]
-        (doseq [batch (partition-all c/+tx-datom-batch-size+ datoms)
-                #_    (partition c/+tx-datom-batch-size+
-                                 c/+tx-datom-batch-size+
-                                 nil
-                                 datoms)]
-          (transact-datoms this ft-ds eids batch))
-        ;; (update-entity-classes this (persistent @eids))
-        (doseq [[op ^Datom d] (persistent! @ft-ds)
-                :let          [v (str (.-v d))]]
-          (case op
-            :a (s/add-doc search-engine d v)
-            :d (s/remove-doc search-engine d))))))
+    (let [ft-ds (volatile! (transient []))] ; fulltext datoms, [:a d] or [:d d]
+      (locking (lmdb/write-txn lmdb)
+        (let [eids (volatile! (transient #{}))] ; touched entity ids
+          (lmdb/open-transact-kv lmdb)
+          (doseq [batch (partition-all c/+tx-datom-batch-size+ datoms)]
+            (transact-datoms this ft-ds eids batch))
+          ;; (update-entity-classes this (persistent @eids))
+          (lmdb/transact-kv
+            lmdb
+            [[:put c/meta :last-modified (System/currentTimeMillis)
+              :attr :long]])
+          (lmdb/close-transact-kv lmdb)))
+      (fulltext-index search-engine (persistent! @ft-ds))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -565,9 +569,9 @@
   (lmdb/transact-kv
     (.-lmdb store)
     (persistent!
-      (conj!
-        (reduce (partial handle-datom store ft-ds eids) (transient []) batch)
-        [:put c/meta :last-modified (System/currentTimeMillis) :attr :long]))))
+      (reduce (fn [holder datom]
+                (handle-datom store ft-ds eids holder datom))
+              (transient []) batch))))
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"

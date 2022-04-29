@@ -10,8 +10,7 @@
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
-           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue
-            ExecutorService Executors Future Callable]
+           [java.util.concurrent ConcurrentLinkedQueue]
            [java.util Iterator]
            [org.eclipse.collections.impl.map.mutable UnifiedMap]
            [java.nio ByteBuffer BufferOverflowException]))
@@ -214,7 +213,6 @@
   (.setMapSize env
                (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
-
 (defn- transact*
   [txs ^UnifiedMap dbis txn]
   (doseq [[op dbi-name k & r] txs]
@@ -244,7 +242,8 @@
 (deftype LMDB [^Env env
                ^String dir
                ^ConcurrentLinkedQueue pool
-               ^UnifiedMap dbis]
+               ^UnifiedMap dbis
+               write-txn]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -381,96 +380,119 @@
   (open-transact-kv [this]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
-      (.txnWrite env)
+      (vreset! write-txn (->Rtx this
+                                (.txnWrite env)
+                                (b/allocate-buffer c/+max-key-size+)
+                                (b/allocate-buffer c/+max-key-size+)
+                                (b/allocate-buffer c/+max-key-size+)))
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: "
                (ex-message e) {}))))
 
-  (close-transact-kv [this txn]
+  (close-transact-kv [this]
     (try
-      (.commit ^Txn txn)
-      (.close ^Txn txn)
-      :committed
+      (when-let [^Txn txn (.-txn ^Rtx @write-txn)]
+        (.commit txn)
+        (.close txn)
+        (vreset! write-txn nil)
+        :committed)
       (catch Exception e
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
 
-  (transact-kv [this txs txn]
+  (write-txn [this]
+    write-txn)
+
+  (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
-      (if txn
-        (transact* txs dbis txn)
+      (if @write-txn
+        (transact* txs dbis (.-txn ^Rtx @write-txn))
         (with-open [txn (.txnWrite env)]
           (transact* txs dbis txn)
           (.commit txn)))
       :transacted
       (catch Env$MapFullException _
         (up-db-size env)
-        (.transact-kv this txs txn))
+        (.transact-kv this txs))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {}))))
-  (transact-kv [this txs]
-    (.transact-kv this txs nil))
 
   (get-value [this dbi-name k]
-    (.get-value this dbi-name k :data :data true))
+    (.get-value this dbi-name k :data :data true false))
   (get-value [this dbi-name k k-type]
-    (.get-value this dbi-name k k-type :data true))
+    (.get-value this dbi-name k k-type :data true false))
   (get-value [this dbi-name k k-type v-type]
-    (.get-value this dbi-name k k-type v-type true))
+    (.get-value this dbi-name k k-type v-type true false))
   (get-value [this dbi-name k k-type v-type ignore-key?]
-    (scan/get-value this dbi-name k k-type v-type ignore-key?))
+    (.get-value this dbi-name k k-type v-type ignore-key? false))
+  (get-value [this dbi-name k k-type v-type ignore-key? writing?]
+    (scan/get-value this dbi-name k k-type v-type ignore-key? writing?))
 
   (get-first [this dbi-name k-range]
-    (.get-first this dbi-name k-range :data :data false))
+    (.get-first this dbi-name k-range :data :data false false))
   (get-first [this dbi-name k-range k-type]
-    (.get-first this dbi-name k-range k-type :data false))
+    (.get-first this dbi-name k-range k-type :data false false))
   (get-first [this dbi-name k-range k-type v-type]
-    (.get-first this dbi-name k-range k-type v-type false))
+    (.get-first this dbi-name k-range k-type v-type false false))
   (get-first [this dbi-name k-range k-type v-type ignore-key?]
-    (scan/get-first this dbi-name k-range k-type v-type ignore-key?))
+    (.get-first this dbi-name k-range k-type v-type ignore-key? false))
+  (get-first [this dbi-name k-range k-type v-type ignore-key? writing?]
+    (scan/get-first this dbi-name k-range k-type v-type ignore-key? writing?))
 
   (get-range [this dbi-name k-range]
-    (.get-range this dbi-name k-range :data :data false))
+    (.get-range this dbi-name k-range :data :data false false))
   (get-range [this dbi-name k-range k-type]
-    (.get-range this dbi-name k-range k-type :data false))
+    (.get-range this dbi-name k-range k-type :data false false))
   (get-range [this dbi-name k-range k-type v-type]
-    (.get-range this dbi-name k-range k-type v-type false))
+    (.get-range this dbi-name k-range k-type v-type false false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
-    (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
+    (.get-range this dbi-name k-range k-type v-type ignore-key? false))
+  (get-range [this dbi-name k-range k-type v-type ignore-key? writing?]
+    (scan/get-range this dbi-name k-range k-type v-type ignore-key? writing?))
 
   (range-count [this dbi-name k-range]
-    (.range-count this dbi-name k-range :data))
+    (.range-count this dbi-name k-range :data false))
   (range-count [this dbi-name k-range k-type]
-    (scan/range-count this dbi-name k-range k-type))
+    (.range-count this dbi-name k-range k-type false))
+  (range-count [this dbi-name k-range k-type writing?]
+    (scan/range-count this dbi-name k-range k-type writing?))
 
   (get-some [this dbi-name pred k-range]
-    (.get-some this dbi-name pred k-range :data :data false))
+    (.get-some this dbi-name pred k-range :data :data false false))
   (get-some [this dbi-name pred k-range k-type]
-    (.get-some this dbi-name pred k-range k-type :data false))
+    (.get-some this dbi-name pred k-range k-type :data false false))
   (get-some [this dbi-name pred k-range k-type v-type]
-    (.get-some this dbi-name pred k-range k-type v-type false))
+    (.get-some this dbi-name pred k-range k-type v-type false false))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
-    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?))
+    (.get-some this dbi-name pred k-range k-type v-type ignore-key? false))
+  (get-some [this dbi-name pred k-range k-type v-type ignore-key? writing?]
+    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key? writing?))
 
   (range-filter [this dbi-name pred k-range]
-    (.range-filter this dbi-name pred k-range :data :data false))
+    (.range-filter this dbi-name pred k-range :data :data false false))
   (range-filter [this dbi-name pred k-range k-type]
-    (.range-filter this dbi-name pred k-range k-type :data false))
+    (.range-filter this dbi-name pred k-range k-type :data false false))
   (range-filter [this dbi-name pred k-range k-type v-type]
-    (.range-filter this dbi-name pred k-range k-type v-type false))
+    (.range-filter this dbi-name pred k-range k-type v-type false false))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
-    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?))
+    (.range-filter this dbi-name pred k-range k-type v-type ignore-key? false))
+  (range-filter [this dbi-name pred k-range k-type v-type ignore-key? writing?]
+    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key? writing?))
 
   (range-filter-count [this dbi-name pred k-range]
-    (.range-filter-count this dbi-name pred k-range :data))
+    (.range-filter-count this dbi-name pred k-range :data false))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (scan/range-filter-count this dbi-name pred k-range k-type))
+    (.range-filter-count this dbi-name pred k-range k-type false))
+  (range-filter-count [this dbi-name pred k-range k-type writing?]
+    (scan/range-filter-count this dbi-name pred k-range k-type writing?))
 
   (visit [this dbi-name visitor k-range]
-    (.visit this dbi-name visitor k-range :data))
+    (.visit this dbi-name visitor k-range :data false))
   (visit [this dbi-name visitor k-range k-type]
-    (scan/visit this dbi-name visitor k-range k-type))
+    (.visit this dbi-name visitor k-range k-type false))
+  (visit [this dbi-name visitor k-range k-type writing?]
+    (scan/visit this dbi-name visitor k-range k-type writing?))
 
   (open-inverted-list [this dbi-name key-size item-size]
     (assert (and (>= c/+max-key-size+ ^long key-size)
@@ -623,7 +645,8 @@
            lmdb     (->LMDB env
                             dir
                             (ConcurrentLinkedQueue.)
-                            (UnifiedMap.))]
+                            (UnifiedMap.)
+                            (volatile! nil))]
        lmdb)
      (catch Exception e
        (raise

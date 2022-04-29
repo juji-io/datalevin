@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.scan
-  "Index scan routines"
+  "Index scan routines common to all bindings"
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :refer [raise]]
@@ -139,22 +139,25 @@
   `(do
      (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
      (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
-           ~'rtx (l/get-rtx ~'lmdb)]
+           ~'rtx (if ~'writing?
+                   @(l/write-txn ~'lmdb)
+                   (l/get-rtx ~'lmdb))]
        (try
          ~call
          (catch Exception ~'e
            ~error)
-         (finally (l/return-rtx ~'lmdb ~'rtx))))))
+         (finally
+           (when-not ~'writing? (l/return-rtx ~'lmdb ~'rtx)))))))
 
 (defn get-value
-  [lmdb dbi-name k k-type v-type ignore-key?]
+  [lmdb dbi-name k k-type v-type ignore-key? writing?]
   (scan
     (fetch-value dbi rtx k k-type v-type ignore-key?)
     (raise "Fail to get-value: " (ex-message e)
            {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
 
 (defn get-first
-  [lmdb dbi-name k-range k-type v-type ignore-key?]
+  [lmdb dbi-name k-range k-type v-type ignore-key? writing?]
   (scan
     (fetch-first dbi rtx k-range k-type v-type ignore-key?)
     (raise "Fail to get-first: " (ex-message e)
@@ -162,7 +165,7 @@
             :k-type k-type   :v-type  v-type})))
 
 (defn get-range
-  [lmdb dbi-name k-range k-type v-type ignore-key?]
+  [lmdb dbi-name k-range k-type v-type ignore-key? writing?]
   (scan
     (fetch-range dbi rtx k-range k-type v-type ignore-key?)
     (raise "Fail to get-range: " (ex-message e)
@@ -170,14 +173,14 @@
             :k-type k-type   :v-type  v-type})))
 
 (defn range-count
-  [lmdb dbi-name k-range k-type]
+  [lmdb dbi-name k-range k-type writing?]
   (scan
     (fetch-range-count dbi rtx k-range k-type)
     (raise "Fail to range-count: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))
 
 (defn get-some
-  [lmdb dbi-name pred k-range k-type v-type ignore-key?]
+  [lmdb dbi-name pred k-range k-type v-type ignore-key? writing?]
   (scan
     (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
     (raise "Fail to get-some: " (ex-message e)
@@ -185,7 +188,7 @@
             :k-type k-type   :v-type  v-type})))
 
 (defn range-filter
-  [lmdb dbi-name pred k-range k-type v-type ignore-key?]
+  [lmdb dbi-name pred k-range k-type v-type ignore-key? writing?]
   (scan
     (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
     (raise "Fail to range-filter: " (ex-message e)
@@ -193,14 +196,14 @@
             :k-type k-type   :v-type  v-type})))
 
 (defn range-filter-count
-  [lmdb dbi-name pred k-range k-type]
+  [lmdb dbi-name pred k-range k-type writing?]
   (scan
     (fetch-range-filtered-count dbi rtx pred k-range k-type)
     (raise "Fail to range-filter-count: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))
 
 (defn visit
-  [lmdb dbi-name visitor k-range k-type]
+  [lmdb dbi-name visitor k-range k-type writing?]
   (scan
     (let [[range-type k1 k2] k-range
           info               (l/range-info rtx range-type k1 k2)]

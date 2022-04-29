@@ -88,34 +88,39 @@
      (i.e. sub-database) as a map")
   (entries [db dbi-name]
     "Get the number of data entries in a DBI (i.e. sub-db)")
-  (get-rtx [db])
-  (return-rtx [db rtx])
+  (get-rtx [db] "get a read-only rtx")
+  (return-rtx [db rtx] "return the read-only rtx back to pool")
   (open-transact-kv [db]
-    "open a read/write transaction, return the transaction context")
-  (close-transact-kv [db ctx] "close and commit a transaction")
-  (transact-kv [db txs] [db txs ctx]
+    "open a read/write rtx, set write-txn")
+  (close-transact-kv [db] "close and commit the write-txn")
+  (write-txn [db] "return the write-txn")
+  (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]
     [db dbi-name k k-type v-type]
     [db dbi-name k k-type v-type ignore-key?]
+    [db dbi-name k k-type v-type ignore-key? writing?]
     "Get kv pair of the specified key `k`. ")
   (get-first
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type ignore-key? writing?]
     "Return the first kv pair in the specified key range;")
   (get-range
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type ignore-key? writing?]
     "Return a seq of kv pairs in the specified key range;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type writing?]
     "Return the number of kv pairs in the specified key range, does not process
      the kv pairs.")
   (get-some
@@ -123,22 +128,26 @@
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
     [db dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range k-type v-type ignore-key? writing?]
     "Return the first kv pair that has logical true value of `(pred kv)`")
   (range-filter
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
     [db dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range k-type v-type ignore-key? writing?]
     "Return a seq of kv pair in the specified key range, for only those
      return true value for `(pred kv)`.")
   (range-filter-count
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
+    [db dbi-name pred k-range k-type writing?]
     "Return the number of kv pairs in the specified key range, for only those
      return true value for `(pred kv)`")
   (visit
     [db dbi-name visitor k-range]
     [db dbi-name visitor k-range k-type]
+    [db dbi-name visitor k-range k-type writing?]
     "Call `visitor` function on each kv pairs in the specified key range, presumably
      for side effects. Return nil."))
 
