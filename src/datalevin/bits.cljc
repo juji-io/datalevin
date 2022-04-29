@@ -16,6 +16,8 @@
            [datalevin.datom Datom]
            [datalevin.utl BitOps]))
 
+(set! *unchecked-math* true)
+
 ;; bytes <-> text
 
 (def ^:no-doc hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
@@ -508,6 +510,10 @@
         (< i n-1)                   (recur (inc i)))))
   bs)
 
+(defn- skip
+  [^ByteBuffer bf ^long bytes]
+  (.position bf (+ (.position bf) bytes)))
+
 (defn- get-string
   ([^ByteBuffer bf]
    (String. ^bytes (get-bytes bf) StandardCharsets/UTF_8))
@@ -574,11 +580,6 @@
         v (get-value bf 1)]
     (->Retrieved e a v)))
 
-(defn- get-eav-a
-  [bf]
-  (get-long bf)
-  (get-int bf))
-
 (defn- get-ave
   [bf]
   (let [a (get-int bf)
@@ -607,15 +608,6 @@
   [bf]
   (let [^bytes bs (get-bytes bf)]
     (keyword (String. bs StandardCharsets/UTF_8))))
-
-(defn- get-link
-  [bf]
-  [(get-int bf) (get-int bf)])
-
-(defn- put-link
-  [bf [v-class e-class]]
-  (put-int bf v-class)
-  (put-int bf e-class))
 
 (defn- raw-header
   [v t]
@@ -693,7 +685,6 @@
                          (put-uuid bf x))
      :attr           (put-attr bf x)
      :datom          (put-nippy bf x)
-     :link           (put-link bf x)
      :eav            (put-eav bf x)
      :eav-a          (put-eav bf x)
      :eavt           (put-eav bf x)
@@ -726,7 +717,7 @@
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
    (case v-type
-     :string         (do (get-byte bf) (get-string bf))
+     :string         (do (skip bf Byte/BYTES) (get-string bf))
      :short          (get-short bf)
      :int            (get-int bf)
      :int-int        [(get-int bf) (get-int bf)]
@@ -734,23 +725,22 @@
      :sial           (get-sparse-list bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
      :doc-info       [(get-short bf) (get-data bf)]
-     :long           (do (get-byte bf) (get-long bf))
+     :long           (do (skip bf Byte/BYTES) (get-long bf))
      :id             (get-long bf)
-     :float          (do (get-byte bf) (get-float bf))
-     :double         (do (get-byte bf) (get-double bf))
+     :float          (do (skip bf Byte/BYTES) (get-float bf))
+     :double         (do (skip bf Byte/BYTES) (get-double bf))
      :byte           (get-byte bf)
-     :bytes          (do (get-byte bf) (get-bytes bf))
-     :keyword        (do (get-byte bf) (get-keyword bf 0))
-     :symbol         (do (get-byte bf) (get-symbol bf 0))
-     :boolean        (do (get-byte bf) (get-boolean bf))
-     :instant        (do (get-byte bf) (get-instant bf))
-     :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
-     :uuid           (do (get-byte bf) (get-uuid bf))
+     :bytes          (do (skip bf Byte/BYTES) (get-bytes bf))
+     :keyword        (do (skip bf Byte/BYTES) (get-keyword bf 0))
+     :symbol         (do (skip bf Byte/BYTES) (get-symbol bf 0))
+     :boolean        (do (skip bf Byte/BYTES) (get-boolean bf))
+     :instant        (do (skip bf Byte/BYTES) (get-instant bf))
+     :instant-pre-06 (do (skip bf Byte/BYTES) (Date. (.getLong bf)))
+     :uuid           (do (skip bf Byte/BYTES) (get-uuid bf))
      :attr           (get-attr bf)
      :datom          (get-nippy bf)
-     :link           (get-link bf)
      :eav            (get-eav bf)
-     :eav-a          (get-eav-a bf)
+     :eav-a          (do (skip bf Long/BYTES) (get-int bf))
      :eavt           (get-eav bf)
      :ave            (get-ave bf)
      :avet           (get-ave bf)

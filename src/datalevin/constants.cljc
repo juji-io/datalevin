@@ -8,8 +8,9 @@
 ;; datom
 
 (def ^:const e0    0)
-(def ^:const tx0   0x20000000)
+;;TODO make this long
 (def ^:const emax  0x7FFFFFFF)
+(def ^:const tx0   0x20000000)
 (def ^:const txmax 0x7FFFFFFF)
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)

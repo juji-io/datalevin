@@ -576,16 +576,17 @@ adjust the priorities based on feedback.
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 A new Datalog query engine with improved performance.
 * 0.8.0 As a product rule engine: implementing Rete/UL algorithm.
-* 1.0.0 First major release.
-* 1.1.0 Read-only replicas.
+* 0.9.0 Up the limits from int to long.
+* 1.0.0 First major release with documentation.
+* 1.1.0 Transaction log and read-only replicas.
 * 1.2.0 Option to store data in compressed form.
 * 1.3.0 Arbitrary data as attribute.
 * 1.4.0 Composite tuples.
 * 1.5.0 Fully automatic schema migration on write.
+* 1.6.0 As a document store: automatic indexing.
+* 1.7.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
 * 2.0.0 Second major release.
-* 3.0.0 As a document store: automatic indexing.
-* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
-* 5.0.0 Distributed mode with raft based replication.
+* 3.0.0 Distributed mode with replication.
 
 
 ## :rocket: Status

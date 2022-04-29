@@ -7,7 +7,6 @@
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.set :as set]
-            [taoensso.timbre :as log]
             )
   (:import [java.util UUID]
            [datalevin.datom Datom]
@@ -45,13 +44,16 @@
            m keys->values))
        (transient old-rschema) new-schema))))
 
+(defn- time-tx
+  []
+  [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])
+
 (defn- transact-schema
   [lmdb schema]
-  (lmdb/transact-kv
-    lmdb
-    (conj (for [[attr props] schema]
-            [:put c/schema attr props :attr :data])
-          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv lmdb
+                    (conj (for [[attr props] schema]
+                            [:put c/schema attr props :attr :data])
+                          (time-tx))))
 
 (defn- load-schema
   [lmdb]
@@ -91,8 +93,6 @@
   [lmdb]
   (into {} (lmdb/get-range lmdb c/classes [:all] :id :data)))
 
-
-
 (defn- classes->rclasses
   ([classes]
    (classes->rclasses {} classes))
@@ -112,10 +112,11 @@
 
 (defn- entities->rentities
   [entities]
-  (reduce-kv
-    (fn [m eid cid]
-      (assoc m cid (b/bitmap-add (get m cid (b/bitmap)) eid)))
-    {} entities))
+  (persistent!
+    (reduce-kv
+      (fn [m eid cid]
+        (assoc! m cid (b/bitmap-add (get m cid (b/bitmap)) eid)))
+      (transient {}) entities)))
 
 (defn- init-max-gt
   [lmdb]
@@ -339,7 +340,10 @@
     rclasses)
 
   (add-classes [_ new-classes]
+    (lmdb/transact-kv
+      lmdb (for [[cid aids] new-classes] [:put c/classes cid aids :id :data]))
     (set! classes (merge classes new-classes))
+    (set! rclasses (classes->rclasses rclasses new-classes))
     classes)
 
   (max-cid [_]
@@ -354,7 +358,30 @@
   (rentities [_]
     rentities)
 
-  (update-entities [_ new-entities del-entities])
+  (update-entities [_ new-entities del-entities]
+    (lmdb/transact-kv
+      lmdb (for [eid del-entities] [:del c/entities eid :id]))
+    (lmdb/transact-kv
+      lmdb (for [[eid cid] new-entities] [:put c/entities eid cid :id :id]))
+    (set! rentities
+          (persistent!
+            (as-> (transient rentities) res
+              (reduce-kv
+                (fn [m eid cid]
+                  (let [old-cid (entities eid)]
+                    (assoc! m
+                            cid (b/bitmap-add (get m cid (b/bitmap)) eid)
+                            old-cid (b/bitmap-del (m old-cid) eid))))
+                res new-entities)
+              (reduce
+                (fn [m eid]
+                  (let [old-cid (entities eid)]
+                    (assoc! m old-cid (b/bitmap-del (m old-cid) eid))))
+                res del-entities))))
+    (set! entities (as-> entities res
+                     (merge res new-entities)
+                     (apply dissoc res del-entities)))
+    entities)
 
   (swap-attr [this attr f]
     (swap-attr this attr f nil nil))
@@ -372,7 +399,6 @@
           s {attr p}]
       ;; TODO auto schema migration
       ;; (migrate lmdb attr o p)
-      ;; TODO remove this tx, return tx-data instead
       (transact-schema lmdb s)
       (set! schema (assoc schema attr p))
       (set! rschema (schema->rschema rschema s))
@@ -380,18 +406,16 @@
       p))
 
   (load-datoms [this datoms]
-    (let [ft-ds (volatile! (transient []))] ; fulltext datoms, [:a d] or [:d d]
+    (let [ft-ds (volatile! (transient []))]     ; fulltext datoms
       (locking (lmdb/write-txn lmdb)
         (let [eids (volatile! (transient #{}))] ; touched entity ids
           (lmdb/open-transact-kv lmdb)
-          (doseq [batch (partition-all c/+tx-datom-batch-size+ datoms)]
-            (transact-datoms this ft-ds eids batch))
-          ;; (update-entity-classes this (persistent @eids))
-          (lmdb/transact-kv
-            lmdb
-            [[:put c/meta :last-modified (System/currentTimeMillis)
-              :attr :long]])
-          (lmdb/close-transact-kv lmdb)))
+          (try
+            (transact-datoms this ft-ds eids datoms)
+            ;; (update-entity-classes this (persistent @eids))
+            (lmdb/transact-kv lmdb [(time-tx)])
+            (finally
+              (lmdb/close-transact-kv lmdb)))))
       (fulltext-index search-engine (persistent! @ft-ds))))
 
   (fetch [this datom]
@@ -557,21 +581,14 @@
       ref? (conj [:del c/vea i :vea])
       gt   (conj [:del c/giants gt :id]))))
 
-(defn- handle-datom
-  [store ft-ds eids holder datom]
-  (vswap! eids conj! (d/datom-e datom))
-  (if (d/datom-added datom)
-    (reduce conj! holder (insert-datom store datom ft-ds))
-    (reduce conj! holder (delete-datom store datom ft-ds))))
-
 (defn- transact-datoms
-  [^Store store ft-ds eids batch]
-  (lmdb/transact-kv
-    (.-lmdb store)
-    (persistent!
-      (reduce (fn [holder datom]
-                (handle-datom store ft-ds eids holder datom))
-              (transient []) batch))))
+  [^Store store ft-ds eids datoms]
+  (let [lmdb (.-lmdb store)]
+    (doseq [datom datoms]
+      (vswap! eids conj! (d/datom-e datom))
+      (if (d/datom-added datom)
+        (lmdb/transact-kv lmdb (insert-datom store datom ft-ds))
+        (lmdb/transact-kv lmdb (delete-datom store datom ft-ds))))))
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
@@ -613,55 +630,34 @@
                     (reduced nil))))
               (map rclasses aids)))))
 
-(defn- collect-updates
-  [store new-classes new-entities eid]
-  (let [lmdb         (.-lmdb store)
-        my-aids      (entity-aids store eid true)
-        old-entities (entities store)]
-    (if (empty? my-aids)                                ; deleted eid
-      (let [cid (old-entities eid)]
-        (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
-        )
-      (let [num-cids (count (find-classes store my-aids))
-            new-cid  (some (fn [[cid aids]]
-                             (when (= aids my-aids) cid))
-                           @new-classes)]
-        (cond
-          (and (zero? num-cids) (nil? new-cid))         ; unseen class
-          (let [cid (max-cid store)]
-            (vswap! new-classes assoc! cid my-aids)
-            (advance-max-cid store)
-            (vswap! new-entities assoc! eid cid))
-          )))))
-
-(defn- transact-entity-classes
-  [lmdb new-classes new-entities del-entities]
-  (lmdb/transact-kv lmdb (for [[cid aids] new-classes]
-                           [:put c/classes cid aids :id :data]))
-  (lmdb/transact-kv lmdb (for [[eid cid] new-entities]
-                           [:put c/entities eid cid :id :id]))
-  (lmdb/transact-kv lmdb (for [eid del-entities]
-                           [:del c/entities eid :id])))
-
 (defn- update-entity-classes
   [^Store store eids]
-  (let [new-classes  (volatile! (transient {}))
-        new-entities (volatile! (transient {}))]
-    (doseq [eid eids]
-      (collect-updates store new-classes new-entities eid))
-    (transact-entity-classes store
-                             (persistent! @new-classes)
-                             (persistent! @new-entities)
-                             (persistent! @del-entities))))
-
+  (doseq [eid eids]
+    (let [lmdb         (.-lmdb store)
+          my-aids      (entity-aids store eid true)
+          old-entities (entities store)]
+      #_(if (empty? my-aids)                                ; deleted eid
+          (let [cid (old-entities eid)]
+            (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
+            )
+          (let [num-cids (count (find-classes store my-aids))
+                new-cid  (some (fn [[cid aids]]
+                                 (when (= aids my-aids) cid))
+                               @new-classes)]
+            (cond
+              (and (zero? num-cids) (nil? new-cid))         ; unseen class
+              (let [cid (max-cid store)]
+                (vswap! new-classes assoc! cid my-aids)
+                (advance-max-cid store)
+                (vswap! new-entities assoc! eid cid))
+              ))))))
 
 (defn- transact-opts
   [lmdb opts]
-  (lmdb/transact-kv
-    lmdb
-    (conj (for [[k v] opts]
-            [:put c/opts k v :attr :data])
-          [:put c/meta :last-modified (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv lmdb
+                    (conj (for [[k v] opts]
+                            [:put c/opts k v :attr :data])
+                          (time-tx))))
 
 (defn- load-opts
   [lmdb]
