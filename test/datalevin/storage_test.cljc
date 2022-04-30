@@ -274,12 +274,42 @@
                                (UUID/randomUUID)))
         store  (sut/open dir)]
     (sut/load-datoms store datoms)
+
     (is (= #{} (sut/entity-attrs store 20)))
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     (is (= #{:name :father} (sut/entity-attrs store 2)))
+
+    (is (= {0 #{3}, 1 #{3 4 5}, 2 #{3 7}, 3 #{3 6}}
+           (sut/classes store)))
+    (is (= {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
+           (sut/rclasses store)))
+    (is (= {1  1,
+            2  3,
+            3  3,
+            4  0,
+            5  0,
+            6  3,
+            7  0,
+            8  0,
+            9  0,
+            10 2,
+            11 2,
+            12 2,
+            13 0,
+            14 0,
+            15 2,
+            16 2,
+            17 0,
+            18 0}
+           (sut/entities store)))
+    (is (= {0 (b/bitmap [4, 5, 7, 8, 9, 13, 14, 17, 18]),
+            1 (b/bitmap [1])
+            2 (b/bitmap [10,11,12,15,16]),
+            3 (b/bitmap [2,3,6])} (sut/rentities store)))
+
     (is (nil? (sut/find-classes store #{})))
+
     (let [aids (sut/attrs->aids store #{:name :aka})]
-      (is (= (sut/aids->attrs store aids) #{:name :aka}))
-      ;; (is (= #{0} (sut/find-classes store aids)))
-      )
-    ))
+      (is (= #{:name :aka} (sut/aids->attrs store aids)))
+      (is (= #{1} (sut/find-classes store aids)))
+      )))

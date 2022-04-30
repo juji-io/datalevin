@@ -226,12 +226,12 @@
   (datom-count [this index] "Return the number of datoms in the index")
   (classes [this] "Return the cid -> class map")
   (rclasses [this] "Return the aid -> classes map")
-  (add-classes [this new-classes] "Add new classes, return updated classes")
+  (add-class [this aids] "Add a new class, return cid")
   (max-cid [this])
-  (advance-max-cid [this])
   (entities [this])
   (rentities [this])
-  (update-entities [this new-entities del-entities])
+  (add-entity [this eid cid])
+  (del-entity [this eid])
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (load-datoms [this datoms] "Load datams into storage")
@@ -339,18 +339,13 @@
   (rclasses [_]
     rclasses)
 
-  (add-classes [_ new-classes]
-    (lmdb/transact-kv
-      lmdb (for [[cid aids] new-classes] [:put c/classes cid aids :id :data]))
-    (set! classes (merge classes new-classes))
-    (set! rclasses (classes->rclasses rclasses new-classes))
-    classes)
-
-  (max-cid [_]
-    max-cid)
-
-  (advance-max-cid [_]
-    (set! max-cid (inc ^long max-cid)))
+  (add-class [_ aids]
+    (let [cid max-cid]
+      (lmdb/transact-kv lmdb [[:put c/classes cid aids :id :data]])
+      (set! classes (assoc classes cid aids))
+      (set! rclasses (classes->rclasses rclasses {cid aids}))
+      (set! max-cid (inc ^long max-cid))
+      cid))
 
   (entities [_]
     entities)
@@ -358,30 +353,24 @@
   (rentities [_]
     rentities)
 
-  (update-entities [_ new-entities del-entities]
-    (lmdb/transact-kv
-      lmdb (for [eid del-entities] [:del c/entities eid :id]))
-    (lmdb/transact-kv
-      lmdb (for [[eid cid] new-entities] [:put c/entities eid cid :id :id]))
+  (add-entity [_ eid cid]
+    (lmdb/transact-kv lmdb [[:put c/entities eid cid :id :id]])
     (set! rentities
-          (persistent!
-            (as-> (transient rentities) res
-              (reduce-kv
-                (fn [m eid cid]
-                  (let [old-cid (entities eid)]
-                    (assoc! m
-                            cid (b/bitmap-add (get m cid (b/bitmap)) eid)
-                            old-cid (b/bitmap-del (m old-cid) eid))))
-                res new-entities)
-              (reduce
-                (fn [m eid]
-                  (let [old-cid (entities eid)]
-                    (assoc! m old-cid (b/bitmap-del (m old-cid) eid))))
-                res del-entities))))
-    (set! entities (as-> entities res
-                     (merge res new-entities)
-                     (apply dissoc res del-entities)))
-    entities)
+          (if-let [old-cid (entities eid)]
+            (assoc rentities
+                   cid (b/bitmap-add (rentities cid (b/bitmap)) eid)
+                   old-cid (b/bitmap-del (rentities old-cid) eid))
+            (assoc rentities
+                   cid (b/bitmap-add (rentities cid (b/bitmap)) eid))))
+    (set! entities (assoc entities eid cid)))
+
+  (del-entity [_ eid]
+    (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
+    (set! rentities
+          (let [old-cid (entities eid)]
+            (assoc rentities
+                   old-cid (b/bitmap-del (rentities old-cid) eid))))
+    (set! entities (dissoc entities eid)))
 
   (swap-attr [this attr f]
     (swap-attr this attr f nil nil))
@@ -412,7 +401,7 @@
           (lmdb/open-transact-kv lmdb)
           (try
             (transact-datoms this ft-ds eids datoms)
-            ;; (update-entity-classes this (persistent @eids))
+            (update-entity-classes this (persistent! @eids))
             (lmdb/transact-kv lmdb [(time-tx)])
             (finally
               (lmdb/close-transact-kv lmdb)))))
@@ -633,24 +622,17 @@
 (defn- update-entity-classes
   [^Store store eids]
   (doseq [eid eids]
-    (let [lmdb         (.-lmdb store)
-          my-aids      (entity-aids store eid true)
-          old-entities (entities store)]
-      #_(if (empty? my-aids)                                ; deleted eid
-          (let [cid (old-entities eid)]
-            (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
-            )
-          (let [num-cids (count (find-classes store my-aids))
-                new-cid  (some (fn [[cid aids]]
-                                 (when (= aids my-aids) cid))
-                               @new-classes)]
-            (cond
-              (and (zero? num-cids) (nil? new-cid))         ; unseen class
-              (let [cid (max-cid store)]
-                (vswap! new-classes assoc! cid my-aids)
-                (advance-max-cid store)
-                (vswap! new-entities assoc! eid cid))
-              ))))))
+    (let [my-aids (entity-aids store eid true)]
+      (if (empty? my-aids)
+        (del-entity store eid)
+        (let [cids (find-classes store my-aids)]
+          (if (empty? cids)
+            (add-entity store eid (add-class store my-aids))
+            (if-let [cid (some (fn [cid]
+                                 (when (= my-aids ((classes store) cid)) cid))
+                               cids)]
+              (add-entity store eid cid)
+              (add-entity store eid (add-class store my-aids)))))))))
 
 (defn- transact-opts
   [lmdb opts]

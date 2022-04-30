@@ -126,15 +126,15 @@
    ;; "add-1"
    ;; "add-5"
    ;; "add-all"
-   ;; "init"
+   "init"
    ;; "retract-5"
-   "q1"
-   "q2"
-   "q3"
-   "q4"
+   ;; "q1"
+   ;; "q2"
+   ;; "q3"
+   ;; "q4"
    ;; "q5"
-   "qpred1"
-   "qpred2"
+   ;; "qpred1"
+   ;; "qpred2"
    ])
 
 

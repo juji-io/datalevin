@@ -2,11 +2,11 @@
 
 ## WIP
 ## Added
-- Entity class indices, a novel index type inspired by tables in RDBMS.
-- Query planner that takes advantage of entity class indices.
+- Entity-class indices, a novel index type.
+- Query planner that takes advantage of entity-class indices.
 ## Improved
 - Ensure ACID by wrapping Datalog transaction reads/writes within a single LMDB
-  transaction, also gain some write speed.
+  transaction.
 
 ## 0.6.8
 ## Fixed
