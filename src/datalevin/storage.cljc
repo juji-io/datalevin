@@ -91,9 +91,11 @@
 
 (defn- init-classes
   [lmdb]
-  (into {} (lmdb/get-range lmdb c/classes [:all] :id :data)))
+  (let [res (lmdb/get-range lmdb c/classes [:all] :id :data)]
+    [(into {} (map (fn [[k v]] [k (first v)])) res)
+     (into {} (map (fn [[k v]] [k (peek v)])) res)]))
 
-(defn- classes->rclasses
+(defn classes->rclasses
   ([classes]
    (classes->rclasses {} classes))
   ([old-rclasses new-classes]
@@ -110,13 +112,13 @@
   [lmdb]
   (into {} (lmdb/get-range lmdb c/entities [:all] :id :id)))
 
-(defn- entities->rentities
-  [entities]
+(defn rentities->entities
+  [rentities]
   (persistent!
     (reduce-kv
-      (fn [m eid cid]
-        (assoc! m cid (b/bitmap-add (get m cid (b/bitmap)) eid)))
-      (transient {}) entities)))
+      (fn [m cid bm]
+        (reduce (fn [m eid] (assoc! m eid cid)) m bm))
+      (transient {}) rentities)))
 
 (defn- init-max-gt
   [lmdb]
@@ -226,7 +228,7 @@
   (datom-count [this index] "Return the number of datoms in the index")
   (classes [this] "Return the cid -> class map")
   (rclasses [this] "Return the aid -> classes map")
-  (add-class [this aids] "Add a new class, return cid")
+  (add-class [this aids])
   (max-cid [this])
   (entities [this])
   (rentities [this])
@@ -341,7 +343,6 @@
 
   (add-class [_ aids]
     (let [cid max-cid]
-      (lmdb/transact-kv lmdb [[:put c/classes cid aids :id :data]])
       (set! classes (assoc classes cid aids))
       (set! rclasses (classes->rclasses rclasses {cid aids}))
       (set! max-cid (inc ^long max-cid))
@@ -354,23 +355,26 @@
     rentities)
 
   (add-entity [_ eid cid]
-    (lmdb/transact-kv lmdb [[:put c/entities eid cid :id :id]])
-    (set! rentities
-          (if-let [old-cid (entities eid)]
-            (assoc rentities
-                   cid (b/bitmap-add (rentities cid (b/bitmap)) eid)
-                   old-cid (b/bitmap-del (rentities old-cid) eid))
-            (assoc rentities
-                   cid (b/bitmap-add (rentities cid (b/bitmap)) eid))))
-    (set! entities (assoc entities eid cid)))
+    ;; (lmdb/transact-kv lmdb [[:put c/entities eid cid :id :id]])
+    (let [old-cid (entities eid)]
+      (set! rentities
+            (if old-cid
+              (assoc rentities
+                     cid (b/bitmap-add (rentities cid (b/bitmap)) eid)
+                     old-cid (b/bitmap-del (rentities old-cid) eid))
+              (assoc rentities
+                     cid (b/bitmap-add (rentities cid (b/bitmap)) eid))))
+      (set! entities (assoc entities eid cid))
+      old-cid))
 
   (del-entity [_ eid]
-    (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
-    (set! rentities
-          (let [old-cid (entities eid)]
+    ;; (lmdb/transact-kv lmdb [[:del c/entities eid :id]])
+    (let [old-cid (entities eid)]
+      (set! rentities
             (assoc rentities
-                   old-cid (b/bitmap-del (rentities old-cid) eid))))
-    (set! entities (dissoc entities eid)))
+                   old-cid (b/bitmap-del (rentities old-cid) eid)))
+      (set! entities (dissoc entities eid))
+      old-cid))
 
   (swap-attr [this attr f]
     (swap-attr this attr f nil nil))
@@ -621,18 +625,31 @@
 
 (defn- update-entity-classes
   [^Store store eids]
-  (doseq [eid eids]
-    (let [my-aids (entity-aids store eid true)]
-      (if (empty? my-aids)
-        (del-entity store eid)
-        (let [cids (find-classes store my-aids)]
-          (if (empty? cids)
-            (add-entity store eid (add-class store my-aids))
-            (if-let [cid (some (fn [cid]
-                                 (when (= my-aids ((classes store) cid)) cid))
-                               cids)]
-              (add-entity store eid cid)
-              (add-entity store eid (add-class store my-aids)))))))))
+  (let [updated-cids (volatile! (transient #{}))
+        adjust       (fn [eid new-cid]
+                       (vswap! updated-cids conj! new-cid)
+                       (when-let [old-cid (add-entity store eid new-cid)]
+                         (vswap! updated-cids conj! old-cid)))]
+    (doseq [eid eids]
+      (let [my-aids (entity-aids store eid true)]
+        (if (empty? my-aids)
+          (vswap! updated-cids conj! (del-entity store eid))
+          (let [cids (find-classes store my-aids)]
+            (if (empty? cids)
+              (adjust eid (add-class store my-aids))
+              (if-let [cid (some (fn [cid]
+                                   (when (= my-aids ((classes store) cid))
+                                     cid))
+                                 cids)]
+                (adjust eid cid)
+                (adjust eid (add-class store my-aids))))))))
+    (lmdb/transact-kv
+      (.-lmdb store)
+      (map (fn [cid]
+             [:put c/classes cid
+              [((classes store) cid) ((rentities store) cid)]
+              :id :data])
+           (persistent! @updated-cids)))))
 
 (defn- transact-opts
   [lmdb opts]
@@ -653,7 +670,6 @@
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
   (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/entities c/+id-bytes+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
   (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
 
@@ -670,9 +686,8 @@
          lmdb (lmdb/open-kv dir)]
      (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
-     (let [schema   (init-schema lmdb schema)
-           classes  (init-classes lmdb)
-           entities (init-entities lmdb)]
+     (let [schema              (init-schema lmdb schema)
+           [classes rentities] (init-classes lmdb)]
        (->Store lmdb
                 (load-opts lmdb)
                 (s/new-search-engine lmdb (:search-engine opts))
@@ -681,8 +696,8 @@
                 (schema->rschema schema)
                 classes
                 (classes->rclasses classes)
-                entities
-                (entities->rentities entities)
+                (rentities->entities rentities)
+                rentities
                 (init-max-aid lmdb)
                 (init-max-gt lmdb)
                 (init-max-cid lmdb))))))

@@ -283,6 +283,7 @@
            (sut/classes store)))
     (is (= {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
            (sut/rclasses store)))
+    (is (= (sut/rclasses store) (sut/classes->rclasses (sut/classes store))))
     (is (= {1  1,
             2  3,
             3  3,
@@ -304,8 +305,11 @@
            (sut/entities store)))
     (is (= {0 (b/bitmap [4, 5, 7, 8, 9, 13, 14, 17, 18]),
             1 (b/bitmap [1])
-            2 (b/bitmap [10,11,12,15,16]),
-            3 (b/bitmap [2,3,6])} (sut/rentities store)))
+            2 (b/bitmap [10, 11, 12, 15, 16]),
+            3 (b/bitmap [2, 3, 6])}
+           (sut/rentities store)))
+    (is (= (sut/rentities store)
+           (sut/entities->rentities (sut/entities store))))
 
     (is (nil? (sut/find-classes store #{})))
 
