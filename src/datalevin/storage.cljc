@@ -108,10 +108,6 @@
            m aids))
        (transient old-rclasses) new-classes))))
 
-(defn- init-entities
-  [lmdb]
-  (into {} (lmdb/get-range lmdb c/entities [:all] :id :id)))
-
 (defn rentities->entities
   [rentities]
   (persistent!
@@ -355,7 +351,6 @@
     rentities)
 
   (add-entity [_ eid cid]
-    ;; (lmdb/transact-kv lmdb [[:put c/entities eid cid :id :id]])
     (let [old-cid (entities eid)]
       (set! rentities
             (if old-cid

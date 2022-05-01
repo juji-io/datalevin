@@ -7,7 +7,7 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
             [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
            [datalevin.storage Store]
@@ -237,83 +237,92 @@
       (is (= [d] r)))))
 
 (deftest extract-entity-test
-  (let [datoms (map #(apply d/datom %)  [[1 :name  "Petr"]
-                                         [1 :aka   "Devil"]
-                                         [1 :aka   "Tupen"]
-                                         [2 :name  "David"]
-                                         [3 :name  "Thomas"]
-                                         [4 :name  "Lucy"]
-                                         [5 :name  "Elizabeth"]
-                                         [6 :name  "Matthew"]
-                                         [7 :name  "Eunan"]
-                                         [8 :name  "Kerri"]
-                                         [9 :name  "Rebecca"]
-                                         [1 :child 2]
-                                         [1 :child 3]
-                                         [2 :father 1]
-                                         [3 :father 1]
-                                         [6 :father 3]
-                                         [10 :name  "Part A"]
-                                         [11 :name  "Part A.A"]
-                                         [10 :part 11]
-                                         [12 :name  "Part A.A.A"]
-                                         [11 :part 12]
-                                         [13 :name  "Part A.A.A.A"]
-                                         [12 :part 13]
-                                         [14 :name  "Part A.A.A.B"]
-                                         [12 :part 14]
-                                         [15 :name  "Part A.B"]
-                                         [10 :part 15]
-                                         [16 :name  "Part A.B.A"]
-                                         [15 :part 16]
-                                         [17 :name  "Part A.B.A.A"]
-                                         [16 :part 17]
-                                         [18 :name  "Part A.B.A.B"]
-                                         [16 :part 18]])
-        dir    (u/tmp-dir (str "datalevin-extract-entity-test-"
-                               (UUID/randomUUID)))
-        store  (sut/open dir)]
+  (let [datoms    (map #(apply d/datom %)  [[1 :name  "Petr"]
+                                            [1 :aka   "Devil"]
+                                            [1 :aka   "Tupen"]
+                                            [2 :name  "David"]
+                                            [3 :name  "Thomas"]
+                                            [4 :name  "Lucy"]
+                                            [5 :name  "Elizabeth"]
+                                            [6 :name  "Matthew"]
+                                            [7 :name  "Eunan"]
+                                            [8 :name  "Kerri"]
+                                            [9 :name  "Rebecca"]
+                                            [1 :child 2]
+                                            [1 :child 3]
+                                            [2 :father 1]
+                                            [3 :father 1]
+                                            [6 :father 3]
+                                            [10 :name  "Part A"]
+                                            [11 :name  "Part A.A"]
+                                            [10 :part 11]
+                                            [12 :name  "Part A.A.A"]
+                                            [11 :part 12]
+                                            [13 :name  "Part A.A.A.A"]
+                                            [12 :part 13]
+                                            [14 :name  "Part A.A.A.B"]
+                                            [12 :part 14]
+                                            [15 :name  "Part A.B"]
+                                            [10 :part 15]
+                                            [16 :name  "Part A.B.A"]
+                                            [15 :part 16]
+                                            [17 :name  "Part A.B.A.A"]
+                                            [16 :part 17]
+                                            [18 :name  "Part A.B.A.B"]
+                                            [16 :part 18]])
+        classes   {0 #{3}, 1 #{3 4 5}, 2 #{3 7}, 3 #{3 6}}
+        rclasses  {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
+        ent-map   {1  1,
+                   2  3,
+                   3  3,
+                   4  0,
+                   5  0,
+                   6  3,
+                   7  0,
+                   8  0,
+                   9  0,
+                   10 2,
+                   11 2,
+                   12 2,
+                   13 0,
+                   14 0,
+                   15 2,
+                   16 2,
+                   17 0,
+                   18 0}
+        rentities {0 (b/bitmap [4, 5, 7, 8, 9, 13, 14, 17, 18]),
+                   1 (b/bitmap [1])
+                   2 (b/bitmap [10, 11, 12, 15, 16]),
+                   3 (b/bitmap [2, 3, 6])}
+        dir       (u/tmp-dir (str "datalevin-extract-entity-test-"
+                                  (UUID/randomUUID)))
+        store     (sut/open dir)]
     (sut/load-datoms store datoms)
 
     (is (= #{} (sut/entity-attrs store 20)))
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     (is (= #{:name :father} (sut/entity-attrs store 2)))
 
-    (is (= {0 #{3}, 1 #{3 4 5}, 2 #{3 7}, 3 #{3 6}}
-           (sut/classes store)))
-    (is (= {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
-           (sut/rclasses store)))
+    (is (= classes (sut/classes store)))
+    (is (= rclasses (sut/rclasses store)))
     (is (= (sut/rclasses store) (sut/classes->rclasses (sut/classes store))))
-    (is (= {1  1,
-            2  3,
-            3  3,
-            4  0,
-            5  0,
-            6  3,
-            7  0,
-            8  0,
-            9  0,
-            10 2,
-            11 2,
-            12 2,
-            13 0,
-            14 0,
-            15 2,
-            16 2,
-            17 0,
-            18 0}
-           (sut/entities store)))
-    (is (= {0 (b/bitmap [4, 5, 7, 8, 9, 13, 14, 17, 18]),
-            1 (b/bitmap [1])
-            2 (b/bitmap [10, 11, 12, 15, 16]),
-            3 (b/bitmap [2, 3, 6])}
-           (sut/rentities store)))
-    (is (= (sut/rentities store)
-           (sut/entities->rentities (sut/entities store))))
+    (is (= ent-map (sut/entities store)))
+    (is (= rentities (sut/rentities store)))
+    (is (= (sut/entities store)
+           (sut/rentities->entities (sut/rentities store))))
 
     (is (nil? (sut/find-classes store #{})))
 
     (let [aids (sut/attrs->aids store #{:name :aka})]
       (is (= #{:name :aka} (sut/aids->attrs store aids)))
-      (is (= #{1} (sut/find-classes store aids)))
-      )))
+      (is (= #{1} (sut/find-classes store aids))))
+    (sut/close store)
+
+    (testing "load classes"
+      (let [store1 (sut/open dir)]
+        (is (= classes (sut/classes store1)))
+        (is (= ent-map (sut/entities store1)))
+        (is (= rclasses (sut/rclasses store1)))
+        (is (= rentities (sut/rentities store1))))))
+
+  )
