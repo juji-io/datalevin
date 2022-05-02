@@ -713,7 +713,7 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [kv-opts] :as opts}]
+  ([dir schema {:keys [kv-opts search-opts] :as opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
@@ -722,7 +722,7 @@
            [classes rentities] (init-classes lmdb)]
        (->Store lmdb
                 (load-opts lmdb)
-                (s/new-search-engine lmdb (:search-engine opts))
+                (s/new-search-engine lmdb search-opts)
                 (init-attrs schema)
                 schema
                 (schema->rschema schema)

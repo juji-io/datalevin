@@ -395,8 +395,8 @@
 
   (close-transact-kv [this]
     (try
-      (when-let [wtxn @write-txn]
-        (when-let [^Txn txn (.-txn ^Rtx wtxn)]
+      (when-let [^Rtx wtxn @write-txn]
+        (when-let [^Txn txn (.-txn wtxn)]
           (.commit txn)
           (.close txn)
           (vreset! write-txn nil)
@@ -421,7 +421,7 @@
         (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
         (up-db-size env)
         (if @write-txn
-          (throw (ex-info "Map is resized" {:resized true}))
+          (raise "Map is resized" {:resized true})
           (.transact-kv this txs)))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {}))))

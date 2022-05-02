@@ -134,7 +134,7 @@
                   :a/uuid    {:db/valueType :db.type/uuid}
                   :a/bytes   {:db/valueType :db.type/bytes}}
         opts     {:auto-entity-time? true
-                  :search-engine     {:analyzer analyzer}}
+                  :search-opts       {:analyzer analyzer}}
         src-dir  (u/tmp-dir (str "src-dump-dl-" (UUID/randomUUID)))
         conn     (d/create-conn src-dir schema opts)
         dest-dir (u/tmp-dir (str "dest-load-dl-" (UUID/randomUUID)))

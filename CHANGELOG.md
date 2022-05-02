@@ -6,6 +6,8 @@
 - Query planner that takes advantage of entity-class indices.
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
+- Allow passing LMDB option map as `:kv-opts` when `create-conn`
+- **Breaking** Change `:search-engine` key to `:search-opts` for consistency
 
 ## 0.6.8
 ## Fixed

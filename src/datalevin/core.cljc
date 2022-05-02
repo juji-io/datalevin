@@ -203,7 +203,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, a option map that will be passed to the search engine
+   * `:search-opts`, a option map that will be passed to the search engine
 
   Usage:
 
@@ -213,7 +213,7 @@ Only usable for debug output.
 
              (empty-db \"/tmp/test-empty-db\" {:likes {:db/cardinality :db.cardinality/many}})
 
-             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true :search-engine {:analyzer blank-space-analyzer}})"}
+             (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true :search-opts {:analyzer blank-space-analyzer} :kv-opts {:mapsize 1000}})"}
   empty-db db/empty-db)
 
 
@@ -253,7 +253,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the search engine
 
              See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
@@ -457,7 +457,9 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying LMDB store
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
