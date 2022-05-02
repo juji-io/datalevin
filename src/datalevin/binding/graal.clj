@@ -580,16 +580,17 @@
                (ex-message e) {}))))
 
   (close-transact-kv [this]
-    (when-let [^Txn txn (.-txn ^Rtx @write-txn)]
-      (try
-        (.commit txn)
-        (vreset! write-txn nil)
-        :committed
-        (catch Exception e
-          (.close txn)
+    (when-let [^Rtx wtxn @write-txn]
+      (when-let [^Txn txn (.-txn wtxn)]
+        (try
+          (.commit txn)
           (vreset! write-txn nil)
-          (raise "Fail to commit read/write transaction in LMDB: "
-                 (ex-message e) {})))))
+          :committed
+          (catch Exception e
+            (.close txn)
+            (vreset! write-txn nil)
+            (raise "Fail to commit read/write transaction in LMDB: "
+                   (ex-message e) {}))))))
 
   (write-txn [this]
     write-txn)
@@ -610,8 +611,9 @@
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
               (.close info))
-            (when @write-txn (.open-transact-kv this))
-            (.transact-kv this txs))
+            (if @write-txn
+              (raise "Map is resized" {:resized true})
+              (.transact-kv this txs)))
           (catch Exception e
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " (ex-message e) {}))))))

@@ -15,7 +15,7 @@
 (def people (repeatedly random-man))
 
 
-(def people20k (shuffle (take 200000 people)))
+(def people20k (shuffle (take 20000 people)))
 
 
 (def ^:dynamic *warmup-t* 500)

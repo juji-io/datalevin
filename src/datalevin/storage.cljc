@@ -388,13 +388,17 @@
   (load-datoms [this datoms]
     (let [ft-ds (volatile! (transient []))
           eids  (volatile! (transient #{}))]
-      (locking (lmdb/write-txn lmdb)
-        (lmdb/open-transact-kv lmdb)
-        (try
+      (try
+        (locking (lmdb/write-txn lmdb)
+          (lmdb/open-transact-kv lmdb)
           (transact-datoms this ft-ds eids datoms)
           (lmdb/transact-kv lmdb [(time-tx)])
-          (update-entity-classes this (persistent! @eids))
-          (finally (lmdb/close-transact-kv lmdb))))
+          (update-entity-classes this (persistent! @eids)))
+        (catch clojure.lang.ExceptionInfo e
+          (if (:resized (ex-data e))
+            (load-datoms this datoms)
+            (throw e)))
+        (finally (lmdb/close-transact-kv lmdb)))
       (fulltext-index search-engine (persistent! @ft-ds))))
 
   (fetch [this datom]
@@ -563,10 +567,11 @@
 (defn- transact-datoms
   [^Store store ft-ds eids datoms]
   (doseq [datom datoms]
-    (if (d/datom-added datom)
-      (lmdb/transact-kv (.-lmdb store) (insert-datom store datom ft-ds))
-      (lmdb/transact-kv (.-lmdb store) (delete-datom store datom ft-ds)))
-    (vswap! eids conj! (d/datom-e datom))))
+    (vswap! eids conj! (d/datom-e datom))
+    (lmdb/transact-kv (.-lmdb store)
+                      (if (d/datom-added datom)
+                        (insert-datom store datom ft-ds)
+                        (delete-datom store datom ft-ds)))))
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
@@ -708,9 +713,9 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema opts]
+  ([dir schema {:keys [kv-opts] :as opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
-         lmdb (lmdb/open-kv dir)]
+         lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
      (let [schema              (init-schema lmdb schema)

@@ -299,6 +299,8 @@
         store     (sut/open dir)]
     (sut/load-datoms store datoms)
 
+    (is (= (count datoms) (sut/datom-count store :eav)))
+
     (is (= #{} (sut/entity-attrs store 20)))
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     (is (= #{:name :father} (sut/entity-attrs store 2)))
@@ -319,6 +321,42 @@
         (is (= classes (sut/classes store1)))
         (is (= ent-map (sut/entities store1)))
         (is (= rclasses (sut/rclasses store1)))
-        (is (= rentities (sut/rentities store1))))))
+        (is (= rentities (sut/rentities store1)))))))
 
-  )
+(deftest map-resize-entity-class-test
+  (let [next-eid (volatile! 0)
+        random-man
+        (fn []
+          (cond->
+              {:db/id (vswap! next-eid #(inc ^long %))
+               :fname (rand-nth ["Ivan" "Petr" "Sergei" "Oleg"
+                                 "Yuri" "Dmitry" "Fedor" "Denis"])
+               :lname (rand-nth ["Ivanov" "Petrov" "Sidorov"
+                                 "Kovalev" "Kuznetsov" "Voronoi"])}
+            (< 10 ^long (rand-int 100))
+            (assoc :sex (rand-nth [:male :female]))
+            (< 30 ^long (rand-int 100))
+            (assoc :age (rand-int 100))
+            (< 50 ^long (rand-int 100))
+            (assoc :salary (rand-int 100000))))
+        datoms   (mapcat (fn [{:keys [db/id fname lname sex age salary]}]
+                           (cond-> [(d/datom id :fname fname)
+                                    (d/datom id :lname lname)]
+                             sex    (conj (d/datom id :sex sex))
+                             age    (conj (d/datom id :age age))
+                             salary (conj (d/datom id :salary salary))))
+                         (take 10000 (repeatedly random-man)))
+        s-dir    (u/tmp-dir (str "small-" (UUID/randomUUID)))
+        s-store  (sut/open s-dir nil {:kv-opts {:mapsize 1}})
+        l-dir    (u/tmp-dir (str "big-" (UUID/randomUUID)))
+        l-store  (sut/open l-dir)]
+    (sut/load-datoms s-store datoms)
+    (sut/load-datoms l-store datoms)
+    (is (= (count datoms)
+           (sut/datom-count s-store :eav)
+           (sut/datom-count l-store :eav)))
+    (is (= (sut/classes s-store) (sut/classes l-store)))
+    (is (= (sut/rclasses s-store) (sut/rclasses l-store)))
+    (is (= (sut/entities s-store) (sut/entities l-store)))
+    (is (= (sut/rentities s-store) (sut/rentities l-store)))
+    (is (= (sut/max-cid s-store) (sut/max-cid l-store)))))
