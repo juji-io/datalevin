@@ -61,7 +61,7 @@
 
 (defn- init-max-aid [lmdb] (lmdb/entries lmdb c/schema))
 
-(defn- init-max-cid [lmdb] (lmdb/entries lmdb c/classes))
+(defn- init-max-cid [lmdb] (lmdb/entries lmdb c/encla))
 
 ;; TODO schema migration
 (defn- update-schema
@@ -91,7 +91,7 @@
 
 (defn- init-classes
   [lmdb]
-  (let [res (lmdb/get-range lmdb c/classes [:all] :id :data)]
+  (let [res (lmdb/get-range lmdb c/encla [:all] :id :data)]
     [(into {} (map (fn [[k v]] [k (first v)])) res)
      (into {} (map (fn [[k v]] [k (peek v)])) res)]))
 
@@ -647,7 +647,7 @@
                            (let [aids (classes cid)
                                  bm   (rentities cid)]
                              (when (and aids bm)
-                               [:put c/classes cid [aids bm] :id :data])))
+                               [:put c/encla cid [aids bm] :id :data])))
                          cids)))
 
 (defn- update-entity-classes
@@ -701,7 +701,7 @@
   (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
   (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-  (lmdb/open-dbi lmdb c/classes c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/encla c/+id-bytes+)
   (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
   (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
 

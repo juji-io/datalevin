@@ -2,24 +2,27 @@
 
 ## Motivation
 
-Currently, Datalevin mostly inherits Datascript query engine, which is inefficient, as it
-does things the following way: all the data that matches each *individual* triple
-pattern clause are fetched and turned into a set of datoms. The sets of datoms
-matching each clause are then hash-joined together one set after another. So if
-a query has _n_ clauses, it would do _n_ index scans and _n-1_ hash joins.
+One of the main reasons for people to use Datalog stores is their
+declarative and composible query language. The simple and elegant language is
+often backup by the flexible triple based data storage. However, it is a well
+know problem that querying a triple store is slow compared to RDBMS that stores
+data in rows.
+
+Datalevin faces the same problem. Currently it mostly inherits Datascript query
+engine, which is inefficient, as it does things the following way: all the data
+that matches each *individual* triple pattern clause are fetched and turned into
+a set of datoms. The sets of datoms matching each clause are then hash-joined
+together one set after another. So if a query has _n_ clauses, it would do _n_
+index scans and _n-1_ hash joins.
 
 Even with user hand crafted clauses order, this process still performs a lot of
 unnecessary data fetching and transformation, joins a lot of unneeded tuples and
 materializes a lot of intermediate relations needlessly. Although Datalevin
 added a few simple query optimizations, it is far from solving the problems.
 
-To address these problems, we will develop a new query engine that attempts to
-evaluate the query with minimal cost. We will also support an `explain` option
-for the users to see the query execution steps.
-
-This query engine will leverage some unique properties of Datomic-like stores,
-take advantage of some new indexing structures, utilize the state of the art join
-algorithms, employ a new query execution style and do concurrent query execution.
+To address these problems, we are developing a new query engine. We will leverage
+some unique properties of Datomic-like stores to develop a new index, and
+the query engine takes advantage of this new index.
 
 ## Difference from RDF Stores
 
@@ -39,37 +42,39 @@ they are often specialized, e.g. the namespaces of attributes encode
 information about entities. Therefore, leveraging grouping of attributes could
 have greater benefits in query processing.
 
-## New index: entity classes
-
-Based on these observations, we introduce a new type of indices. First we
-introduce a concept of entity class, which refers to the type of entities.
-Similar to characteristic sets [8] in RDF stores or tables in relational DB,
-this concept captures the defining combination of attributes for a class of
-entities.
-
 In Datomic-like stores, the set of attributes for a class of entities are often unique.
-There might be overlapping attributes between entity classes, but many
+There might be overlapping attributes shared by multiple entity classes, but many
 attributes are used by only one class of entities, and these are often prefixed
-by namespace unique to that entity class.
+by namespace unique to that group of entities.
 
-A "classes" LMDB DBI will be used to store entity classes. The key
-is an unique integer id of the class. The value is a map about the class,
-containing these keys:
+## New index: `EnCla`
 
-* `:aids`, a set of attribute ids that define the class.
-* `:eids`, a bitmap of the entity ids in the class.
+Based on these observations, we introduce a new type of indices, what we call
+an `EnCla` index, short for Entity Classes. Similar to characteristic sets [8]
+in RDF stores or tables in relational DB, this concept captures the defining
+combination of attributes for a class of entities.
 
-This DBI is loaded into memory at system initialization. This allow us to
-quickly identified relevant entity classes in the query and find relevant
-entities associated with them.
+An `encla` LMDB DBI will be used to store the `EnCla` index. The keys
+are the unique integer IDs of each entity class. The value contains two piece of
+information:
 
-## Optimizations
+* `aids`, the set of attribute ids that define the entity class.
+* `eids`, the bitmap of the integer ids of the entities belonging to the entity
+  class.
+
+`EnCla` index is loaded into memory at system initialization and is kept up to
+date with newly transacted data. We pay a small price in transaction slowdown
+(about 1.3 times slower) and memory footprint, but gain significant query
+speedup. as `EnCla` index allows us to quickly identified relevant entity
+classes in the query and find relevant entities associated with them.
+
+## Query Optimizations
 
 The query engine will employs multiple optimizations.
 
-### Leverage classes
+### Leverage entity classes
 
- Essentially, we leverage the classes to pre-filter entities. This pre-filter
+ Essentially, we leverage the entity classes to pre-filter entities. This pre-filter
  can significantly reduces the amount of work we have to do. For joins, we start
  with clause with least cardinality. "classes" based index scans will also
  participate in this search for least cardinality as if they are normal pattern
@@ -114,12 +119,13 @@ join when it estimates that the cardinality of intermediate results will be
 greater than that of the largest of the participating relations, e.g. as often
 the case in those involving value-value joins.
 
-## A* Search Style Query Evaluation
+## New Style of Query Evaluation
 
-As a major break from the traditional Selinger style query planners [9], where
+As a break from the traditional Selinger style query planners [9], where
 dynamic programming based query planning is done ahead of query execution, our
-query engine works more like an A* search algorithm, where planning and
-execution happen in tandem. The main reason is to be able to obtain more
+query engine works with planning and execution happen in tandem.
+
+The main reason is to be able to obtain more
 accurate cost estimation during query execution, rather than relying on purely
 speculative ahead of time estimation. In the exploration phase of A* search
 algorithm, where we need to determine the next join step, we can leverage
