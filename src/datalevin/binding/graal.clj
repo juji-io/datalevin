@@ -255,9 +255,10 @@
       (->CursorIterable cur this rtx f? sk? is? ek? ie? sk ek)))
 
   (get-cursor [_ txn]
-    (or (when-let [^Cursor cur (.poll curs)]
-          (.renew cur txn)
-          cur)
+    (or (when (.isReadOnly ^Txn txn)
+          (when-let [^Cursor cur (.poll curs)]
+            (.renew cur txn)
+            cur))
         (Cursor/create txn db)))
 
   (return-cursor [_ cur]
@@ -277,7 +278,9 @@
                     ^BufVal ek]
   AutoCloseable
   (close [_]
-    (.return-cursor db cursor))
+    (if (.isReadOnly ^Txn (.-txn rtx))
+      (.return-cursor db cursor)
+      (.close cursor)))
 
   Iterable
   (iterator [this]
@@ -360,29 +363,32 @@
 
 (defn- transact*
   [txs ^ConcurrentHashMap dbis ^Txn txn]
-  (doseq [[op dbi-name k & r] txs]
-    (let [^DBI dbi (or (.get dbis dbi-name)
-                       (raise dbi-name " is not open" {}))]
-      (case op
-        :put      (let [[v kt vt flags] r]
-                    (.put-key dbi k kt)
+  (doseq [[op dbi-name k & r] txs
+          :when               op
+          :let                [^DBI dbi (or (.get dbis dbi-name)
+                                            (raise dbi-name " is not open"
+                                                   {}))]]
+    (case op
+      :put      (let [[v kt vt flags] r]
+                  (.put-key dbi k kt)
+                  (.put-val dbi v vt)
+                  (if flags
+                    (.put dbi txn flags)
+                    (.put dbi txn)))
+      :del      (let [[kt] r]
+                  (.put-key dbi k kt)
+                  (.del dbi txn))
+      :put-list (let [[vs kt vt] r]
+                  (.put-key dbi k kt)
+                  (doseq [v vs]
                     (.put-val dbi v vt)
-                    (if flags
-                      (.put dbi txn flags)
-                      (.put dbi txn)))
-        :del      (let [[kt] r]
-                    (.put-key dbi k kt)
-                    (.del dbi txn))
-        :put-list (let [[vs kt vt] r]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.put dbi txn)))
-        :del-list (let [[vs kt vt] r]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.del dbi txn false)))))))
+                    (.put dbi txn)))
+      :del-list (let [[vs kt vt] r]
+                  (.put-key dbi k kt)
+                  (doseq [v vs]
+                    (.put-val dbi v vt)
+                    (.del dbi txn false)))
+      (raise "Unknown kv operator: " op {}))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -599,12 +605,13 @@
           (when one-shot? (.commit txn))
           :transacted
           (catch Lib$MapFullException _
-            (when one-shot? (.close txn))
+            (.close txn)
             (let [^Info info (Info/create env)]
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-              (.close info)
-              (.transact-kv this txs)))
+              (.close info))
+            (when @write-txn (.open-transact-kv this))
+            (.transact-kv this txs))
           (catch Exception e
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " (ex-message e) {}))))))

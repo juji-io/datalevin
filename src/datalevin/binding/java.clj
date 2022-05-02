@@ -202,9 +202,10 @@
   (iterate-kv [_ rtx range-info]
     (.iterate db (.-txn ^Rtx rtx) range-info))
   (get-cursor [_ txn]
-    (or (when-let [^Cursor cur (.poll curs)]
-          (.renew cur txn)
-          cur)
+    (or (when (.isReadOnly ^Txn txn)
+          (when-let [^Cursor cur (.poll curs)]
+            (.renew cur txn)
+            cur))
         (.openCursor db txn)))
   (return-cursor [this cur]
     (.add curs cur)))
@@ -215,29 +216,32 @@
 
 (defn- transact*
   [txs ^UnifiedMap dbis txn]
-  (doseq [[op dbi-name k & r] txs]
-    (let [^DBI dbi (or (.get dbis dbi-name)
-                       (raise dbi-name " is not open" {}))]
-      (case op
-        :put      (let [[v kt vt flags] r]
-                    (.put-key dbi k kt)
+  (doseq [[op dbi-name k & r] txs
+          :when               op
+          :let                [^DBI dbi (or (.get dbis dbi-name)
+                                            (raise dbi-name " is not open"
+                                                   {}))]]
+    (case op
+      :put      (let [[v kt vt flags] r]
+                  (.put-key dbi k kt)
+                  (.put-val dbi v vt)
+                  (if flags
+                    (.put dbi txn flags)
+                    (.put dbi txn)))
+      :del      (let [[kt] r]
+                  (.put-key dbi k kt)
+                  (.del dbi txn))
+      :put-list (let [[vs kt vt] r]
+                  (.put-key dbi k kt)
+                  (doseq [v vs]
                     (.put-val dbi v vt)
-                    (if flags
-                      (.put dbi txn flags)
-                      (.put dbi txn)))
-        :del      (let [[kt] r]
-                    (.put-key dbi k kt)
-                    (.del dbi txn))
-        :put-list (let [[vs kt vt] r]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.put dbi txn)))
-        :del-list (let [[vs kt vt] r]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.del dbi txn false)))))))
+                    (.put dbi txn)))
+      :del-list (let [[vs kt vt] r]
+                  (.put-key dbi k kt)
+                  (doseq [v vs]
+                    (.put-val dbi v vt)
+                    (.del dbi txn false)))
+      (raise "Unknown kv operator: " op {}))))
 
 (deftype LMDB [^Env env
                ^String dir
@@ -413,7 +417,10 @@
           (.commit txn)))
       :transacted
       (catch Env$MapFullException _
-        (up-db-size env)
+        (locking this
+          (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
+          (up-db-size env)
+          (when @write-txn (.open-transact-kv this)))
         (.transact-kv this txs))
       (catch Exception e
         (raise "Fail to transact to LMDB: " (ex-message e) {}))))

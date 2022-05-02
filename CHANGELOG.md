@@ -5,8 +5,7 @@
 - Entity-class indices, a novel index type.
 - Query planner that takes advantage of entity-class indices.
 ## Improved
-- Ensure ACID by wrapping Datalog transaction reads/writes within a single LMDB
-  transaction.
+- Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
 
 ## 0.6.8
 ## Fixed

@@ -308,14 +308,10 @@
     (is (= (sut/rclasses store) (sut/classes->rclasses (sut/classes store))))
     (is (= ent-map (sut/entities store)))
     (is (= rentities (sut/rentities store)))
-    (is (= (sut/entities store)
-           (sut/rentities->entities (sut/rentities store))))
-
-    (is (nil? (sut/find-classes store #{})))
+    (is (= (sut/entities store) (sut/rentities->entities (sut/rentities store))))
 
     (let [aids (sut/attrs->aids store #{:name :aka})]
-      (is (= #{:name :aka} (sut/aids->attrs store aids)))
-      (is (= #{1} (sut/find-classes store aids))))
+      (is (= #{:name :aka} (sut/aids->attrs store aids))))
     (sut/close store)
 
     (testing "load classes"

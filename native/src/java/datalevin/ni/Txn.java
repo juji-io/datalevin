@@ -14,9 +14,11 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 public class Txn {
 
     private WordPointer ptr;
+    private final boolean readOnly;
 
-    public Txn(WordPointer ptr) {
+    public Txn(WordPointer ptr, boolean readOnly) {
         this.ptr = ptr;
+        this.readOnly = readOnly;
     }
 
     /**
@@ -40,7 +42,12 @@ public class Txn {
                                       flags,
                                       ptr));
 
-        return new Txn(ptr);
+        if ((flags & Lib.MDB_RDONLY()) == Lib.MDB_RDONLY()) {
+            return new Txn(ptr, true);
+        } else {
+            return new Txn(ptr, false);
+        }
+
     }
 
     /**
@@ -69,5 +76,9 @@ public class Txn {
     public void commit() {
         Lib.checkRc(Lib.mdb_txn_commit(get()));
         UnmanagedMemory.free(ptr);
+    }
+
+    public boolean isReadOnly() {
+        return readOnly;
     }
 }
