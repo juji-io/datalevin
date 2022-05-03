@@ -393,7 +393,8 @@
           (lmdb/open-transact-kv lmdb)
           (transact-datoms this ft-ds eids datoms)
           (lmdb/transact-kv lmdb [(time-tx)])
-          (update-entity-classes this (persistent! @eids)))
+          (update-entity-classes this (persistent! @eids))
+          )
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
             (load-datoms this datoms)
@@ -567,11 +568,11 @@
 (defn- transact-datoms
   [^Store store ft-ds eids datoms]
   (doseq [datom datoms]
-    (vswap! eids conj! (d/datom-e datom))
     (lmdb/transact-kv (.-lmdb store)
                       (if (d/datom-added datom)
                         (insert-datom store datom ft-ds)
-                        (delete-datom store datom ft-ds)))))
+                        (delete-datom store datom ft-ds)))
+    (vswap! eids conj! (d/datom-e datom))))
 
 (defn- entity-aids
   "Return the set of attribute ids of an entity"
