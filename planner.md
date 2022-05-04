@@ -17,7 +17,7 @@ unnecessary data fetching and joins many unneeded tuples. Although Datalevin
 added a few simple query optimizations, it is far from solving the problems.
 
 To address these problems, we are developing a new query engine based on the
-latest research findings and some of our own innovations. We will leverage
+latest research findings and some of our own ideas. We will leverage
 some unique properties of Datomic-like stores to develop a new index, and a
 new query engine to utilize this new index.
 
@@ -33,12 +33,11 @@ addition, the entity vs. entity relationship is also explicitly marked by
 entities and their relationship become cheaper.
 
 On the other hand, RDF stores often have a very limited number of properties
-even for huge datasets, whereas Datomic-like stores may have many more attributes and
-they are often specialized. For example, the set of attributes for a class of
-entities are often unique. There might be overlapping attributes shared by
-multiple entity classes, but most attributes are used by only one class of
-entities. Therefore, leveraging grouping of attributes could have greater
-benefits.
+even for huge datasets, whereas Datomic-like stores may have many more
+attributes. Fortunately, they are often specialized. For example, the set of
+attributes for a class of entities are often unique. There are overlapping
+attributes shared by multiple entity classes, but they are rare. Therefore,
+leveraging grouping of attributes could have greater benefits.
 
 ## New index: `EnCla`
 

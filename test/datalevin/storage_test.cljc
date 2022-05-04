@@ -236,7 +236,7 @@
       (sut/close store)
       (is (= [d] r)))))
 
-(deftest extract-entity-test
+(deftest encla-test
   (let [datoms    (map #(apply d/datom %)  [[1 :name  "Petr"]
                                             [1 :aka   "Devil"]
                                             [1 :aka   "Tupen"]
@@ -270,9 +270,18 @@
                                             [16 :part 17]
                                             [18 :name  "Part A.B.A.B"]
                                             [16 :part 18]])
-        classes   {0 #{3}, 1 #{3 4 5}, 2 #{3 7}, 3 #{3 6}}
+        n-datoms  (count datoms)
+        attrs     {0 :db/ident,
+                   1 :db/created-at,
+                   2 :db/updated-at,
+                   3 :name,
+                   4 :aka,
+                   5 :child,
+                   6 :father,
+                   7 :part}
+        classes   {0 #{3}, 1 #{3, 4, 5}, 2 #{3, 7}, 3 #{3, 6}}
         rclasses  {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
-        ent-map   {1  1,
+        entities  {1  1,
                    2  3,
                    3  3,
                    4  0,
@@ -294,13 +303,14 @@
                    1 (b/bitmap [1])
                    2 (b/bitmap [10, 11, 12, 15, 16]),
                    3 (b/bitmap [2, 3, 6])}
-        dir       (u/tmp-dir (str "datalevin-extract-entity-test-"
+        dir       (u/tmp-dir (str "datalevin-extract-encla-test-"
                                   (UUID/randomUUID)))
         store     (sut/open dir)]
     (sut/load-datoms store datoms)
 
-    (is (= (count datoms) (sut/datom-count store :eav)))
+    (is (= n-datoms (sut/datom-count store :eav)))
 
+    (is (= attrs(sut/attrs store)))
     (is (= #{} (sut/entity-attrs store 20)))
     (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
     (is (= #{:name :father} (sut/entity-attrs store 2)))
@@ -308,22 +318,99 @@
     (is (= classes (sut/classes store)))
     (is (= rclasses (sut/rclasses store)))
     (is (= (sut/rclasses store) (sut/classes->rclasses (sut/classes store))))
-    (is (= ent-map (sut/entities store)))
+
     (is (= rentities (sut/rentities store)))
     (is (= (sut/entities store) (sut/rentities->entities (sut/rentities store))))
 
     (let [aids (sut/attrs->aids store #{:name :aka})]
-      (is (= #{:name :aka} (sut/aids->attrs store aids))))
+      (is (= #{:name :aka} (set (sut/aids->attrs store aids)))))
     (sut/close store)
 
-    (testing "load classes"
+    (testing "load encla"
       (let [store1 (sut/open dir)]
         (is (= classes (sut/classes store1)))
-        (is (= ent-map (sut/entities store1)))
+        (is (= entities (sut/entities store1)))
         (is (= rclasses (sut/rclasses store1)))
-        (is (= rentities (sut/rentities store1)))))))
+        (is (= rentities (sut/rentities store1)))
+        (sut/close store1)))
+    (testing "add a datom that does not change encla"
+      (let [store1 (sut/open dir)]
+        (sut/load-datoms store1 [(d/datom 1 :aka "Angel")])
+        (is (= (inc n-datoms) (sut/datom-count store1 :eav)))
+        (is (= classes (sut/classes store1)))
+        (is (= rclasses (sut/rclasses store1)))
+        (is (= entities (sut/entities store1)))
+        (is (= rentities (sut/rentities store1)))
+        (sut/close store1)))
+    (testing "delete a datom that does not change encla"
+      (let [store1 (sut/open dir)]
+        (sut/load-datoms store1 [(d/datom 1 :aka "Devil" -1)])
+        (is (= n-datoms (sut/datom-count store1 :eav)))
+        (is (= classes (sut/classes store1)))
+        (is (= rclasses (sut/rclasses store1)))
+        (is (= entities (sut/entities store1)))
+        (is (= rentities (sut/rentities store1)))
+        (sut/close store1)))
+    (testing "delete a datom that changes entities"
+      (let [store1 (sut/open dir)]
+        (sut/load-datoms store1 [(d/datom 2 :father 1 -1)])
+        (is (= (dec n-datoms) (sut/datom-count store1 :eav)))
+        (is (= classes (sut/classes store1)))
+        (is (= rclasses (sut/rclasses store1)))
+        (is (= (assoc entities 2 0) (sut/entities store1)))
+        (is (= (-> rentities
+                   (update 0 #(b/bitmap-add % 2))
+                   (update 3 #(b/bitmap-del % 2)))
+               (sut/rentities store1)))
+        (sut/close store1)))
+    (testing "add a datom that changes entities"
+      (let [store1 (sut/open dir)]
+        (sut/load-datoms store1 [(d/datom 2 :father 3)])
+        (is (= n-datoms (sut/datom-count store1 :eav)))
+        (is (= classes (sut/classes store1)))
+        (is (= rclasses (sut/rclasses store1)))
+        (is (= (assoc entities 2 3) (sut/entities store1)))
+        (is (= (-> rentities
+                   (update 3 #(b/bitmap-add % 2))
+                   (update 0 #(b/bitmap-del % 2)))
+               (sut/rentities store1)))
+        (sut/close store1)))
+    (testing "add a datom that changes classes"
+      (let [store1 (sut/open dir)]
+        (sut/load-datoms store1 [(d/datom 2 :child 8)])
+        (is (= (inc n-datoms) (sut/datom-count store1 :eav)))
+        (is (= (-> classes (assoc 4 #{3 5 6})) (sut/classes store1)))
+        (is (= (-> rclasses
+                   (update 5 conj 4) (update 3 conj 4) (update 6 conj 4))
+               (sut/rclasses store1)))
+        (is (= (assoc entities 2 4) (sut/entities store1)))
+        (is (= (-> rentities
+                   (assoc 4 (b/bitmap [2]))
+                   (update 3 #(b/bitmap-del % 2))
+                   (update 0 #(b/bitmap-del % 2)))
+               (sut/rentities store1)))
+        (sut/close store1)))
+    (testing "delete datoms that changes classes"
+      (let [store1 (sut/open dir)]
+        (sut/load-datoms store1 [(d/datom 1 :child 2 -1)
+                                 (d/datom 1 :child 3 -1)])
+        (is (= (dec n-datoms) (sut/datom-count store1 :eav)))
+        (is (= (-> classes (assoc 4 #{3 5 6} 5 #{3 4})) (sut/classes store1)))
+        (is (= (-> rclasses
+                   (update 5 conj 4) (update 3 conj 4 5) (update 6 conj 4)
+                   (update 4 conj 5))
+               (sut/rclasses store1)))
+        (is (= (assoc entities 2 4 1 5) (sut/entities store1)))
+        (is (= (-> rentities
+                   (assoc 4 (b/bitmap [2]))
+                   (update 0 #(b/bitmap-del % 2))
+                   (assoc 5 (b/bitmap [1]))
+                   (assoc 1 (b/bitmap)))
+               (sut/rentities store1)))
+        (sut/close store1)))
+    ))
 
-(deftest map-resize-entity-class-test
+(deftest map-resize-encla-test
   (let [next-eid (volatile! 0)
         random-man
         (fn []
