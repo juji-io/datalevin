@@ -645,8 +645,7 @@ than just the difference in data durability and running mode:
   [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
   de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
 
-* Has a value leading index (VEA) for datoms with `:db.type/ref` type attribute;
-  The attribute and value leading index (AVE) is enabled for all datoms, so
+* The attribute and value leading index (AVE) is enabled for all datoms, so
   there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
   have AEV index, in order to save storage and improve write speed.
 

@@ -64,16 +64,16 @@
   (-> db
       (assoc :eavt (set/sorted-set-by d/cmp-datoms-eavt))
       (assoc :avet (set/sorted-set-by d/cmp-datoms-avet))
-      (assoc :veat (set/sorted-set-by d/cmp-datoms-veat))
+      (assoc :vaet (set/sorted-set-by d/cmp-datoms-vaet))
       (update :eavt transient)
       (update :avet transient)
-      (update :veat transient)))
+      (update :vaet transient)))
 
 (defn db-persistent! [db]
   (-> db
       (update :eavt persistent!)
       (update :avet persistent!)
-      (update :veat persistent!)))
+      (update :vaet persistent!)))
 
 (defprotocol Searchable
   (-searchable? [_]))
@@ -104,7 +104,7 @@
          (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
-(defrecord-updatable DB [^IStore store eavt avet veat max-eid max-tx hash]
+(defrecord-updatable DB [^IStore store eavt avet vaet max-eid max-tx hash]
 
   clojure.lang.IEditableCollection
   (empty [db]         (with-meta (empty-db (s/dir store) (s/schema store))
@@ -141,7 +141,7 @@
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/slice store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/slice store :vea (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-first
@@ -161,7 +161,7 @@
            (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/head store :vea (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-last
@@ -181,7 +181,7 @@
            (s/tail store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/tail store :ave (datom emax a v) (datom e0 a v)) ; _ a v
            (s/tail store :ave (datom emax a nil) (datom e0 a nil)) ; _ a _
-           (s/tail store :vea (datom emax nil v) (datom e0 nil v)) ; _ _ v
+           (s/tail store :vae (datom emax nil v) (datom e0 nil v)) ; _ _ v
            (s/tail store :eav (datom emax nil nil) (datom e0 nil nil))]))))
 
   (-count
@@ -201,7 +201,7 @@
            (s/size store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/size store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/size store :vea (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/size store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/datom-count store :eav)])))) ; _ _ _
 
   IIndexAccess
@@ -320,7 +320,7 @@
     {:store   store
      :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
      :avet    (set/sorted-set-by d/cmp-datoms-avet)
-     :veat    (set/sorted-set-by d/cmp-datoms-veat)
+     :vaet    (set/sorted-set-by d/cmp-datoms-vaet)
      :max-eid (s/init-max-eid store)
      :max-tx  tx0
      :hash    (atom 0)}))
@@ -372,8 +372,8 @@
     :eav  (resolve-datom db c0 c1 c2 c3 default-e default-tx)
     :avet (resolve-datom db c2 c0 c1 c3 default-e default-tx)
     :ave  (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    :veat (resolve-datom db c2 c1 c0 c3 default-e default-tx)
-    :vea  (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
+    :vaet (resolve-datom db c2 c1 c0 c3 default-e default-tx)
+    :vae  (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
 
 ;; ----------------------------------------------------------------------------
 
@@ -533,7 +533,7 @@
         (cond-> db
           true (update :eavt set/conj datom d/cmp-datoms-eavt-quick)
           true (update :avet set/conj datom d/cmp-datoms-avet-quick)
-          ref? (update :veat set/conj datom d/cmp-datoms-veat-quick)
+          ref? (update :vaet set/conj datom d/cmp-datoms-vaet-quick)
           true (advance-max-eid (.-e datom))
           true (assoc :hash (atom 0))))
       (if-some [removing (first
@@ -544,7 +544,7 @@
         (cond-> db
           true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
           true (update :avet set/disj datom d/cmp-datoms-avet-quick)
-          ref? (update :veat set/conj datom d/cmp-datoms-veat-quick)
+          ref? (update :vaet set/conj datom d/cmp-datoms-vaet-quick)
           true (assoc :hash (atom 0)))
         db))))
 
@@ -977,7 +977,7 @@
                                        (-search db [e])))
                           v-datoms (vec
                                      (concat
-                                       (set/slice (get db :veat)
+                                       (set/slice (get db :vaet)
                                                   (datom e0 nil e tx0)
                                                   (datom emax nil e txmax))
                                        (-search db [nil nil e])))]

@@ -141,7 +141,7 @@
   (when (and (not old) new)
     ;; TODO figure out if the attr values are unique for each entity,
     ;; raise if not
-    ;; also check if ave and vea entries exist for this attr, create if not
+    ;; also check if ave and vae entries exist for this attr, create if not
     ))
 
 (defn- migrate [lmdb attr old new]
@@ -178,8 +178,8 @@
     :eav  c/eav
     :avet c/ave
     :ave  c/ave
-    :veat c/vea
-    :vea  c/vea))
+    :vaet c/vae
+    :vae  c/vae))
 
 (defn- retrieved->datom
   [lmdb attrs [^Retrieved k ^long v :as kv]]
@@ -393,8 +393,7 @@
           (lmdb/open-transact-kv lmdb)
           (transact-datoms this ft-ds eids datoms)
           (lmdb/transact-kv lmdb [(time-tx)])
-          (update-encla this (persistent! @eids))
-          )
+          (update-encla this (persistent! @eids)))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
             (load-datoms this datoms)
@@ -545,10 +544,10 @@
         (cond-> [[:put c/eav i max-gt :eav :id]
                  [:put c/ave i max-gt :ave :id]
                  [:put c/giants max-gt d :id :datom [:append]]]
-          ref? (conj [:put c/vea i max-gt :vea :id])))
+          ref? (conj [:put c/vae i max-gt :vae :id])))
       (cond-> [[:put c/eav i c/normal :eav :id]
                [:put c/ave i c/normal :ave :id]]
-        ref? (conj [:put c/vea i c/normal :vea :id])))))
+        ref? (conj [:put c/vae i c/normal :vae :id])))))
 
 (defn- delete-datom
   [^Store store ^Datom d ft-ds]
@@ -562,7 +561,7 @@
     (when (props :db/fulltext) (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
-      ref? (conj [:del c/vea i :vea])
+      ref? (conj [:del c/vae i :vae])
       gt   (conj [:del c/giants gt :id]))))
 
 (defn- transact-datoms
@@ -623,20 +622,18 @@
 
 (defn- del-entity
   [updated-cids entities rentities eid]
-  (let [old-cid (@entities eid)]
-    (when old-cid
-      (vswap! rentities assoc old-cid (b/bitmap-del (@rentities old-cid) eid))
-      (vswap! updated-cids conj old-cid))
-    (vswap! entities dissoc eid)))
+  (when-let [old-cid (@entities eid)]
+    (vswap! rentities assoc old-cid (b/bitmap-del (@rentities old-cid) eid))
+    (vswap! updated-cids conj! old-cid))
+  (vswap! entities dissoc eid))
 
 (defn- adj-entity
   [updated-cids entities rentities eid new-cid]
   (let [old-cid (@entities eid)]
     (when (not= old-cid new-cid)
       (vswap! rentities
-              #(cond-> %
-                 true    (assoc new-cid
-                                (b/bitmap-add (% new-cid (b/bitmap)) eid))
+              #(cond-> (assoc % new-cid
+                              (b/bitmap-add (% new-cid (b/bitmap)) eid))
                  old-cid (assoc old-cid (b/bitmap-del (% old-cid) eid))))
       (vswap! entities assoc eid new-cid)
       (vswap! updated-cids conj! new-cid)
@@ -693,7 +690,7 @@
   [lmdb]
   (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
+  (lmdb/open-dbi lmdb c/vae c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
   (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/encla c/+id-bytes+)

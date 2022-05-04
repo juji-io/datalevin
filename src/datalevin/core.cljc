@@ -289,7 +289,7 @@ Only usable for debug output.
 (defn datoms
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
-   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
+   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
 
    Usage:
 
@@ -1275,7 +1275,7 @@ the `pred`.
   (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]
-    (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
+    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
 
@@ -1424,7 +1424,7 @@ one of the following data types:
   - `:attr`
   - `:eav`
   - `:ave`
-  - `:vea`"}
+  - `:vae`"}
   read-buffer b/read-buffer)
 
 (def ^{:arglists '([s])

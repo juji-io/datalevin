@@ -2,12 +2,15 @@
 
 ## WIP
 ## Added
-- Entity-class indices, a novel index type.
-- Query planner that takes advantage of entity-class indices.
+- EnCla indices, a novel index type for Datalog store. Also address #57.
+- Query planner that takes advantage of EnCla indices. #11
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
 - Allow passing LMDB option map as `:kv-opts` when `create-conn`
-- **Breaking** Change `:search-engine` key to `:search-opts` for consistency
+## Changed
+- [**Breaking**] Change `vea` index back to `vae` to facilitate query.
+- [**Breaking**] Change `:search-engine` key to `:search-opts` for consistency
+- [**Breaking**] Datalog data dump/load is required to upgraded to this release.
 
 ## 0.6.8
 ## Fixed

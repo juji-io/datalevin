@@ -50,13 +50,10 @@ An `encla` LMDB map will be used to store the `EnCla` index. The keys
 are the unique integer IDs of each entity class. The value of each entity class
 contains the following information:
 
-* `aids`, the map of attribute ids that define the entity class, to the
-  corresponding count of occurrences of the attribute
-* `eids`, the integer ids of the entities belonging to the entity class, represented
-  as a bitmap.
-* `links`, Entity classes are linked by `:db.type/ref` attributes, here we store the
-  destination entity classes reachable by this entity class, the corresponding
-  linking attributes and number of occurrences.
+* `aids`, the set of attribute ids that define the entity class
+* `eids`, entities ids belonging to the entity class, represented as a bitmap.
+* `refs`, the `:db.type/ref`destination entity classes, and
+  corresponding entity ids and attribute ids, stored in a sparse integer list.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
 into memory at system initialization. The index is built and kept up to date

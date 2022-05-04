@@ -56,10 +56,6 @@
 
 (def ^:const +id-bytes+ Long/BYTES)
 
-(def ^:const lmdb-data-types #{:data :string :int :long :id :float :double
-                               :byte :bytes :keyword :boolean :instant :uuid
-                               :datom :attr :eav :ave :vea})
-
 ;; value headers
 (def ^:const type-long-neg (unchecked-byte 0xC0))
 (def ^:const type-long-pos (unchecked-byte 0xC1))
@@ -95,13 +91,13 @@
 (def ^:const normal 0)
 (def ^:const gt0 1)
 
-(def ^:const index-types #{:eavt :eav :ave :avet :vea :veat})
+(def ^:const index-types #{:eavt :eav :ave :avet :vae :vaet})
 
 
 ;; dbi-names
 (def ^:const eav "datalevin/eav")
 (def ^:const ave "datalevin/ave")
-(def ^:const vea "datalevin/vea")
+(def ^:const vae "datalevin/vae")
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const encla "datalevin/encla")

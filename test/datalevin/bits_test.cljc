@@ -459,44 +459,44 @@
       (is (= a1 (.-a r)))
       (is (= v1 (.-v r))))))
 
-(defn- vea-test
+(defn- vae-test
   [v e1 a1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)
         _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :vea)
+        _               (sut/put-buffer bf d :vae)
         _               (.flip ^ByteBuffer bf)
         _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :vea)
+        _               (sut/put-buffer bf1 d1 :vae)
         _               (.flip ^ByteBuffer bf1)
         ^long  res      (bf-compare bf bf1)]
-    (if (= e e1)
-      (if (= a a1)
+    (if (= a a1)
+      (if (= e e1)
         (is (= res 0))
-        (if (< ^int a ^int a)
+        (if (< ^int e ^int e1)
           (is (< res 0))
           (is (> res 0))))
-      (if (< ^long e ^long e1)
+      (if (< ^long a ^long a1)
         (is (< res 0))
         (is (> res 0))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :vea)]
+    (let [^Retrieved r (sut/read-buffer bf :vae)]
       (is (= e (.-e r)))
       (is (= a (.-a r)))
       (is (= v (.-v r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :vea)]
+    (let [^Retrieved r (sut/read-buffer bf1 :vae)]
       (is (= e1 (.-e r)))
       (is (= a1 (.-a r)))
       (is (= v (.-v r))))))
 
-(test/defspec vea-generative-test
+(test/defspec vae-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v  (gen/large-integer* {:min c/e0})]
-    (vea-test v e1 a1
+    (vae-test v e1 a1
               (sut/indexable e a v :db.type/ref)
               (sut/indexable e1 a1 v :db.type/ref))))
 
@@ -513,7 +513,7 @@
                 (sut/indexable e a v' :db.type/instant)
                 (sut/indexable e1 a1 v1' :db.type/instant)))))
 
-(test/defspec instant-vea-generative-test
+(test/defspec instant-vae-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
