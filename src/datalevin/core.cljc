@@ -866,11 +866,11 @@ Only usable for debug output.
 ;; key value store API
 
 (def ^{:arglists '([kv])
-       :doc      "Key of a key value pair"}
+       :doc      "Key of a key value pair, a ByteBuffer"}
   k l/k)
 
 (def ^{:arglists '([kv])
-       :doc      "Value of a key value pair"}
+       :doc      "Value of a key value pair, a ByteBuffer"}
   v l/v)
 
 (defn open-kv

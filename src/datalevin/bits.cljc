@@ -534,7 +534,7 @@
   [^ByteBuffer bf ^long post-v]
   (symbol (get-key-sym-str bf post-v)))
 
-(defn- get-value
+(defn get-value
   [^ByteBuffer bf post-v]
   (.mark bf)
   (case (short (get-byte bf))

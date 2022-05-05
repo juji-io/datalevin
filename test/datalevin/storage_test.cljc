@@ -237,7 +237,12 @@
       (is (= [d] r)))))
 
 (deftest encla-test
-  (let [datoms    (map #(apply d/datom %)  [[1 :name  "Petr"]
+  (let [schema    {:name   {:db/unique :db.unique/identity}
+                   :aka    {:db/cardinality :db.cardinality/many}
+                   :child  {:db/valueType :db.type/ref}
+                   :father {:db/valueType :db.type/ref}
+                   :part   {:db/valueType :db.type/ref}}
+        datoms    (map #(apply d/datom %)  [[1 :name  "Petr"]
                                             [1 :aka   "Devil"]
                                             [1 :aka   "Tupen"]
                                             [2 :name  "David"]
@@ -305,15 +310,11 @@
                    3 (b/bitmap [2, 3, 6])}
         dir       (u/tmp-dir (str "datalevin-extract-encla-test-"
                                   (UUID/randomUUID)))
-        store     (sut/open dir)]
+        store     (sut/open dir schema)]
     (sut/load-datoms store datoms)
+    (is (= attrs (sut/attrs store)))
 
     (is (= n-datoms (sut/datom-count store :eav)))
-
-    (is (= attrs(sut/attrs store)))
-    (is (= #{} (sut/entity-attrs store 20)))
-    (is (= #{:name :aka :child} (sut/entity-attrs store 1)))
-    (is (= #{:name :father} (sut/entity-attrs store 2)))
 
     (is (= classes (sut/classes store)))
     (is (= rclasses (sut/rclasses store)))
@@ -322,8 +323,6 @@
     (is (= rentities (sut/rentities store)))
     (is (= (sut/entities store) (sut/rentities->entities (sut/rentities store))))
 
-    (let [aids (sut/attrs->aids store #{:name :aka})]
-      (is (= #{:name :aka} (set (sut/aids->attrs store aids)))))
     (sut/close store)
 
     (testing "load encla"

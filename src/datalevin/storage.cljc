@@ -6,8 +6,7 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [clojure.set :as set]
-            )
+            [clojure.set :as set])
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -43,6 +42,14 @@
                m (attr->properties key value)))
            m keys->values))
        (transient old-rschema) new-schema))))
+
+(defn- aids->attrs [attrs aids] (into #{} (map attrs) aids))
+
+(defn- attrs->aids
+  ([schema attrs]
+   (attrs->aids #{} schema attrs))
+  ([old-aids schema attrs]
+   (into old-aids (map #(-> % schema :db/aid)) attrs)))
 
 (defn- time-tx
   []
@@ -86,13 +93,19 @@
       (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
   (load-schema lmdb))
 
-(defn- init-attrs [schema]
+(defn- init-attrs
+  [schema]
   (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
 
-(defn- init-classes
+(defn- init-refs
+  [schema rschema]
+  (attrs->aids schema (rschema :db.type/ref)))
+
+(defn- init-encla
   [lmdb]
   (let [res (lmdb/get-range lmdb c/encla [:all] :id :data)]
     [(into {} (map (fn [[k v]] [k (first v)])) res)
+     (into {} (map (fn [[k v]] [k (second v)])) res)
      (into {} (map (fn [[k v]] [k (peek v)])) res)]))
 
 (defn classes->rclasses
@@ -104,7 +117,7 @@
        (fn [m cid aids]
          (reduce
            (fn [m aid]
-             (assoc! m aid (conj (get m aid #{}) cid)))
+             (assoc! m aid (conj (m aid #{}) cid)))
            m aids))
        (transient old-rclasses) new-classes))))
 
@@ -220,6 +233,7 @@
   (set-schema [this new-schema]
     "Update the schema of open storage, return updated schema")
   (attrs [this] "Return the aid -> attr map")
+  (refs [this])
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
   (classes [this] "Return the cid -> class map")
@@ -232,6 +246,8 @@
   (set-entities [this entities])
   (rentities [this])
   (set-rentities [this rentities])
+  (links [this])
+  (set-links [this links])
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (load-datoms [this datoms] "Load datams into storage")
@@ -270,12 +286,14 @@
                 opts
                 search-engine
                 ^:volatile-mutable attrs     ; aid -> attr
+                ^:volatile-mutable refs      ; set of ref aids
                 ^:volatile-mutable schema    ; attr -> props
                 ^:volatile-mutable rschema   ; prop -> attrs
                 ^:volatile-mutable classes   ; cid -> aids
                 ^:volatile-mutable rclasses  ; aid -> cids
-                ^:volatile-mutable entities  ; eid -> cids
+                ^:volatile-mutable entities  ; eid -> cid
                 ^:volatile-mutable rentities ; cid -> eids bitmap
+                ^:volatile-mutable links     ; e cid -> v cid -> v-eid/aid slist
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cid]
@@ -317,11 +335,15 @@
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
+    (set! refs (init-refs schema rschema))
     (set! max-aid (init-max-aid lmdb))
     schema)
 
   (attrs [_]
     attrs)
+
+  (refs [_]
+    refs)
 
   (init-max-eid [_]
     (or (when-let [[k v] (lmdb/get-first lmdb c/eav [:all-back] :eav :id)]
@@ -363,6 +385,12 @@
   (set-rentities [_ v]
     (set! rentities v))
 
+  (links [_]
+    links)
+
+  (set-links [_ v]
+    (set! links v))
+
   (swap-attr [this attr f]
     (swap-attr this attr f nil nil))
   (swap-attr [this attr f x]
@@ -382,7 +410,10 @@
       (transact-schema lmdb s)
       (set! schema (assoc schema attr p))
       (set! rschema (schema->rschema rschema s))
-      (set! attrs (assoc attrs (p :db/aid) attr))
+      (let [aid (p :db/aid)]
+        (set! attrs (assoc attrs aid attr))
+        (when (= :db.type/ref (p :db/valueType))
+          (set! refs (conj refs aid))))
       p))
 
   (load-datoms [this datoms]
@@ -573,34 +604,22 @@
                         (delete-datom store datom ft-ds)))
     (vswap! eids conj! (d/datom-e datom))))
 
-(defn- entity-aids
-  "Return the map of attribute ids of an entity to their occurrences"
-  [^Store store eid writing?]
-  (let [schema (schema store)
-        datom  (d/datom eid nil nil)
-        aids   (volatile! (transient #{}))]
-    (lmdb/visit (.-lmdb store) c/eav
-                #(vswap! aids conj! (b/read-buffer (lmdb/k %) :eav-a) )
+(defn- scan-entity
+  [lmdb schema refs eid]
+  (let [aids  (volatile! (transient #{}))
+        pairs (volatile! (transient []))
+        datom (d/datom eid nil nil)]
+    (lmdb/visit lmdb c/eav
+                #(let [eav (lmdb/k %)
+                       aid (b/read-buffer eav :eav-a)]
+                   (vswap! aids conj! aid)
+                   (when (refs aid)
+                     (vswap! pairs conj! [aid (b/get-value eav 1)])))
                 [:open
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
-                :eav-a writing?)
-    (persistent! @aids)))
-
-(defn aids->attrs
-  [store aids]
-  (let [attrs (attrs store)]
-    (set (map attrs aids))))
-
-(defn attrs->aids
-  [store attrs]
-  (let [schema (schema store)]
-    (set (map #(some-> % schema :db/aid) attrs))))
-
-(defn entity-attrs
-  "Return the set of attributes of an entity"
-  [^Store store eid]
-  (aids->attrs store (entity-aids store eid false)))
+                :eav-a true)
+    [(persistent! @aids) (persistent! @pairs)]))
 
 (defn- find-classes
   [rclasses aids]
@@ -640,22 +659,27 @@
       (when old-cid (vswap! updated-cids conj! old-cid)))))
 
 (defn- transact-encla
-  [lmdb classes rentities cids]
+  [lmdb classes rentities links cids]
   (lmdb/transact-kv
     lmdb
     (for [cid cids]
-      [:put c/encla cid [(classes cid) (rentities cid)] :id :data])))
+      [:put c/encla cid [(classes cid) (rentities cid) (links cid)]
+       :id :data])))
 
 (defn- update-encla
   [^Store store eids]
-  (let [classes      (volatile! (classes store))
+  (let [lmdb         (.-lmdb store)
+        schema       (schema store)
+        refs         (refs store)
+        classes      (volatile! (classes store))
         rclasses     (volatile! (rclasses store))
         entities     (volatile! (entities store))
         rentities    (volatile! (rentities store))
+        links        (volatile! (links store))
         max-cid      (volatile! (max-cid store))
         updated-cids (volatile! (transient #{}))]
     (doseq [eid  eids
-            :let [my-aids (entity-aids store eid true)]]
+            :let [[my-aids pairs] (scan-entity lmdb schema refs eid)]]
       (if (empty? my-aids)
         (del-entity updated-cids entities rentities eid)
         (let [cids (find-classes @rclasses my-aids)]
@@ -667,12 +691,12 @@
               (adj-entity updated-cids entities rentities eid cid)
               (adj-entity updated-cids entities rentities eid
                           (add-class max-cid classes rclasses my-aids)))))))
-    (transact-encla (.-lmdb store) @classes @rentities
-                    (persistent! @updated-cids))
+    (transact-encla lmdb @classes @rentities @links (persistent! @updated-cids))
     (set-classes store @classes)
     (set-rclasses store @rclasses)
     (set-entities store @entities)
     (set-rentities store @rentities)
+    (set-links store @links)
     (set-max-cid store @max-cid)))
 
 (defn- transact-opts
@@ -710,18 +734,21 @@
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
-     (let [schema              (init-schema lmdb schema)
-           [classes rentities] (init-classes lmdb)]
+     (let [schema                    (init-schema lmdb schema)
+           rschema                   (schema->rschema schema)
+           [classes rentities links] (init-encla lmdb)]
        (->Store lmdb
                 (load-opts lmdb)
                 (s/new-search-engine lmdb search-opts)
                 (init-attrs schema)
+                (init-refs schema rschema)
                 schema
-                (schema->rschema schema)
+                rschema
                 classes
                 (classes->rclasses classes)
                 (rentities->entities rentities)
                 rentities
+                links
                 (init-max-aid lmdb)
                 (init-max-gt lmdb)
                 (init-max-cid lmdb))))))
