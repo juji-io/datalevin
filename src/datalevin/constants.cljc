@@ -91,13 +91,13 @@
 (def ^:const normal 0)
 (def ^:const gt0 1)
 
-(def ^:const index-types #{:eavt :eav :ave :avet :vae :vaet})
+(def ^:const index-types #{:eavt :eav :ave :avet})
 
 
 ;; dbi-names
 (def ^:const eav "datalevin/eav")
 (def ^:const ave "datalevin/ave")
-(def ^:const vae "datalevin/vae")
+(def ^:const links "datalevin/links")
 (def ^:const giants "datalevin/giants")
 (def ^:const schema "datalevin/schema")
 (def ^:const encla "datalevin/encla")

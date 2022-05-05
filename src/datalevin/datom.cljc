@@ -223,13 +223,6 @@
     (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
     (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-vaet [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (nil-cmp-type (.-v d1) (.-v d2))
-    (nil-cmp (.-a d1) (.-a d2))
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
-
 ;; fast versions without nil checks
 
 (defn cmp-attr-quick [a1 a2]
@@ -252,13 +245,6 @@
   (combine-cmp
     (cmp-attr-quick (.-a d1) (.-a d2))
     (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
-
-(defn cmp-datoms-vaet-quick [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (compare-with-type (.-v d1) (.-v d2))
-    (cmp-attr-quick (.-a d1) (.-a d2))
     (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
     (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
 

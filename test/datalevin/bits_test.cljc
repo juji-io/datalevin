@@ -459,47 +459,6 @@
       (is (= a1 (.-a r)))
       (is (= v1 (.-v r))))))
 
-(defn- vae-test
-  [v e1 a1 ^Indexable d ^Indexable d1]
-  (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
-        ^ByteBuffer bf1 (sut/allocate-buffer 16384)
-        _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :vae)
-        _               (.flip ^ByteBuffer bf)
-        _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :vae)
-        _               (.flip ^ByteBuffer bf1)
-        ^long  res      (bf-compare bf bf1)]
-    (if (= a a1)
-      (if (= e e1)
-        (is (= res 0))
-        (if (< ^int e ^int e1)
-          (is (< res 0))
-          (is (> res 0))))
-      (if (< ^long a ^long a1)
-        (is (< res 0))
-        (is (> res 0))))
-    (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :vae)]
-      (is (= e (.-e r)))
-      (is (= a (.-a r)))
-      (is (= v (.-v r))))
-    (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :vae)]
-      (is (= e1 (.-e r)))
-      (is (= a1 (.-a r)))
-      (is (= v (.-v r))))))
-
-(test/defspec vae-generative-test
-  100
-  (prop/for-all
-    [e1 (gen/large-integer* {:min c/e0})
-     a1 gen/nat
-     v  (gen/large-integer* {:min c/e0})]
-    (vae-test v e1 a1
-              (sut/indexable e a v :db.type/ref)
-              (sut/indexable e1 a1 v :db.type/ref))))
-
 (test/defspec instant-eav-generative-test
   100
   (prop/for-all
@@ -510,19 +469,6 @@
     (let [v'  (Date. ^long v)
           v1' (Date. ^long v1)]
       (eav-test v' e1 a1 v1'
-                (sut/indexable e a v' :db.type/instant)
-                (sut/indexable e1 a1 v1' :db.type/instant)))))
-
-(test/defspec instant-vae-generative-test
-  100
-  (prop/for-all
-    [e1 (gen/large-integer* {:min c/e0})
-     a1 gen/nat
-     v1 gen/int
-     v gen/int]
-    (let [v'  (Date. ^long v)
-          v1' (Date. ^long v1)]
-      (ave-test v' e1 a1 v1'
                 (sut/indexable e a v' :db.type/instant)
                 (sut/indexable e1 a1 v1' :db.type/instant)))))
 

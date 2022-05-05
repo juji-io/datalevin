@@ -515,7 +515,7 @@
   ;; doc-id -> norm,doc-ref
   (l/open-dbi lmdb c/docs Integer/BYTES)
   ;; term-id,doc-id -> position,offset (list)
-  (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) c/+max-key-size+))
+  (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) (* 2 Integer/BYTES)))
 
 (defn new-search-engine
   ([lmdb]

@@ -64,16 +64,13 @@
   (-> db
       (assoc :eavt (set/sorted-set-by d/cmp-datoms-eavt))
       (assoc :avet (set/sorted-set-by d/cmp-datoms-avet))
-      (assoc :vaet (set/sorted-set-by d/cmp-datoms-vaet))
       (update :eavt transient)
-      (update :avet transient)
-      (update :vaet transient)))
+      (update :avet transient)))
 
 (defn db-persistent! [db]
   (-> db
       (update :eavt persistent!)
-      (update :avet persistent!)
-      (update :vaet persistent!)))
+      (update :avet persistent!)))
 
 (defprotocol Searchable
   (-searchable? [_]))
@@ -104,7 +101,7 @@
          (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
-(defrecord-updatable DB [^IStore store eavt avet vaet max-eid max-tx hash]
+(defrecord-updatable DB [^IStore store eavt avet max-eid max-tx hash]
 
   clojure.lang.IEditableCollection
   (empty [db]         (with-meta (empty-db (s/dir store) (s/schema store))
@@ -141,7 +138,10 @@
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/slice store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/slice-filter store :eav
+                           (fn [^Datom d] (= v (.-v d)))
+                           (datom e0 nil v)
+                           (datom emax nil v))  ; _ _ v
            (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-first
@@ -161,7 +161,10 @@
            (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/head-filter store :eav
+                          (fn [^Datom d] (= v (.-v d)))
+                          (datom e0 nil v)
+                          (datom emax nil v))  ; _ _ v
            (s/head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-last
@@ -181,7 +184,10 @@
            (s/tail store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/tail store :ave (datom emax a v) (datom e0 a v)) ; _ a v
            (s/tail store :ave (datom emax a nil) (datom e0 a nil)) ; _ a _
-           (s/tail store :vae (datom emax nil v) (datom e0 nil v)) ; _ _ v
+           (s/tail-filter store :eav
+                          (fn [^Datom d] (= v (.-v d)))
+                          (datom e0 nil v)
+                          (datom emax nil v))  ; _ _ v
            (s/tail store :eav (datom emax nil nil) (datom e0 nil nil))]))))
 
   (-count
@@ -201,7 +207,10 @@
            (s/size store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/size store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/size store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/size-filter store :eav
+                          (fn [^Datom d] (= v (.-v d)))
+                          (datom e0 nil v)
+                          (datom emax nil v))  ; _ _ v
            (s/datom-count store :eav)])))) ; _ _ _
 
   IIndexAccess
@@ -320,7 +329,6 @@
     {:store   store
      :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
      :avet    (set/sorted-set-by d/cmp-datoms-avet)
-     :vaet    (set/sorted-set-by d/cmp-datoms-vaet)
      :max-eid (s/init-max-eid store)
      :max-tx  tx0
      :hash    (atom 0)}))
@@ -371,9 +379,7 @@
     :eavt (resolve-datom db c0 c1 c2 c3 default-e default-tx)
     :eav  (resolve-datom db c0 c1 c2 c3 default-e default-tx)
     :avet (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    :ave  (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    :vaet (resolve-datom db c2 c1 c0 c3 default-e default-tx)
-    :vae  (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
+    :ave  (resolve-datom db c2 c0 c1 c3 default-e default-tx)))
 
 ;; ----------------------------------------------------------------------------
 
@@ -530,22 +536,20 @@
     (if (datom-added datom)
       (do
         (validate-datom db datom)
-        (cond-> db
-          true (update :eavt set/conj datom d/cmp-datoms-eavt-quick)
-          true (update :avet set/conj datom d/cmp-datoms-avet-quick)
-          ref? (update :vaet set/conj datom d/cmp-datoms-vaet-quick)
-          true (advance-max-eid (.-e datom))
-          true (assoc :hash (atom 0))))
+        (-> db
+            (update :eavt set/conj datom d/cmp-datoms-eavt-quick)
+            (update :avet set/conj datom d/cmp-datoms-avet-quick)
+            (advance-max-eid (.-e datom))
+            (assoc :hash (atom 0))))
       (if-some [removing (first
                            (set/slice
                              (get db :eavt)
                              (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
                              (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))]
-        (cond-> db
-          true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
-          true (update :avet set/disj datom d/cmp-datoms-avet-quick)
-          ref? (update :vaet set/conj datom d/cmp-datoms-vaet-quick)
-          true (assoc :hash (atom 0)))
+        (-> db
+            (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
+            (update :avet set/disj datom d/cmp-datoms-avet-quick)
+            (assoc :hash (atom 0)))
         db))))
 
 (defn- transact-report [report datom]
@@ -975,11 +979,13 @@
                                                   (datom e nil nil tx0)
                                                   (datom e nil nil txmax))
                                        (-search db [e])))
+                          ;; TODO replace by Links op
                           v-datoms (vec
                                      (concat
-                                       (set/slice (get db :vaet)
-                                                  (datom e0 nil e tx0)
-                                                  (datom emax nil e txmax))
+                                       (filter #(= (.-v ^Datom %) e)
+                                               (set/slice (get db :eavt)
+                                                          (datom e0 nil e tx0)
+                                                          (datom emax nil e txmax)))
                                        (-search db [nil nil e])))]
                       (recur (reduce transact-retract-datom report (concat e-datoms v-datoms))
                              (concat (retract-components db e-datoms) entities)))

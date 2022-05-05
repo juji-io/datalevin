@@ -2,11 +2,11 @@
 
 ## Motivation
 
-One of the main reasons for people to use Datalog stores is to use their
-declarative and composible query language. The simple and elegant query is
-often backed-up by the flexible triple store. However, it is a well-know
-problem that querying a triple store is slow compared to RDBMS that stores data
-in rows or columns.
+One of the main reasons for people to use Datomic-like Datalog stores is to use
+their declarative and composible query language. The simple and elegant query is
+often backed-up by a flexible triple store. However, it is a well-know problem
+that querying a triple store is slow compared to RDBMS that stores data in rows
+or columns.
 
 Datalevin faces the same problem. Currently it mostly inherits Datascript query
 engine, which fetches all the data that matches each *individual* triple
@@ -18,8 +18,7 @@ added a few simple query optimizations, it is far from solving the problems.
 
 To address these problems, we are developing a new query engine based on the
 latest research findings and some of our own ideas. We will leverage
-some unique properties of Datomic-like stores to develop a new index, and a
-new query engine to utilize this new index.
+some unique properties of Datomic-like stores to develop new indices.
 
 ## Difference from RDF Stores
 
@@ -39,27 +38,34 @@ attributes for a class of entities are often unique. There are overlapping
 attributes shared by multiple entity classes, but they are rare. Therefore,
 leveraging grouping of attributes could have greater benefits.
 
-## New index: `EnCla`
+## New indices: `EnCla` and `Links`
 
-Based on these observations, we introduce a new type of indices, what we call
-an `EnCla` index, short for Entity Classes. Similar to characteristic sets [4]
-in RDF stores or tables in RDBMS, this concept captures the defining
-combination of attributes for a class of entities.
+Based on these observations, we introduce two new types of indices. The first is
+what we call an `EnCla` index, short for Entity Classes. Similar to
+characteristic sets [4] in RDF stores or tables in RDBMS, this concept captures
+the defining combination of attributes for a class of entities.
 
 An `encla` LMDB map will be used to store the `EnCla` index. The keys
 are the unique integer IDs of each entity class. The value of each entity class
 contains the following information:
 
 * `aids`, the set of attribute ids that define the entity class
-* `eids`, entities ids belonging to the entity class, represented as a bitmap.
-* `refs`, the `:db.type/ref`destination entity classes, and
-  corresponding entity ids and attribute ids, stored in a sparse integer list.
+* `eids`, entity ids belonging to the entity class, represented as a bitmap.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
-into memory at system initialization. The index is built and kept up to date
-with new data during transaction. We pay a small price in transaction processing time
-(about 30% slower) and a slightly larger memory footprint, but gain orders of
-magnitude query speedup.
+into memory at system initialization and updated during system run.
+
+In Datomic-like stores, `:db.type/ref` triples provide links between two entity
+classes. Such links are important for simplifying query graph [2] [3]. We stored
+them in a `Links` index, an inverted list mapping the pair of entity class ids
+to the list of triples belonging to it. This index also replaces the `vea` index
+that we had.
+
+Compared with research literature [2] [3] [4], we build these indices online and
+kept them up to date with new data during transactions. We pay a small price in
+transaction processing time (about 30% slower) and a slightly larger memory
+footprint, but gain orders of magnitude query speedup. As far as we know, we are
+the first production system to do so.
 
 ## Query Optimizations
 
@@ -81,20 +87,20 @@ values in a single index scan for star-like attributes.
 
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the planner works mainly on the simplified graph that consists of stars and
-links between them [2] [3]. This significantly reduces search space.
+links between them [2] [3]. This significantly reduces the size of search space.
 
-### A* search style optimizer (new)
+### Search style optimizer (new)
 
 As a break from the traditional Selinger style optimizer [5], where
 dynamic programming (DP) query planning is done ahead of query execution, our
-query engine does planning and execution at the same time with A* search.
-This search style execution avoids filling in the full DP table.
+query engine does planning and execution at the same time as a shortest path
+graph search. This avoids filling the DP table in full.
 
 ### Predicates push-down
 
-In Datomic-like stores, the values are stored as they are. It is important to
-push down predicates on values into indexing access methods in order to minimize
-unnecessary intermediate results.
+In Datomic-like stores, the values are stored as they are, instead of as integer
+ids like in RDF stores. It is possible to push predicates on values down into
+indexing access methods in order to minimize unnecessary intermediate results.
 
 ## Benchmark
 

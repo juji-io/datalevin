@@ -154,7 +154,7 @@
   (when (and (not old) new)
     ;; TODO figure out if the attr values are unique for each entity,
     ;; raise if not
-    ;; also check if ave and vae entries exist for this attr, create if not
+    ;; also check if ave entries exist for this attr, create if not
     ))
 
 (defn- migrate [lmdb attr old new]
@@ -179,7 +179,9 @@
         (b/indexable e c/a0 c/v0 nil))
       (if-some [v (.-v d)]
         (if (integer? v)
-          (b/indexable e am v :db.type/ref)
+          (if e
+            (b/indexable e am v :db.type/ref)
+            (b/indexable (if high? c/emax c/e0) am v :db.type/ref))
           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
                    {:v v}))
         (b/indexable e am vm :db.type/sysMin)))))
@@ -190,9 +192,7 @@
     :eavt c/eav
     :eav  c/eav
     :avet c/ave
-    :ave  c/ave
-    :vaet c/vae
-    :vae  c/vae))
+    :ave  c/ave))
 
 (defn- retrieved->datom
   [lmdb attrs [^Retrieved k ^long v :as kv]]
@@ -280,7 +280,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare transact-datoms update-encla)
+(declare transact-datoms update-encla update-links)
 
 (deftype Store [lmdb
                 opts
@@ -417,14 +417,16 @@
       p))
 
   (load-datoms [this datoms]
-    (let [ft-ds (volatile! (transient []))
-          eids  (volatile! (transient #{}))]
+    (let [ft-ds  (volatile! (transient []))
+          ref-ds (volatile! (transient []))
+          eids   (volatile! (transient #{}))]
       (try
         (locking (lmdb/write-txn lmdb)
           (lmdb/open-transact-kv lmdb)
-          (transact-datoms this ft-ds eids datoms)
+          (transact-datoms this ref-ds ft-ds eids datoms)
           (lmdb/transact-kv lmdb [(time-tx)])
-          (update-encla this (persistent! @eids)))
+          (update-encla this (persistent! @eids))
+          (update-links this (persistent! @ref-ds)))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
             (load-datoms this datoms)
@@ -561,47 +563,43 @@
         :id))))
 
 (defn- insert-datom
-  [^Store store ^Datom d ft-ds]
-  (let [attr  (.-a d)
-        props (or ((schema store) attr)
-                  (swap-attr store attr identity))
-        ref?  (= :db.type/ref (props :db/valueType))
-        i     (b/indexable (.-e d) (props :db/aid) (.-v d)
-                           (props :db/valueType))]
-    (when (props :db/fulltext) (vswap! ft-ds conj! [:a d]))
+  [^Store store ^Datom d ref-ds ft-ds]
+  (let [[e attr v] (d/datom-eav d)
+        {:keys [db/valueType db/aid db/fulltext]}
+        (or ((schema store) attr) (swap-attr store attr identity))
+        i          (b/indexable e aid v valueType)]
+    (when (= :db.type/ref valueType) (vswap! ref-ds conj! [:a e aid v]))
+    (when fulltext (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
       (let [max-gt (max-gt store)]
         (advance-max-gt store)
-        (cond-> [[:put c/eav i max-gt :eav :id]
-                 [:put c/ave i max-gt :ave :id]
-                 [:put c/giants max-gt d :id :datom [:append]]]
-          ref? (conj [:put c/vae i max-gt :vae :id])))
-      (cond-> [[:put c/eav i c/normal :eav :id]
-               [:put c/ave i c/normal :ave :id]]
-        ref? (conj [:put c/vae i c/normal :vae :id])))))
+        [[:put c/eav i max-gt :eav :id]
+         [:put c/ave i max-gt :ave :id]
+         [:put c/giants max-gt d :id :datom [:append]]])
+      [[:put c/eav i c/normal :eav :id]
+       [:put c/ave i c/normal :ave :id]])))
 
 (defn- delete-datom
-  [^Store store ^Datom d ft-ds]
-  (let [props  ((schema store) (.-a d))
-        ref?   (= :db.type/ref (props :db/valueType))
-        i      (b/indexable (.-e d) (props :db/aid) (.-v d)
-                            (props :db/valueType))
-        giant? (b/giant? i)
-        gt     (when giant?
-                 (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (when (props :db/fulltext) (vswap! ft-ds conj! [:d d]))
+  [^Store store ^Datom d ref-ds ft-ds]
+  (let [[e attr v] (d/datom-eav d)
+        {:keys [db/valueType db/aid db/fulltext]}
+        ((schema store) attr)
+        i          (b/indexable e aid v valueType)
+        gt         (when (b/giant? i)
+                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
+    (when (= :db.type/ref valueType) (vswap! ref-ds conj! [:d e aid v]))
+    (when fulltext (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
-      ref? (conj [:del c/vae i :vae])
-      gt   (conj [:del c/giants gt :id]))))
+      gt (conj [:del c/giants gt :id]))))
 
 (defn- transact-datoms
-  [^Store store ft-ds eids datoms]
+  [^Store store ref-ds ft-ds eids datoms]
   (doseq [datom datoms]
     (lmdb/transact-kv (.-lmdb store)
                       (if (d/datom-added datom)
-                        (insert-datom store datom ft-ds)
-                        (delete-datom store datom ft-ds)))
+                        (insert-datom store datom ref-ds ft-ds)
+                        (delete-datom store datom ref-ds ft-ds)))
     (vswap! eids conj! (d/datom-e datom))))
 
 (defn- scan-entity
@@ -699,6 +697,9 @@
     (set-links store @links)
     (set-max-cid store @max-cid)))
 
+(defn- update-links
+  [^Store store ref-ds])
+
 (defn- transact-opts
   [lmdb opts]
   (lmdb/transact-kv lmdb
@@ -712,13 +713,13 @@
 
 (defn- open-dbis
   [lmdb]
+  (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
   (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/vae c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/encla c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
+  (lmdb/open-inverted-list lmdb c/links (* 3 Integer/BYTES) (* 2 Long/BYTES))
+  (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
 
 (defn open

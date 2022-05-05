@@ -289,7 +289,7 @@ Only usable for debug output.
 (defn datoms
   "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
-   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
+   Datoms are sorted in index sort order. Possible `index` values are: `:eav` and `:ave`.
 
    Usage:
 
@@ -1275,7 +1275,7 @@ the `pred`.
   (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]
-    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema]]
+    (doseq [dbi [c/eav c/ave c/links c/encla c/giants c/schema c/meta c/opts]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
 
@@ -1417,14 +1417,7 @@ one of the following data types:
   - `:boolean`, `true` or `false`
   - `:instant`, timestamp, same as `java.util.Date`
   - `:uuid`, UUID, same as `java.util.UUID`
-
-  or one of the following Datalog specific data types
-
-  - `:datom`
-  - `:attr`
-  - `:eav`
-  - `:ave`
-  - `:vae`"}
+  "}
   read-buffer b/read-buffer)
 
 (def ^{:arglists '([s])

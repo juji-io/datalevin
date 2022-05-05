@@ -2,15 +2,15 @@
 
 ## WIP
 ## Added
-- EnCla indices, a novel index type for Datalog store. Also address #57.
-- Query planner that takes advantage of EnCla indices. #11
+- EnCla index, a novel index for Datalog store. Also address #57.
+- Links index, a novel index for Datalog store.
+- Query planner that utilizes EnCla and Links indices. #11
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
 - Allow passing LMDB option map as `:kv-opts` when `create-conn`
 ## Changed
-- [**Breaking**] Change `vea` index back to `vae` to facilitate query.
+- [**Breaking**] Remove `vea` index, its functionality is replaced by Links.
 - [**Breaking**] Change `:search-engine` key to `:search-opts` for consistency
-- [**Breaking**] Datalog data dump/load is required to upgraded to this release.
 
 ## 0.6.8
 ## Fixed
