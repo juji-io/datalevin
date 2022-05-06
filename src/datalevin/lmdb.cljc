@@ -39,16 +39,30 @@
   (del-list-items
     [db list-name k k-type]
     [db list-name k vs k-type v-type]
-    "delete an inverted list by key")
-  (get-list [db list-name k k-type v-type] "get a list by key")
-  (visit-list [db list-name visitor k k-type]
+    "delete an inverted list or its items by key")
+  (get-list
+    [db list-name k k-type v-type]
+    [db list-name k k-type v-type writing?]
+    "get a list by key")
+  (visit-list
+    [db list-name visitor k k-type]
+    [db list-name visitor k k-type writing?]
     "visit a list, presumably for side effects")
-  (list-count [db list-name k k-type]
+  (list-count
+    [db list-name k k-type]
+    [db list-name k k-type writing?]
     "get the number of items in the inverted list")
-  (filter-list [db list-name k pred k-type v-type] "predicate filtered items of a list")
-  (filter-list-count [db list-name k pred k-type]
+  (filter-list
+    [db list-name k pred k-type v-type]
+    [db list-name k pred k-type v-type writing?]
+    "predicate filtered items of a list")
+  (filter-list-count
+    [db list-name k pred k-type]
+    [db list-name k pred k-type writing?]
     "get the count of predicate filtered items of a list")
-  (in-list? [db list-name k v k-type v-type]
+  (in-list?
+    [db list-name k v k-type v-type]
+    [db list-name k v k-type v-type writing?]
     "return true if an item is in an inverted list"))
 
 (defprotocol ILMDB

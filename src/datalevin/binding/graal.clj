@@ -707,47 +707,59 @@
 
   IInvertedList
   (put-list-items [this dbi-name k vs kt vt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)
-            ^Txn txn (Txn/create env)]
-        (.put-key dbi k kt)
-        (doseq [v vs]
-          (.put-val dbi v vt)
-          (.put dbi txn))
-        (.commit txn)
-        :transacted)
-      (catch Exception e
-        (raise "Fail to put an inverted list: " (ex-message e) {}))))
+    (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
 
   (del-list-items [this dbi-name k kt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)
-            ^Txn txn (Txn/create env)]
-        (.put-key dbi k kt)
-        (.del dbi txn)
-        (.commit txn)
-        :transacted)
-      (catch Exception e
-        (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+    (.transact-kv this [[:del dbi-name k kt]]))
   (del-list-items [this dbi-name k vs kt vt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)
-            ^Txn txn (Txn/create env)]
-        (.put-key dbi k kt)
-        (doseq [v vs]
-          (.put-val dbi v vt)
-          (.del dbi txn false))
-        (.commit txn)
-        :transacted)
-      (catch Exception e
-        (raise "Fail to delete items from an inverted list: "
-               (ex-message e) {}))))
+    (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
+
+  ;; (put-list-items [this dbi-name k vs kt vt]
+  ;;   (try
+  ;;     (let [^DBI dbi (.get-dbi this dbi-name false)
+  ;;           ^Txn txn (Txn/create env)]
+  ;;       (.put-key dbi k kt)
+  ;;       (doseq [v vs]
+  ;;         (.put-val dbi v vt)
+  ;;         (.put dbi txn))
+  ;;       (.commit txn)
+  ;;       :transacted)
+  ;;     (catch Exception e
+  ;;       (raise "Fail to put an inverted list: " (ex-message e) {}))))
+
+  ;; (del-list-items [this dbi-name k kt]
+  ;;   (try
+  ;;     (let [^DBI dbi (.get-dbi this dbi-name false)
+  ;;           ^Txn txn (Txn/create env)]
+  ;;       (.put-key dbi k kt)
+  ;;       (.del dbi txn)
+  ;;       (.commit txn)
+  ;;       :transacted)
+  ;;     (catch Exception e
+  ;;       (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+  ;; (del-list-items [this dbi-name k vs kt vt]
+  ;;   (try
+  ;;     (let [^DBI dbi (.get-dbi this dbi-name false)
+  ;;           ^Txn txn (Txn/create env)]
+  ;;       (.put-key dbi k kt)
+  ;;       (doseq [v vs]
+  ;;         (.put-val dbi v vt)
+  ;;         (.del dbi txn false))
+  ;;       (.commit txn)
+  ;;       :transacted)
+  ;;     (catch Exception e
+  ;;       (raise "Fail to delete items from an inverted list: "
+  ;;              (ex-message e) {}))))
 
   (get-list [this dbi-name k kt vt]
+    (.get-list this dbi-name k kt vt false))
+  (get-list [this dbi-name k kt vt writing?]
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
+            ^Rtx rtx    (if writing?
+                          @(.write-txn this)
+                          (.get-rtx this))
+            ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn) ]
         (try
           (.put-start-key rtx k kt)
@@ -771,14 +783,21 @@
           (catch Exception e
             (raise "Fail to get inverted list: " (ex-message e)
                    {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))))
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.visit-list this dbi-name visitor k kt false))
+  (visit-list [this dbi-name visitor k kt writing?]
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
+            ^Rtx rtx    (if writing?
+                          @(.write-txn this)
+                          (.get-rtx this))
+            ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
           (.put-start-key rtx k kt)
@@ -800,14 +819,21 @@
           (catch Exception e
             (raise "Fail to visit inverted list: " (ex-message e)
                    {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))))
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))))
 
   (list-count [this dbi-name k kt]
+    (.list-count this dbi-name k kt false))
+  (list-count [this dbi-name k kt writing?]
     (if k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
+            ^Rtx rtx    (if writing?
+                          @(.write-txn this)
+                          (.get-rtx this))
+            ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
           (.put-start-key rtx k kt)
@@ -822,14 +848,21 @@
           (catch Exception e
             (raise "Fail to get count of inverted list: " (ex-message e)
                    {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))
       0))
 
-  (filter-list [this dbi-name k pred kt vt]
+  (filter-list [this dbi-name k pred k-type v-type]
+    (.filter-list this dbi-name k pred k-type v-type false))
+  (filter-list [this dbi-name k pred kt vt writing?]
     (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
+          ^Rtx rtx    (if writing?
+                        @(.write-txn this)
+                        (.get-rtx this))
+          ^Txn txn    (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
         (.put-start-key rtx k kt)
@@ -857,13 +890,20 @@
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
                  {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+        (finally
+          (if (.isReadOnly txn)
+            (.return-cursor dbi cur)
+            (.close cur))
+          (.return-rtx this rtx)))))
 
-  (filter-list-count [this dbi-name k pred kt]
+  (filter-list-count [this dbi-name k pred k-type]
+    (.filter-list-count this dbi-name k pred k-type false))
+  (filter-list-count [this dbi-name k pred kt writing?]
     (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
+          ^Rtx rtx    (if writing?
+                        @(.write-txn this)
+                        (.get-rtx this))
+          ^Txn txn    (.-txn rtx)
           ^Cursor cur (.get-cursor dbi txn)]
       (try
         (.put-start-key rtx k kt)
@@ -890,14 +930,21 @@
         (catch Exception e
           (raise "Fail to get count of inverted list: " (ex-message e)
                  {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+        (finally
+          (if (.isReadOnly txn)
+            (.return-cursor dbi cur)
+            (.close cur))
+          (.return-rtx this rtx)))))
 
   (in-list? [this dbi-name k v kt vt]
+    (.in-list? this dbi-name k v kt vt false))
+  (in-list? [this dbi-name k v kt vt writing?]
     (if (and k v)
       (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
+            ^Rtx rtx    (if writing?
+                          @(.write-txn this)
+                          (.get-rtx this))
+            ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
           (.put-start-key rtx k kt)
@@ -910,10 +957,12 @@
           (catch Exception e
             (raise "Fail to test if an item is in an inverted list: "
                    (ex-message e) {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))
-      false))
-  )
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))
+      false)))
 
 (defmethod open-kv :graal
   ([dir]

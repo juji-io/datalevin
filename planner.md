@@ -45,24 +45,27 @@ what we call an `EnCla` index, short for Entity Classes. Similar to
 characteristic sets [4] in RDF stores or tables in RDBMS, this concept captures
 the defining combination of attributes for a class of entities.
 
-A LMDB map will be used to store the `EnCla` index. The keys
+A LMDB map is used to store the `EnCla` index. The keys
 are the IDs of each entity class. The value contains the following information:
 
 * The set of attribute ids that define an encla.
-* The entity ids belong to an encla.
+* The entity ids belonging to an encla.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
 into memory at system initialization and updated during system run.
 
 In Datomic-like stores, `:db.type/ref` triples provide links between two entity
-classes. Such links are important for simplifying query graph [2] [3]. We stored
-them in a LMDB map. They keys are the link IDs. The value contains:
+classes. Such links are important for simplifying query graph [2] [3]. We store
+them in a LMDB dupsort map:
 
-* Definition of the link: source encla id, target encla id, and the ref attribute id.
-* A mapping of source entity ids to target entity ids of the link.
+* Keys are link definitions: source encla id, target encla id, and the
+  ref attribute id.
+* Values are the pairs of source entity ids and target entity ids of the link.
 
-Unlike previous research work [2] [3] [4], we build these indices online and
-kept them up to date with new data during transactions. We pay a small price in
+`Links` index also replaces `vea` triple ordering index.
+
+Unlike previous research [2] [3] [4], we build these indices online and kept
+them up to date with new data during transactions. We pay a small price in
 transaction processing time (about 30% slower) and a slightly larger memory
 footprint, but gain orders of magnitude query speedup. As far as we know, we are
 the first production system to do so.
@@ -80,7 +83,7 @@ innovation.
 
 ### Pivot scan
 
-`EnCla` also allows us to use pivot scan [1] that returns multiple attribute
+`EnCla` also enables us to use pivot scan [1] that returns multiple attribute
 values in a single index scan for star-like attributes.
 
 ### Query graph simplification
@@ -114,7 +117,7 @@ retrieval in RDF triple stores." CIKM. 2011.
 [2] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[3] Meimaris, Marios, et al. "Extended characteristic sets: graph indexing for
+[3] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
 [4] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
