@@ -105,7 +105,6 @@
   [lmdb]
   (let [res (lmdb/get-range lmdb c/encla [:all] :id :data)]
     [(into {} (map (fn [[k v]] [k (first v)])) res)
-     (into {} (map (fn [[k v]] [k (second v)])) res)
      (into {} (map (fn [[k v]] [k (peek v)])) res)]))
 
 (defn classes->rclasses
@@ -417,16 +416,14 @@
       p))
 
   (load-datoms [this datoms]
-    (let [ft-ds  (volatile! (transient []))
-          ref-ds (volatile! (transient []))
-          eids   (volatile! (transient #{}))]
+    (let [ft-ds (volatile! (transient []))]
       (try
         (locking (lmdb/write-txn lmdb)
           (lmdb/open-transact-kv lmdb)
-          (transact-datoms this ref-ds ft-ds eids datoms)
-          (lmdb/transact-kv lmdb [(time-tx)])
-          (update-encla this (persistent! @eids))
-          (update-links this (persistent! @ref-ds)))
+          (->> (transact-datoms this ft-ds datoms)
+               (update-encla this)
+               (update-links this))
+          (lmdb/transact-kv lmdb [(time-tx)]))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
             (load-datoms this datoms)
@@ -436,27 +433,20 @@
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)
-          (when-some [kv (lmdb/get-value lmdb
-                                         c/eav
+          (when-some [kv (lmdb/get-value lmdb c/eav
                                          (datom->indexable schema datom false)
-                                         :eav
-                                         :id
-                                         false)]
+                                         :eav :id false)]
             [kv])))
 
   (populated? [_ index low-datom high-datom]
-    (lmdb/get-first lmdb
-                    (index->dbi index)
+    (lmdb/get-first lmdb (index->dbi index)
                     [:closed
                      (datom->indexable schema low-datom false)
                      (datom->indexable schema high-datom true)]
-                    index
-                    :ignore
-                    true))
+                    index :ignore true))
 
   (size [_ index low-datom high-datom]
-    (lmdb/range-count lmdb
-                      (index->dbi index)
+    (lmdb/range-count lmdb (index->dbi index)
                       [:closed
                        (datom->indexable schema low-datom false)
                        (datom->indexable schema high-datom true)]
@@ -464,49 +454,38 @@
 
   (head [_ index low-datom high-datom]
     (retrieved->datom
-      lmdb attrs (lmdb/get-first lmdb
-                                 (index->dbi index)
+      lmdb attrs (lmdb/get-first lmdb (index->dbi index)
                                  [:closed
                                   (datom->indexable schema low-datom false)
                                   (datom->indexable schema high-datom true)]
-                                 index
-                                 :id)))
+                                 index :id)))
 
   (tail [_ index high-datom low-datom]
     (retrieved->datom
-      lmdb attrs (lmdb/get-first lmdb
-                                 (index->dbi index)
+      lmdb attrs (lmdb/get-first lmdb (index->dbi index)
                                  [:closed-back
                                   (datom->indexable schema high-datom true)
                                   (datom->indexable schema low-datom false)]
-                                 index
-                                 :id)))
+                                 index :id)))
 
   (slice [_ index low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
-          (lmdb/get-range
-            lmdb
-            (index->dbi index)
-            [:closed
-             (datom->indexable schema low-datom false)
-             (datom->indexable schema high-datom true)]
-            index
-            :id)))
+          (lmdb/get-range lmdb (index->dbi index)
+                          [:closed
+                           (datom->indexable schema low-datom false)
+                           (datom->indexable schema high-datom true)]
+                          index :id)))
 
   (rslice [_ index high-datom low-datom]
     (mapv (partial retrieved->datom lmdb attrs)
-          (lmdb/get-range
-            lmdb
-            (index->dbi index)
-            [:closed-back
-             (datom->indexable schema high-datom true)
-             (datom->indexable schema low-datom false)]
-            index
-            :id)))
+          (lmdb/get-range lmdb (index->dbi index)
+                          [:closed-back
+                           (datom->indexable schema high-datom true)
+                           (datom->indexable schema low-datom false)]
+                          index :id)))
 
   (size-filter [_ index pred low-datom high-datom]
-    (lmdb/range-filter-count lmdb
-                             (index->dbi index)
+    (lmdb/range-filter-count lmdb (index->dbi index)
                              (datom-pred->kv-pred lmdb attrs index pred)
                              [:closed
                               (datom->indexable schema low-datom false)
@@ -515,60 +494,49 @@
 
   (head-filter [_ index pred low-datom high-datom]
     (retrieved->datom
-      lmdb attrs (lmdb/get-some lmdb
-                                (index->dbi index)
+      lmdb attrs (lmdb/get-some lmdb (index->dbi index)
                                 (datom-pred->kv-pred lmdb attrs index pred)
                                 [:closed
                                  (datom->indexable schema low-datom false)
                                  (datom->indexable schema high-datom true)]
-                                index
-                                :id)))
+                                index :id)))
 
   (tail-filter [_ index pred high-datom low-datom]
     (retrieved->datom
-      lmdb attrs (lmdb/get-some lmdb
-                                (index->dbi index)
+      lmdb attrs (lmdb/get-some lmdb (index->dbi index)
                                 (datom-pred->kv-pred lmdb attrs index pred)
                                 [:closed-back
                                  (datom->indexable schema high-datom true)
                                  (datom->indexable schema low-datom false)]
-                                index
-                                :id)))
+                                index :id)))
 
   (slice-filter [_ index pred low-datom high-datom]
     (mapv
       (partial retrieved->datom lmdb attrs)
-      (lmdb/range-filter
-        lmdb
-        (index->dbi index)
-        (datom-pred->kv-pred lmdb attrs index pred)
-        [:closed
-         (datom->indexable schema low-datom false)
-         (datom->indexable schema high-datom true)]
-        index
-        :id)))
+      (lmdb/range-filter lmdb (index->dbi index)
+                         (datom-pred->kv-pred lmdb attrs index pred)
+                         [:closed
+                          (datom->indexable schema low-datom false)
+                          (datom->indexable schema high-datom true)]
+                         index :id)))
 
   (rslice-filter
     [_ index pred high-datom low-datom]
     (mapv
       (partial retrieved->datom lmdb attrs)
-      (lmdb/range-filter
-        lmdb
-        (index->dbi index)
-        (datom-pred->kv-pred lmdb attrs index pred)
-        [:closed
-         (datom->indexable schema high-datom true)
-         (datom->indexable schema low-datom false)]
-        index
-        :id))))
+      (lmdb/range-filter lmdb (index->dbi index)
+                         (datom-pred->kv-pred lmdb attrs index pred)
+                         [:closed
+                          (datom->indexable schema high-datom true)
+                          (datom->indexable schema low-datom false)]
+                         index :id))))
 
 (defn- insert-datom
-  [^Store store ^Datom d ref-ds ft-ds]
+  [^Store store ^Datom d ft-ds]
   (let [[e attr v] (d/datom-eav d)
         {:keys [db/valueType db/aid db/fulltext]}
         (or ((schema store) attr) (swap-attr store attr identity))
         i          (b/indexable e aid v valueType)]
-    (when (= :db.type/ref valueType) (vswap! ref-ds conj! [:a e aid v]))
     (when fulltext (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
       (let [max-gt (max-gt store)]
@@ -580,44 +548,42 @@
        [:put c/ave i c/normal :ave :id]])))
 
 (defn- delete-datom
-  [^Store store ^Datom d ref-ds ft-ds]
+  [^Store store ^Datom d ft-ds]
   (let [[e attr v] (d/datom-eav d)
         {:keys [db/valueType db/aid db/fulltext]}
         ((schema store) attr)
         i          (b/indexable e aid v valueType)
         gt         (when (b/giant? i)
-                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (when (= :db.type/ref valueType) (vswap! ref-ds conj! [:d e aid v]))
+                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id true true))]
     (when fulltext (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       gt (conj [:del c/giants gt :id]))))
 
 (defn- transact-datoms
-  [^Store store ref-ds ft-ds eids datoms]
-  (doseq [datom datoms]
-    (lmdb/transact-kv (.-lmdb store)
-                      (if (d/datom-added datom)
-                        (insert-datom store datom ref-ds ft-ds)
-                        (delete-datom store datom ref-ds ft-ds)))
-    (vswap! eids conj! (d/datom-e datom))))
+  [^Store store ft-ds datoms]
+  (let [lmdb (.-lmdb store)]
+    (persistent!
+      (reduce
+        (fn [eids datom]
+          (lmdb/transact-kv lmdb
+                            (if (d/datom-added datom)
+                              (insert-datom store datom ft-ds)
+                              (delete-datom store datom ft-ds)))
+          (conj! eids (d/datom-e datom)))
+        (transient #{}) datoms))))
 
 (defn- scan-entity
-  [lmdb schema refs eid]
+  [lmdb schema ref-ds eid]
   (let [aids  (volatile! (transient #{}))
-        pairs (volatile! (transient []))
         datom (d/datom eid nil nil)]
     (lmdb/visit lmdb c/eav
-                #(let [eav (lmdb/k %)
-                       aid (b/read-buffer eav :eav-a)]
-                   (vswap! aids conj! aid)
-                   (when (refs aid)
-                     (vswap! pairs conj! [aid (b/get-value eav 1)])))
+                #(vswap! aids conj! (b/read-buffer (lmdb/k %) :eav-a))
                 [:open
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
                 :eav-a true)
-    [(persistent! @aids) (persistent! @pairs)]))
+    (persistent! @aids)))
 
 (defn- find-classes
   [rclasses aids]
@@ -657,27 +623,25 @@
       (when old-cid (vswap! updated-cids conj! old-cid)))))
 
 (defn- transact-encla
-  [lmdb classes rentities links cids]
+  [lmdb classes rentities cids]
   (lmdb/transact-kv
     lmdb
     (for [cid cids]
-      [:put c/encla cid [(classes cid) (rentities cid) (links cid)]
-       :id :data])))
+      [:put c/encla cid [(classes cid) (rentities cid)] :id :data])))
 
 (defn- update-encla
   [^Store store eids]
   (let [lmdb         (.-lmdb store)
         schema       (schema store)
-        refs         (refs store)
         classes      (volatile! (classes store))
         rclasses     (volatile! (rclasses store))
         entities     (volatile! (entities store))
         rentities    (volatile! (rentities store))
-        links        (volatile! (links store))
         max-cid      (volatile! (max-cid store))
-        updated-cids (volatile! (transient #{}))]
+        updated-cids (volatile! (transient #{}))
+        ref-ds       (volatile! (transient #{}))]
     (doseq [eid  eids
-            :let [[my-aids pairs] (scan-entity lmdb schema refs eid)]]
+            :let [my-aids (scan-entity lmdb schema ref-ds eid)]]
       (if (empty? my-aids)
         (del-entity updated-cids entities rentities eid)
         (let [cids (find-classes @rclasses my-aids)]
@@ -689,16 +653,29 @@
               (adj-entity updated-cids entities rentities eid cid)
               (adj-entity updated-cids entities rentities eid
                           (add-class max-cid classes rclasses my-aids)))))))
-    (transact-encla lmdb @classes @rentities @links (persistent! @updated-cids))
+    (transact-encla lmdb @classes @rentities (persistent! @updated-cids))
     (set-classes store @classes)
     (set-rclasses store @rclasses)
     (set-entities store @entities)
     (set-rentities store @rentities)
-    (set-links store @links)
-    (set-max-cid store @max-cid)))
+    (set-max-cid store @max-cid)
+    (persistent! @ref-ds)))
+
+(defn- transact-links
+  [lmdb])
 
 (defn- update-links
-  [^Store store ref-ds])
+  [^Store store ref-ds]
+  (let [lmdb   (.-lmdb store)
+        schema (schema store)
+        links  (volatile! (rentities store))
+        ]
+    (transact-links lmdb )
+    ))
+
+(defn- init-links
+  [lmdb]
+  )
 
 (defn- transact-opts
   [lmdb opts]
@@ -735,9 +712,9 @@
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
-     (let [schema                    (init-schema lmdb schema)
-           rschema                   (schema->rschema schema)
-           [classes rentities links] (init-encla lmdb)]
+     (let [schema              (init-schema lmdb schema)
+           rschema             (schema->rschema schema)
+           [classes rentities] (init-encla lmdb)]
        (->Store lmdb
                 (load-opts lmdb)
                 (s/new-search-engine lmdb search-opts)
@@ -749,7 +726,7 @@
                 (classes->rclasses classes)
                 (rentities->entities rentities)
                 rentities
-                links
+                (init-links lmdb)
                 (init-max-aid lmdb)
                 (init-max-gt lmdb)
                 (init-max-cid lmdb))))))

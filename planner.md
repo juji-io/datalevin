@@ -45,23 +45,23 @@ what we call an `EnCla` index, short for Entity Classes. Similar to
 characteristic sets [4] in RDF stores or tables in RDBMS, this concept captures
 the defining combination of attributes for a class of entities.
 
-An `encla` LMDB map will be used to store the `EnCla` index. The keys
-are the unique integer IDs of each entity class. The value of each entity class
-contains the following information:
+A LMDB map will be used to store the `EnCla` index. The keys
+are the IDs of each entity class. The value contains the following information:
 
-* `aids`, the set of attribute ids that define the entity class
-* `eids`, entity ids belonging to the entity class, represented as a bitmap.
+* The set of attribute ids that define an encla.
+* The entity ids belong to an encla.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
 into memory at system initialization and updated during system run.
 
 In Datomic-like stores, `:db.type/ref` triples provide links between two entity
 classes. Such links are important for simplifying query graph [2] [3]. We stored
-them in a `Links` index, an inverted list mapping the pair of entity class ids
-to the list of triples belonging to it. This index also replaces the `vea` index
-that we had.
+them in a LMDB map. They keys are the link IDs. The value contains:
 
-Compared with research literature [2] [3] [4], we build these indices online and
+* Definition of the link: source encla id, target encla id, and the ref attribute id.
+* A mapping of source entity ids to target entity ids of the link.
+
+Unlike previous research work [2] [3] [4], we build these indices online and
 kept them up to date with new data during transactions. We pay a small price in
 transaction processing time (about 30% slower) and a slightly larger memory
 footprint, but gain orders of magnitude query speedup. As far as we know, we are
