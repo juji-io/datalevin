@@ -292,7 +292,7 @@
                 ^:volatile-mutable rclasses  ; aid -> cids
                 ^:volatile-mutable entities  ; eid -> cid
                 ^:volatile-mutable rentities ; cid -> eids bitmap
-                ^:volatile-mutable links     ; vae -> link
+                ^:volatile-mutable links     ; eav -> link
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cid]
@@ -416,13 +416,14 @@
       p))
 
   (load-datoms [this datoms]
-    (let [ft-ds (volatile! (transient []))]
+    (let [ft-ds      (volatile! (transient []))
+          del-ref-ds (volatile! (transient #{}))]
       (try
         (locking (lmdb/write-txn lmdb)
           (lmdb/open-transact-kv lmdb)
-          (->> (transact-datoms this ft-ds datoms)
+          (->> (transact-datoms this ft-ds del-ref-ds datoms)
                (update-encla this)
-               (update-links this))
+               (update-links this del-ref-ds))
           (lmdb/transact-kv lmdb [(time-tx)]))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
@@ -548,20 +549,21 @@
        [:put c/ave i c/normal :ave :id]])))
 
 (defn- delete-datom
-  [^Store store ^Datom d ft-ds]
+  [^Store store ^Datom d ft-ds del-ref-ds]
   (let [[e attr v] (d/datom-eav d)
         {:keys [db/valueType db/aid db/fulltext]}
         ((schema store) attr)
         i          (b/indexable e aid v valueType)
         gt         (when (b/giant? i)
                      (lmdb/get-value (.-lmdb store) c/eav i :eav :id true true))]
+    (when ((refs store) aid) (vswap! del-ref-ds conj! [e aid v]))
     (when fulltext (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       gt (conj [:del c/giants gt :id]))))
 
 (defn- transact-datoms
-  [^Store store ft-ds datoms]
+  [^Store store ft-ds del-ref-ds datoms]
   (let [lmdb (.-lmdb store)]
     (persistent!
       (reduce
@@ -569,7 +571,7 @@
           (lmdb/transact-kv lmdb
                             (if (d/datom-added datom)
                               (insert-datom store datom ft-ds)
-                              (delete-datom store datom ft-ds)))
+                              (delete-datom store datom ft-ds del-ref-ds)))
           (conj! eids (d/datom-e datom)))
         (transient #{}) datoms))))
 
@@ -582,8 +584,7 @@
                        aid (b/read-buffer eav :eav-a)]
                    (vswap! aids conj! aid)
                    (when (refs aid)
-                     (vswap! ref-ds conj!
-                             (b/->Retrieved eid aid (b/get-value eav 1)))))
+                     (vswap! ref-ds conj! [eid aid (b/get-value eav 1)])))
                 [:open
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
@@ -667,23 +668,32 @@
     (set-max-cid store @max-cid)
     (persistent! @ref-ds)))
 
-(defn- transact-links
-  [lmdb])
-
 (defn- update-links
-  [^Store store ref-ds]
-  (let [lmdb   (.-lmdb store)
-        schema (schema store)
-        links  (volatile! (rentities store))
+  [^Store store del-ref-ds alt-ref-ds]
+  (let [lmdb      (.-lmdb store)
+        entities  (entities store)
+        old-links (links store)
+        new-links (volatile! old-links)
         ]
-    #_(doseq [d ref-ds]
-        (println [(.-e d) (.-a d) (.-v d)]))
-    (transact-links lmdb )
+    (doseq [[e a v] alt-ref-ds]
+      (println "alt" [e a v])
+
+      )
+    (doseq [[e a v] del-ref-ds]
+      (println "del" [e a v])
+
+      )
+    (set-links store @new-links)
     ))
 
 (defn- init-links
   [lmdb]
-  (into #{} (lmdb/get-range lmdb c/links [:all] :int-int-int :long-long)))
+  (persistent!
+    (reduce
+      (fn [m [[_ aid _ :as link] [veid eeid]]]
+        (assoc! m [eeid aid veid] link))
+      (transient {})
+      (lmdb/get-range lmdb c/links [:all] :int-int-int :long-long))))
 
 (defn- transact-opts
   [lmdb opts]

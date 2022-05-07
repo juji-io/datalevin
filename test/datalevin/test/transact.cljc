@@ -123,6 +123,16 @@
                        (d/datoms db :eavt)))))
       (d/close-db db))))
 
+(deftest test-change-ref
+  (let [conn (d/create-conn nil {:friend {:db/valueType :db.type/ref}})]
+    (d/transact! conn [{:db/id 1, :name "Ivan", :age 15, :friend 2}
+                       {:db/id 2, :name "Petr", :age 37}
+                       {:db/id 3, :name "Tom", :age 27}])
+    (is (= (:tx-data (d/transact! conn [{:db/id 1 :friend 3}]))
+           [(d/datom 1 :friend 2 -1)
+            (d/datom 1 :friend 3 1)]))
+    (d/close conn)))
+
 (deftest test-retract-fns-1
   (let [db (-> (d/empty-db nil {:aka    {:db/cardinality :db.cardinality/many}
                                 :friend {:db/valueType :db.type/ref}})
