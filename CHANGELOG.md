@@ -4,7 +4,7 @@
 ## Added
 - EnCla index, a novel index for Datalog store. Also address #57.
 - Links index, a novel index for Datalog store.
-- Query planner that utilizes EnCla and Links indices. #11
+- Query optimizer that utilizes EnCla and Links indices. #11
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
 - Allow passing LMDB option map as `:kv-opts` when `create-conn`

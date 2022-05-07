@@ -520,6 +520,15 @@
     (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
     (l/put-list-items lmdb "inverted" "b" [5 6 7] :string :long)
 
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "inverted" [:all] :string :long) ))
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "inverted" [:closed "a" "b"] :string :long) ))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "inverted" [:closed "b" "b"] :string :long) ))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "inverted" [:open-closed "a" "b"] :string :long) ))
+
     (is (= (l/list-count lmdb "inverted" "a" :string) 4))
     (is (= (l/list-count lmdb "inverted" "b" :string) 3))
 
