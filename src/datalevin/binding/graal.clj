@@ -337,39 +337,48 @@
                                false
                                (if forward?
                                  (check op-next-nodup)
-                                 (check op-prev-nodup))))]
-            (if @ended?
-              (if dupsort?
+                                 (check op-prev-nodup))))
+                seek      #(if (has? (Lib/mdb_cursor_get
+                                       (.get cursor) (.getVal sk) (.getVal v)
+                                       op-set-range))
+                             (if forward? (continue?) (check op-prev))
+                             (if forward? false (check op-last)))
+                start     #(if forward? (check op-first) (check op-last))]
+            (if dupsort?
+              (if @ended?
                 (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
-                false)
-              (if @started?
-                (if forward?
-                  (if dupsort? (check-dup op-next-dup) (check op-next))
-                  (if dupsort? (check-dup op-prev-dup) (check op-prev)))
-                (do
-                  (vreset! started? true)
-                  (if start-key?
-                    (if (has? (Lib/mdb_cursor_get
-                                (.get cursor) (.getVal sk) (.getVal v) op-set))
-                      (if include-start?
-                        (if dupsort?
+                (if @started?
+                  (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
+                  (do
+                    (vreset! started? true)
+                    (if start-key?
+                      (if (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal sk) (.getVal v) op-set))
+                        (if include-start?
                           (if forward?
                             (check-dup op-first-dup)
                             (check-dup op-last-dup))
-                          (continue?))
-                        (if forward?
-                          (if dupsort?
+                          (if forward?
                             (check-dup op-next-nodup)
-                            (check op-next))
-                          (if dupsort?
-                            (check-dup op-prev-nodup)
-                            (check op-prev))))
-                      (if (has? (Lib/mdb_cursor_get
-                                  (.get cursor) (.getVal sk) (.getVal v)
-                                  op-set-range))
-                        (if forward? (continue?) (check op-prev))
-                        (if forward? false (check op-last))))
-                    (if forward? (check op-first) (check op-last))))))))
+                            (check-dup op-prev-nodup)))
+                        (seek))
+                      (start)))))
+              (if @ended?
+                false
+                (if @started?
+                  (if forward? (check op-next) (check op-prev))
+                  (do
+                    (vreset! started? true)
+                    (if start-key?
+                      (if (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal sk) (.getVal v) op-set))
+                        (if include-start?
+                          (continue?)
+                          (if forward? (check op-next) (check op-prev)))
+                        (seek))
+                      (start))))))))
         (next [this]
           (get-cur)
           (->KV k v))))))

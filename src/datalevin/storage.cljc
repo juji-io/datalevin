@@ -417,13 +417,15 @@
 
   (load-datoms [this datoms]
     (let [ft-ds      (volatile! (transient []))
+          alt-ref-ds (volatile! (transient #{}))
           del-ref-ds (volatile! (transient #{}))]
       (try
         (locking (lmdb/write-txn lmdb)
           (lmdb/open-transact-kv lmdb)
-          (->> (transact-datoms this ft-ds del-ref-ds datoms)
-               (update-encla this)
-               (update-links this del-ref-ds))
+          (update-encla this alt-ref-ds
+                        (transact-datoms this ft-ds del-ref-ds datoms))
+          (update-links this (persistent! @del-ref-ds)
+                        (persistent! @alt-ref-ds))
           (lmdb/transact-kv lmdb [(time-tx)]))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
@@ -636,7 +638,7 @@
       [:put c/encla cid [(classes cid) (rentities cid)] :id :data])))
 
 (defn- update-encla
-  [^Store store eids]
+  [^Store store alt-ref-ds eids]
   (let [lmdb         (.-lmdb store)
         schema       (schema store)
         refs         (refs store)
@@ -645,10 +647,9 @@
         entities     (volatile! (entities store))
         rentities    (volatile! (rentities store))
         max-cid      (volatile! (max-cid store))
-        updated-cids (volatile! (transient #{}))
-        ref-ds       (volatile! (transient #{}))]
+        updated-cids (volatile! (transient #{}))]
     (doseq [eid  eids
-            :let [my-aids (scan-entity lmdb schema refs ref-ds eid)]]
+            :let [my-aids (scan-entity lmdb schema refs alt-ref-ds eid)]]
       (if (empty? my-aids)
         (del-entity updated-cids entities rentities eid)
         (let [cids (find-classes @rclasses my-aids)]
@@ -665,8 +666,7 @@
     (set-rclasses store @rclasses)
     (set-entities store @entities)
     (set-rentities store @rentities)
-    (set-max-cid store @max-cid)
-    (persistent! @ref-ds)))
+    (set-max-cid store @max-cid)))
 
 (defn- update-links
   [^Store store del-ref-ds alt-ref-ds]
@@ -676,11 +676,9 @@
         new-links (volatile! old-links)
         ]
     (doseq [[e a v] alt-ref-ds]
-      (println "alt" [e a v])
 
       )
     (doseq [[e a v] del-ref-ds]
-      (println "del" [e a v])
 
       )
     (set-links store @new-links)
