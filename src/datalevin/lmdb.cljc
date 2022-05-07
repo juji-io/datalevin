@@ -77,7 +77,7 @@
     [db dbi-name key-size val-size flags]
     "Open a named DBI (i.e. sub-db) in the LMDB env")
 
-  (open-inverted-list
+  (open-list
     [db list-name]
     [db list-name item-size]
     [db list-name key-size item-size]

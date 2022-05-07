@@ -135,35 +135,35 @@
         (inc ^long gt))
       c/gt0))
 
-(defn- migrate-cardinality
-  [lmdb attr old new]
-  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
-    ;; TODO figure out if this is consistent with data
-    ;; raise exception if not
-    ))
+#_(defn- migrate-cardinality
+    [lmdb attr old new]
+    (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
+      ;; TODO figure out if this is consistent with data
+      ;; raise exception if not
+      ))
 
-(defn- handle-value-type
-  [lmdb attr old new]
-  (when (not= old new)
-    ;; TODO raise if datom already exist for this attr
-    ))
+#_(defn- handle-value-type
+    [lmdb attr old new]
+    (when (not= old new)
+      ;; TODO raise if datom already exist for this attr
+      ))
 
-(defn- migrate-unique
-  [lmdb attr old new]
-  (when (and (not old) new)
-    ;; TODO figure out if the attr values are unique for each entity,
-    ;; raise if not
-    ;; also check if ave entries exist for this attr, create if not
-    ))
+#_(defn- migrate-unique
+    [lmdb attr old new]
+    (when (and (not old) new)
+      ;; TODO figure out if the attr values are unique for each entity,
+      ;; raise if not
+      ;; also check if ave entries exist for this attr, create if not
+      ))
 
-(defn- migrate [lmdb attr old new]
-  (doseq [[k v] new
-          :let  [v' (old k)]]
-    (case k
-      :db/cardinality (migrate-cardinality lmdb attr v' v)
-      :db/valueType   (handle-value-type lmdb attr v' v)
-      :db/unique      (migrate-unique lmdb attr v' v)
-      :pass-through)))
+#_(defn- migrate [lmdb attr old new]
+    (doseq [[k v] new
+            :let  [v' (old k)]]
+      (case k
+        :db/cardinality (migrate-cardinality lmdb attr v' v)
+        :db/valueType   (handle-value-type lmdb attr v' v)
+        :db/unique      (migrate-unique lmdb attr v' v)
+        :pass-through)))
 
 (defn- datom->indexable
   [schema ^Datom d high?]
@@ -292,7 +292,7 @@
                 ^:volatile-mutable rclasses  ; aid -> cids
                 ^:volatile-mutable entities  ; eid -> cid
                 ^:volatile-mutable rentities ; cid -> eids bitmap
-                ^:volatile-mutable links     ; e cid -> v cid -> v-eid/aid slist
+                ^:volatile-mutable links     ; vae -> link
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cid]
@@ -574,11 +574,16 @@
         (transient #{}) datoms))))
 
 (defn- scan-entity
-  [lmdb schema ref-ds eid]
+  [lmdb schema refs ref-ds eid]
   (let [aids  (volatile! (transient #{}))
         datom (d/datom eid nil nil)]
     (lmdb/visit lmdb c/eav
-                #(vswap! aids conj! (b/read-buffer (lmdb/k %) :eav-a))
+                #(let [eav (lmdb/k %)
+                       aid (b/read-buffer eav :eav-a)]
+                   (vswap! aids conj! aid)
+                   (when (refs aid)
+                     (vswap! ref-ds conj!
+                             (b/->Retrieved eid aid (b/get-value eav 1)))))
                 [:open
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
@@ -633,6 +638,7 @@
   [^Store store eids]
   (let [lmdb         (.-lmdb store)
         schema       (schema store)
+        refs         (refs store)
         classes      (volatile! (classes store))
         rclasses     (volatile! (rclasses store))
         entities     (volatile! (entities store))
@@ -641,7 +647,7 @@
         updated-cids (volatile! (transient #{}))
         ref-ds       (volatile! (transient #{}))]
     (doseq [eid  eids
-            :let [my-aids (scan-entity lmdb schema ref-ds eid)]]
+            :let [my-aids (scan-entity lmdb schema refs ref-ds eid)]]
       (if (empty? my-aids)
         (del-entity updated-cids entities rentities eid)
         (let [cids (find-classes @rclasses my-aids)]
@@ -670,12 +676,14 @@
         schema (schema store)
         links  (volatile! (rentities store))
         ]
+    #_(doseq [d ref-ds]
+        (println [(.-e d) (.-a d) (.-v d)]))
     (transact-links lmdb )
     ))
 
 (defn- init-links
   [lmdb]
-  )
+  (into #{} (lmdb/get-range lmdb c/links [:all] :int-int-int :long-long)))
 
 (defn- transact-opts
   [lmdb opts]
@@ -695,7 +703,7 @@
   (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
   (lmdb/open-dbi lmdb c/encla c/+id-bytes+)
-  (lmdb/open-inverted-list lmdb c/links (* 3 Integer/BYTES) (* 2 Long/BYTES))
+  (lmdb/open-list lmdb c/links (* 3 Integer/BYTES) (* 2 Long/BYTES))
   (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
 

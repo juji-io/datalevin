@@ -277,6 +277,7 @@
                    5 :child,
                    6 :father,
                    7 :part}
+        refs      #{7 6 5}
         classes   {0 #{3}, 1 #{3, 4, 5}, 2 #{3, 7}, 3 #{3, 6}}
         rclasses  {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
         entities  {1  1,
@@ -306,6 +307,7 @@
         store     (sut/open dir schema)]
     (sut/load-datoms store datoms)
     (is (= attrs (sut/attrs store)))
+    (is (= refs (sut/refs store)))
 
     (is (= n-datoms (sut/datom-count store :eav)))
 

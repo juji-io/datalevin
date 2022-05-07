@@ -515,7 +515,7 @@
                   [kv]
                   (let [^long v (b/read-buffer (l/v kv) :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))]
-    (l/open-inverted-list lmdb "inverted")
+    (l/open-list lmdb "inverted")
 
     (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
     (l/put-list-items lmdb "inverted" "b" [5 6 7] :string :long)

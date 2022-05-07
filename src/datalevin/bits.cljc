@@ -613,6 +613,12 @@
   [bf x]
   (sl/serialize x bf))
 
+(defn- get-sparse-list
+  [bf]
+  (let [sl (sl/sparse-arraylist)]
+    (sl/deserialize sl bf)
+    sl))
+
 (defn put-buffer
   "In addition to the user facing data types, x-type can be one of the
   following internal data types:
@@ -635,6 +641,13 @@
      :int-int        (let [[i1 i2] x]
                        (put-int bf i1)
                        (put-int bf i2))
+     :int-int-int    (let [[i1 i2 i3] x]
+                       (put-int bf i1)
+                       (put-int bf i2)
+                       (put-int bf i3))
+     :long-long      (let [[l1 l2] x]
+                       (put-long bf l1)
+                       (put-long bf l2))
      :sial           (put-sparse-list bf x)
      :bitmap         (put-bitmap bf x)
      :term-info      (let [[i1 i2 i3] x]
@@ -676,12 +689,6 @@
      :raw            (put-bytes bf x)
      (put-data bf x))))
 
-(defn- get-sparse-list
-  [bf]
-  (let [sl (sl/sparse-arraylist)]
-    (sl/deserialize sl bf)
-    sl))
-
 (defn read-buffer
   "In addition to the user facing data types, v-type can be one of the
   following internal data types:
@@ -701,6 +708,8 @@
      :short          (get-short bf)
      :int            (get-int bf)
      :int-int        [(get-int bf) (get-int bf)]
+     :int-int-int    [(get-int bf) (get-int bf) (get-int bf)]
+     :long-long      [(get-long bf) (get-long bf)]
      :bitmap         (get-bitmap bf)
      :sial           (get-sparse-list bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]

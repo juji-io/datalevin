@@ -5,7 +5,7 @@
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
-             :refer [open-kv open-inverted-list IBuffer IRange IRtx
+             :refer [open-kv open-list IBuffer IRange IRtx
                      IDB IKV IInvertedList ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
@@ -502,16 +502,16 @@
   (visit [this dbi-name visitor k-range k-type writing?]
     (scan/visit this dbi-name visitor k-range k-type writing?))
 
-  (open-inverted-list [this dbi-name key-size item-size]
+  (open-list [this dbi-name key-size item-size]
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long item-size))
             "Data size cannot be larger than 511 bytes")
     (.open-dbi this dbi-name key-size item-size
                (conj c/default-dbi-flags :dupsort)))
-  (open-inverted-list [lmdb dbi-name item-size]
-    (.open-inverted-list lmdb dbi-name c/+max-key-size+ item-size))
-  (open-inverted-list [lmdb dbi-name]
-    (.open-inverted-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
+  (open-list [lmdb dbi-name item-size]
+    (.open-list lmdb dbi-name c/+max-key-size+ item-size))
+  (open-list [lmdb dbi-name]
+    (.open-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
 
   IInvertedList
   (put-list-items [this dbi-name k vs kt vt]
