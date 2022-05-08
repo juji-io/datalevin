@@ -229,7 +229,7 @@
       (sut/close store)
       (is (= [d] r)))))
 
-(deftest encla-test
+(deftest encla-links-test
   (let [schema    {:name   {:db/unique :db.unique/identity}
                    :aka    {:db/cardinality :db.cardinality/many}
                    :child  {:db/valueType :db.type/ref}
@@ -302,6 +302,19 @@
                    1 (b/bitmap [1])
                    2 (b/bitmap [10, 11, 12, 15, 16]),
                    3 (b/bitmap [2, 3, 6])}
+        links     {[11 7 12] [2 7 2],
+                   [10 7 11] [2 7 2],
+                   [15 7 16] [2 7 2],
+                   [3 6 1]   [3 6 1],
+                   [1 5 2]   [1 5 3],
+                   [12 7 13] [2 7 0],
+                   [2 6 1]   [3 6 1],
+                   [1 5 3]   [1 5 3],
+                   [16 7 17] [2 7 0],
+                   [16 7 18] [2 7 0],
+                   [12 7 14] [2 7 0],
+                   [10 7 15] [2 7 2],
+                   [6 6 3]   [3 6 3]}
         dir       (u/tmp-dir (str "datalevin-extract-encla-test-"
                                   (UUID/randomUUID)))
         store     (sut/open dir schema)]
@@ -318,14 +331,17 @@
     (is (= rentities (sut/rentities store)))
     (is (= (sut/entities store) (sut/rentities->entities (sut/rentities store))))
 
+    (is (= links (sut/links store)))
+
     (sut/close store)
 
-    (testing "load encla"
+    (testing "load encla and links"
       (let [store1 (sut/open dir)]
         (is (= classes (sut/classes store1)))
         (is (= entities (sut/entities store1)))
         (is (= rclasses (sut/rclasses store1)))
         (is (= rentities (sut/rentities store1)))
+        (is (= links (sut/links store1)))
         (sut/close store1)))
     (testing "add a datom that does not change encla"
       (let [store1 (sut/open dir)]
@@ -335,6 +351,7 @@
         (is (= rclasses (sut/rclasses store1)))
         (is (= entities (sut/entities store1)))
         (is (= rentities (sut/rentities store1)))
+        (is (= links (sut/links store1)))
         (sut/close store1)))
     (testing "delete a datom that does not change encla"
       (let [store1 (sut/open dir)]
@@ -344,6 +361,7 @@
         (is (= rclasses (sut/rclasses store1)))
         (is (= entities (sut/entities store1)))
         (is (= rentities (sut/rentities store1)))
+        (is (= links (sut/links store1)))
         (sut/close store1)))
     (testing "delete a datom that changes entities"
       (let [store1 (sut/open dir)]
@@ -356,6 +374,7 @@
                    (update 0 #(b/bitmap-add % 2))
                    (update 3 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
+        (is (= (dissoc links [2 6 1]) (sut/links store1)))
         (sut/close store1)))
     (testing "add a datom that changes entities"
       (let [store1 (sut/open dir)]
@@ -368,6 +387,9 @@
                    (update 3 #(b/bitmap-add % 2))
                    (update 0 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
+        (is (= (-> links
+                   (dissoc [2 6 1])
+                   (assoc [2 6 3] [3 6 3])) (sut/links store1)))
         (sut/close store1)))
     (testing "add a datom that changes classes"
       (let [store1 (sut/open dir)]
@@ -383,6 +405,10 @@
                    (update 3 #(b/bitmap-del % 2))
                    (update 0 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
+        (is (= (-> links
+                   (dissoc [2 6 1])
+                   (assoc [2 6 3] [4 6 3] [2 5 8] [4 5 0]))
+               (sut/links store1)))
         (sut/close store1)))
     (testing "delete datoms that changes classes"
       (let [store1 (sut/open dir)]
@@ -401,8 +427,33 @@
                    (assoc 5 (b/bitmap [1]))
                    (assoc 1 (b/bitmap)))
                (sut/rentities store1)))
+        (is (= (-> links
+                   (dissoc [2 6 1])
+                   (assoc [2 6 3] [4 6 3] [2 5 8] [4 5 0])
+                   (dissoc [1 5 2] [1 5 3]))
+               (sut/links store1)))
         (sut/close store1)))
-    ))
+    (testing "reload"
+      (let [store1 (sut/open dir)]
+        (is (= (dec n-datoms) (sut/datom-count store1 :eav)))
+        (is (= (-> classes (assoc 4 #{3 5 6} 5 #{3 4})) (sut/classes store1)))
+        (is (= (-> rclasses
+                   (update 5 conj 4) (update 3 conj 4 5) (update 6 conj 4)
+                   (update 4 conj 5))
+               (sut/rclasses store1)))
+        (is (= (assoc entities 2 4 1 5) (sut/entities store1)))
+        (is (= (-> rentities
+                   (assoc 4 (b/bitmap [2]))
+                   (update 0 #(b/bitmap-del % 2))
+                   (assoc 5 (b/bitmap [1]))
+                   (assoc 1 (b/bitmap)))
+               (sut/rentities store1)))
+        (is (= (-> links
+                   (dissoc [2 6 1])
+                   (assoc [2 6 3] [4 6 3] [2 5 8] [4 5 0])
+                   (dissoc [1 5 2] [1 5 3]))
+               (sut/links store1)))
+        (sut/close store1)))))
 
 (deftest map-resize-encla-test
   (let [next-eid (volatile! 0)
@@ -440,4 +491,5 @@
     (is (= (sut/rclasses s-store) (sut/rclasses l-store)))
     (is (= (sut/entities s-store) (sut/entities l-store)))
     (is (= (sut/rentities s-store) (sut/rentities l-store)))
+    (is (= (sut/links s-store) (sut/links l-store)))
     (is (= (sut/max-cid s-store) (sut/max-cid l-store)))))

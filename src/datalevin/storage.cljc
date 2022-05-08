@@ -6,6 +6,7 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
+            [taoensso.timbre :as log]
             [clojure.set :as set])
   (:import [java.util UUID]
            [datalevin.datom Datom]
@@ -417,15 +418,15 @@
 
   (load-datoms [this datoms]
     (let [ft-ds      (volatile! (transient []))
-          alt-ref-ds (volatile! (transient #{}))
+          cur-ref-ds (volatile! (transient #{}))
           del-ref-ds (volatile! (transient #{}))]
       (try
         (locking (lmdb/write-txn lmdb)
           (lmdb/open-transact-kv lmdb)
-          (update-encla this alt-ref-ds
+          (update-encla this cur-ref-ds
                         (transact-datoms this ft-ds del-ref-ds datoms))
           (update-links this (persistent! @del-ref-ds)
-                        (persistent! @alt-ref-ds))
+                        (persistent! @cur-ref-ds))
           (lmdb/transact-kv lmdb [(time-tx)]))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
@@ -578,7 +579,7 @@
         (transient #{}) datoms))))
 
 (defn- scan-entity
-  [lmdb schema refs ref-ds eid]
+  [lmdb schema refs cur-ref-ds eid]
   (let [aids  (volatile! (transient #{}))
         datom (d/datom eid nil nil)]
     (lmdb/visit lmdb c/eav
@@ -586,7 +587,7 @@
                        aid (b/read-buffer eav :eav-a)]
                    (vswap! aids conj! aid)
                    (when (refs aid)
-                     (vswap! ref-ds conj! [eid aid (b/get-value eav 1)])))
+                     (vswap! cur-ref-ds conj! [eid aid (b/get-value eav 1)])))
                 [:open
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
@@ -638,7 +639,7 @@
       [:put c/encla cid [(classes cid) (rentities cid)] :id :data])))
 
 (defn- update-encla
-  [^Store store alt-ref-ds eids]
+  [^Store store cur-ref-ds eids]
   (let [lmdb         (.-lmdb store)
         schema       (schema store)
         refs         (refs store)
@@ -649,7 +650,7 @@
         max-cid      (volatile! (max-cid store))
         updated-cids (volatile! (transient #{}))]
     (doseq [eid  eids
-            :let [my-aids (scan-entity lmdb schema refs alt-ref-ds eid)]]
+            :let [my-aids (scan-entity lmdb schema refs cur-ref-ds eid)]]
       (if (empty? my-aids)
         (del-entity updated-cids entities rentities eid)
         (let [cids (find-classes @rclasses my-aids)]
@@ -673,16 +674,28 @@
   (let [lmdb      (.-lmdb store)
         entities  (entities store)
         old-links (links store)
-        new-links (volatile! old-links)
-        ]
-    (doseq [[e a v] alt-ref-ds]
-
-      )
-    (doseq [[e a v] del-ref-ds]
-
-      )
-    (set-links store @new-links)
-    ))
+        new-links (volatile! (transient old-links))
+        to-del    (volatile! {})
+        to-add    (volatile! {})
+        conj*     (fnil conj [])]
+    (doseq [[e a v :as eav] alt-ref-ds
+            :let            [new-link [(entities e) a (entities v)]]]
+      (vswap! new-links assoc! eav new-link)
+      (if-let [old-link (old-links eav)]
+        (when (not= old-link new-link)
+          (vswap! to-del update old-link conj* [v e])
+          (vswap! to-add update new-link conj* [v e]))
+        (vswap! to-add update new-link conj* [v e])))
+    (doseq [[e _ v :as eav] del-ref-ds]
+      (when-not (alt-ref-ds eav)
+        (vswap! new-links dissoc! eav)
+        (when-let [old-link (old-links eav)]
+          (vswap! to-del update old-link conj* [v e]))))
+    (doseq [[link lst] @to-add]
+      (lmdb/put-list-items lmdb c/links link lst :int-int-int :long-long))
+    (doseq [[link lst] @to-del]
+      (lmdb/del-list-items lmdb c/links link lst :int-int-int :long-long))
+    (set-links store (persistent! @new-links))))
 
 (defn- init-links
   [lmdb]
