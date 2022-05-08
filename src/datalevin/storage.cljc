@@ -6,7 +6,6 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [taoensso.timbre :as log]
             [clojure.set :as set])
   (:import [java.util UUID]
            [datalevin.datom Datom]
@@ -679,7 +678,10 @@
         to-add    (volatile! {})
         conj*     (fnil conj [])]
     (doseq [[e a v :as eav] alt-ref-ds
-            :let            [new-link [(entities e) a (entities v)]]]
+            :let            [ecid (entities e)
+                             vcid (entities v)
+                             new-link [ecid a vcid]]
+            :when           (and ecid vcid)]
       (vswap! new-links assoc! eav new-link)
       (if-let [old-link (old-links eav)]
         (when (not= old-link new-link)
