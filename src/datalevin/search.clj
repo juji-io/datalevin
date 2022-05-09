@@ -417,6 +417,7 @@
 
 (deftype ^:no-doc SearchEngine [lmdb
                                 analyzer
+                                query-analyzer
                                 ^IntShortHashMap norms ; doc-id -> norm
                                 ^AtomicInteger max-doc
                                 ^AtomicInteger max-term]
@@ -453,7 +454,7 @@
                        :or   {display    :refs
                               top        10
                               doc-filter (constantly true)}}]
-    (let [tokens (->> (analyzer query)
+    (let [tokens (->> (query-analyzer query)
                       (mapv first)
                       (into-array String))
           qterms (->> (hydrate-query lmdb max-doc tokens)
@@ -515,11 +516,12 @@
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
-  ([lmdb {:keys [analyzer]
+  ([lmdb {:keys [analyzer query-analyzer]
           :or   {analyzer en-analyzer}}]
    (open-dbis lmdb)
    (->SearchEngine lmdb
                    analyzer
+                   (or query-analyzer analyzer)
                    (init-norms lmdb)
                    (AtomicInteger. (init-max-doc lmdb))
                    (AtomicInteger. (init-max-term lmdb)))))
