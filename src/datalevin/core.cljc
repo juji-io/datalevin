@@ -1440,7 +1440,7 @@ all documents."}
                                                    [(subs word idx (min (+ idx gram-size) length)) pos start]))
              (recur idx (inc gram-size) (conj! ngrams
                                                [(subs word idx (min (+ idx gram-size) length)) pos start]))))))))
-  ([gram-size] (ngram-token-filter gram-size gram-size)))
+  ([gram-size] (create-ngram-token-filter gram-size gram-size)))
 
 (defn create-min-length-token-filter
   "Filters tokens that are strictly shorter than `min-length`."

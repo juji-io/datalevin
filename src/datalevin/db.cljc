@@ -346,8 +346,10 @@
      (new-db store))))
 
 (defn close-db [^DB db]
-  (s/close ^IStore (.-store db))
-  nil)
+  (let [store ^IStore (.-store db)]
+    (.remove ^ConcurrentHashMap caches store)
+    (s/close store)
+    nil))
 
 (defn db-from-reader [{:keys [schema datoms]}]
   (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))
