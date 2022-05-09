@@ -4,7 +4,6 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
-   [taoensso.timbre :as log]
    [datalevin.db :as db]
    [datalevin.search :as s]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
@@ -1210,7 +1209,7 @@
         wheres        (:where q)
         context       (-> (Context. [] {} {})
                           (resolve-ins (:qin parsed-q) inputs))
-        resultset     (-> (log/spy context)
+        resultset     (-> context
                           (-q wheres)
                           (collect all-vars))]
     (cond->> resultset
