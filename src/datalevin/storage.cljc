@@ -669,7 +669,7 @@
     (set-max-cid store @max-cid)))
 
 (defn- update-links
-  [^Store store del-ref-ds alt-ref-ds]
+  [^Store store del-ref-ds cur-ref-ds]
   (let [lmdb      (.-lmdb store)
         entities  (entities store)
         old-links (links store)
@@ -677,7 +677,7 @@
         to-del    (volatile! {})
         to-add    (volatile! {})
         conj*     (fnil conj [])]
-    (doseq [[e a v :as eav] alt-ref-ds
+    (doseq [[e a v :as eav] cur-ref-ds
             :let            [ecid (entities e)
                              vcid (entities v)
                              new-link [ecid a vcid]]
@@ -689,7 +689,7 @@
           (vswap! to-add update new-link conj* [v e]))
         (vswap! to-add update new-link conj* [v e])))
     (doseq [[e _ v :as eav] del-ref-ds]
-      (when-not (alt-ref-ds eav)
+      (when-not (cur-ref-ds eav)
         (vswap! new-links dissoc! eav)
         (when-let [old-link (old-links eav)]
           (vswap! to-del update old-link conj* [v e]))))
