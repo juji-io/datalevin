@@ -412,11 +412,11 @@
                                 [:db/add "Serg" :age 30]])]
     (is (= (:tempids t1) {-1 1, -2 2, :db/current-tx (+ tx0 1)}))
     (is (= (:tempids t2) {"Serg" 3, :db/current-tx (+ tx0 2)}))
-    (is (= #{[1 "Ivan" 19 tx0]
-             [2 "Petr" 22 tx0]
-             [3 "Sergey" 30 tx0]}
-           (d/q '[:find ?e ?n ?a ?t
-                  :where [?e :name ?n ?t]
+    (is (= #{[1 "Ivan" 19]
+             [2 "Petr" 22]
+             [3 "Sergey" 30]}
+           (d/q '[:find ?e ?n ?a
+                  :where [?e :name ?n]
                   [?e :age ?a]] @conn)))
     (d/close conn)))
 
