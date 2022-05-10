@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Fixed
+- Query cache memory leak, #118 (thx @panterarocks49)
+### Added
+- `datalevin.search-utils` namespace with some utility functions to customize
+  search, #105 (thx @ngrunwald)
+
 ## 0.6.8
 ## Fixed
 - Add `visit` KV function to `core` name space

@@ -4,7 +4,7 @@
             [datalevin.client :as cl]
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
-            [datalevin.search :as sc]
+            [datalevin.search-utils :as su]
             [datalevin.util :as u]
             [datalevin.test.core]
             [clojure.string :as str]
@@ -773,45 +773,19 @@
     (sut/close-kv lmdb)
     (s/stop server)))
 
-(deftest custom-analyzer-test
-  (let [s1 "This is a Datalevin-Analyzers test"
-        s2 "This is a Datalevin-Analyzers test. "
-        cust-analyzer-en (sut/create-analyzer
-                          {:tokenizer (sut/create-regexp-tokenizer
-                                       #"[\s:/\.;,!=?\"'()\[\]{}|<>&@#^*\\~`]+")
-                           :token-filters [sut/lower-case-token-filter
-                                           sut/en-stop-words-token-filter]})]
-    (is (fn? cust-analyzer-en))
-    (is (= (sc/en-analyzer s1)
-           (cust-analyzer-en s1)
-           (cust-analyzer-en s2)
-           [["datalevin-analyzers" 3 10] ["test" 4 30]]))))
-
-(deftest autocomplete-analyzer-test
-  (let [s1 "clock"
-        s2 "cloud"
-        cust-analyzer-en (sut/create-analyzer
-                          {:tokenizer (sut/create-regexp-tokenizer
-                                       #"[\s:/\.;,!=?\"'()\[\]{}|<>&@#^*\\~`]+")
-                           :token-filters [sut/lower-case-token-filter
-                                           sut/prefix-token-filter]})]
-    (is (= (into [] (cust-analyzer-en s1))
-           [["c" 0 0] ["cl" 0 0] ["clo" 0 0] ["cloc" 0 0] ["clock" 0 0]]))
-    (is (= (into [] (cust-analyzer-en s2))
-           [["c" 0 0] ["cl" 0 0] ["clo" 0 0] ["clou" 0 0] ["cloud" 0 0]]))))
-
 (deftest remote-blank-analyzer-test
   (let [server         (s/create {:port c/default-port
                                   :root (u/tmp-dir
                                           (str "remote-blank-analyzer-test-"
                                                (UUID/randomUUID)))})
         _              (s/start server)
-        dir            "dtlv://datalevin:datalevin@localhost/remote-blank-analyzer-test"
+        dir            "dtlv://datalevin:datalevin@localhost/blank-analyzer-test"
         lmdb           (sut/open-kv dir)
-        blank-analyzer (i/inter-fn [^String text]
-                                   (map-indexed (fn [i ^String t]
-                                                  [t i (.indexOf text t)])
-                                                (str/split text #"\s")))
+        blank-analyzer (i/inter-fn
+                         [^String text]
+                         (map-indexed (fn [i ^String t]
+                                        [t i (.indexOf text t)])
+                                      (str/split text #"\s")))
         engine         (sut/new-search-engine lmdb {:analyzer blank-analyzer})]
     (sut/open-dbi lmdb "raw")
     (sut/transact-kv
@@ -824,6 +798,37 @@
     (is (= [[1 [["dogs." [43]]]]]
            (sut/search engine "dogs." {:display :offsets})))
     (is (= [3] (sut/search engine "dogs")))
+    (sut/close-kv lmdb)
+    (s/stop server)))
+
+(deftest remote-custom-analyzer-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-custom-analyzer-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/custom-analyzer-test"
+        lmdb   (sut/open-kv dir)
+        engine (sut/new-search-engine
+                 lmdb
+                 {:analyzer
+                  (su/create-analyzer
+                    {:tokenizer
+                     (su/create-regexp-tokenizer
+                       #"[\s:/\.;,!=?\"'()\[\]{}|<>&@#^*\\~`]+")
+                     :token-filters [su/lower-case-token-filter
+                                     su/unaccent-token-filter
+                                     su/en-stop-words-token-filter]})})]
+    (sut/open-dbi lmdb "raw")
+    (sut/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of some dogs' and a whale."]])
+    (doseq [i [1 2 3]]
+      (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+    (is (= [[3 [["dogs" [29]]]] [1 [["dogs" [43]]]]]
+           (sut/search engine "dogs" {:display :offsets})))
     (sut/close-kv lmdb)
     (s/stop server)))
 

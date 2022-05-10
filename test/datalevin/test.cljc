@@ -6,6 +6,7 @@
    datalevin.lmdb-test
    datalevin.util-test
    datalevin.search-test
+   datalevin.search-utils-test
    datalevin.main-test
    datalevin.bits-test
    datalevin.storage-test
@@ -54,6 +55,7 @@
           'datalevin.lmdb-test
           'datalevin.util-test
           'datalevin.search-test
+          'datalevin.search-utils-test
           'datalevin.main-test
           'datalevin.bits-test
           'datalevin.storage-test
