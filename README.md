@@ -304,13 +304,15 @@ This will start the Datalevin REPL.
 The `dtlv` executable can also run as a
 [Babashka](https://github.com/babashka/babashka)
 [pod](https://github.com/babashka/pods). It is also possible to download
-Datalevin directly from [pod registry](https://github.com/babashka/pod-registry) within a Babashka script:
+Datalevin directly from [pod
+registry](https://github.com/babashka/pod-registry) within a Babashka script
+(not all versions are registered):
 
 ```
 #!/usr/bin/env bb
 
 (require '[babashka.pods :as pods])
-(pods/load-pod 'huahaiy/datalevin "0.6.9")
+(pods/load-pod 'huahaiy/datalevin "0.6.8")
 
 ```
 
@@ -343,6 +345,7 @@ user=> (d/close conn)
 nil
 user=>
 ```
+The example above uses `dtlv` binary in the PATH.
 
 ## :tada: Usage
 

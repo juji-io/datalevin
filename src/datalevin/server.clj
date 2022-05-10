@@ -12,6 +12,7 @@
             [datalevin.constants :as c]
             [taoensso.nippy :as nippy]
             [taoensso.timbre :as log]
+            [clojure.stacktrace :as stt]
             [clojure.string :as s])
   (:import [java.nio.charset StandardCharsets]
            [java.nio ByteBuffer BufferOverflowException]
@@ -1737,25 +1738,29 @@
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
-  (let [state                         (.attachment skey)
-        {:keys [^ByteBuffer read-bf]} @state
-        capacity                      (.capacity read-bf)
-        ^SocketChannel ch             (.channel skey)
-        ^int readn                    (p/read-ch ch read-bf)]
-    (cond
-      (> readn 0)  (if (= (.position read-bf) capacity)
-                     (let [size (* ^long c/+buffer-grow-factor+ capacity)
-                           bf   (b/allocate-buffer size)]
-                       (.flip read-bf)
-                       (b/buffer-transfer read-bf bf)
-                       (vswap! state assoc :read-bf bf))
-                     (p/extract-message
-                       read-bf
-                       (fn [fmt msg]
-                         (execute server
-                                  #(handle-message server skey fmt msg)))))
-      (= readn 0)  :continue
-      (= readn -1) (.close ch))))
+  (try
+    (let [state                         (.attachment skey)
+          {:keys [^ByteBuffer read-bf]} @state
+          capacity                      (.capacity read-bf)
+          ^SocketChannel ch             (.channel skey)
+          ^int readn                    (p/read-ch ch read-bf)]
+      (cond
+        (> readn 0)  (if (= (.position read-bf) capacity)
+                       (let [size (* ^long c/+buffer-grow-factor+ capacity)
+                             bf   (b/allocate-buffer size)]
+                         (.flip read-bf)
+                         (b/buffer-transfer read-bf bf)
+                         (vswap! state assoc :read-bf bf))
+                       (p/extract-message
+                         read-bf
+                         (fn [fmt msg]
+                           (execute server
+                                    #(handle-message server skey fmt msg)))))
+        (= readn 0)  :continue
+        (= readn -1) (.close ch)))
+    (catch Exception e
+      (stt/print-stack-trace e)
+      (log/error "Read error:" (ex-message e)))))
 
 (defn- handle-registration
   [^Server server]

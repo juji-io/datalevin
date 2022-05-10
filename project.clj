@@ -14,7 +14,7 @@
                          [com.taoensso/timbre "5.2.1"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
-                         [org.babashka/sci "0.3.4"]
+                         [org.babashka/sci "0.3.5"]
                          [org.bouncycastle/bcprov-jdk15on "1.70"]
                          [org.clojure/clojure "1.11.1"]
                          [org.clojure/tools.cli "1.0.206"]
@@ -63,12 +63,12 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              ;; :jvm-opts
-                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
-                              ;;  "-Djdk.attach.allowAttachSelf"]
+                              :jvm-opts
+                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
+                               "-Djdk.attach.allowAttachSelf"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]

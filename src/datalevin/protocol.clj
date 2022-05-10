@@ -215,9 +215,12 @@
           (doto read-bf
             (.limit (.capacity read-bf))
             (.position pos))
-          (let [ba (byte-array (- length c/message-header-size))]
-            (.get read-bf ba)
-            (msg-handler fmt ba)
-            (if (= available length)
-              (.clear read-bf)
-              (.compact read-bf))))))))
+          (let [cnt-len (- length c/message-header-size)]
+            (if (< cnt-len 0)
+              (u/raise "Message corruption: length is less than header size" {})
+              (let [ba (byte-array cnt-len)]
+                (.get read-bf ba)
+                (msg-handler fmt ba)
+                (if (= available length)
+                  (.clear read-bf)
+                  (.compact read-bf))))))))))
