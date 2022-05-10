@@ -89,9 +89,11 @@
                                     :password      :env/clojars_password
                                     :sign-releases false}]]
   :plugins [[lein-codox "0.10.7"]]
-  :codox {:output-path "codox"
-          :namespaces  [datalevin.core datalevin.client datalevin.interpret]
-          :metadata    {:doc/format :markdown}
+  :codox {:source-paths ["src"]
+          :output-path  "codox"
+          :namespaces   [datalevin.core datalevin.client datalevin.interpret
+                         datalevin.search-utils]
+          :metadata     {:doc/format :markdown}
           :source-uri
           {#"target/classes"
            "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
