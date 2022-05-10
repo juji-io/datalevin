@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.9
 ### Fixed
 - Query cache memory leak, #118 (thx @panterarocks49)
 - Entity retraction not removing `:db/updated-at` datom #113
