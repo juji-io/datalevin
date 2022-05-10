@@ -3,6 +3,7 @@
 ## WIP
 ### Fixed
 - Query cache memory leak, #118 (thx @panterarocks49)
+- Entity retraction not removing `:db/updated-at` datom #113
 ### Added
 - `datalevin.search-utils` namespace with some utility functions to customize
   search, #105 (thx @ngrunwald)

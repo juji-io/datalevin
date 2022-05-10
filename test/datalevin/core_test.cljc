@@ -1099,3 +1099,22 @@
       (sut/close conn)
       (u/delete-files src)
       (u/delete-files dst))))
+
+(deftest auto-entity-time-test
+  (let [
+        dir  (u/tmp-dir (str "auto-entity-time-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}}
+                              {:auto-entity-time? true})]
+    (sut/transact! conn [{:id 1}])
+    (is (= (count (sut/datoms @conn :eav)) 3))
+    (is (:db/created-at (sut/touch (sut/entity @conn [:id 1]))))
+    (is (:db/updated-at (sut/touch (sut/entity @conn [:id 1]))))
+
+    (sut/transact! conn [[:db/retractEntity [:id 1]]])
+    (is (= (count (sut/datoms @conn :eav)) 0))
+    (is (nil? (sut/entity @conn [:id 1])))
+
+    (sut/close conn)
+    (u/delete-files dir)))
