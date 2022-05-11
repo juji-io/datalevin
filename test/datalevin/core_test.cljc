@@ -202,10 +202,11 @@
     (u/delete-files dir)))
 
 (deftest remote-basic-ops-test
-  (let [server (s/create {:port c/default-port
-                          :root (u/tmp-dir
-                                  (str "remote-basic-test-"
-                                       (UUID/randomUUID)))})
+  (let [server (s/create {:port    c/default-port
+                          :root    (u/tmp-dir
+                                     (str "remote-basic-test-"
+                                          (UUID/randomUUID)))
+                          :verbose true})
         _      (s/start server)
         schema
         {:sales/country           {:db/valueType :db.type/string},
@@ -833,10 +834,11 @@
     (s/stop server)))
 
 (deftest fulltext-fns-test
-  (let [analyzer (i/inter-fn [^String text]
-                             (map-indexed (fn [i ^String t]
-                                            [t i (.indexOf text t)])
-                                          (str/split text #"\s")))
+  (let [analyzer (i/inter-fn
+                   [^String text]
+                   (map-indexed (fn [i ^String t]
+                                  [t i (.indexOf text t)])
+                                (str/split text #"\s")))
         conn     (sut/create-conn (u/tmp-dir (str "fulltext-fns-" (UUID/randomUUID)))
                                   {:a/string {:db/valueType :db.type/string
                                               :db/fulltext  true}}
@@ -857,10 +859,11 @@
                                          (UUID/randomUUID)))})
         _        (s/start server)
         dir      "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
-        analyzer (i/inter-fn [^String text]
-                             (map-indexed (fn [i ^String t]
-                                            [t i (.indexOf text t)])
-                                          (str/split text #"\s")))
+        analyzer (i/inter-fn
+                   [^String text]
+                   (map-indexed (fn [i ^String t]
+                                  [t i (.indexOf text t)])
+                                (str/split text #"\s")))
         db       (-> (sut/empty-db
                        dir
                        {:text {:db/valueType :db.type/string
@@ -892,12 +895,13 @@
 
         conn    (sut/create-conn dir
                                  {:name {:db/unique :db.unique/identity}})
-        inc-age (i/inter-fn [db name]
-                            (if-some [ent (sut/entity db [:name name])]
-                              [{:db/id (:db/id ent)
-                                :age   (inc ^long (:age ent))}
-                               [:db/add (:db/id ent) :had-birthday true]]
-                              (throw (ex-info (str "No entity with name: " name) {}))))]
+        inc-age (i/inter-fn
+                  [db name]
+                  (if-some [ent (sut/entity db [:name name])]
+                    [{:db/id (:db/id ent)
+                      :age   (inc ^long (:age ent))}
+                     [:db/add (:db/id ent) :had-birthday true]]
+                    (throw (ex-info (str "No entity with name: " name) {}))))]
     (sut/transact! conn [{:db/id    1
                           :name     "Petr"
                           :age      31

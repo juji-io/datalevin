@@ -487,7 +487,8 @@ Only usable for debug output.
 (defn close
   "Close the connection"
   [conn]
-  (s/close ^Store (.-store ^DB @conn))
+  (when-let [store (.-store ^DB @conn)]
+    (s/close ^Store store))
   nil)
 
 (defn closed?
@@ -1271,7 +1272,6 @@ the `pred`.
 (defn clear
   "Clear all data in the Datalog database, including schema."
   [conn]
-  (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]
     (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]

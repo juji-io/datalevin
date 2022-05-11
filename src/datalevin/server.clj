@@ -26,7 +26,7 @@
            [java.util.concurrent Executors Executor ExecutorService
             ConcurrentLinkedQueue]
            [datalevin.db DB]
-           [datalevin.storage IStore]
+           [datalevin.storage IStore Store]
            [datalevin.lmdb ILMDB]
            [datalevin.datom Datom]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
@@ -37,17 +37,7 @@
 
 (defprotocol IServer
   (start [srv] "Start the server")
-  (stop [srv] "Stop the server")
-  (get-clients [srv] "access all the clients")
-  (get-client [srv client-id] "access a client")
-  (add-client [srv ip client-id username] "add a client")
-  (remove-client [srv client-id] "remove a client")
-  (update-client [srv client-id f] "update info about a client")
-  (get-stores [srv] "access all open stores")
-  (get-store [srv dir] "access an open store")
-  (add-store [srv dir store] "add a store")
-  (remove-store [srv dir] "remove a store")
-  (get-db [srv db-name] "access a datalog db"))
+  (stop [srv] "Stop the server"))
 
 ;; system db management
 
@@ -492,7 +482,9 @@
          (remove-client ~'server ~'client-id)
          (p/write-message-blocking ~'ch ~'write-bf {:type :reconnect})))))
 
-(declare event-loop close-conn store->db-name)
+(declare event-loop close-conn store->db-name session-lmdb remove-store)
+
+(def session-dbi "datalevin-server/sessions")
 
 (deftype Server [^AtomicBoolean running
                  ^int port
@@ -504,12 +496,15 @@
                  sys-conn
                  ;; session data, a map of
                  ;; client-id -> { ip, uid, username, roles, permissions,
-                 ;;                dbs -> {db-name -> store } }
-                 ^:volatile-mutable clients
-                 ;; dir -> store
-                 ^:volatile-mutable stores
-                 ;; db-name -> db
-                 ^:volatile-mutable dt-dbs]
+                 ;;                stores -> #{ db-name }
+                 ;;                engines -> #{ db-name }
+                 ;;                writers -> #{ db-name }
+                 ;;                dt-dbs -> #{ db-name } }
+                 clients
+                 stores    ; db-name -> store
+                 engines   ; db-name -> engines
+                 writers   ; db-name -> writers
+                 dt-dbs]   ; db-name -> db
   IServer
   (start [server]
     (.set running true)
@@ -525,72 +520,66 @@
     (.close server-socket)
     (when (.isOpen selector) (.close selector))
     (.shutdown work-executor)
-    (doseq [dir (keys stores)] (remove-store server dir))
+    (doseq [db-name (keys @stores)] (remove-store server db-name))
     (d/close sys-conn)
-    (log/info "Datalevin server shuts down."))
+    (log/info "Datalevin server shuts down.")))
 
-  (get-clients [_]
-    clients)
+(defn- get-clients [^Server server] @(.-clients server))
 
-  (get-client [_ client-id]
-    (clients client-id))
+(defn- get-client [^Server server client-id] (@(.-clients server) client-id))
 
-  (add-client [server ip client-id username]
-    (let [roles (user-roles sys-conn username)
-          perms (user-permissions sys-conn username)]
-      (set! clients
-            (assoc clients client-id
-                   {:ip          ip
-                    :uid         (user-eid sys-conn username)
-                    :username    username
-                    :dbs         {}
-                    :engines     {}
-                    :writers     {}
-                    :roles       roles
-                    :permissions perms}))
-      (log/info "Added client from:" ip
-                "for user:" username
-                "with roles:" (pr-str roles)
-                "with permissions:" (pr-str perms))))
+(defn- add-client
+  [^Server server ip client-id username]
+  (let [sys-conn (.-sys-conn server)
+        roles    (user-roles sys-conn username)
+        perms    (user-permissions sys-conn username)]
+    (vswap! (.-clients server) assoc client-id
+            {:ip          ip
+             :uid         (user-eid sys-conn username)
+             :username    username
+             :stores      #{}
+             :engines     #{}
+             :writers     #{}
+             :dt-dbs      #{}
+             :roles       roles
+             :permissions perms})
+    (log/info "Added client " client-id
+              "from:" ip
+              "for user:" username
+              "with roles:" (pr-str roles)
+              "with permissions:" (pr-str perms))))
 
-  (remove-client [_ client-id]
-    (set! clients (dissoc clients client-id))
-    (log/info "Removed client:" client-id))
+(defn- remove-client
+  [^Server server client-id]
+  (vswap! (.-clients server) dissoc client-id)
+  (log/info "Removed client:" client-id))
 
-  (update-client [_ client-id f]
-    (set! clients (update clients client-id f)))
+(defn- update-client
+  [^Server server client-id f]
+  (vswap! (.-clients server) update client-id f))
 
-  (get-stores [_]
-    stores)
+(defn- get-stores [^Server server] @(.-stores server))
 
-  (get-store [_ dir]
-    (when-let [store (stores dir)]
-      (cond
-        (instance? datalevin.storage.IStore store)
-        (when-not (st/closed? store) store)
-        (instance? datalevin.lmdb.ILMDB store)
-        (when-not (l/closed-kv? store) store)
-        :else (u/raise "Unknown store" {:dir dir}))))
+(defn- get-store [^Server server db-name] (@(.-stores server) db-name))
 
-  (add-store [server dir store]
-    (let [db-name (store->db-name server store)]
-      (set! stores (assoc stores dir store))
-      (when (instance? IStore store)
-        (set! dt-dbs (assoc dt-dbs db-name (db/new-db store))))
-      (log/info "Opened database:" db-name)))
+(defn- add-store
+  [^Server server db-name store]
+  (vswap! (.-stores server) assoc db-name store)
+  (when (instance? IStore store)
+    (vswap! (.-dt-dbs server) assoc db-name (db/new-db store)))
+  (log/info "Opened database:" db-name))
 
-  (remove-store [server dir]
-    (when-let [store (get-store server dir)]
-      (let [db-name (store->db-name server store)]
-        (if-let [db (get-db server db-name)]
-          (do (db/close-db db)
-              (set! dt-dbs (dissoc dt-dbs db-name)))
-          (close-store store))
-        (log/info "Closed database:" db-name)))
-    (set! stores (dissoc stores dir)))
+(defn- get-db [^Server server db-name] (@(.-dt-dbs server) db-name))
 
-  (get-db [server db-name]
-    (dt-dbs db-name)))
+(defn- remove-store
+  [^Server server db-name]
+  (when-let [store (get-store server db-name)]
+    (if-let [db (get-db server db-name)]
+      (do (db/close-db db)
+          (vswap! (.-dt-dbs server) dissoc db-name))
+      (close-store store))
+    (log/info "Closed database:" db-name))
+  (vswap! (.-stores server) dissoc db-name))
 
 (defn- update-cached-role
   [^Server server target-username]
@@ -766,11 +755,11 @@
       (instance? ILMDB store)  (l/dir store)
       :else                    (u/raise "Unknown store type" {}))))
 
-
 (defn- db-store
   [^Server server ^SelectionKey skey db-name]
-  (get-in (get-client server (@(.attachment skey) :client-id))
-          [:dbs db-name]))
+  (when (((get-client server (@(.attachment skey) :client-id)) :stores)
+         db-name)
+    (get-store server db-name)))
 
 (defn- store-closed?
   [store]
@@ -779,18 +768,14 @@
     (instance? ILMDB store)  (l/closed-kv? store)
     :else                    (u/raise "Unknown store type" {})))
 
-(defn- store-in-use? [[dir store]] (when-not (store-closed? store) dir))
+(defn- store-in-use? [[db-name store]] (when-not (store-closed? store) db-name))
 
 (defn- db-in-use?
   [server db-name]
-  (when-let [store (get-store server (db-dir server db-name))]
+  (when-let [store (get-store server db-name)]
     (not (store-closed? store))))
 
-(defn- in-use-dbs
-  [server]
-  (->> (get-stores server)
-       (keep store-in-use?)
-       (mapv (partial dir->db-name server))))
+(defn- in-use-dbs [server] (keep store-in-use? (get-stores server)))
 
 (defmacro ^:no-doc normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
@@ -816,21 +801,20 @@
 
 (defn- search-engine
   [^Server server ^SelectionKey skey db-name]
-  (get-in (get-client server (@(.attachment skey) :client-id))
-          [:engines db-name]))
+  (when (((get-client server (@(.attachment skey) :client-id)) :engines)
+         db-name)
+    (@(.-engines server) db-name)))
 
 (defn- new-search-engine
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts]      args
-          dir                 (db-dir server db-name)
-          store               (get-store server dir)
+          store               (get-store server db-name)
           {:keys [client-id]} @(.attachment skey)
-          engine              (or (get-in (get-client server client-id)
-                                          [:engines db-name])
+          engine              (or (search-engine server skey db-name)
                                   (sc/new-search-engine store opts))]
-      (update-client server client-id
-                     #(update % :engines assoc db-name engine))
+      (update-client server client-id #(update % :engines conj db-name))
+      (vswap! (.-engines server) assoc db-name engine)
       (write-message skey {:type :command-complete}))))
 
 (defmacro ^:no-doc search-handler
@@ -846,21 +830,20 @@
 
 (defn- index-writer
   [^Server server ^SelectionKey skey db-name]
-  (get-in (get-client server (@(.attachment skey) :client-id))
-          [:writers db-name]))
+  (when (((get-client server (@(.attachment skey) :client-id)) :writers)
+         db-name)
+    (@(.-writers server) db-name)))
 
 (defn- search-index-writer
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts]      args
-          dir                 (db-dir server db-name)
-          store               (get-store server dir)
+          store               (get-store server db-name)
           {:keys [client-id]} @(.attachment skey)
-          writer              (or (get-in (get-client server client-id)
-                                          [:writers db-name])
+          writer              (or (index-writer server skey db-name)
                                   (sc/search-index-writer store opts))]
-      (update-client server client-id
-                     #(update % :writers assoc db-name writer))
+      (update-client server client-id #(update % :writers conj db-name))
+      (vswap! (.-writers server) assoc db-name writer)
       (write-message skey {:type :command-complete}))))
 
 (defmacro ^:no-doc index-writer-handler
@@ -889,21 +872,28 @@
         (when existing-db? (db-eid sys-conn db-name))
         "Don't have permission to open database"
         (let [dir   (db-dir server db-name)
-              store (or (when-let [ds (get-store server dir)]
-                          (when schema
-                            (st/set-schema ds schema))
-                          ds)
+              store (or (when-let [ds (get-store server db-name)]
+                          (if (instance? Store ds)
+                            (when-not (st/closed? ds)
+                              (when schema
+                                (st/set-schema ds schema))
+                              ds)
+                            (when-not (l/closed-kv? ds)
+                              ds)))
                         (case db-type
                           :datalog   (st/open dir schema opts)
                           :key-value (l/open-kv dir opts)))]
-          (add-store server dir store)
-          (update-client server client-id #(update % :dbs assoc db-name store))
+          (add-store server db-name store)
+          (update-client server client-id
+                         #(update % :stores conj db-name))
           (when-not existing-db?
             (transact-new-db sys-conn username db-type db-name)
             (update-client server client-id
                            #(assoc % :permissions
                                    (user-permissions sys-conn username))))
           (write-message skey {:type :command-complete}))))))
+
+(defn- session-lmdb [sys-conn] (.-lmdb ^Store (.-store ^DB (d/db sys-conn))))
 
 (defn- init-sys-db
   [root]
@@ -928,6 +918,7 @@
                   :role-perm/perm -4
                   :role-perm/role -2}]]
         (d/transact! sys-conn txs)))
+    (d/open-dbi (session-lmdb sys-conn) session-dbi)
     sys-conn))
 
 (defn- authenticate
@@ -948,12 +939,12 @@
          (update :permissions
                  #(mapv
                     (fn [{:keys [permission/act permission/obj
-                                 permission/tgt]}]
+                                permission/tgt]}]
                       (if-let [{:keys [db/id]} tgt]
                         [act obj (perm-tgt-name sys-conn obj id)]
                         [act obj]))
                     %))
-         (assoc :open-dbs (keys (:dbs m)))
+         (assoc :open-dbs (:stores m))
          (select-keys [:ip :username :roles :permissions :open-dbs]))]))
 
 ;; BEGIN message handlers
@@ -1093,18 +1084,17 @@
     (let [sys-conn            (.-sys-conn server)
           [db-name]           args
           {:keys [client-id]} @(.attachment skey)
-          did                 (db-eid sys-conn db-name)
-          dir                 (db-dir server db-name)]
+          did                 (db-eid sys-conn db-name)]
       (if did
-        (if-let [store (get-store server dir)]
+        (if (get-store server db-name)
           (wrap-permission
             ::create ::database did
             "Don't have permission to close the database"
-            (doseq [[cid {:keys [dbs]}] (get-clients server)]
-              (when (identical? store (get dbs db-name))
-                (when-not (= client-id cid)
-                  (disconnect-client* server cid))))
-            (remove-store server dir)
+            (doseq [[cid {:keys [stores]}] (get-clients server)
+                    :when                  (stores db-name)]
+              (when (not= client-id cid)
+                (disconnect-client* server cid)))
+            (remove-store server db-name)
             (write-message skey {:type :command-complete}))
           (u/raise "Database is closed already." {}))
         (u/raise "Database doe snot exist." {})))))
@@ -1338,8 +1328,8 @@
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dbs]}       (get-client server client-id)
-          dt-store            (dbs (nth args 0))
+          {:keys [stores]}    (get-client server client-id)
+          dt-store            (get-store server (stores (nth args 0)))
           sys-conn            (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
@@ -1354,9 +1344,9 @@
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dbs]}       (get-client server client-id)
+          {:keys [stores]}    (get-client server client-id)
           db-name             (nth args 0)
-          dt-store            (dbs db-name)
+          dt-store            (get-store server (stores db-name))
           sys-conn            (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
@@ -1513,8 +1503,8 @@
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [dbs]}       (get-client server client-id)
-          kv-store            (dbs (nth args 0))
+          {:keys [stores]}    (get-client server client-id)
+          kv-store            (get-store server (stores (nth args 0)))
           sys-conn            (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn (store->db-name server kv-store))
@@ -1739,6 +1729,8 @@
 (defn- handle-read
   [^Server server ^SelectionKey skey]
   (try
+    ;; (log/debug "clients" (pr-str (get-clients server)))
+    ;; (log/debug "stores" (pr-str (get-stores server)))
     (let [state                         (.attachment skey)
           {:keys [^ByteBuffer read-bf]} @state
           capacity                      (.capacity read-bf)
@@ -1810,8 +1802,10 @@
                 (ConcurrentLinkedQueue.)
                 (Executors/newWorkStealingPool)
                 (init-sys-db root)
-                {}
-                {}
-                {}))
+                (volatile! {})
+                (volatile! {})
+                (volatile! {})
+                (volatile! {})
+                (volatile! {})))
     (catch Exception e
       (u/raise "Error creating server:" (ex-message e) {}))))

@@ -1,9 +1,14 @@
 # Change Log
 
+## WIP
+### Improved
+- More robust server error handling
+- Persistent server session that survives restarts
+
 ## 0.6.9
 ### Fixed
 - Query cache memory leak, #118 (thx @panterarocks49)
-- Entity retraction not removing `:db/updated-at` datom #113
+- Entity retraction not removing `:db/updated-at` datom, #113
 ### Added
 - `datalevin.search-utils` namespace with some utility functions to customize
   search, #105 (thx @ngrunwald)

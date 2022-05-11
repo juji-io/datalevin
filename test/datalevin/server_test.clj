@@ -1,6 +1,7 @@
 (ns datalevin.server-test
   (:require [datalevin.server :as sut]
             [datalevin.client :as cl]
+            [datalevin.core :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest testing]])
@@ -49,3 +50,37 @@
     ;; the other connections should work as before
     (is (= (cl/list-databases client2) []))
     (sut/stop server)))
+
+(deftest server-restart-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/server-restart-test"
+        root (u/tmp-dir (str "server-restart-test-" (UUID/randomUUID)))]
+    (let [^Server server (sut/create {:port c/default-port :root root})
+          _              (sut/start server)
+          lmdb           (d/open-kv dir)
+          engine         (d/new-search-engine lmdb)
+          ^Client client (cl/new-client "dtlv://datalevin:datalevin@localhost"
+                                        {:pool-size 1 :time-out 2000})]
+      (is (= (cl/list-databases client) ["server-restart-test"]))
+
+      (d/open-dbi lmdb "raw")
+      (d/transact-kv
+        lmdb
+        [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+         [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+         [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
+      (doseq [i [1 2 3]]
+        (d/add-doc engine i (d/get-value lmdb "raw" i)))
+      (is (= [3] (d/search engine "moby")))
+      (sut/stop server)
+
+      (let [^Server server (sut/create {:port c/default-port :root root})
+            _              (sut/start server)]
+        (try
+          (is (= (cl/list-databases client) ["server-restart-test"]))
+
+          ;; (is (= [3] (d/search engine "moby")))
+
+          (finally (sut/stop server)))))
+    ))
+
+(deftest msg-handler-error-test)
