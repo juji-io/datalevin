@@ -1,15 +1,12 @@
 (ns datalevin.search-test
   (:require [datalevin.search :as sut]
             [datalevin.lmdb :as l]
-            [datalevin.bits :as b]
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.string :as s]
             [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Map ArrayList]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
-            IntObjectHashMap ObjectIntHashMap]
            [org.roaringbitmap RoaringBitmap]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.search SearchEngine IndexWriter]))
@@ -193,5 +190,12 @@
                     "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)</p>"]))
       (is (= (sut/search engine "red" ) [1]))
       (is (= (sut/search engine "truth" ) [4])))
+
+    (testing "duplicated docs"
+      (sut/add-doc engine 5
+                   "Pricing how much is the price for each juji Whats the price of using juji for classes Hello, what is the price of Juji? <p>You can create me or any of my brothers and sisters FREE. You can also chat with us privately FREE, as long as you want.</p><p><br></p><p>If you wish to make me or any of my sisters or brothers public so we can chat with other folks, I'd be happy to help you find the right price package.</p>")
+      (sut/add-doc engine 6
+                   "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)</p>")
+      (is (= (sut/search engine "truth" ) [6 4])))
 
     (l/close-kv lmdb)))

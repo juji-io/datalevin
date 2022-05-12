@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- Search add-doc error when alter existing docs
+
 ## 0.6.10
 ### Improved
 - Persistent server session that survives restarts without affecting clients, #119
