@@ -187,9 +187,11 @@
       (is (= (sut/search engine "red" ) [2])))
     (testing "parallel update"
       (dorun (pmap #(sut/add-doc engine %1 %2)
-                   [1 2]
+                   [1 2 4]
                    ["The quick red fox jumped over the lazy dogs."
-                    "May has a little lamb."]))
-      (is (= (sut/search engine "red" ) [1])))
+                    "May has a little lamb."
+                    "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)</p>"]))
+      (is (= (sut/search engine "red" ) [1]))
+      (is (= (sut/search engine "truth" ) [4])))
 
     (l/close-kv lmdb)))

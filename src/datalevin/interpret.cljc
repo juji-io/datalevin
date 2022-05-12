@@ -11,9 +11,11 @@
             [datalevin.util :as u]
             [datalevin.core]
             [datalevin.client]
+            [datalevin.constants]
             [clojure.string :as s])
   (:import [clojure.lang AFn]
            [datalevin.datom Datom]
+           [java.text Normalizer Normalizer$Form]
            [java.io DataInput DataOutput Writer]))
 
 (if (u/graal?)
@@ -21,7 +23,7 @@
   (require 'datalevin.binding.java))
 
 (def ^:no-doc user-facing-ns
-  #{'datalevin.core 'datalevin.client 'datalevin.interpret})
+  #{'datalevin.core 'datalevin.client 'datalevin.interpret 'datalevin.constants})
 
 (defn- user-facing? [v]
   (let [m (meta v)
@@ -172,6 +174,8 @@
 
 (def ^:no-doc sci-opts
   {:namespaces (user-facing-vars)
-   :classes    {:allow :all}})
+   :classes    {:allow                     :all
+                'java.text.Normalizer      java.text.Normalizer
+                'java.text.Normalizer$Form java.text.Normalizer$Form}})
 
 (def ^:no-doc ctx (sci/init sci-opts))

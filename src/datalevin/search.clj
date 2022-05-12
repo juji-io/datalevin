@@ -419,23 +419,28 @@
 
 (deftype ^:no-doc SearchEngine [lmdb
                                 analyzer
+                                query-analyzer
                                 ^IntShortHashMap norms ; doc-id -> norm
                                 ^AtomicInteger max-doc
                                 ^AtomicInteger max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
     (locking this
-      (when-let [doc-id (doc-ref->id lmdb doc-ref)]
-        (remove-doc* lmdb norms doc-id))
-      (let [txs       (FastList.)
-            hit-terms (UnifiedMap.)]
-        (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref norms max-term
-                     hit-terms)
-        (doseq [^Map$Entry kv (.entrySet hit-terms)]
-          (let [term (.getKey kv)
-                info (.getValue kv)]
-            (.add txs [:put c/terms term info :string :term-info])))
-        (l/transact-kv lmdb txs))))
+      (try
+        (when-let [doc-id (doc-ref->id lmdb doc-ref)]
+          (remove-doc* lmdb norms doc-id))
+        (let [txs       (FastList.)
+              hit-terms (UnifiedMap.)]
+          (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref norms max-term
+                       hit-terms)
+          (doseq [^Map$Entry kv (.entrySet hit-terms)]
+            (let [term (.getKey kv)
+                  info (.getValue kv)]
+              (.add txs [:put c/terms term info :string :term-info])))
+          (l/transact-kv lmdb txs))
+        (catch Exception e
+          (u/raise "Error indexing document:" (ex-message e)
+                   {:doc-ref doc-ref :doc-text doc-text})))))
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (doc-ref->id lmdb doc-ref)]
@@ -455,7 +460,7 @@
                        :or   {display    :refs
                               top        10
                               doc-filter (constantly true)}}]
-    (let [tokens (->> (analyzer query)
+    (let [tokens (->> (query-analyzer query)
                       (mapv first)
                       (into-array String))
           qterms (->> (hydrate-query lmdb max-doc tokens)
@@ -520,11 +525,12 @@
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
-  ([lmdb {:keys [analyzer]
+  ([lmdb {:keys [analyzer query-analyzer]
           :or   {analyzer en-analyzer}}]
    (open-dbis lmdb)
    (->SearchEngine lmdb
                    analyzer
+                   (or query-analyzer analyzer)
                    (init-norms lmdb)
                    (AtomicInteger. (init-max-doc lmdb))
                    (AtomicInteger. (init-max-term lmdb)))))

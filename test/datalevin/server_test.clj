@@ -1,6 +1,7 @@
 (ns datalevin.server-test
   (:require [datalevin.server :as sut]
             [datalevin.client :as cl]
+            [datalevin.core :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest testing]])
@@ -49,3 +50,91 @@
     ;; the other connections should work as before
     (is (= (cl/list-databases client2) []))
     (sut/stop server)))
+
+(deftest server-restart-kv-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/server-restart-test"
+        root (u/tmp-dir (str "server-restart-kv-test-" (UUID/randomUUID)))]
+    (let [^Server server (sut/create {:port c/default-port :root root})
+          _              (sut/start server)
+          lmdb           (d/open-kv dir)
+          engine         (d/new-search-engine lmdb)
+          ^Client client (cl/new-client "dtlv://datalevin:datalevin@localhost"
+                                        {:pool-size 1 :time-out 2000})]
+      (is (= (cl/list-databases client) ["server-restart-test"]))
+
+      (d/open-dbi lmdb "raw")
+      (d/transact-kv
+        lmdb
+        [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+         [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+         [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
+      (doseq [i [1 2 3]]
+        (d/add-doc engine i (d/get-value lmdb "raw" i)))
+      (is (= [3] (d/search engine "moby")))
+      (sut/stop server)
+
+      ;; existing clients should work with restarted server normally
+      (let [^Server server (sut/create {:port c/default-port :root root})
+            _              (sut/start server)]
+        (is (= (cl/list-databases client) ["server-restart-test"]))
+
+        (d/transact-kv
+          lmdb
+          [[:put "raw" 4
+            "The robber wore a red fleece jacket and a baseball cap."]])
+        (d/add-doc engine 4 (d/get-value lmdb "raw" 4))
+
+        (is (= [4] (d/search engine "robber")))
+
+        (sut/stop server)))))
+
+(deftest server-restart-dl-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/server-restart"
+        root (u/tmp-dir (str "server-restart-dl-test-" (UUID/randomUUID)))]
+    (let [^Server server (sut/create {:port c/default-port :root root})
+          _              (sut/start server)
+          conn           (d/create-conn dir)]
+      (d/transact! conn [{:name "John" :id 2}
+                         {:name "Matt" :id 3}])
+      (is (= 2 (d/q '[:find ?i .
+                      :in $ ?n
+                      :where
+                      [?e :name ?n]
+                      [?e :id ?i]] (d/db conn) "John")))
+      (sut/stop server)
+
+      ;; existing clients should work with restarted server normally
+      (let [^Server server (sut/create {:port c/default-port :root root})
+            _              (sut/start server)]
+
+        (is (= 2 (d/q '[:find ?i .
+                        :in $ ?n
+                        :where
+                        [?e :name ?n]
+                        [?e :id ?i]] (d/db conn) "John")))
+
+        (sut/stop server)))))
+
+(deftest msg-handler-error-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/server-error"
+        root (u/tmp-dir (str "server-error-test-" (UUID/randomUUID)))]
+    (let [^Server server (sut/create {:port c/default-port :root root})
+          _              (sut/start server)
+          conn           (d/create-conn dir)]
+      (d/transact! conn [{:name "John" :id 2}
+                         {:name "Matt" :id 3}])
+      (is (thrown? Exception
+                   (d/q '[:find ?i ?j
+                          :in $ ?n
+                          :where
+                          [(/ 3 0) ?j]
+                          [?e :name ?n]
+                          [?e :id ?i]] (d/db conn) "John")))
+
+      ;; server still respond normally
+      (is (= 2 (d/q '[:find ?i .
+                      :in $ ?n
+                      :where
+                      [?e :name ?n]
+                      [?e :id ?i]] (d/db conn) "John")))
+      (sut/stop server))))

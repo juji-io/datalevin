@@ -4,6 +4,7 @@
             [datalevin.client :as cl]
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
+            [datalevin.search-utils :as su]
             [datalevin.util :as u]
             [datalevin.test.core]
             [clojure.string :as str]
@@ -778,12 +779,13 @@
                                           (str "remote-blank-analyzer-test-"
                                                (UUID/randomUUID)))})
         _              (s/start server)
-        dir            "dtlv://datalevin:datalevin@localhost/remote-blank-analyzer-test"
+        dir            "dtlv://datalevin:datalevin@localhost/blank-analyzer-test"
         lmdb           (sut/open-kv dir)
-        blank-analyzer (i/inter-fn [^String text]
-                                   (map-indexed (fn [i ^String t]
-                                                  [t i (.indexOf text t)])
-                                                (str/split text #"\s")))
+        blank-analyzer (i/inter-fn
+                         [^String text]
+                         (map-indexed (fn [i ^String t]
+                                        [t i (.indexOf text t)])
+                                      (str/split text #"\s")))
         engine         (sut/new-search-engine lmdb {:analyzer blank-analyzer})]
     (sut/open-dbi lmdb "raw")
     (sut/transact-kv
@@ -799,11 +801,43 @@
     (sut/close-kv lmdb)
     (s/stop server)))
 
+(deftest remote-custom-analyzer-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-custom-analyzer-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/custom-analyzer-test"
+        lmdb   (sut/open-kv dir)
+        engine (sut/new-search-engine
+                 lmdb
+                 {:analyzer
+                  (su/create-analyzer
+                    {:tokenizer
+                     (su/create-regexp-tokenizer
+                       #"[\s:/\.;,!=?\"'()\[\]{}|<>&@#^*\\~`]+")
+                     :token-filters [su/lower-case-token-filter
+                                     su/unaccent-token-filter
+                                     su/en-stop-words-token-filter]})})]
+    (sut/open-dbi lmdb "raw")
+    (sut/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of some dogs' and a whale."]])
+    (doseq [i [1 2 3]]
+      (sut/add-doc engine i (sut/get-value lmdb "raw" i)))
+    (is (= [[3 [["dogs" [29]]]] [1 [["dogs" [43]]]]]
+           (sut/search engine "dogs" {:display :offsets})))
+    (sut/close-kv lmdb)
+    (s/stop server)))
+
 (deftest fulltext-fns-test
-  (let [analyzer (i/inter-fn [^String text]
-                             (map-indexed (fn [i ^String t]
-                                            [t i (.indexOf text t)])
-                                          (str/split text #"\s")))
+  (let [analyzer (i/inter-fn
+                   [^String text]
+                   (map-indexed (fn [i ^String t]
+                                  [t i (.indexOf text t)])
+                                (str/split text #"\s")))
         conn     (sut/create-conn (u/tmp-dir (str "fulltext-fns-" (UUID/randomUUID)))
                                   {:a/string {:db/valueType :db.type/string
                                               :db/fulltext  true}}
@@ -824,10 +858,11 @@
                                          (UUID/randomUUID)))})
         _        (s/start server)
         dir      "dtlv://datalevin:datalevin@localhost/remote-fulltext-fns-test"
-        analyzer (i/inter-fn [^String text]
-                             (map-indexed (fn [i ^String t]
-                                            [t i (.indexOf text t)])
-                                          (str/split text #"\s")))
+        analyzer (i/inter-fn
+                   [^String text]
+                   (map-indexed (fn [i ^String t]
+                                  [t i (.indexOf text t)])
+                                (str/split text #"\s")))
         db       (-> (sut/empty-db
                        dir
                        {:text {:db/valueType :db.type/string
@@ -859,12 +894,13 @@
 
         conn    (sut/create-conn dir
                                  {:name {:db/unique :db.unique/identity}})
-        inc-age (i/inter-fn [db name]
-                            (if-some [ent (sut/entity db [:name name])]
-                              [{:db/id (:db/id ent)
-                                :age   (inc ^long (:age ent))}
-                               [:db/add (:db/id ent) :had-birthday true]]
-                              (throw (ex-info (str "No entity with name: " name) {}))))]
+        inc-age (i/inter-fn
+                  [db name]
+                  (if-some [ent (sut/entity db [:name name])]
+                    [{:db/id (:db/id ent)
+                      :age   (inc ^long (:age ent))}
+                     [:db/add (:db/id ent) :had-birthday true]]
+                    (throw (ex-info (str "No entity with name: " name) {}))))]
     (sut/transact! conn [{:db/id    1
                           :name     "Petr"
                           :age      31
@@ -1066,3 +1102,22 @@
       (sut/close conn)
       (u/delete-files src)
       (u/delete-files dst))))
+
+(deftest auto-entity-time-test
+  (let [
+        dir  (u/tmp-dir (str "auto-entity-time-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}}
+                              {:auto-entity-time? true})]
+    (sut/transact! conn [{:id 1}])
+    (is (= (count (sut/datoms @conn :eav)) 3))
+    (is (:db/created-at (sut/touch (sut/entity @conn [:id 1]))))
+    (is (:db/updated-at (sut/touch (sut/entity @conn [:id 1]))))
+
+    (sut/transact! conn [[:db/retractEntity [:id 1]]])
+    (is (= (count (sut/datoms @conn :eav)) 0))
+    (is (nil? (sut/entity @conn [:id 1])))
+
+    (sut/close conn)
+    (u/delete-files dir)))

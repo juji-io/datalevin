@@ -1,9 +1,8 @@
 (ns datalevin.client
-  "Blocking network client with a connection pool"
+  "Datalevin client to Datalevin server, blocking API, with a connection pool"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
             [clojure.string :as s]
-            [clojure.stacktrace :as st]
             [datalevin.bits :as b]
             [datalevin.protocol :as p])
   (:import [java.nio ByteBuffer BufferOverflowException]
@@ -240,7 +239,6 @@
                               (try
                                 (send-n-receive conn req)
                                 (catch Exception e
-                                  ;; (st/print-stack-trace e)
                                   (close conn)
                                   nil)
                                 (finally (release-connection pool conn)))]

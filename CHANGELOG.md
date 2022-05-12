@@ -2,15 +2,34 @@
 
 ## WIP
 ## Added
-- EnCla index, a novel index for Datalog store. Also address #57.
-- Links index, a novel index for Datalog store.
-- Query optimizer that utilizes EnCla and Links indices. #11
+- EnCla index, a novel index for Datalog store, similar to tables in RDBMS. Also
+  address #57.
+- Links index, a novel index for Datalog store, similar to foreign keys in RDBMS.
+- A novel query optimizer that utilizes EnCla and Links indices. #11
+- Benchmarks for complex queries and large data sets
+- Expose LMDB dupsort capability (the same key maps to a list of sorted values)
+  as list functions: `open-list`, `in-list?`, `put-list-items`, and so on.
+- Add pull API to client/server and babashka pods
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
+- Port the new Pull API implementation from Datascript
 - Allow passing LMDB option map as `:kv-opts` when `create-conn`
 ## Changed
 - [**Breaking**] Remove `vea` index, its functionality is replaced by Links.
 - [**Breaking**] Change `:search-engine` key to `:search-opts` for consistency
+
+## 0.6.10
+### Improved
+- Persistent server session that survives restarts without affecting clients, #119
+- More robust server error handling
+
+## 0.6.9
+### Fixed
+- Query cache memory leak, #118 (thx @panterarocks49)
+- Entity retraction not removing `:db/updated-at` datom, #113
+### Added
+- `datalevin.search-utils` namespace with some utility functions to customize
+  search, #105 (thx @ngrunwald)
 
 ## 0.6.8
 ## Fixed

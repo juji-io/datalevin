@@ -354,8 +354,10 @@
      (new-db store))))
 
 (defn close-db [^DB db]
-  (s/close ^IStore (.-store db))
-  nil)
+  (let [store ^IStore (.-store db)]
+    (.remove ^ConcurrentHashMap caches store)
+    (s/close store)
+    nil))
 
 (defn db-from-reader [{:keys [schema datoms]}]
   (init-db (map (fn [[e a v tx]] (datom e a v tx)) datoms) schema))
@@ -766,10 +768,13 @@
         (recur entities (conj! new-es (assoc entity :db/updated-at tx-time)))
 
         (sequential? entity)
-        (let [[_ e _ _] entity]
-          (recur entities (-> new-es
-                              (conj! entity)
-                              (conj! [:db/add e :db/updated-at tx-time]))))
+        (let [[op e _ _] entity]
+          (if (or (= op :db/retractEntity)
+                  (= op :db.fn/retractEntity))
+            (recur entities (conj! new-es entity))
+            (recur entities (-> new-es
+                                (conj! entity)
+                                (conj! [:db/add e :db/updated-at tx-time])))))
 
         (datom? entity)
         (let [e (d/datom-e entity)]
@@ -987,7 +992,8 @@
                                                           (datom e0 nil e tx0)
                                                           (datom emax nil e txmax)))
                                        (-search db [nil nil e])))]
-                      (recur (reduce transact-retract-datom report (concat e-datoms v-datoms))
+                      (recur (reduce transact-retract-datom report
+                                     (concat e-datoms v-datoms))
                              (concat (retract-components db e-datoms) entities)))
                     (recur report entities))
 

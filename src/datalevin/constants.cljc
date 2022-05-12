@@ -1,4 +1,4 @@
-(ns ^:no-doc datalevin.constants
+(ns datalevin.constants
   (:refer-clojure :exclude [meta])
   (:import [java.util UUID Arrays HashSet]))
 
@@ -190,7 +190,10 @@
       (.add s w))
     s))
 
-(defn en-stop-words? [w] (.contains ^HashSet en-stop-words-set w))
+(defn en-stop-words?
+  "return true if the given word is an English stop words"
+  [w]
+  (.contains ^HashSet en-stop-words-set w))
 
 (def en-punctuations-set
   (let [s (HashSet.)]

@@ -488,7 +488,8 @@ Only usable for debug output.
 (defn close
   "Close the connection"
   [conn]
-  (s/close ^Store (.-store ^DB @conn))
+  (when-let [store (.-store ^DB @conn)]
+    (s/close ^Store store))
   nil)
 
 (defn closed?
@@ -1272,7 +1273,6 @@ the `pred`.
 (defn clear
   "Clear all data in the Datalog database, including schema."
   [conn]
-  (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]
     (doseq [dbi [c/eav c/ave c/links c/encla c/giants c/schema c/meta c/opts]]
@@ -1294,6 +1294,11 @@ the `pred`.
      the term in the document. E.g. for a blank space analyzer and the document
     \"The quick brown fox jumps over the lazy dog\", [\"quick\" 1 4] would be
     the second entry of the resulting seq.
+   * `:query-analyzer` is a similar function that overrides the analyzer at
+    query time (and not indexing time). Mostly useful for autocomplete search in
+    conjunction with the `datalevin.search-utils/prefix-token-filter`.
+
+  See [[datalevin.search-utils]] for some functions to customize search.
   "
   ([lmdb]
    (new-search-engine lmdb nil))

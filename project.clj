@@ -1,4 +1,4 @@
-(def version "0.6.8")
+(def version "0.6.10")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -14,7 +14,7 @@
                          [com.taoensso/timbre "5.2.1"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
-                         [org.babashka/sci "0.3.4"]
+                         [org.babashka/sci "0.3.5"]
                          [org.bouncycastle/bcprov-jdk15on "1.70"]
                          [org.clojure/clojure "1.11.1"]
                          [org.clojure/tools.cli "1.0.206"]
@@ -27,11 +27,11 @@
                          [org.graalvm.nativeimage/svm "21.3.0"]
                          [org.lmdbjava/lmdbjava "0.8.2"
                           ;; uncomment when run lein codox
-                          ;; :exclusions
-                          ;; [org.ow2.asm/asm-analysis
-                          ;;  org.ow2.asm/asm-commons
-                          ;;  org.ow2.asm/asm-tree
-                          ;;  org.ow2.asm/asm-util]
+                          :exclusions
+                          [org.ow2.asm/asm-analysis
+                           org.ow2.asm/asm-commons
+                           org.ow2.asm/asm-tree
+                           org.ow2.asm/asm-util]
                           ]
                          [org.roaringbitmap/RoaringBitmap "0.9.26"]
                          [persistent-sorted-set "0.1.4"]
@@ -92,7 +92,8 @@
   :plugins [[lein-codox "0.10.8"]]
   :codox {:source-paths ["src"]
           :output-path  "codox"
-          :namespaces   [datalevin.core datalevin.client datalevin.interpret]
+          :namespaces   [datalevin.core datalevin.client datalevin.interpret
+                         datalevin.search-utils]
           :metadata     {:doc/format :markdown}
           :source-uri
           {#"target/classes"
