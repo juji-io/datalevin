@@ -549,8 +549,7 @@
     (log/info "Added client " client-id
               "from:" ip
               "for user:" username
-              "with roles:" (pr-str roles)
-              "with permissions:" (pr-str perms))))
+              "with roles:" (pr-str roles))))
 
 (defn- remove-client
 [^Server server client-id]
