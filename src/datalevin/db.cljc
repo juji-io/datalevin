@@ -798,7 +798,7 @@
                           (update :db-after transient))
                es     initial-es]
           (let [[entity & entities] es
-                db                  (:db-after report)
+                ^DB db              (:db-after report)
                 {:keys [tempids]}   report]
             (cond
               (empty? es)
@@ -984,14 +984,7 @@
                                                   (datom e nil nil tx0)
                                                   (datom e nil nil txmax))
                                        (-search db [e])))
-                          ;; TODO replace by Links op
-                          v-datoms (vec
-                                     (concat
-                                       (filter #(= (.-v ^Datom %) e)
-                                               (set/slice (get db :eavt)
-                                                          (datom e0 nil e tx0)
-                                                          (datom emax nil e txmax)))
-                                       (-search db [nil nil e])))]
+                          v-datoms (s/scan-ref-v (.-store db) e)]
                       (recur (reduce transact-retract-datom report
                                      (concat e-datoms v-datoms))
                              (concat (retract-components db e-datoms) entities)))

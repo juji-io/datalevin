@@ -277,7 +277,8 @@
     return true for (pred x), where x is the datom")
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given range (inclusive)
-    that return true for (pred x), where x is the datom"))
+    that return true for (pred x), where x is the datom")
+  (scan-ref-v [this veid] "Return ref type datoms with given v"))
 
 (declare transact-datoms update-encla update-links)
 
@@ -292,7 +293,7 @@
                 ^:volatile-mutable rclasses  ; aid -> cids
                 ^:volatile-mutable entities  ; eid -> cid
                 ^:volatile-mutable rentities ; cid -> eids bitmap
-                ^:volatile-mutable links     ; eav -> link
+                ^:volatile-mutable links     ; vae -> link
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cid]
@@ -532,7 +533,22 @@
                          [:closed
                           (datom->indexable schema high-datom true)
                           (datom->indexable schema low-datom false)]
-                         index :id))))
+                         index :id)))
+
+  (scan-ref-v
+    [_ in-veid]
+    (let [vcid (entities in-veid)]
+      (persistent!
+        (reduce
+          (fn [res [[_ aid _] [veid eeid]]]
+            (if (= veid in-veid)
+              (conj! res (d/datom eeid (attrs aid) veid))
+              res))
+          (transient #{})
+          (lmdb/get-range lmdb c/links
+                          [:closed [vcid c/a0 c/e0] [vcid c/amax c/emax]]
+                          :int-int-int :long-long)))))
+  )
 
 (defn- insert-datom
   [^Store store ^Datom d ft-ds]
@@ -558,7 +574,7 @@
         i          (b/indexable e aid v valueType)
         gt         (when (b/giant? i)
                      (lmdb/get-value (.-lmdb store) c/eav i :eav :id true true))]
-    (when ((refs store) aid) (vswap! del-ref-ds conj! [e aid v]))
+    (when ((refs store) aid) (vswap! del-ref-ds conj! [v aid e]))
     (when fulltext (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
@@ -586,7 +602,7 @@
                        aid (b/read-buffer eav :eav-a)]
                    (vswap! aids conj! aid)
                    (when (refs aid)
-                     (vswap! cur-ref-ds conj! [eid aid (b/get-value eav 1)])))
+                     (vswap! cur-ref-ds conj! [(b/get-value eav 1) aid eid])))
                 [:open
                  (datom->indexable schema datom false)
                  (datom->indexable schema datom true)]
@@ -677,21 +693,21 @@
         to-del    (volatile! {})
         to-add    (volatile! {})
         conj*     (fnil conj [])]
-    (doseq [[e a v :as eav] cur-ref-ds
+    (doseq [[v a e :as vae] cur-ref-ds
             :let            [ecid (entities e)
                              vcid (entities v)
-                             new-link [ecid a vcid]]
-            :when           (and ecid vcid)]
-      (vswap! new-links assoc! eav new-link)
-      (if-let [old-link (old-links eav)]
+                             new-link [vcid a ecid]]
+            :when           (and vcid ecid)]
+      (vswap! new-links assoc! vae new-link)
+      (if-let [old-link (old-links vae)]
         (when (not= old-link new-link)
           (vswap! to-del update old-link conj* [v e])
           (vswap! to-add update new-link conj* [v e]))
         (vswap! to-add update new-link conj* [v e])))
-    (doseq [[e _ v :as eav] del-ref-ds]
-      (when-not (cur-ref-ds eav)
-        (vswap! new-links dissoc! eav)
-        (when-let [old-link (old-links eav)]
+    (doseq [[v _ e :as vae] del-ref-ds]
+      (when-not (cur-ref-ds vae)
+        (vswap! new-links dissoc! vae)
+        (when-let [old-link (old-links vae)]
           (vswap! to-del update old-link conj* [v e]))))
     (doseq [[link lst] @to-add]
       (lmdb/put-list-items lmdb c/links link lst :int-int-int :long-long))
@@ -704,7 +720,7 @@
   (persistent!
     (reduce
       (fn [m [[_ aid _ :as link] [veid eeid]]]
-        (assoc! m [eeid aid veid] link))
+        (assoc! m [veid aid eeid] link))
       (transient {})
       (lmdb/get-range lmdb c/links [:all] :int-int-int :long-long))))
 

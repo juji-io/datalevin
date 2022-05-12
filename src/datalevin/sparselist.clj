@@ -7,6 +7,8 @@
            [me.lemire.integercompression IntCompressor]
            [org.roaringbitmap RoaringBitmap]))
 
+(set! *unchecked-math* true)
+
 (defonce compressor (IntCompressor.))
 
 (defprotocol ISparseIntArrayList
@@ -30,7 +32,6 @@
       (.get items (dec (.rank indices index)))))
 
   (set [this index item]
-
     (let [index (int index)]
       (if (.contains indices index)
         (.set items (dec (.rank indices index)) item)

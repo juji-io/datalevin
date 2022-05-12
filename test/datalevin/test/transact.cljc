@@ -485,21 +485,21 @@
         (d/close conn)))))
 
 ;; TODO turn back on after switching to use Links
-#_(deftest test-transient-294
-   "db.fn/retractEntity retracts attributes of adjacent entities https://github.com/tonsky/datascript/issues/294"
-   (let [db     (reduce #(d/db-with %1 [{:db/id %2 :a1 1 :a2 2 :a3 3}])
-                        (d/empty-db)
-                        (range 1 10))
-         report (d/with db [[:db.fn/retractEntity 1]
-                            [:db.fn/retractEntity 2]])]
-     (is (= [(d/datom 1 :a1 1)
-             (d/datom 1 :a2 2)
-             (d/datom 1 :a3 3)
-             (d/datom 2 :a1 1)
-             (d/datom 2 :a2 2)
-             (d/datom 2 :a3 3)]
-            (:tx-data report)))
-     (d/close-db db)))
+(deftest test-transient-294
+  "db.fn/retractEntity retracts attributes of adjacent entities https://github.com/tonsky/datascript/issues/294"
+  (let [db     (reduce #(d/db-with %1 [{:db/id %2 :a1 1 :a2 2 :a3 3}])
+                       (d/empty-db)
+                       (range 1 10))
+        report (d/with db [[:db.fn/retractEntity 1]
+                           [:db.fn/retractEntity 2]])]
+    (is (= [(d/datom 1 :a1 1)
+            (d/datom 1 :a2 2)
+            (d/datom 1 :a3 3)
+            (d/datom 2 :a1 1)
+            (d/datom 2 :a2 2)
+            (d/datom 2 :a3 3)]
+           (:tx-data report)))
+    (d/close-db db)))
 
 (deftest test-transact-same
   "same data, transacted twice"

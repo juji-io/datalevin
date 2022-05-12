@@ -230,99 +230,103 @@
       (is (= [d] r)))))
 
 (deftest encla-links-test
-  (let [schema    {:name   {:db/unique :db.unique/identity}
-                   :aka    {:db/cardinality :db.cardinality/many}
-                   :child  {:db/valueType :db.type/ref}
-                   :father {:db/valueType :db.type/ref}
-                   :part   {:db/valueType :db.type/ref}}
-        datoms    (map #(apply d/datom %)  [[1 :name  "Petr"]
-                                            [1 :aka   "Devil"]
-                                            [1 :aka   "Tupen"]
-                                            [2 :name  "David"]
-                                            [3 :name  "Thomas"]
-                                            [4 :name  "Lucy"]
-                                            [5 :name  "Elizabeth"]
-                                            [6 :name  "Matthew"]
-                                            [7 :name  "Eunan"]
-                                            [8 :name  "Kerri"]
-                                            [9 :name  "Rebecca"]
-                                            [1 :child 2]
-                                            [1 :child 3]
-                                            [2 :father 1]
-                                            [3 :father 1]
-                                            [6 :father 3]
-                                            [10 :name  "Part A"]
-                                            [11 :name  "Part A.A"]
-                                            [10 :part 11]
-                                            [12 :name  "Part A.A.A"]
-                                            [11 :part 12]
-                                            [13 :name  "Part A.A.A.A"]
-                                            [12 :part 13]
-                                            [14 :name  "Part A.A.A.B"]
-                                            [12 :part 14]
-                                            [15 :name  "Part A.B"]
-                                            [10 :part 15]
-                                            [16 :name  "Part A.B.A"]
-                                            [15 :part 16]
-                                            [17 :name  "Part A.B.A.A"]
-                                            [16 :part 17]
-                                            [18 :name  "Part A.B.A.B"]
-                                            [16 :part 18]])
-        n-datoms  (count datoms)
-        attrs     {0 :db/ident,
-                   1 :db/created-at,
-                   2 :db/updated-at,
-                   3 :name,
-                   4 :aka,
-                   5 :child,
-                   6 :father,
-                   7 :part}
-        refs      #{7 6 5}
-        classes   {0 #{3}, 1 #{3, 4, 5}, 2 #{3, 7}, 3 #{3, 6}}
-        rclasses  {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
-        entities  {1  1,
-                   2  3,
-                   3  3,
-                   4  0,
-                   5  0,
-                   6  3,
-                   7  0,
-                   8  0,
-                   9  0,
-                   10 2,
-                   11 2,
-                   12 2,
-                   13 0,
-                   14 0,
-                   15 2,
-                   16 2,
-                   17 0,
-                   18 0}
-        rentities {0 (b/bitmap [4, 5, 7, 8, 9, 13, 14, 17, 18]),
-                   1 (b/bitmap [1])
-                   2 (b/bitmap [10, 11, 12, 15, 16]),
-                   3 (b/bitmap [2, 3, 6])}
-        links     {[11 7 12] [2 7 2],
-                   [10 7 11] [2 7 2],
-                   [15 7 16] [2 7 2],
-                   [3 6 1]   [3 6 1],
-                   [1 5 2]   [1 5 3],
-                   [12 7 13] [2 7 0],
-                   [2 6 1]   [3 6 1],
-                   [1 5 3]   [1 5 3],
-                   [16 7 17] [2 7 0],
-                   [16 7 18] [2 7 0],
-                   [12 7 14] [2 7 0],
-                   [10 7 15] [2 7 2],
-                   [6 6 3]   [3 6 3]}
-        dir       (u/tmp-dir (str "datalevin-extract-encla-test-"
-                                  (UUID/randomUUID)))
-        store     (sut/open dir schema)]
+  (let [schema     {:name   {:db/unique :db.unique/identity}
+                    :aka    {:db/cardinality :db.cardinality/many}
+                    :child  {:db/valueType :db.type/ref}
+                    :father {:db/valueType :db.type/ref}
+                    :part   {:db/valueType :db.type/ref}}
+        datoms     (map #(apply d/datom %)  [[1 :name  "Petr"]
+                                             [1 :aka   "Devil"]
+                                             [1 :aka   "Tupen"]
+                                             [2 :name  "David"]
+                                             [3 :name  "Thomas"]
+                                             [4 :name  "Lucy"]
+                                             [5 :name  "Elizabeth"]
+                                             [6 :name  "Matthew"]
+                                             [7 :name  "Eunan"]
+                                             [8 :name  "Kerri"]
+                                             [9 :name  "Rebecca"]
+                                             [1 :child 2]
+                                             [1 :child 3]
+                                             [2 :father 1]
+                                             [3 :father 1]
+                                             [6 :father 3]
+                                             [10 :name  "Part A"]
+                                             [11 :name  "Part A.A"]
+                                             [10 :part 11]
+                                             [12 :name  "Part A.A.A"]
+                                             [11 :part 12]
+                                             [13 :name  "Part A.A.A.A"]
+                                             [12 :part 13]
+                                             [14 :name  "Part A.A.A.B"]
+                                             [12 :part 14]
+                                             [15 :name  "Part A.B"]
+                                             [10 :part 15]
+                                             [16 :name  "Part A.B.A"]
+                                             [15 :part 16]
+                                             [17 :name  "Part A.B.A.A"]
+                                             [16 :part 17]
+                                             [18 :name  "Part A.B.A.B"]
+                                             [16 :part 18]])
+        ref-datoms (set (filter #(#{:child :father :part} (d/datom-a %)) datoms))
+        n-datoms   (count datoms)
+        attrs      {0 :db/ident,
+                    1 :db/created-at,
+                    2 :db/updated-at,
+                    3 :name,
+                    4 :aka,
+                    5 :child,
+                    6 :father,
+                    7 :part}
+        refs       #{7 6 5}
+        classes    {0 #{3}, 1 #{3, 4, 5}, 2 #{3, 7}, 3 #{3, 6}}
+        rclasses   {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
+        entities   {1  1,
+                    2  3,
+                    3  3,
+                    4  0,
+                    5  0,
+                    6  3,
+                    7  0,
+                    8  0,
+                    9  0,
+                    10 2,
+                    11 2,
+                    12 2,
+                    13 0,
+                    14 0,
+                    15 2,
+                    16 2,
+                    17 0,
+                    18 0}
+        rentities  {0 (b/bitmap [4, 5, 7, 8, 9, 13, 14, 17, 18]),
+                    1 (b/bitmap [1])
+                    2 (b/bitmap [10, 11, 12, 15, 16]),
+                    3 (b/bitmap [2, 3, 6])}
+        links      {[1 6 2]   [1 6 3],
+                    [13 7 12] [0 7 2],
+                    [18 7 16] [0 7 2],
+                    [15 7 10] [2 7 2],
+                    [17 7 16] [0 7 2],
+                    [14 7 12] [0 7 2],
+                    [3 6 6]   [3 6 3],
+                    [12 7 11] [2 7 2],
+                    [11 7 10] [2 7 2],
+                    [16 7 15] [2 7 2],
+                    [3 5 1]   [3 5 1],
+                    [1 6 3]   [1 6 3],
+                    [2 5 1]   [3 5 1]}
+        dir        (u/tmp-dir (str "datalevin-extract-encla-test-"
+                                   (UUID/randomUUID)))
+        store      (sut/open dir schema)]
     (sut/load-datoms store datoms)
     (is (= attrs (sut/attrs store)))
     (is (= refs (sut/refs store)))
 
     (is (= n-datoms (sut/datom-count store :eav)))
+    (is (= 13 (count ref-datoms)))
+
+    (is (= #{(d/datom 1 :child 3) (d/datom 6 :father 3)} (sut/scan-ref-v store 3)))
 
     (is (= classes (sut/classes store)))
     (is (= rclasses (sut/rclasses store)))
@@ -374,7 +378,7 @@
                    (update 0 #(b/bitmap-add % 2))
                    (update 3 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
-        (is (= (dissoc links [2 6 1]) (sut/links store1)))
+        (is (= (dissoc links [1 6 2]) (sut/links store1)))
         (sut/close store1)))
     (testing "add a datom that changes entities"
       (let [store1 (sut/open dir)]
@@ -388,8 +392,8 @@
                    (update 0 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
         (is (= (-> links
-                   (dissoc [2 6 1])
-                   (assoc [2 6 3] [3 6 3])) (sut/links store1)))
+                   (dissoc [1 6 2])
+                   (assoc [3 6 2] [3 6 3])) (sut/links store1)))
         (sut/close store1)))
     (testing "add a datom that changes classes"
       (let [store1 (sut/open dir)]
@@ -406,8 +410,8 @@
                    (update 0 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
         (is (= (-> links
-                   (dissoc [2 6 1])
-                   (assoc [2 6 3] [4 6 3] [2 5 8] [4 5 0]))
+                   (dissoc [1 6 2])
+                   (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4]))
                (sut/links store1)))
         (sut/close store1)))
     (testing "delete datoms that changes classes"
@@ -428,9 +432,10 @@
                    (assoc 1 (b/bitmap)))
                (sut/rentities store1)))
         (is (= (-> links
-                   (dissoc [2 6 1])
-                   (assoc [2 6 3] [4 6 3] [2 5 8] [4 5 0])
-                   (dissoc [1 5 2] [1 5 3]))
+                   (dissoc [1 6 2])
+                   (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4])
+                   (dissoc [2 5 1] [3 5 1])
+                   )
                (sut/links store1)))
         (sut/close store1)))
     (testing "reload"
@@ -449,9 +454,9 @@
                    (assoc 1 (b/bitmap)))
                (sut/rentities store1)))
         (is (= (-> links
-                   (dissoc [2 6 1])
-                   (assoc [2 6 3] [4 6 3] [2 5 8] [4 5 0])
-                   (dissoc [1 5 2] [1 5 3]))
+                   (dissoc [1 6 2])
+                   (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4])
+                   (dissoc [2 5 1] [3 5 1]))
                (sut/links store1)))
         (sut/close store1)))))
 
