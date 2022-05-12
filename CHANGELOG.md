@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.11
 ### Fixed
 - Search add-doc error when alter existing docs
 
