@@ -5,14 +5,13 @@
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
             [datalevin.bits :as b])
-  (:import [datalevin.utl PriorityQueue]
+  (:import [datalevin.utl PriorityQueue GrowingIntArray]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]
            [java.util.concurrent.atomic AtomicInteger]
            [java.io Writer]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntDoubleHashMap]
-           [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]
            [org.eclipse.collections.impl.list.mutable FastList]
            [org.eclipse.collections.impl.map.mutable UnifiedMap]
            [org.roaringbitmap RoaringBitmap FastAggregation
@@ -210,7 +209,7 @@
     did)
 
   (get-tf [_]
-    (.get ^IntArrayList (.-items sl)
+    (.get ^GrowingIntArray (.-items sl)
           (dec (.rank ^FastRankRoaringBitmap (.-indices sl) did)))))
 
 (def ^:no-doc candidate-comp

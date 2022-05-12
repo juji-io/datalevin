@@ -1,4 +1,4 @@
-(def version "0.6.10")
+(def version "0.6.11")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -27,11 +27,11 @@
                          [org.graalvm.nativeimage/svm "21.3.0"]
                          [org.lmdbjava/lmdbjava "0.8.2"
                           ;; uncomment when run lein codox
-                          :exclusions
-                          [org.ow2.asm/asm-analysis
-                           org.ow2.asm/asm-commons
-                           org.ow2.asm/asm-tree
-                           org.ow2.asm/asm-util]
+                          ;; :exclusions
+                          ;; [org.ow2.asm/asm-analysis
+                          ;;  org.ow2.asm/asm-commons
+                          ;;  org.ow2.asm/asm-tree
+                          ;;  org.ow2.asm/asm-util]
                           ]
                          [org.roaringbitmap/RoaringBitmap "0.9.26"]
                          [persistent-sorted-set "0.1.4"]

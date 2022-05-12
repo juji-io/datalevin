@@ -18,6 +18,10 @@
 - [**Breaking**] Remove `vea` index, its functionality is replaced by Links.
 - [**Breaking**] Change `:search-engine` key to `:search-opts` for consistency
 
+## 0.6.11
+### Fixed
+- Search add-doc error when alter existing docs
+
 ## 0.6.10
 ### Improved
 - Persistent server session that survives restarts without affecting clients, #119
