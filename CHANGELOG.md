@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.10
 ### Improved
 - Persistent server session that survives restarts without affecting clients
 - More robust server error handling
