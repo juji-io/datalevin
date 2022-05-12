@@ -366,16 +366,16 @@
 
 (defn- transact-drop-role
   [sys-conn rid]
-  (let [ur-txs (log/spy (mapv (fn [urid] [:db/retractEntity urid])
-                              (d/q '[:find [?ur ...]
-                                     :in $ ?rid
-                                     :where
-                                     [?ur :user-role/role ?rid]]
-                                   @sys-conn rid)))
-        pids   (log/spy (permission-eid sys-conn rid))
-        p-txs  (log/spy (mapv (fn [pid] [:db/retractEntity pid]) pids))
-        rpids  (log/spy (mapv (partial role-permission-eid sys-conn rid) pids))
-        rp-txs (log/spy (mapv (fn [rpid] [:db/retractEntity rpid]) rpids))]
+  (let [ur-txs (mapv (fn [urid] [:db/retractEntity urid])
+                     (d/q '[:find [?ur ...]
+                            :in $ ?rid
+                            :where
+                            [?ur :user-role/role ?rid]]
+                          @sys-conn rid))
+        pids   (permission-eid sys-conn rid)
+        p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
+        rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
+        rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
     (d/transact! sys-conn (concat rp-txs p-txs ur-txs
                                   [[:db/retractEntity rid]]))))
 
@@ -955,7 +955,6 @@
         vengines (volatile! {})
         vwriters (volatile! {})
         vdt-dbs  (volatile! {})]
-    (log/debug "clients" clients)
     (doseq [[_ {:keys [stores engines writers dt-dbs]}] clients]
       (doseq [[db-name {:keys [datalog? dbis]}] stores
               :when                             (not (@vstores db-name))]
@@ -1863,7 +1862,7 @@
           running                            (AtomicBoolean. false)
           sys-conn                           (init-sys-db root)
           clients                            (load-sessions sys-conn)
-          [stores engines writers dt-dbs]    (log/spy (reopen-dbs root clients))]
+          [stores engines writers dt-dbs]    (reopen-dbs root clients)]
       (.register server-socket selector SelectionKey/OP_ACCEPT)
       (->Server running
                 port
