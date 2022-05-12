@@ -496,7 +496,8 @@
                  sys-conn
                  ;; session data, a map of
                  ;; client-id -> { ip, uid, username, roles, permissions,
-                 ;;                stores -> #{ db-name }
+                 ;;                stores -> { db-name -> { datalog?
+                 ;;                                         dbis -> #{dbi-name}}}
                  ;;                engines -> #{ db-name }
                  ;;                writers -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
@@ -532,17 +533,19 @@
   [^Server server ip client-id username]
   (let [sys-conn (.-sys-conn server)
         roles    (user-roles sys-conn username)
-        perms    (user-permissions sys-conn username)]
-    (vswap! (.-clients server) assoc client-id
-            {:ip          ip
-             :uid         (user-eid sys-conn username)
-             :username    username
-             :stores      #{}
-             :engines     #{}
-             :writers     #{}
-             :dt-dbs      #{}
-             :roles       roles
-             :permissions perms})
+        perms    (user-permissions sys-conn username)
+        session  {:ip          ip
+                  :uid         (user-eid sys-conn username)
+                  :username    username
+                  :stores      {}
+                  :engines     #{}
+                  :writers     #{}
+                  :dt-dbs      #{}
+                  :roles       roles
+                  :permissions perms}]
+    (d/transact-kv (session-lmdb sys-conn)
+                   [[:put session-dbi client-id session :uuid :data]])
+    (vswap! (.-clients server) assoc client-id session)
     (log/info "Added client " client-id
               "from:" ip
               "for user:" username
@@ -550,13 +553,18 @@
               "with permissions:" (pr-str perms))))
 
 (defn- remove-client
-  [^Server server client-id]
-  (vswap! (.-clients server) dissoc client-id)
-  (log/info "Removed client:" client-id))
+[^Server server client-id]
+(d/transact-kv (session-lmdb (.-sys-conn server))
+[[:del session-dbi client-id :uuid]])
+(vswap! (.-clients server) dissoc client-id)
+(log/info "Removed client:" client-id))
 
 (defn- update-client
   [^Server server client-id f]
-  (vswap! (.-clients server) update client-id f))
+  (let [session (f (get-client server client-id))]
+    (d/transact-kv (session-lmdb (.-sys-conn server))
+                   [[:put session-dbi client-id session :uuid :data]])
+    (vswap! (.-clients server) assoc client-id session)))
 
 (defn- get-stores [^Server server] @(.-stores server))
 
@@ -734,12 +742,13 @@
 
 (defn- db-dir
   "translate from db-name to server db path"
-  [^Server server db-name]
-  (str (.-root server) u/+separator+ (b/hexify-string db-name)))
+  [root db-name]
+  (str root u/+separator+ (b/hexify-string db-name)))
 
 (defn- db-exists?
   [^Server server db-name]
-  (u/file-exists (str (db-dir server db-name) u/+separator+ "data.mdb")))
+  (u/file-exists
+    (str (db-dir (.-root server) db-name) u/+separator+ "data.mdb")))
 
 (defn- dir->db-name
   [^Server server dir]
@@ -857,6 +866,15 @@
                 (index-writer ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
+(defn- open-store
+  [root db-name dbis datalog?]
+  (let [dir (db-dir root db-name)]
+    (if datalog?
+      (st/open dir)
+      (let [lmdb (l/open-kv dir)]
+        (doseq [dbi dbis] (l/open-dbi lmdb dbi))
+        lmdb))))
+
 (defn- open-server-store
   "Open a store. NB. stores are left open"
   [^Server server ^SelectionKey skey {:keys [db-name schema opts]} db-type]
@@ -871,21 +889,26 @@
         ::database
         (when existing-db? (db-eid sys-conn db-name))
         "Don't have permission to open database"
-        (let [dir   (db-dir server db-name)
-              store (or (when-let [ds (get-store server db-name)]
-                          (if (instance? Store ds)
-                            (when-not (st/closed? ds)
-                              (when schema
-                                (st/set-schema ds schema))
-                              ds)
-                            (when-not (l/closed-kv? ds)
-                              ds)))
-                        (case db-type
-                          :datalog   (st/open dir schema opts)
-                          :key-value (l/open-kv dir opts)))]
+        (let [dir      (db-dir (.-root server) db-name)
+              store    (or (when-let [ds (get-store server db-name)]
+                             (if (instance? Store ds)
+                               (when-not (st/closed? ds)
+                                 (when schema
+                                   (st/set-schema ds schema))
+                                 ds)
+                               (when-not (l/closed-kv? ds)
+                                 ds)))
+                           (case db-type
+                             :datalog   (st/open dir schema opts)
+                             :key-value (l/open-kv dir opts)))
+              datalog? (instance? Store store)]
           (add-store server db-name store)
           (update-client server client-id
-                         #(update % :stores conj db-name))
+                         #(cond-> %
+                            true     (update :stores assoc db-name
+                                             {:datalog? datalog?
+                                              :dbis     #{}})
+                            datalog? (update :dt-dbs conj db-name)))
           (when-not existing-db?
             (transact-new-db sys-conn username db-type db-name)
             (update-client server client-id
@@ -918,8 +941,36 @@
                   :role-perm/perm -4
                   :role-perm/role -2}]]
         (d/transact! sys-conn txs)))
-    (d/open-dbi (session-lmdb sys-conn) session-dbi)
     sys-conn))
+
+(defn- load-sessions
+  [sys-conn]
+  (let [lmdb (session-lmdb sys-conn)]
+    (d/open-dbi lmdb session-dbi)
+    (into {} (d/get-range lmdb session-dbi [:all] :uuid :data))))
+
+(defn- reopen-dbs
+  [root clients]
+  (let [vstores  (volatile! {})
+        vengines (volatile! {})
+        vwriters (volatile! {})
+        vdt-dbs  (volatile! {})]
+    (log/debug "clients" clients)
+    (doseq [[_ {:keys [stores engines writers dt-dbs]}] clients]
+      (doseq [[db-name {:keys [datalog? dbis]}] stores
+              :when                             (not (@vstores db-name))]
+        (vswap! vstores assoc db-name (open-store root db-name dbis datalog?)))
+      (doseq [db-name engines
+              :when   (not (@vengines db-name))]
+        (vswap! vengines assoc db-name (d/new-search-engine (@vstores db-name))))
+      (doseq [db-name writers
+              :when   (not (@vwriters db-name))]
+        (vswap! vwriters assoc db-name
+                (d/search-index-writer (@vstores db-name))))
+      (doseq [db-name dt-dbs
+              :when   (not (@vdt-dbs db-name))]
+        (vswap! vdt-dbs assoc db-name (db/new-db (@vstores db-name)))))
+    [vstores vengines vwriters vdt-dbs]))
 
 (defn- authenticate
   [^Server server ^SelectionKey skey {:keys [username password]}]
@@ -1112,7 +1163,7 @@
           (if (db-in-use? server db-name)
             (u/raise "Cannot drop a database currently in use." {})
             (do (transact-drop-db sys-conn did)
-                (u/delete-files (db-dir server db-name))
+                (u/delete-files (db-dir (.-root server) db-name))
                 (write-message skey {:type :command-complete}))))
         (u/raise "Database does not exist." {})))))
 
@@ -1327,12 +1378,11 @@
 (defn- load-datoms
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [stores]}    (get-client server client-id)
-          dt-store            (get-store server (stores (nth args 0)))
-          sys-conn            (.-sys-conn server)]
+    (let [db-name  (nth args 0)
+          dt-store (get-store server db-name)
+          sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
+        ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (case mode
           :copy-in (do (st/load-datoms dt-store (copy-in server skey))
@@ -1343,13 +1393,10 @@
 (defn- tx-data
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [stores]}    (get-client server client-id)
-          db-name             (nth args 0)
-          dt-store            (get-store server (stores db-name))
-          sys-conn            (.-sys-conn server)]
+    (let [db-name  (nth args 0)
+          sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn (store->db-name server dt-store))
+        ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (let [txs (case mode
                     :copy-in (copy-in server skey)
@@ -1462,7 +1509,14 @@
 (defn- open-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
-    (apply l/open-dbi (db-store server skey (nth args 0)) (rest args))
+    (let [{:keys [client-id]} @(.attachment skey)
+          db-name             (nth args 0)
+          lmdb                (db-store server skey db-name)
+          args                (rest args)
+          dbi-name            (first args)]
+      (apply l/open-dbi lmdb args)
+      (update-client server client-id
+                     #(update-in % [:stores db-name :dbis] conj dbi-name)))
     (write-message skey {:type :command-complete})))
 
 (defn- clear-dbi
@@ -1471,7 +1525,16 @@
 
 (defn- drop-dbi
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-kv-store-handler drop-dbi)))
+  (wrap-error
+    (let [{:keys [client-id]} @(.attachment skey)
+          db-name             (nth args 0)
+          lmdb                (db-store server skey db-name)
+          args                (rest args)
+          dbi-name            (first args)]
+      (l/drop-dbi lmdb dbi-name)
+      (update-client server client-id
+                     #(update-in % [:stores db-name :dbis] disj dbi-name)))
+    (write-message skey {:type :command-complete})))
 
 (defn- list-dbis
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1502,12 +1565,11 @@
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args]}]
   (wrap-error
-    (let [{:keys [client-id]} @(.attachment skey)
-          {:keys [stores]}    (get-client server client-id)
-          kv-store            (get-store server (stores (nth args 0)))
-          sys-conn            (.-sys-conn server)]
+    (let [db-name  (nth args 0)
+          kv-store (get-store server db-name)
+          sys-conn (.-sys-conn server)]
       (wrap-permission
-        ::alter ::database (db-eid sys-conn (store->db-name server kv-store))
+        ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (case mode
           :copy-in (do (l/transact-kv kv-store (copy-in server skey))
@@ -1717,9 +1779,13 @@
 
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]
-  (let [{:keys [type] :as message} (p/read-value fmt msg)]
-    (log/debug "Message received:" (dissoc message :password))
-    (message-cases skey type)))
+  (try
+    (let [{:keys [type] :as message} (p/read-value fmt msg)]
+      (log/debug "Message received:" (dissoc message :password))
+      (message-cases skey type))
+    (catch Exception e
+      (stt/print-stack-trace e)
+      (log/error "Handle message error:" (ex-message e)))))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
@@ -1729,8 +1795,6 @@
 (defn- handle-read
   [^Server server ^SelectionKey skey]
   (try
-    ;; (log/debug "clients" (pr-str (get-clients server)))
-    ;; (log/debug "stores" (pr-str (get-stores server)))
     (let [state                         (.attachment skey)
           {:keys [^ByteBuffer read-bf]} @state
           capacity                      (.capacity read-bf)
@@ -1790,9 +1854,12 @@
   {:pre [(int? port) (not (s/blank? root))]}
   (try
     (log/set-level! (if verbose :debug :info))
-    (let [server-socket ^ServerSocketChannel (open-port port)
-          selector      ^Selector (Selector/open)
-          running       (AtomicBoolean. false)]
+    (let [^ServerSocketChannel server-socket (open-port port)
+          ^Selector selector                 (Selector/open)
+          running                            (AtomicBoolean. false)
+          sys-conn                           (init-sys-db root)
+          clients                            (load-sessions sys-conn)
+          [stores engines writers dt-dbs]    (log/spy (reopen-dbs root clients))]
       (.register server-socket selector SelectionKey/OP_ACCEPT)
       (->Server running
                 port
@@ -1801,11 +1868,11 @@
                 selector
                 (ConcurrentLinkedQueue.)
                 (Executors/newWorkStealingPool)
-                (init-sys-db root)
-                (volatile! {})
-                (volatile! {})
-                (volatile! {})
-                (volatile! {})
-                (volatile! {})))
+                sys-conn
+                (volatile! clients)
+                stores
+                engines
+                writers
+                dt-dbs))
     (catch Exception e
       (u/raise "Error creating server:" (ex-message e) {}))))

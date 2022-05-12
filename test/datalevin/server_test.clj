@@ -51,9 +51,9 @@
     (is (= (cl/list-databases client2) []))
     (sut/stop server)))
 
-(deftest server-restart-test
+(deftest server-restart-kv-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/server-restart-test"
-        root (u/tmp-dir (str "server-restart-test-" (UUID/randomUUID)))]
+        root (u/tmp-dir (str "server-restart-kv-test-" (UUID/randomUUID)))]
     (let [^Server server (sut/create {:port c/default-port :root root})
           _              (sut/start server)
           lmdb           (d/open-kv dir)
@@ -73,14 +73,67 @@
       (is (= [3] (d/search engine "moby")))
       (sut/stop server)
 
+      ;; existing clients should work with restarted server normally
       (let [^Server server (sut/create {:port c/default-port :root root})
             _              (sut/start server)]
-        (try
-          (is (= (cl/list-databases client) ["server-restart-test"]))
+        (is (= (cl/list-databases client) ["server-restart-test"]))
 
-          ;; (is (= [3] (d/search engine "moby")))
+        (d/transact-kv
+          lmdb
+          [[:put "raw" 4
+            "The robber wore a red fleece jacket and a baseball cap."]])
+        (d/add-doc engine 4 (d/get-value lmdb "raw" 4))
 
-          (finally (sut/stop server)))))
-    ))
+        (is (= [4] (d/search engine "robber")))
 
-(deftest msg-handler-error-test)
+        (sut/stop server)))))
+
+(deftest server-restart-dl-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/server-restart"
+        root (u/tmp-dir (str "server-restart-dl-test-" (UUID/randomUUID)))]
+    (let [^Server server (sut/create {:port c/default-port :root root})
+          _              (sut/start server)
+          conn           (d/create-conn dir)]
+      (d/transact! conn [{:name "John" :id 2}
+                         {:name "Matt" :id 3}])
+      (is (= 2 (d/q '[:find ?i .
+                      :in $ ?n
+                      :where
+                      [?e :name ?n]
+                      [?e :id ?i]] (d/db conn) "John")))
+      (sut/stop server)
+
+      ;; existing clients should work with restarted server normally
+      (let [^Server server (sut/create {:port c/default-port :root root})
+            _              (sut/start server)]
+
+        (is (= 2 (d/q '[:find ?i .
+                        :in $ ?n
+                        :where
+                        [?e :name ?n]
+                        [?e :id ?i]] (d/db conn) "John")))
+
+        (sut/stop server)))))
+
+(deftest msg-handler-error-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/server-error"
+        root (u/tmp-dir (str "server-error-test-" (UUID/randomUUID)))]
+    (let [^Server server (sut/create {:port c/default-port :root root})
+          _              (sut/start server)
+          conn           (d/create-conn dir)]
+      (d/transact! conn [{:name "John" :id 2}
+                         {:name "Matt" :id 3}])
+      (is (thrown? Exception
+                   (d/q '[:find ?i ?j
+                          :in $ ?n
+                          :where
+                          [(/ 3 0) ?j]
+                          [?e :name ?n]
+                          [?e :id ?i]] (d/db conn) "John")))
+
+      (is (= 2 (d/q '[:find ?i .
+                      :in $ ?n
+                      :where
+                      [?e :name ?n]
+                      [?e :id ?i]] (d/db conn) "John")))
+      (sut/stop server))))

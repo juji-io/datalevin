@@ -202,11 +202,10 @@
     (u/delete-files dir)))
 
 (deftest remote-basic-ops-test
-  (let [server (s/create {:port    c/default-port
-                          :root    (u/tmp-dir
-                                     (str "remote-basic-test-"
-                                          (UUID/randomUUID)))
-                          :verbose true})
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-basic-test-"
+                                       (UUID/randomUUID)))})
         _      (s/start server)
         schema
         {:sales/country           {:db/valueType :db.type/string},
