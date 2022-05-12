@@ -2,7 +2,7 @@
 
 ## WIP
 ### Improved
-- Persistent server session that survives restarts, clients still work
+- Persistent server session that survives restarts without affecting clients
 - More robust server error handling
 
 ## 0.6.9

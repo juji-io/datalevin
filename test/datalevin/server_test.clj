@@ -131,6 +131,7 @@
                           [?e :name ?n]
                           [?e :id ?i]] (d/db conn) "John")))
 
+      ;; server still respond normally
       (is (= 2 (d/q '[:find ?i .
                       :in $ ?n
                       :where
