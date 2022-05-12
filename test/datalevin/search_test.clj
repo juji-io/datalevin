@@ -184,9 +184,9 @@
       (is (= (sut/search engine "red" ) [2])))
     (testing "parallel update"
       (dorun (pmap #(sut/add-doc engine %1 %2)
-                   [1 2 4]
-                   ["The quick red fox jumped over the lazy dogs."
-                    "May has a little lamb."
+                   [2 1 4]
+                   ["May has a little lamb."
+                    "The quick red fox jumped over the lazy dogs."
                     "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)</p>"]))
       (is (= (sut/search engine "red" ) [1]))
       (is (= (sut/search engine "truth" ) [4])))
@@ -194,8 +194,8 @@
     (testing "duplicated docs"
       (sut/add-doc engine 5
                    "Pricing how much is the price for each juji Whats the price of using juji for classes Hello, what is the price of Juji? <p>You can create me or any of my brothers and sisters FREE. You can also chat with us privately FREE, as long as you want.</p><p><br></p><p>If you wish to make me or any of my sisters or brothers public so we can chat with other folks, I'd be happy to help you find the right price package.</p>")
-      (sut/add-doc engine 6
-                   "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)</p>")
-      (is (= (sut/search engine "truth" ) [6 4])))
+      (sut/add-doc engine 4
+                   "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)")
+      (is (= (sut/search engine "truth" ) [4])))
 
     (l/close-kv lmdb)))
