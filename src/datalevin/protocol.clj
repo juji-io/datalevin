@@ -217,7 +217,8 @@
             (.position pos))
           (let [cnt-len (- length c/message-header-size)]
             (if (< cnt-len 0)
-              (u/raise "Message corruption: length is less than header size" {})
+              (u/raise "Message corruption: length is less than header size"
+                       {:length length})
               (let [ba (byte-array cnt-len)]
                 (.get read-bf ba)
                 (msg-handler fmt ba)

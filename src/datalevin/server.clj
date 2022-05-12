@@ -1785,7 +1785,7 @@
       (message-cases skey type))
     (catch Exception e
       (stt/print-stack-trace e)
-      (log/error "Handle message error:" (ex-message e)))))
+      (log/error "Error Handling message:" (ex-message e)))))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
@@ -1814,6 +1814,10 @@
                                     #(handle-message server skey fmt msg)))))
         (= readn 0)  :continue
         (= readn -1) (.close ch)))
+    (catch java.io.IOException e
+      (if (s/includes? (ex-message e) "Connection reset by peer")
+        (.close (.channel skey))
+        (log/error "Read IOException:" (ex-message e))))
     (catch Exception e
       (stt/print-stack-trace e)
       (log/error "Read error:" (ex-message e)))))
