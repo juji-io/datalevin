@@ -222,6 +222,4 @@
               (let [ba (byte-array cnt-len)]
                 (.get read-bf ba)
                 (msg-handler fmt ba)
-                (if (= available length)
-                  (.clear read-bf)
-                  (.compact read-bf))))))))))
+                (.compact read-bf)))))))))
