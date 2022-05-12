@@ -2,7 +2,7 @@
 
 ## 0.6.10
 ### Improved
-- Persistent server session that survives restarts without affecting clients
+- Persistent server session that survives restarts without affecting clients, #119
 - More robust server error handling
 
 ## 0.6.9
