@@ -537,7 +537,7 @@
 
   (scan-ref-v
     [_ in-veid]
-    (let [vcid (entities in-veid)]
+    (when-let [vcid (entities in-veid)]
       (persistent!
         (reduce
           (fn [res [[_ aid _] [veid eeid]]]
@@ -742,7 +742,7 @@
   (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
   (lmdb/open-dbi lmdb c/encla c/+id-bytes+)
-  (lmdb/open-list lmdb c/links (* 3 Integer/BYTES) (* 2 Long/BYTES))
+  (lmdb/open-list-dbi lmdb c/links (* 3 Integer/BYTES) (* 2 Long/BYTES))
   (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
 

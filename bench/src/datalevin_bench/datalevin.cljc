@@ -18,19 +18,18 @@
    :age       {:db/valueType :db.type/long}
    :salary    {:db/valueType :db.type/long}})
 
-
 (defn- wide-db
   ([depth width] (d/db-with (d/empty-db nil schema) (wide-db 1 depth width)))
   ([id depth width]
-    (if (pos? depth)
-      (let [children (map #(+ (* id width) %) (range width))]
-        (concat
-          (map #(array-map
-                  :db/add  id
-                  :name    "Ivan"
-                  :follows %) children)
-          (mapcat #(wide-db % (dec depth) width) children)))
-      [{:db/id id :name "Ivan"}])))
+   (if (pos? depth)
+     (let [children (map #(+ (* id width) %) (range width))]
+       (concat
+         (map #(array-map
+                 :db/add  id
+                 :name    "Ivan"
+                 :follows %) children)
+         (mapcat #(wide-db % (dec depth) width) children)))
+     [{:db/id id :name "Ivan"}])))
 
 
 (defn- long-db [depth width]

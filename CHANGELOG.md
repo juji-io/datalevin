@@ -8,8 +8,7 @@
 - `Graphene` query optimizer that utilizes EnCla and Links indices. #11
 - Benchmarks for complex queries and large data sets
 - Expose LMDB dupsort functionality (the same key maps to a list of sorted
-  values) as list functions: `open-list`, `in-list?`, `put-list-items`, and so
-  on.
+  values) as list functions: `open-list-dbi`, `in-list?`, `put-list-items`, etc.
 - Add pull API to client/server and babashka pods
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
