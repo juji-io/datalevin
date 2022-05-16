@@ -45,10 +45,11 @@ what we call an `EnCla` index, short for Entity Classes. Similar to
 characteristic sets [4] in RDF research, this concept captures the defining
 combination of attributes for a class of entities.
 
-A LMDB map is used to store the `EnCla` index. The keys
-are the IDs of entity classes. The value contains the following information:
+A LMDB map is used to store the `EnCla` index. The keys are the unique IDs of
+entity classes. The value contains the following information:
 
-* The set of attribute ids that define an encla.
+* The mapping of the set of attribute ids that defines an encla, to their
+  corresponding estimated average cardinality.
 * The entity ids belonging to an encla.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
@@ -58,9 +59,10 @@ In Datomic-like stores, `:db.type/ref` triples provide links between two entity
 classes. Such links are important for simplifying query graph [2] [3]. We store
 them in a LMDB dupsort map:
 
-* Keys are link definitions: source encla id, target encla id, and the
-  ref attribute id.
-* Values are the lists of pairs of source entity ids and target entity ids of a link type.
+* Keys are the link definitions: source encla id, target encla id, and the
+  ref attribute id, as well as the estimated average cardinality.
+* Values are the lists of pairs of source entity ids and target entity ids of a
+  link type.
 
 `Links` index also replaces our `VEA` triple ordering index.
 
@@ -72,13 +74,14 @@ a relational store.
 Unlike previous research [2] [3] [4], we build these new indices online and kept
 them up to date with new data during transactions. As far as we know, Datalevin
 is the first system to develop online algorithms for these types of indices. We
-pay a small price in transaction processing time (about 30% slower) and a
-slightly larger memory footprint, but gain orders of magnitude query speedup.
+pay a small price in transaction processing time (about 20% slower for large
+transactions, more for small transactions) and a slightly larger memory
+footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 
-The new query engine will employs multiple optimization strategies. Some are our
-innovations.
+The new query engine will employs multiple optimization strategies. Some
+implement our new ideas.
 
 ### Entity filtering (new)
 
@@ -91,6 +94,18 @@ significantly reduces the amount of work we have.
 `EnCla` also enables us to use pivot scan [1] that returns multiple attribute
 values in a single index scan for star-like attributes.
 
+### Predicates push-down
+
+As mentioned, we take advantage of the opportunities to push predicates on
+values down to index scan in order to minimize unnecessary intermediate results.
+
+### Merge join while index scan
+
+Further more, we push joins down to index scan as well, by treating index scan
+as the outer side of the join. This affords us to always use the more efficient
+merge join method, as the index is always sorted and we only need to sort the
+inner side (often the smaller side) of the join.
+
 ### Query graph simplification
 
 Since star-like attributes are already handled by entity filtering and pivot
@@ -100,22 +115,15 @@ query search space.
 
 ### Search style optimizer (new)
 
-As a break from the traditional Selinger style optimizer [5], where
-dynamic programming (DP) query planning is done ahead of query execution, our
-query engine does planning and execution at the same time as a shortest path
-graph search. This avoids filling the DP table in full.
+As a break from the traditional Selinger style optimizer [5], where dynamic
+programming (DP) is used for query planning, we plan with a shortest path graph
+search. This avoids filling the DP table in full.
 
-### Cardinality count (new)
+### Cumulative average cardinality estimation (new)
 
-In addition, instead of relying on often inaccurate cardinality estimation, our
-new indices afford us to count them accurately and quickly, generating better
-execution path.
-
-### Predicates push-down
-
-As mentioned, we take advantage of the opportunities to push predicates on
-values down to indexing access methods in order to minimize unnecessary
-intermediate results.
+During a transaction, we update a cumulative average for each affected attribute
+of the affected encla. This cardinality estimation method is cheap and accurate,
+leading to better plans.
 
 ## Benchmark
 

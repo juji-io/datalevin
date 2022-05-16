@@ -15,6 +15,8 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
+(set! *unchecked-math* true)
+
 (defn attr->properties
   [k v]
   (case v
