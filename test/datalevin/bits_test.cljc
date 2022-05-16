@@ -716,7 +716,7 @@
         bf  (sut/allocate-buffer 16384)]
     (is (= rr rr1))
     (is (= 1000 (.select rr 3)))
-    (is (= (.getCardinality rr) 4))
+    (is (= (sut/bitmap-size rr) 4))
     (sut/put-buffer bf rr :bitmap)
     (.flip bf)
     (let [^RoaringBitmap rr1 (sut/read-buffer bf :bitmap)]

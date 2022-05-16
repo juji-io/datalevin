@@ -279,7 +279,10 @@
                     6 :father,
                     7 :part}
         refs       #{7 6 5}
-        classes    {0 #{3}, 1 #{3, 4, 5}, 2 #{3, 7}, 3 #{3, 6}}
+        classes    {0 {3 1.0},
+                    1 {3 1.0, 4 2.0, 5 2.0},
+                    2 {3 1.0, 7 1.6},
+                    3 {3 1.0, 6 1.0}}
         rclasses   {3 #{0 1 2 3}, 4 #{1}, 5 #{1}, 7 #{2}, 6 #{3}}
         entities   {1  1,
                     2  3,
@@ -347,17 +350,18 @@
         (is (= rentities (sut/rentities store1)))
         (is (= links (sut/links store1)))
         (sut/close store1)))
-    (testing "add a datom that does not change encla"
+    (testing "add a datom that only affect cardinality estimation"
       (let [store1 (sut/open dir)]
         (sut/load-datoms store1 [(d/datom 1 :aka "Angel")])
         (is (= (inc n-datoms) (sut/datom-count store1 :eav)))
-        (is (= classes (sut/classes store1)))
+        (is (= (assoc-in classes [1 4] 2.5)
+               (sut/classes store1)))
         (is (= rclasses (sut/rclasses store1)))
         (is (= entities (sut/entities store1)))
         (is (= rentities (sut/rentities store1)))
         (is (= links (sut/links store1)))
         (sut/close store1)))
-    (testing "delete a datom that does not change encla"
+    (testing "delete a datom that only affect cardinality estimation"
       (let [store1 (sut/open dir)]
         (sut/load-datoms store1 [(d/datom 1 :aka "Devil" -1)])
         (is (= n-datoms (sut/datom-count store1 :eav)))
@@ -367,7 +371,7 @@
         (is (= rentities (sut/rentities store1)))
         (is (= links (sut/links store1)))
         (sut/close store1)))
-    (testing "delete a datom that changes entities"
+    (testing "delete a datom that changes entity class and links"
       (let [store1 (sut/open dir)]
         (sut/load-datoms store1 [(d/datom 2 :father 1 -1)])
         (is (= (dec n-datoms) (sut/datom-count store1 :eav)))
@@ -380,7 +384,7 @@
                (sut/rentities store1)))
         (is (= (dissoc links [1 6 2]) (sut/links store1)))
         (sut/close store1)))
-    (testing "add a datom that changes entities"
+    (testing "add a datom that changes entity class and links"
       (let [store1 (sut/open dir)]
         (sut/load-datoms store1 [(d/datom 2 :father 3)])
         (is (= n-datoms (sut/datom-count store1 :eav)))
@@ -395,11 +399,12 @@
                    (dissoc [1 6 2])
                    (assoc [3 6 2] [3 6 3])) (sut/links store1)))
         (sut/close store1)))
-    (testing "add a datom that changes classes"
+    (testing "add a datom that changes everything"
       (let [store1 (sut/open dir)]
         (sut/load-datoms store1 [(d/datom 2 :child 8)])
         (is (= (inc n-datoms) (sut/datom-count store1 :eav)))
-        (is (= (-> classes (assoc 4 #{3 5 6})) (sut/classes store1)))
+        (is (= (-> classes (assoc 4 {3 1.0, 5 1.0, 6 1.0}))
+               (sut/classes store1)))
         (is (= (-> rclasses
                    (update 5 conj 4) (update 3 conj 4) (update 6 conj 4))
                (sut/rclasses store1)))
@@ -414,12 +419,14 @@
                    (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4]))
                (sut/links store1)))
         (sut/close store1)))
-    (testing "delete datoms that changes classes"
+    (testing "delete datoms that changes everything"
       (let [store1 (sut/open dir)]
         (sut/load-datoms store1 [(d/datom 1 :child 2 -1)
                                  (d/datom 1 :child 3 -1)])
         (is (= (dec n-datoms) (sut/datom-count store1 :eav)))
-        (is (= (-> classes (assoc 4 #{3 5 6} 5 #{3 4})) (sut/classes store1)))
+        (is (= (-> classes (assoc 4 {3 1.0, 5 1.0, 6 1.0}
+                                  5 {3 1.0, 4 2.0}))
+               (sut/classes store1)))
         (is (= (-> rclasses
                    (update 5 conj 4) (update 3 conj 4 5) (update 6 conj 4)
                    (update 4 conj 5))
@@ -434,14 +441,15 @@
         (is (= (-> links
                    (dissoc [1 6 2])
                    (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4])
-                   (dissoc [2 5 1] [3 5 1])
-                   )
+                   (dissoc [2 5 1] [3 5 1]))
                (sut/links store1)))
         (sut/close store1)))
     (testing "reload"
       (let [store1 (sut/open dir)]
         (is (= (dec n-datoms) (sut/datom-count store1 :eav)))
-        (is (= (-> classes (assoc 4 #{3 5 6} 5 #{3 4})) (sut/classes store1)))
+        (is (= (-> classes (assoc 4 {3 1.0, 5 1.0, 6 1.0}
+                                  5 {3 1.0, 4 2.0}))
+               (sut/classes store1)))
         (is (= (-> rclasses
                    (update 5 conj 4) (update 3 conj 4 5) (update 6 conj 4)
                    (update 4 conj 5))

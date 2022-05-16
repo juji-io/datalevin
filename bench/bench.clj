@@ -126,7 +126,7 @@
    "add-1"
    "add-5"
    "add-all"
-   ;;"init"
+   "init"
    ;; "retract-5"
    ;; "q1"
    ;; "q2"

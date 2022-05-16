@@ -89,6 +89,8 @@
      (doseq [^int i ints] (.add writer i))
      (.get writer))))
 
+(defn bitmap-size [^RoaringBitmap bm] (.getCardinality bm))
+
 (defn bitmap-del
   "Delete an int from the bitmap"
   [^RoaringBitmap bm i]
