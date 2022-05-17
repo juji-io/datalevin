@@ -617,16 +617,20 @@
     (vswap! max-cid #(inc ^long %))
     cid))
 
+(defn- cumulative-average
+  [^double average ^long n+1 ^long x]
+  (+ average (/ (- x average) n+1)))
+
 (defn- adj-class
-  "adjust cumulative average estimation"
   [classes rentities cid aid-counts]
   (let [n+1 (inc ^long (b/bitmap-size (@rentities cid)))]
     (vswap! classes update cid
-            #(into {} (map (fn [[aid ^double average]]
-                             [aid (+ average
-                                     (/ (- (aid-counts aid) average)
-                                        n+1))])
-                           %)))
+            #(persistent!
+               (reduce-kv
+                 (fn [m aid average]
+                   (assoc! m aid
+                           (cumulative-average average n+1 (aid-counts aid))))
+                 (transient {}) %)))
     cid))
 
 (defn- del-entity
@@ -665,17 +669,14 @@
         (del-entity updated-cids entities rentities eid)
         (let [my-aids (set (keys aid-counts))
               cids    (find-classes @rclasses my-aids)]
-          (if (empty? cids)
+          (if-let [cid (some (fn [cid]
+                               (when (= my-aids (set (keys (@classes cid))))
+                                 cid))
+                             cids)]
             (adj-entity updated-cids entities rentities eid
-                        (add-class max-cid classes rclasses aid-counts))
-            (if-let [cid (some (fn [cid]
-                                 (when (= my-aids (set (keys (@classes cid))))
-                                   cid))
-                               cids)]
-              (adj-entity updated-cids entities rentities eid
-                          (adj-class classes rentities cid aid-counts))
-              (adj-entity updated-cids entities rentities eid
-                          (add-class max-cid classes rclasses aid-counts)))))))
+                        (adj-class classes rentities cid aid-counts))
+            (adj-entity updated-cids entities rentities eid
+                        (add-class max-cid classes rclasses aid-counts))))))
     (transact-encla lmdb @classes @rentities (persistent! @updated-cids))
     (persistent! @cur-ref-ds)))
 
@@ -695,11 +696,11 @@
           (vswap! to-del update old-link conj* [v e])
           (vswap! to-add update new-link conj* [v e]))
         (vswap! to-add update new-link conj* [v e])))
-    (doseq [[v _ e :as vae] del-ref-ds]
-      (when
-          (vswap! new-links dissoc! vae)
-        (when-let [old-link (old-links vae)]
-          (vswap! to-del update old-link conj* [v e]))))
+    (doseq [[v _ e :as vae] del-ref-ds
+            :when           (not (cur-ref-ds vae))]
+      (vswap! new-links dissoc! vae)
+      (when-let [old-link (old-links vae)]
+        (vswap! to-del update old-link conj* [v e])))
     (doseq [[link lst] @to-add]
       (lmdb/put-list-items lmdb c/links link lst :int-int-int :long-long))
     (doseq [[link lst] @to-del]

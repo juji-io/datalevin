@@ -57,14 +57,14 @@ into memory at system initialization and updated during system run.
 
 In Datomic-like stores, `:db.type/ref` triples provide links between two entity
 classes. Such links are important for simplifying query graph [2] [3]. We store
-them in a LMDB dupsort map:
+them in a LMDB dupsort map as `Links` index:
 
 * Keys are the link definitions: source encla id, target encla id, and the
-  ref attribute id, as well as the estimated average cardinality.
+  ref attribute id.
 * Values are the lists of pairs of source entity ids and target entity ids of a
   link type.
 
-`Links` index also replaces our `VEA` triple ordering index.
+`Links` index replaces the original `VEA` triple ordering index.
 
 Intuitively, we essentially build virtual tables with foreign keys behind the
 scene. This allows us to keep the flexibility of a triple store that enables

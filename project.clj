@@ -8,7 +8,7 @@
   :managed-dependencies [
                          [babashka/babashka.pods "0.1.0"]
                          [com.cognitect/transit-clj "1.0.329"]
-                         [com.fasterxml.jackson.core/jackson-core "2.13.2"]
+                         [com.fasterxml.jackson.core/jackson-core "2.13.3"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
                          [com.taoensso/nippy "3.1.1"]
                          [com.taoensso/timbre "5.2.1"]
@@ -33,7 +33,7 @@
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
                           ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.26"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.27"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
