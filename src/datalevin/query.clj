@@ -4,6 +4,7 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
+   [taoensso.timbre :as log]
    [datalevin.db :as db]
    [datalevin.search :as s]
    [datalevin.util :as u :refer [raise]]

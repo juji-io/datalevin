@@ -73,10 +73,10 @@ a relational store.
 
 Unlike previous research [2] [3] [4], we build these new indices online and kept
 them up to date with new data during transactions. As far as we know, Datalevin
-is the first system to develop online algorithms for these types of indices. We
-pay a small price in transaction processing time (about 20% slower for large
-transactions, more for small transactions) and a slightly larger memory
-footprint, but gain orders of magnitude query speedup.
+is the first production system to develop online algorithms for these novel
+types of indices. We pay a small price in transaction processing time (about 20%
+slower for large transactions, more for small transactions) and a slightly
+larger memory footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 

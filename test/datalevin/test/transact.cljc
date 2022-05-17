@@ -484,7 +484,6 @@
                  {:prop4 "prop4"})))
         (d/close conn)))))
 
-;; TODO turn back on after switching to use Links
 (deftest test-transient-294
   "db.fn/retractEntity retracts attributes of adjacent entities https://github.com/tonsky/datascript/issues/294"
   (let [db     (reduce #(d/db-with %1 [{:db/id %2 :a1 1 :a2 2 :a3 3}])

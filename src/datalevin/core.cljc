@@ -1433,22 +1433,51 @@ one of the following data types:
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
 
-
 (comment
 
-  (def schema {:name   {:db/valueType :db.type/string}
-               :height {:db/valueType :db.type/float}})
+  (def next-eid (volatile! -1))
+  (defn random-man []
+    {:db/id      (vswap! next-eid inc)
+     :first-name (rand-nth ["James" "John" "Robert" "Michael" "William" "David"
+                            "Richard" "Charles" "Joseph" "Thomas"])
+     :last-name  (rand-nth ["Smith" "Johnson" "Williams" "Brown" "Jones" "Garcia"
+                            "Miller" "Davis" "Rodriguez" "Martinez"])
+     :school     (+ 200 (rand-int 20))
+     :age        (rand-int 100)
+     :salary     (rand-int 100000)})
+  (def people (repeatedly random-man))
+  (def people200 (shuffle (take 200 people)))
+  (defn rand-str []
+    (apply str
+           (for [i (range (+ 3 (rand-int 10)))]
+             (char (+ (rand 26) 65)))))
+  (defn random-school []
+    {:db/id      (vswap! next-eid inc)
+     :name       (rand-str)
+     :ownership  (rand-nth [:private :public])
+     :enrollment (rand-int 10000)})
+  (def school (repeatedly random-school))
+  (def school20 (shuffle (take 20 school)))
+  (def schema
+    {:follows    {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/many }
+     :school     {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/many }
+     :name       {:db/valueType :db.type/string}
+     :first-name {:db/valueType :db.type/string}
+     :last-name  {:db/valueType :db.type/string}
+     :ownership  {:db/valueType :db.type/keyword}
+     :enrollment {:db/valueType :db.type/long}
+     :age        {:db/valueType :db.type/long}
+     :salary     {:db/valueType :db.type/long}})
+  (def conn (create-conn nil schema))
+  (transact! conn people200)
+  (dotimes [_ 50]
+    (transact! conn [{:db/id (rand-int 200) :follows (rand-int 200)}]))
+  (transact! conn school20)
 
-  (def conn (get-conn "/tmp/mydb1" schema))
-
-  (transact! conn [{:name "John" :height 1.73}
-                   {:name "Peter" :height 1.92}])
-
-  (def *dbs (atom []))
-
-  (doseq [i (range 2000)]
-    (prn "Creating" i)
-    (swap! *dbs conj (create-conn (str "/tmp/dl-" i))))
-
+  (q '[:find ?e
+       :where [?e :first-namme "David"]]
+     (db conn))
 
   )
