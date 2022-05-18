@@ -243,6 +243,7 @@
   (entities [this])
   (rentities [this])
   (links [this])
+  (rlinks [this])
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (load-datoms [this datoms] "Load datams into storage")
@@ -289,7 +290,8 @@
                 ^:volatile-mutable rclasses  ; aid -> cids
                 ^:volatile-mutable entities  ; eid -> cid
                 ^:volatile-mutable rentities ; cid -> eids bitmap
-                ^:volatile-mutable links     ; vae -> link
+                ^:volatile-mutable links     ; link -> cardinality
+                ^:volatile-mutable rlinks    ; vae -> link
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
                 ^:volatile-mutable max-cid]
@@ -369,6 +371,9 @@
   (links [_]
     links)
 
+  (rlinks [_]
+    rlinks)
+
   (swap-attr [this attr f]
     (swap-attr this attr f nil nil))
   (swap-attr [this attr f x]
@@ -402,14 +407,15 @@
               v-entities  (volatile! entities)
               v-rentities (volatile! rentities)
               v-max-cid   (volatile! max-cid)
-              v-links     (volatile! (transient links))
+              v-links     (volatile! links)
+              v-rlinks    (volatile! (transient rlinks))
               ft-ds       (volatile! (transient []))
               del-ref-ds  (volatile! (transient #{}))]
           (lmdb/open-transact-kv lmdb)
           (-> (transact-datoms this ft-ds del-ref-ds datoms)
               (update-encla lmdb schema refs v-classes v-rclasses
                             v-entities v-rentities v-max-cid)
-              (update-links lmdb @v-entities links v-links
+              (update-links lmdb @v-entities v-links rlinks v-rlinks
                             (persistent! @del-ref-ds)))
           (lmdb/transact-kv lmdb [(time-tx)])
           (set! classes @v-classes)
@@ -417,7 +423,8 @@
           (set! entities @v-entities)
           (set! rentities @v-rentities)
           (set! max-cid @v-max-cid)
-          (set! links (persistent! @v-links))
+          (set! links @v-links)
+          (set! rlinks (persistent! @v-rlinks))
           (fulltext-index search-engine (persistent! @ft-ds))))
       (catch clojure.lang.ExceptionInfo e
         (if (:resized (ex-data e))
@@ -681,7 +688,7 @@
     (persistent! @cur-ref-ds)))
 
 (defn- update-links
-  [cur-ref-ds lmdb entities old-links new-links del-ref-ds]
+  [cur-ref-ds lmdb entities links old-rlinks new-rlinks del-ref-ds]
   (let [to-del (volatile! {})
         to-add (volatile! {})
         conj*  (fnil conj [])]
@@ -690,30 +697,39 @@
                              vcid (entities v)
                              new-link [vcid a ecid]]
             :when           (and vcid ecid)]
-      (vswap! new-links assoc! vae new-link)
-      (if-let [old-link (old-links vae)]
+      (vswap! new-rlinks assoc! vae new-link)
+      (if-let [old-link (old-rlinks vae)]
         (when (not= old-link new-link)
           (vswap! to-del update old-link conj* [v e])
           (vswap! to-add update new-link conj* [v e]))
         (vswap! to-add update new-link conj* [v e])))
     (doseq [[v _ e :as vae] del-ref-ds
             :when           (not (cur-ref-ds vae))]
-      (vswap! new-links dissoc! vae)
-      (when-let [old-link (old-links vae)]
+      (vswap! new-rlinks dissoc! vae)
+      (when-let [old-link (old-rlinks vae)]
         (vswap! to-del update old-link conj* [v e])))
     (doseq [[link lst] @to-add]
+      (vswap! links update link (fnil #(+ ^long % (count lst)) 0))
       (lmdb/put-list-items lmdb c/links link lst :int-int-int :long-long))
     (doseq [[link lst] @to-del]
+      (let [r (- ^long (@links link) (count lst))]
+        (if (< 0 r)
+          (vswap! links assoc link r)
+          (vswap! links dissoc link)))
       (lmdb/del-list-items lmdb c/links link lst :int-int-int :long-long))))
 
 (defn- init-links
   [lmdb]
-  (persistent!
-    (reduce
-      (fn [m [[_ aid _ :as link] [veid eeid]]]
-        (assoc! m [veid aid eeid] link))
-      (transient {})
-      (lmdb/get-range lmdb c/links [:all] :int-int-int :long-long))))
+  (let [links  (volatile! {})
+        rlinks (persistent!
+                 (reduce
+                   (fn [m [[_ aid _ :as link] [veid eeid]]]
+                     (vswap! links update link (fnil inc 0))
+                     (assoc! m [veid aid eeid] link))
+                   (transient {})
+                   (lmdb/get-range lmdb c/links [:all]
+                                   :int-int-int :long-long)))]
+    [@links rlinks]))
 
 (defn- transact-opts
   [lmdb opts]
@@ -752,7 +768,8 @@
      (when opts (transact-opts lmdb opts))
      (let [schema              (init-schema lmdb schema)
            rschema             (schema->rschema schema)
-           [classes rentities] (init-encla lmdb)]
+           [classes rentities] (init-encla lmdb)
+           [links rlinks]      (init-links lmdb)]
        (->Store lmdb
                 (load-opts lmdb)
                 (s/new-search-engine lmdb search-opts)
@@ -764,7 +781,8 @@
                 (classes->rclasses classes)
                 (rentities->entities rentities)
                 rentities
-                (init-links lmdb)
+                links
+                rlinks
                 (init-max-aid lmdb)
                 (init-max-gt lmdb)
                 (init-max-cid lmdb))))))

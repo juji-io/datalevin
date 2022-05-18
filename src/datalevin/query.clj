@@ -177,7 +177,7 @@ be resolved with it"}
       (first tuples))))
 
 (defn q [q & inputs]
-  (let [parsed-q      (memoized-parse-query q)
+  (let [parsed-q      (log/spy (memoized-parse-query q))
         find          (:qfind parsed-q)
         find-elements (dp/find-elements find)
         find-vars     (dp/find-vars find)
@@ -186,11 +186,10 @@ be resolved with it"}
         all-vars      (concat find-vars (map :symbol with))
         q             (cond-> q
                         (sequential? q) dp/query->map)
-        wheres        (:where q)
         context       (-> (Context. [] {} {})
                           (resolve-ins (:qin parsed-q) inputs))
         resultset     (-> context
-                          (q* wheres)
+                          (q* (log/spy (:where q)))
                           (collect all-vars))]
     (cond->> resultset
       (:with q)

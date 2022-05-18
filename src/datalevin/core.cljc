@@ -1442,11 +1442,9 @@ one of the following data types:
                             "Richard" "Charles" "Joseph" "Thomas"])
      :last-name  (rand-nth ["Smith" "Johnson" "Williams" "Brown" "Jones" "Garcia"
                             "Miller" "Davis" "Rodriguez" "Martinez"])
-     :school     (+ 200 (rand-int 20))
      :age        (rand-int 100)
      :salary     (rand-int 100000)})
-  (def people (repeatedly random-man))
-  (def people200 (shuffle (take 200 people)))
+  (def people100 (shuffle (take 100 (repeatedly random-man))))
   (defn rand-str []
     (apply str
            (for [i (range (+ 3 (rand-int 10)))]
@@ -1456,13 +1454,16 @@ one of the following data types:
      :name       (rand-str)
      :ownership  (rand-nth [:private :public])
      :enrollment (rand-int 10000)})
-  (def school (repeatedly random-school))
-  (def school20 (shuffle (take 20 school)))
+  (def school20 (shuffle (take 20 (repeatedly random-school))))
   (def schema
     {:follows    {:db/valueType   :db.type/ref
                   :db/cardinality :db.cardinality/many }
      :school     {:db/valueType   :db.type/ref
                   :db/cardinality :db.cardinality/many }
+     :born       {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/one}
+     :location   {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/one}
      :name       {:db/valueType :db.type/string}
      :first-name {:db/valueType :db.type/string}
      :last-name  {:db/valueType :db.type/string}
@@ -1470,14 +1471,36 @@ one of the following data types:
      :enrollment {:db/valueType :db.type/long}
      :age        {:db/valueType :db.type/long}
      :salary     {:db/valueType :db.type/long}})
+  (defn random-place []
+    {:db/id (vswap! next-eid inc)
+     :name  (rand-str)})
+  (def place15 (shuffle (take 15 (repeatedly random-place))))
   (def conn (create-conn nil schema))
-  (transact! conn people200)
-  (dotimes [_ 50]
-    (transact! conn [{:db/id (rand-int 200) :follows (rand-int 200)}]))
+  (transact! conn people100)
   (transact! conn school20)
+  (transact! conn place15)
+  (dotimes [_ 60]
+    (transact! conn [{:db/id (rand-int 100) :follows (rand-int 100)}]))
+  (dotimes [_ 80]
+    (transact! conn [{:db/id (rand-int 100) :school (+ 100 (rand-int 20))}]))
+  (dotimes [i 70]
+    (transact! conn [{:db/id i :born (+ 120 (rand-int 15))}]))
+  (dotimes [i 15]
+    (transact! conn [{:db/id (+ 100 i) :location (+ 120 (rand-int 15))}]))
+
+  (def store (.-store (db conn)))
+  (def attrs (s/attrs store))
+  {0 :db/ident, 7 :name, 1 :db/created-at, 4 :last-name, 13 :salary, 6 :school, 3 :enrollment, 12 :location, 2 :db/updated-at, 11 :born, 9 :first-name, 5 :age, 10 :ownership, 8 :follows}
+  (def classes (s/classes store))
+  (def rclasses (s/rclasses store))
+  (def entities (s/entities store))
+  (def rentities (s/rentities store))
+  (def links (s/links store))
 
   (q '[:find ?e
-       :where [?e :first-namme "David"]]
+       :where
+       [?e :first-namme "David"]
+       [?e :follows]]
      (db conn))
 
   )

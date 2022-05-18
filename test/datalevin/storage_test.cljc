@@ -306,7 +306,12 @@
                     1 (b/bitmap [1])
                     2 (b/bitmap [10, 11, 12, 15, 16]),
                     3 (b/bitmap [2, 3, 6])}
-        links      {[1 6 2]   [1 6 3],
+        links      {[1 6 3] 2,
+                    [0 7 2] 4,
+                    [3 6 3] 1,
+                    [2 7 2] 4,
+                    [3 5 1] 2}
+        rlinks     {[1 6 2]   [1 6 3],
                     [13 7 12] [0 7 2],
                     [18 7 16] [0 7 2],
                     [15 7 10] [2 7 2],
@@ -339,6 +344,7 @@
     (is (= (sut/entities store) (sut/rentities->entities (sut/rentities store))))
 
     (is (= links (sut/links store)))
+    (is (= rlinks (sut/rlinks store)))
 
     (sut/close store)
 
@@ -349,6 +355,7 @@
         (is (= rclasses (sut/rclasses store1)))
         (is (= rentities (sut/rentities store1)))
         (is (= links (sut/links store1)))
+        (is (= rlinks (sut/rlinks store1)))
         (sut/close store1)))
     (testing "add a datom that only affect cardinality estimation"
       (let [store1 (sut/open dir)]
@@ -360,6 +367,7 @@
         (is (= entities (sut/entities store1)))
         (is (= rentities (sut/rentities store1)))
         (is (= links (sut/links store1)))
+        (is (= rlinks (sut/rlinks store1)))
         (sut/close store1)))
     (testing "delete a datom that only affect cardinality estimation"
       (let [store1 (sut/open dir)]
@@ -370,6 +378,7 @@
         (is (= entities (sut/entities store1)))
         (is (= rentities (sut/rentities store1)))
         (is (= links (sut/links store1)))
+        (is (= rlinks (sut/rlinks store1)))
         (sut/close store1)))
     (testing "delete a datom that changes entity class and links"
       (let [store1 (sut/open dir)]
@@ -382,7 +391,8 @@
                    (update 0 #(b/bitmap-add % 2))
                    (update 3 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
-        (is (= (dissoc links [1 6 2]) (sut/links store1)))
+        (is (= (assoc links [1 6 3] 1) (sut/links store1)))
+        (is (= (dissoc rlinks [1 6 2]) (sut/rlinks store1)))
         (sut/close store1)))
     (testing "add a datom that changes entity class and links"
       (let [store1 (sut/open dir)]
@@ -396,8 +406,11 @@
                    (update 0 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
         (is (= (-> links
+                   (assoc [1 6 3] 1)
+                   (update [3 6 3] inc)) (sut/links store1)))
+        (is (= (-> rlinks
                    (dissoc [1 6 2])
-                   (assoc [3 6 2] [3 6 3])) (sut/links store1)))
+                   (assoc [3 6 2] [3 6 3])) (sut/rlinks store1)))
         (sut/close store1)))
     (testing "add a datom that changes everything"
       (let [store1 (sut/open dir)]
@@ -415,9 +428,13 @@
                    (update 0 #(b/bitmap-del % 2)))
                (sut/rentities store1)))
         (is (= (-> links
+                   (assoc [1 6 3] 1)
+                   (assoc [3 6 4] 1)
+                   (assoc [0 5 4] 1)) (sut/links store1)))
+        (is (= (-> rlinks
                    (dissoc [1 6 2])
                    (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4]))
-               (sut/links store1)))
+               (sut/rlinks store1)))
         (sut/close store1)))
     (testing "delete datoms that changes everything"
       (let [store1 (sut/open dir)]
@@ -439,10 +456,15 @@
                    (assoc 1 (b/bitmap)))
                (sut/rentities store1)))
         (is (= (-> links
+                   (assoc [1 6 3] 1)
+                   (assoc [3 6 4] 1)
+                   (assoc [0 5 4] 1)
+                   (dissoc [3 5 1])) (sut/links store1)))
+        (is (= (-> rlinks
                    (dissoc [1 6 2])
                    (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4])
                    (dissoc [2 5 1] [3 5 1]))
-               (sut/links store1)))
+               (sut/rlinks store1)))
         (sut/close store1)))
     (testing "reload"
       (let [store1 (sut/open dir)]
@@ -462,10 +484,15 @@
                    (assoc 1 (b/bitmap)))
                (sut/rentities store1)))
         (is (= (-> links
+                   (assoc [1 6 3] 1)
+                   (assoc [3 6 4] 1)
+                   (assoc [0 5 4] 1)
+                   (dissoc [3 5 1])) (sut/links store1)))
+        (is (= (-> rlinks
                    (dissoc [1 6 2])
                    (assoc [3 6 2] [3 6 4] [8 5 2] [0 5 4])
                    (dissoc [2 5 1] [3 5 1]))
-               (sut/links store1)))
+               (sut/rlinks store1)))
         (sut/close store1)))))
 
 (deftest map-resize-encla-test
@@ -504,5 +531,5 @@
     (is (= (sut/rclasses s-store) (sut/rclasses l-store)))
     (is (= (sut/entities s-store) (sut/entities l-store)))
     (is (= (sut/rentities s-store) (sut/rentities l-store)))
-    (is (= (sut/links s-store) (sut/links l-store)))
+    (is (= (sut/rlinks s-store) (sut/rlinks l-store)))
     (is (= (sut/max-cid s-store) (sut/max-cid l-store)))))
