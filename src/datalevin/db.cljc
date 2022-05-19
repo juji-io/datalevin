@@ -1009,21 +1009,32 @@
     (refresh-cache pstore)
     rp))
 
+(defn- remote-tx-result
+  [res]
+  (if (map? res)
+    (let [{:keys [tx-data tempids]} res]
+      [tx-data (dissoc tempids :max-eid) (tempids :max-eid)])
+    (let [[tx-data tempids] (split-with datom? res)
+          max-eid           (-> tempids last second)
+          tempids           (into {} (butlast tempids))]
+      [tx-data tempids max-eid])))
+
 (defn transact-tx-data
   [initial-report initial-es]
   (when-not (or (nil? initial-es)
                 (sequential? initial-es))
     (raise "Bad transaction data " initial-es ", expected sequential collection"
            {:error :transact/syntax, :tx-data initial-es}))
-  (let [store (.-store ^DB (:db-before initial-report))]
+  (let [^DB db (:db-before initial-report)
+        store  (.-store db)]
     (if (instance? datalevin.remote.DatalogStore store)
       (try
-        (let [res            (r/tx-data store initial-es)
-              [datoms pairs] (split-with datom? res)]
+        (let [res                       (r/tx-data store initial-es)
+              [tx-data tempids max-eid] (remote-tx-result res)]
           (assoc initial-report
-                 :db-after (new-db store)
-                 :tx-data datoms
-                 :tempids (into {} pairs)))
+                 :db-after (assoc (new-db store) :max-eid max-eid)
+                 :tx-data tx-data
+                 :tempids tempids))
         (catch Exception _
           (local-transact-tx-data initial-report initial-es)))
       (local-transact-tx-data initial-report initial-es))))

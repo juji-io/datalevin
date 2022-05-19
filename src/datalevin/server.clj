@@ -1333,7 +1333,11 @@
 
 (defn- closed?
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-dt-store-handler closed?)))
+  (wrap-error
+    (let [res (if-let [store (db-store server skey (nth args 0))]
+                (st/closed? store)
+                true)]
+      (write-message skey {:type :command-complete :result res}))))
 
 (defn- last-modified
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1402,6 +1406,9 @@
                     (u/raise "Missing :mode when transact data" {}))
               db  (get-db server db-name)
               rp  (d/with db txs)
+              db  (:db-after rp)
+              _   (vswap! (.-dt-dbs server) assoc db-name db)
+              rp  (assoc-in rp [:tempids :max-eid] (:max-eid db))
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (select-keys rp [:tx-data :tempids])]
           (if (< ct ^long c/+wire-datom-batch-size+)
@@ -1852,7 +1859,8 @@
 
 (defn create
   "Create a Datalevin server. Initially not running, call `start` to run."
-  [{:keys [port root verbose]}]
+  [{:keys [port root verbose]
+    :or   {port 8898 root "/var/lib/datalevin" verbose false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try
     (log/set-level! (if verbose :debug :info))

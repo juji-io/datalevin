@@ -195,6 +195,8 @@
   (datom-count [this index] "Return the number of datoms in the index")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
+  (del-attr [this attr]
+    "Delete an attribute, throw if there are datoms related to it")
   (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]

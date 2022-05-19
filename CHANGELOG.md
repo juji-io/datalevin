@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Fixed
+- Server failure to update max-eid regression, #123
+### Added
+- Added an arity to `update-schema` to allow removal of attributes if they are
+  not associated with any datoms, #99
+
 ## 0.6.11
 ### Fixed
 - Search add-doc error when alter existing docs

@@ -1,6 +1,7 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
             [datalevin.server :as s]
+            [datalevin.storage :as st]
             [datalevin.client :as cl]
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
@@ -11,7 +12,9 @@
             [clojure.test :refer [is deftest testing]])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
-           [java.lang Thread]))
+           [java.lang Thread]
+           [datalevin.storage Store]
+           ))
 
 (deftest basic-ops-test
   (let [schema
@@ -1104,8 +1107,7 @@
       (u/delete-files dst))))
 
 (deftest auto-entity-time-test
-  (let [
-        dir  (u/tmp-dir (str "auto-entity-time-test-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "auto-entity-time-test-" (UUID/randomUUID)))
         conn (sut/create-conn dir
                               {:id {:db/unique    :db.unique/identity
                                     :db/valueType :db.type/long}}
