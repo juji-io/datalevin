@@ -31,7 +31,7 @@
   (let [t (if (= datom-type :txs)
             :tx-data
             :load-datoms)
-        {:keys [type message]}
+        {:keys [type message result]}
         (if (< (count datoms) ^long c/+wire-datom-batch-size+)
           (cl/request client {:type t
                               :mode :request
@@ -41,11 +41,12 @@
                               :args [db-name]}
                       datoms c/+wire-datom-batch-size+))]
     (when (= type :error-response)
-      (u/raise "Error loading datoms to server:" message {}))))
+      (u/raise "Error loading datoms to server:" message {}))
+    result))
 
-;; remote datalog store
+;; remote datalog db
 
-(defprotocol IRemote
+(defprotocol IRemoteDB
   (q [store query inputs]
     "For special case of queries with a single remote store as source,
      send the query and inputs over to remote server")
@@ -93,6 +94,9 @@
   (swap-attr [_ attr f x y]
     (let [frozen-f (nippy/fast-freeze f)]
       (cl/normal-request client :swap-attr [db-name attr frozen-f x y])))
+
+  (del-attr [_ attr]
+    (cl/normal-request client :del-attr [db-name attr]))
 
   (datom-count [_ index]
     (cl/normal-request client :datom-count [db-name index]))
@@ -145,7 +149,7 @@
       (cl/normal-request client :rslice-filter
                          [db-name index frozen-pred high-datom low-datom])))
 
-  IRemote
+  IRemoteDB
   (q [_ query inputs]
     (cl/normal-request client :q [db-name query inputs]))
   (tx-data [store data]

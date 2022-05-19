@@ -1333,7 +1333,11 @@
 
 (defn- closed?
   [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-dt-store-handler closed?)))
+  (wrap-error
+    (let [res (if-let [store (db-store server skey (nth args 0))]
+                (st/closed? store)
+                true)]
+      (write-message skey {:type :command-complete :result res}))))
 
 (defn- last-modified
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1369,6 +1373,10 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)]
       (normal-dt-store-handler swap-attr))))
 
+(defn- del-attr
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler del-attr)))
+
 (defn- datom-count
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler datom-count)))
@@ -1402,6 +1410,9 @@
                     (u/raise "Missing :mode when transact data" {}))
               db  (get-db server db-name)
               rp  (d/with db txs)
+              db  (:db-after rp)
+              _   (vswap! (.-dt-dbs server) assoc db-name db)
+              rp  (assoc-in rp [:tempids :max-eid] (:max-eid db))
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (select-keys rp [:tx-data :tempids])]
           (if (< ct ^long c/+wire-datom-batch-size+)
@@ -1718,6 +1729,7 @@
    'set-schema
    'init-max-eid
    'swap-attr
+   'del-attr
    'datom-count
    'load-datoms
    'tx-data
@@ -1852,7 +1864,8 @@
 
 (defn create
   "Create a Datalevin server. Initially not running, call `start` to run."
-  [{:keys [port root verbose]}]
+  [{:keys [port root verbose]
+    :or   {port 8898 root "/var/lib/datalevin" verbose false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try
     (log/set-level! (if verbose :debug :info))
