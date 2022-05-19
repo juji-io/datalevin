@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.12
 ### Fixed
 - Server failure to update max-eid regression, #123
 ### Added
