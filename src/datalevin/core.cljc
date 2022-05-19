@@ -699,7 +699,7 @@ Only usable for debug output.
 (defn update-schema
   "Update the schema of an open connection. `schema-update` is a map from
   attribute keywords to maps of corresponding properties. `del-attrs` is a
-  set of attribute keywords to be removed from the schema, if there is no
+  set of attributes to be removed from the schema, if there is no
   datoms associated with them, otherwise an exception will be thrown.
 
   Return the updated schema.
@@ -709,13 +709,14 @@ Only usable for debug output.
         (update-schema conn {:new/attr {:db/valueType :db.type/string}})
         (update-schema conn {:new/attr {:db/valueType :db.type/string}}
                             #{:old/attr1 :old/attr2})"
+  ([conn schema-update]
+   (update-schema conn schema-update nil))
   ([conn schema-update del-attrs]
    {:pre [(conn? conn)]}
    (let [^DB db       (db conn)
          ^Store store (.-store db)]
      (s/set-schema store schema-update)
-     (doseq [attr del-attrs]
-       (s/del-attr store attr))
+     (doseq [attr del-attrs] (s/del-attr store attr))
      (schema conn))))
 
 (defonce ^:private connections (atom {}))

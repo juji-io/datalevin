@@ -1373,6 +1373,10 @@
           args   (replace {frozen (nippy/fast-thaw frozen)} args)]
       (normal-dt-store-handler swap-attr))))
 
+(defn- del-attr
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler del-attr)))
+
 (defn- datom-count
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler datom-count)))
@@ -1725,6 +1729,7 @@
    'set-schema
    'init-max-eid
    'swap-attr
+   'del-attr
    'datom-count
    'load-datoms
    'tx-data

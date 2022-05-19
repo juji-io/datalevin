@@ -95,6 +95,9 @@
     (let [frozen-f (nippy/fast-freeze f)]
       (cl/normal-request client :swap-attr [db-name attr frozen-f x y])))
 
+  (del-attr [_ attr]
+    (cl/normal-request client :del-attr [db-name attr]))
+
   (datom-count [_ index]
     (cl/normal-request client :datom-count [db-name index]))
 

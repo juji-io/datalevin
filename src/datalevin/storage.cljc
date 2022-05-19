@@ -196,7 +196,7 @@
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
     "Update an attribute, f is similar to that of swap!")
   (del-attr [this attr]
-    "Delete an attribute, throw if there are datoms related to it")
+    "Delete an attribute, throw if there is still datom related to it")
   (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
@@ -308,6 +308,16 @@
       (set! rschema (schema->rschema schema))
       (set! attrs (assoc attrs (:db/aid p) attr))
       p))
+
+  (del-attr [this attr]
+    (if (populated? this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
+      (u/raise "Cannot delete attribute with datoms" {})
+      (let [aid (:db/aid (schema attr))]
+        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]])
+        (set! schema (dissoc schema attr))
+        (set! rschema (schema->rschema schema))
+        (set! attrs (dissoc attrs aid))
+        attrs)))
 
   (datom-count [_ index]
     (lmdb/entries lmdb (if (string? index) index (index->dbi index))))

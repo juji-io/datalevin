@@ -392,6 +392,7 @@
     (is (:regions/country (sut/schema conn)))
     (is (:db/created-at (sut/schema conn)))
     (is (sut/conn? conn))
+    (is (thrown? Exception (sut/update-schema conn {} #{:sales/year})))
     (sut/close conn)
     (let [conn1 (sut/create-conn dir)]
       (is (= 83 (count (sut/datoms @conn1 :eavt))))
