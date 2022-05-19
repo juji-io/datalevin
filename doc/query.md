@@ -1,13 +1,13 @@
 # Datalevin Query Engine
 
-Datalevin has an advanced Datalog query engine that handles complex queries
-on large data sets with ease.
+Datalevin has an advanced Datalog query engine that handles complex queries on
+large data sets with ease.
 
 ## Motivation
 
 One of the main reasons for people to use Datomic-like Datalog stores is to use
 their declarative and composible query language. The simple and elegant query is
-often backed-up by a flexible triple store. However, it is a well-know problem
+often backed by a flexible triple store. However, it is a well-know problem
 that querying a triple store is much slower than querying RDBMS that store data
 in rows or columns.
 
@@ -49,15 +49,15 @@ A LMDB map is used to store the `EnCla` index. The keys are the unique IDs of
 entity classes. The value contains the following information:
 
 * The mapping of the set of attribute ids that defines an encla, to their
-  corresponding estimated average cardinality.
+  corresponding estimated average cardinality (see below).
 * The entity ids belonging to an encla.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
 into memory at system initialization and updated during system run.
 
 In Datomic-like stores, `:db.type/ref` triples provide links between two entity
-classes. Such links are important for simplifying query graph [2] [3]. We store
-them in a LMDB dupsort map as `Links` index:
+classes. Such links are important for simplifying query graph [2] [4]. We store
+them in a LMDB dupsort map as an `Links` index:
 
 * Keys are the link definitions: source encla id, target encla id, and the
   ref attribute id.
@@ -71,23 +71,23 @@ scene. This allows us to keep the flexibility of a triple store that enables
 simple and elegant query, while reap the benefits of faster query performance of
 a relational store.
 
-Unlike previous research [2] [3] [4], we build these new indices online and kept
+Unlike previous research [2] [4] [5], we build these new indices online and kept
 them up to date with new data during transactions. As far as we know, Datalevin
 is the first production system to develop online algorithms for these novel
-types of indices. We pay a small price in transaction processing time (about 20%
-slower for large transactions, more for small transactions) and a slightly
-larger memory footprint, but gain orders of magnitude query speedup.
+indices. We pay a small price in transaction processing time (about 20% slower
+for large transactions, more for small transactions) and a slightly larger
+memory footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 
-The new query engine will employs multiple optimization strategies. Some
-implement our new ideas.
+The new query engine employs multiple optimization strategies. Some implement
+our own new ideas.
 
 ### Entity filtering (new)
 
 Instead of relying solely on joins to filter tuples, we leverage the `EnCla`
 index to pre-filter entities directly from query patterns. This pre-filter can
-significantly reduces the amount of work we have.
+significantly reduces the amount of work we have to do.
 
 ### Pivot scan
 
@@ -102,7 +102,7 @@ values down to index scan in order to minimize unnecessary intermediate results.
 ### Merge join while index scan
 
 Further more, we push joins down to index scan as well, by treating index scan
-as the outer side of the join. This affords us to always use the more efficient
+as the outer side of a join. This affords us to always use the most efficient
 merge join method, as the index is always sorted and we only need to sort the
 inner side (often the smaller side) of the join.
 
@@ -110,20 +110,21 @@ inner side (often the smaller side) of the join.
 
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the optimizer works mainly on the simplified graph that consists of stars
-and the links between them [2] [3]. This significantly reduces the size of
+and the links between them [2] [4]. This significantly reduces the size of
 query search space.
-
-### Search style optimizer (new)
-
-As a break from the traditional Selinger style optimizer [5], where dynamic
-programming (DP) is used for query planning, we plan with a shortest path graph
-search. This avoids filling the DP table in full.
 
 ### Cumulative average cardinality estimation (new)
 
 During a transaction, we update a cumulative average for each affected attribute
 of the affected encla. This cardinality estimation method is cheap and accurate,
 leading to better plans.
+
+### Steiner tree approximation query optimizer (new)
+
+As a break from the traditional Selinger style optimizer [6], where dynamic
+programming is used for query planning, we treat query planning as a
+Steiner tree problem and solve it with a fast approximation algorithm [3], which
+has better bounds.
 
 ## Benchmark
 
@@ -137,11 +138,14 @@ retrieval in RDF triple stores." CIKM. 2011.
 [2] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[3] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[3] Mehlhorn, K., "A faster approximation algorithm for the Steiner problem in
+graphs." Information Processing Letters 27.3 (1988): 125-128.
+
+[4] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[4] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[5] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[5] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[6] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
