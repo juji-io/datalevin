@@ -42,7 +42,7 @@ methods brings more benefits in Datomic-like stores.
 
 Based on these observations, we introduce two new types of indices. The first is
 what we call an `EnCla` index, short for Entity Classes. Similar to
-characteristic sets [4] in RDF research, this concept captures the defining
+characteristic sets [7] in RDF research, this concept captures the defining
 combination of attributes for a class of entities.
 
 A LMDB map is used to store the `EnCla` index. The keys are the unique IDs of
@@ -56,7 +56,7 @@ entity classes. The value contains the following information:
 into memory at system initialization and updated during system run.
 
 In Datomic-like stores, `:db.type/ref` triples provide links between two entity
-classes. Such links are important for simplifying query graph [2] [4]. We store
+classes. Such links are important for simplifying query graph [2] [5]. We store
 them in a LMDB dupsort map as an `Links` index:
 
 * Keys are the link definitions: source encla id, target encla id, and the
@@ -71,7 +71,7 @@ scene. This allows us to keep the flexibility of a triple store that enables
 simple and elegant query, while reap the benefits of faster query performance of
 a relational store.
 
-Unlike previous research [2] [3] [5], we build these new indices online and kept
+Unlike previous research [2] [5] [7], we build these new indices online and keep
 them up to date with new data during transactions. As far as we know, Datalevin
 is the first production system to develop online algorithms for these novel
 indices. We pay a small price in transaction processing time (about 20% slower
@@ -80,7 +80,7 @@ memory footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 
-We use cost based Selinger style query optimizer [4] [6], where
+We use cost based Selinger style query optimizer [6] [8], where
 dynamic programming is used for query planning. The query engine employs
 multiple optimization strategies. Some implement our own new ideas.
 
@@ -105,14 +105,14 @@ results.
 
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the optimizer works mainly on the simplified graph that consists of stars
-and the links between them [2] [3]. This significantly reduces the size of
+and the links between them [2] [5]. This significantly reduces the size of
 query search space.
 
 ### Cumulative average cardinality (new)
 
 During a transaction, we update a cumulative average count for each affected
-attribute of the affected encla. This cardinality estimation method is cheap and
-accurate, leading to better plans.
+attribute of the affected encla. This base table cardinality estimation method
+is cheap and accurate, leading to better plans.
 
 ### Direct count for bounded cardinality (new)
 
@@ -124,7 +124,7 @@ because range count with bounded values is fast in triple indices.
 For join cardinality estimation, we do sampling at query time [4]. Sampling is
 cheap in triple indices, because all the attribute are already unpacked and indexed
 separately, unlike in RDDBMS. Instead of sampling rows and storing them, we can
-just count sampled values directly during index scan in triple stores.
+just count sampled values directly in triple indices.
 
 ## Benchmark
 
@@ -157,14 +157,14 @@ join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 [4] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
 Sampling." Cidr. 2017.
 
-[3] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[5] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[4] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+[6] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
 SIGMOD. 2008.
 
-[5] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[7] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[6] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[8] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
