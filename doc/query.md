@@ -49,7 +49,7 @@ A LMDB map is used to store the `EnCla` index. The keys are the unique IDs of
 entity classes. The value contains the following information:
 
 * The mapping of the set of attribute ids that defines an encla, to their
-  corresponding estimated average cardinality (see below).
+  corresponding estimated average cardinality.
 * The entity ids belonging to an encla.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
@@ -71,7 +71,7 @@ scene. This allows us to keep the flexibility of a triple store that enables
 simple and elegant query, while reap the benefits of faster query performance of
 a relational store.
 
-Unlike previous research [2] [4] [5], we build these new indices online and kept
+Unlike previous research [2] [3] [5], we build these new indices online and kept
 them up to date with new data during transactions. As far as we know, Datalevin
 is the first production system to develop online algorithms for these novel
 indices. We pay a small price in transaction processing time (about 20% slower
@@ -80,55 +80,68 @@ memory footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 
-The new query engine employs multiple optimization strategies. Some implement
-our own new ideas.
+We use cost based Selinger style query optimizer [4] [6], where
+dynamic programming is used for query planning. The query engine employs
+multiple optimization strategies. Some implement our own new ideas.
 
 ### Entity filtering (new)
 
 Instead of relying solely on joins to filter tuples, we leverage the `EnCla`
 index to pre-filter entities directly from query patterns. This pre-filter can
-significantly reduces the amount of work we have to do.
+significantly reduce the amount of work we have to do.
 
 ### Pivot scan
 
 `EnCla` also enables us to use pivot scan [1] that returns multiple attribute
-values in a single index scan for star-like attributes.
+values with a single index scan for star-like attributes.
 
 ### Predicates push-down
 
-As mentioned, we take advantage of the opportunities to push predicates on
-values down to index scan in order to minimize unnecessary intermediate results.
-
-### Merge join while index scan
-
-Further more, we push joins down to index scan as well, by treating index scan
-as the outer side of a join. This affords us to always use the most efficient
-merge join method, as the index is always sorted and we only need to sort the
-inner side (often the smaller side) of the join.
+As mentioned, we take advantage of the opportunities to push selection
+predicates down to index scan in order to minimize unnecessary intermediate
+results.
 
 ### Query graph simplification
 
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the optimizer works mainly on the simplified graph that consists of stars
-and the links between them [2] [4]. This significantly reduces the size of
+and the links between them [2] [3]. This significantly reduces the size of
 query search space.
 
-### Cumulative average cardinality estimation (new)
+### Cumulative average cardinality (new)
 
-During a transaction, we update a cumulative average for each affected attribute
-of the affected encla. This cardinality estimation method is cheap and accurate,
-leading to better plans.
+During a transaction, we update a cumulative average count for each affected
+attribute of the affected encla. This cardinality estimation method is cheap and
+accurate, leading to better plans.
 
-### Steiner tree approximation query optimizer (new)
+### Direct count for bounded cardinality (new)
 
-As a break from the traditional Selinger style optimizer [6], where dynamic
-programming is used for query planning, we treat query planning as a
-Steiner tree problem and solve it with a fast approximation algorithm [3], which
-has better bounds.
+For cardinality estimation with bounded variables, we count them directly,
+because range count with bounded values is fast in triple indices.
+
+### Sampling for join cardinality estimation
+
+For join cardinality estimation, we do sampling at query time [4]. Sampling is
+cheap in triple indices, because all the attribute are already unpacked and indexed
+separately, unlike in RDDBMS. Instead of sampling rows and storing them, we can
+just count sampled values directly during index scan in triple stores.
 
 ## Benchmark
 
 TBD
+
+## Remark
+
+The more granular and redundant storage format of triple stores brings some
+challenges to query processing due to its greater demand on storage access, but
+it also offer some opportunities to help with query.
+
+We found that the opportunities lie precisely in the "Achilles Heel" of RDBMS
+optimizer: cardinality estimation. It is hard to have good cardinality
+estimation in RDDBMS because the data are stored in rows, so it becomes
+expensive and complicated when one has to unpack them to get counts or to sample
+by rows. On the other hand, it is cheap and straightforward to count or sample
+values directly in the already unpacked storage of triple stores.
 
 ## Reference
 
@@ -138,11 +151,17 @@ retrieval in RDF triple stores." CIKM. 2011.
 [2] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[3] Mehlhorn, K., "A faster approximation algorithm for the Steiner problem in
-graphs." Information Processing Letters 27.3 (1988): 125-128.
+[3] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
+2015.
 
-[4] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[4] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
+Sampling." Cidr. 2017.
+
+[3] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
+
+[4] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+SIGMOD. 2008.
 
 [5] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
