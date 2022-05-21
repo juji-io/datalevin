@@ -80,7 +80,7 @@ memory footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 
-We use cost based Selinger style query optimizer [6] [8], where
+We use cost based Selinger style query optimizer [7] [9], where
 dynamic programming is used for query planning. The query engine employs
 multiple optimization strategies. Some implement our own new ideas.
 
@@ -105,7 +105,7 @@ results.
 
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the optimizer works mainly on the simplified graph that consists of stars
-and the links between them [2] [5]. This significantly reduces the size of
+and the links between them [2] [6]. This significantly reduces the size of
 query search space.
 
 ### Cumulative average cardinality (new)
@@ -121,7 +121,7 @@ because range count with bounded values is fast in triple indices.
 
 ### Sampling for join cardinality estimation
 
-For join cardinality estimation, we do sampling at query time [4]. Sampling is
+For join cardinality estimation, we do sampling at query time [5]. Sampling is
 cheap in triple indices, because all the attribute are already unpacked and indexed
 separately, unlike in RDDBMS. Instead of sampling rows and storing them, we can
 just count sampled values directly in triple indices.
@@ -137,11 +137,19 @@ challenges to query processing due to its greater demand on storage access, but
 it also offer some opportunities to help with query.
 
 We found that the opportunities lie precisely in the "Achilles Heel" of RDBMS
-optimizer: cardinality estimation. It is hard to have good cardinality
-estimation in RDDBMS because the data are stored in rows, so it becomes
-expensive and complicated when one has to unpack them to get counts or to sample
-by rows. On the other hand, it is cheap and straightforward to count or sample
-values directly in the already unpacked storage of triple stores.
+optimizer: cardinality estimation [4]. It is hard to have good cardinality
+estimation in RDBMS because the data are stored in rows, so it becomes rather
+expensive and complicated when one has to unpack them to get attribute value
+counts or to sample by rows [3]. On the other hand, it is cheap and
+straightforward to count or sample values directly in the already unpacked
+storage of triple stores.
+
+## Conclusion
+
+Datalevin query engine stands on the shoulder of a half century of database
+research. We have chosen to implement simple and practical techniques that are
+consists with our goal of simplifying data access, and we are also open for the
+future, e.g. explore learning based techniques.
 
 ## Reference
 
@@ -151,20 +159,24 @@ retrieval in RDF triple stores." CIKM. 2011.
 [2] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[3] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
+[3] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
+optimizer: cardinality estimation, cost model, and plan enumeration." Data
+Science and Engineering, 2021
+
+[4] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
 2015.
 
-[4] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
+[5] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
 Sampling." Cidr. 2017.
 
-[5] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[6] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[6] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+[7] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
 SIGMOD. 2008.
 
-[7] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[8] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[8] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[9] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
