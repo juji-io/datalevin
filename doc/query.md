@@ -5,11 +5,11 @@ large data sets with ease.
 
 ## Motivation
 
-One of the main reasons for people to use Datomic-like Datalog stores is to use
+One of the main reasons for people to use Datomic flavored Datalog stores is to use
 their declarative and composible query language. The simple and elegant query is
-often backed by a flexible triple store. However, it is a well-know problem
-that querying a triple store is much slower than querying RDBMS that store data
-in rows or columns.
+backed by a flexible triple store. However, it is a well-know problem that
+querying a triple store is much slower than querying RDBMS that store data in
+rows (or columns).
 
 Datalevin solves the problem by developing an innovative query engine based on
 the latest research findings and some innovations of our own. We leverage some
@@ -21,11 +21,11 @@ triple store query performance to a level competitive with RDBMS.
 Although Datomic-like stores are heavily inspired by RDF stores, there are
 some differences that impact query engine design.
 
-In RDF stores, there's no explicit identification of entities, whereas in
-Datomic-like stores, the entities are explicitly defined during transactions; in
+In RDF stores, there are no explicit entity id numbers, whereas in Datomic-like
+stores, the entity id numbers are explicitly resolved during transactions; in
 addition, the entity vs. entity relationship is also explicitly marked by
-`:db.type/ref` value type. Consequently, the cost of resolving
-entities and their relationship become much lower.
+`:db.type/ref` value type. Consequently, the cost of resolving entities and
+their relationship become much lower.
 
 On the other hand, RDF stores often have a limited number of properties
 even for huge datasets, whereas Datomic-like stores may have many more
@@ -35,34 +35,34 @@ attributes shared by multiple entity classes are rare. Therefore,
 leveraging grouping of attributes have greater benefits.
 
 Finally, in Datomic-like stores, the values are stored as they are, instead of as
-integer ids like in RDF stores, therefore, pushing predicates down to index scan
-methods brings more benefits in Datomic-like stores.
+integer ids like in RDF stores, therefore, pushing selection predicates down to
+index scan methods brings more benefits in Datomic-like stores.
 
 ## New indices: `EnCla` and `Links`
 
 Based on these observations, we introduce two new types of indices. The first is
-what we call an `EnCla` index, short for Entity Classes. Similar to
-characteristic sets [7] in RDF research, this concept captures the defining
-combination of attributes for a class of entities.
+what we call an `EnCla` index, short for Entity Classes, and we call each entity
+class an `encla`. Similar to characteristic sets [9] in RDF research, this
+concept captures the defining combination of attributes for a class of entities.
 
-A LMDB map is used to store the `EnCla` index. The keys are the unique IDs of
-entity classes. The value contains the following information:
+A LMDB map is used to store the `EnCla` index. The key is the unique id of
+an encla. The value contains the following information:
 
-* The mapping of the set of attribute ids that defines an encla, to their
+* The mapping of the set of attribute ids that defines the encla, to their
   corresponding estimated average cardinality.
-* The entity ids belonging to an encla.
+* The entity ids belonging to the encla.
 
 `EnCla` index takes up negligible disk space (about 0.002X larger). It is loaded
 into memory at system initialization and updated during system run.
 
-In Datomic-like stores, `:db.type/ref` triples provide links between two entity
-classes. Such links are important for simplifying query graph [2] [5]. We store
-them in a LMDB dupsort map as an `Links` index:
+In Datomic-like stores, `:db.type/ref` triples provide links between two encla.
+Such links are important for simplifying query graph [3] [7]. We store them in a
+LMDB dupsort map as an `Links` index:
 
 * Keys are the link definitions: source encla id, target encla id, and the
-  ref attribute id.
-* Values are the lists of pairs of source entity ids and target entity ids of a
-  link type.
+  reference attribute id.
+* Values are the lists of pairs of source entity ids and target entity ids
+  belonging to the link.
 
 `Links` index replaces the original `VEA` triple ordering index.
 
@@ -71,18 +71,18 @@ scene. This allows us to keep the flexibility of a triple store that enables
 simple and elegant query, while reap the benefits of faster query performance of
 a relational store.
 
-Unlike previous research [2] [5] [7], we build these new indices online and keep
+Unlike previous research [3] [7], we build these new indices online and keep
 them up to date with new data during transactions. As far as we know, Datalevin
-is the first production system to develop online algorithms for these novel
-indices. We pay a small price in transaction processing time (about 20% slower
-for large transactions, more for small transactions) and a slightly larger
-memory footprint, but gain orders of magnitude query speedup.
+is the first production system to develop online algorithms for maintaining
+these indices. We pay a small price in transaction processing time (about 20%
+slower for large transactions, more for small transactions) and a slightly
+larger memory footprint, but gain orders of magnitude query speedup.
 
 ## Query Optimizations
 
-We use cost based Selinger style query optimizer [7] [9], where
-dynamic programming is used for query planning. The query engine employs
-multiple optimization strategies. Some implement our own new ideas.
+We built a cost based query optimizer that uses dynamic programming for query
+planning [9]. The query engine employs multiple optimization strategies.
+Some implement our own new ideas.
 
 ### Entity filtering (new)
 
@@ -92,7 +92,7 @@ significantly reduce the amount of work we have to do.
 
 ### Pivot scan
 
-`EnCla` also enables us to use pivot scan [1] that returns multiple attribute
+`EnCla` also enables us to use pivot scan [2] that returns multiple attribute
 values with a single index scan for star-like attributes.
 
 ### Predicates push-down
@@ -106,7 +106,7 @@ results.
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the optimizer works mainly on the simplified graph that consists of stars
 and the links between them [2] [6]. This significantly reduces the size of
-query search space.
+optimizer search space.
 
 ### Cumulative average cardinality (new)
 
@@ -123,12 +123,42 @@ because range count with bounded values is fast in triple indices.
 
 For join cardinality estimation, we do sampling at query time [5]. Sampling is
 cheap in triple indices, because all the attribute are already unpacked and indexed
-separately, unlike in RDDBMS. Instead of sampling rows and storing them, we can
-just count sampled values directly in triple indices.
+separately, unlike in RDDBMS.
 
-## Benchmark
+### Join while index scan
 
-TBD
+Our planner generates left-deep trees, which may not be optimal [7], but works
+well for our simplified query graph, since stars are already turned into meta
+nodes and mostly chains remain. Such plans enable efficient sort-merge join
+method. We only need to sort one side, as the other side is a B+ tree index. Most
+importantly, it reduces the cost of cardinality estimation using counting and
+sampling, which dominates the cost of planning. Since there is always a base
+relation in a join, it is much simpler to accurately estimate using counting and
+sampling on indices.
+
+## Benchmarks
+
+### Datascript
+
+This is included to show the level of improvement of this query engine rewrite,
+since several Datalog stores written in Clojure were compared this way.
+Using this benchmark, Datalevin before the rewrite was already the fastest, now
+we show that this benchmark is too easy, as it involves only one encla, so it
+does not even exercise the new query planner.
+
+datascript, datahike, asami, xtdb, datalevin 0.6, datalevin 0.7
+
+### Watdiv
+
+This is a standard benchmark for RDF stores [1].
+
+neo4j, xtdb, datalevin
+
+### JOB
+
+We compare with a RDBMS using JOB benchmark [5], which is based on real world data and designed to stress the query optimizer.
+
+postgresql, datalevin
 
 ## Remark
 
@@ -137,46 +167,50 @@ challenges to query processing due to its greater demand on storage access, but
 it also offer some opportunities to help with query.
 
 We found that the opportunities lie precisely in the "Achilles Heel" of RDBMS
-optimizer: cardinality estimation [4]. It is hard to have good cardinality
+optimizer: cardinality estimation [6]. It is hard to have good cardinality
 estimation in RDBMS because the data are stored in rows, so it becomes rather
-expensive and complicated when one has to unpack them to get attribute value
-counts or to sample by rows [3]. On the other hand, it is cheap and
+expensive and complicated when one tries to unpack them to get attribute value
+counts or to sample by rows [4]. On the other hand, it is cheap and
 straightforward to count or sample values directly in the already unpacked
-storage of triple stores.
+indices of triple stores.
 
 ## Conclusion
 
 Datalevin query engine stands on the shoulder of a half century of database
-research. We have chosen to implement simple and practical techniques that are
-consists with our goal of simplifying data access, and we are also open for the
-future, e.g. explore learning based techniques.
+research to bring a new hope to triple stores. We have chosen to implement
+simple and effective techniques that are consists with our goal of simplifying
+data access, and we are also open for the future, e.g. explore learning based
+techniques.
 
 ## Reference
 
-[1] Brodt, A., Schiller, O. and Mitschang, B. "Efficient resource attribute
+[1] Aluç, G., Hartig, O., Özsu, M. T. and Daudjee, K. "Diversified Stress
+Testing of RDF Data Management Systems". ISWC. 2014.
+
+[2] Brodt, A., Schiller, O. and Mitschang, B. "Efficient resource attribute
 retrieval in RDF triple stores." CIKM. 2011.
 
-[2] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
+[3] Gubichev, A., and Neumann, T. "Exploiting the query structure for efficient
 join ordering in SPARQL queries." EDBT. Vol. 14. 2014.
 
-[3] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
+[4] Lan, H., Bao, Z. and Peng, Y.. "A survey on advancing the DBMS query
 optimizer: cardinality estimation, cost model, and plan enumeration." Data
 Science and Engineering, 2021
 
-[4] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
+[5] Leis, V., et al. "How good are query optimizers, really?." VLDB Endowment
 2015.
 
-[5] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
+[6] Leis, V., et al. "Cardinality Estimation Done Right: Index-Based Join
 Sampling." Cidr. 2017.
 
-[6] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
+[7] Meimaris, M., et al. "Extended characteristic sets: graph indexing for
 SPARQL query optimization." ICDE. 2017.
 
-[7] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
+[8] Moerkotte, G., and Neumann, T. "Dynamic programming strikes back."
 SIGMOD. 2008.
 
-[8] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
+[9] Neumann, T., and Moerkotte, G. "Characteristic sets: Accurate cardinality
 estimation for RDF queries with multiple joins." ICDE. 2011.
 
-[9] Selinger, P. Griffiths, et al. "Access path selection in a relational
+[10] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
