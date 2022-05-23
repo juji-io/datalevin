@@ -81,7 +81,7 @@ larger memory footprint, but gain orders of magnitude query speedup.
 ## Query Optimizations
 
 We built a cost based query optimizer that uses dynamic programming for query
-planning [9]. The query engine employs multiple optimization strategies.
+planning [10]. The query engine employs multiple optimization strategies.
 Some implement our own new ideas.
 
 ### Entity filtering (new)
@@ -105,7 +105,7 @@ results.
 
 Since star-like attributes are already handled by entity filtering and pivot
 scan, the optimizer works mainly on the simplified graph that consists of stars
-and the links between them [2] [6]. This significantly reduces the size of
+and the links between them [3] [7]. This significantly reduces the size of
 optimizer search space.
 
 ### Cumulative average cardinality (new)
@@ -121,20 +121,27 @@ because range count with bounded values is fast in triple indices.
 
 ### Sampling for join cardinality estimation
 
-For join cardinality estimation, we do sampling at query time [5]. Sampling is
+For join cardinality estimation, we do sampling at query time [6]. Sampling is
 cheap in triple indices, because all the attribute are already unpacked and indexed
 separately, unlike in RDDBMS.
 
-### Join while index scan
+### Left-deep join tree
 
-Our planner generates left-deep trees, which may not be optimal [7], but works
+Our planner generates left-deep join trees, which may not be optimal [8], but works
 well for our simplified query graph, since stars are already turned into meta
-nodes and mostly chains remain. Such plans enable efficient sort-merge join
-method. We only need to sort one side, as the other side is a B+ tree index. Most
-importantly, it reduces the cost of cardinality estimation using counting and
-sampling, which dominates the cost of planning. Since there is always a base
-relation in a join, it is much simpler to accurately estimate using counting and
-sampling on indices.
+nodes and mostly chains remain. This also reduces the cost of cardinality
+estimation using counting and sampling, which dominates the cost of planning.
+Since there is always a base relation in a join, it is much simpler to
+accurately estimate using counting and sampling on indices.
+
+### Choose join methods on the fly
+
+Instead of deciding join method during planning, we use a cost model that only
+depends on cardinality, and postpone the decision on join method
+until right before executing a join, so join method is chosen using real
+cardinality: for small intermediate result size, choose nested loop join; if the
+intermediate results are already sorted on join attribute, choose merge join;
+hash join as the default.
 
 ## Benchmarks
 
@@ -156,7 +163,8 @@ neo4j, xtdb, datalevin
 
 ### JOB
 
-We compare with a RDBMS using JOB benchmark [5], which is based on real world data and designed to stress the query optimizer.
+We compare with a RDBMS using JOB benchmark [5], which is based on real world
+data and designed to stress the query optimizer.
 
 postgresql, datalevin
 
