@@ -49,20 +49,20 @@
   (into {} (lmdb/get-range lmdb c/schema [:all] :attr :data)))
 
 (defn- init-max-aid
-  [lmdb]
-  (lmdb/entries lmdb c/schema))
+  [schema]
+  (inc ^long (apply max (map :db/aid (vals schema)))))
 
 ;; TODO schema migration
 (defn- update-schema
-  [lmdb old schema]
-  (let [^long init-aid (init-max-aid lmdb)
-        i              (atom 0)]
+  [old schema]
+  (let [^long init-aid (init-max-aid old)
+        i              (volatile! 0)]
     (into {}
           (map (fn [[attr props]]
                  (if-let [old-props (old attr)]
                    [attr (merge old-props props)]
                    (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
-                     (swap! i inc)
+                     (vswap! i #(inc ^long %))
                      res))))
           schema)))
 
@@ -71,7 +71,7 @@
   (when (empty? (load-schema lmdb))
     (transact-schema lmdb c/implicit-schema))
   (when schema
-    (transact-schema lmdb (update-schema lmdb (load-schema lmdb) schema)))
+    (transact-schema lmdb (update-schema (load-schema lmdb) schema)))
   (let [now (load-schema lmdb)]
     (when-not (:db/created-at now)
       (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
@@ -276,7 +276,7 @@
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
-    (set! max-aid (init-max-aid lmdb))
+    (set! max-aid (init-max-aid schema))
     schema)
 
   (attrs [_]
@@ -550,5 +550,5 @@
                 schema
                 (schema->rschema schema)
                 (init-attrs schema)
-                (init-max-aid lmdb)
+                (init-max-aid schema)
                 (init-max-gt lmdb))))))
