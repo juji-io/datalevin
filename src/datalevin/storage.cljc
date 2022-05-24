@@ -413,9 +413,6 @@
         (set! attrs (dissoc attrs aid))
         attrs)))
 
-  (datom-count [_ index]
-    (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
-
   (load-datoms [this datoms]
     (try
       (locking (lmdb/write-txn lmdb)

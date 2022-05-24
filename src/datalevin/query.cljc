@@ -1,4 +1,4 @@
-(ns ^:no-doc datalevin.query0
+(ns ^:no-doc datalevin.query
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [clojure.set :as set]

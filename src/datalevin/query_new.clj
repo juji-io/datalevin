@@ -1,4 +1,4 @@
-(ns datalevin.query
+(ns datalevin.query-new
   (:require
    [clojure.edn :as edn]
    [clojure.set :as set]
