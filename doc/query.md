@@ -8,7 +8,7 @@ large data sets with ease.
 One of the main reasons for people to use Datomic flavored Datalog stores is to use
 their declarative and composible query language. The simple and elegant query is
 backed by a flexible triple store. However, it is a well-know problem that
-querying a triple store is much slower than querying RDBMS that store data in
+querying a triple store is much slower than querying RDBMS that stores data in
 rows (or columns).
 
 Datalevin solves the problem by developing an innovative query engine based on
@@ -123,7 +123,7 @@ because range count with bounded values is fast in triple indices.
 
 For join cardinality estimation, we do sampling at query time [6]. Sampling is
 cheap in triple indices, because all the attribute are already unpacked and indexed
-separately, unlike in RDDBMS.
+separately, unlike in RDBMS.
 
 ### Left-deep join tree
 
@@ -177,7 +177,7 @@ it also offer some opportunities to help with query.
 We found that the opportunities lie precisely in the "Achilles Heel" of RDBMS
 optimizer: cardinality estimation [6]. It is hard to have good cardinality
 estimation in RDBMS because the data are stored in rows, so it becomes rather
-expensive and complicated when one tries to unpack them to get attribute value
+expensive and complicated trying to unpack them to get attribute value
 counts or to sample by rows [4]. On the other hand, it is cheap and
 straightforward to count or sample values directly in the already unpacked
 indices of triple stores.

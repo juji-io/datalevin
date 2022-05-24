@@ -5,8 +5,8 @@
 - `EnCla` index, a novel index for Datalog store, serves similar role of tables
   in RDBMS. Also address #57.
 - `Links` index, a novel index for Datalog store, similar to foreign keys in RDBMS.
-- `Graphene` query optimizer that utilizes EnCla and Links indices. #11
-- Benchmarks for complex queries and large data sets
+- Cost based Datalog query optimizer that utilizes EnCla and Links indices. #11
+- Benchmark suits for complex queries and large data sets
 - Expose LMDB dupsort functionality (the same key maps to a list of sorted
   values) as list functions: `open-list-dbi`, `in-list?`, `put-list-items`, etc.
 - Add pull API to client/server and babashka pods
@@ -17,6 +17,13 @@
 ## Changed
 - [**Breaking**] Removed `VEA` index, its functionality is replaced by `Links`.
 - [**Breaking**] Changed `:search-engine` key to `:search-opts` for consistency
+
+## 0.6.13
+### Fixed
+- Schema update regression. #124
+### Added
+- `:domain` option to `new-search-engine`, so multiple search engines can
+  coexist in the same `dir`, each with its own domain, a string. #112
 
 ## 0.6.12
 ### Fixed

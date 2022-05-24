@@ -40,6 +40,23 @@
     (d/close conn1)
     (d/close conn2)))
 
+(deftest test-update-schema-1
+  (let [conn (d/create-conn)]
+    (d/update-schema conn {:things {}})
+    (is (= (d/schema conn) (-> c/implicit-schema
+                               (assoc-in [:things :db/aid] 3))))
+    (d/update-schema conn {:stuff {}})
+    (is (= (d/schema conn) (-> c/implicit-schema
+                               (assoc-in [:things :db/aid] 3)
+                               (assoc-in [:stuff :db/aid] 4))))
+    (d/update-schema conn {} [:things])
+    (is (= (d/schema conn) (-> c/implicit-schema
+                               (assoc-in [:stuff :db/aid] 4))))
+    (d/update-schema conn {:things {}})
+    (is (= (d/schema conn) (-> c/implicit-schema
+                               (assoc-in [:stuff :db/aid] 4)
+                               (assoc-in [:things :db/aid] 5))))))
+
 (deftest test-update-schema-ensure-no-duplicate-aids
   (let [conn (d/create-conn)]
     (d/update-schema conn {:up/a {}})

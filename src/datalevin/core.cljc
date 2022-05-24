@@ -1295,7 +1295,11 @@ the `pred`.
   "Create a search engine. The search index is stored in the passed-in
   key-value database opened by [[open-kv]].
 
-  `opts` is an option map that may contains keys:
+  `opts` is an option map that may contain these keys:
+
+   * `:domain` is an identifier string, indicates the domain of this search engine.
+      This way, multiple independent search engines can reside in the same
+      key-value database, each with its own domain identifier.
 
    * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence
@@ -1303,6 +1307,7 @@ the `pred`.
      the term in the document. E.g. for a blank space analyzer and the document
     \"The quick brown fox jumps over the lazy dog\", [\"quick\" 1 4] would be
     the second entry of the resulting seq.
+
    * `:query-analyzer` is a similar function that overrides the analyzer at
     query time (and not indexing time). Mostly useful for autocomplete search in
     conjunction with the `datalevin.search-utils/prefix-token-filter`.
@@ -1366,7 +1371,12 @@ words.
   The search index is stored in the passed-in key value database opened
   by [[open-kv]]. See also [[write]] and [[commit]].
 
-  `opts` is an option map that may contains keys:
+  `opts` is an option map that may contain these keys:
+
+   * `:domain` is an identifier string, indicates the domain of this search engine.
+      This way, multiple independent search engines can reside in the same
+      key-value database, each with its own domain identifier.
+
   * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence
      number of the term, and offset is the character offset of this term.
