@@ -122,6 +122,7 @@
         engine ^SearchEngine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
+    (is (= (sut/search engine "red fox") [:doc1 :doc4 :doc2 :doc5]))
     (is (= (sut/search engine "cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (is (= (sut/search engine "notaword cap" {:display :offsets})
