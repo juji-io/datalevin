@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.13
 ### Fixed
 - Schema update regression. #124
 ### Added
