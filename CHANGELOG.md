@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Fixed
+- Schema update regression. #124
+### Added
+- `:domain` option to `new-search-engine`, so multiple search engines can
+  coexist in the same `dir`, each with its own domain, a string. #112
+
 ## 0.6.12
 ### Fixed
 - Server failure to update max-eid regression, #123

@@ -112,7 +112,7 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
-This JVM library supports Java 8 and above. For JVM version newer than 11, you may want to add the following JVM options:
+This JVM library supports Java 8 and above. For **JVM version newer than 11**, you may want to add the following JVM options:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
@@ -145,7 +145,7 @@ code works in both Datalevin library and Datalevin command line tool.
 
 A native Datalevin is built by compiling into [GraalVM native
 image](https://www.graalvm.org/reference-manual/native-image/). In addition to
-fast startup times, it should also have better database performance, for the
+fast startup times, it should also have better index access speed, for the
 native image version does not incur JNI overhead and uses a comparator written
 in C, see [blog
 post](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/).
@@ -291,13 +291,22 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 
 A JVM
 [uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.12/datalevin-0.6.12-standalone.jar)
-is downloadable to use as the command line tool, in case a pre-built native
-version is not available for your platform. For example,
+is downloadable to use as the command line tool. It is useful when one wants to
+run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
+image is AOT and not as efficient as JVM for long running programs, or when a
+pre-built native version is not available for your platform. For example,
+assuming your Java is newer than version 11:
 
 ```console
-java -jar datalevin-0.6.12-standalone.jar
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.12-standalone.jar
 ```
 This will start the Datalevin REPL.
+
+```console
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.12-standalone.jar serv -r /tmp/test-server
+```
+Will run the Datalevin server on default port 8898, with root data path at
+`/tmp/test-server`.
 
 ### Babashka Pod
 
