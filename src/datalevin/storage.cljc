@@ -414,8 +414,8 @@
         attrs)))
 
   (load-datoms [this datoms]
-    (try
-      (locking (lmdb/write-txn lmdb)
+    (locking (lmdb/write-txn lmdb)
+      (try
         (let [v-classes   (volatile! classes)
               v-rclasses  (volatile! rclasses)
               v-entities  (volatile! entities)
@@ -439,12 +439,12 @@
           (set! max-cid @v-max-cid)
           (set! links @v-links)
           (set! rlinks (persistent! @v-rlinks))
-          (fulltext-index search-engine (persistent! @ft-ds))))
-      (catch clojure.lang.ExceptionInfo e
-        (if (:resized (ex-data e))
-          (load-datoms this datoms)
-          (throw e)))
-      (finally (lmdb/close-transact-kv lmdb))))
+          (lmdb/close-transact-kv lmdb)
+          (fulltext-index search-engine (persistent! @ft-ds)))
+        (catch clojure.lang.ExceptionInfo e
+          (if (:resized (ex-data e))
+            (load-datoms this datoms)
+            (throw e))))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)

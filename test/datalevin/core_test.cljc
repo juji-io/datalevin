@@ -855,7 +855,6 @@
                   (sut/db conn) "brown fox") s))
     (sut/close conn)))
 
-;; TODO turn back on with new query engine
 (deftest remote-fulltext-fns-test
   (let [server   (s/create {:port c/default-port
                             :root (u/tmp-dir

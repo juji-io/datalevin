@@ -4,7 +4,9 @@
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    [datalevin.core :as d])
   #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+     (:import [clojure.lang ExceptionInfo]
+              [datalevin.storage Store]
+              [datalevin.db DB])))
 
 (deftest test-string-fn
   (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string}})
@@ -35,23 +37,28 @@
                                  [(ends-with? ?v ?ext)]]
                                db "?") 3))))
 
-;; TODO turn back on with new query engine
 (deftest test-fulltext-fns
-  (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
-                                       :db/fulltext  true}})
-               (d/db-with
-                 [{:db/id 2,
-                   :text  "The quick red fox jumped over the lazy red dogs."}
-                  {:db/id 1,
-                   :text  "Mary had a little lamb whose fleece was red as fire."}
-                  {:db/id 3,
-                   :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
-    (is (= (d/q '[:find ?e ?a ?v
+  (let [db     (-> (d/empty-db nil {:text {:db/valueType :db.type/string
+                                           :db/fulltext  true}})
+                   (d/db-with
+                     [
+                      {:db/id 1,
+                       :text  "The quick red fox jumped over the lazy red dogs."}
+                      {:db/id 2,
+                       :text  "Mary had a little lamb whose fleece was red as fire."}
+                      {:db/id 3,
+                       :text  "Moby Dick is a story of a whale and a man obsessed."}
+                      {:db/id 4,
+                       :text  "The robber wore a red fleece jacket and a baseball cap."}
+                      {:db/id 5,
+                       :text  "The English Springer Spaniel is the best of all red dogs I know."}]))
+        engine (.-search-engine ^Store (.-store ^DB db))]
+    (is (= 5 (d/doc-count engine)))
+    (is (= (d/q '[:find (count ?e) .
                   :in $ ?q
                   :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                 db "red fox")
-           #{[2 :text "The quick red fox jumped over the lazy red dogs."]
-             [1 :text "Mary had a little lamb whose fleece was red as fire."]}))))
+           4))))
 
 (deftest test-query-fns
   (testing "predicate without free variables"

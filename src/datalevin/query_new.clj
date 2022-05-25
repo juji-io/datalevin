@@ -231,7 +231,7 @@ be resolved with it"}
       (first tuples))))
 
 (defn q [q & inputs]
-  (let [parsed-q      (log/spy (memoized-parse-query q))
+  (let [parsed-q      (memoized-parse-query q)
         find          (:qfind parsed-q)
         find-elements (dp/find-elements find)
         find-vars     (dp/find-vars find)
@@ -243,7 +243,7 @@ be resolved with it"}
         context       (-> (Context. [] {} {})
                           (resolve-ins (:qin parsed-q) inputs))
         resultset     (-> context
-                          (q* (log/spy (:where q)))
+                          (q* (:where q))
                           (collect all-vars))]
     (cond->> resultset
       (:with q)
