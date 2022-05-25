@@ -217,8 +217,8 @@
   (doseq [[op ^Datom d] ft-ds
           :let          [v (str (.-v d))]]
     (case op
-      :a (s/add-doc search-engine d v)
-      :d (s/remove-doc search-engine d))))
+      :a (s/add-doc search-engine d v true)
+      :d (s/remove-doc search-engine d true))))
 
 (defprotocol IStore
   (opts [this] "Return the opts map")
@@ -432,19 +432,19 @@
               (update-links lmdb @v-entities v-links rlinks v-rlinks
                             (persistent! @del-ref-ds)))
           (lmdb/transact-kv lmdb [(time-tx)])
+          (fulltext-index search-engine (persistent! @ft-ds))
           (set! classes @v-classes)
           (set! rclasses @v-rclasses)
           (set! entities @v-entities)
           (set! rentities @v-rentities)
           (set! max-cid @v-max-cid)
           (set! links @v-links)
-          (set! rlinks (persistent! @v-rlinks))
-          (lmdb/close-transact-kv lmdb)
-          (fulltext-index search-engine (persistent! @ft-ds)))
+          (set! rlinks (persistent! @v-rlinks)))
         (catch clojure.lang.ExceptionInfo e
           (if (:resized (ex-data e))
             (load-datoms this datoms)
-            (throw e))))))
+            (throw e)))
+        (finally (lmdb/close-transact-kv lmdb)))))
 
   (fetch [this datom]
     (mapv (partial retrieved->datom lmdb attrs)

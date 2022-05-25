@@ -4,7 +4,8 @@
             [datalevin.util :as u]
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
-            [datalevin.bits :as b])
+            [datalevin.bits :as b]
+            [clojure.stacktrace :as st])
   (:import [datalevin.utl PriorityQueue GrowingIntArray]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]
@@ -297,8 +298,8 @@
               (recur (skip-candidates pivot did candidates)))))))))
 
 (defprotocol ISearchEngine
-  (add-doc [this doc-ref doc-text])
-  (remove-doc [this doc-ref])
+  (add-doc [this doc-ref doc-text] [this doc-ref doc-text writing?])
+  (remove-doc [this doc-ref] [this doc-ref writing?])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
   (doc-refs [this])
@@ -324,28 +325,33 @@
                                 ^AtomicInteger max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
+    (.add-doc this doc-ref doc-text false))
+  (add-doc [this doc-ref doc-text writing?]
     (locking this
       (try
-        (when-let [doc-id (doc-ref->id this doc-ref)]
-          (remove-doc* this norms doc-id))
+        (when-let [doc-id (doc-ref->id this doc-ref writing?)]
+          (remove-doc* this norms doc-id writing?))
         (let [txs       (FastList.)
               hit-terms (UnifiedMap.)]
-          (add-doc-txs this norms doc-text txs doc-ref hit-terms)
+          (add-doc-txs this norms doc-text txs doc-ref hit-terms writing?)
           (doseq [^Map$Entry kv (.entrySet hit-terms)]
             (let [term (.getKey kv)
                   info (.getValue kv)]
               (.add txs [:put terms-dbi term info :string :term-info])))
           (l/transact-kv lmdb txs))
         (catch Exception e
+          (st/print-stack-trace e)
           (u/raise "Error indexing document:" (ex-message e)
                    {:doc-ref doc-ref :doc-text doc-text})))))
 
   (remove-doc [this doc-ref]
-    (if-let [doc-id (doc-ref->id this doc-ref)]
-      (remove-doc* this norms doc-id)
+    (.remove-doc this doc-ref false))
+  (remove-doc [this doc-ref writing?]
+    (if-let [doc-id (doc-ref->id this doc-ref writing?)]
+      (remove-doc* this norms doc-id writing?)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
-  (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref))
+  (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref false))
 
   (doc-count [_] (l/entries lmdb docs-dbi))
 
@@ -415,40 +421,41 @@
   )
 
 (defn- get-term-info
-  [engine term]
-  (l/get-value (lmdb engine) (terms-dbi engine) term :string :term-info))
+  [engine term writing?]
+  (l/get-value (lmdb engine) (terms-dbi engine) term :string :term-info
+               true writing?))
 
 (defn- doc-ref->id
-  [engine doc-ref]
+  [engine doc-ref writing?]
   (let [is-ref? (fn [kv]
                   (= doc-ref (nth (b/read-buffer (l/v kv) :doc-info) 1)))]
     (nth (l/get-some (lmdb engine) (docs-dbi engine) is-ref? [:all]
-                     :int :doc-info) 0)))
+                     :int :doc-info false writing?) 0)))
 
 (defn- doc-id->term-ids
-  [engine doc-id]
+  [engine doc-id writing?]
   (dedupe
     (map ffirst
          (l/range-filter (lmdb engine) (positions-dbi engine)
                          (fn [kv]
                            (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
                              (= did doc-id)))
-                         [:all] :int-int :ignore false))))
+                         [:all] :int-int :ignore false writing?))))
 
 (defn- term-id->info
-  [engine term-id]
+  [engine term-id writing?]
   (let [is-id? (fn [kv] (= term-id (b/read-buffer (l/v kv) :int)))]
     (l/get-some (lmdb engine) (terms-dbi engine) is-id? [:all]
-                :string :term-info false)))
+                :string :term-info false writing?)))
 
 (defn- remove-doc*
-  [engine ^IntShortHashMap norms doc-id]
+  [engine ^IntShortHashMap norms doc-id writing?]
   (let [txs  (FastList.)
         norm (.get norms doc-id)]
     (.remove norms doc-id)
     (.add txs [:del (docs-dbi engine) doc-id :int])
-    (doseq [term-id (doc-id->term-ids engine doc-id)]
-      (let [[term [_ mw sl]] (term-id->info engine term-id)]
+    (doseq [term-id (doc-id->term-ids engine doc-id writing?)]
+      (let [[term [_ mw sl]] (term-id->info engine term-id writing?)]
         (when-let [tf (sl/get sl doc-id)]
           (.add txs [:put (terms-dbi engine) term
                      [term-id
@@ -460,7 +467,7 @@
 
 (defn- add-doc-txs
   [engine ^IntShortHashMap norms doc-text  ^FastList txs doc-ref
-   ^UnifiedMap hit-terms]
+   ^UnifiedMap hit-terms writing?]
   (let [result    ((analyzer engine) doc-text)
         new-terms ^HashMap (collect-terms result)
         unique    (.size new-terms)
@@ -473,7 +480,7 @@
             tf      (.size new-lst)
             [tid mw sl]
             (or (.get hit-terms term)
-                (get-term-info engine term)
+                (get-term-info engine term writing?)
                 [(.incrementAndGet ^AtomicInteger (max-term engine))
                  0.0
                  (sl/sparse-arraylist)])]
@@ -488,7 +495,7 @@
         (comp
           (map (fn [[term freq]]
                  (when-let [[id mw ^SparseIntArrayList sl]
-                            (get-term-info engine term)]
+                            (get-term-info engine term false)]
                    (let [df (sl/size sl)
                          sl (sl/->SparseIntArrayList
                               (doto (FastRankRoaringBitmap.)
@@ -593,7 +600,7 @@
                                ^UnifiedMap hit-terms]
   IIndexWriter
   (write [this doc-ref doc-text]
-    (add-doc-txs this nil doc-text txs doc-ref hit-terms)
+    (add-doc-txs this nil doc-text txs doc-ref hit-terms false)
     (when (< 10000000 (.size txs))
       (.commit this)))
 
