@@ -1,4 +1,4 @@
-(ns ^:no-doc datalevin.query
+(ns ^:no-doc datalevin.query-new
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [clojure.set :as set]
@@ -904,7 +904,7 @@
 
 (defn -resolve-clause
   ([context clause]
-    (-resolve-clause context clause clause))
+   (-resolve-clause context clause clause))
   ([context clause orig-clause]
    (condp looks-like? clause
      [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
@@ -924,26 +924,26 @@
 
      '[or *] ;; (or ...)
      (let [[_ & branches] clause
-           _        (check-free-same (bound-vars context) branches clause)
-           contexts (map #(resolve-clause context %) branches)
-           rels     (map #(reduce hash-join (:rels %)) contexts)]
+           _              (check-free-same (bound-vars context) branches clause)
+           contexts       (map #(resolve-clause context %) branches)
+           rels           (map #(reduce hash-join (:rels %)) contexts)]
        (assoc (first contexts) :rels [(reduce sum-rel rels)]))
 
      '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
      (let [[_ [req-vars & vars] & branches] clause
-           bound (bound-vars context)]
+           bound                            (bound-vars context)]
        (check-bound bound req-vars orig-clause)
        (check-free-subset bound vars branches)
        (recur context (list* 'or-join (concat req-vars vars) branches) clause))
 
      '[or-join [*] *] ;; (or-join [vars] ...)
      (let [[_ vars & branches] clause
-           vars         (set vars)
-           _            (check-free-subset (bound-vars context) vars branches)
-           join-context (limit-context context vars)
-           contexts     (map #(-> join-context (resolve-clause %) (limit-context vars)) branches)
-           rels         (map #(reduce hash-join (:rels %)) contexts)
-           sum-rel      (reduce sum-rel rels)]
+           vars                (set vars)
+           _                   (check-free-subset (bound-vars context) vars branches)
+           join-context        (limit-context context vars)
+           contexts            (map #(-> join-context (resolve-clause %) (limit-context vars)) branches)
+           rels                (map #(reduce hash-join (:rels %)) contexts)
+           sum-rel             (reduce sum-rel rels)]
        (update context :rels collapse-rels sum-rel))
 
      '[and *] ;; (and ...)
@@ -951,13 +951,13 @@
        (reduce resolve-clause context clauses))
 
      '[not *] ;; (not ...)
-     (let [[_ & clauses] clause
+     (let [[_ & clauses]    clause
            bound            (bound-vars context)
            negation-vars    (collect-vars clauses)
            _                (when (empty? (set/intersection bound negation-vars))
                               (raise "Insufficient bindings: none of " negation-vars " is bound in " orig-clause
-                                {:error :query/where
-                                 :form  orig-clause}))
+                                     {:error :query/where
+                                      :form  orig-clause}))
            context'         (assoc context :rels [(reduce hash-join (:rels context))])
            negation-context (reduce resolve-clause context' clauses)
            negation         (subtract-rel
@@ -967,15 +967,15 @@
 
      '[not-join [*] *] ;; (not-join [vars] ...)
      (let [[_ vars & clauses] clause
-           bound            (bound-vars context)
-           _                (check-bound bound vars orig-clause)
-           context'         (assoc context :rels [(reduce hash-join (:rels context))])
-           join-context     (limit-context context' vars)
-           negation-context (-> (reduce resolve-clause join-context clauses)
-                                (limit-context vars))
-           negation         (subtract-rel
-                              (single (:rels context'))
-                              (reduce hash-join (:rels negation-context)))]
+           bound              (bound-vars context)
+           _                  (check-bound bound vars orig-clause)
+           context'           (assoc context :rels [(reduce hash-join (:rels context))])
+           join-context       (limit-context context' vars)
+           negation-context   (-> (reduce resolve-clause join-context clauses)
+                                  (limit-context vars))
+           negation           (subtract-rel
+                                (single (:rels context'))
+                                (reduce hash-join (:rels negation-context)))]
        (assoc context' :rels [negation]))
 
      '[*] ;; pattern
@@ -985,6 +985,7 @@
        (binding [*lookup-attrs* (if (db/-searchable? source)
                                   (dynamic-lookup-attrs source pattern)
                                   *lookup-attrs*)]
+         (log/debug "*lookup-attrs*" *lookup-attrs*)
          (update context :rels collapse-rels relation))))))
 
 (defn resolve-clause [context clause]
@@ -1062,6 +1063,7 @@
       acc)))
 
 (defn collect [context symbols]
+  (log/debug "after context" context)
   (->> (-collect context symbols)
        (map vec)
        set))
@@ -1184,10 +1186,10 @@
         wheres        (:where q)
         context       (-> (Context. [] {} {})
                           (resolve-ins (:qin parsed-q) inputs))
-        resultset     (-> context
+        resultset     (-> (log/spy context)
                           (-q wheres)
                           (collect all-vars))]
-    (cond->> (log/spy resultset)
+    (cond->> resultset
       (:with q)
       (mapv #(vec (subvec % 0 result-arity)))
       (some dp/aggregate? find-elements)
