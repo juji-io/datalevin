@@ -36,22 +36,22 @@
                                db "?") 3))))
 
 ;; TODO turn back on with new query engine
-#_(deftest test-fulltext-fns
-   (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
-                                        :db/fulltext  true}})
-                (d/db-with
-                  [{:db/id 1,
-                    :text  "The quick red fox jumped over the lazy red dogs."}
-                   {:db/id 2,
-                    :text  "Mary had a little lamb whose fleece was red as fire."}
-                   {:db/id 3,
-                    :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
-     (is (= (d/q '[:find ?e ?a ?v
-                   :in $ ?q
-                   :where [(fulltext $ ?q) [[?e ?a ?v]]]]
-                 db "red fox")
-            #{[1 :text "The quick red fox jumped over the lazy red dogs."]
-              [2 :text "Mary had a little lamb whose fleece was red as fire."]}))))
+(deftest test-fulltext-fns
+  (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
+                                       :db/fulltext  true}})
+               (d/db-with
+                 [{:db/id 2,
+                   :text  "The quick red fox jumped over the lazy red dogs."}
+                  {:db/id 1,
+                   :text  "Mary had a little lamb whose fleece was red as fire."}
+                  {:db/id 3,
+                   :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (is (= (d/q '[:find ?e ?a ?v
+                  :in $ ?q
+                  :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                db "red fox")
+           #{[2 :text "The quick red fox jumped over the lazy red dogs."]
+             [1 :text "Mary had a little lamb whose fleece was red as fire."]}))))
 
 (deftest test-query-fns
   (testing "predicate without free variables"

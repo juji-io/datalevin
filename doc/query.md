@@ -71,7 +71,7 @@ scene. This allows us to keep the flexibility of a triple store that enables
 simple and elegant query, while reap the benefits of faster query performance of
 a relational store.
 
-Unlike previous research [3] [7], we build these new indices online and keep
+Unlike previous research [3] [7] [9], we build these new indices online and keep
 them up to date with new data during transactions. As far as we know, Datalevin
 is the first production system to develop online algorithms for maintaining
 these indices. We pay a small price in transaction processing time (about 20%
@@ -127,7 +127,7 @@ separately, unlike in RDBMS.
 
 ### Left-deep join tree
 
-Our planner generates left-deep join trees, which may not be optimal [8], but works
+Our planner generates left-deep join trees, which may not be optimal [8], but work
 well for our simplified query graph, since stars are already turned into meta
 nodes and mostly chains remain. This also reduces the cost of cardinality
 estimation using counting and sampling, which dominates the cost of planning.

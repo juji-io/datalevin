@@ -7,6 +7,7 @@
    [taoensso.timbre :as log]
    [datalevin.db :as db]
    [datalevin.search :as s]
+   [datalevin.storage :as st]
    [datalevin.util :as u :refer [raise]]
    [datalevin.lru :as lru]
    [datalevin.entity :as de]
@@ -37,6 +38,59 @@
 
 (defrecord Relation [attrs tuples])
 
+;; Utilities
+
+(defn single [coll]
+  (assert (nil? (next coll)) "Expected single element")
+  (first coll))
+
+(defn intersect-keys [attrs1 attrs2]
+  (set/intersection (set (keys attrs1))
+                    (set (keys attrs2))))
+
+(defn concatv [& xs]
+  (into [] cat xs))
+
+(defn zip
+  ([a b] (mapv vector a b))
+  ([a b & rest] (apply mapv vector a b rest)))
+
+(defn same-keys? [a b]
+  (and (= (count a) (count b))
+       (every? #(contains? b %) (keys a))
+       (every? #(contains? b %) (keys a))))
+
+(defn- looks-like? [pattern form]
+  (cond
+    (= '_ pattern)    true
+    (= '[*] pattern)  (sequential? form)
+    (symbol? pattern) (= form pattern)
+    (sequential? pattern)
+    (if (= (last pattern) '*)
+      (and (sequential? form)
+           (every? (fn [[pattern-el form-el]] (looks-like? pattern-el form-el))
+                   (map vector (butlast pattern) form)))
+      (and (sequential? form)
+           (= (count form) (count pattern))
+           (every? (fn [[pattern-el form-el]] (looks-like? pattern-el form-el))
+                   (map vector pattern form))))
+    :else ;; (predicate? pattern)
+    (pattern form)))
+
+(defn source? [sym]
+  (and (symbol? sym)
+       (= \$ (first (name sym)))))
+
+(defn free-var? [sym]
+  (and (symbol? sym)
+       (= \? (first (name sym)))))
+
+(defn attr? [form]
+  (or (keyword? form) (string? form)))
+
+(defn lookup-ref? [form]
+  (looks-like? [attr? '_] form))
+
 (defn ^Relation prod-rel
   ([] (Relation. {} []))
   ([ra rb]
@@ -66,7 +120,7 @@
   BindScalar
   (in->rel [binding value]
     (Relation. {(get-in binding [:variable :symbol]) 0}
-               [#_(into-array Object [value])]))
+               [(into-array Object [value])]))
 
   BindColl
   (in->rel [binding coll]
@@ -127,8 +181,8 @@ be resolved with it"}
   *implicit-source* nil)
 
 (defn q* [context clauses]
-  (binding [*implicit-source* (get (:sources context) '$)]
-    ))
+  (log/debug "context" context)
+  )
 
 (defn collect [context symbols]
   )
@@ -200,3 +254,78 @@ be resolved with it"}
       (pull find-elements context)
       true
       (post-process find (:qreturn-map parsed-q)))))
+
+(comment
+
+  (require '[datalevin.core :as d])
+  (def next-eid (volatile! -1))
+  (defn random-man []
+    {:db/id      (vswap! next-eid inc)
+     :first-name (rand-nth ["James" "John" "Robert" "Michael" "William" "David"
+                            "Richard" "Charles" "Joseph" "Thomas"])
+     :last-name  (rand-nth ["Smith" "Johnson" "Williams" "Brown" "Jones" "Garcia"
+                            "Miller" "Davis" "Rodriguez" "Martinez"])
+     :age        (rand-int 100)
+     :salary     (rand-int 100000)})
+  (def people100 (shuffle (take 100 (repeatedly random-man))))
+  (defn rand-str []
+    (apply str
+           (for [i (range (+ 3 (rand-int 10)))]
+             (char (+ (rand 26) 65)))))
+  (defn random-school []
+    {:db/id      (vswap! next-eid inc)
+     :name       (rand-str)
+     :ownership  (rand-nth [:private :public])
+     :enrollment (rand-int 10000)})
+  (def school20 (shuffle (take 20 (repeatedly random-school))))
+  (def schema
+    {:follows    {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/many }
+     :school     {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/many }
+     :born       {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/one}
+     :location   {:db/valueType   :db.type/ref
+                  :db/cardinality :db.cardinality/one}
+     :name       {:db/valueType :db.type/string}
+     :first-name {:db/valueType :db.type/string}
+     :last-name  {:db/valueType :db.type/string}
+     :ownership  {:db/valueType :db.type/keyword}
+     :enrollment {:db/valueType :db.type/long}
+     :age        {:db/valueType :db.type/long}
+     :salary     {:db/valueType :db.type/long}})
+  (defn random-place []
+    {:db/id (vswap! next-eid inc)
+     :name  (rand-str)})
+  (def place15 (shuffle (take 15 (repeatedly random-place))))
+  (def conn (d/create-conn nil schema))
+  (d/transact! conn people100)
+  (d/transact! conn school20)
+  (d/transact! conn place15)
+  (dotimes [_ 60]
+    (d/transact! conn [{:db/id (rand-int 100) :follows (rand-int 100)}]))
+  (dotimes [_ 80]
+    (d/transact! conn [{:db/id (rand-int 100) :school (+ 100 (rand-int 20))}]))
+  (dotimes [i 70]
+    (d/transact! conn [{:db/id i :born (+ 120 (rand-int 15))}]))
+  (dotimes [i 15]
+    (d/transact! conn [{:db/id (+ 100 i) :location (+ 120 (rand-int 15))}]))
+
+  (def store (.-store (d/db conn)))
+  (def attrs (st/attrs store))
+  {0 :db/ident, 7 :name, 1 :db/created-at, 4 :last-name, 13 :salary, 6 :school, 3 :enrollment, 12 :location, 2 :db/updated-at, 11 :born, 9 :first-name, 5 :age, 10 :ownership, 8 :follows}
+  (def classes (st/classes store))
+  (def rclasses (st/rclasses store))
+  (def entities (st/entities store))
+  (def rentities (st/rentities store))
+  (def links (st/links store))
+  (def rlinks (st/rlinks store))
+
+  (q '[:find ?e
+       :in $ ?fn
+       :where
+       [?e :first-namme ?fn]
+       [?e :follows]]
+     (d/db conn) "David")
+
+  )
