@@ -836,23 +836,9 @@
                  (clause-size clause))))
            clauses))
 
-(defn- build-graph [context clauses]
-  (let [[node group] (group-by first clauses)]
-    ))
-
-(defn- planning [context]
-  )
-
-(defn- excecute [context]
-  )
-
 (defn -q [context clauses]
   (binding [r/*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context (sort-clauses context clauses))
-    #_(-> context
-          (build-graph clauses)
-          planning
-          excecute)))
+    (reduce resolve-clause context (sort-clauses context clauses))))
 
 (defn -collect
   ([context symbols]
