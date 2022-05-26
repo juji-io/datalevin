@@ -8,11 +8,13 @@
    [datalevin.search :as s]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
+   [taoensso.timbre :as log]
    [datalevin.lru]
    [datalevin.entity :as de]
-   [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
-                                               FindColl FindRel FindScalar FindTuple PlainSymbol
-                                               RulesVar SrcVar Variable]])]
+   [datalevin.parser :as dp
+    #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
+                       FindColl FindRel FindScalar FindTuple PlainSymbol
+                       RulesVar SrcVar Variable]])]
    [datalevin.pull-api :as dpa]
    [datalevin.pull-parser :as dpp])
   #?(:clj (:import [datalevin.parser BindColl BindIgnore BindScalar BindTuple
@@ -31,7 +33,7 @@
 
 ;; Records
 
-(defrecord Context [rels sources rules])
+(defrecord Context [rels sources rules graph plan])
 
 ;; attrs:
 ;;    {?e 0, ?v 1} or {?e2 "a", ?age "v"}
@@ -1028,9 +1030,24 @@
                  (clause-size clause))))
            clauses))
 
+(defn- build-graph [context clauses]
+  (let [grps (group-by first clauses)]
+    ))
+
+(defn- planning [context]
+  )
+
+(defn- excecute [context]
+  )
+
 (defn -q [context clauses]
+  (log/debug "pre context:" context)
   (binding [*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context (sort-clauses context clauses))))
+    #_(reduce resolve-clause context (sort-clauses context clauses))
+    (-> context
+        (build-graph clauses)
+        planning
+        excecute)))
 
 (defn -collect
   ([context symbols]
@@ -1057,6 +1074,7 @@
       acc)))
 
 (defn collect [context symbols]
+  (log/debug "post-context:" context)
   (->> (-collect context symbols)
        (map vec)
        set))
@@ -1177,7 +1195,7 @@
         q             (cond-> q
                         (sequential? q) dp/query->map)
         wheres        (:where q)
-        context       (-> (Context. [] {} {})
+        context       (-> (Context. [] {} {} {} {})
                           (resolve-ins (:qin parsed-q) inputs))
         resultset     (-> context
                           (-q wheres)
