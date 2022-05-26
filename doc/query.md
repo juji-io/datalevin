@@ -159,7 +159,7 @@ datascript, datahike, asami, xtdb, datalevin 0.6, datalevin 0.7
 
 This is a standard benchmark for RDF stores [1].
 
-neo4j, xtdb, datalevin
+neo4j, xtdb, jena, rdf4j, datalevin
 
 ### JOB
 

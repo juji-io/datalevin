@@ -9,8 +9,6 @@
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
    [datalevin.lru]
-   [taoensso.timbre :as log]
-   [datalevin.storage :as st]
    [datalevin.entity :as de]
    [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
                                                FindColl FindRel FindScalar FindTuple PlainSymbol
@@ -531,7 +529,7 @@
   ;; TODO optimize with bound attrs min/max values here
   (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)
         datoms         (db/-search db search-pattern)
-        attr->prop     (->> (map vector pattern ["e" "a" "v" "tx"])
+        attr->prop     (->> (map vector pattern ["e" "a" "v"])
                             (filter (fn [[s _]] (free-var? s)))
                             (into {}))]
     (Relation. attr->prop datoms)))
@@ -839,20 +837,18 @@
 
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
-    (let [[e a v tx] pattern]
+    (let [[e a v] pattern]
       (->
         [(if (or (lookup-ref? e) (attr? e)) (db/entid-strict source e) e)
          a
-         (if (and v (attr? a) (db/ref? source a) (or (lookup-ref? v) (attr? v))) (db/entid-strict source v) v)
-         (if (lookup-ref? tx) (db/entid-strict source tx) tx)]
+         (if (and v (attr? a) (db/ref? source a) (or (lookup-ref? v) (attr? v))) (db/entid-strict source v) v)]
         (subvec 0 (count pattern))))
     pattern))
 
 (defn dynamic-lookup-attrs [source pattern]
-  (let [[e a v tx] pattern]
+  (let [[e a v] pattern]
     (cond-> #{}
-      (free-var? e) (conj e)
-      (free-var? tx) (conj tx)
+      (free-var? e)         (conj e)
       (and
         (free-var? v)
         (not (free-var? a))
@@ -1033,7 +1029,6 @@
            clauses))
 
 (defn -q [context clauses]
-  ;; (log/debug "context" context)
   (binding [*implicit-source* (get (:sources context) '$)]
     (reduce resolve-clause context (sort-clauses context clauses))))
 
@@ -1187,7 +1182,7 @@
         resultset     (-> context
                           (-q wheres)
                           (collect all-vars))]
-    (cond->> (log/spy resultset)
+    (cond->> resultset
       (:with q)
       (mapv #(vec (subvec % 0 result-arity)))
       (some dp/aggregate? find-elements)
