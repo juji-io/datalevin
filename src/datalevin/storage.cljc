@@ -595,16 +595,18 @@
           aids  (map peek pairs)
           n     (count pairs)]
       (when-let [cs (find-classes rclasses aids)]
-        (persistent!
-          (reduce
-            (fn [tuples c]
-              (reduce
-                (fn [tuples eid]
-                  (let [tuple (make-array Object n)]
-                    (scan-e this tuple pred eid attrs n)
-                    (conj! tuples tuple)))
-                tuples (rentities c)))
-            (transient []) cs))))))
+        (r/->Relation
+          (zipmap (map first pairs) (range))
+          (persistent!
+            (reduce
+              (fn [tuples c]
+                (reduce
+                  (fn [tuples eid]
+                    (let [tuple (make-array Object n)]
+                      (scan-e this tuple pred eid attrs n)
+                      (conj! tuples tuple)))
+                  tuples (rentities c)))
+              (transient []) cs)))))))
 
 (defn- scan-e
   [store tuple pred eid attrs n]
