@@ -5,7 +5,7 @@
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
-   [datalevin.search :as s]
+   [datalevin.built-ins :as bi]
    [datalevin.storage :as st]
    [datalevin.relation :as r]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
@@ -35,7 +35,7 @@
 
 ;; Records
 
-(defrecord Context [rels sources rules])
+(defrecord Context [rels sources rules plan])
 
 ;; Utilities
 
@@ -83,190 +83,6 @@
 
 (defn lookup-ref? [form]
   (looks-like? [attr? '_] form))
-
-;; built-ins
-
-(defn- -differ? [& xs]
-  (let [l (count xs)]
-    (not= (take (/ l 2) xs) (drop (/ l 2) xs))))
-
-(defn- -get-else
-  [db e a else-val]
-  (when (nil? else-val)
-    (raise "get-else: nil default value is not supported" {:error :query/where}))
-  (if-some [datom (db/-first db [e a])]
-    (:v datom)
-    else-val))
-
-(defn- -get-some
-  [db e & as]
-  (reduce
-   (fn [_ a]
-     (when-some [datom (db/-first db [e a])]
-       (reduced [(:a datom) (:v datom)])))
-   nil
-   as))
-
-(defn- -missing?
-  [db e a]
-  (nil? (get (de/entity db e) a)))
-
-(defn- and-fn [& args]
-  (reduce (fn [_ b]
-            (if b b (reduced b))) true args))
-
-(defn- or-fn [& args]
-  (reduce (fn [_ b]
-            (if b (reduced b) b)) nil args))
-
-(defn- fulltext
-  ([db query]
-   (fulltext db query nil))
-  ([^DB db query opts]
-   (let [^SearchEngine engine (.-search-engine ^Store (.-store db))]
-     (s/search engine query opts))))
-
-(def built-ins {'=                           =,
-                '==                          ==,
-                'not=                        not=,
-                '!=                          not=,
-                '<                           <,
-                '>                           >,
-                '<=                          <=,
-                '>=                          >=,
-                '+                           +,
-                '-                           -,
-                '*                           *,
-                '/                           /,
-                'quot                        quot,
-                'rem                         rem,
-                'mod                         mod,
-                'inc                         inc,
-                'dec                         dec,
-                'max                         max,
-                'min                         min,
-                'zero?                       zero?,
-                'pos?                        pos?,
-                'neg?                        neg?,
-                'even?                       even?,
-                'odd?                        odd?,
-                'compare                     compare,
-                'rand                        rand,
-                'rand-int                    rand-int,
-                'true?                       true?,
-                'false?                      false?,
-                'nil?                        nil?,
-                'some?                       some?,
-                'not                         not,
-                'and                         and-fn,
-                'or                          or-fn,
-                'complement                  complement,
-                'identical?                  identical?,
-                'identity                    identity,
-                'keyword                     keyword,
-                'meta                        meta,
-                'name                        name,
-                'namespace                   namespace,
-                'type                        type,
-                'vector                      vector,
-                'list                        list,
-                'set                         set,
-                'hash-map                    hash-map,
-                'array-map                   array-map,
-                'count                       count,
-                'range                       range,
-                'not-empty                   not-empty,
-                'empty?                      empty?,
-                'contains?                   contains?,
-                'str                         str,
-                'pr-str                      pr-str,
-                'print-str                   print-str,
-                'println-str                 println-str,
-                'prn-str                     prn-str,
-                'subs                        subs,
-                're-find                     re-find,
-                're-matches                  re-matches,
-                're-seq                      re-seq,
-                're-pattern                  re-pattern,
-                '-differ?                    -differ?,
-                'get-else                    -get-else,
-                'get-some                    -get-some,
-                'missing?                    -missing?,
-                'ground                      identity,
-                'fulltext                    fulltext,
-                'clojure.string/blank?       str/blank?,
-                'clojure.string/includes?    str/includes?,
-                'clojure.string/starts-with? str/starts-with?,
-                'clojure.string/ends-with?   str/ends-with?})
-
-(def built-in-aggregates
-  (letfn [(sum [coll] (reduce + 0 coll))
-          (avg [coll] (/ ^double (sum coll) (count coll)))
-          (median
-            [coll]
-            (let [terms (sort coll)
-                  size  (count coll)
-                  med   (bit-shift-right size 1)]
-              (cond-> ^double (nth terms med)
-                (even? size)
-                (-> (+ ^double (nth terms ^long (dec med)))
-                    (/ 2)))))
-          (variance
-            [coll]
-            (let [mean (avg coll)
-                  sum  (sum (for [x    coll
-                                  :let [delta (- ^double x ^double mean)]]
-                              (* delta delta)))]
-              (/ ^double sum (count coll))))
-          (stddev
-            [coll]
-            (#?(:cljs js/Math.sqrt :clj Math/sqrt) (variance coll)))]
-    {'avg            avg
-     'median         median
-     'variance       variance
-     'stddev         stddev
-     'distinct       set
-     'min            (fn
-                 ([coll] (reduce (fn [acc x]
-                                   (if (neg? (compare x acc))
-                                     x acc))
-                                 (first coll) (next coll)))
-                 ([n coll]
-                  (vec
-                    (reduce (fn [acc x]
-                              (cond
-                                (< (count acc) ^long n)
-                                (sort compare (conj acc x))
-                                (neg? (compare x (last acc)))
-                                (sort compare (conj (butlast acc) x))
-                                :else acc))
-                            [] coll))))
-     'max            (fn
-                 ([coll] (reduce (fn [acc x]
-                                   (if (pos? (compare x acc))
-                                     x acc))
-                                 (first coll) (next coll)))
-                 ([n coll]
-                  (vec
-                    (reduce (fn [acc x]
-                              (cond
-                                (< (count acc) ^long n)
-                                (sort compare (conj acc x))
-                                (pos? (compare x (first acc)))
-                                (sort compare (conj (next acc) x))
-                                :else acc))
-                            [] coll))))
-     'sum            sum
-     'rand           (fn
-                 ([coll] (rand-nth coll))
-                 ([n coll] (vec (repeatedly n #(rand-nth coll)))))
-     'sample         (fn [n coll]
-                 (vec (take n (shuffle coll))))
-     'count          count
-     'count-distinct (fn [coll] (count (distinct coll)))}))
-
-
-;;
 
 (defn parse-rules [rules]
   (let [rules (if (string? rules) (edn/read-string rules) rules)]
@@ -467,7 +283,7 @@
 
 (defn filter-by-pred [context clause]
   (let [[[f & args]]         clause
-        pred                 (or (get built-ins f)
+        pred                 (or (get bi/query-fns f)
                                  (context-resolve-val context f)
                                  (dot-form f)
                                  (resolve-sym f)
@@ -486,7 +302,7 @@
 (defn bind-by-fn [context clause]
   (let [[[f & args] out] clause
         binding          (dp/parse-binding out)
-        fun              (or (get built-ins f)
+        fun              (or (get bi/query-fns f)
                              (context-resolve-val context f)
                              (resolve-sym f)
                              (dot-form f)
@@ -836,23 +652,19 @@
                  (clause-size clause))))
            clauses))
 
-(defn- build-graph [context clauses]
+(defn- planning [context clauses]
   (let [[node group] (group-by first clauses)]
     ))
-
-(defn- planning [context]
-  )
 
 (defn- excecute [context]
   )
 
 (defn -q [context clauses]
   (binding [r/*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context (sort-clauses context clauses))
-    #_(-> context
-          (build-graph clauses)
-          planning
-          excecute)))
+    ;; (reduce resolve-clause context (sort-clauses context clauses))
+    (-> context
+        (planning clauses)
+        excecute)))
 
 (defn -collect
   ([context symbols]
@@ -895,7 +707,7 @@
     (get-in context [:sources (.-symbol var)]))
   PlainSymbol
   (-context-resolve [var _]
-    (or (get built-in-aggregates (.-symbol var))
+    (or (get bi/aggregates (.-symbol var))
         (resolve-sym (.-symbol var))))
   Constant
   (-context-resolve [var _]
@@ -999,7 +811,7 @@
         q             (cond-> q
                         (sequential? q) dp/query->map)
         wheres        (:where q)
-        context       (-> (Context. [] {} {})
+        context       (-> (Context. [] {} {} {})
                           (resolve-ins (:qin parsed-q) inputs))
         resultset     (-> context
                           (-q wheres)

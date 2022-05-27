@@ -129,6 +129,8 @@
         dir   (u/tmp-dir (str "datalevin-schema-test-" (UUID/randomUUID)))
         store (sut/open dir s)
         s1    (sut/schema store)]
+    (is (= [[:a 3] [:b 4]] (sort-by peek (map (fn [[attr props]] [attr (props :db/aid)])
+                                              (select-keys s1 [:b :a])))))
     (sut/close store)
     (is (sut/closed? store))
     (let [store (sut/open dir s)]

@@ -2,6 +2,7 @@
   "Storage layer of Datalog store"
   (:require [datalevin.lmdb :as lmdb]
             [datalevin.util :as u]
+            [datalevin.relation :as r]
             [datalevin.bits :as b]
             [datalevin.search :as s]
             [datalevin.constants :as c]
@@ -123,6 +124,16 @@
              (assoc! m aid (conj (m aid #{}) cid)))
            m (keys aids)))
        (transient old-rclasses) new-classes))))
+
+(defn- find-classes
+  [rclasses aids]
+  (when (seq aids)
+    (reduce (fn [cs new-cs]
+              (let [cs' (set/intersection cs new-cs)]
+                (if (seq cs')
+                  cs'
+                  (reduced nil))))
+            (map rclasses aids))))
 
 (defn rentities->entities
   [rentities]
@@ -253,7 +264,8 @@
   (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
-    "Return true if there exists at least one datom in the given boundary (inclusive)")
+    "Return true if there exists at least one datom in the given boundary
+     (inclusive)")
   (size [this index low-datom high-datom]
     "Return the number of datoms within the given range (inclusive)")
   (head [this index low-datom high-datom]
@@ -279,9 +291,24 @@
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
-  (scan-ref-v [this veid] "Return ref type datoms with given v"))
+  (scan-ref-v [this veid] "Return ref type datoms with given v")
+  (pivot-scan [this attrs pred]
+    "Return a relation of those entities belonging to the enclas defined by the
+     attrs, with pred applied, containing only projections of given attrs")
+  (cardinality [this attrs pred]
+    "Return the sum of cardinality of the enclas defined by the attrs, with
+     pred applied.")
+  (link-cardinality [this src-attrs dst-attrs]
+    "Return the sum of cardinality of the links defined by the attrs.")
+  (join-cardinality [this attrs rel]
+    "Return the cardinality of the joins between the enclas defined by the
+     attrs and the given relation.")
+  (join [this attrs rel]
+    "Return a relation that is the join of the enclas defined by the
+     attrs and the given relation.")
+  )
 
-(declare transact-datoms update-encla update-links)
+(declare transact-datoms update-encla update-links scan-e)
 
 (deftype Store [lmdb
                 opts
@@ -559,7 +586,34 @@
           (lmdb/get-range lmdb c/links
                           [:closed [vcid c/a0 c/e0] [vcid c/amax c/emax]]
                           :int-int-int :long-long)))))
-  )
+
+  (pivot-scan
+    [this attrs pred]
+    (let [attrs (set attrs)
+          pairs (sort-by peek (map (fn [[attr props]] [attr (props :db/aid)])
+                                   (select-keys schema attrs)))
+          aids  (map peek pairs)
+          n     (count pairs)]
+      (when-let [cs (find-classes rclasses aids)]
+        (persistent!
+          (reduce
+            (fn [tuples c]
+              (reduce
+                (fn [tuples eid]
+                  (let [tuple (make-array Object n)]
+                    (scan-e this tuple pred eid attrs n)
+                    (conj! tuples tuple)))
+                tuples (rentities c)))
+            (transient []) cs))))))
+
+(defn- scan-e
+  [store tuple pred eid attrs n]
+  (let [a-pred (fn [^Datom d] (attrs (.-a d)))
+        pred'  #(and (a-pred %) (pred %))
+        datoms (slice-filter store :eav pred'
+                             (d/datom eid c/a0 c/v0)
+                             (d/datom eid c/amax c/vmax))]
+    (dotimes [i n] (aset ^"[Ljava.lang.Object;" tuple i (datoms i)))))
 
 (defn- insert-datom
   [^Store store ^Datom d ft-ds]
@@ -619,16 +673,6 @@
                  (datom->indexable schema datom true)]
                 :eav-a true)
     @aid-counts))
-
-(defn- find-classes
-  [rclasses aids]
-  (when (seq aids)
-    (reduce (fn [cs new-cs]
-              (let [cs' (set/intersection cs new-cs)]
-                (if (seq cs')
-                  cs'
-                  (reduced nil))))
-            (map rclasses aids))))
 
 (defn- add-class
   [max-cid classes rclasses aid-counts]

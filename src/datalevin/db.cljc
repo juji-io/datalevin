@@ -44,6 +44,13 @@
   (-rseek-datoms [db index components])
   (-index-range [db attr start end]))
 
+(defprotocol IQuery
+  (-pivot-scan [db attrs preds])
+  (-cardinality [db attrs preds])
+  (-link-cardinality [db attrs1 attrs2])
+  (-join-cardinality [db attrs rel])
+  (-join [db attrs rel]))
+
 (defprotocol IDB
   (-schema [db])
   (-rschema [db])
@@ -259,10 +266,46 @@
     [db attr start end]
     (wrap-cache
       store
-      [attr start end]
+      [:index-range attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
                    (resolve-datom db nil attr end nil emax txmax)))))
+
+  IQuery
+  (-pivot-scan
+    [db attrs preds]
+    (wrap-cache
+      store
+      [:pivot-scan attrs preds]
+      (s/pivot-scan store preds)))
+
+  (-cardinality
+    [db attrs preds]
+    (wrap-cache
+      store
+      [:cardinality attrs preds]
+      (s/cardinality store attrs preds)))
+
+  (-link-cardinality
+    [db attrs1 attrs2]
+    (wrap-cache
+      store
+      [:link-cardinality attrs1 attrs2]
+      (s/link-cardinality store attrs1 attrs2)))
+
+  (-join-cardinality
+    [db attrs rel]
+    (wrap-cache
+      store
+      [:join-cardinality attrs rel]
+      (s/join-cardinality store attrs rel)))
+
+  (-join
+    [db attrs rel]
+    (wrap-cache
+      store
+      [:pivot-scan attrs rel]
+      (s/join store attrs rel)))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
