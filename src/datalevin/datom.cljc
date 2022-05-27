@@ -188,7 +188,7 @@
                   (if (nil? o2) 0
                                 (cmp-fn o1 o2)))))
 
-(defn- compare-with-type [a b]
+(defn compare-with-type [a b]
   (if (identical? (type a) (type b))
     ;; using `compare` on colls throws when
     ;; items at the same index of the coll
