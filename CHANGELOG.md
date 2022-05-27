@@ -12,7 +12,6 @@
 - Add pull API to client/server and babashka pods
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
-- Port the new Pull API implementation from Datascript
 - Allow passing LMDB option map as `:kv-opts` when `create-conn`
 ## Changed
 - [**Breaking**] Removed `VEA` index, its functionality is replaced by `Links`.

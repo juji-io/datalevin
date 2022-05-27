@@ -1,4 +1,5 @@
 (ns ^:no-doc ^:lean-ns datalevin.db
+  "Datalog DB"
   (:require
    [clojure.walk]
    [clojure.data]

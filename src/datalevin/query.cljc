@@ -5,7 +5,6 @@
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
-   [datalevin.search :as s]
    [datalevin.built-ins :as bi]
    [datalevin.storage :as st]
    [datalevin.relation :as r]

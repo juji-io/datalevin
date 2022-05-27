@@ -1,4 +1,5 @@
 (ns datalevin.built-ins
+  "built-in query functions"
   (:require
    [clojure.string :as str]
    [datalevin.util #?(:cljs :refer-macros :clj :refer) [raise]]
@@ -19,18 +20,18 @@
   [db e a else-val]
   (when (nil? else-val)
     (raise "get-else: nil default value is not supported" {:error :query/where}))
-  (if-some [datom (first (db/-search db [e a]))]
+  (if-some [datom (db/-first db [e a])]
     (:v datom)
     else-val))
 
 (defn- -get-some
   [db e & as]
   (reduce
-   (fn [_ a]
-     (when-some [datom (first (db/-search db [e a]))]
-       (reduced [(:a datom) (:v datom)])))
-   nil
-   as))
+    (fn [_ a]
+      (when-some [datom (db/-first db [e a])]
+        (reduced [(:a datom) (:v datom)])))
+    nil
+    as))
 
 (defn- -missing?
   [db e a]
