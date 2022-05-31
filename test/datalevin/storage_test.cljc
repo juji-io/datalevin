@@ -2,6 +2,7 @@
   (:require [datalevin.storage :as sut]
             [datalevin.bits :as b]
             [datalevin.util :as u]
+            [datalevin.relation :as r]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test.check.generators :as gen]
@@ -347,6 +348,10 @@
 
     (is (= links (sut/links store)))
     (is (= rlinks (sut/rlinks store)))
+
+    (is (nil? (sut/pivot-scan store #{:aka :part} identity)))
+    (is (= (r/->Relation {:name 0 :aka 1} [])
+           (sut/pivot-scan store #{:aka :name} identity)))
 
     (sut/close store)
 

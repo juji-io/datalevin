@@ -8,7 +8,7 @@
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.set :as set])
-  (:import [java.util UUID]
+  (:import [java.util UUID ArrayList]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
 
@@ -48,11 +48,13 @@
 
 (defn- aids->attrs [attrs aids] (into #{} (map attrs) aids))
 
+(defn- attr->aid [schema attr] (-> attr schema :db/aid))
+
 (defn- attrs->aids
   ([schema attrs]
    (attrs->aids #{} schema attrs))
   ([old-aids schema attrs]
-   (into old-aids (map #(-> % schema :db/aid)) attrs)))
+   (into old-aids (map (partial attr->aid schema)) attrs)))
 
 (defn- time-tx
   []
@@ -292,9 +294,9 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
   (scan-ref-v [this veid] "Return ref type datoms with given v")
-  (pivot-scan [this attrs pred]
+  (pivot-scan [this esym sym->attr pred]
     "Return a relation of those entities belonging to the enclas defined by the
-     attrs, with pred applied, containing only projections of given attrs")
+     vals of sym->attr, with pred applied")
   (cardinality [this attrs pred]
     "Return the sum of cardinality of the enclas defined by the attrs, with
      pred applied.")
@@ -308,7 +310,7 @@
      attrs and the given relation.")
   )
 
-(declare transact-datoms update-encla update-links scan-e)
+(declare transact-datoms update-encla update-links pivot-scan*)
 
 (deftype Store [lmdb
                 opts
@@ -588,34 +590,60 @@
                           :int-int-int :long-long)))))
 
   (pivot-scan
-    [this attrs pred]
-    (let [attrs (set attrs)
-          pairs (sort-by peek (map (fn [[attr props]] [attr (props :db/aid)])
-                                   (select-keys schema attrs)))
-          aids  (map peek pairs)
+    [this esym sym->attr pred]
+    (let [pairs (sort-by peek (map (fn [[sym attr]]
+                                     [sym (attr->aid schema attr)])
+                                   sym->attr))
+          aids  (mapv peek pairs)
           n     (count pairs)]
-      (when-let [cs (find-classes rclasses aids)]
+      (when-let [cs (find-classes rclasses (set aids))]
         (r/->Relation
-          (zipmap (map first pairs) (range))
+          (zipmap (conj (map first pairs) esym) (range))
           (persistent!
             (reduce
               (fn [tuples c]
                 (reduce
                   (fn [tuples eid]
-                    (let [tuple (make-array Object n)]
-                      (scan-e this tuple pred eid attrs n)
-                      (conj! tuples tuple)))
+                    (pivot-scan* this tuples pred eid aids n))
                   tuples (rentities c)))
               (transient []) cs)))))))
 
-(defn- scan-e
-  [store tuple pred eid attrs n]
-  (let [a-pred (fn [^Datom d] (attrs (.-a d)))
-        pred'  #(and (a-pred %) (pred %))
-        datoms (slice-filter store :eav pred'
-                             (d/datom eid c/a0 c/v0)
-                             (d/datom eid c/amax c/vmax))]
-    (dotimes [i n] (aset ^"[Ljava.lang.Object;" tuple i (datoms i)))))
+(defn- pivot-scan*
+  [^Store store tuples pred eid aids n]
+  (let [lmdb    (.-lmdb store)
+        schema  (.-schema store)
+        attrs   (.-attrs store)
+        values  (ArrayList.)
+        cur     (volatile! 0)
+        collect #(let [eav (lmdb/k %)
+                       aid (b/read-buffer eav :eav-a)]
+                   (loop [i @cur]
+                     (if (= aid (nth aids i))
+                       (let [v (lmdb/v %)
+                             d (if (= v c/normal)
+                                 (d/datom eid (attrs aid) (b/get-value eav 1))
+                                 (lmdb/get-value lmdb c/giants v :id :datom))]
+                         (when (pred d)
+                           (.add ^ArrayList (.get values i) (.-v d)))
+                         (recur (inc i)))
+
+                       )))
+        dl (d/datom eid (attrs (first aids)) nil)
+        dh (d/datom eid (attrs (peek aids)) nil)]
+    (dotimes [_ n] (.add values (ArrayList.)))
+    (lmdb/visit lmdb c/eav collect
+                [:closed
+                 (datom->indexable schema dl false)
+                 (datom->indexable schema dh true)]
+                :eav-a)
+    )
+  #_(let [a-pred (fn [^Datom d] (attrs (.-a d)))
+          pred'  #(and (a-pred %) (pred %))
+          datoms (slice-filter store :eav pred'
+                               (d/datom eid c/a0 c/v0)
+                               (d/datom eid c/amax c/vmax))]
+      (dotimes [i n]
+        (aset ^"[Ljava.lang.Object;" tuple i (.-v ^Datom (datoms i))))))
 
 (defn- insert-datom
   [^Store store ^Datom d ft-ds]
