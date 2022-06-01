@@ -295,12 +295,15 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
   (scan-ref-v [this veid] "Return ref type datoms with given v")
-  (pivot-scan [this esym sym->attr pred]
+  (pivot-scan [this esym sym->attr] [this esym sym->attr pred]
     "Return a relation of those entities belonging to the enclas defined by the
-     vals of sym->attr, with pred applied")
-  (cardinality [this attrs pred]
-    "Return the sum of cardinality of the enclas defined by the attrs, with
-     pred applied.")
+     vals of sym->attr, with pred applied if given")
+  (cardinality [this attrs] [this attrs pred]
+    "Return the estimated sum of cardinality of the enclas defined by the attrs,
+     with pred applied through sampling if given.")
+  (bounded-cardinality [this attrs bindings]
+    "Return the sum of cardinality of the enclas defined by the attrs,
+     where some values are founded.")
   (link-cardinality [this src-attrs dst-attrs]
     "Return the sum of cardinality of the links defined by the attrs.")
   (join-cardinality [this attrs rel]
@@ -311,7 +314,8 @@
      attrs and the given relation.")
   )
 
-(declare transact-datoms update-encla update-links pivot-scan*)
+(declare transact-datoms update-encla update-links pivot-scan*
+         cardinality*)
 
 (deftype Store [lmdb
                 opts
@@ -320,7 +324,7 @@
                 ^:volatile-mutable refs      ; set of ref aids
                 ^:volatile-mutable schema    ; attr -> props
                 ^:volatile-mutable rschema   ; prop -> attrs
-                ^:volatile-mutable classes   ; cid -> aids
+                ^:volatile-mutable classes   ; cid -> aid -> cardinality
                 ^:volatile-mutable rclasses  ; aid -> cids
                 ^:volatile-mutable entities  ; eid -> cid
                 ^:volatile-mutable rentities ; cid -> eids bitmap
@@ -591,6 +595,9 @@
                           :int-int-int :long-long)))))
 
   (pivot-scan
+    [this esym sym->attr]
+    (.pivot-scan this esym sym->attr nil))
+  (pivot-scan
     [this esym sym->attr pred]
     (let [pairs (sort-by peek (map (fn [[sym attr]]
                                      [sym (attr->aid schema attr)])
@@ -599,18 +606,43 @@
           aids  (mapv peek pairs)
           al    (attrs (first aids))
           ah    (attrs (peek aids))]
-      (when-let [cs (find-classes rclasses (set aids))]
+      (when-let [cids (find-classes rclasses (set aids))]
         (r/->Relation
           (zipmap (conj (map first pairs) esym) (range))
           (reduce
-            (fn [tuples c]
+            (fn [tuples cid]
               (reduce
                 (fn [tuples eid]
                   (pivot-scan* this tuples pred eid aids n al ah))
-                tuples (rentities c)))
-            [] cs))))))
+                tuples (rentities cid)))
+            [] cids)))))
 
-(defn attr-values->tuples
+  (cardinality
+    [this attrs]
+    (.cardinality this attrs nil))
+  (cardinality
+    [this attrs pred]
+    (let [aids   (map (partial attr->aid schema) attrs)
+          a-freq (frequencies aids)]
+      (if-let [cs (find-classes rclasses aids)]
+        (transduce (map (partial cardinality* this a-freq pred)) + cs)
+        0.0))))
+
+(defn- sample-pred-factor
+  [store pred cid]
+  1)
+
+(defn- cardinality*
+  [store a-freq pred cid]
+  (let [factors ((classes store) cid)
+        scores  (map (fn [[aid freq]] (* freq (factors aid))) a-freq)
+        bm      ((rentities store) cid)
+        base    (apply * (b/bitmap-size bm) scores)]
+    (if pred
+      (* base (sample-pred-factor store pred bm))
+      base)))
+
+(defn- attr-values->tuples
   "tuples are basically cartesian product of attribute values"
   [attr-values eid ^long n]
   (let [orig-values (vec attr-values)]
@@ -622,16 +654,14 @@
             (step [values]
               (let [increment
                     (fn [vs]
-                      (loop [i  (dec (count vs))
-                             vs vs]
+                      (loop [i (dec (count vs)) vs vs]
                         (when-not (= i -1)
                           (if-let [rst (next (vs i))]
                             (assoc vs i rst)
                             (recur (dec i) (assoc vs i (orig-values i)))))))]
                 (when values
                   (cons (fill values) (step (increment values))))))]
-      (when (every? seq attr-values)
-        (step orig-values)))))
+      (when (every? seq attr-values) (step orig-values)))))
 
 (defn- convert-values
   [lmdb ^ArrayList values pred n]
@@ -642,7 +672,7 @@
           (if (d/datom? v)
             (.set vs j (.-v ^Datom v))
             (let [d (lmdb/get-value lmdb c/giants v :id :datom)]
-              (if (pred d)
+              (if (or (not pred) (pred d))
                 (.set vs j (.-v ^Datom d))
                 (.set vs j nil))))))
       (.set values i (remove nil? vs)))))
@@ -661,7 +691,7 @@
                               (d/datom eid (attrs aid) (b/get-value eav 1))
                               v)
                         dt? (d/datom? d)]
-                    (when (or (and dt? (pred d)) (not dt?))
+                    (when (or (not pred) (not dt?) (pred d))
                       (loop [j @i]
                         (when (and (< j n) (= aid (nth aids j)))
                           (.add ^ArrayList (.get values j) d)
@@ -669,24 +699,22 @@
         advance (fn [aid kv eav]
                   (loop [j @i]
                     (when (< j n)
-                      (if (= aid (nth aids j))
-                        (do (vreset! i j)
-                            (add aid kv eav))
-                        (recur (inc j))))))
+                      (let [cur-aid (nth aids j)]
+                        (if (= aid cur-aid)
+                          (do (vreset! i j) (add aid kv eav))
+                          (when (> aid cur-aid) (recur (inc j))))))))
         collect (fn [kv]
                   (let [eav     (lmdb/k kv)
                         aid     (b/read-buffer eav :eav-a)
                         cur-aid (nth aids @i)]
                     (cond
-                      (< aid cur-aid) :skip
                       (= aid cur-aid) (add aid kv eav)
-                      :else           (advance aid kv eav))))]
+                      (> aid cur-aid) (advance aid kv eav)
+                      :else           :skip)))]
     (dotimes [_ n] (.add values (ArrayList.)))
     (lmdb/visit lmdb c/eav collect
-                [:open
-                 (datom->indexable schema (d/datom eid al nil) false)
-                 (datom->indexable schema (d/datom eid ah nil) true)]
-                :eav-a)
+                [:open (datom->indexable schema (d/datom eid al nil) false)
+                 (datom->indexable schema (d/datom eid ah nil) true)] :eav-a)
     (convert-values lmdb values pred n)
     (into tuples (attr-values->tuples values eid n))))
 
