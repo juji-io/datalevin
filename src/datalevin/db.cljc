@@ -45,7 +45,7 @@
   (-index-range [db attr start end]))
 
 (defprotocol IQuery
-  (-pivot-scan [db attrs preds])
+  (-pivot-scan [db esym sym->attr pred])
   (-cardinality [db attrs preds])
   (-link-cardinality [db attrs1 attrs2])
   (-join-cardinality [db attrs rel])
@@ -273,11 +273,11 @@
 
   IQuery
   (-pivot-scan
-    [db attrs preds]
+    [db esym sym->attr pred]
     (wrap-cache
       store
-      [:pivot-scan attrs preds]
-      (s/pivot-scan store preds)))
+      [:pivot-scan esym sym->attr pred]
+      (s/pivot-scan store esym sym->attr pred)))
 
   (-cardinality
     [db attrs preds]

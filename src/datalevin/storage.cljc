@@ -7,6 +7,7 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
+            [taoensso.timbre :as log]
             [clojure.set :as set])
   (:import [java.util UUID ArrayList]
            [datalevin.datom Datom]
@@ -594,56 +595,103 @@
     (let [pairs (sort-by peek (map (fn [[sym attr]]
                                      [sym (attr->aid schema attr)])
                                    sym->attr))
+          n     (count pairs)
           aids  (mapv peek pairs)
-          n     (count pairs)]
+          al    (attrs (first aids))
+          ah    (attrs (peek aids))]
       (when-let [cs (find-classes rclasses (set aids))]
         (r/->Relation
           (zipmap (conj (map first pairs) esym) (range))
-          (persistent!
-            (reduce
-              (fn [tuples c]
-                (reduce
-                  (fn [tuples eid]
-                    (pivot-scan* this tuples pred eid aids n))
-                  tuples (rentities c)))
-              (transient []) cs)))))))
+          (reduce
+            (fn [tuples c]
+              (reduce
+                (fn [tuples eid]
+                  (pivot-scan* this tuples pred eid aids n al ah))
+                tuples (rentities c)))
+            [] cs))))))
+
+(defn attr-values->tuples
+  "tuples are basically cartesian product of attribute values"
+  [attr-values eid ^long n]
+  (let [orig-values (vec attr-values)]
+    (log/debug orig-values)
+    (letfn [(fill [vs]
+              (let [^"[Ljava.lang.Object;" tuple (make-array Object (inc n))]
+                (aset tuple 0 eid)
+                (dotimes [i n] (aset tuple (inc i) (first (vs i))))
+                tuple))
+            (step [values]
+              (let [increment
+                    (fn [vs]
+                      (loop [i  (dec (count vs))
+                             vs vs]
+                        (when-not (= i -1)
+                          (if-let [rst (next (vs i))]
+                            (assoc vs i rst)
+                            (recur (dec i) (assoc vs i (orig-values i)))))))]
+                (when values
+                  (cons (fill values)
+                        (step (increment values))))))]
+      (when (every? seq attr-values)
+        (step orig-values)))))
+
+(defn- convert-values
+  [lmdb ^ArrayList values pred n]
+  (dotimes [i n]
+    (let [^ArrayList vs (.get values i)]
+      (dotimes [j (.size vs)]
+        (let [v (.get vs j)]
+          (if (d/datom? v)
+            (.set vs j (.-v ^Datom v))
+            (let [d (lmdb/get-value lmdb c/giants v :id :datom)]
+              (if (pred d)
+                (.set vs j (.-v ^Datom d))
+                (.set vs j nil))))))
+      (.set values i (remove nil? vs)))))
 
 (defn- pivot-scan*
-  [^Store store tuples pred eid aids n]
+  [^Store store tuples pred eid aids n al ah]
   (let [lmdb    (.-lmdb store)
-        schema  (.-schema store)
-        attrs   (.-attrs store)
+        schema  (schema store)
+        attrs   (attrs store)
         values  (ArrayList.)
-        cur     (volatile! 0)
-        collect #(let [eav (lmdb/k %)
-                       aid (b/read-buffer eav :eav-a)]
-                   (loop [i @cur]
-                     (if (= aid (nth aids i))
-                       (let [v (lmdb/v %)
-                             d (if (= v c/normal)
-                                 (d/datom eid (attrs aid) (b/get-value eav 1))
-                                 (lmdb/get-value lmdb c/giants v :id :datom))]
-                         (when (pred d)
-                           (.add ^ArrayList (.get values i) (.-v d)))
-                         (recur (inc i)))
-
-                       )))
-        dl (d/datom eid (attrs (first aids)) nil)
-        dh (d/datom eid (attrs (peek aids)) nil)]
+        i       (volatile! 0)
+        add     (fn [aid kv eav]
+                  (let [vb  (lmdb/v kv)
+                        v   (b/read-buffer vb :id)
+                        d   (if (= v c/normal)
+                              (d/datom eid (attrs aid) (b/get-value eav 1))
+                              v)
+                        dt? (d/datom? d)]
+                    (when (or (and dt? (pred d)) (not dt?))
+                      (loop [j @i]
+                        (when (and (< j n) (= aid (nth aids j)))
+                          (.add ^ArrayList (.get values j) d)
+                          (recur (inc j)))))))
+        advance (fn [aid kv eav]
+                  (loop [j @i]
+                    (when (< j n)
+                      (if (= aid (nth aids j))
+                        (do (vreset! i j)
+                            (add aid kv eav))
+                        (recur (inc j))))))
+        collect (fn [kv]
+                  (let [eav     (lmdb/k kv)
+                        aid     (b/read-buffer eav :eav-a)
+                        cur-aid (nth aids @i)]
+                    (log/debug "cur" cur-aid)
+                    (cond
+                      (< aid cur-aid) :skip
+                      (= aid cur-aid) (add aid kv eav)
+                      :else           (advance aid kv eav))))]
     (dotimes [_ n] (.add values (ArrayList.)))
     (lmdb/visit lmdb c/eav collect
-                [:closed
-                 (datom->indexable schema dl false)
-                 (datom->indexable schema dh true)]
+                [:open
+                 (datom->indexable schema (d/datom eid al nil) false)
+                 (datom->indexable schema (d/datom eid ah nil) true)]
                 :eav-a)
-    )
-  #_(let [a-pred (fn [^Datom d] (attrs (.-a d)))
-          pred'  #(and (a-pred %) (pred %))
-          datoms (slice-filter store :eav pred'
-                               (d/datom eid c/a0 c/v0)
-                               (d/datom eid c/amax c/vmax))]
-      (dotimes [i n]
-        (aset ^"[Ljava.lang.Object;" tuple i (.-v ^Datom (datoms i))))))
+    (convert-values lmdb values pred n)
+    (into tuples (attr-values->tuples values eid n))))
 
 (defn- insert-datom
   [^Store store ^Datom d ft-ds]

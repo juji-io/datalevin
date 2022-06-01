@@ -10,7 +10,7 @@
             [clojure.test.check.properties :as prop]
             [clojure.test :refer [deftest is testing]]
             [datalevin.lmdb :as lmdb])
-  (:import [java.util UUID]
+  (:import [java.util UUID Arrays]
            [datalevin.storage Store]
            [datalevin.datom Datom]))
 
@@ -349,9 +349,12 @@
     (is (= links (sut/links store)))
     (is (= rlinks (sut/rlinks store)))
 
-    (is (nil? (sut/pivot-scan store #{:aka :part} identity)))
-    (is (= (r/->Relation {:name 0 :aka 1} [])
-           (sut/pivot-scan store #{:aka :name} identity)))
+    (is (nil? (sut/pivot-scan store '?e {'?a :aka '?p :part} identity)))
+    (is (r/equal-rel? (r/->Relation {'?e 0 '?n 1 '?a 2}
+                                    [[1, "Petr", "Devil"]
+                                     [1, "Petr", "Tupen"]])
+                      (sut/pivot-scan store '?e {'?a :aka '?n :name} identity)))
+
 
     (sut/close store)
 
