@@ -23,7 +23,7 @@
 ;; tuples:
 ;;    [ #js [1 "Ivan" 5 14] ... ]
 ;; or [ (Datom. 2 "Oleg" 1 55) ... ]
-(deftype Relation [attrs tuples])
+(defrecord Relation [attrs tuples])
 
 ;; Relation algebra
 

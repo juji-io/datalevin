@@ -350,12 +350,34 @@
     (is (= rlinks (sut/rlinks store)))
 
     (is (nil? (sut/pivot-scan store '?e {'?a :aka '?p :part} identity)))
+    (is (r/equal-rel? (r/->Relation {'?e 0 '?n 1 '?f 2}
+                                    [[2, "David", 1]
+                                     [3, "Thomas", 1]
+                                     [6, "Matthew", 3]])
+                      (sut/pivot-scan store '?e {'?n :name '?f :father}
+                                      identity)))
     (is (r/equal-rel? (r/->Relation {'?e 0 '?n 1 '?a 2}
                                     [[1, "Petr", "Devil"]
                                      [1, "Petr", "Tupen"]])
                       (sut/pivot-scan store '?e {'?a :aka '?n :name} identity)))
-
-
+    (is (r/equal-rel? (r/->Relation {'?e 0 '?n 1 '?c1 2 '?c2 3}
+                                    [[1, "Petr", 2, 2]
+                                     [1, "Petr", 2, 3]
+                                     [1, "Petr", 3, 2]
+                                     [1, "Petr", 3, 3]])
+                      (sut/pivot-scan store '?e
+                                      {'?c1 :child '?c2 :child '?n :name}
+                                      identity)))
+    (is (r/equal-rel? (r/->Relation {'?e 0 '?n 1 '?p 2}
+                                    [[10, "Part A", 11]
+                                     [10, "Part A", 15]
+                                     [12, "Part A.A.A", 13]
+                                     [12, "Part A.A.A", 14]
+                                     [16, "Part A.B.A", 17]
+                                     [16, "Part A.B.A", 18]])
+                      (sut/pivot-scan store '?e
+                                      {'?n :name '?p :part}
+                                      (fn [^Datom d] (even? (.-e d))))))
     (sut/close store)
 
     (testing "load encla and links"

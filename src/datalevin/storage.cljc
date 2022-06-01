@@ -7,7 +7,7 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [taoensso.timbre :as log]
+            ;; [taoensso.timbre :as log]
             [clojure.set :as set])
   (:import [java.util UUID ArrayList]
            [datalevin.datom Datom]
@@ -614,7 +614,6 @@
   "tuples are basically cartesian product of attribute values"
   [attr-values eid ^long n]
   (let [orig-values (vec attr-values)]
-    (log/debug orig-values)
     (letfn [(fill [vs]
               (let [^"[Ljava.lang.Object;" tuple (make-array Object (inc n))]
                 (aset tuple 0 eid)
@@ -630,8 +629,7 @@
                             (assoc vs i rst)
                             (recur (dec i) (assoc vs i (orig-values i)))))))]
                 (when values
-                  (cons (fill values)
-                        (step (increment values))))))]
+                  (cons (fill values) (step (increment values))))))]
       (when (every? seq attr-values)
         (step orig-values)))))
 
@@ -679,7 +677,6 @@
                   (let [eav     (lmdb/k kv)
                         aid     (b/read-buffer eav :eav-a)
                         cur-aid (nth aids @i)]
-                    (log/debug "cur" cur-aid)
                     (cond
                       (< aid cur-aid) :skip
                       (= aid cur-aid) (add aid kv eav)
