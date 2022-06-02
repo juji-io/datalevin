@@ -128,8 +128,7 @@ instead  (they have the same version number) in your `project.clj` or `deps.edn`
 
 This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
-[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
-library supports JVM 11 and above.
+[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image).
 
 ### Command Line Tool
 
