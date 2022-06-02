@@ -128,8 +128,7 @@ instead  (they have the same version number) in your `project.clj` or `deps.edn`
 
 This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
-[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image). This native
-library supports JVM 11 and above.
+[note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image).
 
 ### Command Line Tool
 
@@ -688,9 +687,8 @@ are applicable to Datascript.
 
 * Floating point `NaN` cannot be stored.
 
-* The maximum individual value size is 4GB. In practice, value size is
-  determined by LMDB's ability to find large enough continuous space on disk and
-  Datelevin's ability to pre-allocate off-heap buffers in JVM for them.
+* The maximum individual value size is 2GB. Limited by the maximum size of
+  off-heap byte buffer that can be allocated in JVM.
 
 * The total data size of a Datalevin database has the same limit as LMDB's, e.g.
   128TB on a modern 64-bit machine that implements 48-bit address spaces.
