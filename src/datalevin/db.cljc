@@ -45,12 +45,12 @@
   (-index-range [db attr start end]))
 
 (defprotocol IQuery
-  (-pivot-scan [db esym sym->attr] [db esym sym->attr pred])
-  (-cardinality [db attrs] [db attrs pred])
-  (-bounded-cardinality [db attrs bindings])
-  (-link-cardinality [db attrs1 attrs2])
-  (-join-cardinality [db attrs rel])
-  (-join [db attrs rel]))
+  (-pivot-scan [db esym sym->attr pred])
+  (-cardinality [db attrs pred])
+  (-bounded-pivot-scan [db esym sym->attr bindings pred])
+  (-bounded-cardinality [db attrs bindings pred])
+  (-index-join [db esym sym->attr rel pred])
+  (-index-join-cardinality [db attrs rel pred]))
 
 (defprotocol IDB
   (-schema [db])
@@ -279,9 +279,6 @@
       store
       [:pivot-scan esym sym->attr pred]
       (s/pivot-scan store esym sym->attr pred)))
-  (-pivot-scan
-    [db esym sym->attr]
-    (-pivot-scan db esym sym->attr nil))
 
   (-cardinality
     [db attrs pred]
@@ -289,37 +286,34 @@
       store
       [:cardinality attrs pred]
       (s/cardinality store attrs pred)))
-  (-cardinality
-    [db attrs]
-    (-cardinality db attrs nil))
+
+  (-bounded-pivot-scan
+    [db esym sym->attr bindings pred]
+    (wrap-cache
+      store
+      [:bounded-pivot-scan esym sym->attr bindings pred]
+      (s/bounded-pivot-scan store esym sym->attr bindings pred)))
 
   (-bounded-cardinality
-    [db attrs bindings]
+    [db attrs bindings pred]
     (wrap-cache
       store
-      [:bounded-cardinality attrs bindings]
-      (s/bounded-cardinality store attrs bindings)))
+      [:bounded-cardinality attrs bindings pred]
+      (s/bounded-cardinality store attrs bindings pred)))
 
-  (-link-cardinality
-    [db attrs1 attrs2]
+  (-index-join
+    [db esym sym->attr rel pred]
     (wrap-cache
       store
-      [:link-cardinality attrs1 attrs2]
-      (s/link-cardinality store attrs1 attrs2)))
+      [:index-join esym sym->attr rel pred]
+      (s/index-join store esym sym->attr rel pred)))
 
-  (-join-cardinality
-    [db attrs rel]
+  (-index-join-cardinality
+    [db attrs rel pred]
     (wrap-cache
       store
-      [:join-cardinality attrs rel]
-      (s/join-cardinality store attrs rel)))
-
-  (-join
-    [db attrs rel]
-    (wrap-cache
-      store
-      [:pivot-scan attrs rel]
-      (s/join store attrs rel)))
+      [:index-join-cardinality attrs rel pred]
+      (s/index-join-cardinality store attrs rel pred)))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))

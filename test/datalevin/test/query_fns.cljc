@@ -320,22 +320,22 @@
                                :where [(fun ?e) ?x]]
                              [1])))
 
-  ;; (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(zero? ?x)]"
-  ;;                  (d/q '[:find ?x
-  ;;                         :where [(zero? ?x)]])))
+  (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(zero? ?x)]"
+                   (d/q '[:find ?x
+                          :where [(zero? ?x)]])))
 
-  ;; (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(inc ?x) ?y]"
-  ;;                  (d/q '[:find ?x
-  ;;                         :where [(inc ?x) ?y]])))
+  (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(inc ?x) ?y]"
+                   (d/q '[:find ?x
+                          :where [(inc ?x) ?y]])))
 
-  ;; (is (thrown-msg? "Where uses unknown source vars: [$2]"
-  ;;                  (d/q '[:find ?x
-  ;;                         :where [?x] [(zero? $2 ?x)]])))
+  (is (thrown-msg? "Where uses unknown source vars: [$2]"
+                   (d/q '[:find ?x
+                          :where [?x] [(zero? $2 ?x)]])))
 
-  ;; (is (thrown-msg? "Where uses unknown source vars: [$]"
-  ;;                  (d/q '[:find  ?x
-  ;;                         :in    $2
-  ;;                         :where [$2 ?x] [(zero? $ ?x)]])))
+  (is (thrown-msg? "Where uses unknown source vars: [$]"
+                   (d/q '[:find  ?x
+                          :in    $2
+                          :where [$2 ?x] [(zero? $ ?x)]])))
   )
 
 (deftest test-issue-180

@@ -301,3 +301,5 @@
   {:pre  [(string? s)]
    :post [(string? %)]}
   (s/join "-" (map s/lower-case (split-words s))))
+
+(defn factorial [n] (reduce * (range 1 (inc ^long n))))

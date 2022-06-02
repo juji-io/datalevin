@@ -301,18 +301,19 @@
   (cardinality [this attrs] [this attrs pred]
     "Return the estimated sum of cardinality of the enclas defined by the attrs,
      with pred applied through sampling if given.")
-  (bounded-cardinality [this attrs bindings]
+  (bounded-pivot-scan
+    [this esym sym->attr bindings] [this esym sym->attr bindings pred]
+    "Return a relation of those entities belonging to the enclas defined by the
+     vals of sym->attr, with some values bounded, pred applied if given")
+  (bounded-cardinality [this attrs bindings] [this attrs bindings pred]
     "Return the sum of cardinality of the enclas defined by the attrs,
-     where some values are founded.")
-  (link-cardinality [this src-attrs dst-attrs]
-    "Return the sum of cardinality of the links defined by the attrs.")
-  (join-cardinality [this attrs rel]
-    "Return the cardinality of the joins between the enclas defined by the
-     attrs and the given relation.")
-  (join [this attrs rel]
+     where some values are bounded.")
+  (index-join [this esym sym->attr rel] [this esym esym->attr rel pred]
     "Return a relation that is the join of the enclas defined by the
      attrs and the given relation.")
-  )
+  (index-join-cardinality [this attrs rel] [this attrs rel pred]
+    "Return the cardinality of the joins between the enclas defined by the
+     attrs and the given relation."))
 
 (declare transact-datoms update-encla update-links pivot-scan*
          cardinality*)
@@ -628,9 +629,11 @@
         (transduce (map (partial cardinality* this a-freq pred)) + cs)
         0.0))))
 
-(defn- sample-pred-factor
-  [store pred cid]
-  1)
+(defn- pred-factor
+  [store pred bm]
+  1.0)
+
+(def *sampling?* true)
 
 (defn- cardinality*
   [store a-freq pred cid]
@@ -639,7 +642,9 @@
         bm      ((rentities store) cid)
         base    (apply * (b/bitmap-size bm) scores)]
     (if pred
-      (* base (sample-pred-factor store pred bm))
+      (* base (if *sampling?*
+                (pred-factor store pred bm)
+                c/+magic-factor+))
       base)))
 
 (defn- attr-values->tuples
