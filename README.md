@@ -685,9 +685,8 @@ are applicable to Datascript.
 
 * Floating point `NaN` cannot be stored.
 
-* The maximum individual value size is 4GB. In practice, value size is
-  determined by LMDB's ability to find large enough continuous space on disk and
-  Datelevin's ability to pre-allocate off-heap buffers in JVM for them.
+* The maximum individual value size is 2GB. Limited by the maximum size of
+  off-heap byte buffer that can be allocated in JVM.
 
 * The total data size of a Datalevin database has the same limit as LMDB's, e.g.
   128TB on a modern 64-bit machine that implements 48-bit address spaces.
