@@ -95,6 +95,16 @@ significantly reduce the amount of work we have to do.
 `EnCla` also enables us to use pivot scan [2] that returns multiple attribute
 values with a single index scan for star-like attributes.
 
+### Join only effective attributes (new)
+
+Not all attributes of an encla affect the result set of entities, only those
+participate in the joins with other encla or being touched by predicates do. We
+only scan these effective attributes in the initial pivot scans. The rest of the
+attributes are scanned after all the joins are completed and all predicates are
+run. This reduces the chances of materializing attribute values that would not
+appear in the final result set. Furthermore, we only consider effective
+attributes in planning, which speeds up plan enumeration as well.
+
 ### Predicates push-down
 
 As mentioned, we take advantage of the opportunities to push selection
@@ -103,10 +113,10 @@ results.
 
 ### Query graph simplification
 
-Since star-like attributes are already handled by entity filtering and pivot
-scan, the optimizer works mainly on the simplified graph that consists of stars
-and the links between them [3] [7]. This significantly reduces the size of
-optimizer search space.
+Since star-like attributes are already handled by pivot scan, the optimizer
+works mainly on the simplified graph that consists of stars and the links
+between them [3] [7], this significantly reduces the size of optimizer search
+space.
 
 ### Cumulative average cardinality (new)
 
@@ -119,11 +129,14 @@ is cheap and accurate, leading to better plans.
 For cardinality estimation with bounded variables, we count them directly,
 because range count with bounded values is fast in triple indices.
 
-### Sampling for join cardinality estimation
+### Sampling for join and predicate cardinality estimation
 
-For join cardinality estimation, we do sampling at query time [6]. Sampling is
-cheap in triple indices, because all the attribute are already unpacked and indexed
-separately, unlike in RDBMS.
+For join cardinality estimation, we do sampling at query time [6].
+Sampling is cheap in triple indices, because all the attribute are already
+unpacked and indexed separately, unlike in RDBMS. We also do sampling for cardinality
+estimation with predicates. Sampling is under a dynamic time based budget, with
+more time allocated for bigger query graph. After all the budget is spent,
+magic numbers are used.
 
 ### Left-deep join tree
 
@@ -136,12 +149,11 @@ accurately estimate using counting and sampling on indices.
 
 ### Choose join methods on the fly
 
-Instead of deciding join method during planning, we use a cost model that only
-depends on cardinality, and postpone the decision on join method
-until right before executing a join, so join method is chosen using real
-cardinality: for small intermediate result size, choose nested loop join; if the
-intermediate results are already sorted on join attribute, choose merge join;
-hash join as the default.
+Instead of deciding join method during planning, we postpone the decision on
+join method until right before executing a join, so join method is chosen using
+real cardinality: for small intermediate result size, choose nested loop join;
+if the intermediate results are already sorted on join attribute, choose merge
+join; hash join as the default.
 
 ## Benchmarks
 
