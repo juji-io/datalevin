@@ -586,7 +586,8 @@ adjust the priorities based on feedback.
 * 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 A new Datalog query engine with improved performance.
-* 0.8.0 As a product rule engine: implementing Rete/UL algorithm.
+* 0.8.0 As a product rule engine: implement iterative rules application and
+  truth maintenance.
 * 0.9.0 Up the limits from int to long.
 * 1.0.0 First major release with documentation.
 * 1.1.0 Transaction log and read-only replicas.
