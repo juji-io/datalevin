@@ -21,22 +21,19 @@ triple store query performance to a level competitive with RDBMS.
 Although Datomic-like stores are heavily inspired by RDF stores, there are
 some differences that impact query engine design.
 
-In RDF stores, there are no explicit entity id numbers, whereas in Datomic-like
-stores, the entity id numbers are explicitly resolved during transactions; in
-addition, the entity vs. entity relationship is also explicitly marked by
-`:db.type/ref` value type. Consequently, the cost of resolving entities and
-their relationship become much lower.
+RDF stores often have a limited number of properties even for huge datasets,
+whereas Datomic-like stores may have many more attributes. Fortunately, they are
+often specialized. For example, the set of attributes for a class of entities
+are often unique. Therefore, leveraging grouping of attributes have greater
+benefits.
 
-On the other hand, RDF stores often have a limited number of properties
-even for huge datasets, whereas Datomic-like stores may have many more
-attributes. Fortunately, they are often specialized. For example, the set of
-attributes for a class of entities are often unique. The overlapping
-attributes shared by multiple entity classes are rare. Therefore,
-leveraging grouping of attributes have greater benefits.
+In Datomic-like stores, the entity vs. entity relationship is explicitly marked
+by `:db.type/ref` value type. The cost of resolving entity relationship becomes
+lower.
 
 Finally, in Datomic-like stores, the values are stored as they are, instead of as
-integer ids like in RDF stores, therefore, pushing selection predicates down to
-index scan methods brings more benefits in Datomic-like stores.
+integer ids, therefore, pushing selection predicates down to index scan methods
+brings more benefits.
 
 ## New indices: `EnCla` and `Links`
 
@@ -68,8 +65,8 @@ LMDB dupsort map as an `Links` index:
 
 Intuitively, we essentially build virtual tables with foreign keys behind the
 scene. This allows us to keep the flexibility of a triple store that enables
-simple and elegant query, while reap the benefits of faster query performance of
-a relational store.
+simple and elegant query, while reaping the benefits of faster query performance
+of a relational store.
 
 Unlike previous research [3] [7] [9], we build these new indices online and keep
 them up to date with new data during transactions. As far as we know, Datalevin
@@ -97,7 +94,7 @@ values with a single index scan for star-like attributes.
 
 ### Join only effective attributes (new)
 
-Not all attributes of an encla affect the result set of entities, only those
+Not all attributes of an encla affect the number of results, only those
 participate in the joins with other encla or being touched by predicates do. We
 only scan these effective attributes in the initial pivot scans. The rest of the
 attributes are scanned after all the joins are completed and all predicates are
@@ -167,7 +164,7 @@ does not even exercise the new query planner.
 
 datascript, datahike, asami, xtdb, datalevin 0.6, datalevin 0.7
 
-### Watdiv
+### WatDiv
 
 This is a standard benchmark for RDF stores [1].
 

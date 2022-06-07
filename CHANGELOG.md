@@ -2,9 +2,8 @@
 
 ## WIP
 ## Added
-- `EnCla` index, a novel index for Datalog store, serves similar role of tables
-  in RDBMS. Also address #57.
-- `Links` index, a novel index for Datalog store, similar to foreign keys in RDBMS.
+- `EnCla` index, a novel index for Datalog store. Also address #57.
+- `Links` index, a novel index for Datalog store.
 - Cost based Datalog query optimizer that utilizes EnCla and Links indices. #11
 - Benchmark suits for complex queries and large data sets
 - Expose LMDB dupsort functionality (the same key maps to a list of sorted
@@ -14,6 +13,8 @@
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
 - Allow passing LMDB option map as `:kv-opts` when `create-conn`
 ## Changed
+- [**Breaking**] Change `EAV` and `AVE` index storage to use LMDB dupsort,
+  reducing storage size and improving speed.
 - [**Breaking**] Removed `VEA` index, its functionality is replaced by `Links`.
 - [**Breaking**] Changed `:search-engine` key to `:search-opts` for consistency
 

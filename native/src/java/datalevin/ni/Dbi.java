@@ -26,6 +26,7 @@ public class Dbi {
                                          flags,
                                          ptr));
             Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+            Lib.checkRc(Lib.dtlv_set_dupsort_comparator(txn.get(), get()));
         } catch(Exception e) {
             txn.close();
             throw e;
@@ -44,6 +45,7 @@ public class Dbi {
                                         flags,
                                         ptr));
             Lib.checkRc(Lib.dtlv_set_comparator(txn.get(), get()));
+            Lib.checkRc(Lib.dtlv_set_dupsort_comparator(txn.get(), get()));
         } catch(Exception e) {
             txn.close();
             throw e;

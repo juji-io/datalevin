@@ -656,4 +656,7 @@ public final class Lib {
     @CFunction("dtlv_set_comparator")
     public static native int dtlv_set_comparator(MDB_txn txn, int dbi);
 
+    @CFunction("dtlv_set_dupsort_comparator")
+    public static native int dtlv_set_dupsort_comparator(MDB_txn txn, int dbi);
+
 }
