@@ -720,7 +720,7 @@ file issues or pull requests.
 
 If commercial support is needed for Datalevin, talk to us.
 
-You can talk to us in the `#datalevin` channel on [Clojurians Slack](https://clojurians.slack.com/join/shared_invite/zt-lsr4rn2f-jealnYXLHVZ61V2vdi15QQ#/shared-invite/email).
+You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://clojurians.net/).
 
 ## License
 
