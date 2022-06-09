@@ -9,7 +9,8 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
-            [taoensso.nippy :as nippy])
+            [taoensso.nippy :as nippy]
+            [clojure.string :as s])
   (:import [java.util UUID Arrays HashMap]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [java.lang Long]))
@@ -503,7 +504,7 @@
                   (u/delete-files dir)
                   (is (and put-ok del-ok)))))
 
-(deftest inverted-list-basic-ops-test
+(deftest list-basic-ops-test
   (let [dir     (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
         lmdb    (l/open-kv dir)
         pred    (i/inter-fn
@@ -517,8 +518,8 @@
                     (vswap! sum #(+ ^long %1 ^long %2) v)))]
     (l/open-list-dbi lmdb "inverted")
 
-    (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
-    (l/put-list-items lmdb "inverted" "b" [5 6 7] :string :long)
+    (l/put-list-items lmdb "inverted" "a" [2 3 1 4] :string :long)
+    (l/put-list-items lmdb "inverted" "b" [5 7 6] :string :long)
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
            (l/get-range lmdb "inverted" [:all] :string :long)))
@@ -558,6 +559,61 @@
 
     (is (= (l/filter-list lmdb "inverted" "b" pred :string :long) [3 5 7]))
     (is (= (l/filter-list-count lmdb "inverted" "b" pred :string) 3))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest list-string-test
+  (let [dir  (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        pred (i/inter-fn
+               [kv]
+               (let [^String v (b/read-buffer (l/v kv) :string)]
+                 (< (count v) 5)))]
+    (l/open-list-dbi lmdb "str")
+
+    (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
+    (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
+
+    (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
+            ["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:all] :string :string)))
+    (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
+            ["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:closed "a" "b"] :string :string)))
+    (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
+    (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
+
+    (is (= (l/list-count lmdb "str" "a" :string) 3))
+    (is (= (l/list-count lmdb "str" "b" :string) 3))
+
+    (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
+    (is (l/in-list? lmdb "str" "b" "hello" :string :string))
+
+    (is (= (l/get-list lmdb "str" "a" :string :string)
+           ["abc" "defg" "hi"]))
+
+    (l/del-list-items lmdb "str" "a" :string)
+
+    (is (= (l/list-count lmdb "str" "a" :string) 0))
+    (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
+    (is (nil? (l/get-list lmdb "str" "a" :string :string)))
+
+    (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
+
+    (is (= (l/list-count lmdb "str" "b" :string) 5))
+    (is (l/in-list? lmdb "str" "b" "good" :string :string))
+
+    (l/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
+
+    (is (= (l/list-count lmdb "str" "b" :string) 3))
+    (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
+
+    (is (= (l/filter-list lmdb "str" "b" pred :string :string)
+           ["good" "nice"]))
+    (is (= (l/filter-list-count lmdb "str" "b" pred :string) 2))
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
