@@ -184,24 +184,24 @@
         :pass-through)))
 
 (defn- datom->indexable
-  [schema ^Datom d high?]
+  [schema max-gt ^Datom d high?]
   (let [e  (.-e d)
         am (if high? c/amax c/a0)
         vm (if high? c/vmax c/v0)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-some [v (.-v d)]
-          (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) vm (:db/valueType p)))
-        (b/indexable e c/a0 c/v0 nil))
+          (b/indexable e (:db/aid p) v (:db/valueType p) max-gt)
+          (b/indexable e (:db/aid p) vm (:db/valueType p) max-gt))
+        (b/indexable e c/a0 c/v0 nil max-gt))
       (if-some [v (.-v d)]
         (if (integer? v)
           (if e
-            (b/indexable e am v :db.type/ref)
-            (b/indexable (if high? c/emax c/e0) am v :db.type/ref))
+            (b/indexable e am v :db.type/ref max-gt)
+            (b/indexable (if high? c/emax c/e0) am v :db.type/ref max-gt))
           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
                    {:v v}))
-        (b/indexable e am vm :db.type/sysMin)))))
+        (b/indexable e am vm :db.type/sysMin max-gt)))))
 
 (defn- index->dbi
   [index]
@@ -265,7 +265,6 @@
   (del-attr [this attr]
     "Delete an attribute, throw if there is still datom related to it")
   (load-datoms [this datoms] "Load datams into storage")
-  (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
     "Return true if there exists at least one datom in the given boundary
      (inclusive)")
@@ -439,7 +438,8 @@
       p))
 
   (del-attr [this attr]
-    (if (populated? this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
+    (if (populated? this :ave (d/datom c/e0 attr c/v0)
+                    (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
       (let [aid (:db/aid (schema attr))]
         (lmdb/transact-kv lmdb [[:del c/schema attr :attr]])
@@ -462,7 +462,7 @@
               del-ref-ds  (volatile! (transient #{}))]
           (lmdb/open-transact-kv lmdb)
           (-> (transact-datoms this ft-ds del-ref-ds datoms)
-              (update-encla lmdb schema refs v-classes v-rclasses
+              (update-encla lmdb schema max-gt refs v-classes v-rclasses
                             v-entities v-rentities v-max-cid)
               (update-links lmdb @v-entities v-links rlinks v-rlinks
                             (persistent! @del-ref-ds)))
@@ -481,65 +481,59 @@
             (throw e)))
         (finally (lmdb/close-transact-kv lmdb)))))
 
-  (fetch [this datom]
-    (mapv (partial retrieved->datom lmdb attrs)
-          (when-some [kv (lmdb/get-value lmdb c/eav
-                                         (datom->indexable schema datom false)
-                                         :eav :id false)]
-            [kv])))
-
   (populated? [_ index low-datom high-datom]
     (lmdb/get-first lmdb (index->dbi index)
                     [:closed
-                     (datom->indexable schema low-datom false)
-                     (datom->indexable schema high-datom true)]
+                     (datom->indexable schema c/g0 low-datom false)
+                     (datom->indexable schema c/gmax high-datom true)]
                     index :ignore true))
 
   (size [_ index low-datom high-datom]
     (lmdb/range-count lmdb (index->dbi index)
                       [:closed
-                       (datom->indexable schema low-datom false)
-                       (datom->indexable schema high-datom true)]
+                       (datom->indexable schema c/g0 low-datom false)
+                       (datom->indexable schema c/gmax high-datom true)]
                       index))
 
   (head [_ index low-datom high-datom]
     (retrieved->datom
-      lmdb attrs (lmdb/get-first lmdb (index->dbi index)
-                                 [:closed
-                                  (datom->indexable schema low-datom false)
-                                  (datom->indexable schema high-datom true)]
-                                 index :id)))
+      lmdb attrs (lmdb/get-first
+                   lmdb (index->dbi index)
+                   [:closed
+                    (datom->indexable schema c/g0 low-datom false)
+                    (datom->indexable schema c/gmax high-datom true)]
+                   index :id)))
 
   (tail [_ index high-datom low-datom]
     (retrieved->datom
       lmdb attrs (lmdb/get-first lmdb (index->dbi index)
                                  [:closed-back
-                                  (datom->indexable schema high-datom true)
-                                  (datom->indexable schema low-datom false)]
+                                  (datom->indexable schema c/g0 high-datom true)
+                                  (datom->indexable schema c/gmax low-datom false)]
                                  index :id)))
 
   (slice [_ index low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/get-range lmdb (index->dbi index)
                           [:closed
-                           (datom->indexable schema low-datom false)
-                           (datom->indexable schema high-datom true)]
+                           (datom->indexable schema c/g0 low-datom false)
+                           (datom->indexable schema c/gmax high-datom true)]
                           index :id)))
 
   (rslice [_ index high-datom low-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/get-range lmdb (index->dbi index)
                           [:closed-back
-                           (datom->indexable schema high-datom true)
-                           (datom->indexable schema low-datom false)]
+                           (datom->indexable schema c/g0 high-datom true)
+                           (datom->indexable schema c/gmax low-datom false)]
                           index :id)))
 
   (size-filter [_ index pred low-datom high-datom]
     (lmdb/range-filter-count lmdb (index->dbi index)
                              (datom-pred->kv-pred lmdb attrs index pred)
                              [:closed
-                              (datom->indexable schema low-datom false)
-                              (datom->indexable schema high-datom true)]
+                              (datom->indexable schema c/g0 low-datom false)
+                              (datom->indexable schema c/gmax high-datom true)]
                              index))
 
   (head-filter [_ index pred low-datom high-datom]
@@ -547,8 +541,8 @@
       lmdb attrs (lmdb/get-some lmdb (index->dbi index)
                                 (datom-pred->kv-pred lmdb attrs index pred)
                                 [:closed
-                                 (datom->indexable schema low-datom false)
-                                 (datom->indexable schema high-datom true)]
+                                 (datom->indexable schema c/g0 low-datom false)
+                                 (datom->indexable schema c/gmax high-datom true)]
                                 index :id)))
 
   (tail-filter [_ index pred high-datom low-datom]
@@ -556,8 +550,8 @@
       lmdb attrs (lmdb/get-some lmdb (index->dbi index)
                                 (datom-pred->kv-pred lmdb attrs index pred)
                                 [:closed-back
-                                 (datom->indexable schema high-datom true)
-                                 (datom->indexable schema low-datom false)]
+                                 (datom->indexable schema c/g0 high-datom true)
+                                 (datom->indexable schema c/gmax low-datom false)]
                                 index :id)))
 
   (slice-filter [_ index pred low-datom high-datom]
@@ -566,8 +560,8 @@
       (lmdb/range-filter lmdb (index->dbi index)
                          (datom-pred->kv-pred lmdb attrs index pred)
                          [:closed
-                          (datom->indexable schema low-datom false)
-                          (datom->indexable schema high-datom true)]
+                          (datom->indexable schema c/g0 low-datom false)
+                          (datom->indexable schema c/gmax high-datom true)]
                          index :id)))
 
   (rslice-filter
@@ -577,8 +571,8 @@
       (lmdb/range-filter lmdb (index->dbi index)
                          (datom-pred->kv-pred lmdb attrs index pred)
                          [:closed
-                          (datom->indexable schema high-datom true)
-                          (datom->indexable schema low-datom false)]
+                          (datom->indexable schema c/g0 high-datom true)
+                          (datom->indexable schema c/gmax low-datom false)]
                          index :id)))
 
   (scan-ref-v
@@ -686,6 +680,7 @@
   [^Store store tuples pred eid aids n al ah]
   (let [lmdb    (.-lmdb store)
         schema  (schema store)
+        max-gt  (max-gt store)
         attrs   (attrs store)
         values  (ArrayList.)
         i       (volatile! 0)
@@ -718,8 +713,9 @@
                       :else           :skip)))]
     (dotimes [_ n] (.add values (ArrayList.)))
     (lmdb/visit lmdb c/eav collect
-                [:open (datom->indexable schema (d/datom eid al nil) false)
-                 (datom->indexable schema (d/datom eid ah nil) true)] :eav-a)
+                [:open
+                 (datom->indexable schema max-gt (d/datom eid al nil) false)
+                 (datom->indexable schema max-gt (d/datom eid ah nil) true)] :eav-a)
     (convert-values lmdb values pred n)
     (into tuples (attr-values->tuples values eid n))))
 
@@ -728,14 +724,14 @@
   (let [[e attr v] (d/datom-eav d)
         {:keys [db/valueType db/aid db/fulltext]}
         (or ((schema store) attr) (swap-attr store attr identity))
-        i          (b/indexable e aid v valueType)]
+        max-gt     (max-gt store)
+        i          (b/indexable e aid v valueType max-gt)]
     (when fulltext (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
-      (let [max-gt (max-gt store)]
-        (advance-max-gt store)
-        [[:put c/eav i max-gt :eav :id]
-         [:put c/ave i max-gt :ave :id]
-         [:put c/giants max-gt d :id :datom [:append]]])
+      (do (advance-max-gt store)
+          [[:put c/eav i max-gt :eav :id]
+           [:put c/ave i max-gt :ave :id]
+           [:put c/giants max-gt d :id :datom [:append]]])
       [[:put c/eav i c/normal :eav :id]
        [:put c/ave i c/normal :ave :id]])))
 
@@ -744,7 +740,7 @@
   (let [[e attr v] (d/datom-eav d)
         {:keys [db/valueType db/aid db/fulltext]}
         ((schema store) attr)
-        i          (b/indexable e aid v valueType)
+        i          (b/indexable e aid v valueType (max-gt store))
         gt         (when (b/giant? i)
                      (lmdb/get-value (.-lmdb store) c/eav i :eav :id true true))]
     (when ((refs store) aid) (vswap! del-ref-ds conj! [v aid e]))
@@ -767,7 +763,7 @@
         (transient #{}) datoms))))
 
 (defn- scan-entity
-  [lmdb schema refs cur-ref-ds eid]
+  [lmdb schema max-gt refs cur-ref-ds eid]
   (let [aid-counts (volatile! {})
         datom      (d/datom eid nil nil)]
     (lmdb/visit lmdb c/eav
@@ -777,8 +773,8 @@
                    (when (refs aid)
                      (vswap! cur-ref-ds conj! [(b/get-value eav 1) aid eid])))
                 [:open
-                 (datom->indexable schema datom false)
-                 (datom->indexable schema datom true)]
+                 (datom->indexable schema max-gt datom false)
+                 (datom->indexable schema max-gt datom true)]
                 :eav-a true)
     @aid-counts))
 
@@ -833,11 +829,11 @@
       [:put c/encla cid [(classes cid) (rentities cid)] :id :data])))
 
 (defn- update-encla
-  [eids lmdb schema refs classes rclasses entities rentities max-cid]
+  [eids lmdb schema max-gt refs classes rclasses entities rentities max-cid]
   (let [cur-ref-ds   (volatile! (transient #{}))
         updated-cids (volatile! (transient #{}))]
     (doseq [eid  eids
-            :let [aid-counts (scan-entity lmdb schema refs cur-ref-ds eid)]]
+            :let [aid-counts (scan-entity lmdb max-gt schema refs cur-ref-ds eid)]]
       (if (empty? aid-counts)
         (del-entity updated-cids entities rentities eid)
         (let [my-aids (set (keys aid-counts))

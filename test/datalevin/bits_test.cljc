@@ -302,20 +302,20 @@
 (test/defspec keyword-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/keyword-ns]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/keyword)
-                 (sut/indexable e a c/v0 :db.type/keyword)
-                 (sut/indexable e a c/vmax :db.type/keyword))))
+    [v gen/keyword-ns]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/keyword c/normal)
+                  (sut/indexable e a c/v0 :db.type/keyword c/g0)
+                  (sut/indexable e a c/vmax :db.type/keyword c/gmax))))
 
 (test/defspec symbol-extrema-generative-test
   100
   (prop/for-all
     [v  gen/symbol-ns]
     (test-extrema v
-                  (sut/indexable e a v :db.type/symbol)
-                  (sut/indexable e a c/v0 :db.type/symbol)
-                  (sut/indexable e a c/vmax :db.type/symbol))))
+                  (sut/indexable e a v :db.type/symbol c/normal)
+                  (sut/indexable e a c/v0 :db.type/symbol c/g0)
+                  (sut/indexable e a c/vmax :db.type/symbol c/gmax))))
 
 ;; null character "^@" is a special case
 (test/defspec string-extrema-generative-test
@@ -325,37 +325,36 @@
                              (not= "^@" %))
                        gen/string)]
     (test-extrema v
-                  (sut/indexable e a v :db.type/string)
-                  (sut/indexable e a c/v0 :db.type/string)
-                  (sut/indexable e a c/vmax :db.type/string))))
+                  (sut/indexable e a v :db.type/string c/normal)
+                  (sut/indexable e a c/v0 :db.type/string c/g0)
+                  (sut/indexable e a c/vmax :db.type/string c/gmax))))
 
 (test/defspec boolean-extrema-generative-test
   5
   (prop/for-all
-   [v  gen/boolean]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/boolean)
-                 (sut/indexable e a c/v0 :db.type/boolean)
-                 (sut/indexable e a c/vmax :db.type/boolean))))
+    [v  gen/boolean]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/boolean c/normal)
+                  (sut/indexable e a c/v0 :db.type/boolean c/g0)
+                  (sut/indexable e a c/vmax :db.type/boolean c/gmax))))
 
 (test/defspec long-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/large-integer]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/long)
-                 (sut/indexable e a c/v0 :db.type/long)
-                 (sut/indexable e a c/vmax :db.type/long))))
+    [v  gen/large-integer]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/long c/normal)
+                  (sut/indexable e a c/v0 :db.type/long c/g0)
+                  (sut/indexable e a c/vmax :db.type/long c/gmax))))
 
 (test/defspec double-extrema-generative-test
   100
   (prop/for-all
     [v (gen/double* {:NaN? false})]
     (test-extrema v
-                  (sut/indexable e a v :db.type/double)
-                  (sut/indexable e a c/v0 :db.type/double)
-                  (sut/indexable e a c/vmax :db.type/double))))
-
+                  (sut/indexable e a v :db.type/double c/normal)
+                  (sut/indexable e a c/v0 :db.type/double c/g0)
+                  (sut/indexable e a c/vmax :db.type/double c/gmax))))
 
 (test/defspec float-extrema-generative-test
   100
@@ -363,27 +362,27 @@
     [v (gen/double* {:NaN? false})]
     (let [f (float v)]
       (test-extrema f
-                    (sut/indexable e a f :db.type/float)
-                    (sut/indexable e a c/v0 :db.type/float)
-                    (sut/indexable e a c/vmax :db.type/float)))))
+                    (sut/indexable e a f :db.type/float c/normal)
+                    (sut/indexable e a c/v0 :db.type/float c/g0)
+                    (sut/indexable e a c/vmax :db.type/float c/gmax)))))
 
 (test/defspec ref-extrema-generative-test
   100
   (prop/for-all
     [v  gen/nat]
     (test-extrema v
-                  (sut/indexable e a v :db.type/ref)
-                  (sut/indexable e a c/v0 :db.type/ref)
-                  (sut/indexable e a c/vmax :db.type/ref))))
+                  (sut/indexable e a v :db.type/ref c/normal)
+                  (sut/indexable e a c/v0 :db.type/ref c/g0)
+                  (sut/indexable e a c/vmax :db.type/ref c/gmax))))
 
 (test/defspec uuid-extrema-generative-test
   100
   (prop/for-all
     [v  gen/uuid]
     (test-extrema v
-                  (sut/indexable e a v :db.type/uuid)
-                  (sut/indexable e a c/v0 :db.type/uuid)
-                  (sut/indexable e a c/vmax :db.type/uuid))))
+                  (sut/indexable e a v :db.type/uuid c/normal)
+                  (sut/indexable e a c/v0 :db.type/uuid c/g0)
+                  (sut/indexable e a c/vmax :db.type/uuid c/gmax))))
 
 ;; orders
 
@@ -469,8 +468,8 @@
     (let [v'  (Date. ^long v)
           v1' (Date. ^long v1)]
       (eav-test v' e1 a1 v1'
-                (sut/indexable e a v' :db.type/instant)
-                (sut/indexable e1 a1 v1' :db.type/instant)))))
+                (sut/indexable e a v' :db.type/instant c/normal)
+                (sut/indexable e1 a1 v1' :db.type/instant c/normal)))))
 
 (test/defspec keyword-eav-generative-test
   100
@@ -480,8 +479,8 @@
      v1 gen/keyword-ns
      v gen/keyword-ns]
     (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/keyword)
-              (sut/indexable e1 a1 v1 :db.type/keyword))))
+              (sut/indexable e a v :db.type/keyword c/normal)
+              (sut/indexable e1 a1 v1 :db.type/keyword c/normal))))
 
 (test/defspec keyword-ave-generative-test
   100
@@ -491,8 +490,8 @@
      v1 gen/keyword-ns
      v gen/keyword-ns]
     (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/keyword)
-              (sut/indexable e1 a1 v1 :db.type/keyword))))
+              (sut/indexable e a v :db.type/keyword c/normal)
+              (sut/indexable e1 a1 v1 :db.type/keyword c/normal))))
 
 (test/defspec symbol-eav-generative-test
   100
@@ -502,8 +501,8 @@
      v1 gen/symbol-ns
      v gen/symbol-ns]
     (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/symbol)
-              (sut/indexable e1 a1 v1 :db.type/symbol))))
+              (sut/indexable e a v :db.type/symbol c/normal)
+              (sut/indexable e1 a1 v1 :db.type/symbol c/normal))))
 
 (test/defspec symbol-ave-generative-test
   100
@@ -513,8 +512,8 @@
      v1 gen/symbol-ns
      v  gen/symbol-ns]
     (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/symbol)
-              (sut/indexable e1 a1 v1 :db.type/symbol))))
+              (sut/indexable e a v :db.type/symbol c/normal)
+              (sut/indexable e1 a1 v1 :db.type/symbol c/normal))))
 
 (test/defspec string-eav-generative-test
   100
@@ -524,8 +523,8 @@
      v1 gen/string
      v  gen/string]
     (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/string)
-              (sut/indexable e1 a1 v1 :db.type/string))))
+              (sut/indexable e a v :db.type/string c/normal)
+              (sut/indexable e1 a1 v1 :db.type/string c/normal))))
 
 (test/defspec string-ave-generative-test
   100
@@ -535,8 +534,8 @@
      v1 gen/string
      v  gen/string]
     (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/string)
-              (sut/indexable e1 a1 v1 :db.type/string))))
+              (sut/indexable e a v :db.type/string c/normal)
+              (sut/indexable e1 a1 v1 :db.type/string c/normal))))
 
 (test/defspec boolean-eav-generative-test
   100
@@ -546,8 +545,8 @@
      v1 gen/boolean
      v  gen/boolean]
     (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/boolean)
-              (sut/indexable e1 a1 v1 :db.type/boolean))))
+              (sut/indexable e a v :db.type/boolean c/normal)
+              (sut/indexable e1 a1 v1 :db.type/boolean c/normal))))
 
 (test/defspec boolean-ave-generative-test
   100
@@ -557,8 +556,8 @@
      v1 gen/boolean
      v  gen/boolean]
     (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/boolean)
-              (sut/indexable e1 a1 v1 :db.type/boolean))))
+              (sut/indexable e a v :db.type/boolean c/normal)
+              (sut/indexable e1 a1 v1 :db.type/boolean c/normal))))
 
 (test/defspec long-eav-generative-test
   100
@@ -568,8 +567,8 @@
      v1 gen/large-integer
      v  gen/large-integer]
     (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/long)
-              (sut/indexable e1 a1 v1 :db.type/long))))
+              (sut/indexable e a v :db.type/long c/normal)
+              (sut/indexable e1 a1 v1 :db.type/long c/normal))))
 
 
 (test/defspec long-ave-generative-test
@@ -580,8 +579,8 @@
      v1 gen/large-integer
      v  gen/large-integer]
     (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/long)
-              (sut/indexable e1 a1 v1 :db.type/long))))
+              (sut/indexable e a v :db.type/long c/normal)
+              (sut/indexable e1 a1 v1 :db.type/long c/normal))))
 
 (test/defspec double-eav-generative-test
   100
@@ -591,8 +590,8 @@
      v1 (gen/double* {:NaN? false})
      v  (gen/double* {:NaN? false})]
     (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/double)
-              (sut/indexable e1 a1 v1 :db.type/double))))
+              (sut/indexable e a v :db.type/double c/normal)
+              (sut/indexable e1 a1 v1 :db.type/double c/normal))))
 
 (test/defspec double-ave-generative-test
   100
@@ -602,8 +601,8 @@
      v1 (gen/double* {:NaN? false})
      v  (gen/double* {:NaN? false})]
     (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/double)
-              (sut/indexable e1 a1 v1 :db.type/double))))
+              (sut/indexable e a v :db.type/double c/normal)
+              (sut/indexable e1 a1 v1 :db.type/double c/normal))))
 
 (test/defspec float-ave-generative-test
   100
@@ -615,15 +614,15 @@
     (let [f1 (float v1)
           f  (float v)]
       (ave-test f e1 a1 f1
-                (sut/indexable e a f :db.type/float)
-                (sut/indexable e1 a1 f1 :db.type/float)))))
+                (sut/indexable e a f :db.type/float c/normal)
+                (sut/indexable e1 a1 f1 :db.type/float c/normal)))))
 
 (test/defspec uuid-eav-generative-test
   50
   (prop/for-all
     [v  gen/uuid]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/uuid)
+          ^Indexable d   (sut/indexable e a v :db.type/uuid c/normal)
           _              (.clear ^ByteBuffer bf)
           _              (sut/put-buffer bf d :eav)
           _              (.flip ^ByteBuffer bf)
@@ -637,7 +636,7 @@
   (prop/for-all
     [v  gen/uuid]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/uuid)
+          ^Indexable d   (sut/indexable e a v :db.type/uuid c/normal)
           _              (.clear ^ByteBuffer bf)
           _              (sut/put-buffer bf d :ave)
           _              (.flip ^ByteBuffer bf)
@@ -652,7 +651,7 @@
     [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/bytes)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/bytes)
+          ^Indexable d   (sut/indexable e a v :db.type/bytes c/normal)
           _              (.clear ^ByteBuffer bf)
           _              (sut/put-buffer bf d :eav)
           _              (.flip ^ByteBuffer bf)
@@ -667,7 +666,7 @@
     [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/bytes)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/bytes)
+          ^Indexable d   (sut/indexable e a v :db.type/bytes c/normal)
           _              (.clear ^ByteBuffer bf)
           _              (sut/put-buffer bf d :ave)
           _              (.flip ^ByteBuffer bf)
@@ -686,7 +685,7 @@
     [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/any-equatable)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v nil)
+          ^Indexable d   (sut/indexable e a v nil c/normal)
           _              (.clear ^ByteBuffer bf)
           _              (sut/put-buffer bf d :eav)
           _              (.flip ^ByteBuffer bf)
@@ -701,7 +700,7 @@
     [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/any-equatable)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v nil)
+          ^Indexable d   (sut/indexable e a v nil c/normal)
           _              (.clear ^ByteBuffer bf)
           _              (sut/put-buffer bf d :ave)
           _              (.flip ^ByteBuffer bf)

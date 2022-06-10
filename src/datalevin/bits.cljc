@@ -418,10 +418,10 @@
     :db.type/long    (long-header v)
     nil))
 
-(deftype ^:no-doc Indexable [e a v f b h])
+(deftype ^:no-doc Indexable [e a v f b g])
 
 (defn pr-indexable [^Indexable i]
-  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-h i)])
+  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-g i)])
 
 (defmethod print-method Indexable
   [^Indexable i, ^Writer w]
@@ -430,8 +430,9 @@
 
 (defn ^:no-doc indexable
   "Turn datom parts into a form that is suitable for putting in indices,
-  where aid is the integer id of an attribute, vt is its :db/valueType"
-  [eid aid val vt]
+  where aid is the integer id of an attribute, vt is its :db/valueType,
+  max-gt is the current max giant id"
+  [eid aid val vt max-gt]
   (let [hdr (val-header val vt)]
     (if-let [vb (val-bytes val vt)]
       (let [bl   (alength ^bytes vb)
@@ -439,13 +440,13 @@
             bas  (if cut?
                    (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
                    vb)
-            hsh  (when cut? (hash val))]
-        (->Indexable eid aid val hdr bas hsh))
-      (->Indexable eid aid val hdr nil nil))))
+            gid  (if cut? max-gt c/normal)]
+        (->Indexable eid aid val hdr bas gid))
+      (->Indexable eid aid val hdr nil c/normal))))
 
 (defn ^:no-doc giant?
   [^Indexable i]
-  (.-h i))
+  (not= (.-g i) c/normal))
 
 (defn- put-uuid
   [bf ^UUID val]
@@ -480,10 +481,10 @@
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
-        (when (.-h x) (put-byte bf c/truncator)))
+        (when (giant? x) (put-byte bf c/truncator)))
     (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
-  (when-let [h (.-h x)] (put-int bf h)))
+  (put-long bf (.-g x)))
 
 (defn- put-ave
   [bf ^Indexable x]
@@ -491,11 +492,11 @@
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
-        (when (.-h x) (put-byte bf c/truncator)))
+        (when (giant? x) (put-byte bf c/truncator)))
     (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
-  (when-let [h (.-h x)] (put-int bf h)))
+  (put-long bf (.-g x)))
 
 (defn- sep->slash
   [^bytes bs]
@@ -549,13 +550,21 @@
     (do (.reset bf)
         (get-data bf post-v))))
 
-(deftype ^:no-doc Retrieved [e a v])
+(deftype ^:no-doc Retrieved [e a v g])
 
-(def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown))
+(defn pr-retrieved [^Retrieved r]
+  [(.-e r) (.-a r) (.-v r) (.-g r)])
+
+(defmethod print-method Retrieved
+  [^Retrieved r, ^Writer w]
+  (.write w "#datalevin/Retrieved ")
+  (.write w (pr-str (pr-retrieved r))))
+
+(def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown c/normal))
 
 (defn- indexable->retrieved
   [^Indexable i]
-  (->Retrieved (.-e i) (.-a i) (.-v i)))
+  (->Retrieved (.-e i) (.-a i) (.-v i) (.-g i)))
 
 (defn ^:no-doc expected-return
   "Given what's put in, return the expected output from storage"
@@ -571,16 +580,19 @@
   [bf]
   (let [e (get-long bf)
         a (get-int bf)
-        v (get-value bf 1)]
-    (->Retrieved e a v)))
+        v (get-value bf 9)
+        _ (get-byte bf)
+        g (get-long bf)]
+    (->Retrieved e a v g)))
 
 (defn- get-ave
   [bf]
   (let [a (get-int bf)
-        v (get-value bf 9)
+        v (get-value bf 17)
         _ (get-byte bf)
-        e (get-long bf)]
-    (->Retrieved e a v)))
+        e (get-long bf)
+        g (get-long bf)]
+    (->Retrieved e a v g)))
 
 (defn- put-attr
   "NB. not going to do range query on attr names"

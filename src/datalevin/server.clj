@@ -1421,10 +1421,6 @@
               (copy-out skey (into tx-data tempids)
                         c/+wire-datom-batch-size+))))))))
 
-(defn- fetch
-  [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error (normal-dt-store-handler fetch)))
-
 (defn- populated?
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler populated?)))
@@ -1733,7 +1729,6 @@
    'datom-count
    'load-datoms
    'tx-data
-   'fetch
    'populated?
    'size
    'head

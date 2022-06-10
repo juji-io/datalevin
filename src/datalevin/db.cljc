@@ -138,7 +138,7 @@
         [:search e a v]
         (case-tree
           [e a (some? v)]
-          [(s/fetch store (datom e a v)) ; e a v
+          [(s/slice store :eav (datom e a v) (datom e a v)) ; e a v
            (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/slice-filter store :eav
                            (fn [^Datom d] (= v (.-v d)))
@@ -161,7 +161,7 @@
         [:first e a v]
         (case-tree
           [e a (some? v)]
-          [(first (s/fetch store (datom e a v))) ; e a v
+          [(s/head store :eav (datom e a v) (datom e a v)) ; e a v
            (s/head store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/head-filter store :eav
                           (fn [^Datom d] (= v (.-v d)))
@@ -184,7 +184,7 @@
         [:last e a v]
         (case-tree
           [e a (some? v)]
-          [(first (s/fetch store (datom e a v))) ; e a v
+          [(s/tail store :eav (datom e a v) (datom e a v)) ; e a v
            (s/tail store :eav  (datom e a c/vmax) (datom e a c/v0)) ; e a _
            (s/tail-filter store :eav
                           (fn [^Datom d] (= v (.-v d)))

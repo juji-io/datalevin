@@ -60,7 +60,6 @@
         (is (= s (st/schema store)))
         (is (= 1 (st/datom-count store :eav)))
         (is (= 1 (st/datom-count store :ave)))
-        (is (= [d] (st/fetch store d)))
         (is (= [d] (st/slice store :eavt d d)))
         (is (= true (st/populated? store :eav d d)))
         (is (= 1 (st/size store :eav d d)))

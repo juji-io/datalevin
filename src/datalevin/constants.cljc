@@ -14,6 +14,8 @@
 (def ^:const txmax 0x7FFFFFFF)
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)
+(def ^:const g0    1)
+(def ^:const gmax  0x7FFFFFFF)
 (def ^:const a0    0)
 (def ^:const amax  0x7FFFFFFF)
 
@@ -50,9 +52,9 @@
 
 ;; index storage
 
-(def ^:const +val-prefix-size+  498)  ; - eid - aid - s
-(def ^:const +val-bytes-wo-hdr+ 496)  ; - hdr - 1 byte TBD
-(def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
+(def ^:const +val-prefix-size+  490)  ; - eid - aid - s - gid
+(def ^:const +val-bytes-wo-hdr+ 489)  ; - hdr
+(def ^:const +val-bytes-trunc+  488)  ; - tr
 
 (def ^:const +id-bytes+ Long/BYTES)
 

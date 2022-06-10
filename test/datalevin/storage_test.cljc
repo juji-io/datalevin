@@ -42,7 +42,6 @@
       (is (= s (sut/schema store)))
       (is (= 1 (sut/datom-count store :eav)))
       (is (= 1 (sut/datom-count store :ave)))
-      (is (= [d] (sut/fetch store d)))
       (is (= [d] (sut/slice store :eav d d)))
       (is (= true (sut/populated? store :eav d d)))
       (is (= 1 (sut/size store :eav d d)))
@@ -146,10 +145,10 @@
   (let [schema {:a {:db/valueType :db.type/string}}
         dir    (u/tmp-dir (str "datalevin-giants-str-test-" (UUID/randomUUID)))
         store  (sut/open dir schema)
-        v      (apply str (repeat 10000 (UUID/randomUUID)))
+        v      (apply str (repeat 1000 (UUID/randomUUID)))
         d      (d/datom c/e0 :a v)]
     (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
+    (is (= [d] (sut/slice store :eav d d)))
     (is (= [d] (sut/slice store :eavt
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
@@ -163,7 +162,7 @@
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
     (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
+    (is (= [d] (sut/slice store :eav d d)))
     (is (= [d] (sut/slice store :eavt
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
@@ -172,13 +171,13 @@
       (is (sut/populated? store' :eav
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax)))
-      (is (= [d] (sut/fetch store' d)))
+      (is (= [d] (sut/slice store' :eav d d)))
       (is (= [d] (sut/slice store' :eavt
                             (d/datom c/e0 :a c/v0)
                             (d/datom c/e0 :a c/vmax))))
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
-      (is (= [d1] (sut/fetch store' d1)))
+      (is (= [d1] (sut/slice store' :eav d1 d1)))
       (sut/close store'))
     (u/delete-files dir)))
 
@@ -189,7 +188,7 @@
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
     (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
+    (is (= [d] (sut/slice store :eav d d)))
     (is (= [d] (sut/slice store :eavt
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
@@ -199,13 +198,13 @@
       (is (sut/populated? store' :eav
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax)))
-      (is (= [d] (sut/fetch store' d)))
+      (is (= [d] (sut/slice store' :eav d d)))
       (is (= [d] (sut/slice store' :eavt
                             (d/datom c/e0 :a c/v0)
                             (d/datom c/e0 :a c/vmax))))
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
-      (is (= [d1] (sut/fetch store' d1)))
+      (is (= [d1] (sut/slice store' :eav d1 d1)))
       (sut/close store))
     ))
 
@@ -214,7 +213,7 @@
         dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store (sut/open dir)]
     (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
+    (is (= [d] (sut/slice store :eav d d)))
     (sut/close store)
     (u/delete-files dir)))
 
@@ -228,7 +227,7 @@
           dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
           store (sut/open dir)
           _     (sut/load-datoms store [d])
-          r     (sut/fetch store d)]
+          r     (sut/slice store :eav d d)]
       (sut/close store)
       (is (= [d] r)))))
 

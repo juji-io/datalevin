@@ -104,8 +104,6 @@
   (load-datoms [_ datoms]
     (load-datoms* client db-name datoms :raw))
 
-  (fetch [_ datom] (cl/normal-request client :fetch [db-name datom]))
-
   (populated? [_ index low-datom high-datom]
     (cl/normal-request client :populated? [db-name index low-datom high-datom]))
 

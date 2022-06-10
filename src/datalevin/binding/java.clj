@@ -4,6 +4,7 @@
             [datalevin.util :refer [raise] :as u]
             [datalevin.constants :as c]
             [datalevin.scan :as scan]
+            [clojure.stacktrace :as st]
             [datalevin.lmdb :as l
              :refer [open-kv open-list-dbi IBuffer IRange IRtx
                      IDB IKV IInvertedList ILMDB]])
@@ -83,6 +84,7 @@
       (b/put-buffer kb x t)
       (.flip kb)
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Error putting read-only transaction key buffer: "
                (ex-message e)
                {:value x :type t}))))
@@ -119,6 +121,7 @@
         (b/put-buffer start-kb x t)
         (.flip start-kb)
         (catch Exception e
+          (st/print-stack-trace e)
           (raise "Error putting read-only transaction start key buffer: "
                  (ex-message e)
                  {:value x :type t})))))
@@ -129,6 +132,7 @@
         (b/put-buffer stop-kb x t)
         (.flip stop-kb)
         (catch Exception e
+          (st/print-stack-trace e)
           (raise "Error putting read-only transaction stop key buffer: "
                  (ex-message e)
                  {:value x :type t})))))
@@ -162,6 +166,7 @@
       (b/put-buffer kb x t)
       (.flip kb)
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Error putting r/w key buffer of "
                (.dbi-name this) "with value" x ": " (ex-message e)
                {:type t}))))
@@ -176,6 +181,7 @@
           (b/put-buffer vb x t)
           (.flip vb)))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Error putting r/w value buffer of "
                (.dbi-name this) ": " (ex-message e)
                {:value x :type t :dbi (.dbi-name this)}))))
@@ -300,6 +306,7 @@
           (.drop ^Dbi (.-db dbi) txn)
           (.commit txn)))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
@@ -312,6 +319,7 @@
         (.remove dbis dbi-name)
         nil)
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
 
   (list-dbis [this]
@@ -319,6 +327,7 @@
     (try
       (mapv b/text-ba->str (.getDbiNames env))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to list DBIs: " (ex-message e) {}))))
 
   (copy [this dest]
@@ -355,6 +364,7 @@
     (try
       (stat-map (.stat env))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -366,6 +376,7 @@
                 ^Txn txn (.-txn rtx)]
             (stat-map (.stat db txn)))
           (catch Exception e
+            (st/print-stack-trace e)
             (raise "Fail to get stat: " (ex-message e) {:dbi dbi-name}))
           (finally (.return-rtx this rtx))))
       (l/stat this)))
@@ -377,6 +388,7 @@
       (try
         (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))
         (catch Exception e
+          (st/print-stack-trace e)
           (raise "Fail to get entries: " (ex-message e)
                  {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
@@ -390,6 +402,7 @@
                                 (b/allocate-buffer c/+max-key-size+)
                                 (b/allocate-buffer c/+max-key-size+)))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to open read/write transaction in LMDB: "
                (ex-message e) {}))))
 
@@ -402,6 +415,7 @@
           (vreset! write-txn nil)
           :committed))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
 
@@ -424,6 +438,7 @@
           (raise "Map is resized" {:resized true})
           (.transact-kv this txs)))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to transact to LMDB: " (ex-message e) {}))))
 
   (get-value [this dbi-name k]
@@ -543,6 +558,7 @@
                 (conj! holder (b/read-buffer (.val cur) vt)))
               (persistent! holder)))
           (catch Exception e
+            (st/print-stack-trace e)
             (raise "Fail to get inverted list: " (ex-message e)
                    {:dbi dbi-name}))
           (finally
@@ -573,6 +589,7 @@
               (.seek cur SeekOp/MDB_NEXT_DUP)
               (visitor kv)))
           (catch Exception e
+            (st/print-stack-trace e)
             (raise "Fail to get count of inverted list: " (ex-message e)
                    {:dbi dbi-name}))
           (finally
@@ -597,6 +614,7 @@
             (.count cur)
             0)
           (catch Exception e
+            (st/print-stack-trace e)
             (raise "Fail to get count of inverted list: " (ex-message e)
                    {:dbi dbi-name}))
           (finally
@@ -632,6 +650,7 @@
           (.put-stop-key rtx v vt)
           (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
           (catch Exception e
+            (st/print-stack-trace e)
             (raise "Fail to test if an item is in an inverted list: "
                    (ex-message e) {:dbi dbi-name}))
           (finally
@@ -661,6 +680,7 @@
                             (volatile! nil))]
        lmdb)
      (catch Exception e
+       (st/print-stack-trace e)
        (raise
          "Fail to open database: " (ex-message e)
          {:dir dir})))))
