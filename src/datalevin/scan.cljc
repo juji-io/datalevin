@@ -15,7 +15,7 @@
   (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
     (if ignore-key?
       (b/read-buffer bb v-type)
-      [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
+      [k (b/read-buffer bb v-type)])))
 
 (defn- read-key
   ([kv k-type v]

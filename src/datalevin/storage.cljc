@@ -729,11 +729,11 @@
     (when fulltext (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
       (do (advance-max-gt store)
-          [[:put c/eav i max-gt :eav :id]
-           [:put c/ave i max-gt :ave :id]
+          [[:put c/eav e i :id :avg]
+           [:put c/ave aid i :short-id :veg]
            [:put c/giants max-gt d :id :datom [:append]]])
-      [[:put c/eav i c/normal :eav :id]
-       [:put c/ave i c/normal :ave :id]])))
+      [[:put c/eav e i :id :avg]
+       [:put c/ave aid i :short-id :veg]])))
 
 (defn- delete-datom
   [^Store store ^Datom d ft-ds del-ref-ds]
@@ -907,11 +907,11 @@
 (defn- open-dbis
   [lmdb]
   (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
-  (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
+  (lmdb/open-list-dbi lmdb c/eav c/+id-bytes+ c/+max-key-size+)
+  (lmdb/open-list-dbi lmdb c/ave c/+short-id-bytes+ c/+max-key-size+)
+  (lmdb/open-list-dbi lmdb c/links (* 3 c/+short-id-bytes+) (* 2 c/+id-bytes+))
   (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
   (lmdb/open-dbi lmdb c/encla c/+id-bytes+)
-  (lmdb/open-list-dbi lmdb c/links (* 3 Integer/BYTES) (* 2 Long/BYTES))
   (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
   (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
 

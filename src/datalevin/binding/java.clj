@@ -559,8 +559,8 @@
               (persistent! holder)))
           (catch Exception e
             (st/print-stack-trace e)
-            (raise "Fail to get inverted list: " (ex-message e)
-                   {:dbi dbi-name}))
+            (raise "Fail to get list: " (ex-message e)
+                   {:dbi dbi-name :k k}))
           (finally
             (if (.isReadOnly txn)
               (.return-cursor dbi cur)
@@ -590,8 +590,8 @@
               (visitor kv)))
           (catch Exception e
             (st/print-stack-trace e)
-            (raise "Fail to get count of inverted list: " (ex-message e)
-                   {:dbi dbi-name}))
+            (raise "Fail to visit list: " (ex-message e)
+                   {:dbi dbi-name :k k}))
           (finally
             (if (.isReadOnly txn)
               (.return-cursor dbi cur)

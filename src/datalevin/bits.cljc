@@ -474,9 +474,8 @@
     -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
                                    (if val c/true-value c/false-value)))))
 
-(defn- put-eav
+(defn- put-avg
   [bf ^Indexable x]
-  (put-long bf (.-e x))
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
@@ -486,9 +485,8 @@
   (put-byte bf c/separator)
   (put-long bf (.-g x)))
 
-(defn- put-ave
+(defn- put-veg
   [bf ^Indexable x]
-  (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
@@ -550,10 +548,24 @@
     (do (.reset bf)
         (get-data bf post-v))))
 
-(deftype ^:no-doc Retrieved [e a v g])
+(defprotocol IRetrieved
+  (e [this])
+  (set-e [this e])
+  (a [this])
+  (set-a [this a]))
+
+(deftype Retrieved [^:volatile-mutable e
+                    ^:volatile-mutable a
+                    v
+                    g]
+  IRetrieved
+  (e [_] e)
+  (set-e [_ x] (set! e x))
+  (a [_] a)
+  (set-a [_ x] (set! a x)))
 
 (defn pr-retrieved [^Retrieved r]
-  [(.-e r) (.-a r) (.-v r) (.-g r)])
+  [(e r) (a r) (.-v r) (.-g r)])
 
 (defmethod print-method Retrieved
   [^Retrieved r, ^Writer w]
@@ -562,37 +574,21 @@
 
 (def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown c/normal))
 
-(defn- indexable->retrieved
-  [^Indexable i]
-  (->Retrieved (.-e i) (.-a i) (.-v i) (.-g i)))
-
-(defn ^:no-doc expected-return
-  "Given what's put in, return the expected output from storage"
-  [x x-type]
-  (case x-type
-    :eav  (indexable->retrieved x)
-    :eavt (indexable->retrieved x)
-    :ave  (indexable->retrieved x)
-    :avet (indexable->retrieved x)
-    x))
-
-(defn- get-eav
+(defn- get-avg
   [bf]
-  (let [e (get-long bf)
-        a (get-int bf)
+  (let [a (get-int bf)
         v (get-value bf 9)
         _ (get-byte bf)
         g (get-long bf)]
-    (->Retrieved e a v g)))
+    (->Retrieved nil a v g)))
 
-(defn- get-ave
+(defn- get-veg
   [bf]
-  (let [a (get-int bf)
-        v (get-value bf 17)
+  (let [v (get-value bf 17)
         _ (get-byte bf)
         e (get-long bf)
         g (get-long bf)]
-    (->Retrieved e a v g)))
+    (->Retrieved e nil v g)))
 
 (defn- put-attr
   "NB. not going to do range query on attr names"
@@ -674,6 +670,7 @@
      :long           (do (put-byte bf (raw-header x :long))
                          (put-long bf x))
      :id             (put-long bf x)
+     :short-id       (put-int bf x)
      :float          (do (put-byte bf (raw-header x :float))
                          (put-float bf x))
      :double         (do (put-byte bf (raw-header x :double))
@@ -695,11 +692,8 @@
                          (put-uuid bf x))
      :attr           (put-attr bf x)
      :datom          (put-nippy bf x)
-     :eav            (put-eav bf x)
-     :eav-a          (put-eav bf x)
-     :eavt           (put-eav bf x)
-     :ave            (put-ave bf x)
-     :avet           (put-ave bf x)
+     :avg            (put-avg bf x)
+     :veg            (put-veg bf x)
      :raw            (put-bytes bf x)
      (put-data bf x))))
 
@@ -730,6 +724,7 @@
      :doc-info       [(get-short bf) (get-data bf)]
      :long           (do (skip bf Byte/BYTES) (get-long bf))
      :id             (get-long bf)
+     :short-id       (get-int bf)
      :float          (do (skip bf Byte/BYTES) (get-float bf))
      :double         (do (skip bf Byte/BYTES) (get-double bf))
      :byte           (get-byte bf)
@@ -742,10 +737,12 @@
      :uuid           (do (skip bf Byte/BYTES) (get-uuid bf))
      :attr           (get-attr bf)
      :datom          (get-nippy bf)
-     :eav            (get-eav bf)
-     :eav-a          (do (skip bf Long/BYTES) (get-int bf))
-     :eavt           (get-eav bf)
-     :ave            (get-ave bf)
-     :avet           (get-ave bf)
+     :avg            (get-avg bf)
+     :veg            (get-veg bf)
+     ;; :eav            (get-eav bf)
+     ;; :eav-a          (do (skip bf Long/BYTES) (get-int bf))
+     ;; :eavt           (get-eav bf)
+     ;; :ave            (get-ave bf)
+     ;; :avet           (get-ave bf)
      :raw            (get-bytes bf)
      (get-data bf))))

@@ -57,6 +57,7 @@
 (def ^:const +val-bytes-trunc+  488)  ; - tr
 
 (def ^:const +id-bytes+ Long/BYTES)
+(def ^:const +short-id-bytes+ Integer/BYTES)
 
 ;; value headers
 (def ^:const type-long-neg (unchecked-byte 0xC0))
