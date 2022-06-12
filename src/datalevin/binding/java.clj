@@ -7,7 +7,7 @@
             [clojure.stacktrace :as st]
             [datalevin.lmdb :as l
              :refer [open-kv open-list-dbi IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB]])
+                     IDB IKV IList ILMDB]])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
@@ -528,7 +528,7 @@
   (open-list-dbi [lmdb dbi-name]
     (.open-list-dbi lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
 
-  IInvertedList
+  IList
   (put-list-items [this dbi-name k vs kt vt]
     (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
 
@@ -548,8 +548,8 @@
             ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
-          (.put-start-key rtx k kt)
-          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+          (.put-key rtx k kt)
+          (when (.get cur (.-kb rtx) GetOp/MDB_SET)
             (let [holder (transient [])]
               (.seek cur SeekOp/MDB_FIRST_DUP)
               (conj! holder (b/read-buffer (.val cur) vt))
@@ -624,17 +624,6 @@
             (.return-rtx this rtx))))
       0))
 
-  (filter-list [this dbi-name k pred k-type v-type]
-    (.filter-list this dbi-name k pred k-type v-type false))
-  (filter-list [this dbi-name k pred k-type v-type writing?]
-    (.range-filter this dbi-name pred [:closed k k] k-type v-type true
-                   writing?))
-
-  (filter-list-count [this dbi-name k pred k-type]
-    (.filter-list-count this dbi-name k pred k-type false))
-  (filter-list-count [this dbi-name k pred k-type writing?]
-    (.range-filter-count this dbi-name pred [:closed k k] k-type writing?))
-
   (in-list? [this dbi-name k v kt vt]
     (.in-list? this dbi-name k v kt vt false))
   (in-list? [this dbi-name k v kt vt writing?]
@@ -651,14 +640,45 @@
           (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
           (catch Exception e
             (st/print-stack-trace e)
-            (raise "Fail to test if an item is in an inverted list: "
+            (raise "Fail to test if an item is in a list: "
                    (ex-message e) {:dbi dbi-name}))
           (finally
             (if (.isReadOnly txn)
               (.return-cursor dbi cur)
               (.close cur))
             (.return-rtx this rtx))))
-      false)))
+      false))
+
+  (list-range-filter [this dbi-name pred k kt v-range vt]
+    (.list-range-filter this dbi-name pred k kt v-range vt false))
+  (list-range-filter [this dbi-name pred k kt v-range vt writing?]
+    (when k
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (if writing?
+                          @(.write-txn this)
+                          (.get-rtx this))
+            ^Txn txn    (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+            (let [holder (transient [])]
+              (.seek cur SeekOp/MDB_FIRST_DUP)
+              (conj! holder (b/read-buffer (.val cur) vt))
+              (dotimes [_ (dec (.count cur))]
+                (.seek cur SeekOp/MDB_NEXT_DUP)
+                (conj! holder (b/read-buffer (.val cur) vt)))
+              (persistent! holder)))
+          (catch Exception e
+            (st/print-stack-trace e)
+            (raise "Fail to get list: " (ex-message e)
+                   {:dbi dbi-name :k k}))
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))))
+  )
 
 (defmethod open-kv :java
   ([dir]

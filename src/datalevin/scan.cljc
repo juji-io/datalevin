@@ -18,15 +18,13 @@
       [k (b/read-buffer bb v-type)])))
 
 (defn- read-key
-  ([kv k-type v]
-   (read-key kv k-type v false))
-  ([kv k-type v rewind?]
-   (if (and v (not= v c/normal) (c/index-types k-type))
-     b/overflown-key
-     (b/read-buffer (if rewind?
-                      (.rewind ^ByteBuffer (l/k kv))
-                      (l/k kv))
-                    k-type))))
+  ([kv k-type]
+   (read-key kv k-type false))
+  ([kv k-type rewind?]
+   (b/read-buffer (if rewind?
+                    (.rewind ^ByteBuffer (l/k kv))
+                    (l/k kv))
+                  k-type)))
 
 (defn- fetch-first
   [dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -41,7 +39,7 @@
                      (b/read-buffer (l/v kv) v-type))]
             (if ignore-key?
               (if v v true)
-              [(read-key kv k-type v) v])))))))
+              [(read-key kv k-type) v])))))))
 
 (defn- fetch-range
   [dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
@@ -60,7 +58,7 @@
                 holder' (conj! holder
                                (if ignore-key?
                                  v
-                                 [(read-key kv k-type v) v]))]
+                                 [(read-key kv k-type) v]))]
             (recur iter holder'))
           (persistent! holder))))))
 
@@ -93,7 +91,7 @@
                                        v-type))]
                 (if ignore-key?
                   v
-                  [(read-key kv k-type v true) v]))
+                  [(read-key kv k-type true) v]))
               (recur iter))))))))
 
 (defn- fetch-range-filtered
@@ -115,7 +113,7 @@
                     holder' (conj! holder
                                    (if ignore-key?
                                      v
-                                     [(read-key kv k-type v true) v]))]
+                                     [(read-key kv k-type true) v]))]
                 (recur iter holder'))
               (recur iter holder)))
           (persistent! holder))))))
@@ -135,7 +133,7 @@
               (recur iter c)))
           c)))))
 
-(defmacro scan
+(defmacro scan-key
   [call error]
   `(do
      (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
@@ -153,14 +151,14 @@
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key? writing?]
-  (scan
+  (scan-key
     (fetch-value dbi rtx k k-type v-type ignore-key?)
     (raise "Fail to get-value: " (ex-message e)
            {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
 
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key? writing?]
-  (scan
+  (scan-key
     (fetch-first dbi rtx k-range k-type v-type ignore-key?)
     (raise "Fail to get-first: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
@@ -168,7 +166,7 @@
 
 (defn get-range
   [lmdb dbi-name k-range k-type v-type ignore-key? writing?]
-  (scan
+  (scan-key
     (fetch-range dbi rtx k-range k-type v-type ignore-key?)
     (raise "Fail to get-range: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
@@ -176,14 +174,14 @@
 
 (defn range-count
   [lmdb dbi-name k-range k-type writing?]
-  (scan
+  (scan-key
     (fetch-range-count dbi rtx k-range k-type)
     (raise "Fail to range-count: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))
 
 (defn get-some
   [lmdb dbi-name pred k-range k-type v-type ignore-key? writing?]
-  (scan
+  (scan-key
     (fetch-some dbi rtx pred k-range k-type v-type ignore-key?)
     (raise "Fail to get-some: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
@@ -191,7 +189,7 @@
 
 (defn range-filter
   [lmdb dbi-name pred k-range k-type v-type ignore-key? writing?]
-  (scan
+  (scan-key
     (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
     (raise "Fail to range-filter: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
@@ -199,14 +197,14 @@
 
 (defn range-filter-count
   [lmdb dbi-name pred k-range k-type writing?]
-  (scan
+  (scan-key
     (fetch-range-filtered-count dbi rtx pred k-range k-type)
     (raise "Fail to range-filter-count: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))
 
 (defn visit
   [lmdb dbi-name visitor k-range k-type writing?]
-  (scan
+  (scan-key
     (let [[range-type k1 k2] k-range
           info               (l/range-info rtx range-type k1 k2)]
       (when k1 (l/put-start-key rtx k1 k-type))
@@ -218,3 +216,23 @@
             (recur iter)))))
     (raise "Fail to visit: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))
+
+(defmacro scan-list
+  [call error]
+  `(do
+     (let [~'dbi (.get-dbi ~'lmdb ~'dbi-name false)
+           ~'rtx (if ~'writing?
+                   @(l/write-txn ~'lmdb)
+                   (l/get-rtx ~'lmdb))
+           ~'txn (.-txn ~'rtx)
+           ~'cur (.get-cursor ~'dbi ~'txn)]
+       (try
+         ~call
+         (catch Exception ~'e
+           (st/print-stack-trace ~'e)
+           ~error)
+         (finally
+           (if (.isReadOnly ~'txn)
+             (.return-cursor ~'dbi ~'cur)
+             (.close ~'cur))
+           (.return-rtx ~'lmdb ~'rtx))))))

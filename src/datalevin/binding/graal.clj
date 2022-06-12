@@ -6,7 +6,7 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-list-dbi IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB]])
+                     IDB IKV IList ILMDB]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
            [java.nio ByteBuffer BufferOverflowException]
@@ -737,7 +737,7 @@
   (open-list-dbi [lmdb dbi-name]
     (.open-list-dbi lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
 
-  IInvertedList
+  IList
   (put-list-items [this dbi-name k vs kt vt]
     (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
 

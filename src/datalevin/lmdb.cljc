@@ -33,13 +33,13 @@
   (k [this] "Key of a key value pair")
   (v [this] "Value of a key value pair"))
 
-(defprotocol IInvertedList
+(defprotocol IList
   (put-list-items [db list-name k vs k-type v-type]
-    "put an inverted list by key")
+    "put an list by key")
   (del-list-items
     [db list-name k k-type]
     [db list-name k vs k-type v-type]
-    "delete an inverted list or its items by key")
+    "delete an list or its items by key")
   (get-list
     [db list-name k k-type v-type]
     [db list-name k k-type v-type writing?]
@@ -51,26 +51,29 @@
   (list-count
     [db list-name k k-type]
     [db list-name k k-type writing?]
-    "get the number of items in the inverted list")
-  (filter-list
-    [db list-name k pred k-type v-type]
-    [db list-name k pred k-type v-type writing?]
-    "predicate filtered items of a list")
-  (filter-list-count
-    [db list-name k pred k-type]
-    [db list-name k pred k-type writing?]
-    "get the count of predicate filtered items of a list")
+    "get the number of items in the list")
   (in-list?
     [db list-name k v k-type v-type]
     [db list-name k v k-type v-type writing?]
-    "return true if an item is in an inverted list"))
+    "return true if an item is in the list")
+  (list-range-filter
+    [db list-name pred k k-type v-range v-type]
+    [db list-name pred k k-type v-range v-type writing?]
+    "Return a seq of values in the specified value range of the key")
+  (list-range-filter-count
+    [db list-name pred k k-type v-range v-type]
+    [db list-name pred k k-type v-range v-type writing?]
+    "Return the count of values in the specified value range of the key")
+  (list-some
+    [db list-name pred k k-type v-range v-type]
+    [db list-name pred k k-type v-range v-type writing?]
+    "Return the first value in the specified value range of the key"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
-    ;; [db]
     [db dbi-name]
     [db dbi-name key-size]
     [db dbi-name key-size val-size]
@@ -163,6 +166,15 @@
     [db dbi-name visitor k-range k-type writing?]
     "Call `visitor` function on each kv pairs in the specified key range, presumably
      for side effects. Return nil."))
+
+(deftype Range [f?  ; forward?
+                s?  ; has start?
+                is? ; inclusive at start?
+                e?  ; has end?
+                ie? ; inclusive at end?
+                s   ; start value
+                e   ; end value
+                ])
 
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 

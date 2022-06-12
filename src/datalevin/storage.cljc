@@ -8,7 +8,8 @@
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             ;; [taoensso.timbre :as log]
-            [clojure.set :as set])
+            [clojure.set :as set]
+            [datalevin.lmdb :as l])
   (:import [java.util UUID ArrayList]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -211,6 +212,14 @@
     :avet c/ave
     :ave  c/ave))
 
+(defn- index->vtype
+  [index]
+  (case index
+    :eavt :avg
+    :eav  :avg
+    :avet :veg
+    :ave  :veg))
+
 (defn- retrieved->datom
   [lmdb attrs [^Retrieved k ^long v :as kv]]
   (when kv
@@ -382,10 +391,8 @@
     refs)
 
   (init-max-eid [_]
-    (or (when-let [[k v] (lmdb/get-first lmdb c/eav [:all-back] :eav :id)]
-          (if (= c/overflown (.-a ^Retrieved k))
-            (.-e ^Datom (lmdb/get-value lmdb c/giants v :id :datom))
-            (.-e ^Retrieved k)))
+    (or (when-let [[e _] (lmdb/get-first lmdb c/eav [:all-back] :id :avg)]
+          e)
         c/e0))
 
   (datom-count [_ index]
@@ -742,7 +749,7 @@
         ((schema store) attr)
         i          (b/indexable e aid v valueType (max-gt store))
         gt         (when (b/giant? i)
-                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id true true))]
+                     )]
     (when ((refs store) aid) (vswap! del-ref-ds conj! [v aid e]))
     (when fulltext (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]

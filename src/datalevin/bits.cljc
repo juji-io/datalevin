@@ -418,17 +418,25 @@
     :db.type/long    (long-header v)
     nil))
 
-(deftype ^:no-doc Indexable [e a v f b g])
+(defprotocol IIndexable
+  (g [this])
+  (set-g [this x]))
+
+(deftype Indexable [e a v f b
+                    ^:volatile-mutable g]
+  IIndexable
+  (g [_] g)
+  (set-g [_ x] (set! g x)))
 
 (defn pr-indexable [^Indexable i]
-  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-g i)])
+  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (g i)])
 
 (defmethod print-method Indexable
   [^Indexable i, ^Writer w]
   (.write w "#datalevin/Indexable ")
   (.write w (pr-str (pr-indexable i))))
 
-(defn ^:no-doc indexable
+(defn indexable
   "Turn datom parts into a form that is suitable for putting in indices,
   where aid is the integer id of an attribute, vt is its :db/valueType,
   max-gt is the current max giant id"
@@ -444,9 +452,9 @@
         (->Indexable eid aid val hdr bas gid))
       (->Indexable eid aid val hdr nil c/normal))))
 
-(defn ^:no-doc giant?
+(defn giant?
   [^Indexable i]
-  (not= (.-g i) c/normal))
+  (not= (g i) c/normal))
 
 (defn- put-uuid
   [bf ^UUID val]
@@ -483,7 +491,7 @@
         (when (giant? x) (put-byte bf c/truncator)))
     (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
-  (put-long bf (.-g x)))
+  (put-long bf (g x)))
 
 (defn- put-veg
   [bf ^Indexable x]
@@ -494,7 +502,7 @@
     (put-native bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
-  (put-long bf (.-g x)))
+  (put-long bf (g x)))
 
 (defn- sep->slash
   [^bytes bs]
@@ -572,7 +580,7 @@
   (.write w "#datalevin/Retrieved ")
   (.write w (pr-str (pr-retrieved r))))
 
-(def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown c/normal))
+;; (def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown c/normal))
 
 (defn- get-avg
   [bf]
