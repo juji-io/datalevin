@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- Fixed adding created time schema for old Datalog DB (thx @jdf-id-au)
+
 ## 0.6.13
 ### Fixed
 - Schema update regression. #124
