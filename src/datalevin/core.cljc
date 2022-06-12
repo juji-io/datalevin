@@ -201,6 +201,8 @@ Only usable for debug output.
 
  `opts` map has keys:
 
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
    * `:search-engine`, a option map that will be passed to the search engine
@@ -250,6 +252,8 @@ Only usable for debug output.
        :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
+
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
@@ -440,6 +444,9 @@ Only usable for debug output.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
+
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
   "
   ([datoms] (conn-from-db (init-db datoms)))
@@ -455,6 +462,8 @@ Only usable for debug output.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
+
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
@@ -724,10 +733,8 @@ Only usable for debug output.
 (defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
 (defn- new-conn
-  [dir schema]
-  (let [conn (if schema
-               (create-conn dir schema)
-               (create-conn dir))]
+  [dir schema opts]
+  (let [conn (create-conn dir schema opts)]
     (add-conn dir conn)
     conn))
 
@@ -736,11 +743,13 @@ Only usable for debug output.
 
   See also [[create-conn]] and [[with-conn]]"
   ([dir]
-   (get-conn dir nil))
+   (get-conn dir nil nil))
   ([dir schema]
+   (get-conn dir schema nil))
+  ([dir schema opts]
    (if-let [c (get @connections dir)]
-     (if (closed? c) (new-conn dir schema) c)
-     (new-conn dir schema))))
+     (if (closed? c) (new-conn dir schema opts) c)
+     (new-conn dir schema opts))))
 
 (defmacro with-conn
   "Evaluate body in the context of an connection to the database.
@@ -764,8 +773,8 @@ Only usable for debug output.
   [spec & body]
   `(let [dir#    ~(second spec)
          schema# ~(second (rest spec))
-         conn#   (get-conn dir#)]
-     (when schema# (update-schema conn# schema#))
+         opts#   ~(second (rest (rest spec)))
+         conn#   (get-conn dir# schema# opts#)]
      (try
        (let [~(first spec) conn#] ~@body)
        (finally
@@ -889,7 +898,7 @@ Only usable for debug output.
   `opts` is an option map that may have the following keys:
   * `:mapsize` is the initial size of the database. This will be expanded as needed
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
-     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB)_NOSUBDIR, and so on.
+     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
 
   Please note:
 
@@ -927,12 +936,12 @@ Only usable for debug output.
        :doc      "Return the path or URI string of the key-value store"}
   dir l/dir)
 
-(def ^{:arglists '([db]
-                   [db dbi-name]
-                   [db dbi-name key-size]
-                   [db dbi-name key-size val-size]
-                   [db dbi-name key-size val-size flags])
-       :doc      "Open a named DBI (i.e. sub-db) or unamed main DBI in the key-value store"}
+(def ^{:arglists '([db dbi-name]
+                   [db dbi-name opts])
+       :doc      "Open a named DBI (i.e. sub-db) in the key-value store. `opts` is an option map that may have the following keys:
+   * `:key-size` is the max size of the key in bytes, cannot be greater than 511, default is 511.
+   * `:val-size` is the default size of the value in bytes, Datalevin will automatically increase the size if a larger value is transacted.
+   * `:flags` is a vector of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `[:create]`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
   open-dbi l/open-dbi)
 
 (def ^{:arglists '([db dbi-name])

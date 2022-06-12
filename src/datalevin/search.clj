@@ -550,10 +550,10 @@
 (defn- open-dbis
   [lmdb terms-dbi docs-dbi positions-dbi]
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-  (l/open-dbi lmdb terms-dbi c/+max-key-size+)
-  (l/open-dbi lmdb docs-dbi Integer/BYTES)
-  (l/open-inverted-list lmdb positions-dbi (* 2 Integer/BYTES)
-                        c/+max-key-size+))
+  (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
+  (l/open-dbi lmdb docs-dbi {:key-size Integer/BYTES})
+  (l/open-inverted-list lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
+                                            :val-size c/+max-key-size+}))
 
 (defn new-search-engine
   ([lmdb]

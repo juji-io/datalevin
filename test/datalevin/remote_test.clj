@@ -182,7 +182,7 @@
     (is (instance? datalevin.remote.KVStore store))
     (l/open-dbi store "a")
     (l/open-dbi store "b")
-    (l/open-dbi store "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi store "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (l/open-dbi store "d")
 
     (testing "list dbis"
@@ -269,7 +269,7 @@
 
     (testing "range and filter queries"
       (let [store (sut/open-kv dir)]
-        (l/open-dbi store "r" (inc Long/BYTES) (inc Long/BYTES))
+        (l/open-dbi store "r" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
         (let [ks   (shuffle (range 0 10000))
               vs   (map inc ks)
               txs  (map (fn [k v] [:put "r" k v :long :long]) ks vs)

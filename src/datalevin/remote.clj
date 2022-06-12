@@ -190,15 +190,9 @@
   (dir [_] uri)
 
   (open-dbi [db dbi-name]
-    (l/open-dbi db dbi-name c/+max-key-size+ c/+default-val-size+
-                c/default-dbi-flags))
-  (open-dbi [db dbi-name key-size]
-    (l/open-dbi db dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
-  (open-dbi [db dbi-name key-size val-size]
-    (l/open-dbi db dbi-name key-size val-size c/default-dbi-flags))
-  (open-dbi [_ dbi-name key-size val-size flags]
-    (cl/normal-request client :open-dbi
-                       [db-name dbi-name key-size val-size flags]))
+    (l/open-dbi db dbi-name nil))
+  (open-dbi [_ dbi-name opts]
+    (cl/normal-request client :open-dbi [db-name dbi-name opts]))
 
   (clear-dbi [db dbi-name]
     (cl/normal-request client :clear-dbi [db-name dbi-name]))

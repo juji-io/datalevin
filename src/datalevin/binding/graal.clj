@@ -420,14 +420,13 @@
     dir)
 
   (open-dbi [this dbi-name]
-    (.open-dbi
-      this dbi-name c/+max-key-size+ c/+default-val-size+ c/default-dbi-flags))
-  (open-dbi [this dbi-name key-size]
-    (.open-dbi this dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
-  (open-dbi [this dbi-name key-size val-size]
-    (.open-dbi this dbi-name key-size val-size c/default-dbi-flags))
-  (open-dbi [_ dbi-name key-size val-size flags]
+    (.open-dbi this dbi-name nil))
+  (open-dbi [_ dbi-name {:keys [key-size val-size flags]
+                         :or   {key-size c/+max-key-size+
+                                val-size c/+default-val-size+
+                                flags    c/default-dbi-flags}}]
     (assert (not closed?) "LMDB env is closed.")
+    (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kp  (BufVal/create key-size)
           vp  (BufVal/create val-size)
           dbi (Dbi/create env dbi-name (kv-flags flags))

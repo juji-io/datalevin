@@ -524,6 +524,16 @@
   [lmdb]
   (into {} (lmdb/get-range lmdb c/opts [:all] :attr :data)))
 
+(defn- open-dbis
+  [lmdb]
+  (lmdb/open-dbi lmdb c/eav {:key-size c/+max-key-size+ :val-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/ave {:key-size c/+max-key-size+ :val-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/vea {:key-size c/+max-key-size+ :val-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
+  (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
+  (lmdb/open-dbi lmdb c/opts {:key-size c/+max-key-size+}))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -535,13 +545,7 @@
   ([dir schema opts]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
-     (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/opts c/+max-key-size+)
+     (open-dbis lmdb)
      (when opts (transact-opts lmdb opts))
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb

@@ -11,7 +11,6 @@
             [clojure.test.check.properties :as prop]
             [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays HashMap]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [java.lang Long]))
 
 (if (u/graal?)
@@ -23,7 +22,7 @@
         lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "b")
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (l/open-dbi lmdb "d")
 
     (testing "list dbis"
@@ -143,7 +142,7 @@
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks  (shuffle (range 0 1000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)]
@@ -166,7 +165,7 @@
 (deftest get-range-no-gap-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 1000))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -197,7 +196,8 @@
   (let [dir        (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         db         (l/open-kv dir)
         misc-table "misc-test-table"]
-    (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
+    (l/open-dbi db misc-table {:key-size (b/type-size :long)
+                               :val-size (b/type-size :long)})
     (l/transact-kv db
                    [[:put misc-table 1 1 :long :long]
                     [:put misc-table 2 2 :long :long]
@@ -320,7 +320,7 @@
 (deftest get-some-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -336,7 +336,7 @@
 (deftest range-filter-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
