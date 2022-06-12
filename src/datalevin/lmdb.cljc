@@ -13,6 +13,8 @@
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
 (defprotocol IRtx
+  (read-only? [this])
+  (get-txn [this] "access the transaction")
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
@@ -27,6 +29,7 @@
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
   (iterate-kv [this rtx range-info] "Return an Iterable given the range")
   (get-cursor [this txn] "Get a reusable read-only cursor")
+  (close-cursor [this cur] "Close cursor")
   (return-cursor [this cur] "Return a read-only cursor after use"))
 
 (defprotocol IKV

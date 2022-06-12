@@ -220,19 +220,19 @@
 (defmacro scan-list
   [call error]
   `(do
-     (let [~'dbi (.get-dbi ~'lmdb ~'dbi-name false)
+     (let [~'dbi (l/get-dbi ~'this ~'dbi-name false)
            ~'rtx (if ~'writing?
-                   @(l/write-txn ~'lmdb)
-                   (l/get-rtx ~'lmdb))
-           ~'txn (.-txn ~'rtx)
-           ~'cur (.get-cursor ~'dbi ~'txn)]
+                   @(l/write-txn ~'this)
+                   (l/get-rtx ~'this))
+           ~'txn (l/get-txn ~'rtx)
+           ~'cur (l/get-cursor ~'dbi ~'txn)]
        (try
          ~call
          (catch Exception ~'e
            (st/print-stack-trace ~'e)
            ~error)
          (finally
-           (if (.isReadOnly ~'txn)
-             (.return-cursor ~'dbi ~'cur)
-             (.close ~'cur))
-           (.return-rtx ~'lmdb ~'rtx))))))
+           (if (l/read-only? ~'rtx)
+             (l/return-cursor ~'dbi ~'cur)
+             (l/close-cursor ~'dbi ~'cur))
+           (l/return-rtx ~'this ~'rtx))))))

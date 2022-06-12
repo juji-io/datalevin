@@ -138,6 +138,10 @@
                  {:value x :type t})))))
 
   IRtx
+  (read-only? [_]
+    (.isReadOnly txn))
+  (get-txn [_]
+    txn)
   (close-rtx [_]
     (.close txn))
   (reset [this]
@@ -213,7 +217,9 @@
             (.renew cur txn)
             cur))
         (.openCursor db txn)))
-  (return-cursor [this cur]
+  (close-cursor [_ cur]
+    (.close ^Cursor cur))
+  (return-cursor [_ cur]
     (.add curs cur)))
 
 (defn- up-db-size [^Env env]
@@ -248,6 +254,44 @@
                     (.put-val dbi v vt)
                     (.del dbi txn false)))
       (raise "Unknown kv operator: " op {}))))
+
+(defn- get-list*
+  [^Rtx rtx ^Cursor cur k kt vt]
+  (.put-key rtx k kt)
+  (when (.get cur (.-kb rtx) GetOp/MDB_SET)
+    (let [holder (transient [])]
+      (.seek cur SeekOp/MDB_FIRST_DUP)
+      (conj! holder (b/read-buffer (.val cur) vt))
+      (dotimes [_ (dec (.count cur))]
+        (.seek cur SeekOp/MDB_NEXT_DUP)
+        (conj! holder (b/read-buffer (.val cur) vt)))
+      (persistent! holder))))
+
+(defn- visit-list*
+  [^Rtx rtx ^Cursor cur k kt visitor]
+  (let [kv (reify IKV
+             (k [_] (.key cur))
+             (v [_] (.val cur)))]
+    (.put-key rtx k kt)
+    (when (.get cur (.-kb rtx) GetOp/MDB_SET)
+      (.seek cur SeekOp/MDB_FIRST_DUP)
+      (visitor kv)
+      (dotimes [_ (dec (.count cur))]
+        (.seek cur SeekOp/MDB_NEXT_DUP)
+        (visitor kv)))))
+
+(defn- list-count*
+  [^Rtx rtx ^Cursor cur k kt]
+  (.put-key rtx k kt)
+  (if (.get cur (.-kb rtx) GetOp/MDB_SET)
+    (.count cur)
+    0))
+
+(defn- in-list?*
+  [^Rtx rtx ^Cursor cur k kt v vt]
+  (.put-start-key rtx k kt)
+  (.put-stop-key rtx v vt)
+  (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH))
 
 (deftype LMDB [^Env env
                ^String dir
@@ -541,143 +585,42 @@
     (.get-list this dbi-name k kt vt false))
   (get-list [this dbi-name k kt vt writing?]
     (when k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (if writing?
-                          @(.write-txn this)
-                          (.get-rtx this))
-            ^Txn txn    (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-key rtx k kt)
-          (when (.get cur (.-kb rtx) GetOp/MDB_SET)
-            (let [holder (transient [])]
-              (.seek cur SeekOp/MDB_FIRST_DUP)
-              (conj! holder (b/read-buffer (.val cur) vt))
-              (dotimes [_ (dec (.count cur))]
-                (.seek cur SeekOp/MDB_NEXT_DUP)
-                (conj! holder (b/read-buffer (.val cur) vt)))
-              (persistent! holder)))
-          (catch Exception e
-            (st/print-stack-trace e)
-            (raise "Fail to get list: " (ex-message e)
-                   {:dbi dbi-name :k k}))
-          (finally
-            (if (.isReadOnly txn)
-              (.return-cursor dbi cur)
-              (.close cur))
-            (.return-rtx this rtx))))))
+      (scan/scan-list
+        (get-list* rtx cur k kt vt)
+        (raise "Fail to get list: " (ex-message e) {:dbi dbi-name :k k}))))
 
   (visit-list [this dbi-name visitor k kt]
     (.visit-list this dbi-name visitor k kt false))
   (visit-list [this dbi-name visitor k kt writing?]
     (when k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (if writing?
-                          @(.write-txn this)
-                          (.get-rtx this))
-            ^Txn txn    (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)
-            kv          (reify IKV
-                          (k [_] (.key cur))
-                          (v [_] (.val cur)))]
-        (try
-          (.put-start-key rtx k kt)
-          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (.seek cur SeekOp/MDB_FIRST_DUP)
-            (visitor kv)
-            (dotimes [_ (dec (.count cur))]
-              (.seek cur SeekOp/MDB_NEXT_DUP)
-              (visitor kv)))
-          (catch Exception e
-            (st/print-stack-trace e)
-            (raise "Fail to visit list: " (ex-message e)
-                   {:dbi dbi-name :k k}))
-          (finally
-            (if (.isReadOnly txn)
-              (.return-cursor dbi cur)
-              (.close cur))
-            (.return-rtx this rtx))))))
+      (scan/scan-list
+        (visit-list* rtx cur k kt visitor)
+        (raise "Fail to visit list: " (ex-message e) {:dbi dbi-name :k k}))))
 
   (list-count [this dbi-name k kt]
     (.list-count this dbi-name k kt false))
   (list-count [this dbi-name k kt writing?]
     (if k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (if writing?
-                          @(.write-txn this)
-                          (.get-rtx this))
-            ^Txn txn    (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-start-key rtx k kt)
-          (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (.count cur)
-            0)
-          (catch Exception e
-            (st/print-stack-trace e)
-            (raise "Fail to get count of inverted list: " (ex-message e)
-                   {:dbi dbi-name}))
-          (finally
-            (if (.isReadOnly txn)
-              (.return-cursor dbi cur)
-              (.close cur))
-            (.return-rtx this rtx))))
+      (scan/scan-list
+        (list-count* rtx cur k kt)
+        (raise "Fail to count list: " (ex-message e) {:dbi dbi-name :k k}))
       0))
 
   (in-list? [this dbi-name k v kt vt]
     (.in-list? this dbi-name k v kt vt false))
   (in-list? [this dbi-name k v kt vt writing?]
     (if (and k v)
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (if writing?
-                          @(.write-txn this)
-                          (.get-rtx this))
-            ^Txn txn    (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-start-key rtx k kt)
-          (.put-stop-key rtx v vt)
-          (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
-          (catch Exception e
-            (st/print-stack-trace e)
-            (raise "Fail to test if an item is in a list: "
-                   (ex-message e) {:dbi dbi-name}))
-          (finally
-            (if (.isReadOnly txn)
-              (.return-cursor dbi cur)
-              (.close cur))
-            (.return-rtx this rtx))))
+      (scan/scan-list
+        (in-list?* rtx cur k kt v vt)
+        (raise "Fail to test if an item is in list: "
+               (ex-message e) {:dbi dbi-name :k k :v v}))
       false))
 
   (list-range-filter [this dbi-name pred k kt v-range vt]
     (.list-range-filter this dbi-name pred k kt v-range vt false))
   (list-range-filter [this dbi-name pred k kt v-range vt writing?]
     (when k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (if writing?
-                          @(.write-txn this)
-                          (.get-rtx this))
-            ^Txn txn    (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-start-key rtx k kt)
-          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (let [holder (transient [])]
-              (.seek cur SeekOp/MDB_FIRST_DUP)
-              (conj! holder (b/read-buffer (.val cur) vt))
-              (dotimes [_ (dec (.count cur))]
-                (.seek cur SeekOp/MDB_NEXT_DUP)
-                (conj! holder (b/read-buffer (.val cur) vt)))
-              (persistent! holder)))
-          (catch Exception e
-            (st/print-stack-trace e)
-            (raise "Fail to get list: " (ex-message e)
-                   {:dbi dbi-name :k k}))
-          (finally
-            (if (.isReadOnly txn)
-              (.return-cursor dbi cur)
-              (.close cur))
-            (.return-rtx this rtx))))))
+      ))
   )
 
 (defmethod open-kv :java
