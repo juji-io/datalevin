@@ -74,7 +74,7 @@
     (transact-schema lmdb (update-schema (load-schema lmdb) schema)))
   (let [now (load-schema lmdb)]
     (when-not (:db/created-at now)
-      (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
+      (transact-schema lmdb (update-schema now c/entity-time-schema))))
   (load-schema lmdb))
 
 (defn- init-attrs [schema]
