@@ -512,3 +512,30 @@
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest validate-data-test
+  (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "a" {:validate-data? true})
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 2 :string]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 "b" :int :int]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 1 :float]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1000 1 :byte]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 1 :bytes]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :keyword]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :symbol]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :boolean]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :instant]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :uuid]])))
+    (l/close-kv lmdb)
+    (u/delete-files dir)) )

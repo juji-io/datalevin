@@ -2,9 +2,9 @@
 
 ## WIP
 ### Fixed
-- Fixed adding created time schema for old Datalog DB prior 0.6.4 (thx @jdf-id-au)
+- Fixed adding created-at schema item for upgrading Datalog DB from prior 0.6.4 (thx @jdf-id-au)
 ### Changed
-- [**breaking**] Simplify `open-dbi` signature to take an option map instead
+- [**breaking**] Simplified `open-dbi` signature to take an option map instead
 ### Added
 - `:validate-data?` option for `open-dbi`, `create-conn` etc., #121
 

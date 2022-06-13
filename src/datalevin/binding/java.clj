@@ -155,9 +155,13 @@
 (deftype DBI [^Dbi db
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
-              ^:volatile-mutable ^ByteBuffer vb]
+              ^:volatile-mutable ^ByteBuffer vb
+              ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
+    (or (not validate-data?)
+        (b/valid-data? x t)
+        (raise "Invalid data, expecting " t {:input x}))
     (try
       (.clear kb)
       (b/put-buffer kb x t)
@@ -167,6 +171,9 @@
                (.dbi-name this) "with value" x ": " (ex-message e)
                {:type t}))))
   (put-val [this x t]
+    (or (not validate-data?)
+        (b/valid-data? x t)
+        (raise "Invalid data, expecting " t {:input x}))
     (try
       (.clear vb)
       (b/put-buffer vb x t)
@@ -267,17 +274,18 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [this dbi-name {:keys [key-size val-size flags]
-                            :or   {key-size c/+max-key-size+
-                                   val-size c/+default-val-size+
-                                   flags    c/default-dbi-flags}}]
+  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?]
+                            :or   {key-size       c/+max-key-size+
+                                   val-size       c/+default-val-size+
+                                   flags          c/default-dbi-flags
+                                   validate-data? false}}]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
-          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb)]
+          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb validate-data?)]
       (.put dbis dbi-name dbi)
       dbi))
 

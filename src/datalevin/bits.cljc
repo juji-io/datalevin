@@ -265,6 +265,7 @@
 (defn- put-byte
   [^ByteBuffer bb b]
   (.put bb ^byte (unchecked-byte b)))
+(type (byte 1))
 
 (defn- put-data
   [^ByteBuffer bb x]
@@ -606,43 +607,44 @@
   ([^ByteBuffer bf x x-type]
    (case x-type
      :string         (do (put-byte bf (raw-header x :string))
-                        (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
+                         (put-bytes
+                           bf (.getBytes ^String x StandardCharsets/UTF_8)))
      :int            (put-int bf x)
      :short          (put-short bf x)
      :int-int        (let [[i1 i2] x]
-                      (put-int bf i1)
-                      (put-int bf i2))
+                       (put-int bf i1)
+                       (put-int bf i2))
      :sial           (put-sparse-list bf x)
      :bitmap         (put-bitmap bf x)
      :term-info      (let [[i1 i2 i3] x]
-                      (put-int bf i1)
-                      (.putFloat bf (float i2))
-                      (put-sparse-list bf i3))
+                       (put-int bf i1)
+                       (.putFloat bf (float i2))
+                       (put-sparse-list bf i3))
      :doc-info       (let [[i1 i2] x]
-                      (put-short bf i1)
-                      (put-data bf i2))
+                       (put-short bf i1)
+                       (put-data bf i2))
      :long           (do (put-byte bf (raw-header x :long))
-                        (put-long bf x))
+                         (put-long bf x))
      :id             (put-long bf x)
      :float          (do (put-byte bf (raw-header x :float))
-                        (put-float bf x))
+                         (put-float bf x))
      :double         (do (put-byte bf (raw-header x :double))
-                        (put-double bf x))
+                         (put-double bf x))
      :byte           (put-byte bf x)
      :bytes          (do (put-byte bf (raw-header x :bytes))
-                        (put-bytes bf x))
+                         (put-bytes bf x))
      :keyword        (do (put-byte bf (raw-header x :keyword))
-                        (put-bytes bf (key-sym-bytes x)))
+                         (put-bytes bf (key-sym-bytes x)))
      :symbol         (do (put-byte bf (raw-header x :symbol))
-                        (put-bytes bf (key-sym-bytes x)))
+                         (put-bytes bf (key-sym-bytes x)))
      :boolean        (do (put-byte bf (raw-header x :boolean))
-                        (put-byte bf (if x c/true-value c/false-value)))
+                         (put-byte bf (if x c/true-value c/false-value)))
      :instant        (do (put-byte bf (raw-header x :instant))
-                        (put-instant bf x))
+                         (put-instant bf x))
      :instant-pre-06 (do (put-byte bf (raw-header x :instant))
                          (.putLong bf (.getTime ^Date x)))
      :uuid           (do (put-byte bf (raw-header x :uuid))
-                        (put-uuid bf x))
+                         (put-uuid bf x))
      :attr           (put-attr bf x)
      :eav            (put-eav bf x)
      :eavt           (put-eav bf x)
@@ -693,3 +695,22 @@
      :veat           (get-vea bf)
      :raw            (get-bytes bf)
      (get-data bf))))
+
+(defn valid-data?
+  "validate data type"
+  [x t]
+  (case t
+    :string  (string? x)
+    :int     (and (int? x) (<= Integer/MIN_VALUE x Integer/MAX_VALUE))
+    :long    (int? x)
+    :float   (and (float? x) (<= Float/MIN_VALUE x Float/MAX_VALUE))
+    :double  (float? x)
+    :byte    (or (instance? java.lang.Byte x)
+                 (and (int? x) (<= -128 x 127)))
+    :bytes   (bytes? x)
+    :keyword (keyword? x)
+    :symbol  (symbol? x)
+    :boolean (boolean? x)
+    :instant (inst? x)
+    :uuid    (uuid? x)
+    true))

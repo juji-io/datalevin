@@ -1416,7 +1416,6 @@ all documents."}
     - `:string`, UTF-8 string
     - `:int`, 32 bits integer
     - `:long`, 64 bits integer
-    - `:id`, 64 bits integer, not prefixed with a type header
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
     - `:byte`, single byte
@@ -1426,14 +1425,6 @@ all documents."}
     - `:boolean`, `true` or `false`
     - `:instant`, timestamp, same as `java.util.Date`
     - `:uuid`, UUID, same as `java.util.UUID`
-
-  or one of the following Datalog specific data types
-
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:ave`
-    - `:vea`
 
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."}
@@ -1447,7 +1438,6 @@ one of the following data types:
   - `:string`, UTF-8 string
   - `:int`, 32 bits integer
   - `:long`, 64 bits integer
-  - `:id`, 64 bits integer, not prefixed with a type header
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
   - `:byte`, single byte
@@ -1456,15 +1446,7 @@ one of the following data types:
   - `:symbol`, EDN symbol
   - `:boolean`, `true` or `false`
   - `:instant`, timestamp, same as `java.util.Date`
-  - `:uuid`, UUID, same as `java.util.UUID`
-
-  or one of the following Datalog specific data types
-
-  - `:datom`
-  - `:attr`
-  - `:eav`
-  - `:ave`
-  - `:vea`"}
+  - `:uuid`, UUID, same as `java.util.UUID`"}
   read-buffer b/read-buffer)
 
 (def ^{:arglists '([s])
