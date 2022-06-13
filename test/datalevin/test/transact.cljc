@@ -501,6 +501,16 @@
     (is (= dts1 dts2))
     (d/close-db db)))
 
+(deftest validate-data
+  "validate data during transact"
+  (let [sc {:company {:db/valueType :db.type/string}
+            :id      {:db/valueType :db.type/uuid}}
+        es [{:db/id -1 :company "IBM" :id "ibm"}
+            {:db/id -2 :company "PwC" :id "pwc"}]
+        db (d/empty-db nil sc {:validate-data? true})]
+    (is (thrown? Exception (d/db-with db es)))
+    (d/close-db db)))
+
 #?(:clj
    (deftest test-transact-bytes
      "requires comparing byte-arrays"

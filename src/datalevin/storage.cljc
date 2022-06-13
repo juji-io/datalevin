@@ -482,10 +482,14 @@
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
+        vt     (:db/valueType props)
+        ref?   (= :db.type/ref vt)
+        v      (.-v d)
+        i      (b/indexable (.-e d) (:db/aid props) v vt)
         max-gt (max-gt store)]
+    (or (not (:validate-data? (.-opts store)))
+        (b/valid-data? v vt)
+        (u/raise "Invalid data, expecting " vt {:input v}))
     (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
@@ -501,9 +505,9 @@
 (defn- delete-data
   [^Store store ^Datom d ft-ds]
   (let [props  ((schema store) (.-a d))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
+        vt     (:db/valueType props)
+        ref?   (= :db.type/ref vt)
+        i      (b/indexable (.-e d) (:db/aid props) (.-v d) vt)
         giant? (b/giant? i)
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
@@ -542,11 +546,14 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema opts]
+  ([dir schema {:keys [validate-data? auto-entity-time?]
+                :or   {validate-data?    false
+                       auto-entity-time? false}
+                :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir)]
      (open-dbis lmdb)
-     (when opts (transact-opts lmdb opts))
+     (transact-opts lmdb opts)
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
                 (s/new-search-engine lmdb (:search-engine opts))
