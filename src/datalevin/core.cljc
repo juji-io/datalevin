@@ -939,9 +939,14 @@ Only usable for debug output.
 (def ^{:arglists '([db dbi-name]
                    [db dbi-name opts])
        :doc      "Open a named DBI (i.e. sub-db) in the key-value store. `opts` is an option map that may have the following keys:
-   * `:key-size` is the max size of the key in bytes, cannot be greater than 511, default is 511.
-   * `:val-size` is the default size of the value in bytes, Datalevin will automatically increase the size if a larger value is transacted.
-   * `:flags` is a vector of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `[:create]`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
+
+      * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
+      * `:key-size` is the max size of the key in bytes, cannot be greater than 511, default is 511.
+
+      * `:val-size` is the default size of the value in bytes, Datalevin will automatically increase the size if a larger value is transacted.
+
+      * `:flags` is a vector of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `[:create]`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
   open-dbi l/open-dbi)
 
 (def ^{:arglists '([db dbi-name])
