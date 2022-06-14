@@ -99,7 +99,7 @@
     (transact-schema lmdb (update-schema (load-schema lmdb) schema)))
   (let [now (load-schema lmdb)]
     (when-not (:db/created-at now)
-      (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
+      (transact-schema lmdb (update-schema now c/entity-time-schema))))
   (load-schema lmdb))
 
 (defn- init-attrs
@@ -733,6 +733,9 @@
         (or ((schema store) attr) (swap-attr store attr identity))
         max-gt     (max-gt store)
         i          (b/indexable e aid v valueType max-gt)]
+    (or (not (:validate-data? (.-opts store)))
+        (b/valid-data? v valueType)
+        (u/raise "Invalid data, expecting " valueType {:input v}))
     (when fulltext (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
       (do (advance-max-gt store)
@@ -913,14 +916,17 @@
 
 (defn- open-dbis
   [lmdb]
-  (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
-  (lmdb/open-list-dbi lmdb c/eav c/+id-bytes+ c/+max-key-size+)
-  (lmdb/open-list-dbi lmdb c/ave c/+short-id-bytes+ c/+max-key-size+)
-  (lmdb/open-list-dbi lmdb c/links (* 3 c/+short-id-bytes+) (* 2 c/+id-bytes+))
-  (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/encla c/+id-bytes+)
-  (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-  (lmdb/open-dbi lmdb c/opts c/+max-key-size+))
+  (lmdb/open-list-dbi lmdb c/eav {:key-size c/+id-bytes+
+                                  :val-size c/+max-key-size+})
+  (lmdb/open-list-dbi lmdb c/ave {:key-size c/+short-id-bytes+
+                                  :val-size c/+max-key-size+})
+  (lmdb/open-list-dbi lmdb c/links {:key-size (* 3 c/+short-id-bytes+)
+                                    :val-size (* 2 c/+id-bytes+)})
+  (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/encla {:key-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
+  (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
+  (lmdb/open-dbi lmdb c/opts {:key-size c/+max-key-size+}))
 
 (defn open
   "Open and return the storage."
@@ -930,12 +936,15 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [kv-opts search-opts] :as opts}]
+  ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?]
+                :or   {validate-data?    false
+                       auto-entity-time? false}
+                :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
-     (when opts (transact-opts lmdb opts))
-     (let [schema              (init-schema lmdb schema)
+     (transact-opts lmdb opts)
+     (let [schema (init-schema lmdb schema)
            rschema             (schema->rschema schema)
            [classes rentities] (init-encla lmdb)
            [links rlinks]      (init-links lmdb)]

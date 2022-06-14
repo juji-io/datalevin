@@ -560,11 +560,12 @@
   [lmdb terms-dbi docs-dbi positions-dbi]
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
   ;; term -> term-id,max-weight,doc-freq
-  (l/open-dbi lmdb terms-dbi c/+max-key-size+)
+  (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
   ;; doc-id -> norm,doc-ref
-  (l/open-dbi lmdb docs-dbi Integer/BYTES)
+  (l/open-dbi lmdb docs-dbi {:key-size Integer/BYTES})
   ;; term-id,doc-id -> position,offset (list)
-  (l/open-list-dbi lmdb positions-dbi (* 2 Integer/BYTES) (* 2 Integer/BYTES)))
+  (l/open-list-dbi lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
+                                       :val-size c/+max-key-size+}))
 
 (defn new-search-engine
   ([lmdb]

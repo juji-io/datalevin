@@ -1,4 +1,4 @@
-(def version "0.6.13")
+(def version "0.6.14")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -33,7 +33,7 @@
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
                           ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.27"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.28"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
@@ -68,8 +68,7 @@
                               ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
                                "--add-opens" "java.base/java.lang=ALL-UNNAMED"
                                "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"
-                               "-Djdk.attach.allowAttachSelf"]
+                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]

@@ -12,7 +12,6 @@
             [taoensso.nippy :as nippy]
             [clojure.string :as s])
   (:import [java.util UUID Arrays HashMap]
-           [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap]
            [java.lang Long]))
 
 (if (u/graal?)
@@ -24,7 +23,7 @@
         lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "b")
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (l/open-dbi lmdb "d")
 
     (testing "list dbis"
@@ -184,7 +183,7 @@
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
     (l/open-dbi lmdb "a")
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks  (shuffle (range 0 1000))
           vs  (map inc ks)
           txs (map (fn [k v] [:put "c" k v :long :long]) ks vs)]
@@ -207,7 +206,7 @@
 (deftest get-range-no-gap-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 1000))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -238,7 +237,8 @@
   (let [dir        (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         db         (l/open-kv dir)
         misc-table "misc-test-table"]
-    (l/open-dbi db misc-table (b/type-size :long) (b/type-size :long))
+    (l/open-dbi db misc-table {:key-size (b/type-size :long)
+                               :val-size (b/type-size :long)})
     (l/transact-kv db
                    [[:put misc-table 1 1 :long :long]
                     [:put misc-table 2 2 :long :long]
@@ -361,7 +361,7 @@
 (deftest get-some-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -377,7 +377,7 @@
 (deftest range-filter-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" (inc Long/BYTES) (inc Long/BYTES))
+    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -628,3 +628,30 @@
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest validate-data-test
+  (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "a" {:validate-data? true})
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 2 :string]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 "b" :int :int]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 1 :float]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1000 1 :byte]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" 1 1 :bytes]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :keyword]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :symbol]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :boolean]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :instant]])))
+    (is (thrown-with-msg? Exception #"Invalid data"
+                          (l/transact-kv lmdb [[:put "a" "b" 1 :uuid]])))
+    (l/close-kv lmdb)
+    (u/delete-files dir)) )

@@ -312,7 +312,7 @@
   * `:pool-size` determines number of connections maintained in the connection
   pool, default is 5.
   * `:time-out` specifies the time (milliseconds) before an exception is thrown
-  when obtaining an open network connection, default is 30000."
+  when obtaining an open network connection, default is 60000."
   ([uri-str]
    (new-client uri-str {:pool-size c/connection-pool-size
                         :time-out  c/connection-timeout}))

@@ -78,16 +78,14 @@
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
     [db dbi-name]
-    [db dbi-name key-size]
-    [db dbi-name key-size val-size]
-    [db dbi-name key-size val-size flags]
+    [db dbi-name opts]
     "Open a named DBI (i.e. sub-db) in the LMDB env")
 
   (open-list-dbi
-    [db dbi-name]
-    [db dbi-name item-size]
-    [db dbi-name key-size item-size]
-    "Open a DBI that permits a list of values for the same key")
+    [db list-name]
+    [db list-name opts]
+    "Open a named list, a special dbi, that permits a list of
+     values for the same key, with some corresponding special functions")
 
   (clear-dbi [db dbi-name]
     "Clear data in the DBI (i.e sub-db), but leave it open")

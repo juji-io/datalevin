@@ -724,7 +724,7 @@
         end    100000
         conn   (sut/create-conn dir nil {:auto-entity-time? true})
         vs     (range 0 end)
-        txs    (mapv (fn [a v] {a v}) (repeat :id) vs)]
+        txs    (map (fn [a v] {a v}) (repeat :id) vs)]
     (sut/transact! conn txs)
     (is (= (sut/q '[:find (count ?e)
                     :where [?e :id]]

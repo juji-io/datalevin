@@ -269,6 +269,7 @@
 (defn- put-byte
   [^ByteBuffer bb b]
   (.put bb ^byte (unchecked-byte b)))
+(type (byte 1))
 
 (defn- put-data
   [^ByteBuffer bb x]
@@ -638,22 +639,13 @@
     sl))
 
 (defn put-buffer
-  "In addition to the user facing data types, x-type can be one of the
-  following internal data types:
-
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:eav-a`
-    - `:ave`
-    - `:bitmap`
-  "
   ([bf x]
    (put-buffer bf x :data))
   ([^ByteBuffer bf x x-type]
    (case x-type
      :string         (do (put-byte bf (raw-header x :string))
-                         (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8)))
+                         (put-bytes
+                           bf (.getBytes ^String x StandardCharsets/UTF_8)))
      :int            (put-int bf x)
      :short          (put-short bf x)
      :int-int        (let [[i1 i2] x]
@@ -706,16 +698,6 @@
      (put-data bf x))))
 
 (defn read-buffer
-  "In addition to the user facing data types, v-type can be one of the
-  following internal data types:
-
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:eav-a`
-    - `:ave`
-    - `:bitmap`
-    - `:link`"
   ([bf]
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
@@ -747,10 +729,28 @@
      :datom          (get-nippy bf)
      :avg            (get-avg bf)
      :veg            (get-veg bf)
-     ;; :eav            (get-eav bf)
-     ;; :eav-a          (do (skip bf Long/BYTES) (get-int bf))
-     ;; :eavt           (get-eav bf)
-     ;; :ave            (get-ave bf)
-     ;; :avet           (get-ave bf)
      :raw            (get-bytes bf)
      (get-data bf))))
+
+(defn valid-data?
+  "validate data type"
+  [x t]
+  (case t
+    (:db.type/string :string) (string? x)
+    :int                      (and (int? x)
+                                   (<= Integer/MIN_VALUE x Integer/MAX_VALUE))
+
+    (:db.type/long :db.type/ref :long) (int? x)
+
+    (:db.type/float :float)     (and (float? x)
+                                     (<= Float/MIN_VALUE x Float/MAX_VALUE))
+    (:db.type/double :double)   (float? x)
+    :byte                       (or (instance? java.lang.Byte x)
+                                    (and (int? x) (<= -128 x 127)))
+    (:db.type/bytes :bytes)     (bytes? x)
+    (:db.type/keyword :keyword) (keyword? x)
+    (:db.type/symbol :symbol)   (symbol? x)
+    (:db.type/boolean :boolean) (boolean? x)
+    (:db.type/instant :instant) (inst? x)
+    (:db.type/uuid :uuid)       (uuid? x)
+    true))

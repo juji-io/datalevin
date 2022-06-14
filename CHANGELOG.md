@@ -18,6 +18,14 @@
 - [**Breaking**] Removed `VEA` index, its functionality is replaced by `Links`.
 - [**Breaking**] Changed `:search-engine` key to `:search-opts` for consistency
 
+## 0.6.14
+### Fixed
+- Fixed adding created-at schema item for upgrading Datalog DB from prior 0.6.4 (thx @jdf-id-au)
+### Changed
+- [**breaking**] Simplified `open-dbi` signature to take an option map instead
+### Added
+- `:validate-data?` option for `open-dbi`, `create-conn` etc., #121
+
 ## 0.6.13
 ### Fixed
 - Schema update regression. #124

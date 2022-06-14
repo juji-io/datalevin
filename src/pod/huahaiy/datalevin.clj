@@ -225,17 +225,10 @@
     (d/dir d)))
 
 (defn open-dbi
-  ([{:keys [::kv-db]}] (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d) nil))
   ([{:keys [::kv-db]} dbi-name]
    (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name) nil))
-  ([{:keys [::kv-db]} dbi-name key-size]
-   (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name key-size) nil))
-  ([{:keys [::kv-db]} dbi-name key-size val-size]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/open-dbi d dbi-name key-size val-size) nil))
-  ([{:keys [::kv-db]} dbi-name key-size val-size flags]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/open-dbi d dbi-name key-size val-size flags) nil)))
+  ([{:keys [::kv-db]} dbi-name opts]
+   (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name opts) nil)))
 
 (defn clear-dbi [{:keys [::kv-db]}]
   (when-let [d (get @kv-dbs kv-db)]
