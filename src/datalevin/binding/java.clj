@@ -11,6 +11,7 @@
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
+           [datalevin.lmdb Range]
            [java.util.concurrent ConcurrentLinkedQueue]
            [java.util Iterator]
            [org.eclipse.collections.impl.map.mutable UnifiedMap]
@@ -262,7 +263,7 @@
                     (.del dbi txn false)))
       (raise "Unknown kv operator: " op {}))))
 
-(defn- get-list*
+(defn- list-range*
   [^Rtx rtx ^Cursor cur k kt vt]
   (.put-key rtx k kt)
   (when (.get cur (.-kb rtx) GetOp/MDB_SET)
@@ -589,14 +590,6 @@
   (del-list-items [this dbi-name k vs kt vt]
     (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
 
-  (get-list [this dbi-name k kt vt]
-    (.get-list this dbi-name k kt vt false))
-  (get-list [this dbi-name k kt vt writing?]
-    (when k
-      (scan/scan-list
-        (get-list* rtx cur k kt vt)
-        (raise "Fail to get list: " (ex-message e) {:dbi dbi-name :k k}))))
-
   (visit-list [this dbi-name visitor k kt]
     (.visit-list this dbi-name visitor k kt false))
   (visit-list [this dbi-name visitor k kt writing?]
@@ -623,6 +616,15 @@
         (raise "Fail to test if an item is in list: "
                (ex-message e) {:dbi dbi-name :k k :v v}))
       false))
+
+  (list-range [this dbi-name k kt vt]
+    (.list-range this dbi-name k kt vt false))
+  (list-range [this dbi-name k kt vt writing?]
+    (when k
+      (scan/scan-list
+        (list-range* rtx cur k kt vt)
+        (raise "Fail to get list range: " (ex-message e)
+               {:dbi dbi-name :k k}))))
 
   (list-range-filter [this dbi-name pred k kt v-range vt]
     (.list-range-filter this dbi-name pred k kt v-range vt false))

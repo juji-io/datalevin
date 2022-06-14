@@ -179,7 +179,7 @@
     false
     (do (Lib/checkRc ^int rc) true)))
 
-(declare ->CursorIterable)
+(declare ->KVIterable)
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -260,7 +260,7 @@
   (iterate-kv [this rtx [f? sk? is? ek? ie? sk ek]]
     (let [txn (.-txn ^Rtx rtx)
           cur (.get-cursor this txn)]
-      (->CursorIterable cur this rtx f? sk? is? ek? ie? sk ek)))
+      (->KVIterable cur this rtx f? sk? is? ek? ie? sk ek)))
 
   (get-cursor [_ txn]
     (or (when (.isReadOnly ^Txn txn)
@@ -274,16 +274,16 @@
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
-    CursorIterable [^Cursor cursor
-                    ^DBI db
-                    ^Rtx rtx
-                    forward?
-                    start-key?
-                    include-start?
-                    stop-key?
-                    include-stop?
-                    ^BufVal sk
-                    ^BufVal ek]
+    KVIterable [^Cursor cursor
+                ^DBI db
+                ^Rtx rtx
+                forward?
+                start-key?
+                include-start?
+                stop-key?
+                include-stop?
+                ^BufVal sk
+                ^BufVal ek]
   AutoCloseable
   (close [_]
     (if (.isReadOnly ^Txn (.-txn rtx))
@@ -542,7 +542,7 @@
           ^Rtx rtx  (.get-rtx this)]
       (try
         (with-open [^Cursor cursor (.get-cursor dbi (.-txn rtx))]
-          (with-open [^AutoCloseable iterable (->CursorIterable
+          (with-open [^AutoCloseable iterable (->KVIterable
                                                 cursor dbi rtx true false false
                                                 false false nil nil)]
             (loop [^Iterator iter (.iterator ^Iterable iterable)
@@ -735,8 +735,8 @@
     (scan/visit this dbi-name visitor k-range k-type writing?))
 
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
-                                      :or   {key-size c/+max-key-size+
-                                             val-size c/+max-key-size+}}]
+                                 :or   {key-size c/+max-key-size+
+                                        val-size c/+max-key-size+}}]
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")

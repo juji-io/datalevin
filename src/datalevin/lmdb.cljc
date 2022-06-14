@@ -43,10 +43,6 @@
     [db list-name k k-type]
     [db list-name k vs k-type v-type]
     "delete an list or its items by key")
-  (get-list
-    [db list-name k k-type v-type]
-    [db list-name k k-type v-type writing?]
-    "get a list by key")
   (visit-list
     [db list-name visitor k k-type]
     [db list-name visitor k k-type writing?]
@@ -59,10 +55,19 @@
     [db list-name k v k-type v-type]
     [db list-name k v k-type v-type writing?]
     "return true if an item is in the list")
+  (list-range
+    [db list-name k k-type v-range v-type]
+    [db list-name k k-type v-range v-type writing?]
+    "Return a seq of values in the specified value range of the key")
+  (list-range-count
+    [db list-name k k-type v-range v-type]
+    [db list-name k k-type v-range v-type writing?]
+    "Return the number of values in the specified value range of the key")
   (list-range-filter
     [db list-name pred k k-type v-range v-type]
     [db list-name pred k k-type v-range v-type writing?]
-    "Return a seq of values in the specified value range of the key")
+    "Return a seq of values in the specified value range of the key,
+     filtered by pred")
   (list-range-filter-count
     [db list-name pred k k-type v-range v-type]
     [db list-name pred k k-type v-range v-type writing?]
@@ -70,7 +75,8 @@
   (list-some
     [db list-name pred k k-type v-range v-type]
     [db list-name pred k k-type v-range v-type writing?]
-    "Return the first value in the specified value range of the key"))
+    "Return the first value in the specified value range of the key that
+     return true for pred"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
