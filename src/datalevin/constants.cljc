@@ -166,7 +166,7 @@
 
 ;; query
 
-(def +cache-limit+ 1000)  ; per Datalog db
+(def +cache-limit+ 100)  ; per Datalog db
 (def +base-sampling-unit+ 1000000)           ; 1 ms
 (def +max-sampling-budget+ 100000000)        ; 100 ms
 (def +magic-factor+ 0.2)
