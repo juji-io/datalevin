@@ -187,7 +187,7 @@
          ^ConcurrentLinkedQueue curs
          ^BufVal kp
          ^:volatile-mutable ^BufVal vp
-         dupsort?
+         ^boolean dupsort?
          ^boolean validate-data?]
   IBuffer
   (put-key [this x t]

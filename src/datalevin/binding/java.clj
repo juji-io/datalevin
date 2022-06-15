@@ -93,28 +93,56 @@
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
-  (range-info [this range-type _ _]
-    (let [kb1 (.-start-kb this)
-          kb2 (.-stop-kb this)]
-      (case range-type
-        :all               (KeyRange/all)
-        :all-back          (KeyRange/allBackward)
-        :at-least          (KeyRange/atLeast kb1)
-        :at-most-back      (KeyRange/atLeastBackward kb1)
-        :at-most           (KeyRange/atMost kb1)
-        :at-least-back     (KeyRange/atMostBackward kb1)
-        :closed            (KeyRange/closed kb1 kb2)
-        :closed-back       (KeyRange/closedBackward kb1 kb2)
-        :closed-open       (KeyRange/closedOpen kb1 kb2)
-        :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
-        :greater-than      (KeyRange/greaterThan kb1)
-        :less-than-back    (KeyRange/greaterThanBackward kb1)
-        :less-than         (KeyRange/lessThan kb1)
-        :greater-than-back (KeyRange/lessThanBackward kb1)
-        :open              (KeyRange/open kb1 kb2)
-        :open-back         (KeyRange/openBackward kb1 kb2)
-        :open-closed       (KeyRange/openClosed kb1 kb2)
-        :open-closed-back  (KeyRange/openClosedBackward kb1 kb2))))
+  (range-info [this range-type k1 k2]
+    (.range-info this range-type k1 k2 false))
+  (range-info [this range-type k1 k2 value?]
+    (let [chk1 #(if k1
+                  %1
+                  (raise "Missing start/end key for range type " %2 {}))
+          chk2 #(if (and k1 k2)
+                  %1
+                  (raise "Missing start/end key for range type " %2 {}))
+          kb1  (.-start-kb this)
+          kb2  (.-stop-kb this)]
+      (if value?
+        (case range-type
+          :all               (l/->Range true false false false false nil nil)
+          :all-back          (KeyRange/allBackward)
+          :at-least          (KeyRange/atLeast kb1)
+          :at-most-back      (KeyRange/atLeastBackward kb1)
+          :at-most           (KeyRange/atMost kb1)
+          :at-least-back     (KeyRange/atMostBackward kb1)
+          :closed            (KeyRange/closed kb1 kb2)
+          :closed-back       (KeyRange/closedBackward kb1 kb2)
+          :closed-open       (KeyRange/closedOpen kb1 kb2)
+          :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
+          :greater-than      (KeyRange/greaterThan kb1)
+          :less-than-back    (KeyRange/greaterThanBackward kb1)
+          :less-than         (KeyRange/lessThan kb1)
+          :greater-than-back (KeyRange/lessThanBackward kb1)
+          :open              (KeyRange/open kb1 kb2)
+          :open-back         (KeyRange/openBackward kb1 kb2)
+          :open-closed       (KeyRange/openClosed kb1 kb2)
+          :open-closed-back  (KeyRange/openClosedBackward kb1 kb2))
+        (case range-type
+          :all               (KeyRange/all)
+          :all-back          (KeyRange/allBackward)
+          :at-least          (KeyRange/atLeast kb1)
+          :at-most-back      (KeyRange/atLeastBackward kb1)
+          :at-most           (KeyRange/atMost kb1)
+          :at-least-back     (KeyRange/atMostBackward kb1)
+          :closed            (KeyRange/closed kb1 kb2)
+          :closed-back       (KeyRange/closedBackward kb1 kb2)
+          :closed-open       (KeyRange/closedOpen kb1 kb2)
+          :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
+          :greater-than      (KeyRange/greaterThan kb1)
+          :less-than-back    (KeyRange/greaterThanBackward kb1)
+          :less-than         (KeyRange/lessThan kb1)
+          :greater-than-back (KeyRange/lessThanBackward kb1)
+          :open              (KeyRange/open kb1 kb2)
+          :open-back         (KeyRange/openBackward kb1 kb2)
+          :open-closed       (KeyRange/openClosed kb1 kb2)
+          :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))))
   (put-start-key [_ x t]
     (when x
       (try
@@ -164,6 +192,7 @@
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
               ^:volatile-mutable ^ByteBuffer vb
+              ^boolean dupsort?
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -219,6 +248,8 @@
       (.get db (.-txn ^Rtx rtx) kb)))
   (iterate-kv [_ rtx range-info]
     (.iterate db (.-txn ^Rtx rtx) range-info))
+  (iterate-list [_ rtx k k-type v-range]
+    )
   (get-cursor [_ txn]
     (or (when (.isReadOnly ^Txn txn)
           (when-let [^Cursor cur (.poll curs)]
@@ -337,7 +368,8 @@
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
-          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb validate-data?)]
+          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb
+                     (some #{:dupsort} flags) validate-data?)]
       (.put dbis dbi-name dbi)
       dbi))
 
@@ -347,9 +379,7 @@
     (or (.get dbis dbi-name)
         (if create?
           (.open-dbi this dbi-name)
-          (.open-dbi this dbi-name {:key-size c/+max-key-size+
-                                    :val-size c/+default-val-size+
-                                    :flags    c/read-dbi-flags}))))
+          (.open-dbi this dbi-name {:flags c/read-dbi-flags}))))
 
   (clear-dbi [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -617,9 +647,9 @@
                (ex-message e) {:dbi dbi-name :k k :v v}))
       false))
 
-  (list-range [this dbi-name k kt vt]
-    (.list-range this dbi-name k kt vt false))
-  (list-range [this dbi-name k kt vt writing?]
+  (list-range [this dbi-name k kt v-range vt]
+    (.list-range this dbi-name k kt v-range vt false))
+  (list-range [this dbi-name k kt v-range vt writing?]
     (when k
       (scan/scan-list
         (list-range* rtx cur k kt vt)

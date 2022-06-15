@@ -7,7 +7,7 @@
   (put-val [this data v-type] "put data in val buffer"))
 
 (defprotocol IRange
-  (range-info [this range-type k1 k2]
+  (range-info [this range-type k1 k2] [this range-type k1 k2 value?]
     "return necessary range information for iterators")
   (put-start-key [this data k-type] "put data in start-key buffer.")
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
@@ -27,7 +27,10 @@
   (del [this txn] [this txn all?]
     "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-info] "Return an Iterable given the range")
+  (iterate-kv [this rtx range-info]
+    "Return an Iterable of key-values given the range")
+  (iterate-list [this rtx k k-type range-info]
+    "Return an Iterable of values given the key and the value range")
   (get-cursor [this txn] "Get a reusable read-only cursor")
   (close-cursor [this cur] "Close cursor")
   (return-cursor [this cur] "Return a read-only cursor after use"))
