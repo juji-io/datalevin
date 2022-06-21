@@ -1,7 +1,6 @@
 (ns ^:no-doc datalevin.scan
   "Index scan routines common to all bindings"
   (:require [datalevin.bits :as b]
-            [datalevin.constants :as c]
             [datalevin.util :refer [raise]]
             [clojure.stacktrace :as st]
             [datalevin.lmdb :as l])
@@ -28,9 +27,7 @@
 
 (defn- fetch-first
   [dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
-  (let [info (l/range-info rtx range-type k1 k2)]
-    (when k1 (l/put-start-key rtx k1 k-type))
-    (when k2 (l/put-stop-key rtx k2 k-type))
+  (let [info (l/range-info rtx range-type k1 k2 k-type)]
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (let [^Iterator iter (.iterator ^Iterable iterable)]
         (when (.hasNext iter)
@@ -45,9 +42,7 @@
   [dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2)]
-    (when k1 (l/put-start-key rtx k1 k-type))
-    (when k2 (l/put-stop-key rtx k2 k-type))
+  (let [info (l/range-info rtx range-type k1 k2 k-type)]
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)
              holder         (transient [])]
@@ -64,9 +59,7 @@
 
 (defn- fetch-range-count
   [dbi rtx [range-type k1 k2] k-type]
-  (let [info (l/range-info rtx range-type k1 k2)]
-    (when k1 (l/put-start-key rtx k1 k-type))
-    (when k2 (l/put-stop-key rtx k2 k-type))
+  (let [info (l/range-info rtx range-type k1 k2 k-type)]
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)
              c              0]
@@ -78,9 +71,7 @@
   [dbi rtx pred [range-type k1 k2] k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2)]
-    (when k1 (l/put-start-key rtx k1 k-type))
-    (when k2 (l/put-stop-key rtx k2 k-type))
+  (let [info (l/range-info rtx range-type k1 k2 k-type)]
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)]
         (when (.hasNext iter)
@@ -98,9 +89,7 @@
   [dbi rtx pred [range-type k1 k2] k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2)]
-    (when k1 (l/put-start-key rtx k1 k-type))
-    (when k2 (l/put-stop-key rtx k2 k-type))
+  (let [info (l/range-info rtx range-type k1 k2 k-type)]
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)
              holder         (transient [])]
@@ -120,9 +109,7 @@
 
 (defn- fetch-range-filtered-count
   [dbi rtx pred [range-type k1 k2] k-type]
-  (let [info (l/range-info rtx range-type k1 k2)]
-    (when k1 (l/put-start-key rtx k1 k-type))
-    (when k2 (l/put-stop-key rtx k2 k-type))
+  (let [info (l/range-info rtx range-type k1 k2 k-type)]
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)
              c              0]
@@ -206,9 +193,7 @@
   [lmdb dbi-name visitor k-range k-type writing?]
   (scan-key
     (let [[range-type k1 k2] k-range
-          info               (l/range-info rtx range-type k1 k2)]
-      (when k1 (l/put-start-key rtx k1 k-type))
-      (when k2 (l/put-stop-key rtx k2 k-type))
+          info               (l/range-info rtx range-type k1 k2 k-type)]
       (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
         (loop [^Iterator iter (.iterator ^Iterable iterable)]
           (when (.hasNext iter)

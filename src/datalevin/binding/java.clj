@@ -73,6 +73,50 @@
       (make-array t 0)
       (into-array t (mapv flag flags)))))
 
+(defn- key-range
+  [range-type kb1 kb2]
+  (case range-type
+    :all               (KeyRange/all)
+    :all-back          (KeyRange/allBackward)
+    :at-least          (KeyRange/atLeast kb1)
+    :at-most-back      (KeyRange/atLeastBackward kb1)
+    :at-most           (KeyRange/atMost kb1)
+    :at-least-back     (KeyRange/atMostBackward kb1)
+    :closed            (KeyRange/closed kb1 kb2)
+    :closed-back       (KeyRange/closedBackward kb1 kb2)
+    :closed-open       (KeyRange/closedOpen kb1 kb2)
+    :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
+    :greater-than      (KeyRange/greaterThan kb1)
+    :less-than-back    (KeyRange/greaterThanBackward kb1)
+    :less-than         (KeyRange/lessThan kb1)
+    :greater-than-back (KeyRange/lessThanBackward kb1)
+    :open              (KeyRange/open kb1 kb2)
+    :open-back         (KeyRange/openBackward kb1 kb2)
+    :open-closed       (KeyRange/openClosed kb1 kb2)
+    :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))
+
+(defn- value-range
+  [range-type kb1 kb2]
+  (case range-type
+    :all               (l/->Range true false false false false nil nil)
+    :all-back          (l/->Range false false false false false nil nil)
+    :at-least          (l/->Range true true true false false kb1 nil)
+    :at-most-back      (l/->Range false true true false false kb1 nil)
+    :at-most           (l/->Range true false false true true nil kb1)
+    :at-least-back     (l/->Range false false false true true nil kb1)
+    :closed            (l/->Range true true true true true kb1 kb2)
+    :closed-back       (l/->Range false true true true true kb1 kb2)
+    :closed-open       (l/->Range true true true true false kb1 kb2)
+    :closed-open-back  (l/->Range false true true true false kb1 kb2)
+    :greater-than      (l/->Range true true false false false kb1 nil)
+    :less-than-back    (l/->Range false true false false false kb1 nil)
+    :less-than         (l/->Range true false false true false nil kb1)
+    :greater-than-back (l/->Range false false false true false nil kb1)
+    :open              (l/->Range true true false true false kb1 kb2)
+    :open-back         (l/->Range false true false true false kb1 kb2)
+    :open-closed       (l/->Range true true false true true kb1 kb2)
+    :open-closed-back  (l/->Range false true false true true kb1 kb2)))
+
 (deftype Rtx [lmdb
               ^Txn txn
               ^ByteBuffer kb
@@ -93,56 +137,16 @@
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
-  (range-info [this range-type k1 k2]
-    (.range-info this range-type k1 k2 false))
-  (range-info [this range-type k1 k2 value?]
-    (let [chk1 #(if k1
-                  %1
-                  (raise "Missing start/end key for range type " %2 {}))
-          chk2 #(if (and k1 k2)
-                  %1
-                  (raise "Missing start/end key for range type " %2 {}))
-          kb1  (.-start-kb this)
-          kb2  (.-stop-kb this)]
+  (range-info [this range-type k1 k2 kt]
+    (.range-info this range-type k1 k2 kt false))
+  (range-info [this range-type k1 k2 kt value?]
+    (let [kb1 (.-start-kb this)
+          kb2 (.-stop-kb this)]
+      (when k1 (.put-start-key this k1 kt))
+      (when k2 (.put-stop-key this k2 kt))
       (if value?
-        (case range-type
-          :all               (l/->Range true false false false false nil nil)
-          :all-back          (KeyRange/allBackward)
-          :at-least          (KeyRange/atLeast kb1)
-          :at-most-back      (KeyRange/atLeastBackward kb1)
-          :at-most           (KeyRange/atMost kb1)
-          :at-least-back     (KeyRange/atMostBackward kb1)
-          :closed            (KeyRange/closed kb1 kb2)
-          :closed-back       (KeyRange/closedBackward kb1 kb2)
-          :closed-open       (KeyRange/closedOpen kb1 kb2)
-          :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
-          :greater-than      (KeyRange/greaterThan kb1)
-          :less-than-back    (KeyRange/greaterThanBackward kb1)
-          :less-than         (KeyRange/lessThan kb1)
-          :greater-than-back (KeyRange/lessThanBackward kb1)
-          :open              (KeyRange/open kb1 kb2)
-          :open-back         (KeyRange/openBackward kb1 kb2)
-          :open-closed       (KeyRange/openClosed kb1 kb2)
-          :open-closed-back  (KeyRange/openClosedBackward kb1 kb2))
-        (case range-type
-          :all               (KeyRange/all)
-          :all-back          (KeyRange/allBackward)
-          :at-least          (KeyRange/atLeast kb1)
-          :at-most-back      (KeyRange/atLeastBackward kb1)
-          :at-most           (KeyRange/atMost kb1)
-          :at-least-back     (KeyRange/atMostBackward kb1)
-          :closed            (KeyRange/closed kb1 kb2)
-          :closed-back       (KeyRange/closedBackward kb1 kb2)
-          :closed-open       (KeyRange/closedOpen kb1 kb2)
-          :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
-          :greater-than      (KeyRange/greaterThan kb1)
-          :less-than-back    (KeyRange/greaterThanBackward kb1)
-          :less-than         (KeyRange/lessThan kb1)
-          :greater-than-back (KeyRange/lessThanBackward kb1)
-          :open              (KeyRange/open kb1 kb2)
-          :open-back         (KeyRange/openBackward kb1 kb2)
-          :open-closed       (KeyRange/openClosed kb1 kb2)
-          :open-closed-back  (KeyRange/openClosedBackward kb1 kb2)))))
+        (value-range range-type kb1 kb2)
+        (key-range range-type kb1 kb2))))
   (put-start-key [_ x t]
     (when x
       (try
@@ -192,7 +196,7 @@
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
               ^:volatile-mutable ^ByteBuffer vb
-              ^boolean dupsort?
+              dupsort?
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -249,6 +253,7 @@
   (iterate-kv [_ rtx range-info]
     (.iterate db (.-txn ^Rtx rtx) range-info))
   (iterate-list [_ rtx k k-type v-range]
+    (assert dupsort? "Can only iterate list in a list Dbi")
     )
   (get-cursor [_ txn]
     (or (when (.isReadOnly ^Txn txn)

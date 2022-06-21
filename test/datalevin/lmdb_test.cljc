@@ -544,7 +544,7 @@
     (is (not (l/in-list? lmdb "inverted" "a" 7 :string :long)))
     (is (l/in-list? lmdb "inverted" "b" 7 :string :long))
 
-    (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
+    ;; (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
 
     (l/visit-list lmdb "inverted" visitor "a" :string)
     (is (= @sum 10))
@@ -553,7 +553,7 @@
 
     (is (= (l/list-count lmdb "inverted" "a" :string) 0))
     (is (not (l/in-list? lmdb "inverted" "a" 1 :string :long)))
-    (is (nil? (l/get-list lmdb "inverted" "a" :string :long)))
+    ;; (is (nil? (l/get-list lmdb "inverted" "a" :string :long)))
 
     (l/put-list-items lmdb "inverted" "b" [1 2 3 4] :string :long)
 
@@ -603,14 +603,14 @@
     (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
     (is (l/in-list? lmdb "str" "b" "hello" :string :string))
 
-    (is (= (l/get-list lmdb "str" "a" :string :string)
-           ["abc" "defg" "hi"]))
+    ;; (is (= (l/get-list lmdb "str" "a" :string :string)
+    ;;        ["abc" "defg" "hi"]))
 
     (l/del-list-items lmdb "str" "a" :string)
 
     (is (= (l/list-count lmdb "str" "a" :string) 0))
     (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
-    (is (nil? (l/get-list lmdb "str" "a" :string :string)))
+    ;; (is (nil? (l/get-list lmdb "str" "a" :string :string)))
 
     (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
 

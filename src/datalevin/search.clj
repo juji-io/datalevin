@@ -523,8 +523,9 @@
     [doc-ref
      (sequence
        (comp (map (fn [tid]
-                 (let [lst (l/get-list (lmdb engine) (positions-dbi engine)
-                                       [tid doc-id] :int-int :int-int)]
+                 (let [lst (l/list-range (lmdb engine) (positions-dbi engine)
+                                         [tid doc-id] :int-int
+                                         [:all] :int-int)]
                    (when (seq lst)
                      [(terms tid) (mapv #(nth % 1) lst)]))))
           (remove nil? ))

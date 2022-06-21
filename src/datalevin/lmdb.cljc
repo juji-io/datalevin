@@ -7,7 +7,9 @@
   (put-val [this data v-type] "put data in val buffer"))
 
 (defprotocol IRange
-  (range-info [this range-type k1 k2] [this range-type k1 k2 value?]
+  (range-info
+    [this range-type k1 k2 k-type]
+    [this range-type k1 k2 k-type value?]
     "return necessary range information for iterators")
   (put-start-key [this data k-type] "put data in start-key buffer.")
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
