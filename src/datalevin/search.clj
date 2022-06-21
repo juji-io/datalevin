@@ -4,7 +4,8 @@
             [datalevin.util :as u]
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
-            [datalevin.bits :as b])
+            [datalevin.bits :as b]
+            [clojure.string :as s])
   (:import [datalevin.utl PriorityQueue GrowingIntArray]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]
@@ -324,16 +325,17 @@
   (add-doc [this doc-ref doc-text]
     (locking this
       (try
-        (when-let [doc-id (doc-ref->id this doc-ref)]
-          (remove-doc* this norms doc-id))
-        (let [txs       (FastList.)
-              hit-terms (UnifiedMap.)]
-          (add-doc-txs this norms doc-text txs doc-ref hit-terms)
-          (doseq [^Map$Entry kv (.entrySet hit-terms)]
-            (let [term (.getKey kv)
-                  info (.getValue kv)]
-              (.add txs [:put terms-dbi term info :string :term-info])))
-          (l/transact-kv lmdb txs))
+        (when-not (s/blank? doc-text)
+          (when-let [doc-id (doc-ref->id this doc-ref)]
+            (remove-doc* this norms doc-id))
+          (let [txs       (FastList.)
+                hit-terms (UnifiedMap.)]
+            (add-doc-txs this norms doc-text txs doc-ref hit-terms)
+            (doseq [^Map$Entry kv (.entrySet hit-terms)]
+              (let [term (.getKey kv)
+                    info (.getValue kv)]
+                (.add txs [:put terms-dbi term info :string :term-info])))
+            (l/transact-kv lmdb txs)))
         (catch Exception e
           (u/raise "Error indexing document:" (ex-message e)
                    {:doc-ref doc-ref :doc-text doc-text})))))
@@ -589,9 +591,10 @@
                                ^UnifiedMap hit-terms]
   IIndexWriter
   (write [this doc-ref doc-text]
-    (add-doc-txs this nil doc-text txs doc-ref hit-terms)
-    (when (< 10000000 (.size txs))
-      (.commit this)))
+    (when-not (s/blank? doc-text)
+      (add-doc-txs this nil doc-text txs doc-ref hit-terms)
+      (when (< 10000000 (.size txs))
+        (.commit this))))
 
   (commit [this]
     (l/transact-kv lmdb txs)

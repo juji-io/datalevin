@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- [Search] Handle empty documents
+
 ## 0.6.14
 ### Fixed
 - Fixed adding created-at schema item for upgrading Datalog DB from prior 0.6.4 (thx @jdf-id-au)
