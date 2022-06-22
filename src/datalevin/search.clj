@@ -5,7 +5,8 @@
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
             [datalevin.bits :as b]
-            [clojure.stacktrace :as st])
+            [clojure.stacktrace :as st]
+            [clojure.string :as s])
   (:import [datalevin.utl PriorityQueue GrowingIntArray]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]
@@ -329,7 +330,8 @@
   (add-doc [this doc-ref doc-text writing?]
     (locking this
       (try
-        (when-let [doc-id (doc-ref->id this doc-ref writing?)]
+        (when-not (s/blank? doc-text)
+          (when-let [doc-id (doc-ref->id this doc-ref writing?)]
           (remove-doc* this norms doc-id writing?))
         (let [txs       (FastList.)
               hit-terms (UnifiedMap.)]
@@ -338,7 +340,7 @@
             (let [term (.getKey kv)
                   info (.getValue kv)]
               (.add txs [:put terms-dbi term info :string :term-info])))
-          (l/transact-kv lmdb txs))
+          (l/transact-kv lmdb txs)))
         (catch Exception e
           (st/print-stack-trace e)
           (u/raise "Error indexing document:" (ex-message e)
@@ -602,9 +604,10 @@
                                ^UnifiedMap hit-terms]
   IIndexWriter
   (write [this doc-ref doc-text]
-    (add-doc-txs this nil doc-text txs doc-ref hit-terms false)
+    (when-not (s/blank? doc-text)
+      (add-doc-txs this nil doc-text txs doc-ref hit-terms false)
     (when (< 10000000 (.size txs))
-      (.commit this)))
+      (.commit this))))
 
   (commit [this]
     (l/transact-kv lmdb txs)

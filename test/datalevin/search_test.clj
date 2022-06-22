@@ -22,14 +22,11 @@
 
 (defn- add-docs
   [f engine]
-  (f engine :doc1
-     "The quick red fox jumped over the lazy red dogs.")
-  (f engine :doc2
-     "Mary had a little lamb whose fleece was red as fire.")
-  (f engine :doc3
-     "Moby Dick is a story of a whale and a man obsessed.")
-  (f engine :doc4
-     "The robber wore a red fleece jacket and a baseball cap.")
+  (f engine :doc0 "")
+  (f engine :doc1 "The quick red fox jumped over the lazy red dogs.")
+  (f engine :doc2 "Mary had a little lamb whose fleece was red as fire.")
+  (f engine :doc3 "Moby Dick is a story of a whale and a man obsessed.")
+  (f engine :doc4 "The robber wore a red fleece jacket and a baseball cap.")
   (f engine :doc5
      "The English Springer Spaniel is the best of all red dogs I know."))
 
