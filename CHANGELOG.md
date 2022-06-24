@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.15
 ### Improved
 - [Search] Handle empty documents
 - [Datalog] Handle safe schema migration, #1, #128
