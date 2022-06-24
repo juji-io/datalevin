@@ -509,14 +509,13 @@ Only usable for debug output.
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
-  (locking conn
-    (let [report (atom nil)]
+  (let [report (atom nil)]
+    (locking conn
       (swap! conn (fn [db]
                     (let [r (with db tx-data tx-meta)]
                       (reset! report r)
-                      (:db-after r))))
-      @report)))
-
+                      (:db-after r)))))
+    @report))
 
 (defn transact!
   "Applies transaction to the underlying database.
