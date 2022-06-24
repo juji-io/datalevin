@@ -52,7 +52,6 @@
   [schema]
   (inc ^long (apply max (map :db/aid (vals schema)))))
 
-;; TODO schema migration
 (defn- update-schema
   [old schema]
   (let [^long init-aid (init-max-aid old)
@@ -60,7 +59,7 @@
     (into {}
           (map (fn [[attr props]]
                  (if-let [old-props (old attr)]
-                   [attr (merge old-props props)]
+                   [attr (assoc props :db/aid (old-props :db/aid))]
                    (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
                      (vswap! i #(inc ^long %))
                      res))))
@@ -86,36 +85,6 @@
                         first)]
         (inc ^long gt))
       c/gt0))
-
-(defn- migrate-cardinality
-  [lmdb attr old new]
-  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
-    ;; TODO figure out if this is consistent with data
-    ;; raise exception if not
-    ))
-
-(defn- handle-value-type
-  [lmdb attr old new]
-  (when (not= old new)
-    ;; TODO raise if datom already exist for this attr
-    ))
-
-(defn- migrate-unique
-  [lmdb attr old new]
-  (when (and (not old) new)
-    ;; TODO figure out if the attr values are unique for each entity,
-    ;; raise if not
-    ;; also check if ave and vea entries exist for this attr, create if not
-    ))
-
-(defn- migrate [lmdb attr old new]
-  (doseq [[k v] new
-          :let  [v' (old k)]]
-    (case k
-      :db/cardinality (migrate-cardinality lmdb attr v' v)
-      :db/valueType   (handle-value-type lmdb attr v' v)
-      :db/unique      (migrate-unique lmdb attr v' v)
-      :pass-through)))
 
 (defn- low-datom->indexable
   [schema ^Datom d]
@@ -227,7 +196,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare insert-data delete-data)
+(declare insert-data delete-data check)
 
 (deftype Store [lmdb
                 search-engine
@@ -272,7 +241,11 @@
   (rschema [_]
     rschema)
 
-  (set-schema [_ new-schema]
+  (set-schema [this new-schema]
+    (doseq [[attr new] new-schema
+            :let       [old (schema attr)]
+            :when      old]
+      (check this attr old new))
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
@@ -293,7 +266,7 @@
     (swap-attr this attr f nil nil))
   (swap-attr [this attr f x]
     (swap-attr this attr f x nil))
-  (swap-attr [_ attr f x y]
+  (swap-attr [this attr f x y]
     (let [o (or (schema attr)
                 (let [m {:db/aid max-aid}]
                   (set! max-aid (inc ^long max-aid))
@@ -302,7 +275,7 @@
               (and x y) (f o x y)
               x         (f o x)
               :else     (f o))]
-      (migrate lmdb attr o p)
+      (check this attr o p)
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
       (set! rschema (schema->rschema schema))
@@ -476,6 +449,62 @@
          (low-datom->indexable schema low-datom)]
         index
         :id))))
+
+(defn- check-cardinality
+  [^Store store attr old new]
+  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (u/raise "Cardinality change is not allowed when data exist"
+                 {:attribute attr})))))
+
+(defn- check-value-type
+  [^Store store attr old new]
+  (when (not= old new)
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (u/raise "Value type change is not allowed when data exist"
+                 {:attribute attr})))))
+
+(defn- violate-unique?
+  [^Store store low-datom high-datom]
+  (let [prev-v   (volatile! nil)
+        violate? (volatile! false)
+        schema   (schema store)
+        visitor  (fn [kv]
+                   (let [^Retrieved ave (b/read-buffer (lmdb/k kv) :ave)
+                         v              (.-v ave)]
+                     (if (= @prev-v v)
+                       (do (vreset! violate? true)
+                           :datalevin/terminate-visit)
+                       (vreset! prev-v v))))]
+    (lmdb/visit (.-lmdb store) c/ave visitor
+                [:open
+                 (low-datom->indexable schema low-datom)
+                 (high-datom->indexable schema high-datom)]
+                :ave)
+    @violate?))
+
+(defn- check-unique
+  [store attr old new]
+  (when (and (not old) new)
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (when (violate-unique? store low-datom high-datom)
+          (u/raise "Attribute uniqueness change is inconsistent with data"
+                   {:attribute attr}))))))
+
+(defn- check [store attr old new]
+  (doseq [[k v] new
+          :let  [v' (old k)]]
+    (case k
+      :db/cardinality (check-cardinality store attr v' v)
+      :db/valueType   (check-value-type store attr v' v)
+      :db/unique      (check-unique store attr v' v)
+      :pass-through)))
 
 (defn- insert-data
   [^Store store ^Datom d ft-ds]

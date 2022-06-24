@@ -209,7 +209,7 @@
       (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
         (loop [^Iterator iter (.iterator ^Iterable iterable)]
           (when (.hasNext iter)
-            (visitor (.next iter))
-            (recur iter)))))
+            (when-not (= (visitor (.next iter)) :datalevin/terminate-visit)
+              (recur iter))))))
     (raise "Fail to visit: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))

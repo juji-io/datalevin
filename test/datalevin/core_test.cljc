@@ -9,7 +9,8 @@
             [datalevin.util :as u]
             [datalevin.test.core]
             [clojure.string :as str]
-            [clojure.test :refer [is deftest testing]])
+            [clojure.test :refer [is deftest testing]]
+            [datalevin.datom :as d])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]
@@ -1121,6 +1122,28 @@
     (sut/transact! conn [[:db/retractEntity [:id 1]]])
     (is (= (count (sut/datoms @conn :eav)) 0))
     (is (nil? (sut/entity @conn [:id 1])))
+
+    (sut/close conn)
+    (u/delete-files dir)))
+
+(deftest update-schema-test
+  (let [dir  (u/tmp-dir (str "update-schema-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}})]
+    (sut/transact! conn [{:id 1}])
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (thrown-with-msg? Exception #"unique constraint"
+                          (sut/transact! conn [[:db/add 2 :id 1]])))
+
+    (sut/update-schema conn {:id {:db/valueType :db.type/long}})
+    (sut/transact! conn [[:db/add 2 :id 1]])
+    (is (= (count (sut/datoms @conn :eav)) 2))
+
+    (is (thrown-with-msg? Exception #"uniqueness change is inconsistent"
+                          (sut/update-schema
+                            conn {:id {:db/unique    :db.unique/identity
+                                       :db/valueType :db.type/long}})))
 
     (sut/close conn)
     (u/delete-files dir)))
