@@ -510,14 +510,13 @@ Only usable for debug output.
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
-  (locking conn
-    (let [report (atom nil)]
+  (let [report (atom nil)]
+    (locking conn
       (swap! conn (fn [db]
                     (let [r (with db tx-data tx-meta)]
                       (reset! report r)
-                      (:db-after r))))
-      @report)))
-
+                      (:db-after r)))))
+    @report))
 
 (defn transact!
   "Applies transaction to the underlying database.
@@ -1265,9 +1264,9 @@ the `pred`.
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type])
-       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return nil. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`.
+       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return nil. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`. `visitor` function can use [[read-buffer]] to read the buffer content.
 
-     `visitor` can use [[read-buffer]] to read the buffer content.
+      If `visitor` function returns a special value `:datalevin/terminate-visit`, the visit will stop immediately.
 
       For client/server usage, [[interpret.inter-fn]] should be used to define the `visitor` function. For babashka pod usage, `defpodfn` should be used.
 

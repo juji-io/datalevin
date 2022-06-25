@@ -21,6 +21,10 @@
 ## 0.6.15
 ### Improved
 - [Search] Handle empty documents
+- [Datalog] Handle safe schema migration, #1, #128
+- bump deps
+### Added
+- [KV] visitor function for `visit` can return a special value `:datalevin/terminate-visit` to stop the visit.
 
 ## 0.6.14
 ### Fixed

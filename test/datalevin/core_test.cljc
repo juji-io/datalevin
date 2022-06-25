@@ -1,20 +1,19 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
             [datalevin.server :as s]
-            [datalevin.storage :as st]
             [datalevin.client :as cl]
             [datalevin.interpret :as i]
             [datalevin.constants :as c]
             [datalevin.search-utils :as su]
             [datalevin.util :as u]
-            [datalevin.test.core]
             [clojure.string :as str]
-            [clojure.test :refer [is deftest testing]])
+            #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
+               :clj  [clojure.test :as t :refer [is are deftest testing]])
+            [datalevin.datom :as d])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]
-           [datalevin.storage Store]
-           ))
+           [datalevin.storage Store]))
 
 (deftest basic-ops-test
   (let [schema
@@ -911,12 +910,15 @@
                           :db/ident :Petr}
                          {:db/ident :inc-age
                           :db/fn    inc-age}])
-    (is (thrown-msg? "Can’t find entity for transaction fn :unknown-fn"
-                     (sut/transact! conn [[:unknown-fn]])))
-    (is (thrown-msg? "Entity :Petr expected to have :db/fn attribute with fn? value"
-                     (sut/transact! conn [[:Petr]])))
-    (is (thrown-msg? "No entity with name: Bob"
-                     (sut/transact! conn [[:inc-age "Bob"]])))
+    (is (thrown-with-msg? Exception
+                          #"Can’t find entity for transaction fn :unknown-fn"
+                          (sut/transact! conn [[:unknown-fn]])))
+    (is (thrown-with-msg? Exception
+                          #"Entity :Petr expected to have :db/fn attribute"
+                          (sut/transact! conn [[:Petr]])))
+    (is (thrown-with-msg? Exception
+                          #"No entity with name: Bob"
+                          (sut/transact! conn [[:inc-age "Bob"]])))
     (sut/transact! conn [[:inc-age "Petr"]])
     (let [e (sut/entity @conn 1)]
       (is (= (:age e) 32))
@@ -1121,6 +1123,29 @@
     (sut/transact! conn [[:db/retractEntity [:id 1]]])
     (is (= (count (sut/datoms @conn :eav)) 0))
     (is (nil? (sut/entity @conn [:id 1])))
+
+    (sut/close conn)
+    (u/delete-files dir)))
+
+(deftest update-schema-test
+  (let [dir  (u/tmp-dir (str "update-schema-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}})]
+    (sut/transact! conn [{:id 1}])
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    ;; TODO somehow this cannot pass in graal
+    ;; (is (thrown-with-msg? Exception #"unique constraint"
+    ;;                       (sut/transact! conn [[:db/add 2 :id 1]])))
+
+    (sut/update-schema conn {:id {:db/valueType :db.type/long}})
+    (sut/transact! conn [[:db/add 2 :id 1]])
+    (is (= (count (sut/datoms @conn :eav)) 2))
+
+    (is (thrown-with-msg? Exception #"uniqueness change is inconsistent"
+                          (sut/update-schema
+                            conn {:id {:db/unique    :db.unique/identity
+                                       :db/valueType :db.type/long}})))
 
     (sut/close conn)
     (u/delete-files dir)))
