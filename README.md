@@ -604,7 +604,7 @@ adjust the priorities based on feedback.
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io) and a few other projects, e.g. [clojure-lsp](https://github.com/clojure-lsp/clojure-lsp) replaced SQLite with Datalevin to gain some caching speedups.
+in production at [Juji](https://juji.io).
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
