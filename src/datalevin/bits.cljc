@@ -74,6 +74,11 @@
   [s]
   (Pattern/compile s))
 
+;; nippy
+
+#_(defn serialize
+   "")
+
 ;; bitmap
 
 (defn bitmap

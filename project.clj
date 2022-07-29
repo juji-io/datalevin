@@ -10,7 +10,7 @@
                          [com.cognitect/transit-clj "1.0.329"]
                          [com.fasterxml.jackson.core/jackson-core "2.13.3"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
-                         [com.taoensso/nippy "3.1.3"]
+                         [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "5.2.1"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
@@ -22,7 +22,7 @@
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.5.1"]
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.5.1"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.5.1"]
-                         [org.eclipse.collections/eclipse-collections "11.0.0.M1"]
+                         [org.eclipse.collections/eclipse-collections "11.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.3.0"]
                          [org.graalvm.nativeimage/svm "21.3.0"]
                          [org.lmdbjava/lmdbjava "0.8.2"
@@ -33,7 +33,7 @@
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
                           ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.28"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.30"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
