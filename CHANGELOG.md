@@ -11,7 +11,6 @@
 - Add pull API to client/server and babashka pods
 ## Improved
 - Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
-- Allow passing LMDB option map as `:kv-opts` when `create-conn`
 ## Changed
 - [**Breaking**] Change `EAV` and `AVE` index storage to use LMDB dupsort,
   reducing storage size and improving speed.
