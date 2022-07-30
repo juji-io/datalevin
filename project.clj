@@ -23,8 +23,9 @@
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.5.1"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.5.1"]
                          [org.eclipse.collections/eclipse-collections "11.1.0"]
-                         [org.graalvm.sdk/graal-sdk "21.3.0"]
-                         [org.graalvm.nativeimage/svm "21.3.0"]
+                         [org.graalvm.sdk/graal-sdk "22.2.0"]
+                         [org.graalvm.nativeimage/svm "22.2.0"]
+                         [org.graalvm.nativeimage/library-support "22.2.0"]
                          [org.lmdbjava/lmdbjava "0.8.2"
                           ;; uncomment when run lein codox
                           ;; :exclusions

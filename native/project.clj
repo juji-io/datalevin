@@ -22,6 +22,7 @@
                  [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
+                 [org.graalvm.nativeimage/library-support]
                  [org.lmdbjava/lmdbjava]
                  [org.clojure/test.check]
                  [org.bouncycastle/bcprov-jdk15on]

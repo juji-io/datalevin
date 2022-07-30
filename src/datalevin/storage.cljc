@@ -575,17 +575,17 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [validate-data? auto-entity-time?]
+  ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?]
                 :or   {validate-data?    false
                        auto-entity-time? false}
                 :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
-         lmdb (lmdb/open-kv dir)]
+         lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
      (transact-opts lmdb opts)
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
-                (s/new-search-engine lmdb (:search-engine opts))
+                (s/new-search-engine lmdb search-opts)
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)

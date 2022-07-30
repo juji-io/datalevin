@@ -30,7 +30,7 @@
 ;; Entities
 
 (defn entity
-  "Retrieves an entity by its id from Datalog database. Entities
+  "Retrieves an entity by its id from a Datalog database. Entities
   are lazy map-like structures to navigate Datalevin database content.
 
   `db` is a Datalog database.
@@ -93,11 +93,11 @@
   (de/entity db eid))
 
 (def ^{:arglists '([ent attr value])
-       :doc      "Add an attribute value to an entity"}
+       :doc      "Add an attribute value to an entity of a Datalog database"}
   add de/add)
 
 (def ^{:arglists '([ent attr][ent attr value])
-       :doc      "Remove an attribute from an entity"}
+       :doc      "Remove an attribute from an entity of a Datalog database"}
   retract de/retract)
 
 (defn entid
@@ -134,7 +134,7 @@ Only usable for debug output.
 ;; Pull API
 
 (defn pull
-  "Fetches data from Datalog database using recursive declarative
+  "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
@@ -179,7 +179,7 @@ Only usable for debug output.
           [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
 
 (defn q
-  "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+  "Executes a Datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
 
           Usage:
 
@@ -205,7 +205,9 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, a option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   Usage:
 
@@ -225,7 +227,7 @@ Only usable for debug output.
 
 
 (def ^{:arglists '([e a v] [e a v tx] [e a v tx added])
-       :doc      "Low-level fn to create raw datoms.
+       :doc      "Low-level fn to create raw datoms in a Datalog db.
 
              Optionally with transaction id (number) and `added` flag (`true` for addition, `false` for retraction).
 
@@ -249,7 +251,7 @@ Only usable for debug output.
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
-       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+       :doc      "Low-level function for creating a Datalog database quickly from a trusted sequence of datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
 
@@ -257,7 +259,9 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
              See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
@@ -448,6 +452,11 @@ Only usable for debug output.
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
+
   "
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
@@ -456,18 +465,20 @@ Only usable for debug output.
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to a database at the given
+  "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
   `dir` could be a local directory path or a dtlv connection URI string.
 
-  `opts` map has keys:
+  `opts` map may have keys:
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening

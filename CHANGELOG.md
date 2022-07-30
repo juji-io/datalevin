@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Improved
+- [Datalog] Allow passing LMDB option map as `:kv-opts` when `create-conn`
+- bump deps
+
 ## 0.6.15
 ### Improved
 - [Search] Handle empty documents
