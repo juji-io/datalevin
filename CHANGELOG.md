@@ -2,14 +2,14 @@
 
 ## WIP
 ### Added
-- `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
+- [KV] `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
   used for `binding` if additional Java classes are to be serialized as part of
   the `:data` data type.
 ### Improved
-- [Datalog] Allow passing LMDB option map as `:kv-opts` to underlying KV store when `create-conn`
+- [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
 - bump deps
 ### Changed
-- [**Breaking**] Changed `:search-engine` option map key to `:search-opts` for consistency
+- [Datalog] Changed `:search-engine` option map key to `:search-opts` for consistency [**Breaking**]
 
 ## 0.6.15
 ### Improved
