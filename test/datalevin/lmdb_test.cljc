@@ -8,10 +8,10 @@
             [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop]
-            [taoensso.nippy :as nippy])
+            [clojure.test.check.properties :as prop])
   (:import [java.util UUID Arrays HashMap]
-           [java.lang Long]))
+           [java.lang Long]
+           [org.eclipse.collections.impl.list.mutable FastList]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -538,4 +538,19 @@
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" "b" 1 :uuid]])))
     (l/close-kv lmdb)
-    (u/delete-files dir)) )
+    (u/delete-files dir)))
+
+(deftest custom-data-test
+  (let [dir  (u/tmp-dir (str "custom-data-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        lst  (doto (FastList.) (.add 1))
+        data {:lst lst}]
+    (l/open-dbi lmdb "a")
+    (l/transact-kv lmdb [[:put "a" 1 data]])
+    (is (not= data (l/get-value lmdb "a" 1)))
+    (is (= data
+           (binding [c/*data-serializable-classes*
+                     #{"org.eclipse.collections.impl.list.mutable.FastList"}]
+             (l/get-value lmdb "a" 1))))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))

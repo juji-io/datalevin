@@ -2,7 +2,7 @@
 
 ## WIP
 ### Added
-- [KV] `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
+- `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
   used for `binding` if additional Java classes are to be serialized as part of
   the `:data` data type.
 ### Improved
