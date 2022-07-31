@@ -411,7 +411,7 @@
 
 (defn- data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/freeze data)) limit))
+  (< (alength ^bytes (b/serialize data)) limit))
 
 (test/defspec data-ops-generative-test
   100

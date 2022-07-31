@@ -1,5 +1,6 @@
 (ns datalevin.constants
   (:refer-clojure :exclude [meta])
+  (:require [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays HashSet]))
 
 ;;---------------------------------------------
@@ -155,6 +156,13 @@
 ;; general
 
 (def +buffer-grow-factor+ 10)
+
+;; serialization
+
+(def ^{:dynamic true
+       :doc     "set of additional serializable classes, e.g.
+                  `#{\"my.package.*\"}`"}
+  *data-serializable-classes* #{})
 
 ;; lmdb
 

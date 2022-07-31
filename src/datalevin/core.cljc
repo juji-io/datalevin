@@ -30,7 +30,7 @@
 ;; Entities
 
 (defn entity
-  "Retrieves an entity by its id from Datalog database. Entities
+  "Retrieves an entity by its id from a Datalog database. Entities
   are lazy map-like structures to navigate Datalevin database content.
 
   `db` is a Datalog database.
@@ -93,11 +93,11 @@
   (de/entity db eid))
 
 (def ^{:arglists '([ent attr value])
-       :doc      "Add an attribute value to an entity"}
+       :doc      "Add an attribute value to an entity of a Datalog database"}
   add de/add)
 
 (def ^{:arglists '([ent attr][ent attr value])
-       :doc      "Remove an attribute from an entity"}
+       :doc      "Remove an attribute from an entity of a Datalog database"}
   retract de/retract)
 
 (defn entid
@@ -134,7 +134,7 @@ Only usable for debug output.
 ;; Pull API
 
 (defn pull
-  "Fetches data from Datalog database using recursive declarative
+  "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
@@ -179,7 +179,7 @@ Only usable for debug output.
           [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
 
 (defn q
-  "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+  "Executes a Datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
 
           Usage:
 
@@ -205,7 +205,9 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, a option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   Usage:
 
@@ -225,7 +227,7 @@ Only usable for debug output.
 
 
 (def ^{:arglists '([e a v] [e a v tx] [e a v tx added])
-       :doc      "Low-level fn to create raw datoms.
+       :doc      "Low-level fn to create raw datoms in a Datalog db.
 
              Optionally with transaction id (number) and `added` flag (`true` for addition, `false` for retraction).
 
@@ -249,7 +251,7 @@ Only usable for debug output.
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
-       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+       :doc      "Low-level function for creating a Datalog database quickly from a trusted sequence of datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
 
@@ -257,7 +259,9 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
              See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
@@ -282,7 +286,7 @@ Only usable for debug output.
 
 
 (defn ^:no-doc db-with
-  "Applies transaction. Return the db."
+  "Applies transaction. Return the Datalog db."
   [db tx-data]
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
@@ -291,7 +295,7 @@ Only usable for debug output.
 ;; Index lookups
 
 (defn datoms
-  "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
+  "Index lookup in Datalog db. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
 
@@ -434,13 +438,13 @@ Only usable for debug output.
        (db/db? @conn)))
 
 (defn conn-from-db
-  "Creates a mutable reference to a given database. See [[create-conn]]."
+  "Creates a mutable reference to a given Datalog database. See [[create-conn]]."
   [db]
   {:pre [(db/db? db)]}
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
-  "Create a mutable reference to a database with the given datoms added to it.
+  "Create a mutable reference to a Datalog database with the given datoms added to it.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
@@ -448,6 +452,11 @@ Only usable for debug output.
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
+
   "
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
@@ -456,18 +465,20 @@ Only usable for debug output.
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to a database at the given
+  "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
   `dir` could be a local directory path or a dtlv connection URI string.
 
-  `opts` map has keys:
+  `opts` map may have keys:
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -494,14 +505,14 @@ Only usable for debug output.
   ([dir schema opts] (conn-from-db (empty-db dir schema opts))))
 
 (defn close
-  "Close the connection"
+  "Close the connection to a Datalog db"
   [conn]
   (when-let [store (.-store ^DB @conn)]
     (s/close ^Store store))
   nil)
 
 (defn closed?
-  "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
+  "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"
   [conn]
   (or (nil? conn)
       (nil? @conn)
@@ -518,7 +529,7 @@ Only usable for debug output.
     @report))
 
 (defn transact!
-  "Applies transaction to the underlying database.
+  "Applies transaction to the underlying Datalog database of a connection.
 
   Returns transaction report, a map:
 
@@ -612,7 +623,7 @@ Only usable for debug output.
 
 
 (defn reset-conn!
-  "Forces underlying `conn` value to become `db`. Will generate a tx-report that
+  "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that
   will remove everything from old value and insert everything from the new one."
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
@@ -635,7 +646,7 @@ Only usable for debug output.
 
 
 (defn listen!
-  "Listen for changes on the given connection. Whenever a transaction is applied
+  "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
   to the database via [[transact!]], the callback is called with the transaction
   report. `key` is any opaque unique value.
 
@@ -683,14 +694,12 @@ Only usable for debug output.
 
 
 (defn db
-  "Returns the underlying database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
+  "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
 
   Exists for Datomic API compatibility. "
   [conn]
   {:pre [(conn? conn)]}
   @conn)
-
-;; datalog db
 
 (defn opts
   "Return the option map of the Datalog DB"
@@ -705,7 +714,7 @@ Only usable for debug output.
   (s/schema ^Store (.-store ^DB @conn)))
 
 (defn update-schema
-  "Update the schema of an open connection. `schema-update` is a map from
+  "Update the schema of an open connection to a Datalog db. `schema-update` is a map from
   attribute keywords to maps of corresponding properties. `del-attrs` is a
   set of attributes to be removed from the schema, if there is no
   datoms associated with them, otherwise an exception will be thrown.
@@ -738,7 +747,7 @@ Only usable for debug output.
     conn))
 
 (defn get-conn
-  "Obtain an open connection to a database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
+  "Obtain an open connection to a Datalog database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
 
   See also [[create-conn]] and [[with-conn]]"
   ([dir]
@@ -751,7 +760,7 @@ Only usable for debug output.
      (new-conn dir schema opts))))
 
 (defmacro with-conn
-  "Evaluate body in the context of an connection to the database.
+  "Evaluate body in the context of an connection to the Datalog database.
 
   If the database does not exist, this will create it. If it is closed,
   this will open it. However, the connection will be closed in the end of
@@ -961,7 +970,7 @@ Only usable for debug output.
   list-dbis l/list-dbis)
 
 (defn copy
-  "Copy a database to a destination directory path, optionally compact while copying, default not compact. "
+  "Copy a Datalog or key-value database to a destination directory path, optionally compact while copying, default not compact. "
   ([db dest]
    (copy db dest false))
   ([db dest compact?]

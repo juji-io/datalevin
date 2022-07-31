@@ -1370,7 +1370,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler swap-attr))))
 
 (defn- del-attr
@@ -1463,28 +1463,28 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler size-filter))))
 
 (defn- head-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler head-filter))))
 
 (defn- tail-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler tail-filter))))
 
 (defn- slice-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)
+          args   (replace {frozen (b/deserialize frozen)} args)
 
           datoms (apply st/slice-filter
                         (db-store server skey (nth args 0)) (rest args))]
@@ -1496,7 +1496,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)
+          args   (replace {frozen (b/deserialize frozen)} args)
           datoms (apply st/rslice-filter
                         (db-store server skey (nth args 0)) (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1611,14 +1611,14 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler get-some))))
 
 (defn- range-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)
+          args   (replace {frozen (b/deserialize frozen)} args)
           data   (apply l/range-filter
                         (db-store server skey (nth args 0)) (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -1629,20 +1629,14 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler range-filter-count))))
 
 (defn- visit
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace
-                   {frozen
-                    (binding [nippy/*thaw-serializable-allowlist*
-                              (conj nippy/default-thaw-serializable-allowlist
-                                    "java.util.*")]
-                      (nippy/fast-thaw frozen))}
-                   args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler visit))))
 
 (defn- q

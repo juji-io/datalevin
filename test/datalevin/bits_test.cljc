@@ -10,6 +10,7 @@
             [clojure.test.check.properties :as prop]
             [datalevin.util :as u])
   (:import [java.util Arrays UUID Date]
+           [java.util.concurrent Semaphore]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
            [org.roaringbitmap RoaringBitmap]
@@ -230,7 +231,7 @@
     (.clear bf)
     (sut/put-buffer bf d1 :datom)
     (.flip bf)
-    (is (= d1 (nippy/fast-thaw (nippy/fast-freeze d1))))
+    (is (= d1 (sut/deserialize (sut/serialize d1))))
     (is (= d1 (sut/read-buffer bf :datom)))))
 
 (test/defspec datom-generative-test
@@ -732,7 +733,7 @@
 
 (defn data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/fast-freeze data)) limit))
+  (< (alength ^bytes (sut/serialize data)) limit))
 
 (test/defspec data-eav-generative-test
   50
@@ -779,3 +780,10 @@
     (is (= 4 (.select rr 3)))
     (sut/bitmap-del rr 4)
     (is (= 1000 (.select rr 3)))))
+
+(deftest data-serialize-test
+  (let [d  (Semaphore. 1)
+        bs (sut/serialize d)]
+    (is (not (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))
+    (binding [c/*data-serializable-classes* #{"java.util.concurrent.*"}]
+      (is (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))))

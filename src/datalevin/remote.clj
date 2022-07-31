@@ -4,6 +4,7 @@
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.storage :as s]
+            [datalevin.bits :as b]
             [datalevin.search :as sc]
             [datalevin.lmdb :as l]
             [taoensso.nippy :as nippy]
@@ -92,7 +93,7 @@
   (swap-attr [this attr f x]
     (s/swap-attr this attr f x nil))
   (swap-attr [_ attr f x y]
-    (let [frozen-f (nippy/fast-freeze f)]
+    (let [frozen-f (b/serialize f)]
       (cl/normal-request client :swap-attr [db-name attr frozen-f x y])))
 
   (del-attr [_ attr]
@@ -125,27 +126,27 @@
     (cl/normal-request client :rslice [db-name index high-datom low-datom]))
 
   (size-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :size-filter
                          [db-name index frozen-pred low-datom high-datom])))
 
   (head-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :head-filter
                          [db-name index frozen-pred low-datom high-datom])))
 
   (tail-filter [_ index pred high-datom low-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :tail-filter
                          [db-name index frozen-pred high-datom low-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :slice-filter
                          [db-name index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :rslice-filter
                          [db-name index frozen-pred high-datom low-datom])))
 
@@ -276,7 +277,7 @@
   (get-some [db dbi-name pred k-range k-type v-type]
     (l/get-some db dbi-name pred k-range k-type v-type false))
   (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :get-some
                          [db-name dbi-name frozen-pred k-range k-type v-type
                           ignore-key?])))
@@ -288,7 +289,7 @@
   (range-filter [db dbi-name pred k-range k-type v-type]
     (l/range-filter db dbi-name pred k-range k-type v-type false))
   (range-filter [db dbi-name pred k-range k-type v-type ignore-key?]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :range-filter
                          [db-name dbi-name frozen-pred k-range k-type v-type
                           ignore-key?])))
@@ -296,14 +297,14 @@
   (range-filter-count [db dbi-name pred k-range]
     (l/range-filter-count db dbi-name pred k-range :data))
   (range-filter-count [db dbi-name pred k-range k-type]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :range-filter-count
                          [db-name dbi-name frozen-pred k-range k-type])))
 
   (visit [db dbi-name visitor k-range]
     (l/visit db dbi-name visitor k-range :data))
   (visit [db dbi-name visitor k-range k-type]
-    (let [frozen-visitor (nippy/fast-freeze visitor)]
+    (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request client :visit
                          [db-name dbi-name frozen-visitor k-range k-type]))))
 

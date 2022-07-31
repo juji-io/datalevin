@@ -76,8 +76,18 @@
 
 ;; nippy
 
-#_(defn serialize
-   "")
+(defn serialize
+  "Serialize data to bytes"
+  [x]
+  (nippy/fast-freeze x))
+
+(defn deserialize
+  "Deserialize from bytes. "
+  [bs]
+  (binding [nippy/*thaw-serializable-allowlist*
+            (into nippy/*thaw-serializable-allowlist*
+                  c/*data-serializable-classes*)]
+    (nippy/fast-thaw bs)))
 
 ;; bitmap
 
@@ -173,9 +183,10 @@
 (defn- get-data
   "Read data from a ByteBuffer"
   ([^ByteBuffer bb]
-   (when-let [bs (get-bytes bb)] (nippy/fast-thaw bs)))
+   (when-let [bs (get-bytes bb)]
+     (deserialize bs)))
   ([^ByteBuffer bb n]
-   (when-let [bs (get-bytes-val bb n)] (nippy/fast-thaw bs))))
+   (when-let [bs (get-bytes-val bb n)] (deserialize bs))))
 
 (def ^:no-doc ^:const float-sign-idx 31)
 (def ^:no-doc ^:const double-sign-idx 63)
@@ -274,7 +285,7 @@
 
 (defn- put-data
   [^ByteBuffer bb x]
-  (put-bytes bb (nippy/fast-freeze x)))
+  (put-bytes bb (serialize x)))
 
 ;; bytes
 
@@ -302,7 +313,7 @@
     (bytes? x)         (inc (alength ^bytes x))
     (int? x)           8
     (instance? Byte x) 1
-    :else              (alength ^bytes (nippy/fast-freeze x))))
+    :else              (alength ^bytes (serialize x))))
 
 ;; index
 
@@ -352,7 +363,7 @@
   (condp = v
     c/v0   c/min-bytes
     c/vmax c/max-bytes
-    (nippy/fast-freeze v)))
+    (serialize v)))
 
 (defn- val-bytes
   "Turn value into bytes according to :db/valueType"
