@@ -761,6 +761,13 @@
     (testing "update"
       (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
       (is (= (sut/search engine "red" ) [2])))
+
+    (sut/remove-doc engine 1)
+    (is (= 2 (sut/doc-count engine)))
+
+    (sut/clear-docs engine)
+    (is (= 0 (sut/doc-count engine)))
+
     (sut/close-kv lmdb)
     (s/stop server)))
 

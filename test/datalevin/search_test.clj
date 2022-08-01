@@ -110,8 +110,10 @@
         (is (not (sl/contains-index? sl 1)))
         (is (= (sl/size sl) 3))
         (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 1] :int-id) 0))
-        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-id :int-int)))))
+        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-id :int-int))))
 
+      (sut/clear-docs engine)
+      (is (= (sut/doc-count engine) 0)))
     (l/close-kv lmdb)))
 
 (deftest search-test

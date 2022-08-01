@@ -1359,6 +1359,11 @@ the `pred`.
 engine index. A slow operation."}
   remove-doc sc/remove-doc)
 
+(def ^{:arglists '([engine])
+       :doc      "Remove all documents from the search engine index. It is useful
+  because rebuilding search index may be faster than updating some documents."}
+  clear-docs sc/clear-docs)
+
 (def ^{:arglists '([engine doc-ref])
        :doc      "Test if a `doc-ref` is already in the search index"}
   doc-indexed? sc/doc-indexed?)

@@ -1660,6 +1660,10 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler remove-doc)))
 
+(defn- clear-docs
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler clear-docs)))
+
 (defn- doc-indexed?
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler doc-indexed?)))
@@ -1762,6 +1766,7 @@
    'new-search-engine
    'add-doc
    'remove-doc
+   'clear-docs
    'doc-indexed?
    'doc-count
    'doc-refs

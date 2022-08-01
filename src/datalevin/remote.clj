@@ -336,6 +336,9 @@
     (cl/normal-request (.-client store) :remove-doc
                        [(.-db-name store) doc-ref]))
 
+  (clear-docs [this]
+    (cl/normal-request (.-client store) :clear-docs [(.-db-name store)]))
+
   (doc-indexed? [this doc-ref]
     (cl/normal-request (.-client store) :doc-indexed?
                        [(.-db-name store) doc-ref]))

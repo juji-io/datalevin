@@ -298,6 +298,7 @@
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text])
   (remove-doc [this doc-ref])
+  (clear-docs [this])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
   (doc-refs [this])
@@ -344,6 +345,11 @@
     (if-let [doc-id (doc-ref->id this doc-ref)]
       (remove-doc* this norms doc-id)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
+
+  (clear-docs [this]
+    (l/clear-dbi lmdb terms-dbi)
+    (l/clear-dbi lmdb docs-dbi)
+    (l/clear-dbi lmdb positions-dbi))
 
   (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref))
 
@@ -411,8 +417,7 @@
     max-term)
 
   (lmdb [_]
-    lmdb)
-  )
+    lmdb))
 
 (defn- get-term-info
   [engine term]

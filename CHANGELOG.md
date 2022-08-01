@@ -2,6 +2,8 @@
 
 ## WIP
 ### Added
+- [Search] `clear-docs` function to wipe out search index, as it is often faster
+  to rebuild search index than updating individual documents.
 - `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
   used for `binding` if additional Java classes are to be serialized as part of
   the `:data` data type.
