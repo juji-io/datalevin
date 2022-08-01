@@ -191,12 +191,6 @@
     (is (:regions/country (sut/schema conn)))
     (is (:db/created-at (sut/schema conn)))
     (is (sut/conn? conn))
-    (sut/close conn)
-    (let [conn1 (sut/create-conn dir)]
-      (is (= 83 (count (sut/datoms @conn1 :eavt))))
-      (is (:regions/country (sut/schema conn1)))
-      (is (:db/created-at (sut/schema conn1)))
-      (sut/close conn1))
     (sut/clear conn)
     (let [conn1 (sut/create-conn dir)]
       (is (= 0 (count (sut/datoms @conn1 :eavt))))
@@ -392,12 +386,6 @@
     (is (:db/created-at (sut/schema conn)))
     (is (sut/conn? conn))
     (is (thrown? Exception (sut/update-schema conn {} #{:sales/year})))
-    (sut/close conn)
-    (let [conn1 (sut/create-conn dir)]
-      (is (= 83 (count (sut/datoms @conn1 :eavt))))
-      (is (:regions/country (sut/schema conn1)))
-      (is (:db/created-at (sut/schema conn1)))
-      (sut/close conn1))
     (sut/clear conn)
     (let [conn1 (sut/create-conn dir)]
       (is (= 0 (count (sut/datoms @conn1 :eavt))))

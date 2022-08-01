@@ -14,6 +14,7 @@
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
    [datalevin.entity :as de]
+   [taoensso.timbre :as log]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
@@ -1301,8 +1302,9 @@ the `pred`.
   visit l/visit)
 
 (defn clear
-  "Clear all data in the Datalog database, including schema."
+  "Close the Datalog database, then clear all data, including schema."
   [conn]
+  (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]
     (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
