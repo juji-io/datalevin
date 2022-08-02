@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.16
 ### Added
 - [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
 - [Search] `clear-docs` function to wipe out search index, as it might be faster
