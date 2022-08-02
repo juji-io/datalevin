@@ -163,9 +163,10 @@
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
-    "Update an attribute, f is similar to that of swap!")
+    "Update the properties of an attribute, f is similar to that of swap!")
   (del-attr [this attr]
     "Delete an attribute, throw if there is still datom related to it")
+  (rename-attr [this attr new-attr] "Rename an attribute")
   (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
@@ -286,11 +287,24 @@
     (if (populated? this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
       (let [aid (:db/aid (schema attr))]
-        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]])
+        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                                [:put c/meta :last-modified
+                                 (System/currentTimeMillis) :attr :long]])
         (set! schema (dissoc schema attr))
         (set! rschema (schema->rschema schema))
         (set! attrs (dissoc attrs aid))
         attrs)))
+
+  (rename-attr [this attr new-attr]
+    (let [props (schema attr)]
+      (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                              [:put c/schema new-attr props :attr]
+                              [:put c/meta :last-modified
+                               (System/currentTimeMillis) :attr :long]])
+      (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
+      (set! rschema (schema->rschema schema))
+      (set! attrs (assoc attrs (:db/aid props) new-attr))
+      attrs))
 
   (datom-count [_ index]
     (lmdb/entries lmdb (if (string? index) index (index->dbi index))))

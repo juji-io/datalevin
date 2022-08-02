@@ -1377,6 +1377,10 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler del-attr)))
 
+(defn- rename-attr
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler rename-attr)))
+
 (defn- datom-count
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler datom-count)))
@@ -1728,6 +1732,7 @@
    'init-max-eid
    'swap-attr
    'del-attr
+   'rename-attr
    'datom-count
    'load-datoms
    'tx-data

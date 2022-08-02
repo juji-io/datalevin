@@ -2,14 +2,17 @@
 
 ## WIP
 ### Added
-- [Search] `clear-docs` function to wipe out search index, as it is often faster
-  to rebuild search index than updating individual documents.
+- [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
+- [Search] `clear-docs` function to wipe out search index, as it might be faster
+  to rebuild search index than updating individual documents sometimes. #132
 - `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
   used for `binding` if additional Java classes are to be serialized as part of
-  the `:data` data type.
+  the default `:data` data type. #134
 ### Improved
 - [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
 - bump deps
+### Fixed
+- [Datalog] `clear` function on server. #133
 ### Changed
 - [Datalog] Changed `:search-engine` option map key to `:search-opts` for consistency [**Breaking**]
 

@@ -1123,7 +1123,13 @@
     (u/delete-files dir)))
 
 (deftest update-schema-test
-  (let [dir  (u/tmp-dir (str "update-schema-test-" (UUID/randomUUID)))
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "update-schema-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        dir  "dtlv://datalevin:datalevin@localhost/update-schema"
         conn (sut/create-conn dir
                               {:id {:db/unique    :db.unique/identity
                                     :db/valueType :db.type/long}})]
@@ -1142,5 +1148,14 @@
                             conn {:id {:db/unique    :db.unique/identity
                                        :db/valueType :db.type/long}})))
 
+    (is (thrown-with-msg? Exception #"Cannot delete attribute with datom"
+                          (sut/update-schema conn nil #{:id})))
+
+    (sut/update-schema conn nil nil {:id :identifer})
+    (is (= (:identifer (sut/schema conn))
+           {:db/valueType :db.type/long :db/aid 3}))
+    (is (= (sut/datoms @conn :eav)
+           [(d/datom 1 :identifer 1) (d/datom 2 :identifer 1)]))
+
     (sut/close conn)
-    (u/delete-files dir)))
+    (s/stop server)))

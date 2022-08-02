@@ -99,6 +99,9 @@
   (del-attr [_ attr]
     (cl/normal-request client :del-attr [db-name attr]))
 
+  (rename-attr [_ attr new-attr]
+    (cl/normal-request client :rename-attr [db-name attr new-attr]))
+
   (datom-count [_ index]
     (cl/normal-request client :datom-count [db-name index]))
 

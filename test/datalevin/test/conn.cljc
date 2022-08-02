@@ -37,6 +37,10 @@
            (d/update-schema conn1 {} #{:c/d})
            (d/schema conn1)))
 
+    (d/update-schema conn1 nil nil {:a/b :e/f})
+    (is (= (d/schema conn1) (assoc c/implicit-schema :e/f
+                                   {:db/valueType :db.type/string :db/aid 3})))
+
     (d/close conn1)
     (d/close conn2)))
 

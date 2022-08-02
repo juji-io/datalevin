@@ -715,10 +715,16 @@ Only usable for debug output.
   (s/schema ^Store (.-store ^DB @conn)))
 
 (defn update-schema
-  "Update the schema of an open connection to a Datalog db. `schema-update` is a map from
-  attribute keywords to maps of corresponding properties. `del-attrs` is a
-  set of attributes to be removed from the schema, if there is no
-  datoms associated with them, otherwise an exception will be thrown.
+  "Update the schema of an open connection to a Datalog db.
+
+  * `schema-update` is a map from attribute keywords to maps of corresponding
+  properties.
+
+  * `del-attrs` is a set of attributes to be removed from the schema, if there is
+  no datoms associated with them, otherwise an exception will be thrown.
+
+  * `rename-map` is a map of old attributes to new attributes, for renaming
+  attributes
 
   Return the updated schema.
 
@@ -726,15 +732,19 @@ Only usable for debug output.
 
         (update-schema conn {:new/attr {:db/valueType :db.type/string}})
         (update-schema conn {:new/attr {:db/valueType :db.type/string}}
-                            #{:old/attr1 :old/attr2})"
+                            #{:old/attr1 :old/attr2})
+        (update-schema conn nil nil {:old/attr :new/attr}) "
   ([conn schema-update]
-   (update-schema conn schema-update nil))
+   (update-schema conn schema-update nil nil))
   ([conn schema-update del-attrs]
+   (update-schema conn schema-update del-attrs nil))
+  ([conn schema-update del-attrs rename-map]
    {:pre [(conn? conn)]}
    (let [^DB db       (db conn)
          ^Store store (.-store db)]
      (s/set-schema store schema-update)
      (doseq [attr del-attrs] (s/del-attr store attr))
+     (doseq [[old new] rename-map] (s/rename-attr store old new))
      (schema conn))))
 
 (defonce ^:private connections (atom {}))
