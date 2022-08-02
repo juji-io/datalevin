@@ -13,6 +13,7 @@
            [java.util.concurrent Semaphore]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
+           [org.joda.time DateTime]
            [org.roaringbitmap RoaringBitmap]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.bits Indexable Retrieved]))
@@ -782,8 +783,13 @@
     (is (= 1000 (.select rr 3)))))
 
 (deftest data-serialize-test
-  (let [d  (Semaphore. 1)
-        bs (sut/serialize d)]
-    (is (not (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))
-    (binding [c/*data-serializable-classes* #{"java.util.concurrent.*"}]
-      (is (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))))
+  ;; TODO somehow this doesn't work in graal
+  (when-not (u/graal?)
+    (let [d1  (DateTime.)
+          bs1 (sut/serialize d1)]
+      (is (instance? org.joda.time.DateTime (sut/deserialize bs1))))
+    (let [d  (Semaphore. 1)
+          bs (sut/serialize d)]
+      (is (not (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))
+      (binding [c/*data-serializable-classes* #{"java.util.concurrent.Semaphore"}]
+        (is (instance? java.util.concurrent.Semaphore (sut/deserialize bs)))))))

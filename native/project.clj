@@ -26,6 +26,7 @@
                  [org.clojure/test.check]
                  [org.bouncycastle/bcprov-jdk15on]
                  [com.github.clj-easy/graal-build-time]
+                 [joda-time/joda-time]
                  [babashka/babashka.pods]]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"

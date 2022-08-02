@@ -12,6 +12,7 @@
                          [com.github.clj-easy/graal-build-time "0.1.4"]
                          [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "5.2.1"]
+                         [joda-time/joda-time "2.10.14"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
                          [org.babashka/sci "0.3.32"]
@@ -74,6 +75,7 @@
                                [org.bouncycastle/bcprov-jdk15on]
                                [com.taoensso/timbre]
                                [nrepl/bencode]
+                               [joda-time/joda-time]
                                [babashka/babashka.pods]
                                [org.graalvm.nativeimage/svm]]
                               :global-vars
