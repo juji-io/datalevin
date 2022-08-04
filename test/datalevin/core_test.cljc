@@ -708,7 +708,7 @@
                                        (UUID/randomUUID)))})
         _      (s/start server)
         dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
-        end    100000
+        end    50000
         conn   (sut/create-conn dir nil {:auto-entity-time? true})
         vs     (range 0 end)
         txs    (map (fn [a v] {a v}) (repeat :id) vs)]

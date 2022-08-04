@@ -14,7 +14,6 @@
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
    [datalevin.entity :as de]
-   [taoensso.timbre :as log]
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
