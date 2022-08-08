@@ -96,7 +96,7 @@
        :doc      "Add an attribute value to an entity of a Datalog database"}
   add de/add)
 
-(def ^{:arglists '([ent attr][ent attr value])
+(def ^{:arglists '([ent attr] [ent attr value])
        :doc      "Remove an attribute from an entity of a Datalog database"}
   retract de/retract)
 
@@ -278,11 +278,11 @@ Only usable for debug output.
   ([db tx-data tx-meta]
    {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
-                          {:db-before db
-                           :db-after  db
-                           :tx-data   []
-                           :tempids   {}
-                           :tx-meta   tx-meta}) tx-data)))
+                         {:db-before db
+                          :db-after  db
+                          :tx-data   []
+                          :tempids   {}
+                          :tx-meta   tx-meta}) tx-data)))
 
 
 (defn ^:no-doc db-with
@@ -441,7 +441,7 @@ Only usable for debug output.
   "Creates a mutable reference to a given Datalog database. See [[create-conn]]."
   [db]
   {:pre [(db/db? db)]}
-  (atom db :meta { :listeners (atom {}) }))
+  (atom db :meta {:listeners (atom {})}))
 
 (defn conn-from-datoms
   "Create a mutable reference to a Datalog database with the given datoms added to it.
@@ -518,18 +518,23 @@ Only usable for debug output.
       (nil? @conn)
       (s/closed? ^Store (.-store ^DB @conn))))
 
-(defn ^:no-doc -transact! [conn tx-data tx-meta]
-  {:pre [(conn? conn)]}
-  (let [report (atom nil)]
-    (locking conn
-      (swap! conn (fn [db]
-                    (let [r (with db tx-data tx-meta)]
-                      (reset! report r)
-                      (:db-after r)))))
-    @report))
+(defn ^:no-doc -transact!
+  ([conn tx-data tx-meta] -transact! conn tx-data tx-meta {})
+  ([conn tx-data tx-meta opts]
+   {:pre [(conn? conn)]}
+
+   (let [report (atom nil)]
+     (locking conn
+       (if-not (:staged? opts)
+         (swap! conn (fn [db]
+                       (let [r (with db tx-data tx-meta opts)]
+                         (reset! report r)
+                         (:db-after r))))
+         (reset! report (with @conn tx-data tx-meta opts))))
+     @report)))
 
 (defn transact!
-  "Applies transaction to the underlying Datalog database of a connection.
+  "Applies transaction to the underlying database.
 
   Returns transaction report, a map:
 
@@ -614,9 +619,10 @@ Only usable for debug output.
       (transact! conn [[:db/add  -1 :name   \"Oleg\"]
                        {:db/add 296 :friend -1]])"
   ([conn tx-data] (transact! conn tx-data nil))
-  ([conn tx-data tx-meta]
+  ([conn tx-data tx-meta] (transact! conn tx-data tx-meta {}))
+  ([conn tx-data tx-meta & {:keys [_staged?] :as opts}]
    ;; {:pre [(conn? conn)]}
-   (let [report (-transact! conn tx-data tx-meta)]
+   (let [report (-transact! conn tx-data tx-meta opts)]
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
        (callback report))
      report)))
@@ -628,12 +634,12 @@ Only usable for debug output.
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
    (let [report (db/map->TxReport
-                  { :db-before @conn
-                   :db-after   db
-                   :tx-data    (concat
-                                 (map #(assoc % :added false) (datoms @conn :eavt))
-                                 (datoms db :eavt))
-                   :tx-meta    tx-meta})]
+                 {:db-before @conn
+                  :db-after   db
+                  :tx-data    (concat
+                               (map #(assoc % :added false) (datoms @conn :eavt))
+                               (datoms db :eavt))
+                  :tx-meta    tx-meta})]
      (reset! conn db)
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
        (callback report))
@@ -873,19 +879,19 @@ Only usable for debug output.
             high     (.getMostSignificantBits uuid)
             low      (.getLeastSignificantBits uuid)
             new-high (bit-or (bit-and high 0x00000000FFFFFFFF)
-                             (bit-shift-left time 32)) ]
+                             (bit-shift-left time 32))]
         (UUID. new-high low))
       :cljs
       (uuid
-        (str
-          (-> (int (/ msec 1000))
-              (to-hex-string 8))
-          "-" (-> (rand-bits 16) (to-hex-string 4))
-          "-" (-> (rand-bits 16) (bit-and 0x0FFF) (bit-or 0x4000) (to-hex-string 4))
-          "-" (-> (rand-bits 16) (bit-and 0x3FFF) (bit-or 0x8000) (to-hex-string 4))
-          "-" (-> (rand-bits 16) (to-hex-string 4))
-          (-> (rand-bits 16) (to-hex-string 4))
-          (-> (rand-bits 16) (to-hex-string 4)))))))
+       (str
+        (-> (int (/ msec 1000))
+            (to-hex-string 8))
+        "-" (-> (rand-bits 16) (to-hex-string 4))
+        "-" (-> (rand-bits 16) (bit-and 0x0FFF) (bit-or 0x4000) (to-hex-string 4))
+        "-" (-> (rand-bits 16) (bit-and 0x3FFF) (bit-or 0x8000) (to-hex-string 4))
+        "-" (-> (rand-bits 16) (to-hex-string 4))
+        (-> (rand-bits 16) (to-hex-string 4))
+        (-> (rand-bits 16) (to-hex-string 4)))))))
 
 (defn ^:no-doc squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
@@ -1501,7 +1507,4 @@ one of the following data types:
 
   (doseq [i (range 2000)]
     (prn "Creating" i)
-    (swap! *dbs conj (create-conn (str "/tmp/dl-" i))))
-
-
-  )
+    (swap! *dbs conj (create-conn (str "/tmp/dl-" i)))))
