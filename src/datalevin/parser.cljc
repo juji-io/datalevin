@@ -3,6 +3,7 @@
   #?(:cljs (:require-macros [datalevin.parser :refer [deftrecord]]))
   (:require
     [clojure.set :as set]
+    [datalevin.timeout :as timeout]
     [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]))
 
 ;; utils
@@ -787,7 +788,7 @@
 (defn parse-timeout [t]
   (cond
     (sequential? t) (recur (first t))
-    (number? t) (+ #?(:clj (System/currentTimeMillis) :cljs (.now js/Date)) t)
+    (number? t) (timeout/to-deadline t)
     (nil? t) nil
     :else (raise "Unsupported timeout format"
             {:error :parser/query :form t})))

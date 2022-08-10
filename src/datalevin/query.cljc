@@ -14,7 +14,8 @@
                                                FindColl FindRel FindScalar FindTuple PlainSymbol
                                                RulesVar SrcVar Variable]])]
    [datalevin.pull-api :as dpa]
-   [datalevin.pull-parser :as dpp])
+   [datalevin.pull-parser :as dpp]
+   [datalevin.timeout :as timeout])
   #?(:clj (:import [datalevin.parser BindColl BindIgnore BindScalar BindTuple
                     Constant Pull FindColl FindRel FindScalar FindTuple PlainSymbol
                     RulesVar SrcVar Variable]
@@ -40,11 +41,8 @@
 ;; or [ (Datom. 2 "Oleg" 1 55) ... ]
 (defrecord Relation [attrs tuples])
 
-(def ^:dynamic *deadline* "When non nil, query will throw if its not done before *deadline* -- as returned by (System/currentTimeMillis) or (.now js/Date)" nil)
-
 (defn relation! [attrs tuples]
-  (when (some-> *deadline* (< #?(:clj (System/currentTimeMillis) :cljs (.now js/Date))))
-    (throw (ex-info "Query took too long to run." {})))
+  (timeout/assert-time-left)
   (Relation. attrs tuples))
 
 ;; Utilities
@@ -1181,7 +1179,7 @@
         result-arity  (count find-elements)
         with          (:qwith parsed-q)
         deadline      (:qdeadline parsed-q)]
-    (binding [*deadline* deadline]
+    (binding [timeout/*deadline* deadline]
       (let [;; TODO utilize parser
             all-vars      (concat find-vars (map :symbol with))
             q             (cond-> q

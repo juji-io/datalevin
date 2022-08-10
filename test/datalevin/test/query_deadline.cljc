@@ -2,15 +2,12 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-   [datalevin.core :as d]
-   [datalevin.query :as q]
-   [datalevin.db :as db]
-   [datalevin.test.core :as tdc]))
+   [datalevin.core :as d]))
 
 (deftest timeout
   (is (thrown-with-msg?
        Exception
-       #"Query took too long to run."
+       #"Query and/or pull expression took too long to run."
        (d/q '[:find  ?e1
               :in    $ ?e1 %
               :where (long-query ?e1)
@@ -21,7 +18,7 @@
        #{}))
   (is (thrown-with-msg?
        Exception
-       #"Query took too long to run."
+       #"Query and/or pull expression took too long to run."
        (d/q '{:find  [?e1]
               :in    [$ ?e1 %]
               :where [(long-query ?e1)]
