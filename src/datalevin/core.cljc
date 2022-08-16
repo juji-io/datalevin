@@ -618,7 +618,10 @@ Only usable for debug output.
                        {:db/id 296, :friend -1}])
       ; equivalent to
       (transact! conn [[:db/add  -1 :name   \"Oleg\"]
-                       {:db/add 296 :friend -1]])"
+                       {:db/add 296 :friend -1]])
+                        
+      ; staged transactions: obtain a transaction report without side-effects or changes to the db.
+      (d/transact! conn tx-data tx-meta :staged? true)"
   ([conn tx-data] (transact! conn tx-data nil))
   ([conn tx-data tx-meta] (transact! conn tx-data tx-meta {}))
   ([conn tx-data tx-meta & {:keys [_staged?] :as opts}]
