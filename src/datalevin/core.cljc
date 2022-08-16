@@ -275,14 +275,16 @@ Only usable for debug output.
 (defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
   ([db tx-data] (with db tx-data nil))
-  ([db tx-data tx-meta]
+  ([db tx-data tx-meta] (with db tx-data tx-meta {}))
+  ([db tx-data tx-meta opts]
    {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
                          {:db-before db
                           :db-after  db
                           :tx-data   []
                           :tempids   {}
-                          :tx-meta   tx-meta}) tx-data)))
+                          :tx-meta   tx-meta}) tx-data opts)))
+
 
 
 (defn ^:no-doc db-with
@@ -522,7 +524,6 @@ Only usable for debug output.
   ([conn tx-data tx-meta] -transact! conn tx-data tx-meta {})
   ([conn tx-data tx-meta opts]
    {:pre [(conn? conn)]}
-
    (let [report (atom nil)]
      (locking conn
        (if-not (:staged? opts)
@@ -534,7 +535,7 @@ Only usable for debug output.
      @report)))
 
 (defn transact!
-  "Applies transaction to the underlying database.
+  "Applies transaction to the underlying Datalog database of a connection.
 
   Returns transaction report, a map:
 
@@ -1014,18 +1015,19 @@ Only usable for debug output.
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
 
-  `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
+  `txs` is a seq of `[op dbi-name k v k-type v-type flags]`
   when `op` is `:put`, for insertion of a key value pair `k` and `v`;
   or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
   `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
 
-  `k-type`, `v-type` and `append?` are optional.
+  `k-type`, `v-type` and `flags` are optional.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
   of `v`. The allowed data types are described in [[put-buffer]]
-
-  Set `append?` to true when the data is sorted to gain better write performance.
+     
+  `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html). 
+       Pass in `:append` when the data is sorted to gain better write performance.
 
   Example:
 

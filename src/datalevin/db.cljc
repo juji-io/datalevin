@@ -1008,7 +1008,6 @@
       (refresh-cache pstore))
     rp))
 
-
 (defn- remote-tx-result
   [res]
   (if (map? res)
