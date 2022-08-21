@@ -783,7 +783,7 @@
                {:error :transact/syntax, :tx-data entity})))))
 
 (defn- local-transact-tx-data
-  [initial-report initial-es]
+  [initial-report initial-es & {:keys [staged?]}]
   (let [tx-time    (System/currentTimeMillis)
         initial-es (if (:auto-entity-time?
                         (s/opts (.-store ^DB (:db-before initial-report))))
@@ -1005,8 +1005,9 @@
                      {:error :transact/syntax, :tx-data entity})
               )))
         pstore (.-store ^DB (:db-after rp))]
-    (s/load-datoms pstore (:tx-data rp))
-    (refresh-cache pstore)
+    (when-not staged?
+      (s/load-datoms pstore (:tx-data rp))
+      (refresh-cache pstore))
     rp))
 
 (defn- remote-tx-result
@@ -1038,3 +1039,19 @@
         (catch Exception _
           (local-transact-tx-data initial-report initial-es)))
       (local-transact-tx-data initial-report initial-es))))
+
+(defn tx-data->staged-report
+  "Returns a transaction report without side-effects or changes to the db."
+  [db tx-data]
+  {:pre [(db/db? db)]}
+  (when-not (or (nil? tx-data)
+                (sequential? tx-data))
+    (raise "Bad transaction data " tx-data ", expected sequential collection"
+           {:error :transact/syntax, :tx-data tx-data}))
+  (let [initial-report (map->TxReport
+                        {:db-before db
+                         :db-after  db
+                         :tx-data   []
+                         :tempids   {}
+                         :tx-meta   nil})]
+    (db/local-transact-tx-data initial-report tx-data {:staged? true})))
