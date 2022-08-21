@@ -284,6 +284,11 @@ Only usable for debug output.
                            :tempids   {}
                            :tx-meta   tx-meta}) tx-data)))
 
+(defn tx-data->staged-report
+  "Returns a transaction report without side-effects or changes to the db."
+  [db tx-data]
+  (db/tx-data->staged-report db tx-data))
+
 
 (defn ^:no-doc db-with
   "Applies transaction. Return the Datalog db."
