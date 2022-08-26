@@ -28,7 +28,7 @@
     s))
 
 (defn- load-datoms*
-  [client db-name datoms datom-type]
+  [client db-name datoms datom-type simulated?]
   (let [t (if (= datom-type :txs)
             :tx-data
             :load-datoms)
@@ -36,10 +36,10 @@
         (if (< (count datoms) ^long c/+wire-datom-batch-size+)
           (cl/request client {:type t
                               :mode :request
-                              :args [db-name datoms]})
+                              :args [db-name datoms simulated?]})
           (cl/copy-in client {:type t
                               :mode :copy-in
-                              :args [db-name]}
+                              :args [db-name simulated?]}
                       datoms c/+wire-datom-batch-size+))]
     (when (= type :error-response)
       (u/raise "Error loading datoms to server:" message {}))
@@ -51,7 +51,7 @@
   (q [store query inputs]
     "For special case of queries with a single remote store as source,
      send the query and inputs over to remote server")
-  (tx-data [store data]
+  (tx-data [store data simulated?]
     "Send to remote server the data from call to `db/transact-tx-data`"))
 
 (deftype DatalogStore [^String uri
@@ -156,8 +156,8 @@
   IRemoteDB
   (q [_ query inputs]
     (cl/normal-request client :q [db-name query inputs]))
-  (tx-data [store data]
-    (load-datoms* client db-name data :txs)))
+  (tx-data [store data simulated?]
+    (load-datoms* client db-name data :txs simulated?)))
 
 (defn open
   "Open a remote Datalog store"

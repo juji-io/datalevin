@@ -1,5 +1,13 @@
 # Change Log
 
+## WIP
+### Added
+- [Datalog] `tx-data->simulated-report` to obtain a transaction report without
+  actually persisting the changes.
+- [KV] Support `:bigint` and `:bigdec` data types, corresponding to
+  `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
+  [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly.
+
 ## 0.6.16
 ### Added
 - [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131

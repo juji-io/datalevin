@@ -284,11 +284,11 @@ Only usable for debug output.
                            :tempids   {}
                            :tx-meta   tx-meta}) tx-data)))
 
-(defn tx-data->staged-report
-  "Returns a transaction report without side-effects or changes to the db."
+(defn tx-data->simulated-report
+  "Returns a transaction report without side-effects. Useful for obtaining
+  the would-be db state and the would-be set of datoms."
   [db tx-data]
-  (db/tx-data->staged-report db tx-data))
-
+  (db/tx-data->simulated-report db tx-data))
 
 (defn ^:no-doc db-with
   "Applies transaction. Return the Datalog db."
@@ -1023,8 +1023,8 @@ Only usable for debug output.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
   of `v`. The allowed data types are described in [[put-buffer]]
-     
-  `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html). 
+
+  `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
        Pass in `:append` when the data is sorted to gain better write performance.
 
   Example:
