@@ -3,7 +3,7 @@
 ## WIP
 ### Added
 - [Datalog] `tx-data->simulated-report` to obtain a transaction report without
-  actually persisting the changes.
+  actually persisting the changes. (Thx @TheExGenesis)
 - [KV] Support `:bigint` and `:bigdec` data types, corresponding to
   `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
   [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly.

@@ -1055,4 +1055,4 @@
                           :tx-data   []
                           :tempids   {}
                           :tx-meta   nil})]
-    (local-transact-tx-data initial-report tx-data true)))
+    (transact-tx-data initial-report tx-data true)))

@@ -1159,3 +1159,28 @@
 
     (sut/close conn)
     (s/stop server)))
+
+(deftest simulated-tx-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "simulated-tx-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        dir  "dtlv://datalevin:datalevin@localhost/simulated-tx"
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}})]
+    (sut/transact! conn [{:id 1}])
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+
+    (let [rp (sut/tx-data->simulated-report @conn [{:id 2}])]
+      (is (= (:tx-data rp) [(d/datom 2 :id 2)]))
+      (is (= (:max-eid (:db-after rp)) 2)))
+
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+
+    (sut/close conn)
+    (s/stop server)))
