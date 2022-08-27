@@ -1042,17 +1042,17 @@
            (local-transact-tx-data initial-report initial-es simulated?)))
        (local-transact-tx-data initial-report initial-es simulated?)))))
 
-#_(defn tx-data->simulated-report
-   [db tx-data]
-   {:pre [(db? db)]}
-   (when-not (or (nil? tx-data)
-                 (sequential? tx-data))
-     (raise "Bad transaction data " tx-data ", expected sequential collection"
-            {:error :transact/syntax, :tx-data tx-data}))
-   (let [initial-report (map->TxReport
-                          {:db-before db
-                           :db-after  db
-                           :tx-data   []
-                           :tempids   {}
-                           :tx-meta   nil})]
-     (local-transact-tx-data initial-report tx-data {:simulated? true})))
+(defn tx-data->simulated-report
+  [db tx-data]
+  {:pre [(db? db)]}
+  (when-not (or (nil? tx-data)
+                (sequential? tx-data))
+    (raise "Bad transaction data " tx-data ", expected sequential collection"
+           {:error :transact/syntax, :tx-data tx-data}))
+  (let [initial-report (map->TxReport
+                         {:db-before db
+                          :db-after  db
+                          :tx-data   []
+                          :tempids   {}
+                          :tx-meta   nil})]
+    (local-transact-tx-data initial-report tx-data true)))

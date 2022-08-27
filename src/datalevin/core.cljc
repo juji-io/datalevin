@@ -274,15 +274,16 @@ Only usable for debug output.
 
 (defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
-  ([db tx-data] (with db tx-data nil))
-  ([db tx-data tx-meta]
+  ([db tx-data] (with db tx-data {} false))
+  ([db tx-data tx-meta] (with db tx-data tx-meta false))
+  ([db tx-data tx-meta simulated?]
    {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
                           {:db-before db
                            :db-after  db
                            :tx-data   []
                            :tempids   {}
-                           :tx-meta   tx-meta}) tx-data)))
+                           :tx-meta   tx-meta}) tx-data simulated?)))
 
 (defn tx-data->simulated-report
   "Returns a transaction report without side-effects. Useful for obtaining

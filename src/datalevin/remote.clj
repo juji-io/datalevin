@@ -36,10 +36,14 @@
         (if (< (count datoms) ^long c/+wire-datom-batch-size+)
           (cl/request client {:type t
                               :mode :request
-                              :args [db-name datoms simulated?]})
+                              :args (if (= datom-type :txs)
+                                      [db-name datoms simulated?]
+                                      [db-name datoms])})
           (cl/copy-in client {:type t
                               :mode :copy-in
-                              :args [db-name simulated?]}
+                              :args (if (= datom-type :txs)
+                                      [db-name simulated?]
+                                      [db-name])}
                       datoms c/+wire-datom-batch-size+))]
     (when (= type :error-response)
       (u/raise "Error loading datoms to server:" message {}))
@@ -106,7 +110,7 @@
     (cl/normal-request client :datom-count [db-name index]))
 
   (load-datoms [_ datoms]
-    (load-datoms* client db-name datoms :raw))
+    (load-datoms* client db-name datoms :raw false))
 
   (fetch [_ datom] (cl/normal-request client :fetch [db-name datom]))
 
