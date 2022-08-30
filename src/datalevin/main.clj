@@ -1,4 +1,4 @@
-(ns datalevin.main
+(ns ^:no-doc datalevin.main
   "Database management commands"
   (:refer-clojure :exclude [drop load])
   (:require [clojure.tools.cli :refer [parse-opts]]

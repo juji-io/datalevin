@@ -1,4 +1,4 @@
-(ns datalevin.search
+(ns ^:no-doc datalevin.search
   "Full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]

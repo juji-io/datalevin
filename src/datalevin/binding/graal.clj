@@ -1,4 +1,4 @@
-(ns datalevin.binding.graal
+(ns ^:no-doc datalevin.binding.graal
   "LMDB binding for GraalVM native image"
   (:require [datalevin.bits :as b]
             [datalevin.util :refer [raise] :as u]

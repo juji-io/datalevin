@@ -1,4 +1,4 @@
-(ns datalevin.remote
+(ns ^:no-doc datalevin.remote
   "Proxy for remote stores"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]

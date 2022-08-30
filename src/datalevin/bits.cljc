@@ -1,4 +1,4 @@
-(ns datalevin.bits
+(ns ^:no-doc datalevin.bits
   "Handle binary encoding, byte buffers, etc."
   (:require [datalevin.datom :as d]
             [datalevin.constants :as c]
