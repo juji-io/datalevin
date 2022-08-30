@@ -1,4 +1,4 @@
-(ns pod.huahaiy.datalevin
+(ns ^:no-doc pod.huahaiy.datalevin
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
             [sci.core :as sci]
