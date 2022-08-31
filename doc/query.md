@@ -75,6 +75,19 @@ these indices. We pay a small price in transaction processing time (about 20%
 slower for large transactions, more for small transactions) and a slightly
 larger memory footprint, but gain orders of magnitude query speedup.
 
+## Compressed Triple Storage
+
+Literal representation of triples in an index introduces significant redundant
+storage. For example, in `:eav` index, there are many repeated values of `e`,
+and in `:ave` index, there are many repeated values of `a`. These repetitions of
+head elements not just increase the storage size, but also add processing
+overhead during query.
+
+Taking advantage of LMDB's dupsort capability, we store the head element value
+only once, by treating them as keys. The values are the remaining two elements
+of the triple, plus a reference to the full datom if the datom is larger than
+the maximal key size allowed by LMDB.
+
 ## Query Optimizations
 
 We built a cost based query optimizer that uses dynamic programming for query
