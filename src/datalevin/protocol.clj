@@ -1,4 +1,4 @@
-(ns datalevin.protocol
+(ns ^:no-doc datalevin.protocol
   "Shared code of client/server"
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]

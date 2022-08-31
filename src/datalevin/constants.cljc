@@ -1,4 +1,4 @@
-(ns datalevin.constants
+(ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
   (:require [taoensso.nippy :as nippy])
   (:import [java.util UUID Arrays HashSet]))
