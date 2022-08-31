@@ -12,7 +12,7 @@
                          [com.github.clj-easy/graal-build-time "0.1.4"]
                          [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "5.2.1"]
-                         [joda-time/joda-time "2.10.14"]
+                         [joda-time/joda-time "2.11.1"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
                          [org.babashka/sci "0.3.32"]
@@ -34,7 +34,7 @@
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
                           ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.30"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.31"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
