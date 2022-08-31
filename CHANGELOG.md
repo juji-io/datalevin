@@ -3,10 +3,19 @@
 ## WIP
 ### Added
 - [Datalog] `tx-data->simulated-report` to obtain a transaction report without
-  actually persisting the changes. (Thx @TheExGenesis)
+  actually persisting the changes. (thx @TheExGenesis)
 - [KV] Support `:bigint` and `:bigdec` data types, corresponding to
   `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
-  [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly.
+- [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly, #138.
+- [KV] Support tuple data types, specified by a vector of 2-8 scalar data types,
+  represented on disk as concatenation of values, and resulting in expected
+  order in range queries.
+- [Datalog] Support `:db.type/tuple`, including all Datomic tuple types:
+  composite tuples, heterogeneous fixed length tuples, and homogeneous variable
+  length tuples.
+### Improved
+ - Better documentation so that cljdoc can build successfully. (thx @lread)
+ - Incorporate relevant Datascript improvements since 0.18.13, #3
 
 ## 0.6.16
 ### Added
