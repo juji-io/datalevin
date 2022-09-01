@@ -653,7 +653,7 @@ than just the difference in data durability and running mode:
 
 * Respects `:db/valueType`. Currently, most [Datomic® value
   types](https://docs.datomic.com/on-prem/schema.html#value-types) are
-  supported, except bigint, bigdec, uri and tuple. Values of the attributes that
+  supported, except uri. Values of the attributes that
   are not defined in the schema or have unspecified types are treated as
   [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
   de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
@@ -686,6 +686,9 @@ are applicable to Datascript.
   attribute, its `:db/valueType` should be specified.
 
 * Floating point `NaN` cannot be stored.
+
+* Big integer does not go beyond the range of ±2^1024, corresponding limit
+  applies to big decimal as well.
 
 * The maximum individual value size is 2GB. Limited by the maximum size of
   off-heap byte buffer that can be allocated in JVM.
