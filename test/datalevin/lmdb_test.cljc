@@ -45,7 +45,7 @@
                       [:put "b" 1 :long :long :data]
                       [:put "b" :long 1 :data :long]
                       [:put "b" 2 3 :long :long]
-                      [:put "b" "ok" 42 :string :int]
+                      [:put "b" "ok" 42 :string :long]
                       [:put "d" 3.14 :pi :double :keyword]
                       [:put "d" #inst "1969-01-01" "nice year" :instant :string]
                       ]))
@@ -76,7 +76,7 @@
       (is (= :long (l/get-value lmdb "b" 1 :long :data)))
       (is (= 1 (l/get-value lmdb "b" :long :data :long)))
       (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
-      (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
+      (is (= 42 (l/get-value lmdb "b" "ok" :string :long)))
       (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
       (is (= "nice year" (l/get-value lmdb "d" #inst "1969-01-01" :instant :string)))
       )
@@ -520,7 +520,7 @@
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" 1 2 :string]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1 "b" :int :int]])))
+                          (l/transact-kv lmdb [[:put "a" 1 "b" :long :long]])))
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" 1 1 :float]])))
     (is (thrown-with-msg? Exception #"Invalid data"

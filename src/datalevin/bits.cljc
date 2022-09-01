@@ -8,6 +8,7 @@
             [taoensso.nippy :as nippy])
   (:import [java.util ArrayList Arrays UUID Date Base64]
            [java.util.regex Pattern]
+           [java.math BigInteger BigDecimal]
            [java.io Writer DataInput DataOutput ObjectInput ObjectOutput]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
@@ -18,18 +19,19 @@
 
 ;; bytes <-> text
 
-(def ^:no-doc hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
+(def hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
 
-(defn ^:no-doc hexify-byte
+(defn hexify-byte
   "Convert a byte to a hex pair"
   [b]
   (let [v (bit-and ^byte b 0xFF)]
     [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))
 
-(defn ^:no-doc hexify
+(defn hexify
   "Convert bytes to hex string"
   [bs]
   (apply str (mapcat hexify-byte bs)))
+
 
 (defn ^:no-doc unhexify-2c
   "Convert two hex characters to a byte"
@@ -283,6 +285,99 @@
   (.put bb ^byte (unchecked-byte b)))
 (type (byte 1))
 
+(defn encode-bigint
+  [^BigInteger x]
+  (let [bs (.toByteArray x)
+        n  (alength bs)]
+    (assert (<= n 128) "Does not support integer beyond the range of ±2^1024")
+    (let [bs1 (byte-array (inc n))]
+      (aset bs1 0 (byte (if (= (.signum x) -1)
+                          (- 128 n)
+                          (bit-flip n 7))))
+      (System/arraycopy bs 0 bs1 1 n)
+      bs1)))
+
+(defn- put-bigint
+  [^ByteBuffer bb ^BigInteger x]
+  (put-bytes bb (encode-bigint x)))
+
+(defn ^BigInteger decode-bigint
+  [^bytes bs]
+  (BigInteger. ^bytes (Arrays/copyOfRange bs 1 (alength bs))))
+
+(decode-bigint (encode-bigint (BigInteger. "1024")))
+(decode-bigint (encode-bigint (BigInteger. "-1024")))
+;; => "8400"
+
+(hexify (encode-bigint (BigInteger. "-123456789123456789")))
+;; => "78FE4964B4532FA0EB"
+(hexify (encode-bigint (BigInteger. "-1024")))
+;; => "7EFC00"
+(hexify (encode-bigint (BigInteger. "-1023")))
+;; => "7EFC01"
+(hexify (encode-bigint (BigInteger. "-2")))
+;; => "7FFE"
+(hexify (encode-bigint (BigInteger. "-1")))
+;; => "7FFF"
+(hexify (encode-bigint (BigInteger. "0")))
+;; => "8100"
+(hexify (encode-bigint (BigInteger. "1")))
+;; => "8101"
+(hexify (encode-bigint (BigInteger. "2")))
+;; => "8102"
+(hexify (encode-bigint (BigInteger. "8")))
+;; => "8108"
+(hexify (encode-bigint (BigInteger. "1023")))
+;; => "8203FF"
+(hexify (encode-bigint (BigInteger. "1024")))
+;; => "820400"
+(hexify (encode-bigint (BigInteger. "123456789123456789")))
+;; => "8801B69B4BACD05F15"
+
+(decode-bigint (encode-bigint (BigInteger. "123456789123456789")))
+(decode-bigint (encode-bigint (BigInteger. "-123456789123456789")))
+
+(hexify (.toByteArray (BigInteger. "-123456789123456789")))
+;; => "FE4964B4532FA0EB"
+(hexify (.toByteArray (BigInteger. "-1024102410241024")))
+;; => "FC5C95939FBC00"
+(hexify (.toByteArray (BigInteger. "-102410241024")))
+;; => "E827DFBC00"
+(hexify (.toByteArray (BigInteger. "-10241024")))
+;; => "FF63BC00"
+(hexify (.toByteArray (BigInteger. "-1024")))
+;; => "FC00"
+(hexify (.toByteArray (BigInteger. "-1")))
+;; => "FF"
+(hexify (.toByteArray (BigInteger. "0")))
+;; => "00"
+(hexify (.toByteArray (BigInteger. "1")))
+;; => "01"
+(hexify (.toByteArray (BigInteger. "10")))
+;; => "0A"
+(hexify (.toByteArray (BigInteger. "64")))
+;; => "40"
+(hexify (.toByteArray (BigInteger. "254")))
+;; => "00FE"
+(hexify (.toByteArray (BigInteger. "255")))
+;; => "00FF"
+(hexify (.toByteArray (BigInteger. "256")))
+;; => "0100"
+(hexify (.toByteArray (BigInteger. "1024")))
+;; => "0400"
+(hexify (.toByteArray (BigInteger. "1023")))
+;; => "03FF"
+(hexify (.toByteArray (BigInteger. "10231024")))
+;; => "009C1CF0"
+(hexify (.toByteArray (BigInteger. "123456789123456789")))
+;; => "01B69B4BACD05F15"
+(defn- get-bigint
+  [^ByteBuffer bb]
+  (let [^byte b   (get-byte bb)
+        n         (if (bit-test b 7) (byte (bit-flip b 7)) (byte (- 128 b)))
+        ^bytes bs (get-bytes bb n)]
+    (BigInteger. bs)))
+
 (defn- put-data
   [^ByteBuffer bb x]
   (put-bytes bb (serialize x)))
@@ -306,7 +401,7 @@
     :uuid    17
     nil))
 
-(defn ^:no-doc measure-size
+(defn measure-size
   "measure size of x in number of bytes"
   [x]
   (cond
@@ -317,7 +412,7 @@
 
 ;; index
 
-(defmacro ^:no-doc wrap-extrema
+(defmacro wrap-extrema
   [v vmin vmax b]
   `(if (keyword? ~v)
      (condp = ~v
@@ -610,6 +705,7 @@
     :instant c/type-instant
     :uuid    c/type-uuid
     :bytes   c/type-bytes
+    :bigint  c/type-bigint
     :long    (long-header v)
     nil))
 
@@ -626,6 +722,8 @@
                          (put-bytes
                            bf (.getBytes ^String x StandardCharsets/UTF_8)))
      :int            (put-int bf x)
+     :bigint         (do (put-byte bf (raw-header x :bigint))
+                         (put-bigint bf x))
      :short          (put-short bf x)
      :int-int        (let [[i1 i2] x]
                        (put-int bf i1)
@@ -686,6 +784,7 @@
      :short          (get-short bf)
      :int            (get-int bf)
      :int-int        [(get-int bf) (get-int bf)]
+     :bigint         (do (get-byte bf) (get-bigint bf))
      :bitmap         (get-bitmap bf)
      :sial           (get-sparse-list bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]

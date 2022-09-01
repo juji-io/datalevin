@@ -141,6 +141,18 @@
                   (.flip bf)
                   (= f (sut/read-buffer bf :float)))))
 
+(test/defspec bigint-generative-test
+  100
+  (prop/for-all [k gen/size-bounded-bigint]
+                (let [^ByteBuffer bf (sut/allocate-buffer 816384)]
+                  (if (int? k)
+                    true
+                    (let [n (.toBigInteger ^clojure.lang.BigInt k)]
+                      (.clear bf)
+                      (sut/put-buffer bf n :bigint)
+                      (.flip bf)
+                      (= n (sut/read-buffer bf :bigint)))))))
+
 (test/defspec bytes-generative-test
   100
   (prop/for-all [^bytes k (gen/not-empty gen/bytes)]

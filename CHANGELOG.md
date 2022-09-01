@@ -8,8 +8,8 @@
   `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
 - [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly, #138.
 - [KV] Support tuple data types, specified by a vector of 2-8 scalar data types,
-  represented on disk as concatenation of values, and resulting in expected
-  order in range queries.
+  represented as concatenation of values, and resulting in expected order in
+  range queries.
 - [Datalog] Support `:db.type/tuple`, including all Datomic tuple types:
   composite tuples, heterogeneous fixed length tuples, and homogeneous variable
   length tuples.

@@ -1450,7 +1450,6 @@ all documents."}
 
     - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
     - `:string`, UTF-8 string
-    - `:int`, 32 bits integer
     - `:long`, 64 bits integer
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
@@ -1472,7 +1471,6 @@ one of the following data types:
 
   - `:data` (default), arbitrary EDN data
   - `:string`, UTF-8 string
-  - `:int`, 32 bits integer
   - `:long`, 64 bits integer
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
