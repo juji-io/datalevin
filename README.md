@@ -687,8 +687,8 @@ are applicable to Datascript.
 
 * Floating point `NaN` cannot be stored.
 
-* Big integer does not go beyond the range of ±2^1024, corresponding limit
-  applies to big decimal as well.
+* Cannot store big integer beyond the range of `[-2^1015, 2^1015-1]`, corresponding
+  limit applies to big decimal as well.
 
 * The maximum individual value size is 2GB. Limited by the maximum size of
   off-heap byte buffer that can be allocated in JVM.

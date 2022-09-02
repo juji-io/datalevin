@@ -141,17 +141,36 @@
                   (.flip bf)
                   (= f (sut/read-buffer bf :float)))))
 
+(def gen-bigint (gen/such-that
+                  #(= clojure.lang.BigInt (type %))
+                  gen/size-bounded-bigint))
+
+(defn bigint-test
+  [i j]
+  (let [^ByteBuffer bf (sut/allocate-buffer 816384)]
+    (let [^BigInteger m (.toBigInteger ^clojure.lang.BigInt i)
+          ^BigInteger n (.toBigInteger ^clojure.lang.BigInt j)]
+      (.clear bf)
+      (sut/put-buffer bf m :bigint)
+      (.flip bf)
+      (let [^BigInteger m1 (sut/read-buffer bf :bigint)]
+        (is (= (.compareTo m m1) 0))
+        (.clear bf)
+        (sut/put-buffer bf n :bigint)
+        (.flip bf)
+        (let [^BigInteger n1 (sut/read-buffer bf :bigint)]
+          (is (= (.compareTo n n1) 0))
+          (if (< (.compareTo m n) 0)
+            (is (< (.compareTo m1 n1) 0))
+            (if (= (.compareTo m n) 0)
+              (is (= (.compareTo m1 n1) 0))
+              (is (> (.compareTo m1 n1) 0)))))))))
+
 (test/defspec bigint-generative-test
   100
-  (prop/for-all [k gen/size-bounded-bigint]
-                (let [^ByteBuffer bf (sut/allocate-buffer 816384)]
-                  (if (int? k)
-                    true
-                    (let [n (.toBigInteger ^clojure.lang.BigInt k)]
-                      (.clear bf)
-                      (sut/put-buffer bf n :bigint)
-                      (.flip bf)
-                      (= n (sut/read-buffer bf :bigint)))))))
+  (prop/for-all [i gen-bigint
+                 j gen-bigint]
+                (bigint-test i j)))
 
 (test/defspec bytes-generative-test
   100

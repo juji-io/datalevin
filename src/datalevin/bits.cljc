@@ -32,7 +32,6 @@
   [bs]
   (apply str (mapcat hexify-byte bs)))
 
-
 (defn ^:no-doc unhexify-2c
   "Convert two hex characters to a byte"
   [c1 c2]
@@ -289,10 +288,11 @@
   [^BigInteger x]
   (let [bs (.toByteArray x)
         n  (alength bs)]
-    (assert (<= n 128) "Does not support integer beyond the range of ±2^1024")
+    (assert (< n 128)
+            "Does not support integer beyond the range of [-2^1015, 2^1015-1]")
     (let [bs1 (byte-array (inc n))]
       (aset bs1 0 (byte (if (= (.signum x) -1)
-                          (- 128 n)
+                          (- 127 n)
                           (bit-flip n 7))))
       (System/arraycopy bs 0 bs1 1 n)
       bs1)))
@@ -308,7 +308,7 @@
 (defn- get-bigint
   [^ByteBuffer bb]
   (let [^byte b   (get-byte bb)
-        n         (if (bit-test b 7) (byte (bit-flip b 7)) (byte (- 128 b)))
+        n         (if (bit-test b 7) (byte (bit-flip b 7)) (byte (- 127 b)))
         ^bytes bs (get-bytes bb n)]
     (BigInteger. bs)))
 
