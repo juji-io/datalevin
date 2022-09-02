@@ -312,6 +312,21 @@
         ^bytes bs (get-bytes bb n)]
     (BigInteger. bs)))
 
+(defn- put-bigdec
+  [^ByteBuffer bb ^BigDecimal x]
+  (put-double bb (.doubleValue x))
+  (put-bigint bb (.unscaledValue x))
+  (put-byte bb c/separator)
+  (put-int bb (.scale x)))
+
+(defn- get-bigdec
+  [^ByteBuffer bb]
+  (get-double bb)
+  (let [^BigInteger value (get-bigint bb)
+        _                 (get-byte bb)
+        ^int scale        (get-int bb)]
+    (BigDecimal. value scale)))
+
 (defn- put-data
   [^ByteBuffer bb x]
   (put-bytes bb (serialize x)))
@@ -640,6 +655,7 @@
     :uuid    c/type-uuid
     :bytes   c/type-bytes
     :bigint  c/type-bigint
+    :bigdec  c/type-bigdec
     :long    (long-header v)
     nil))
 
@@ -658,6 +674,8 @@
      :int            (put-int bf x)
      :bigint         (do (put-byte bf (raw-header x :bigint))
                          (put-bigint bf x))
+     :bigdec         (do (put-byte bf (raw-header x :bigdec))
+                         (put-bigdec bf x))
      :short          (put-short bf x)
      :int-int        (let [[i1 i2] x]
                        (put-int bf i1)
@@ -719,6 +737,7 @@
      :int            (get-int bf)
      :int-int        [(get-int bf) (get-int bf)]
      :bigint         (do (get-byte bf) (get-bigint bf))
+     :bigdec         (do (get-byte bf) (get-bigdec bf))
      :bitmap         (get-bitmap bf)
      :sial           (get-sparse-list bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]

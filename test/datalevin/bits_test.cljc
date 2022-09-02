@@ -147,30 +147,77 @@
 
 (defn bigint-test
   [i j]
-  (let [^ByteBuffer bf (sut/allocate-buffer 816384)]
-    (let [^BigInteger m (.toBigInteger ^clojure.lang.BigInt i)
-          ^BigInteger n (.toBigInteger ^clojure.lang.BigInt j)]
-      (.clear bf)
-      (sut/put-buffer bf m :bigint)
-      (.flip bf)
-      (let [^BigInteger m1 (sut/read-buffer bf :bigint)]
-        (is (= (.compareTo m m1) 0))
-        (.clear bf)
-        (sut/put-buffer bf n :bigint)
-        (.flip bf)
-        (let [^BigInteger n1 (sut/read-buffer bf :bigint)]
-          (is (= (.compareTo n n1) 0))
-          (if (< (.compareTo m n) 0)
-            (is (< (.compareTo m1 n1) 0))
-            (if (= (.compareTo m n) 0)
-              (is (= (.compareTo m1 n1) 0))
-              (is (> (.compareTo m1 n1) 0)))))))))
+  (let [^ByteBuffer bf  (sut/allocate-buffer 816384)
+        ^ByteBuffer bf1 (sut/allocate-buffer 816384)
+        ^BigInteger m   (.toBigInteger ^clojure.lang.BigInt i)
+        ^BigInteger n   (.toBigInteger ^clojure.lang.BigInt j)]
+    (.clear bf)
+    (sut/put-buffer bf m :bigint)
+    (.flip bf)
+    (.clear bf1)
+    (sut/put-buffer bf1 n :bigint)
+    (.flip bf1)
+    (if (< (.compareTo m n) 0)
+      (is (< (bf-compare bf bf1) 0))
+      (if (= (.compareTo m n) 0)
+        (is (= (bf-compare bf bf1) 0))
+        (is (> (bf-compare bf bf1) 0))))
+    (.rewind bf)
+    (.rewind bf1)
+    (let [^BigInteger m1 (sut/read-buffer bf :bigint)
+          ^BigInteger n1 (sut/read-buffer bf1 :bigint)]
+      (is (= (.compareTo m m1) 0))
+      (is (= (.compareTo n n1) 0))
+      (if (< (.compareTo m n) 0)
+        (is (< (.compareTo m1 n1) 0))
+        (if (= (.compareTo m n) 0)
+          (is (= (.compareTo m1 n1) 0))
+          (is (> (.compareTo m1 n1) 0)))))))
 
 (test/defspec bigint-generative-test
   100
   (prop/for-all [i gen-bigint
                  j gen-bigint]
                 (bigint-test i j)))
+
+(defn bigdec-test
+  [vi vj si sj]
+  (let [^ByteBuffer bf  (sut/allocate-buffer 816384)
+        ^ByteBuffer bf1 (sut/allocate-buffer 816384)
+        ^BigInteger vi  (.toBigInteger ^clojure.lang.BigInt vi)
+        ^BigInteger vj  (.toBigInteger ^clojure.lang.BigInt vj)
+        ^BigDecimal m   (BigDecimal. vi ^int si)
+        ^BigDecimal n   (BigDecimal. vj ^int sj)]
+    (.clear bf)
+    (sut/put-buffer bf m :bigdec)
+    (.flip bf)
+    (.clear bf1)
+    (sut/put-buffer bf1 n :bigdec)
+    (.flip bf1)
+    (if (< (.compareTo m n) 0)
+      (is (< (bf-compare bf bf1) 0))
+      (if (= (.compareTo m n) 0)
+        (is (= (bf-compare bf bf1) 0))
+        (is (> (bf-compare bf bf1) 0))))
+    (.rewind bf)
+    (.rewind bf1)
+    (let [^BigDecimal m1 (sut/read-buffer bf :bigdec)
+          ^BigDecimal n1 (sut/read-buffer bf1 :bigdec)]
+      (is (= (.compareTo m m1) 0))
+      (is (= (.compareTo n n1) 0))
+      (if (< (.compareTo m n) 0)
+        (is (< (.compareTo m1 n1) 0))
+        (if (= (.compareTo m n) 0)
+          (is (= (.compareTo m1 n1) 0))
+          (is (> (.compareTo m1 n1) 0)))))))
+
+(test/defspec bigdec-generative-test
+  100
+  (prop/for-all [vi gen-bigint
+                 vj gen-bigint
+                 si gen/small-integer
+                 sj gen/small-integer]
+                (bigdec-test vi vj si sj)))
 
 (test/defspec bytes-generative-test
   100

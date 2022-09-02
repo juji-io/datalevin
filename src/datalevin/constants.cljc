@@ -58,15 +58,11 @@
 
 (def ^:const +id-bytes+ Long/BYTES)
 
-(def ^:const lmdb-data-types #{:data :string :int :long :id :float :double
-                               :byte :bytes :keyword :boolean :instant :uuid
-                               :datom :attr :eav :ave :vea})
-
 ;; value headers
 (def ^:const type-long-neg   (unchecked-byte 0xC0))
 (def ^:const type-long-pos   (unchecked-byte 0xC1))
 (def ^:const type-bigint     (unchecked-byte 0xF1))
-;; (def ^:const type-bigdec     (unchecked-byte 0xF2))
+(def ^:const type-bigdec     (unchecked-byte 0xF2))
 ;; (def ^:const type-tuple-hete (unchecked-byte 0xF3))
 ;; (def ^:const type-tuple-homo (unchecked-byte 0xF4))
 (def ^:const type-float    (unchecked-byte 0xF5))
