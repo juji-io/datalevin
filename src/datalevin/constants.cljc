@@ -1,7 +1,9 @@
 (ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
   (:require [taoensso.nippy :as nippy])
-  (:import [java.util UUID Arrays HashSet]))
+  (:import [java.util UUID Arrays HashSet]
+           [java.math BigInteger BigDecimal]
+           ))
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -94,6 +96,24 @@
                  (Arrays/fill ba (unchecked-byte 0xFF))
                  ba))
 (def min-bytes (byte-array 0))
+
+(defn- max-bigint-bs
+  ^bytes []
+  (let [^bytes bs (byte-array 127)]
+    (aset bs 0 (byte 0x7f))
+    (dotimes [i 126] (aset bs (inc i) (byte 0xff)))
+    bs))
+
+(def max-bigint (BigInteger. (max-bigint-bs)))
+
+(defn- min-bigint-bs
+  ^bytes []
+  (let [bs (byte-array 127)]
+    (aset bs 0 (byte 0x80))
+    (dotimes [i 126] (aset bs (inc i) (byte 0x00)))
+    bs))
+
+(def min-bigint (BigInteger. (min-bigint-bs)))
 
 (def ^:const overflown :overflown-key)
 (def ^:const normal 0)

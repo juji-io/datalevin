@@ -744,17 +744,19 @@
      :veat           (get-vea bf)
      :raw            (get-bytes bf)
      (get-data bf))))
+;; => #'datalevin.bits/read-buffer
 
 (defn valid-data?
   "validate data type"
   [x t]
   (case t
-    (:db.type/string :string) (string? x)
-    :int                      (and (int? x)
-                                   (<= Integer/MIN_VALUE x Integer/MAX_VALUE))
-
-    (:db.type/long :db.type/ref :long) (int? x)
-
+    (:db.type/string :string)   (string? x)
+    :int                        (and (int? x)
+                                     (<= Integer/MIN_VALUE x Integer/MAX_VALUE))
+    (:db.type/bigint :bigint)   (and (instance? java.math.BigInteger x)
+                                     (<= c/min-bigint x c/max-bigint))
+    (:db.type/long :db.type/ref
+                   :long)       (int? x)
     (:db.type/float :float)     (and (float? x)
                                      (<= Float/MIN_VALUE x Float/MAX_VALUE))
     (:db.type/double :double)   (float? x)
