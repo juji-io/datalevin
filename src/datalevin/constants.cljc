@@ -111,6 +111,10 @@
 
 (def min-bigint (BigInteger. (min-bigint-bs)))
 
+(def max-bigdec (BigDecimal. ^BigInteger max-bigint Integer/MIN_VALUE))
+
+(def min-bigdec (BigDecimal. ^BigInteger min-bigint Integer/MIN_VALUE))
+
 (def ^:const overflown :overflown-key)
 (def ^:const normal 0)
 (def ^:const gt0 1)

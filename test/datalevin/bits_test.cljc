@@ -436,7 +436,6 @@
                   (sut/indexable e a c/v0 :db.type/double)
                   (sut/indexable e a c/vmax :db.type/double))))
 
-
 (test/defspec float-extrema-generative-test
   100
   (prop/for-all
@@ -464,6 +463,28 @@
                   (sut/indexable e a v :db.type/uuid)
                   (sut/indexable e a c/v0 :db.type/uuid)
                   (sut/indexable e a c/vmax :db.type/uuid))))
+
+(test/defspec bigint-extrema-generative-test
+  100
+  (prop/for-all
+    [i  gen-bigint]
+    (let [^BigInteger v (.toBigInteger ^clojure.lang.BigInt i)]
+      (test-extrema v
+                    (sut/indexable e a v :db.type/bigint)
+                    (sut/indexable e a c/v0 :db.type/bigint)
+                    (sut/indexable e a c/vmax :db.type/bigint)))))
+
+(test/defspec bigdec-extrema-generative-test
+  100
+  (prop/for-all
+    [i  gen-bigint
+     s gen/small-integer]
+    (let [^BigInteger n (.toBigInteger ^clojure.lang.BigInt i)
+          ^BigDecimal v (BigDecimal. n ^int s)]
+      (test-extrema v
+                    (sut/indexable e a v :db.type/bigdec)
+                    (sut/indexable e a c/v0 :db.type/bigdec)
+                    (sut/indexable e a c/vmax :db.type/bigdec)))))
 
 ;; orders
 
@@ -660,6 +681,73 @@
     (eav-test v e1 a1 v1
               (sut/indexable e a v :db.type/string)
               (sut/indexable e1 a1 v1 :db.type/string))))
+
+(test/defspec string-ave-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 gen/string
+     v  gen/string]
+    (ave-test v e1 a1 v1
+              (sut/indexable e a v :db.type/string)
+              (sut/indexable e1 a1 v1 :db.type/string))))
+
+(test/defspec bigint-eav-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger v1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger v  (.toBigInteger ^clojure.lang.BigInt i)]
+      (eav-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigint)
+                (sut/indexable e1 a1 v1 :db.type/bigint)))))
+
+(test/defspec bigint-eav-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger v1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger v  (.toBigInteger ^clojure.lang.BigInt i)]
+      (ave-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigint)
+                (sut/indexable e1 a1 v1 :db.type/bigint)))))
+
+(test/defspec bigdec-eav-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger u1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger u  (.toBigInteger ^clojure.lang.BigInt i)
+          v1             (BigDecimal. u1 -10)
+          v              (BigDecimal. u -10)]
+      (eav-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigdec)
+                (sut/indexable e1 a1 v1 :db.type/bigdec)))))
+
+(test/defspec bigdec-ave-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger u1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger u  (.toBigInteger ^clojure.lang.BigInt i)
+          v1             (BigDecimal. u1 -10)
+          v              (BigDecimal. u -10)]
+      (ave-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigdec)
+                (sut/indexable e1 a1 v1 :db.type/bigdec)))))
 
 (test/defspec string-ave-generative-test
   100

@@ -319,6 +319,18 @@
   (put-byte bb c/separator)
   (put-int bb (.scale x)))
 
+(defn- encode-bigdec
+  [^BigDecimal x]
+  (let [^BigInteger v (.unscaledValue x)
+        bs            (.toByteArray v)
+        n             (alength bs)]
+    (assert (< n 128)
+            "Unscaled value of big decimal cannot go beyond the range of
+             [-2^1015, 2^1015-1]")
+    (let [bf (ByteBuffer/allocate (+ n 14))]
+      (put-bigdec bf x)
+      (.array bf))))
+
 (defn- get-bigdec
   [^ByteBuffer bb]
   (get-double bb)
@@ -409,6 +421,20 @@
     c/vmax c/max-bytes
     (serialize v)))
 
+(defn- bigint-bytes
+  [v]
+  (condp = v
+    c/v0   c/min-bytes
+    c/vmax c/max-bytes
+    (encode-bigint v)))
+
+(defn- bigdec-bytes
+  [v]
+  (condp = v
+    c/v0   c/min-bytes
+    c/vmax c/max-bytes
+    (encode-bigdec v)))
+
 (defn- val-bytes
   "Turn value into bytes according to :db/valueType"
   [v t]
@@ -424,6 +450,8 @@
     :db.type/instant nil
     :db.type/uuid    nil
     :db.type/bytes   (wrap-extrema v c/min-bytes c/max-bytes v)
+    :db.type/bigint  (bigint-bytes v)
+    :db.type/bigdec  (bigdec-bytes v)
     (data-bytes v)))
 
 (defn- long-header
@@ -450,6 +478,8 @@
     :db.type/instant c/type-instant
     :db.type/uuid    c/type-uuid
     :db.type/bytes   c/type-bytes
+    :db.type/bigint  c/type-bigint
+    :db.type/bigdec  c/type-bigdec
     :db.type/long    (long-header v)
     nil))
 
@@ -491,7 +521,7 @@
   [bf]
   (UUID. (get-long bf) (get-long bf)))
 
-(defn- put-native
+(defn- put-fixed
   [bf val hdr]
   (case (short hdr)
     -64 (put-long bf (wrap-extrema val Long/MIN_VALUE -1 val))
@@ -516,7 +546,7 @@
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
         (when (.-h x) (put-byte bf c/truncator)))
-    (put-native bf (.-v x) (.-f x)))
+    (put-fixed bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (when-let [h (.-h x)] (put-int bf h)))
 
@@ -527,14 +557,14 @@
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
         (when (.-h x) (put-byte bf c/truncator)))
-    (put-native bf (.-v x) (.-f x)))
+    (put-fixed bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
   (when-let [h (.-h x)] (put-int bf h)))
 
 (defn- put-vea
   [bf ^Indexable x]
-  (put-native bf (.-v x) (.-f x))
+  (put-fixed bf (.-v x) (.-f x))
   (put-long bf (.-e x))
   (put-int bf (.-a x)))
 
@@ -573,6 +603,8 @@
   (case (short (get-byte bf))
     -64 (get-long bf)
     -63 (get-long bf)
+    -15 (get-bigint bf)
+    -14 (get-bigdec bf)
     -11 (get-float bf)
     -10 (get-double bf)
     -9  (get-instant bf)
@@ -774,6 +806,8 @@
                                      (<= Integer/MIN_VALUE x Integer/MAX_VALUE))
     (:db.type/bigint :bigint)   (and (instance? java.math.BigInteger x)
                                      (<= c/min-bigint x c/max-bigint))
+    (:db.type/bigdec :bigdec)   (and (instance? java.math.BigDecimal x)
+                                     (<= c/min-bigdec x c/max-bigdec))
     (:db.type/long :db.type/ref
                    :long)       (int? x)
     (:db.type/float :float)     (and (float? x)
