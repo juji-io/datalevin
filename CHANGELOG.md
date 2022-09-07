@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.17
 ### Added
 - [Datalog] `tx-data->simulated-report` to obtain a transaction report without
   actually persisting the changes. (thx @TheExGenesis)
