@@ -8,7 +8,7 @@
   :managed-dependencies [
                          [babashka/babashka.pods "0.1.0"]
                          [com.cognitect/transit-clj "1.0.329"]
-                         [com.fasterxml.jackson.core/jackson-core "2.13.3"]
+                         [com.fasterxml.jackson.core/jackson-core "2.13.4"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
                          [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "5.2.1"]
@@ -34,7 +34,7 @@
                           ;;  org.ow2.asm/asm-tree
                           ;;  org.ow2.asm/asm-util]
                           ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.31"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.32"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
@@ -64,11 +64,11 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              :jvm-opts
-                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
+                              ;; :jvm-opts
+                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]
