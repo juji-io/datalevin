@@ -96,8 +96,8 @@
 (defn- max-bigint-bs
   ^bytes []
   (let [^bytes bs (byte-array 127)]
-    (aset bs 0 (byte 0x7f))
-    (dotimes [i 126] (aset bs (inc i) (byte 0xff)))
+    (aset bs 0 (unchecked-byte 0x7f))
+    (dotimes [i 126] (aset bs (inc i) (unchecked-byte 0xff)))
     bs))
 
 (def max-bigint (BigInteger. (max-bigint-bs)))
@@ -105,8 +105,8 @@
 (defn- min-bigint-bs
   ^bytes []
   (let [bs (byte-array 127)]
-    (aset bs 0 (byte 0x80))
-    (dotimes [i 126] (aset bs (inc i) (byte 0x00)))
+    (aset bs 0 (unchecked-byte 0x80))
+    (dotimes [i 126] (aset bs (inc i) (unchecked-byte 0x00)))
     bs))
 
 (def min-bigint (BigInteger. (min-bigint-bs)))
