@@ -1,5 +1,16 @@
 # Change Log
 
+## WIP
+### Added
+- [KV] Support tuple data types, specified by a vector of 2-8 scalar data types,
+  represented as concatenation of values, and resulting in expected order in
+  range queries.
+- [Datalog] Support `:db.type/tuple`, including all Datomic tuple types:
+  composite tuples, heterogeneous fixed length tuples, and homogeneous variable
+  length tuples.
+### Improved
+ - Incorporate relevant Datascript improvements since 0.18.13, #3
+
 ## 0.6.17
 ### Added
 - [Datalog] `tx-data->simulated-report` to obtain a transaction report without

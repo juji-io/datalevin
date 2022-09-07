@@ -361,7 +361,7 @@ Datalevin is aimed to be a versatile database.
 
 ### Use as a Datalog store
 
-In addition to [our API doc](https://juji-io.github.io/datalevin/index.html),
+In addition to [our API doc](https://cljdoc.org/d/datalevin/datalevin),
 since Datalevin has almost the same Datalog API as Datascript, which in turn has
 almost the same API as Datomic®, please consult the abundant tutorials, guides
 and learning sites available online to learn about the usage of Datomic® flavor
@@ -567,7 +567,7 @@ lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel free to rea
 ## :green_book: Documentation
 
 Please refer to the [API
-documentation](https://juji-io.github.io/datalevin/index.html) for more details.
+documentation](https://cljdoc.org/d/datalevin/datalevin) for more details.
 You may also consult online materials for Datascript or Datomic®, as the Datalog API is
 similar.
 
