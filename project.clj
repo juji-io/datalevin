@@ -26,14 +26,7 @@
                          [org.eclipse.collections/eclipse-collections "11.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.3.0"]
                          [org.graalvm.nativeimage/svm "21.3.0"]
-                         [org.lmdbjava/lmdbjava "0.8.2"
-                          ;; uncomment when run lein codox
-                          ;; :exclusions
-                          ;; [org.ow2.asm/asm-analysis
-                          ;;  org.ow2.asm/asm-commons
-                          ;;  org.ow2.asm/asm-tree
-                          ;;  org.ow2.asm/asm-util]
-                          ]
+                         [org.lmdbjava/lmdbjava "0.8.2"]
                          [org.roaringbitmap/RoaringBitmap "0.9.32"]
                          [persistent-sorted-set "0.1.4"]
                          ]
@@ -88,16 +81,4 @@
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password
-                                    :sign-releases false}]]
-  :plugins [[lein-codox "0.10.7"]]
-  :codox {:source-paths ["src"]
-          :output-path  "codox"
-          :namespaces   [datalevin.core datalevin.client datalevin.interpret
-                         datalevin.search-utils]
-          :metadata     {:doc/format :markdown}
-          :source-uri
-          {#"target/classes"
-           "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
-           #".*"
-           "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
-  )
+                                    :sign-releases false}]])
