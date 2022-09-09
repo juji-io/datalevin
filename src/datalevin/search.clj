@@ -259,7 +259,7 @@
 (defn- current-threshold
   [^PriorityQueue pq]
   (if (< (.size pq) (.maxSize pq))
-    0.0
+    -0.1
     (nth (.top pq) 0)))
 
 (defn- score-term

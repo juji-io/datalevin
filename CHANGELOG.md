@@ -1,6 +1,9 @@
 # Change Log
 
 ## WIP
+### Fixed
+- [Search] corner case of document collection contains only one term and search
+  is on that term
 ### Added
 - [KV] Support tuple data types, specified by a vector of 2-8 scalar data types,
   represented as concatenation of values, and resulting in expected order in
