@@ -493,8 +493,7 @@
   (or (and (number? x) (neg? ^long x)) (string? x)))
 
 (defn- new-eid? [db ^long eid]
-  (and (> eid ^long (:max-eid db))
-       (< eid tx0))) ;; tx0 is max eid
+  (> eid ^long (:max-eid db)))
 
 (defn- advance-max-eid [db eid]
   (cond-> db
