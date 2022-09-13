@@ -5,7 +5,7 @@
 - [Search] corner case of search in document collection containing only one term, #143
 - [Datalog] entity IDs has smaller than expected range, now they cover full 32 bit integer range, #140
 ### Added
-- Persistent `max-tx`, #142
+- [Datalog] Persistent `max-tx`, #142
 
 ## 0.6.17
 ### Added
