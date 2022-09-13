@@ -1366,6 +1366,10 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler init-max-eid)))
 
+(defn- max-tx
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler max-tx)))
+
 (defn- swap-attr
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
@@ -1731,6 +1735,7 @@
    'rschema
    'set-schema
    'init-max-eid
+   'max-tx
    'swap-attr
    'del-attr
    'rename-attr

@@ -1171,16 +1171,22 @@
         conn (sut/create-conn dir
                               {:id {:db/unique    :db.unique/identity
                                     :db/valueType :db.type/long}})]
-    (sut/transact! conn [{:id 1}])
+    (let [rp (sut/transact! conn [{:id 1}])]
+      (is (= (:tx-data rp) [(d/datom 1 :id 1)]))
+      (is (= (d/datom-tx (first (:tx-data rp))) 2)))
     (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
     (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
 
     (let [rp (sut/tx-data->simulated-report @conn [{:id 2}])]
       (is (= (:tx-data rp) [(d/datom 2 :id 2)]))
-      (is (= (:max-eid (:db-after rp)) 2)))
+      (is (= (d/datom-tx (first (:tx-data rp))) 3))
+      (is (= (:max-eid (:db-after rp)) 2))
+      (is (= (:max-tx (:db-after rp)) 3)))
 
     (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
     (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
 
     (sut/close conn)
     (s/stop server)))

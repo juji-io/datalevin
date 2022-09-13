@@ -92,6 +92,9 @@
   (init-max-eid [_]
     (cl/normal-request client :init-max-eid [db-name]))
 
+  (max-tx [_]
+    (cl/normal-request client :max-tx [db-name]))
+
   (swap-attr [this attr f]
     (s/swap-attr this attr f nil nil))
   (swap-attr [this attr f x]

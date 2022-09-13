@@ -322,8 +322,7 @@
      :avet    (set/sorted-set-by d/cmp-datoms-avet)
      :veat    (set/sorted-set-by d/cmp-datoms-veat)
      :max-eid (s/init-max-eid store)
-     :max-tx  tx0
-     :hash    (atom 0)}))
+     :max-tx  (s/max-tx store)}))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))
@@ -535,8 +534,7 @@
           true (update :eavt set/conj datom d/cmp-datoms-eavt-quick)
           true (update :avet set/conj datom d/cmp-datoms-avet-quick)
           ref? (update :veat set/conj datom d/cmp-datoms-veat-quick)
-          true (advance-max-eid (.-e datom))
-          true (assoc :hash (atom 0))))
+          true (advance-max-eid (.-e datom))))
       (if-some [removing (first
                            (set/slice
                              (get db :eavt)
@@ -545,8 +543,7 @@
         (cond-> db
           true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
           true (update :avet set/disj datom d/cmp-datoms-avet-quick)
-          ref? (update :veat set/conj datom d/cmp-datoms-veat-quick)
-          true (assoc :hash (atom 0)))
+          ref? (update :veat set/conj datom d/cmp-datoms-veat-quick))
         db))))
 
 (defn- transact-report [report datom]
@@ -1034,7 +1031,9 @@
          (let [res                       (r/tx-data store initial-es simulated?)
                [tx-data tempids max-eid] (remote-tx-result res)]
            (assoc initial-report
-                  :db-after (assoc (new-db store) :max-eid max-eid)
+                  :db-after (-> (new-db store)
+                                (assoc :max-eid max-eid)
+                                (#(if simulated? (update % :max-tx inc) %)))
                   :tx-data tx-data
                   :tempids tempids))
          (catch Exception _

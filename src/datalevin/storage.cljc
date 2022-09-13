@@ -86,6 +86,11 @@
         (inc ^long gt))
       c/gt0))
 
+(defn- init-max-tx
+  [lmdb]
+  (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
+      c/tx0))
+
 (defn- low-datom->indexable
   [schema ^Datom d]
   (let [e (.-e d)]
@@ -154,6 +159,8 @@
     "Return the unix timestamp of when the store is last modified")
   (max-gt [this])
   (advance-max-gt [this])
+  (max-tx [this])
+  (advance-max-tx [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (rschema [this] "Return the reverse schema map")
@@ -206,7 +213,8 @@
                 ^:volatile-mutable rschema
                 ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
-                ^:volatile-mutable max-gt]
+                ^:volatile-mutable max-gt
+                ^:volatile-mutable max-tx]
   IStore
 
   (opts [_]
@@ -232,6 +240,12 @@
 
   (advance-max-gt [_]
     (set! max-gt (inc ^long max-gt)))
+
+  (max-tx [_]
+    max-tx)
+
+  (advance-max-tx [_]
+    (set! max-tx (inc ^long max-tx)))
 
   (max-aid [_]
     max-aid)
@@ -331,6 +345,9 @@
                                  nil
                                  datoms)]
           (batch-fn batch))
+        (lmdb/transact-kv
+          lmdb
+          [[:put c/meta :max-tx (advance-max-tx this) :attr :long]])
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op
@@ -605,4 +622,5 @@
                 (schema->rschema schema)
                 (init-attrs schema)
                 (init-max-aid schema)
-                (init-max-gt lmdb))))))
+                (init-max-gt lmdb)
+                (init-max-tx lmdb))))))
