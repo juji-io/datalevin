@@ -256,7 +256,7 @@
 (defn- equiv-entity [^Entity this that]
   (and
     (instance? Entity that)
-    ;; (= db  (.-db ^Entity that))
+    (identical? (.-db this) (.-db ^Entity that)) ; `=` and `hash` on db is expensive
     (= (.-eid this) (.-eid ^Entity that))))
 
 (defn- lookup-entity
