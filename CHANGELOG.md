@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Changed
+- [Datalog] Entity equality requires DB identity in order to better support reactive applications, #146 (thx @den1k)
+
 ## 0.6.18
 ### Fixed
 - [Search] corner case of search in document collection containing only one term, #143

@@ -13,7 +13,8 @@
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]
-           [datalevin.storage Store]))
+           [datalevin.storage Store]
+           [datalevin.entity Entity]))
 
 (deftest basic-ops-test
   (let [schema
@@ -680,7 +681,9 @@
         vs  (range 0 end)
         txs (mapv sut/datom (range c/e0 (+ c/e0 end)) (repeat :value) vs)
 
-        q '[:find ?ent :in $ ent :where [?e _ _] [(ent $ ?e) ?ent]]
+        q '[:find [?ent ...] :in $ ent :where [?e _ _] [(ent $ ?e) ?ent]]
+
+        get-eid (fn [^Entity e] (.-eid e))
 
         uri    "dtlv://datalevin:datalevin@localhost/entity-fn"
         r-conn (sut/get-conn uri)
@@ -690,13 +693,16 @@
     (sut/transact! r-conn txs)
     (sut/transact! l-conn txs)
 
+
     (is (i/inter-fn? f1))
     (is (i/inter-fn? f2))
 
-    (is (= (sut/q q @r-conn f1)
-           (sut/q q @l-conn sut/entity)))
-    (is (= (sut/q q @r-conn f2)
-           (sut/q q @l-conn (fn [db eid] (sut/touch (sut/entity db eid))))))
+    (is (= (set (map get-eid (sut/q q @r-conn f1)))
+           (set (map get-eid (sut/q q @l-conn sut/entity)))))
+    (is (= (set (map get-eid (sut/q q @r-conn f2)))
+           (set (map get-eid (sut/q q @l-conn
+                                    (fn [db eid]
+                                      (sut/touch (sut/entity db eid))))))))
     (sut/close r-conn)
     (sut/close l-conn)
     (s/stop server)))
