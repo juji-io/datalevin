@@ -367,6 +367,7 @@
    'update-schema      update-schema
    'get-conn           get-conn
    'q                  q
+   'entity             entity
    'open-kv            open-kv
    'close-kv           close-kv
    'closed-kv?         closed-kv?
