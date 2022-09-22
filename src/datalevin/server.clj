@@ -1,4 +1,4 @@
-(ns datalevin.server
+(ns ^:no-doc datalevin.server
   "Non-blocking event-driven database server with role based access control"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
@@ -1366,16 +1366,24 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler init-max-eid)))
 
+(defn- max-tx
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler max-tx)))
+
 (defn- swap-attr
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler swap-attr))))
 
 (defn- del-attr
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (normal-dt-store-handler del-attr)))
+
+(defn- rename-attr
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (normal-dt-store-handler rename-attr)))
 
 (defn- datom-count
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1409,7 +1417,8 @@
                     :request (nth args 1)
                     (u/raise "Missing :mode when transact data" {}))
               db  (get-db server db-name)
-              rp  (d/with db txs)
+              s?  (last args)
+              rp  (d/with db txs {} s?)
               db  (:db-after rp)
               _   (vswap! (.-dt-dbs server) assoc db-name db)
               rp  (assoc-in rp [:tempids :max-eid] (:max-eid db))
@@ -1459,28 +1468,28 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler size-filter))))
 
 (defn- head-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler head-filter))))
 
 (defn- tail-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler tail-filter))))
 
 (defn- slice-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)
+          args   (replace {frozen (b/deserialize frozen)} args)
 
           datoms (apply st/slice-filter
                         (db-store server skey (nth args 0)) (rest args))]
@@ -1492,7 +1501,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)
+          args   (replace {frozen (b/deserialize frozen)} args)
           datoms (apply st/rslice-filter
                         (db-store server skey (nth args 0)) (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
@@ -1607,14 +1616,14 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler get-some))))
 
 (defn- range-filter
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)
+          args   (replace {frozen (b/deserialize frozen)} args)
           data   (apply l/range-filter
                         (db-store server skey (nth args 0)) (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
@@ -1625,20 +1634,14 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace {frozen (nippy/fast-thaw frozen)} args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler range-filter-count))))
 
 (defn- visit
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [frozen (nth args 2)
-          args   (replace
-                   {frozen
-                    (binding [nippy/*thaw-serializable-allowlist*
-                              (conj nippy/default-thaw-serializable-allowlist
-                                    "java.util.*")]
-                      (nippy/fast-thaw frozen))}
-                   args)]
+          args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler visit))))
 
 (defn- q
@@ -1661,6 +1664,10 @@
 (defn- remove-doc
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler remove-doc)))
+
+(defn- clear-docs
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error (search-handler clear-docs)))
 
 (defn- doc-indexed?
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1724,8 +1731,10 @@
    'rschema
    'set-schema
    'init-max-eid
+   'max-tx
    'swap-attr
    'del-attr
+   'rename-attr
    'datom-count
    'load-datoms
    'tx-data
@@ -1763,6 +1772,7 @@
    'new-search-engine
    'add-doc
    'remove-doc
+   'clear-docs
    'doc-indexed?
    'doc-count
    'doc-refs

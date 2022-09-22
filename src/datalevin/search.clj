@@ -1,4 +1,4 @@
-(ns datalevin.search
+(ns ^:no-doc datalevin.search
   "Full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]
@@ -262,7 +262,7 @@
 (defn- current-threshold
   [^PriorityQueue pq]
   (if (< (.size pq) (.maxSize pq))
-    0.0
+    -0.1
     (nth (.top pq) 0)))
 
 (defn- score-term
@@ -301,6 +301,7 @@
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text] [this doc-ref doc-text writing?])
   (remove-doc [this doc-ref] [this doc-ref writing?])
+  (clear-docs [this])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
   (doc-refs [this])
@@ -354,6 +355,11 @@
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref false))
+
+  (clear-docs [this]
+    (l/clear-dbi lmdb terms-dbi)
+    (l/clear-dbi lmdb docs-dbi)
+    (l/clear-dbi lmdb positions-dbi))
 
   (doc-count [_] (l/entries lmdb docs-dbi))
 
@@ -419,8 +425,7 @@
     max-term)
 
   (lmdb [_]
-    lmdb)
-  )
+    lmdb))
 
 (defn- get-term-info
   [engine term writing?]

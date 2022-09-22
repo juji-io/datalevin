@@ -8,11 +8,10 @@
             [clojure.test :refer [deftest testing is]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop]
-            [taoensso.nippy :as nippy]
-            [clojure.string :as s])
+            [clojure.test.check.properties :as prop])
   (:import [java.util UUID Arrays HashMap]
-           [java.lang Long]))
+           [java.lang Long]
+           [org.eclipse.collections.impl.list.mutable FastList]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -46,7 +45,7 @@
                       [:put "b" 1 :long :long :data]
                       [:put "b" :long 1 :data :long]
                       [:put "b" 2 3 :long :long]
-                      [:put "b" "ok" 42 :string :int]
+                      [:put "b" "ok" 42 :string :long]
                       [:put "d" 3.14 :pi :double :keyword]
                       [:put "d" #inst "1969-01-01" "nice year" :instant :string]
                       ]))
@@ -77,7 +76,7 @@
       (is (= :long (l/get-value lmdb "b" 1 :long :data)))
       (is (= 1 (l/get-value lmdb "b" :long :data :long)))
       (is (= 3 (l/get-value lmdb "b" 2 :long :long)))
-      (is (= 42 (l/get-value lmdb "b" "ok" :string :int)))
+      (is (= 42 (l/get-value lmdb "b" "ok" :string :long)))
       (is (= :pi (l/get-value lmdb "d" 3.14 :double :keyword)))
       (is (= "nice year" (l/get-value lmdb "d" #inst "1969-01-01" :instant :string)))
       )
@@ -452,7 +451,7 @@
 
 (defn- data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/freeze data)) limit))
+  (< (alength ^bytes (b/serialize data)) limit))
 
 (test/defspec data-ops-generative-test
   100
@@ -636,7 +635,7 @@
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" 1 2 :string]])))
     (is (thrown-with-msg? Exception #"Invalid data"
-                          (l/transact-kv lmdb [[:put "a" 1 "b" :int :int]])))
+                          (l/transact-kv lmdb [[:put "a" 1 "b" :long :long]])))
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" 1 1 :float]])))
     (is (thrown-with-msg? Exception #"Invalid data"
@@ -654,4 +653,21 @@
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" "b" 1 :uuid]])))
     (l/close-kv lmdb)
-    (u/delete-files dir)) )
+    (u/delete-files dir)))
+
+(deftest custom-data-test
+  (let [dir  (u/tmp-dir (str "custom-data-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        lst  (doto (FastList.) (.add 1))
+        data {:lst lst}]
+    (l/open-dbi lmdb "a")
+    (l/transact-kv lmdb [[:put "a" 1 data]])
+    (is (not= data (l/get-value lmdb "a" 1)))
+    ;; TODO somehow this doesn't work in graal
+    (when-not (u/graal?)
+      (is (= data
+             (binding [c/*data-serializable-classes*
+                       #{"org.eclipse.collections.impl.list.mutable.FastList"}]
+               (l/get-value lmdb "a" 1)))))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))

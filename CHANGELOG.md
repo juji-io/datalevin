@@ -9,13 +9,56 @@
 - Expose LMDB dupsort functionality (the same key maps to a list of sorted
   values) as list functions: `open-list-dbi`, `in-list?`, `put-list-items`, etc.
 - Add pull API to client/server and babashka pods
-## Improved
-- Ensure ACID by wrapping Datalog writes within a single LMDB transaction.
 ## Changed
 - [**Breaking**] Change `EAV` and `AVE` index storage to use LMDB dupsort,
   reducing storage size and improving speed.
 - [**Breaking**] Removed `VEA` index, its functionality is replaced by `Links`.
-- [**Breaking**] Changed `:search-engine` key to `:search-opts` for consistency
+
+## 0.6.20
+### Added
+- [Pod] `entity` and `touch` function to babashka pod. These return regular
+  maps, as the `Entity` type does not exist in a babashka script. #148 (thx
+  @ngrunwald)
+
+## 0.6.19
+### Changed
+- [Datalog] Entity equality requires DB identity in order to better support
+  reactive applications, #146 (thx @den1k)
+### Improved
+- bump deps
+
+## 0.6.18
+### Fixed
+- [Search] corner case of search in document collection containing only one term, #143
+- [Datalog] entity IDs has smaller than expected range, now they cover full 32 bit integer range, #140
+### Added
+- [Datalog] Persistent `max-tx`, #142
+
+## 0.6.17
+### Added
+- [Datalog] `tx-data->simulated-report` to obtain a transaction report without
+  actually persisting the changes. (thx @TheExGenesis)
+- [KV] Support `:bigint` and `:bigdec` data types, corresponding to
+  `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
+- [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly, #138.
+### Improved
+ - Better documentation so that cljdoc can build successfully. (thx @lread)
+
+## 0.6.16
+### Added
+- [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
+- [Search] `clear-docs` function to wipe out search index, as it might be faster
+  to rebuild search index than updating individual documents sometimes. #132
+- `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
+  used for `binding` if additional Java classes are to be serialized as part of
+  the default `:data` data type. #134
+### Improved
+- [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
+- bump deps
+### Fixed
+- [Datalog] `clear` function on server. #133
+### Changed
+- [Datalog] Changed `:search-engine` option map key to `:search-opts` for consistency [**Breaking**]
 
 ## 0.6.15
 ### Improved

@@ -1,13 +1,13 @@
 (ns datalevin.test.entity
   (:require
-   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-   #?(:cljs [cljs.test :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer [is deftest testing]])
-   [datalevin.core :as d]
-   [datalevin.server :as s]
-   [datalevin.util :as u]
-   [datalevin.constants :as c]
-   [datalevin.test.core :as tdc])
+    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+    #?(:cljs [cljs.test :as t :refer-macros [is deftest testing]]
+       :clj  [clojure.test :as t :refer [is deftest testing]])
+    [datalevin.core :as d]
+    [datalevin.server :as s]
+    [datalevin.util :as u]
+    [datalevin.constants :as c]
+    [datalevin.test.core :as tdc])
   (:import [java.util UUID]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
@@ -105,8 +105,8 @@
           (is (nil? (find-fred ava-db-no-fred-friend)) "fred is not a friend anymore :(")
           ;; ava and fred make up
           (let [ava-friends-with-fred (d/add ava-db-no-fred-friend :user/friends fred)]
-                                        ; tx-stage does not handle cardinality properly yet:
-                                        ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
+            ; tx-stage does not handle cardinality properly yet:
+            ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
             (let [db-with-friends (d/db-with db [ava-friends-with-fred])
                   ava             (d/entity db-with-friends [:user/handle "ava"])]
               (is (some? (find-fred ava)) "officially friends again"))))))
@@ -233,11 +233,26 @@
           (is (nil? (find-fred ava-db-no-fred-friend)) "fred is not a friend anymore :(")
           ;; ava and fred make up
           (let [ava-friends-with-fred (d/add ava-db-no-fred-friend :user/friends fred)]
-                                        ; tx-stage does not handle cardinality properly yet:
-                                        ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
+            ; tx-stage does not handle cardinality properly yet:
+            ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
             (let [db-with-friends (d/db-with db [ava-friends-with-fred])
                   ava             (d/entity db-with-friends [:user/handle "ava"])]
               (is (some? (find-fred ava)) "officially friends again"))))))
 
     (d/close-db db)
     (s/stop server)))
+
+(deftest test-entity-equality
+  (let [db1 (-> (d/empty-db)
+                (d/db-with [{:db/id 1, :name "Ivan"}]))
+        e1  (d/entity db1 1)
+        db2 (d/db-with db1 [])
+        db3 (d/db-with db2 [{:db/id 2, :name "Oleg"}])]
+
+    (testing "Two entities are equal if they have the same :db/id"
+      (is (= e1 e1))
+      (is (= e1 (d/entity db1 1)))
+
+      (testing "and refer to the same database"
+        (is (not= e1 (d/entity db2 1)))
+        (is (not= e1 (d/entity db3 1)))))))

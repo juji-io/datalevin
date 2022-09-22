@@ -10,8 +10,10 @@
             [clojure.test.check.properties :as prop]
             [datalevin.util :as u])
   (:import [java.util Arrays UUID Date]
+           [java.util.concurrent Semaphore]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
+           [org.joda.time DateTime]
            [org.roaringbitmap RoaringBitmap]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.bits Indexable Retrieved]))
@@ -136,6 +138,84 @@
                   (.flip bf)
                   (= f (sut/read-buffer bf :float)))))
 
+(def gen-bigint (gen/such-that
+                  #(= clojure.lang.BigInt (type %))
+                  gen/size-bounded-bigint))
+
+(defn bigint-test
+  [i j]
+  (let [^ByteBuffer bf  (sut/allocate-buffer 816384)
+        ^ByteBuffer bf1 (sut/allocate-buffer 816384)
+        ^BigInteger m   (.toBigInteger ^clojure.lang.BigInt i)
+        ^BigInteger n   (.toBigInteger ^clojure.lang.BigInt j)]
+    (.clear bf)
+    (sut/put-buffer bf m :bigint)
+    (.flip bf)
+    (.clear bf1)
+    (sut/put-buffer bf1 n :bigint)
+    (.flip bf1)
+    (if (< (.compareTo m n) 0)
+      (is (< (bf-compare bf bf1) 0))
+      (if (= (.compareTo m n) 0)
+        (is (= (bf-compare bf bf1) 0))
+        (is (> (bf-compare bf bf1) 0))))
+    (.rewind bf)
+    (.rewind bf1)
+    (let [^BigInteger m1 (sut/read-buffer bf :bigint)
+          ^BigInteger n1 (sut/read-buffer bf1 :bigint)]
+      (is (= (.compareTo m m1) 0))
+      (is (= (.compareTo n n1) 0))
+      (if (< (.compareTo m n) 0)
+        (is (< (.compareTo m1 n1) 0))
+        (if (= (.compareTo m n) 0)
+          (is (= (.compareTo m1 n1) 0))
+          (is (> (.compareTo m1 n1) 0)))))))
+
+(test/defspec bigint-generative-test
+  100
+  (prop/for-all [i gen-bigint
+                 j gen-bigint]
+                (bigint-test i j)))
+
+(defn bigdec-test
+  [vi vj si sj]
+  (let [^ByteBuffer bf  (sut/allocate-buffer 816384)
+        ^ByteBuffer bf1 (sut/allocate-buffer 816384)
+        ^BigInteger vi  (.toBigInteger ^clojure.lang.BigInt vi)
+        ^BigInteger vj  (.toBigInteger ^clojure.lang.BigInt vj)
+        ^BigDecimal m   (BigDecimal. vi ^int si)
+        ^BigDecimal n   (BigDecimal. vj ^int sj)]
+    (.clear bf)
+    (sut/put-buffer bf m :bigdec)
+    (.flip bf)
+    (.clear bf1)
+    (sut/put-buffer bf1 n :bigdec)
+    (.flip bf1)
+    (if (< (.compareTo m n) 0)
+      (is (< (bf-compare bf bf1) 0))
+      (if (= (.compareTo m n) 0)
+        (is (= (bf-compare bf bf1) 0))
+        (is (> (bf-compare bf bf1) 0))))
+    (.rewind bf)
+    (.rewind bf1)
+    (let [^BigDecimal m1 (sut/read-buffer bf :bigdec)
+          ^BigDecimal n1 (sut/read-buffer bf1 :bigdec)]
+      (is (= (.compareTo m m1) 0))
+      (is (= (.compareTo n n1) 0))
+      (if (< (.compareTo m n) 0)
+        (is (< (.compareTo m1 n1) 0))
+        (if (= (.compareTo m n) 0)
+          (is (= (.compareTo m1 n1) 0))
+          (is (> (.compareTo m1 n1) 0)))))))
+
+(test/defspec bigdec-generative-test
+  100
+  (prop/for-all [vi gen-bigint
+                 vj gen-bigint
+                 si gen/small-integer
+                 sj gen/small-integer]
+                (bigdec-test vi vj si sj)))
+
 (test/defspec bytes-generative-test
   100
   (prop/for-all [^bytes k (gen/not-empty gen/bytes)]
@@ -227,7 +307,7 @@
     (.clear bf)
     (sut/put-buffer bf d1 :datom)
     (.flip bf)
-    (is (= d1 (nippy/fast-thaw (nippy/fast-freeze d1))))
+    (is (= d1 (sut/deserialize (sut/serialize d1))))
     (is (= d1 (sut/read-buffer bf :datom)))))
 
 (test/defspec datom-generative-test
@@ -384,6 +464,28 @@
                   (sut/indexable e a c/v0 :db.type/uuid c/g0)
                   (sut/indexable e a c/vmax :db.type/uuid c/gmax))))
 
+(test/defspec bigint-extrema-generative-test
+  100
+  (prop/for-all
+    [i  gen-bigint]
+    (let [^BigInteger v (.toBigInteger ^clojure.lang.BigInt i)]
+      (test-extrema v
+                    (sut/indexable e a v :db.type/bigint)
+                    (sut/indexable e a c/v0 :db.type/bigint)
+                    (sut/indexable e a c/vmax :db.type/bigint)))))
+
+(test/defspec bigdec-extrema-generative-test
+  100
+  (prop/for-all
+    [i  gen-bigint
+     s gen/small-integer]
+    (let [^BigInteger n (.toBigInteger ^clojure.lang.BigInt i)
+          ^BigDecimal v (BigDecimal. n ^int s)]
+      (test-extrema v
+                    (sut/indexable e a v :db.type/bigdec)
+                    (sut/indexable e a c/v0 :db.type/bigdec)
+                    (sut/indexable e a c/vmax :db.type/bigdec)))))
+
 ;; orders
 
 (defn- veg-test
@@ -518,6 +620,73 @@
               (sut/indexable e a v :db.type/string c/normal)
               (sut/indexable e1 a v1 :db.type/string c/normal))))
 
+(test/defspec bigint-eav-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger v1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger v  (.toBigInteger ^clojure.lang.BigInt i)]
+      (eav-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigint)
+                (sut/indexable e1 a1 v1 :db.type/bigint)))))
+
+(test/defspec bigint-eav-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger v1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger v  (.toBigInteger ^clojure.lang.BigInt i)]
+      (ave-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigint)
+                (sut/indexable e1 a1 v1 :db.type/bigint)))))
+
+(test/defspec bigdec-eav-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger u1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger u  (.toBigInteger ^clojure.lang.BigInt i)
+          v1             (BigDecimal. u1 -10)
+          v              (BigDecimal. u -10)]
+      (eav-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigdec)
+                (sut/indexable e1 a1 v1 :db.type/bigdec)))))
+
+(test/defspec bigdec-ave-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     i1 gen-bigint
+     i  gen-bigint]
+    (let [^BigInteger u1 (.toBigInteger ^clojure.lang.BigInt i1)
+          ^BigInteger u  (.toBigInteger ^clojure.lang.BigInt i)
+          v1             (BigDecimal. u1 -10)
+          v              (BigDecimal. u -10)]
+      (ave-test v e1 a1 v1
+                (sut/indexable e a v :db.type/bigdec)
+                (sut/indexable e1 a1 v1 :db.type/bigdec)))))
+
+(test/defspec string-ave-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 gen/string
+     v  gen/string]
+    (ave-test v e1 a1 v1
+              (sut/indexable e a v :db.type/string)
+              (sut/indexable e1 a1 v1 :db.type/string))))
+
 (test/defspec boolean-avg-generative-test
   100
   (prop/for-all
@@ -646,7 +815,7 @@
 
 (defn data-size-less-than?
   [^long limit data]
-  (< (alength ^bytes (nippy/fast-freeze data)) limit))
+  (< (alength ^bytes (sut/serialize data)) limit))
 
 (test/defspec data-avg-generative-test
   50
@@ -691,3 +860,15 @@
     (is (= 4 (.select rr 3)))
     (sut/bitmap-del rr 4)
     (is (= 1000 (.select rr 3)))))
+
+(deftest data-serialize-test
+  ;; TODO somehow this doesn't work in graal
+  (when-not (u/graal?)
+    (let [d1  (DateTime.)
+          bs1 (sut/serialize d1)]
+      (is (instance? org.joda.time.DateTime (sut/deserialize bs1))))
+    (let [d  (Semaphore. 1)
+          bs (sut/serialize d)]
+      (is (not (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))
+      (binding [c/*data-serializable-classes* #{"java.util.concurrent.Semaphore"}]
+        (is (instance? java.util.concurrent.Semaphore (sut/deserialize bs)))))))

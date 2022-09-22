@@ -153,6 +153,11 @@
         (inc ^long gt))
       c/gt0))
 
+(defn- init-max-tx
+  [lmdb]
+  (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
+      c/tx0))
+
 (defn- datom->indexable
   [schema max-gt ^Datom d high?]
   (let [e  (.-e d)
@@ -222,6 +227,8 @@
     "Return the unix timestamp of when the store is last modified")
   (max-gt [this])
   (advance-max-gt [this])
+  (max-tx [this])
+  (advance-max-tx [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (rschema [this] "Return the reverse schema map")
@@ -239,9 +246,10 @@
   (links [this])
   (rlinks [this])
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
-    "Update an attribute, f is similar to that of swap!")
+    "Update the properties of an attribute, f is similar to that of swap!")
   (del-attr [this attr]
     "Delete an attribute, throw if there is still datom related to it")
+  (rename-attr [this attr new-attr] "Rename an attribute")
   (load-datoms [this datoms] "Load datams into storage")
   (populated? [this index low-datom high-datom]
     "Return true if there exists at least one datom in the given boundary
@@ -310,7 +318,8 @@
                 ^:volatile-mutable rlinks    ; vae -> link
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
-                ^:volatile-mutable max-cid]
+                ^:volatile-mutable max-cid
+                ^:volatile-mutable max-tx]
   IStore
   (opts [_]
     opts)
@@ -335,6 +344,12 @@
 
   (advance-max-gt [_]
     (set! max-gt (inc ^long max-gt)))
+
+  (max-tx [_]
+    max-tx)
+
+  (advance-max-tx [_]
+    (set! max-tx (inc ^long max-tx)))
 
   (max-aid [_]
     max-aid)
@@ -421,11 +436,27 @@
                     (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
       (let [aid (:db/aid (schema attr))]
-        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]])
+        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                                [:put c/meta :last-modified
+                                 (System/currentTimeMillis) :attr :long]])
         (set! schema (dissoc schema attr))
         (set! rschema (schema->rschema schema))
         (set! attrs (dissoc attrs aid))
         attrs)))
+
+  (rename-attr [this attr new-attr]
+    (let [props (schema attr)]
+      (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                              [:put c/schema new-attr props :attr]
+                              [:put c/meta :last-modified
+                               (System/currentTimeMillis) :attr :long]])
+      (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
+      (set! rschema (schema->rschema schema))
+      (set! attrs (assoc attrs (:db/aid props) new-attr))
+      attrs))
+
+  (datom-count [_ index]
+    (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
@@ -459,6 +490,17 @@
             (load-datoms this datoms)
             (throw e)))
         (finally (lmdb/close-transact-kv lmdb)))))
+
+
+  #_(fetch [this datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (when-some [kv (lmdb/get-value lmdb
+                                         c/eav
+                                         (low-datom->indexable schema datom)
+                                         :eav
+                                         :id
+                                         false)]
+            [kv])))
 
   (populated? [_ index low-datom high-datom]
     (lmdb/get-first lmdb (index->dbi index)
@@ -991,4 +1033,5 @@
                 rlinks
                 (init-max-aid schema)
                 (init-max-gt lmdb)
-                (init-max-cid lmdb))))))
+                (init-max-cid lmdb)
+                (init-max-tx lmdb))))))

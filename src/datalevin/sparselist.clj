@@ -1,4 +1,4 @@
-(ns datalevin.sparselist
+(ns ^:no-doc datalevin.sparselist
   "Sparse array list of integers"
   (:refer-clojure :exclude [get set remove])
   (:import [java.nio ByteBuffer]

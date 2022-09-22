@@ -1,4 +1,4 @@
-(def version "0.6.15")
+(def version "0.6.19")
 
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
@@ -27,6 +27,7 @@
                  [org.clojure/test.check]
                  [org.bouncycastle/bcprov-jdk15on]
                  [com.github.clj-easy/graal-build-time]
+                 [joda-time/joda-time]
                  [babashka/babashka.pods]]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"

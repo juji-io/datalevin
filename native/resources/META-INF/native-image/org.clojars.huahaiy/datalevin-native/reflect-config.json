@@ -37,6 +37,14 @@
         "allPublicMethods":true
     },
     {
+      "name": "org.eclipse.collections.impl.list.mutable.AbstractMutableList",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.list.mutable.FastList",
+      "allPublicMethods":true
+    },
+    {
         "name": "java.text.Normalizer",
         "allPublicConstructors" : true,
         "allPublicMethods" : true,

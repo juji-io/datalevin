@@ -1,9 +1,10 @@
-(ns datalevin.remote
+(ns ^:no-doc datalevin.remote
   "Proxy for remote stores"
   (:require [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.client :as cl]
             [datalevin.storage :as s]
+            [datalevin.bits :as b]
             [datalevin.search :as sc]
             [datalevin.lmdb :as l]
             [taoensso.nippy :as nippy]
@@ -27,7 +28,7 @@
     s))
 
 (defn- load-datoms*
-  [client db-name datoms datom-type]
+  [client db-name datoms datom-type simulated?]
   (let [t (if (= datom-type :txs)
             :tx-data
             :load-datoms)
@@ -35,10 +36,14 @@
         (if (< (count datoms) ^long c/+wire-datom-batch-size+)
           (cl/request client {:type t
                               :mode :request
-                              :args [db-name datoms]})
+                              :args (if (= datom-type :txs)
+                                      [db-name datoms simulated?]
+                                      [db-name datoms])})
           (cl/copy-in client {:type t
                               :mode :copy-in
-                              :args [db-name]}
+                              :args (if (= datom-type :txs)
+                                      [db-name simulated?]
+                                      [db-name])}
                       datoms c/+wire-datom-batch-size+))]
     (when (= type :error-response)
       (u/raise "Error loading datoms to server:" message {}))
@@ -50,7 +55,7 @@
   (q [store query inputs]
     "For special case of queries with a single remote store as source,
      send the query and inputs over to remote server")
-  (tx-data [store data]
+  (tx-data [store data simulated?]
     "Send to remote server the data from call to `db/transact-tx-data`"))
 
 (deftype DatalogStore [^String uri
@@ -87,22 +92,28 @@
   (init-max-eid [_]
     (cl/normal-request client :init-max-eid [db-name]))
 
+  (max-tx [_]
+    (cl/normal-request client :max-tx [db-name]))
+
   (swap-attr [this attr f]
     (s/swap-attr this attr f nil nil))
   (swap-attr [this attr f x]
     (s/swap-attr this attr f x nil))
   (swap-attr [_ attr f x y]
-    (let [frozen-f (nippy/fast-freeze f)]
+    (let [frozen-f (b/serialize f)]
       (cl/normal-request client :swap-attr [db-name attr frozen-f x y])))
 
   (del-attr [_ attr]
     (cl/normal-request client :del-attr [db-name attr]))
 
+  (rename-attr [_ attr new-attr]
+    (cl/normal-request client :rename-attr [db-name attr new-attr]))
+
   (datom-count [_ index]
     (cl/normal-request client :datom-count [db-name index]))
 
   (load-datoms [_ datoms]
-    (load-datoms* client db-name datoms :raw))
+    (load-datoms* client db-name datoms :raw false))
 
   (populated? [_ index low-datom high-datom]
     (cl/normal-request client :populated? [db-name index low-datom high-datom]))
@@ -123,35 +134,35 @@
     (cl/normal-request client :rslice [db-name index high-datom low-datom]))
 
   (size-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :size-filter
                          [db-name index frozen-pred low-datom high-datom])))
 
   (head-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :head-filter
                          [db-name index frozen-pred low-datom high-datom])))
 
   (tail-filter [_ index pred high-datom low-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :tail-filter
                          [db-name index frozen-pred high-datom low-datom])))
 
   (slice-filter [_ index pred low-datom high-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :slice-filter
                          [db-name index frozen-pred low-datom high-datom])))
 
   (rslice-filter [_ index pred high-datom low-datom]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :rslice-filter
                          [db-name index frozen-pred high-datom low-datom])))
 
   IRemoteDB
   (q [_ query inputs]
     (cl/normal-request client :q [db-name query inputs]))
-  (tx-data [store data]
-    (load-datoms* client db-name data :txs)))
+  (tx-data [store data simulated?]
+    (load-datoms* client db-name data :txs simulated?)))
 
 (defn open
   "Open a remote Datalog store"
@@ -274,7 +285,7 @@
   (get-some [db dbi-name pred k-range k-type v-type]
     (l/get-some db dbi-name pred k-range k-type v-type false))
   (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :get-some
                          [db-name dbi-name frozen-pred k-range k-type v-type
                           ignore-key?])))
@@ -286,7 +297,7 @@
   (range-filter [db dbi-name pred k-range k-type v-type]
     (l/range-filter db dbi-name pred k-range k-type v-type false))
   (range-filter [db dbi-name pred k-range k-type v-type ignore-key?]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :range-filter
                          [db-name dbi-name frozen-pred k-range k-type v-type
                           ignore-key?])))
@@ -294,14 +305,14 @@
   (range-filter-count [db dbi-name pred k-range]
     (l/range-filter-count db dbi-name pred k-range :data))
   (range-filter-count [db dbi-name pred k-range k-type]
-    (let [frozen-pred (nippy/fast-freeze pred)]
+    (let [frozen-pred (b/serialize pred)]
       (cl/normal-request client :range-filter-count
                          [db-name dbi-name frozen-pred k-range k-type])))
 
   (visit [db dbi-name visitor k-range]
     (l/visit db dbi-name visitor k-range :data))
   (visit [db dbi-name visitor k-range k-type]
-    (let [frozen-visitor (nippy/fast-freeze visitor)]
+    (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request client :visit
                          [db-name dbi-name frozen-visitor k-range k-type]))))
 
@@ -332,6 +343,9 @@
   (remove-doc [this doc-ref]
     (cl/normal-request (.-client store) :remove-doc
                        [(.-db-name store) doc-ref]))
+
+  (clear-docs [this]
+    (cl/normal-request (.-client store) :clear-docs [(.-db-name store)]))
 
   (doc-indexed? [this doc-ref]
     (cl/normal-request (.-client store) :doc-indexed?

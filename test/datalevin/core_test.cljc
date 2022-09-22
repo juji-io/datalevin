@@ -13,7 +13,8 @@
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]
-           [datalevin.storage Store]))
+           [datalevin.storage Store]
+           [datalevin.entity Entity]))
 
 (deftest basic-ops-test
   (let [schema
@@ -191,12 +192,6 @@
     (is (:regions/country (sut/schema conn)))
     (is (:db/created-at (sut/schema conn)))
     (is (sut/conn? conn))
-    (sut/close conn)
-    (let [conn1 (sut/create-conn dir)]
-      (is (= 83 (count (sut/datoms @conn1 :eavt))))
-      (is (:regions/country (sut/schema conn1)))
-      (is (:db/created-at (sut/schema conn1)))
-      (sut/close conn1))
     (sut/clear conn)
     (let [conn1 (sut/create-conn dir)]
       (is (= 0 (count (sut/datoms @conn1 :eavt))))
@@ -392,12 +387,6 @@
     (is (:db/created-at (sut/schema conn)))
     (is (sut/conn? conn))
     (is (thrown? Exception (sut/update-schema conn {} #{:sales/year})))
-    (sut/close conn)
-    (let [conn1 (sut/create-conn dir)]
-      (is (= 83 (count (sut/datoms @conn1 :eavt))))
-      (is (:regions/country (sut/schema conn1)))
-      (is (:db/created-at (sut/schema conn1)))
-      (sut/close conn1))
     (sut/clear conn)
     (let [conn1 (sut/create-conn dir)]
       (is (= 0 (count (sut/datoms @conn1 :eavt))))
@@ -692,7 +681,9 @@
         vs  (range 0 end)
         txs (mapv sut/datom (range c/e0 (+ c/e0 end)) (repeat :value) vs)
 
-        q '[:find ?ent :in $ ent :where [?e _ _] [(ent $ ?e) ?ent]]
+        q '[:find [?ent ...] :in $ ent :where [?e _ _] [(ent $ ?e) ?ent]]
+
+        get-eid (fn [^Entity e] (.-eid e))
 
         uri    "dtlv://datalevin:datalevin@localhost/entity-fn"
         r-conn (sut/get-conn uri)
@@ -702,13 +693,16 @@
     (sut/transact! r-conn txs)
     (sut/transact! l-conn txs)
 
+
     (is (i/inter-fn? f1))
     (is (i/inter-fn? f2))
 
-    (is (= (sut/q q @r-conn f1)
-           (sut/q q @l-conn sut/entity)))
-    (is (= (sut/q q @r-conn f2)
-           (sut/q q @l-conn (fn [db eid] (sut/touch (sut/entity db eid))))))
+    (is (= (set (map get-eid (sut/q q @r-conn f1)))
+           (set (map get-eid (sut/q q @l-conn sut/entity)))))
+    (is (= (set (map get-eid (sut/q q @r-conn f2)))
+           (set (map get-eid (sut/q q @l-conn
+                                    (fn [db eid]
+                                      (sut/touch (sut/entity db eid))))))))
     (sut/close r-conn)
     (sut/close l-conn)
     (s/stop server)))
@@ -720,7 +714,7 @@
                                        (UUID/randomUUID)))})
         _      (s/start server)
         dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
-        end    100000
+        end    10000
         conn   (sut/create-conn dir nil {:auto-entity-time? true})
         vs     (range 0 end)
         txs    (map (fn [a v] {a v}) (repeat :id) vs)]
@@ -773,6 +767,13 @@
     (testing "update"
       (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
       (is (= (sut/search engine "red" ) [2])))
+
+    (sut/remove-doc engine 1)
+    (is (= 2 (sut/doc-count engine)))
+
+    (sut/clear-docs engine)
+    (is (= 0 (sut/doc-count engine)))
+
     (sut/close-kv lmdb)
     (s/stop server)))
 
@@ -1128,7 +1129,13 @@
     (u/delete-files dir)))
 
 (deftest update-schema-test
-  (let [dir  (u/tmp-dir (str "update-schema-test-" (UUID/randomUUID)))
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "update-schema-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        dir  "dtlv://datalevin:datalevin@localhost/update-schema"
         conn (sut/create-conn dir
                               {:id {:db/unique    :db.unique/identity
                                     :db/valueType :db.type/long}})]
@@ -1147,5 +1154,45 @@
                             conn {:id {:db/unique    :db.unique/identity
                                        :db/valueType :db.type/long}})))
 
+    (is (thrown-with-msg? Exception #"Cannot delete attribute with datom"
+                          (sut/update-schema conn nil #{:id})))
+
+    (sut/update-schema conn nil nil {:id :identifer})
+    (is (= (:identifer (sut/schema conn))
+           {:db/valueType :db.type/long :db/aid 3}))
+    (is (= (sut/datoms @conn :eav)
+           [(d/datom 1 :identifer 1) (d/datom 2 :identifer 1)]))
+
     (sut/close conn)
-    (u/delete-files dir)))
+    (s/stop server)))
+
+(deftest simulated-tx-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "simulated-tx-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        dir  "dtlv://datalevin:datalevin@localhost/simulated-tx"
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}})]
+    (let [rp (sut/transact! conn [{:id 1}])]
+      (is (= (:tx-data rp) [(d/datom 1 :id 1)]))
+      (is (= (d/datom-tx (first (:tx-data rp))) 2)))
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
+
+    (let [rp (sut/tx-data->simulated-report @conn [{:id 2}])]
+      (is (= (:tx-data rp) [(d/datom 2 :id 2)]))
+      (is (= (d/datom-tx (first (:tx-data rp))) 3))
+      (is (= (:max-eid (:db-after rp)) 2))
+      (is (= (:max-tx (:db-after rp)) 3)))
+
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
+
+    (sut/close conn)
+    (s/stop server)))

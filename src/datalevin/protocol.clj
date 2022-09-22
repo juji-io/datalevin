@@ -1,4 +1,4 @@
-(ns datalevin.protocol
+(ns ^:no-doc datalevin.protocol
   "Shared code of client/server"
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
@@ -17,7 +17,7 @@
   "Read from a ByteBuffer containing nippy encoded bytes, return a Clojure
   value."
   [^ByteBuffer bf]
-  (nippy/fast-thaw (b/get-bytes bf)))
+  (b/deserialize (b/get-bytes bf)))
 
 (def transit-read-handlers
   {"datalevin/Datom" (transit/read-handler d/datom-from-reader)})
@@ -33,7 +33,7 @@
 (defn write-nippy-bf
   "Write a Clojure value as nippy encoded bytes into a ByteBuffer"
   [^ByteBuffer bf v]
-  (b/put-bytes bf (nippy/fast-freeze v)))
+  (b/put-bytes bf (b/serialize v)))
 
 (def transit-write-handlers
   {Datom (transit/write-handler

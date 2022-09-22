@@ -1,4 +1,4 @@
-(def version "0.6.15")
+(def version "0.6.19")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -8,13 +8,14 @@
   :managed-dependencies [
                          [babashka/babashka.pods "0.1.0"]
                          [com.cognitect/transit-clj "1.0.329"]
-                         [com.fasterxml.jackson.core/jackson-core "2.13.3"]
+                         [com.fasterxml.jackson.core/jackson-core "2.13.4"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
-                         [com.taoensso/nippy "3.1.3"]
+                         [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "5.2.1"]
+                         [joda-time/joda-time "2.11.1"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
-                         [org.babashka/sci "0.3.32"]
+                         [org.babashka/sci "0.4.33"]
                          [org.bouncycastle/bcprov-jdk15on "1.70"]
                          [org.clojure/clojure "1.11.1"]
                          [org.clojure/tools.cli "1.0.206"]
@@ -22,18 +23,11 @@
                          [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.5.1"]
                          [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.5.1"]
                          [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.5.1"]
-                         [org.eclipse.collections/eclipse-collections "11.0.0.M1"]
+                         [org.eclipse.collections/eclipse-collections "11.1.0"]
                          [org.graalvm.sdk/graal-sdk "21.3.0"]
                          [org.graalvm.nativeimage/svm "21.3.0"]
-                         [org.lmdbjava/lmdbjava "0.8.2"
-                          ;; uncomment when run lein codox
-                          ;; :exclusions
-                          ;; [org.ow2.asm/asm-analysis
-                          ;;  org.ow2.asm/asm-commons
-                          ;;  org.ow2.asm/asm-tree
-                          ;;  org.ow2.asm/asm-util]
-                          ]
-                         [org.roaringbitmap/RoaringBitmap "0.9.28"]
+                         [org.lmdbjava/lmdbjava "0.8.2"]
+                         [org.roaringbitmap/RoaringBitmap "0.9.32"]
                          [persistent-sorted-set "0.1.4"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
@@ -75,6 +69,7 @@
                                [org.bouncycastle/bcprov-jdk15on]
                                [com.taoensso/timbre]
                                [nrepl/bencode]
+                               [joda-time/joda-time]
                                [babashka/babashka.pods]
                                [org.graalvm.nativeimage/svm]]
                               :global-vars
@@ -87,16 +82,4 @@
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password
-                                    :sign-releases false}]]
-  :plugins [[lein-codox "0.10.8"]]
-  :codox {:source-paths ["src"]
-          :output-path  "codox"
-          :namespaces   [datalevin.core datalevin.client datalevin.interpret
-                         datalevin.search-utils]
-          :metadata     {:doc/format :markdown}
-          :source-uri
-          {#"target/classes"
-           "https://github.com/juji-io/datalevin/blob/master/src/{classpath}x#L{line}"
-           #".*"
-           "https://github.com/juji-io/datalevin/blob/master/{filepath}#L{line}"}}
-  )
+                                    :sign-releases false}]])

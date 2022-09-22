@@ -2,8 +2,9 @@
 <h1 align="center">Datalevin</h1>
 <p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone 💽 </p>
 <p align="center">
+<a href="https://cljdoc.org/d/datalevin/datalevin"><img src="https://cljdoc.org/badge/datalevin/datalevin" alt="datalevin on cljdoc"></img></a>
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.15" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.19" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -101,14 +102,14 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.6.15"]
+[datalevin "0.6.19"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.6.15"}
+{:deps {datalevin/datalevin {:mvn/version "0.6.19"}
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
@@ -184,16 +185,16 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.15/dtlv-0.6.15-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.19/dtlv-0.6.19-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.15/dtlv-0.6.15-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.19/dtlv-0.6.19-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.15/dtlv-0.6.15-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.19/dtlv-0.6.19-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.6.15)
+  Datalevin (version: 0.6.19)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -230,7 +231,7 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.6.15)
+  Datalevin (version: 0.6.19)
 
   Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
@@ -289,7 +290,7 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 #### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.15/datalevin-0.6.15-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.19/datalevin-0.6.19-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
 image is AOT and not as efficient as JVM for long running programs, or when a
@@ -297,12 +298,12 @@ pre-built native version is not available for your platform. For example,
 assuming your Java is newer than version 11:
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.15-standalone.jar
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.19-standalone.jar
 ```
 This will start the Datalevin REPL.
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.15-standalone.jar serv -r /tmp/test-server
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.19-standalone.jar serv -r /tmp/test-server
 ```
 Will run the Datalevin server on default port 8898, with root data path at
 `/tmp/test-server`.
@@ -361,7 +362,7 @@ Datalevin is aimed to be a versatile database.
 
 ### Use as a Datalog store
 
-In addition to [our API doc](https://juji-io.github.io/datalevin/index.html),
+In addition to [our API doc](https://cljdoc.org/d/datalevin/datalevin),
 since Datalevin has almost the same Datalog API as Datascript, which in turn has
 almost the same API as Datomic®, please consult the abundant tutorials, guides
 and learning sites available online to learn about the usage of Datomic® flavor
@@ -567,7 +568,7 @@ lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel free to rea
 ## :green_book: Documentation
 
 Please refer to the [API
-documentation](https://juji-io.github.io/datalevin/index.html) for more details.
+documentation](https://cljdoc.org/d/datalevin/datalevin) for more details.
 You may also consult online materials for Datascript or Datomic®, as the Datalog API is
 similar.
 
@@ -585,27 +586,27 @@ adjust the priorities based on feedback.
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
-* 0.7.0 A new Datalog query engine with improved performance.
-* 0.8.0 As a product rule engine: implement iterative rules application and
+* 0.7.0 Data type feature parity with Datomic: bigint, bigdec, tuples, composite tuples, etc.
+* 0.8.0 A new Datalog query engine with improved performance.
+* 0.9.0 As a production rule engine: implement iterative rules application and
   truth maintenance.
-* 0.9.0 Up the limits from int to long.
-* 1.0.0 First major release with documentation.
-* 1.1.0 Transaction log and read-only replicas.
-* 1.2.0 Option to store data in compressed form.
-* 1.3.0 Arbitrary data as attribute.
-* 1.4.0 Composite tuples.
-* 1.5.0 Fully automatic schema migration on write.
-* 1.6.0 As a document store: automatic indexing.
-* 1.7.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
-* 2.0.0 Second major release.
-* 3.0.0 Distributed mode with replication.
+* 1.0.0 First major release with good documentation.
+* 1.1.0 Transaction log storage and access API.
+* 1.2.0 Read-only replicas for server.
+* 1.3.0 Distributed mode with raft based replication.
+* 2.0.0 Second major release with a book.
+* 2.2.0 Option to store data in compressed form.
+* 2.3.0 Arbitrary data as attribute.
+* 2.4.0 Fully automatic schema migration on write.
+* 3.0.0 As a document store: automatic indexing.
+* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
 
 
 ## :rocket: Status
 
 Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io) and a few other projects, e.g. [clojure-lsp](https://github.com/clojure-lsp/clojure-lsp) replaced SQLite with Datalevin to gain some caching speedups.
+in production at [Juji](https://juji.io).
 
 Running the [benchmark suite adopted from
 Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
@@ -652,7 +653,7 @@ than just the difference in data durability and running mode:
 
 * Respects `:db/valueType`. Currently, most [Datomic® value
   types](https://docs.datomic.com/on-prem/schema.html#value-types) are
-  supported, except bigint, bigdec, uri and tuple. Values of the attributes that
+  supported, except uri. Values of the attributes that
   are not defined in the schema or have unspecified types are treated as
   [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
   de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
@@ -687,6 +688,9 @@ are applicable to Datascript.
   attribute, its `:db/valueType` should be specified.
 
 * Floating point `NaN` cannot be stored.
+
+* Cannot store big integer beyond the range of `[-2^1015, 2^1015-1]`, the
+  unscaled value of big decimal has the same limit.
 
 * The maximum individual value size is 2GB. Limited by the maximum size of
   off-heap byte buffer that can be allocated in JVM.

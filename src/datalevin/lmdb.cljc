@@ -1,4 +1,4 @@
-(ns datalevin.lmdb
+(ns ^:no-doc datalevin.lmdb
   "API for LMDB Key Value Store"
   (:require [datalevin.util :as u]))
 
