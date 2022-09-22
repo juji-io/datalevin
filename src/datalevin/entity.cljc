@@ -309,23 +309,27 @@
 
 #?(:cljs (goog/exportSymbol "datalevin.entity.Entity" Entity))
 
+(defn- ent->map
+  [^Entity x]
+  (let [^DB db  (.-db x)
+        db-name (st/db-name ^IStore (.-store db))
+        m       {:db/id   (.-eid x)
+                 :db-name db-name}]
+    (if @(.-touched x)
+      (assoc m :touched true :cache @(.-cache x))
+      m)))
+
 (nippy/extend-freeze Entity :datalevin/entity
                      [^Entity x ^DataOutput out]
-                     (nippy/freeze-to-out!
-                       out
-                       (let [^DB db  (.-db x)
-                             db-name (st/db-name ^IStore (.-store db))
-                             m       {:db/id   (.-eid x)
-                                      :db-name db-name}]
-                         (if @(.-touched x)
-                           (assoc m :touched true :cache @(.-cache x))
-                           m))))
+                     (nippy/freeze-to-out! out (ent->map x)))
+
+(defn- map->ent
+  [{:keys [db-name touched cache db/id]}]
+  (let [e (entity (@db/dbs db-name) id)]
+    (if touched
+      (load-cache e cache)
+      e)))
 
 (nippy/extend-thaw :datalevin/entity
                    [^DataInput in]
-                   (let [{:keys [db-name touched cache db/id]}
-                         (nippy/thaw-from-in! in)
-                         e (entity (@db/dbs db-name) id)]
-                     (if touched
-                       (load-cache e cache)
-                       e)))
+                   (map->ent (nippy/thaw-from-in! in)))

@@ -1,8 +1,15 @@
 # Change Log
 
+## WIP
+### Added
+- [Pod] `entity` and `touch` function to babashka pod, these return regular
+  maps, as the `Entity` type does not exist in a babashka script. #148 (thx
+  @ngrunwald)
+
 ## 0.6.19
 ### Changed
-- [Datalog] Entity equality requires DB identity in order to better support reactive applications, #146 (thx @den1k)
+- [Datalog] Entity equality requires DB identity in order to better support
+  reactive applications, #146 (thx @den1k)
 ### Improved
 - bump deps
 
