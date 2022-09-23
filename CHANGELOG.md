@@ -5,6 +5,8 @@
 - [Pod] `entity` and `touch` function to babashka pod, these return regular
   maps, as the `Entity` type does not exist in a babashka script. #148 (thx
   @ngrunwald)
+- [KV] `with-transaction-kv` to wrap KV reads/writes within a single transaction to ensure atomicity
+- [Datalog] `with-transaction` to wrap Datalog reads/writes within a single transaction to ensure atomicity
 
 ## 0.6.19
 ### Changed
@@ -22,8 +24,7 @@
 
 ## 0.6.17
 ### Added
-- [Datalog] `tx-data->simulated-report` to obtain a transaction report without
-  actually persisting the changes. (thx @TheExGenesis)
+- [Datalog] `tx-data->simulated-report` to obtain a transaction report without actually persisting the changes. (thx @TheExGenesis)
 - [KV] Support `:bigint` and `:bigdec` data types, corresponding to
   `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
 - [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly, #138.
@@ -33,11 +34,9 @@
 ## 0.6.16
 ### Added
 - [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
-- [Search] `clear-docs` function to wipe out search index, as it might be faster
-  to rebuild search index than updating individual documents sometimes. #132
+- [Search] `clear-docs` function to wipe out search index, as it might be faster to rebuild search index than updating individual documents sometimes. #132
 - `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
-  used for `binding` if additional Java classes are to be serialized as part of
-  the default `:data` data type. #134
+  used for `binding` if additional Java classes are to be serialized as part of the default `:data` data type. #134
 ### Improved
 - [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
 - bump deps
