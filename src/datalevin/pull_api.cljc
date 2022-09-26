@@ -1,7 +1,8 @@
 (ns ^:no-doc datalevin.pull-api
   (:require
     [datalevin.db :as db]
-    [datalevin.pull-parser :as dpp #?@(:cljs [:refer [PullSpec]])])
+    [datalevin.pull-parser :as dpp #?@(:cljs [:refer [PullSpec]])]
+    [datalevin.timeout :as timeout])
     #?(:clj
       (:import
         [datalevin.datom Datom]
@@ -228,6 +229,7 @@
 
 (defn- pull-pattern-frame
   [db [frame & frames]]
+  (timeout/assert-time-left)
   (if-let [eids (seq (:eids frame))]
     (if (:wildcard? frame)
       (pull-wildcard db
@@ -249,6 +251,7 @@
 
 (defn- pull-pattern
   [db frames]
+  (timeout/assert-time-left)
   (case (:state (first frames))
     :expand     (recur db (pull-expand-frame db frames))
     :expand-rev (recur db (pull-expand-reverse-frame db frames))
@@ -269,8 +272,10 @@
   (let [eids (into [] (map #(db/entid-strict db %)) eids)]
     (pull-pattern db (list (initial-frame pattern eids multi?)))))
 
-(defn pull [db selector eid]
-  (pull-spec db (dpp/parse-pull selector) [eid] false))
+(defn pull [db selector eid & {:keys [timeout]}]
+  (binding [timeout/*deadline* (timeout/to-deadline timeout)]
+    (pull-spec db (dpp/parse-pull selector) [eid] false)))
 
-(defn pull-many [db selector eids]
-  (pull-spec db (dpp/parse-pull selector) eids true))
+(defn pull-many [db selector eids & {:keys [timeout]}]
+  (binding [timeout/*deadline* (timeout/to-deadline timeout)]
+    (pull-spec db (dpp/parse-pull selector) eids true)))
