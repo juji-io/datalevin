@@ -26,7 +26,8 @@
   (f engine :doc3 "Moby Dick is a story of a whale and a man obsessed.")
   (f engine :doc4 "The robber wore a red fleece jacket and a baseball cap.")
   (f engine :doc5
-     "The English Springer Spaniel is the best of all red dogs I know."))
+     "The English Springer Spaniel is the best of all red dogs I know.")
+  )
 
 (deftest blank-analyzer-test
   (let [blank-analyzer (fn [^String text]
@@ -119,6 +120,7 @@
         engine ^SearchEngine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
+    (is (= [:doc1 :doc4 :doc2 :doc5] (sut/search engine "red cat")))
     (is (= (sut/search engine "cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (is (= (sut/search engine "notaword cap" {:display :offsets})
