@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.20
 ### Added
 - [Pod] `entity` and `touch` function to babashka pod, these return regular
   maps, as the `Entity` type does not exist in a babashka script. #148 (thx
