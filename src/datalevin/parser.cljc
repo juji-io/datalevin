@@ -696,7 +696,7 @@
 ;; query
 
 ;; q* prefix because of https://dev.clojure.org/jira/browse/CLJS-2237
-(deftrecord Query [qfind qwith return-map qin qwhere qdeadline])
+(deftrecord Query [qfind qwith return-map qin qwhere qtimeout])
 
 (defn query->map [query]
   (loop [parsed {}, key nil, qs query]
@@ -788,7 +788,7 @@
 (defn parse-timeout [t]
   (cond
     (sequential? t) (recur (first t))
-    (number? t) (timeout/to-deadline t)
+    (number? t) t
     (nil? t) nil
     :else (raise "Unsupported timeout format"
             {:error :parser/query :form t})))
@@ -810,6 +810,6 @@
                   :qin         (parse-in
                                  (or (:in qm) (default-in qwhere)))
                   :qwhere      qwhere
-                  :qdeadline   (parse-timeout (:timeout qm))})]
+                  :qtimeout   (parse-timeout (:timeout qm))})]
     (validate-query res q qm)
     res))
