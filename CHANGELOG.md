@@ -5,8 +5,7 @@
 - [Pod] `entity` and `touch` function to babashka pod, these return regular
   maps, as the `Entity` type does not exist in a babashka script. #148 (thx
   @ngrunwald)
-- [KV] `with-transaction-kv` to wrap KV reads/writes within a single transaction to ensure atomicity
-- [Datalog] `with-transaction` to wrap Datalog reads/writes within a single transaction to ensure atomicity
+- [Datalog] `:timeout` option to terminate on deadline for query/pull. #150 (thx cgrand).
 
 ## 0.6.19
 ### Changed

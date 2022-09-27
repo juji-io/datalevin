@@ -185,7 +185,8 @@ Only usable for debug output.
 
           ```
           (q '[:find ?value
-               :where [_ :likes ?value]]
+               :where [_ :likes ?value]
+               :timeout 5000]
              db)
           ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
           ```"
