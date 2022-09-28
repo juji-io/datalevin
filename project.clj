@@ -1,4 +1,4 @@
-(def version "0.6.20")
+(def version "0.6.21")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -57,11 +57,11 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              :jvm-opts
-                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
+                              ;; :jvm-opts
+                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]

@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.21
 ### Fixed
 - [Datalog] Caching issue introduced in 0.6.20 (thx @cgrand)
 
