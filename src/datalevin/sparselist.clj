@@ -1,12 +1,11 @@
-(ns datalevin.sparselist
+(ns ^:no-doc datalevin.sparselist
   "Sparse array list of integers"
   (:refer-clojure :exclude [get set remove])
-  (:import
-   [java.nio ByteBuffer]
-   [java.io Writer]
-   [me.lemire.integercompression IntCompressor]
-   [org.roaringbitmap RoaringBitmap]
-   [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]))
+  (:import [java.nio ByteBuffer]
+           [java.io Writer]
+           [datalevin.utl GrowingIntArray]
+           [me.lemire.integercompression IntCompressor]
+           [org.roaringbitmap RoaringBitmap]))
 
 (defonce compressor (IntCompressor.))
 
@@ -21,7 +20,7 @@
   (deserialize [this bf] "serialize from a bytebuffer"))
 
 (deftype SparseIntArrayList [^RoaringBitmap indices
-                             ^IntArrayList items]
+                             ^GrowingIntArray items]
   ISparseIntArrayList
   (contains-index? [_ index]
     (.contains indices (int index)))
@@ -31,15 +30,16 @@
       (.get items (dec (.rank indices index)))))
 
   (set [this index item]
-    (.add indices (int index))
-    (let [i (dec (.rank indices index))]
-      (if (< i (.size items))
-        (.set items i item)
-        (.addAtIndex items i item)))
+
+    (let [index (int index)]
+      (if (.contains indices index)
+        (.set items (dec (.rank indices index)) item)
+        (do (.add indices index)
+            (.insert items (dec (.rank indices index)) item))))
     this)
 
   (remove [this index]
-    (.removeAtIndex items (dec (.rank indices index)))
+    (.remove items (dec (.rank indices index)))
     (.remove indices index)
     this)
 
@@ -72,7 +72,7 @@
 
 (defn sparse-arraylist
   ([]
-   (->SparseIntArrayList (RoaringBitmap.) (IntArrayList.)))
+   (->SparseIntArrayList (RoaringBitmap.) (GrowingIntArray.)))
   ([m]
    (let [ssl (sparse-arraylist)]
      (doseq [[k v] m] (set ssl k v))
@@ -87,3 +87,32 @@
   (.write w (str "#datalevin/SparseList "))
   (binding [*out* w]
     (pr (for [i (.-indices s)] [i (get s i)]))))
+
+(comment
+
+
+  (-> (sparse-arraylist)
+      (set 2 2)
+      (set 1 1)
+      (set 3 3)
+      (set 1 5)
+      )
+
+  (= (-> (sparse-arraylist)
+         (set 2 2)
+         (set 1 1)
+         (set 3 3))
+     (-> (sparse-arraylist)
+         (set 1 1)
+         (set 2 2)
+         (set 3 3)))
+
+
+  (.size (.-items (-> (sparse-arraylist)
+                      (set 2 2)
+                      (set 1 1)
+                      (set 3 3)
+                      (set 1 5))))
+
+
+  )

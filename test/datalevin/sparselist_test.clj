@@ -8,19 +8,19 @@
   (:import
    [java.nio ByteBuffer]
    [datalevin.sparselist SparseIntArrayList]
-   [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]))
+   [datalevin.utl GrowingIntArray]))
 
 (deftest basic-ops-test
   (let [ssl (sut/sparse-arraylist)]
     (-> ssl
         (sut/set 42 99)
-        (sut/set 88 888)
         (sut/set 1000 2)
+        (sut/set 88 888)
         (sut/set 2000 0))
     (is (= (sut/size ssl) 4))
     (is (= (sut/select ssl 0) 99))
     (is (= (sut/select ssl 1) 888))
-    (is (= (seq (.toArray ^IntArrayList (.-items ^SparseIntArrayList ssl)))
+    (is (= (seq (.toArray ^GrowingIntArray (.-items ^SparseIntArrayList ssl)))
            [99 888 2 0]))
     (is (nil? (sut/get ssl 99)))
     (is (= (sut/get ssl 42) 99))

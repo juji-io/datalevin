@@ -1,4 +1,4 @@
-(ns datalevin.main
+(ns ^:no-doc datalevin.main
   "Database management commands"
   (:refer-clojure :exclude [drop load])
   (:require [clojure.tools.cli :refer [parse-opts]]
@@ -28,7 +28,7 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.6.7")
+(def ^:private version "0.6.21")
 
 (def ^:private version-str
   (str

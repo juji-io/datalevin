@@ -1,8 +1,107 @@
 # Change Log
 
-## WIP
+## 0.6.21
+### Fixed
+- [Datalog] Caching issue introduced in 0.6.20 (thx @cgrand)
+
+## 0.6.20
+### Added
+- [Pod] `entity` and `touch` function to babashka pod, these return regular
+  maps, as the `Entity` type does not exist in a babashka script. #148 (thx
+  @ngrunwald)
+- [Datalog] `:timeout` option to terminate on deadline for query/pull. #150 (thx
+  @cgrand).
+
+## 0.6.19
+### Changed
+- [Datalog] Entity equality requires DB identity in order to better support
+  reactive applications, #146 (thx @den1k)
+### Improved
+- bump deps
+
+## 0.6.18
+### Fixed
+- [Search] corner case of search in document collection containing only one term, #143
+- [Datalog] entity IDs has smaller than expected range, now they cover full 32 bit integer range, #140
+### Added
+- [Datalog] Persistent `max-tx`, #142
+
+## 0.6.17
+### Added
+- [Datalog] `tx-data->simulated-report` to obtain a transaction report without actually persisting the changes. (thx @TheExGenesis)
+- [KV] Support `:bigint` and `:bigdec` data types, corresponding to
+  `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
+- [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly, #138.
+### Improved
+ - Better documentation so that cljdoc can build successfully. (thx @lread)
+
+## 0.6.16
+### Added
+- [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
+- [Search] `clear-docs` function to wipe out search index, as it might be faster to rebuild search index than updating individual documents sometimes. #132
+- `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
+  used for `binding` if additional Java classes are to be serialized as part of the default `:data` data type. #134
+### Improved
+- [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
+- bump deps
+### Fixed
+- [Datalog] `clear` function on server. #133
+### Changed
+- [Datalog] Changed `:search-engine` option map key to `:search-opts` for consistency [**Breaking**]
+
+## 0.6.15
+### Improved
+- [Search] Handle empty documents
+- [Datalog] Handle safe schema migration, #1, #128
+- bump deps
+### Added
+- [KV] visitor function for `visit` can return a special value `:datalevin/terminate-visit` to stop the visit.
+
+## 0.6.14
+### Fixed
+- Fixed adding created-at schema item for upgrading Datalog DB from prior 0.6.4 (thx @jdf-id-au)
+### Changed
+- [**breaking**] Simplified `open-dbi` signature to take an option map instead
+### Added
+- `:validate-data?` option for `open-dbi`, `create-conn` etc., #121
+
+## 0.6.13
+### Fixed
+- Schema update regression. #124
+### Added
+- `:domain` option to `new-search-engine`, so multiple search engines can
+  coexist in the same `dir`, each with its own domain, a string. #112
+
+## 0.6.12
+### Fixed
+- Server failure to update max-eid regression, #123
+### Added
+- Added an arity to `update-schema` to allow removal of attributes if they are
+  not associated with any datoms, #99
+
+## 0.6.11
+### Fixed
+- Search add-doc error when alter existing docs
+
+## 0.6.10
+### Improved
+- Persistent server session that survives restarts without affecting clients, #119
+- More robust server error handling
+
+## 0.6.9
+### Fixed
+- Query cache memory leak, #118 (thx @panterarocks49)
+- Entity retraction not removing `:db/updated-at` datom, #113
+### Added
+- `datalevin.search-utils` namespace with some utility functions to customize
+  search, #105 (thx @ngrunwald)
+
+## 0.6.8
+## Fixed
+- Add `visit` KV function to `core` name space
+- Handle concurrent `add-doc` for the same doc ref
 ## Improved
-- add more kv functions to `core` namespace
+- Bump deps
 
 ## 0.6.7
 ## Fixed

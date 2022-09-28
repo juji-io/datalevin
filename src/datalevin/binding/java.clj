@@ -155,9 +155,13 @@
 (deftype DBI [^Dbi db
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
-              ^:volatile-mutable ^ByteBuffer vb]
+              ^:volatile-mutable ^ByteBuffer vb
+              ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
+    (or (not validate-data?)
+        (b/valid-data? x t)
+        (raise "Invalid data, expecting " t {:input x}))
     (try
       (.clear kb)
       (b/put-buffer kb x t)
@@ -167,6 +171,9 @@
                (.dbi-name this) "with value" x ": " (ex-message e)
                {:type t}))))
   (put-val [this x t]
+    (or (not validate-data?)
+        (b/valid-data? x t)
+        (raise "Invalid data, expecting " t {:input x}))
     (try
       (.clear vb)
       (b/put-buffer vb x t)
@@ -266,19 +273,19 @@
     dir)
 
   (open-dbi [this dbi-name]
-    (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-               c/default-dbi-flags))
-  (open-dbi [this dbi-name key-size]
-    (.open-dbi this dbi-name key-size c/+default-val-size+ c/default-dbi-flags))
-  (open-dbi [this dbi-name key-size val-size]
-    (.open-dbi this dbi-name key-size val-size c/default-dbi-flags))
-  (open-dbi [this dbi-name key-size val-size flags]
+    (.open-dbi this dbi-name nil))
+  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?]
+                            :or   {key-size       c/+max-key-size+
+                                   val-size       c/+default-val-size+
+                                   flags          c/default-dbi-flags
+                                   validate-data? false}}]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
-          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb)]
+          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb validate-data?)]
       (.put dbis dbi-name dbi)
       dbi))
 
@@ -288,8 +295,9 @@
     (or (.get dbis dbi-name)
         (if create?
           (.open-dbi this dbi-name)
-          (.open-dbi this dbi-name c/+max-key-size+ c/+default-val-size+
-                     c/read-dbi-flags))))
+          (.open-dbi this dbi-name {:key-size c/+max-key-size+
+                                    :val-size c/+default-val-size+
+                                    :flags    c/read-dbi-flags}))))
 
   (clear-dbi [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -451,16 +459,16 @@
   (visit [this dbi-name visitor k-range k-type]
     (scan/visit this dbi-name visitor k-range k-type))
 
-  (open-inverted-list [this dbi-name key-size item-size]
+  (open-inverted-list [this dbi-name {:keys [key-size val-size]
+                                      :or   {key-size c/+max-key-size+
+                                             val-size c/+max-key-size+}}]
     (assert (and (>= c/+max-key-size+ ^long key-size)
-                 (>= c/+max-key-size+ ^long item-size))
+                 (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
-    (.open-dbi this dbi-name key-size item-size
-               (conj c/default-dbi-flags :dupsort)))
-  (open-inverted-list [lmdb dbi-name item-size]
-    (.open-inverted-list lmdb dbi-name c/+max-key-size+ item-size))
+    (.open-dbi this dbi-name {:key-size key-size :val-size val-size
+                              :flags    (conj c/default-dbi-flags :dupsort)}))
   (open-inverted-list [lmdb dbi-name]
-    (.open-inverted-list lmdb dbi-name c/+max-key-size+ c/+max-key-size+))
+    (.open-inverted-list lmdb dbi-name nil))
 
   IInvertedList
   (put-list-items [this dbi-name k vs kt vt]

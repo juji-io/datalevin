@@ -2,8 +2,8 @@
   (:require [datalevin.util :as u]
             [datalevin.interpret :as i]
             [babashka.pods :as pods]
-            [clojure.string :as s]
-            [clojure.test :refer [deftest is testing]])
+            [clojure.test :refer [deftest is testing]]
+            [datalevin.core :as d])
   (:import [java.util UUID Date]))
 
 ;; TODO uberjar build hangs if this ns is included
@@ -60,6 +60,24 @@
                      [?e :aka ?alias]]
                    (pd/db conn)
                    "fred")))
+      (pd/close conn)
+      (u/delete-files dir)))
+
+  (testing "entity"
+    (let [dir  (u/tmp-dir (str "datalevin-pod-test-" (UUID/randomUUID)))
+          conn (pd/get-conn dir
+                            {:aka {:db/cardinality :db.cardinality/many}})]
+      (pd/transact! conn [{:db/id 1, :name "Ivan", :age 19, :aka ["X" "Y"]}
+                          {:db/id 2, :name "Ivan", :sex "male", :aka ["Z"]}
+                          [:db/add 3 :huh? false]])
+      (let [e (pd/touch (pd/entity (pd/db conn) 1))]
+        (is (= (:db/id e) 1))
+        (is (= (:name e) "Ivan"))
+        (is (= (e :name) "Ivan"))
+        (is (= (:age e) 19))
+        (is (= (:aka e) #{"X" "Y"}))
+        (is (= true (contains? e :age)))
+        (is (= false (contains? e :not-found))))
       (pd/close conn)
       (u/delete-files dir)))
 

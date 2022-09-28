@@ -444,35 +444,36 @@
     (is (= (d/q q @conn "Oleg") #{["Boris"]}))
     (d/close conn)))
 
-(deftest test-resolve-current-tx
-  (doseq [tx-tempid [:db/current-tx "datomic.tx" "datalevin.tx"]]
-    (testing tx-tempid
-      (let [conn (d/create-conn nil {:created-at {:db/valueType :db.type/ref}})
-            tx1  (d/transact! conn [{:name "X", :created-at tx-tempid}
-                                    {:db/id tx-tempid, :prop1 "prop1"}
-                                    [:db/add tx-tempid :prop2 "prop2"]
-                                    [:db/add -1 :name "Y"]
-                                    [:db/add -1 :created-at tx-tempid]])]
-        (is (= (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)
-               #{[1 :name "X"]
-                 [1 :created-at (+ tx0 1)]
-                 [(+ tx0 1) :prop1 "prop1"]
-                 [(+ tx0 1) :prop2 "prop2"]
-                 [2 :name "Y"]
-                 [2 :created-at (+ tx0 1)]}))
-        (is (= (:tempids tx1) (assoc {1 1, -1 2, :db/current-tx (+ tx0 1)}
-                                     tx-tempid (+ tx0 1))))
-        (let [tx2   (d/transact! conn [[:db/add tx-tempid :prop3 "prop3"]])
-              tx-id (get-in tx2 [:tempids tx-tempid])]
-          (is (= tx-id (+ tx0 2)))
-          (is (= (into {} (d/entity @conn tx-id))
-                 {:prop3 "prop3"})))
-        (let [tx3   (d/transact! conn [{:db/id tx-tempid, :prop4 "prop4"}])
-              tx-id (get-in tx3 [:tempids tx-tempid])]
-          (is (= tx-id (+ tx0 3)))
-          (is (= (into {} (d/entity @conn tx-id))
-                 {:prop4 "prop4"})))
-        (d/close conn)))))
+;; We don't have immutable semantics and don't care about these tx particulars
+#_(deftest test-resolve-current-tx
+   (doseq [tx-tempid [:db/current-tx "datomic.tx" "datalevin.tx"]]
+     (testing tx-tempid
+       (let [conn (d/create-conn nil {:created-at {:db/valueType :db.type/ref}})
+             tx1  (d/transact! conn [{:name "X", :created-at tx-tempid}
+                                     {:db/id tx-tempid, :prop1 "prop1"}
+                                     [:db/add tx-tempid :prop2 "prop2"]
+                                     [:db/add -1 :name "Y"]
+                                     [:db/add -1 :created-at tx-tempid]])]
+         (is (= (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)
+                #{[1 :name "X"]
+                  [1 :created-at (+ tx0 1)]
+                  [(+ tx0 1) :prop1 "prop1"]
+                  [(+ tx0 1) :prop2 "prop2"]
+                  [2 :name "Y"]
+                  [2 :created-at (+ tx0 1)]}))
+         (is (= (:tempids tx1) (assoc {1 1, -1 2, :db/current-tx (+ tx0 1)}
+                                      tx-tempid (+ tx0 1))))
+         (let [tx2   (d/transact! conn [[:db/add tx-tempid :prop3 "prop3"]])
+               tx-id (get-in tx2 [:tempids tx-tempid])]
+           (is (= tx-id (+ tx0 2)))
+           (is (= (into {} (d/entity @conn tx-id))
+                  {:prop3 "prop3"})))
+         (let [tx3   (d/transact! conn [{:db/id tx-tempid, :prop4 "prop4"}])
+               tx-id (get-in tx3 [:tempids tx-tempid])]
+           (is (= tx-id (+ tx0 3)))
+           (is (= (into {} (d/entity @conn tx-id))
+                  {:prop4 "prop4"})))
+         (d/close conn)))))
 
 (deftest test-transient-294
   "db.fn/retractEntity retracts attributes of adjacent entities https://github.com/tonsky/datalevin/issues/294"
@@ -499,6 +500,16 @@
         db   (d/db-with (d/empty-db) es)
         dts2 (d/datoms db :eavt)]
     (is (= dts1 dts2))
+    (d/close-db db)))
+
+(deftest validate-data
+  "validate data during transact"
+  (let [sc {:company {:db/valueType :db.type/string}
+            :id      {:db/valueType :db.type/uuid}}
+        es [{:db/id -1 :company "IBM" :id "ibm"}
+            {:db/id -2 :company "PwC" :id "pwc"}]
+        db (d/empty-db nil sc {:validate-data? true})]
+    (is (thrown? Exception (d/db-with db es)))
     (d/close-db db)))
 
 #?(:clj

@@ -4,7 +4,7 @@
          com.cognitect/transit-clj                   {:mvn/version "1.0.329"}
          com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.2"}
          com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.13.2"}
-         com.taoensso/nippy                          {:mvn/version "3.1.1"}
+         com.taoensso/nippy                          {:mvn/version "3.2.0"}
          datalevin/datalevin                         {:local/root ".."}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
          org.clojure/clojure                         {:mvn/version "1.11.0"}

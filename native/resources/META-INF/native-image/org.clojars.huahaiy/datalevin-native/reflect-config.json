@@ -33,6 +33,32 @@
         "methods" : [{"name":"canAccess"}]
     },
     {
+        "name": "java.util.regex.Matcher",
+        "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.list.mutable.AbstractMutableList",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.list.mutable.FastList",
+      "allPublicMethods":true
+    },
+    {
+        "name": "java.text.Normalizer",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name": "java.text.Normalizer$Form",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
         "name":"java.util.Date",
         "allPublicConstructors" : true,
         "allPublicMethods" : true,

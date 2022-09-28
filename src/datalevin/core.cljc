@@ -1,5 +1,5 @@
 (ns datalevin.core
-  "API for Datalevin database"
+  "User facing API for Datalevin library features"
   (:require
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.util :as u]
@@ -30,7 +30,7 @@
 ;; Entities
 
 (defn entity
-  "Retrieves an entity by its id from Datalog database. Entities
+  "Retrieves an entity by its id from a Datalog database. Entities
   are lazy map-like structures to navigate Datalevin database content.
 
   `db` is a Datalog database.
@@ -93,11 +93,11 @@
   (de/entity db eid))
 
 (def ^{:arglists '([ent attr value])
-       :doc      "Add an attribute value to an entity"}
+       :doc      "Add an attribute value to an entity of a Datalog database"}
   add de/add)
 
 (def ^{:arglists '([ent attr][ent attr value])
-       :doc      "Remove an attribute from an entity"}
+       :doc      "Remove an attribute from an entity of a Datalog database"}
   retract de/retract)
 
 (defn entid
@@ -134,7 +134,7 @@ Only usable for debug output.
 ;; Pull API
 
 (defn pull
-  "Fetches data from Datalog database using recursive declarative
+  "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
@@ -179,13 +179,14 @@ Only usable for debug output.
           [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
 
 (defn q
-  "Executes a datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+  "Executes a Datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
 
           Usage:
 
           ```
           (q '[:find ?value
-               :where [_ :likes ?value]]
+               :where [_ :likes ?value]
+               :timeout 5000]
              db)
           ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
           ```"
@@ -201,9 +202,13 @@ Only usable for debug output.
 
  `opts` map has keys:
 
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, a option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   Usage:
 
@@ -223,7 +228,7 @@ Only usable for debug output.
 
 
 (def ^{:arglists '([e a v] [e a v tx] [e a v tx added])
-       :doc      "Low-level fn to create raw datoms.
+       :doc      "Low-level fn to create raw datoms in a Datalog db.
 
              Optionally with transaction id (number) and `added` flag (`true` for addition, `false` for retraction).
 
@@ -247,13 +252,17 @@ Only usable for debug output.
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
-       :doc      "Low-level fn for creating database quickly from a trusted sequence of datoms. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+       :doc      "Low-level function for creating a Datalog database quickly from a trusted sequence of datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
 
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
              See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
@@ -266,19 +275,25 @@ Only usable for debug output.
 
 (defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
-  ([db tx-data] (with db tx-data nil))
-  ([db tx-data tx-meta]
+  ([db tx-data] (with db tx-data {} false))
+  ([db tx-data tx-meta] (with db tx-data tx-meta false))
+  ([db tx-data tx-meta simulated?]
    {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
                           {:db-before db
                            :db-after  db
                            :tx-data   []
                            :tempids   {}
-                           :tx-meta   tx-meta}) tx-data)))
+                           :tx-meta   tx-meta}) tx-data simulated?)))
 
+(defn tx-data->simulated-report
+  "Returns a transaction report without side-effects. Useful for obtaining
+  the would-be db state and the would-be set of datoms."
+  [db tx-data]
+  (db/tx-data->simulated-report db tx-data))
 
 (defn ^:no-doc db-with
-  "Applies transaction. Return the db."
+  "Applies transaction. Return the Datalog db."
   [db tx-data]
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
@@ -287,7 +302,7 @@ Only usable for debug output.
 ;; Index lookups
 
 (defn datoms
-  "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
+  "Index lookup in Datalog db. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
 
@@ -430,17 +445,25 @@ Only usable for debug output.
        (db/db? @conn)))
 
 (defn conn-from-db
-  "Creates a mutable reference to a given database. See [[create-conn]]."
+  "Creates a mutable reference to a given Datalog database. See [[create-conn]]."
   [db]
   {:pre [(db/db? db)]}
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
-  "Create a mutable reference to a database with the given datoms added to it.
+  "Create a mutable reference to a Datalog database with the given datoms added to it.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
+
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
+
   "
   ([datoms] (conn-from-db (init-db datoms)))
   ([datoms dir] (conn-from-db (init-db datoms dir)))
@@ -449,16 +472,20 @@ Only usable for debug output.
 
 
 (defn create-conn
-  "Creates a mutable reference (a “connection”) to a database at the given
+  "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
   `dir` could be a local directory path or a dtlv connection URI string.
 
-  `opts` map has keys:
+  `opts` map may have keys:
+
+   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-engine`, an option map that will be passed to the search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+
+   * `:kv-opts`, an option map that will be passed to the underlying kV store
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -485,13 +512,14 @@ Only usable for debug output.
   ([dir schema opts] (conn-from-db (empty-db dir schema opts))))
 
 (defn close
-  "Close the connection"
+  "Close the connection to a Datalog db"
   [conn]
-  (s/close ^Store (.-store ^DB @conn))
+  (when-let [store (.-store ^DB @conn)]
+    (s/close ^Store store))
   nil)
 
 (defn closed?
-  "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
+  "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"
   [conn]
   (or (nil? conn)
       (nil? @conn)
@@ -499,17 +527,16 @@ Only usable for debug output.
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
-  (locking conn
-    (let [report (atom nil)]
+  (let [report (atom nil)]
+    (locking conn
       (swap! conn (fn [db]
                     (let [r (with db tx-data tx-meta)]
                       (reset! report r)
-                      (:db-after r))))
-      @report)))
-
+                      (:db-after r)))))
+    @report))
 
 (defn transact!
-  "Applies transaction to the underlying database.
+  "Applies transaction to the underlying Datalog database of a connection.
 
   Returns transaction report, a map:
 
@@ -603,7 +630,7 @@ Only usable for debug output.
 
 
 (defn reset-conn!
-  "Forces underlying `conn` value to become `db`. Will generate a tx-report that
+  "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that
   will remove everything from old value and insert everything from the new one."
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
@@ -626,7 +653,7 @@ Only usable for debug output.
 
 
 (defn listen!
-  "Listen for changes on the given connection. Whenever a transaction is applied
+  "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
   to the database via [[transact!]], the callback is called with the transaction
   report. `key` is any opaque unique value.
 
@@ -674,14 +701,12 @@ Only usable for debug output.
 
 
 (defn db
-  "Returns the underlying database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
+  "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
 
   Exists for Datomic API compatibility. "
   [conn]
   {:pre [(conn? conn)]}
   @conn)
-
-;; datalog db
 
 (defn opts
   "Return the option map of the Datalog DB"
@@ -696,44 +721,63 @@ Only usable for debug output.
   (s/schema ^Store (.-store ^DB @conn)))
 
 (defn update-schema
-  "Update the schema of an open connection. `schema-update` is a map from
-  attribute keywords to maps of corresponding properties. Return the updated
-  schema.
+  "Update the schema of an open connection to a Datalog db.
+
+  * `schema-update` is a map from attribute keywords to maps of corresponding
+  properties.
+
+  * `del-attrs` is a set of attributes to be removed from the schema, if there is
+  no datoms associated with them, otherwise an exception will be thrown.
+
+  * `rename-map` is a map of old attributes to new attributes, for renaming
+  attributes
+
+  Return the updated schema.
 
   Example:
 
-        (update-schema conn {:new/attr {:db/valueType :db.type/string}})"
-  [conn schema-update]
-  {:pre [(conn? conn)]}
-  (let [^DB db (db conn)]
-    (s/set-schema ^Store (.-store db) schema-update)
-    (schema conn)))
+        (update-schema conn {:new/attr {:db/valueType :db.type/string}})
+        (update-schema conn {:new/attr {:db/valueType :db.type/string}}
+                            #{:old/attr1 :old/attr2})
+        (update-schema conn nil nil {:old/attr :new/attr}) "
+  ([conn schema-update]
+   (update-schema conn schema-update nil nil))
+  ([conn schema-update del-attrs]
+   (update-schema conn schema-update del-attrs nil))
+  ([conn schema-update del-attrs rename-map]
+   {:pre [(conn? conn)]}
+   (let [^DB db       (db conn)
+         ^Store store (.-store db)]
+     (s/set-schema store schema-update)
+     (doseq [attr del-attrs] (s/del-attr store attr))
+     (doseq [[old new] rename-map] (s/rename-attr store old new))
+     (schema conn))))
 
 (defonce ^:private connections (atom {}))
 
 (defn- add-conn [dir conn] (swap! connections assoc dir conn))
 
 (defn- new-conn
-  [dir schema]
-  (let [conn (if schema
-               (create-conn dir schema)
-               (create-conn dir))]
+  [dir schema opts]
+  (let [conn (create-conn dir schema opts)]
     (add-conn dir conn)
     conn))
 
 (defn get-conn
-  "Obtain an open connection to a database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
+  "Obtain an open connection to a Datalog database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
 
   See also [[create-conn]] and [[with-conn]]"
   ([dir]
-   (get-conn dir nil))
+   (get-conn dir nil nil))
   ([dir schema]
+   (get-conn dir schema nil))
+  ([dir schema opts]
    (if-let [c (get @connections dir)]
-     (if (closed? c) (new-conn dir schema) c)
-     (new-conn dir schema))))
+     (if (closed? c) (new-conn dir schema opts) c)
+     (new-conn dir schema opts))))
 
 (defmacro with-conn
-  "Evaluate body in the context of an connection to the database.
+  "Evaluate body in the context of an connection to the Datalog database.
 
   If the database does not exist, this will create it. If it is closed,
   this will open it. However, the connection will be closed in the end of
@@ -754,8 +798,8 @@ Only usable for debug output.
   [spec & body]
   `(let [dir#    ~(second spec)
          schema# ~(second (rest spec))
-         conn#   (get-conn dir#)]
-     (when schema# (update-schema conn# schema#))
+         opts#   ~(second (rest (rest spec)))
+         conn#   (get-conn dir# schema# opts#)]
      (try
        (let [~(first spec) conn#] ~@body)
        (finally
@@ -879,7 +923,7 @@ Only usable for debug output.
   `opts` is an option map that may have the following keys:
   * `:mapsize` is the initial size of the database. This will be expanded as needed
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
-     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB)_NOSUBDIR, and so on.
+     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
 
   Please note:
 
@@ -917,12 +961,17 @@ Only usable for debug output.
        :doc      "Return the path or URI string of the key-value store"}
   dir l/dir)
 
-(def ^{:arglists '([db]
-                   [db dbi-name]
-                   [db dbi-name key-size]
-                   [db dbi-name key-size val-size]
-                   [db dbi-name key-size val-size flags])
-       :doc      "Open a named DBI (i.e. sub-db) or unamed main DBI in the key-value store"}
+(def ^{:arglists '([db dbi-name]
+                   [db dbi-name opts])
+       :doc      "Open a named DBI (i.e. sub-db) in the key-value store. `opts` is an option map that may have the following keys:
+
+      * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
+      * `:key-size` is the max size of the key in bytes, cannot be greater than 511, default is 511.
+
+      * `:val-size` is the default size of the value in bytes, Datalevin will automatically increase the size if a larger value is transacted.
+
+      * `:flags` is a vector of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `[:create]`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
   open-dbi l/open-dbi)
 
 (def ^{:arglists '([db dbi-name])
@@ -938,7 +987,7 @@ Only usable for debug output.
   list-dbis l/list-dbis)
 
 (defn copy
-  "Copy a database to a destination directory path, optionally compact while copying, default not compact. "
+  "Copy a Datalog or key-value database to a destination directory path, optionally compact while copying, default not compact. "
   ([db dest]
    (copy db dest false))
   ([db dest compact?]
@@ -966,18 +1015,19 @@ Only usable for debug output.
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
 
-  `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
+  `txs` is a seq of `[op dbi-name k v k-type v-type flags]`
   when `op` is `:put`, for insertion of a key value pair `k` and `v`;
   or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
   `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
 
-  `k-type`, `v-type` and `append?` are optional.
+  `k-type`, `v-type` and `flags` are optional.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
   of `v`. The allowed data types are described in [[put-buffer]]
 
-  Set `append?` to true when the data is sorted to gain better write performance.
+  `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
+       Pass in `:append` when the data is sorted to gain better write performance.
 
   Example:
 
@@ -1232,14 +1282,44 @@ the `pred`.
 
               (def pred (i/inter-fn [kv]
                          (let [^long lk (read-buffer (k kv) :long)]
-                          (> lk 15)))
+                          (> lk 15))))
 
               (range-filter-count lmdb \"a\" pred [:less-than 20] :long)
               ;;==> 3"}
   range-filter-count l/range-filter-count)
 
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type])
+       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return nil. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`. `visitor` function can use [[read-buffer]] to read the buffer content.
+
+      If `visitor` function returns a special value `:datalevin/terminate-visit`, the visit will stop immediately.
+
+      For client/server usage, [[interpret.inter-fn]] should be used to define the `visitor` function. For babashka pod usage, `defpodfn` should be used.
+
+    `k-type` indicates data type of `k` and the allowed data types are described
+    in [[read-buffer]].
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;
+
+     Examples:
+
+              (require '[datalevin.interpret :as i])
+              (import '[java.util Hashmap])
+
+              (def hashmap (HashMap.))
+              (def visitor (i/inter-fn [kv]
+                             (let [^long k (b/read-buffer (l/k kv) :long)
+                                   ^long v (b/read-buffer (l/v kv) :long)]
+                                  (.put hashmap k v))))
+              (visit lmdb \"a\" visitor [:closed 11 19] :long)
+              "}
+  visit l/visit)
+
 (defn clear
-  "Clear all data in the Datalog database, including schema."
+  "Close the Datalog database, then clear all data, including schema."
   [conn]
   (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
@@ -1255,7 +1335,11 @@ the `pred`.
   "Create a search engine. The search index is stored in the passed-in
   key-value database opened by [[open-kv]].
 
-  `opts` is an option map that may contains keys:
+  `opts` is an option map that may contain these keys:
+
+   * `:domain` is an identifier string, indicates the domain of this search engine.
+      This way, multiple independent search engines can reside in the same
+      key-value database, each with its own domain identifier.
 
    * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence
@@ -1263,6 +1347,12 @@ the `pred`.
      the term in the document. E.g. for a blank space analyzer and the document
     \"The quick brown fox jumps over the lazy dog\", [\"quick\" 1 4] would be
     the second entry of the resulting seq.
+
+   * `:query-analyzer` is a similar function that overrides the analyzer at
+    query time (and not indexing time). Mostly useful for autocomplete search in
+    conjunction with the `datalevin.search-utils/prefix-token-filter`.
+
+  See [[datalevin.search-utils]] for some functions to customize search.
   "
   ([lmdb]
    (new-search-engine lmdb nil))
@@ -1285,6 +1375,11 @@ the `pred`.
        :doc      "Remove a document referred to by `doc-ref` from the search
 engine index. A slow operation."}
   remove-doc sc/remove-doc)
+
+(def ^{:arglists '([engine])
+       :doc      "Remove all documents from the search engine index. It is useful
+  because rebuilding search index may be faster than updating some documents."}
+  clear-docs sc/clear-docs)
 
 (def ^{:arglists '([engine doc-ref])
        :doc      "Test if a `doc-ref` is already in the search index"}
@@ -1321,7 +1416,12 @@ words.
   The search index is stored in the passed-in key value database opened
   by [[open-kv]]. See also [[write]] and [[commit]].
 
-  `opts` is an option map that may contains keys:
+  `opts` is an option map that may contain these keys:
+
+   * `:domain` is an identifier string, indicates the domain of this search engine.
+      This way, multiple independent search engines can reside in the same
+      key-value database, each with its own domain identifier.
+
   * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence
      number of the term, and offset is the character offset of this term.
@@ -1351,9 +1451,7 @@ all documents."}
 
     - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
     - `:string`, UTF-8 string
-    - `:int`, 32 bits integer
     - `:long`, 64 bits integer
-    - `:id`, 64 bits integer, not prefixed with a type header
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
     - `:byte`, single byte
@@ -1363,14 +1461,6 @@ all documents."}
     - `:boolean`, `true` or `false`
     - `:instant`, timestamp, same as `java.util.Date`
     - `:uuid`, UUID, same as `java.util.UUID`
-
-  or one of the following Datalog specific data types
-
-    - `:datom`
-    - `:attr`
-    - `:eav`
-    - `:ave`
-    - `:vea`
 
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."}
@@ -1382,9 +1472,7 @@ one of the following data types:
 
   - `:data` (default), arbitrary EDN data
   - `:string`, UTF-8 string
-  - `:int`, 32 bits integer
   - `:long`, 64 bits integer
-  - `:id`, 64 bits integer, not prefixed with a type header
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
   - `:byte`, single byte
@@ -1393,15 +1481,7 @@ one of the following data types:
   - `:symbol`, EDN symbol
   - `:boolean`, `true` or `false`
   - `:instant`, timestamp, same as `java.util.Date`
-  - `:uuid`, UUID, same as `java.util.UUID`
-
-  or one of the following Datalog specific data types
-
-  - `:datom`
-  - `:attr`
-  - `:eav`
-  - `:ave`
-  - `:vea`"}
+  - `:uuid`, UUID, same as `java.util.UUID`"}
   read-buffer b/read-buffer)
 
 (def ^{:arglists '([s])

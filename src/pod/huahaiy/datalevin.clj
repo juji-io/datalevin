@@ -1,18 +1,19 @@
-(ns pod.huahaiy.datalevin
+(ns ^:no-doc pod.huahaiy.datalevin
   (:refer-clojure :exclude [read read-string])
   (:require [bencode.core :as bencode]
             [sci.core :as sci]
             [datalevin.core :as d]
-            [datalevin.query :as q]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
             [datalevin.datom :as dd]
+            [datalevin.storage :as st]
             [clojure.java.io :as io]
             [clojure.walk :as w])
   (:import [java.io PushbackInputStream]
            [java.nio.charset StandardCharsets]
            [datalevin.datom Datom]
-           [datalevin.db TxReport]
+           [datalevin.db DB TxReport]
+           [datalevin.entity Entity]
            [java.util UUID])
   (:gen-class))
 
@@ -22,7 +23,7 @@
 
 (defn debug [& args]
   (when debug?
-    (binding [*out* (io/writer "/tmp/pod-debug.log" :append true)]
+    (binding [*out* (io/writer "/tmp/datalevin-pod-debug.log" :append true)]
       (apply println args))))
 
 (def stdin (PushbackInputStream. System/in))
@@ -57,6 +58,17 @@
   (when-let [d (get @dl-dbs db)]
     (d/entid d eid)))
 
+(defn entity [{:keys [::db]} eid]
+  (when-let [^DB d (get @dl-dbs db)]
+    (let [^Entity e (d/entity d eid)]
+      (assoc @(.-cache e) :db/id (.-eid e) :db-name db))))
+
+(defn touch
+  [{:keys [db-name db/id]}]
+  (when-let [d (get @dl-dbs db-name)]
+    (let [^Entity e (d/touch (d/entity d id))]
+      (assoc @(.-cache e) :db/id id :db-name db-name))))
+
 (defn pull [{:keys [::db]} selector eid]
   (when-let [d (get @dl-dbs db)]
     (d/pull d selector eid)))
@@ -73,8 +85,8 @@
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
   ([dir schema]
-   (let [db (d/empty-db dir schema)
-         id (UUID/randomUUID)]
+   (let [id (UUID/randomUUID)
+         db (d/empty-db dir schema {:db-name id})]
      (swap! dl-dbs assoc id db)
      {::db id})))
 
@@ -225,17 +237,10 @@
     (d/dir d)))
 
 (defn open-dbi
-  ([{:keys [::kv-db]}] (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d) nil))
   ([{:keys [::kv-db]} dbi-name]
    (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name) nil))
-  ([{:keys [::kv-db]} dbi-name key-size]
-   (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name key-size) nil))
-  ([{:keys [::kv-db]} dbi-name key-size val-size]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/open-dbi d dbi-name key-size val-size) nil))
-  ([{:keys [::kv-db]} dbi-name key-size val-size flags]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/open-dbi d dbi-name key-size val-size flags) nil)))
+  ([{:keys [::kv-db]} dbi-name opts]
+   (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name opts) nil)))
 
 (defn clear-dbi [{:keys [::kv-db]}]
   (when-let [d (get @kv-dbs kv-db)]
@@ -353,6 +358,8 @@
 (def ^:private exposed-vars
   {'pod-fn             pod-fn
    'entid              entid
+   'entity             entity
+   'touch              touch
    'pull               pull
    'pull-many          pull-many
    'empty-db           empty-db

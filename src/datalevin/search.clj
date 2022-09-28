@@ -1,18 +1,18 @@
-(ns datalevin.search
+(ns ^:no-doc datalevin.search
   "Full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]
             [datalevin.sparselist :as sl]
             [datalevin.constants :as c]
-            [datalevin.bits :as b])
-  (:import [datalevin.utl PriorityQueue]
+            [datalevin.bits :as b]
+            [clojure.string :as s])
+  (:import [datalevin.utl PriorityQueue GrowingIntArray]
            [datalevin.sparselist SparseIntArrayList]
            [java.util HashMap ArrayList Map$Entry Arrays]
            [java.util.concurrent.atomic AtomicInteger]
            [java.io Writer]
            [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
             IntDoubleHashMap]
-           [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]
            [org.eclipse.collections.impl.list.mutable FastList]
            [org.eclipse.collections.impl.map.mutable UnifiedMap]
            [org.roaringbitmap RoaringBitmap FastAggregation
@@ -70,10 +70,6 @@
                            (doto (FastList.) (.add [position offset]))))))
     terms))
 
-(defn- get-term-info
-  [lmdb term]
-  (l/get-value lmdb c/terms term :string :term-info))
-
 (defn- idf
   "inverse document frequency of a term"
   [^long freq N]
@@ -101,50 +97,6 @@
                             ^short norm)
                         (.-indices sl))))
       mw)))
-
-(defn- add-doc-txs
-  [lmdb analyzer doc-text ^AtomicInteger max-doc ^FastList txs doc-ref
-   ^IntShortHashMap norms ^AtomicInteger max-term ^UnifiedMap hit-terms]
-  (let [result    (analyzer doc-text)
-        new-terms ^HashMap (collect-terms result)
-        unique    (.size new-terms)
-        doc-id    (.incrementAndGet max-doc)]
-    (.add txs [:put c/docs doc-id [unique doc-ref] :int :doc-info])
-    (when norms (.put norms doc-id unique))
-    (doseq [^Map$Entry kv (.entrySet new-terms)]
-      (let [term        (.getKey kv)
-            new-lst     ^FastList (.getValue kv)
-            tf          (.size new-lst)
-            [tid mw sl] (or (.get hit-terms term)
-                            (get-term-info lmdb term)
-                            [(.incrementAndGet max-term) 0.0
-                             (sl/sparse-arraylist)])]
-        (.put hit-terms term [tid (add-max-weight mw tf unique)
-                              (sl/set sl doc-id tf)])
-        (.add txs [:put-list c/positions [tid doc-id] new-lst
-                   :int-int :int-int])))))
-
-(defn- hydrate-query
-  [lmdb ^AtomicInteger max-doc tokens]
-  (into []
-        (comp
-          (map (fn [[term freq]]
-                 (when-let [[id mw ^SparseIntArrayList sl]
-                            (get-term-info lmdb term)]
-                   (let [df (sl/size sl)
-                         sl (sl/->SparseIntArrayList
-                              (doto (FastRankRoaringBitmap.)
-                                (.or ^RoaringBitmap (.-indices sl)))
-                              (.-items sl))]
-                     {:df df
-                      :id id
-                      :mw mw
-                      :sl sl
-                      :tm term
-                      :wq (* ^double (tf* freq)
-                             ^double (idf df (.get max-doc)))}))))
-          (filter map?))
-        (frequencies tokens)))
 
 (defn- priority-queue
   [top]
@@ -208,7 +160,7 @@
     did)
 
   (get-tf [_]
-    (.get ^IntArrayList (.-items sl)
+    (.get ^GrowingIntArray (.-items sl)
           (dec (.rank ^FastRankRoaringBitmap (.-indices sl) did)))))
 
 (def ^:no-doc candidate-comp
@@ -307,7 +259,7 @@
 (defn- current-threshold
   [^PriorityQueue pq]
   (if (< (.size pq) (.maxSize pq))
-    0.0
+    -0.1
     (nth (.top pq) 0)))
 
 (defn- score-term
@@ -343,108 +295,68 @@
                 (recur (next-candidates did candidates)))
               (recur (skip-candidates pivot did candidates)))))))))
 
-(defn- get-doc-ref
-  [doc-filter lmdb [_ doc-id]]
-  (when-let [doc-ref (nth (l/get-value lmdb c/docs doc-id :int :doc-info) 1)]
-    (when (doc-filter doc-ref) doc-ref)))
-
-(defn- add-offsets
-  [doc-filter lmdb terms [_ doc-id :as result]]
-  (when-let [doc-ref (get-doc-ref doc-filter lmdb result)]
-    [doc-ref
-     (sequence
-       (comp (map (fn [tid]
-                 (let [lst (l/get-list lmdb c/positions [tid doc-id]
-                                       :int-int :int-int)]
-                   (when (seq lst)
-                     [(terms tid) (mapv #(nth % 1) lst)]))))
-          (remove nil? ))
-       (keys terms))]))
-
-(defn- display-xf
-  [doc-filter display lmdb tms]
-  (case display
-    :offsets (comp (map #(add-offsets doc-filter lmdb tms %))
-                (remove nil?))
-    :refs    (comp (map #(get-doc-ref doc-filter lmdb %))
-                (remove nil?))))
-
-(defn- doc-ref->id
-  [lmdb doc-ref]
-  (let [is-ref? (fn [kv]
-                  (= doc-ref (nth (b/read-buffer (l/v kv) :doc-info) 1)))]
-    (nth (l/get-some lmdb c/docs is-ref? [:all] :int :doc-info) 0)))
-
-(defn- doc-id->term-ids
-  [lmdb doc-id]
-  (dedupe
-    (map ffirst
-         (l/range-filter lmdb c/positions
-                         (fn [kv]
-                           (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
-                             (= did doc-id)))
-                         [:all] :int-int :ignore false))))
-
-(defn- term-id->info
-  [lmdb term-id]
-  (let [is-id? (fn [kv] (= term-id (b/read-buffer (l/v kv) :int)))]
-    (l/get-some lmdb c/terms is-id? [:all] :string :term-info false)))
-
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text])
   (remove-doc [this doc-ref])
+  (clear-docs [this])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
   (doc-refs [this])
-  (search [this query] [this query opts]))
+  (search [this query] [this query opts])
+  (analyzer [this])
+  (terms-dbi [this])
+  (docs-dbi [this])
+  (positions-dbi [this])
+  (max-doc [this])
+  (max-term [this])
+  (lmdb [this]))
 
-(defn- remove-doc*
-  [lmdb ^IntShortHashMap norms doc-id]
-  (let [txs  (FastList.)
-        norm (.get norms doc-id)]
-    (.remove norms doc-id)
-    (.add txs [:del c/docs doc-id :int])
-    (doseq [term-id (doc-id->term-ids lmdb doc-id)]
-      (let [[term [_ mw sl]] (term-id->info lmdb term-id)
-            tf               (sl/get sl doc-id)]
-        (.add txs [:put c/terms term
-                   [term-id
-                    (del-max-weight sl doc-id mw tf norm)
-                    (sl/remove sl doc-id)]
-                   :string :term-info]))
-      (.add txs [:del c/positions [term-id doc-id] :int-int]))
-    (l/transact-kv lmdb txs)))
+(declare doc-ref->id remove-doc* add-doc-txs hydrate-query display-xf)
 
 (deftype ^:no-doc SearchEngine [lmdb
                                 analyzer
+                                query-analyzer
+                                terms-dbi
+                                docs-dbi
+                                positions-dbi
                                 ^IntShortHashMap norms ; doc-id -> norm
                                 ^AtomicInteger max-doc
                                 ^AtomicInteger max-term]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
-    (when-let [doc-id (doc-ref->id lmdb doc-ref)]
-      (remove-doc* lmdb norms doc-id))
-    (let [txs       (FastList.)
-          hit-terms (UnifiedMap.)]
-      (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref norms max-term
-                   hit-terms)
-      (doseq [^Map$Entry kv (.entrySet hit-terms)]
-        (let [term (.getKey kv)
-              info (.getValue kv)]
-          (.add txs [:put c/terms term info :string :term-info])))
-      (l/transact-kv lmdb txs)))
+    (locking this
+      (try
+        (when-not (s/blank? doc-text)
+          (when-let [doc-id (doc-ref->id this doc-ref)]
+            (remove-doc* this norms doc-id))
+          (let [txs       (FastList.)
+                hit-terms (UnifiedMap.)]
+            (add-doc-txs this norms doc-text txs doc-ref hit-terms)
+            (doseq [^Map$Entry kv (.entrySet hit-terms)]
+              (let [term (.getKey kv)
+                    info (.getValue kv)]
+                (.add txs [:put terms-dbi term info :string :term-info])))
+            (l/transact-kv lmdb txs)))
+        (catch Exception e
+          (u/raise "Error indexing document:" (ex-message e)
+                   {:doc-ref doc-ref :doc-text doc-text})))))
 
   (remove-doc [this doc-ref]
-    (if-let [doc-id (doc-ref->id lmdb doc-ref)]
-      (remove-doc* lmdb norms doc-id)
+    (if-let [doc-id (doc-ref->id this doc-ref)]
+      (remove-doc* this norms doc-id)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
-  (doc-indexed? [this doc-ref] (doc-ref->id lmdb doc-ref))
+  (clear-docs [this]
+    (l/clear-dbi lmdb terms-dbi)
+    (l/clear-dbi lmdb docs-dbi)
+    (l/clear-dbi lmdb positions-dbi))
 
-  (doc-count [_] (l/entries lmdb c/docs))
+  (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref))
+
+  (doc-count [_] (l/entries lmdb docs-dbi))
 
   (doc-refs [_]
-    (map second (l/get-range lmdb c/docs [:all] :int :doc-info true)))
+    (map second (l/get-range lmdb docs-dbi [:all] :int :doc-info true)))
 
   (search [this query]
     (.search this query {}))
@@ -452,10 +364,10 @@
                        :or   {display    :refs
                               top        10
                               doc-filter (constantly true)}}]
-    (let [tokens (->> (analyzer query)
+    (let [tokens (->> (query-analyzer query)
                       (mapv first)
                       (into-array String))
-          qterms (->> (hydrate-query lmdb max-doc tokens)
+          qterms (->> (hydrate-query this max-doc tokens)
                       (sort-by :df)
                       vec)
           n      (count qterms)]
@@ -472,7 +384,7 @@
               result  (RoaringBitmap.)
               scoring (score-docs n tids sls bms mxs wqs norms result)]
           (sequence
-            (display-xf doc-filter display lmdb tms)
+            (display-xf this doc-filter display tms)
             (persistent!
               (reduce
                 (fn [coll tao]
@@ -484,44 +396,190 @@
                         (pouring coll pq result))
                       (reduced coll))))
                 (transient [])
-                (range n 0 -1)))))))))
+                (range n 0 -1))))))))
+
+  (analyzer [_]
+    analyzer)
+
+  (terms-dbi [_]
+    terms-dbi)
+
+  (docs-dbi [_]
+    docs-dbi)
+
+  (positions-dbi [_]
+    positions-dbi)
+
+  (max-doc [_]
+    max-doc)
+
+  (max-term [_]
+    max-term)
+
+  (lmdb [_]
+    lmdb))
+
+(defn- get-term-info
+  [engine term]
+  (l/get-value (lmdb engine) (terms-dbi engine) term :string :term-info))
+
+(defn- doc-ref->id
+  [engine doc-ref]
+  (let [is-ref? (fn [kv]
+                  (= doc-ref (nth (b/read-buffer (l/v kv) :doc-info) 1)))]
+    (nth (l/get-some (lmdb engine) (docs-dbi engine) is-ref? [:all]
+                     :int :doc-info) 0)))
+
+(defn- doc-id->term-ids
+  [engine doc-id]
+  (dedupe
+    (map ffirst
+         (l/range-filter (lmdb engine) (positions-dbi engine)
+                         (fn [kv]
+                           (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
+                             (= did doc-id)))
+                         [:all] :int-int :ignore false))))
+
+(defn- term-id->info
+  [engine term-id]
+  (let [is-id? (fn [kv] (= term-id (b/read-buffer (l/v kv) :int)))]
+    (l/get-some (lmdb engine) (terms-dbi engine) is-id? [:all]
+                :string :term-info false)))
+
+(defn- remove-doc*
+  [engine ^IntShortHashMap norms doc-id]
+  (let [txs  (FastList.)
+        norm (.get norms doc-id)]
+    (.remove norms doc-id)
+    (.add txs [:del (docs-dbi engine) doc-id :int])
+    (doseq [term-id (doc-id->term-ids engine doc-id)]
+      (let [[term [_ mw sl]] (term-id->info engine term-id)]
+        (when-let [tf (sl/get sl doc-id)]
+          (.add txs [:put (terms-dbi engine) term
+                     [term-id
+                      (del-max-weight sl doc-id mw tf norm)
+                      (sl/remove sl doc-id)]
+                     :string :term-info])))
+      (.add txs [:del (positions-dbi engine) [term-id doc-id] :int-int]))
+    (l/transact-kv (lmdb engine) txs)))
+
+(defn- add-doc-txs
+  [engine ^IntShortHashMap norms doc-text  ^FastList txs doc-ref
+   ^UnifiedMap hit-terms]
+  (let [result    ((analyzer engine) doc-text)
+        new-terms ^HashMap (collect-terms result)
+        unique    (.size new-terms)
+        doc-id    (.incrementAndGet ^AtomicInteger (max-doc engine))]
+    (.add txs [:put (docs-dbi engine) doc-id [unique doc-ref] :int :doc-info])
+    (when norms (.put norms doc-id unique))
+    (doseq [^Map$Entry kv (.entrySet new-terms)]
+      (let [term    (.getKey kv)
+            new-lst ^FastList (.getValue kv)
+            tf      (.size new-lst)
+            [tid mw sl]
+            (or (.get hit-terms term)
+                (get-term-info engine term)
+                [(.incrementAndGet ^AtomicInteger (max-term engine))
+                 0.0
+                 (sl/sparse-arraylist)])]
+        (.put hit-terms term [tid (add-max-weight mw tf unique)
+                              (sl/set sl doc-id tf)])
+        (.add txs [:put-list (positions-dbi engine) [tid doc-id] new-lst
+                   :int-int :int-int])))))
+
+(defn- hydrate-query
+  [engine ^AtomicInteger max-doc tokens]
+  (into []
+        (comp
+          (map (fn [[term freq]]
+                 (when-let [[id mw ^SparseIntArrayList sl]
+                            (get-term-info engine term)]
+                   (let [df (sl/size sl)
+                         sl (sl/->SparseIntArrayList
+                              (doto (FastRankRoaringBitmap.)
+                                (.or ^RoaringBitmap (.-indices sl)))
+                              (.-items sl))]
+                     {:df df
+                      :id id
+                      :mw mw
+                      :sl sl
+                      :tm term
+                      :wq (* ^double (tf* freq)
+                             ^double (idf df (.get max-doc)))}))))
+          (filter map?))
+        (frequencies tokens)))
+
+(defn- get-doc-ref
+  [engine doc-filter [_ doc-id]]
+  (when-let [doc-ref (nth (l/get-value (lmdb engine) (docs-dbi engine)
+                                       doc-id :int :doc-info) 1)]
+    (when (doc-filter doc-ref) doc-ref)))
+
+(defn- add-offsets
+  [engine doc-filter terms [_ doc-id :as result]]
+  (when-let [doc-ref (get-doc-ref engine doc-filter result)]
+    [doc-ref
+     (sequence
+       (comp (map (fn [tid]
+                 (let [lst (l/get-list (lmdb engine) (positions-dbi engine)
+                                       [tid doc-id] :int-int :int-int)]
+                   (when (seq lst)
+                     [(terms tid) (mapv #(nth % 1) lst)]))))
+          (remove nil? ))
+       (keys terms))]))
+
+(defn- display-xf
+  [^SearchEngine engine doc-filter display tms]
+  (case display
+    :offsets (comp (map #(add-offsets engine doc-filter tms %))
+                (remove nil?))
+    :refs    (comp (map #(get-doc-ref engine doc-filter %))
+                (remove nil?))))
 
 (defn- init-norms
-  [lmdb]
+  [lmdb docs-dbi]
   (let [norms (IntShortHashMap.)
         load  (fn [kv]
                 (let [doc-id (b/read-buffer (l/k kv) :int)
                       norm   (b/read-buffer (l/v kv) :short)]
                   (.put norms doc-id norm)))]
-    (l/visit lmdb c/docs load [:all] :int)
+    (l/visit lmdb docs-dbi load [:all] :int)
     norms))
 
 (defn- init-max-doc
-  [lmdb]
-  (or (first (l/get-first lmdb c/docs [:all-back] :int :ignore)) 0))
+  [lmdb docs-dbi]
+  (or (first (l/get-first lmdb docs-dbi [:all-back] :int :ignore)) 0))
 
 (defn- init-max-term
-  [lmdb]
-  (or (first (l/get-first lmdb c/positions [:all-back] :int :ignore)) 0))
+  [lmdb positions-dbi]
+  (or (first (l/get-first lmdb positions-dbi [:all-back] :int :ignore)) 0))
 
 (defn- open-dbis
-  [lmdb]
+  [lmdb terms-dbi docs-dbi positions-dbi]
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
-  (l/open-dbi lmdb c/terms c/+max-key-size+)
-  (l/open-dbi lmdb c/docs Integer/BYTES)
-  (l/open-inverted-list lmdb c/positions (* 2 Integer/BYTES) c/+max-key-size+))
+  (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
+  (l/open-dbi lmdb docs-dbi {:key-size Integer/BYTES})
+  (l/open-inverted-list lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
+                                            :val-size c/+max-key-size+}))
 
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
-  ([lmdb {:keys [analyzer]
-          :or   {analyzer en-analyzer}}]
-   (open-dbis lmdb)
-   (->SearchEngine lmdb
-                   analyzer
-                   (init-norms lmdb)
-                   (AtomicInteger. (init-max-doc lmdb))
-                   (AtomicInteger. (init-max-term lmdb)))))
+  ([lmdb {:keys [domain analyzer query-analyzer]
+          :or   {analyzer en-analyzer domain "datalevin"}}]
+   (let [terms-dbi     (str domain "/" c/terms)
+         docs-dbi      (str domain "/" c/docs)
+         positions-dbi (str domain "/" c/positions)]
+     (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
+     (->SearchEngine lmdb
+                     analyzer
+                     (or query-analyzer analyzer)
+                     terms-dbi
+                     docs-dbi
+                     positions-dbi
+                     (init-norms lmdb docs-dbi)
+                     (AtomicInteger. (init-max-doc lmdb docs-dbi))
+                     (AtomicInteger. (init-max-term lmdb positions-dbi))))))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])
@@ -529,16 +587,19 @@
 
 (deftype ^:no=doc IndexWriter [lmdb
                                analyzer
+                               terms-dbi
+                               docs-dbi
+                               positions-dbi
                                ^AtomicInteger max-doc
                                ^AtomicInteger max-term
                                ^FastList txs
                                ^UnifiedMap hit-terms]
   IIndexWriter
   (write [this doc-ref doc-text]
-    (add-doc-txs lmdb analyzer doc-text max-doc txs doc-ref nil max-term
-                 hit-terms)
-    (when (< 10000000 (.size txs))
-      (.commit this)))
+    (when-not (s/blank? doc-text)
+      (add-doc-txs this nil doc-text txs doc-ref hit-terms)
+      (when (< 10000000 (.size txs))
+        (.commit this))))
 
   (commit [this]
     (l/transact-kv lmdb txs)
@@ -546,25 +607,53 @@
     (loop [iter (.iterator (.entrySet hit-terms))]
       (when (.hasNext iter)
         (let [^Map$Entry kv (.next iter)]
-          (.add txs [:put c/terms (.getKey kv) (.getValue kv)
+          (.add txs [:put terms-dbi (.getKey kv) (.getValue kv)
                      :string :term-info])
           (.remove iter)
           (recur iter))))
     (l/transact-kv lmdb txs)
-    (.clear txs)))
+    (.clear txs))
+
+  ISearchEngine
+  (analyzer [_]
+    analyzer)
+
+  (terms-dbi [_]
+    terms-dbi)
+
+  (docs-dbi [_]
+    docs-dbi)
+
+  (positions-dbi [_]
+    positions-dbi)
+
+  (max-doc [_]
+    max-doc)
+
+  (max-term [_]
+    max-term)
+
+  (lmdb [_]
+    lmdb))
 
 (defn search-index-writer
   ([lmdb]
    (search-index-writer lmdb nil))
-  ([lmdb {:keys [analyzer]
-          :or   {analyzer en-analyzer}}]
-   (open-dbis lmdb)
-   (->IndexWriter lmdb
-                  analyzer
-                  (AtomicInteger. (init-max-doc lmdb))
-                  (AtomicInteger. (init-max-term lmdb))
-                  (FastList.)
-                  (UnifiedMap.))))
+  ([lmdb {:keys [domain analyzer]
+          :or   {domain "datalevin" analyzer en-analyzer}}]
+   (let [terms-dbi     (str domain "/" c/terms)
+         docs-dbi      (str domain "/" c/docs)
+         positions-dbi (str domain "/" c/positions)]
+     (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
+     (->IndexWriter lmdb
+                    analyzer
+                    terms-dbi
+                    docs-dbi
+                    positions-dbi
+                    (AtomicInteger. (init-max-doc lmdb docs-dbi))
+                    (AtomicInteger. (init-max-term lmdb positions-dbi))
+                    (FastList.)
+                    (UnifiedMap.)))))
 
 (comment
 
@@ -572,7 +661,8 @@
 
   (time (search-index-writer lmdb))
   (def engine (time (new-search-engine lmdb)))
-  (.size (peek (l/get-value lmdb c/terms "s" :string :term-info))) ; over 3 mil.
+  (.size (peek (l/get-value lmdb "datalevin/terms"
+                            "s" :string :term-info))) ; over 3 mil.
 
   (time (search engine "s"))
   (time (search engine "french lick resort and casino"))

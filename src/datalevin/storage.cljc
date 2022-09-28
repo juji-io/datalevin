@@ -49,20 +49,19 @@
   (into {} (lmdb/get-range lmdb c/schema [:all] :attr :data)))
 
 (defn- init-max-aid
-  [lmdb]
-  (lmdb/entries lmdb c/schema))
+  [schema]
+  (inc ^long (apply max (map :db/aid (vals schema)))))
 
-;; TODO schema migration
 (defn- update-schema
-  [lmdb old schema]
-  (let [^long init-aid (init-max-aid lmdb)
-        i              (atom 0)]
+  [old schema]
+  (let [^long init-aid (init-max-aid old)
+        i              (volatile! 0)]
     (into {}
           (map (fn [[attr props]]
                  (if-let [old-props (old attr)]
-                   [attr (merge old-props props)]
+                   [attr (assoc props :db/aid (old-props :db/aid))]
                    (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
-                     (swap! i inc)
+                     (vswap! i #(inc ^long %))
                      res))))
           schema)))
 
@@ -71,10 +70,10 @@
   (when (empty? (load-schema lmdb))
     (transact-schema lmdb c/implicit-schema))
   (when schema
-    (transact-schema lmdb (update-schema lmdb (load-schema lmdb) schema)))
+    (transact-schema lmdb (update-schema (load-schema lmdb) schema)))
   (let [now (load-schema lmdb)]
     (when-not (:db/created-at now)
-      (transact-schema lmdb (update-schema lmdb now c/entity-time-schema))))
+      (transact-schema lmdb (update-schema now c/entity-time-schema))))
   (load-schema lmdb))
 
 (defn- init-attrs [schema]
@@ -87,35 +86,10 @@
         (inc ^long gt))
       c/gt0))
 
-(defn- migrate-cardinality
-  [lmdb attr old new]
-  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
-    ;; TODO figure out if this is consistent with data
-    ;; raise exception if not
-    ))
-
-(defn- handle-value-type
-  [lmdb attr old new]
-  (when (not= old new)
-    ;; TODO raise if datom already exist for this attr
-    ))
-
-(defn- migrate-unique
-  [lmdb attr old new]
-  (when (and (not old) new)
-    ;; TODO figure out if the attr values are unique for each entity,
-    ;; raise if not
-    ;; also check if ave and vea entries exist for this attr, create if not
-    ))
-
-(defn- migrate [lmdb attr old new]
-  (doseq [[k v] new
-          :let  [v' (old k)]]
-    (case k
-      :db/cardinality (migrate-cardinality lmdb attr v' v)
-      :db/valueType   (handle-value-type lmdb attr v' v)
-      :db/unique      (migrate-unique lmdb attr v' v)
-      :pass-through)))
+(defn- init-max-tx
+  [lmdb]
+  (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
+      c/tx0))
 
 (defn- low-datom->indexable
   [schema ^Datom d]
@@ -185,6 +159,8 @@
     "Return the unix timestamp of when the store is last modified")
   (max-gt [this])
   (advance-max-gt [this])
+  (max-tx [this])
+  (advance-max-tx [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (rschema [this] "Return the reverse schema map")
@@ -194,7 +170,10 @@
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
-    "Update an attribute, f is similar to that of swap!")
+    "Update the properties of an attribute, f is similar to that of swap!")
+  (del-attr [this attr]
+    "Delete an attribute, throw if there is still datom related to it")
+  (rename-attr [this attr new-attr] "Rename an attribute")
   (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
@@ -225,7 +204,7 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom"))
 
-(declare insert-data delete-data)
+(declare insert-data delete-data check)
 
 (deftype Store [lmdb
                 search-engine
@@ -234,7 +213,8 @@
                 ^:volatile-mutable rschema
                 ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
-                ^:volatile-mutable max-gt]
+                ^:volatile-mutable max-gt
+                ^:volatile-mutable max-tx]
   IStore
 
   (opts [_]
@@ -261,6 +241,12 @@
   (advance-max-gt [_]
     (set! max-gt (inc ^long max-gt)))
 
+  (max-tx [_]
+    max-tx)
+
+  (advance-max-tx [_]
+    (set! max-tx (inc ^long max-tx)))
+
   (max-aid [_]
     max-aid)
 
@@ -270,11 +256,15 @@
   (rschema [_]
     rschema)
 
-  (set-schema [_ new-schema]
+  (set-schema [this new-schema]
+    (doseq [[attr new] new-schema
+            :let       [old (schema attr)]
+            :when      old]
+      (check this attr old new))
     (set! schema (init-schema lmdb new-schema))
     (set! rschema (schema->rschema schema))
     (set! attrs (init-attrs schema))
-    (set! max-aid (init-max-aid lmdb))
+    (set! max-aid (init-max-aid schema))
     schema)
 
   (attrs [_]
@@ -291,7 +281,7 @@
     (swap-attr this attr f nil nil))
   (swap-attr [this attr f x]
     (swap-attr this attr f x nil))
-  (swap-attr [_ attr f x y]
+  (swap-attr [this attr f x y]
     (let [o (or (schema attr)
                 (let [m {:db/aid max-aid}]
                   (set! max-aid (inc ^long max-aid))
@@ -300,12 +290,35 @@
               (and x y) (f o x y)
               x         (f o x)
               :else     (f o))]
-      (migrate lmdb attr o p)
+      (check this attr o p)
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
       (set! rschema (schema->rschema schema))
       (set! attrs (assoc attrs (:db/aid p) attr))
       p))
+
+  (del-attr [this attr]
+    (if (populated? this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
+      (u/raise "Cannot delete attribute with datoms" {})
+      (let [aid (:db/aid (schema attr))]
+        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                                [:put c/meta :last-modified
+                                 (System/currentTimeMillis) :attr :long]])
+        (set! schema (dissoc schema attr))
+        (set! rschema (schema->rschema schema))
+        (set! attrs (dissoc attrs aid))
+        attrs)))
+
+  (rename-attr [this attr new-attr]
+    (let [props (schema attr)]
+      (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                              [:put c/schema new-attr props :attr]
+                              [:put c/meta :last-modified
+                               (System/currentTimeMillis) :attr :long]])
+      (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
+      (set! rschema (schema->rschema schema))
+      (set! attrs (assoc attrs (:db/aid props) new-attr))
+      attrs))
 
   (datom-count [_ index]
     (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
@@ -332,6 +345,9 @@
                                  nil
                                  datoms)]
           (batch-fn batch))
+        (lmdb/transact-kv
+          lmdb
+          [[:put c/meta :max-tx (advance-max-tx this) :attr :long]])
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op
@@ -465,15 +481,75 @@
         index
         :id))))
 
+(defn- check-cardinality
+  [^Store store attr old new]
+  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (u/raise "Cardinality change is not allowed when data exist"
+                 {:attribute attr})))))
+
+(defn- check-value-type
+  [^Store store attr old new]
+  (when (not= old new)
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (u/raise "Value type change is not allowed when data exist"
+                 {:attribute attr})))))
+
+(defn- violate-unique?
+  [^Store store low-datom high-datom]
+  (let [prev-v   (volatile! nil)
+        violate? (volatile! false)
+        schema   (schema store)
+        visitor  (fn [kv]
+                   (let [^Retrieved ave (b/read-buffer (lmdb/k kv) :ave)
+                         v              (.-v ave)]
+                     (if (= @prev-v v)
+                       (do (vreset! violate? true)
+                           :datalevin/terminate-visit)
+                       (vreset! prev-v v))))]
+    (lmdb/visit (.-lmdb store) c/ave visitor
+                [:open
+                 (low-datom->indexable schema low-datom)
+                 (high-datom->indexable schema high-datom)]
+                :ave)
+    @violate?))
+
+(defn- check-unique
+  [store attr old new]
+  (when (and (not old) new)
+    (let [low-datom  (d/datom c/e0 attr c/v0)
+          high-datom (d/datom c/emax attr c/vmax)]
+      (when (populated? store :ave low-datom high-datom)
+        (when (violate-unique? store low-datom high-datom)
+          (u/raise "Attribute uniqueness change is inconsistent with data"
+                   {:attribute attr}))))))
+
+(defn- check [store attr old new]
+  (doseq [[k v] new
+          :let  [v' (old k)]]
+    (case k
+      :db/cardinality (check-cardinality store attr v' v)
+      :db/valueType   (check-value-type store attr v' v)
+      :db/unique      (check-unique store attr v' v)
+      :pass-through)))
+
 (defn- insert-data
   [^Store store ^Datom d ft-ds]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
+        vt     (:db/valueType props)
+        ref?   (= :db.type/ref vt)
+        v      (.-v d)
+        i      (b/indexable (.-e d) (:db/aid props) v vt)
         max-gt (max-gt store)]
+    (or (not (:validate-data? (.-opts store)))
+        (b/valid-data? v vt)
+        (u/raise "Invalid data, expecting " vt {:input v}))
     (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
@@ -489,9 +565,9 @@
 (defn- delete-data
   [^Store store ^Datom d ft-ds]
   (let [props  ((schema store) (.-a d))
-        ref?   (= :db.type/ref (:db/valueType props))
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d)
-                            (:db/valueType props))
+        vt     (:db/valueType props)
+        ref?   (= :db.type/ref vt)
+        i      (b/indexable (.-e d) (:db/aid props) (.-v d) vt)
         giant? (b/giant? i)
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
@@ -512,6 +588,16 @@
   [lmdb]
   (into {} (lmdb/get-range lmdb c/opts [:all] :attr :data)))
 
+(defn- open-dbis
+  [lmdb]
+  (lmdb/open-dbi lmdb c/eav {:key-size c/+max-key-size+ :val-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/ave {:key-size c/+max-key-size+ :val-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/vea {:key-size c/+max-key-size+ :val-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
+  (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
+  (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
+  (lmdb/open-dbi lmdb c/opts {:key-size c/+max-key-size+}))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -520,23 +606,21 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema opts]
+  ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?]
+                :or   {validate-data?    false
+                       auto-entity-time? false}
+                :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
-         lmdb (lmdb/open-kv dir)]
-     (lmdb/open-dbi lmdb c/eav c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/ave c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/vea c/+max-key-size+ c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/giants c/+id-bytes+)
-     (lmdb/open-dbi lmdb c/schema c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/meta c/+max-key-size+)
-     (lmdb/open-dbi lmdb c/opts c/+max-key-size+)
-     (when opts (transact-opts lmdb opts))
+         lmdb (lmdb/open-kv dir kv-opts)]
+     (open-dbis lmdb)
+     (transact-opts lmdb opts)
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
-                (s/new-search-engine lmdb (:search-engine opts))
+                (s/new-search-engine lmdb search-opts)
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)
                 (init-attrs schema)
-                (init-max-aid lmdb)
-                (init-max-gt lmdb))))))
+                (init-max-aid schema)
+                (init-max-gt lmdb)
+                (init-max-tx lmdb))))))

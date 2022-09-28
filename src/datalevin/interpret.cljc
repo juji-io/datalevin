@@ -12,9 +12,11 @@
             [datalevin.util :as u]
             [datalevin.core]
             [datalevin.client]
+            [datalevin.constants]
             [clojure.string :as s])
   (:import [clojure.lang AFn]
            [datalevin.datom Datom]
+           [java.text Normalizer Normalizer$Form]
            [java.io DataInput DataOutput Writer]))
 
 (if (u/graal?)
@@ -22,7 +24,7 @@
   (require 'datalevin.binding.java))
 
 (def ^:no-doc user-facing-ns
-  #{'datalevin.core 'datalevin.client 'datalevin.interpret})
+  #{'datalevin.core 'datalevin.client 'datalevin.interpret 'datalevin.constants})
 
 (defn- user-facing? [v]
   (let [m (meta v)
@@ -35,15 +37,12 @@
          (not (s/starts-with? d "Positional factory function for class")))))
 
 (defn ^:no-doc user-facing-map [ns var-map]
-  (let [sci-ns (vars/->SciNamespace ns nil)]
+  (let [sci-ns (sci/create-ns ns)]
     (reduce
       (fn [m [k v]]
-        (assoc m k (vars/->SciVar v
-                                  (symbol v)
-                                  (assoc (meta v)
-                                         :sci.impl/built-in true
-                                         :ns sci-ns)
-                                  false)))
+        (assoc m k (sci/new-var (symbol v) v (assoc (meta v)
+                                                    :sci.impl/built-in true
+                                                    :ns sci-ns))))
       {}
       (select-keys var-map
                    (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
@@ -176,6 +175,8 @@
 
 (def ^:no-doc sci-opts
   {:namespaces (user-facing-vars)
-   :classes    {:allow :all}})
+   :classes    {:allow                     :all
+                'java.text.Normalizer      java.text.Normalizer
+                'java.text.Normalizer$Form java.text.Normalizer$Form}})
 
 (def ^:no-doc ctx (sci/init sci-opts))

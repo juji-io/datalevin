@@ -1,4 +1,4 @@
-(ns datalevin.lmdb
+(ns ^:no-doc datalevin.lmdb
   "API for LMDB Key Value Store"
   (:require [datalevin.util :as u]))
 
@@ -56,17 +56,13 @@
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
   (open-dbi
-    ;; [db]
     [db dbi-name]
-    [db dbi-name key-size]
-    [db dbi-name key-size val-size]
-    [db dbi-name key-size val-size flags]
+    [db dbi-name opts]
     "Open a named DBI (i.e. sub-db) in the LMDB env")
 
   (open-inverted-list
     [db list-name]
-    [db list-name item-size]
-    [db list-name key-size item-size]
+    [db list-name opts]
     "Open a named inverted list, a special dbi, that permits a list of
      values for the same key, with some corresponding special functions")
 
