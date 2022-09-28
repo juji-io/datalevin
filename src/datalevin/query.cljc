@@ -1178,8 +1178,8 @@
         find-vars     (dp/find-vars find)
         result-arity  (count find-elements)
         with          (:qwith parsed-q)
-        deadline      (:qdeadline parsed-q)]
-    (binding [timeout/*deadline* deadline]
+        timeout      (:qtimeout parsed-q)]
+    (binding [timeout/*deadline* (timeout/to-deadline timeout)]
       (let [;; TODO utilize parser
             all-vars      (concat find-vars (map :symbol with))
             q             (cond-> q
