@@ -55,3 +55,4 @@ native/test-jar/jar-test
 
 .lsp/.cache
 .portal
+output.calva-repl
