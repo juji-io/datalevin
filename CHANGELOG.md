@@ -1,11 +1,16 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] Caching issue introduced in 0.6.20 (thx @cgrand)
+
 ## 0.6.20
 ### Added
 - [Pod] `entity` and `touch` function to babashka pod, these return regular
   maps, as the `Entity` type does not exist in a babashka script. #148 (thx
   @ngrunwald)
-- [Datalog] `:timeout` option to terminate on deadline for query/pull. #150 (thx cgrand).
+- [Datalog] `:timeout` option to terminate on deadline for query/pull. #150 (thx
+  @cgrand).
 
 ## 0.6.19
 ### Changed
