@@ -52,3 +52,7 @@ native/test-jar/jar-test
 */reports/
 */*/reports/
 *.build_artifacts.txt
+
+.lsp/.cache
+.portal
+output.calva-repl
