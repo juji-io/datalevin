@@ -429,9 +429,7 @@ Datalevin packages the underlying LMDB database as a convenient key-value store
 for EDN data.
 
 ```clojure
-(require '[datalevin.core :as d]
-         '[datalevin.scan :as scan]
-         '[datalevin.bits :as b])
+(require '[datalevin.core :as d])
 (import '[java.util Date])
 
 ;; Open a key value DB on disk and get the DB handle
@@ -464,38 +462,41 @@ for EDN data.
 ;; => {:saying "So Long, and thanks for all the fish",
 ;;     :source "The Hitchhiker's Guide to the Galaxy"}
 
-;; Delete some data
-(d/transact-kv db [[:del misc-table 42]])
-
-;; Now it's gone
-(d/get-value db misc-table 42)
-;; => nil
 
 ;; Range query, from unix epoch time to now
 (d/get-range db date-table [:closed (Date. 0) (Date.)] :instant)
 ;; => [[#inst "1989-11-09T00:00:00.000-00:00" "The fall of the Berlin Wall"]
 ;;     [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
 
-;; This returns a PersistentVector - e.g. reads all data in JVM memory 
+;; This returns a PersistentVector - e.g. reads all data in JVM memory
 (d/get-range db misc-table [:all])
+;; => [[42 {:saying "So Long, and thanks for all the fish",
+;;          :source "The Hitchhiker's Guide to the Galaxy"}]
+;;     [:datalevin "Hello, world!"]]
 
-;; This allows you to iterate over all DB keys inside a transaction. 
+;; This allows you to iterate over all DB keys inside a transaction.
 ;; You can perform writes inside the transaction.
 ;; kv is of of type https://www.javadoc.io/doc/org.lmdbjava/lmdbjava/latest/org/lmdbjava/CursorIterable.KeyVal.html
-;; Avoid long-lived transactions. Read transactions prevent reuse of pages freed by newer write transactions, thus the database can grow quickly. 
+;; Avoid long-lived transactions. Read transactions prevent reuse of pages freed by newer write transactions, thus the database can grow quickly.
 ;; Write transactions prevent other write transactions, since writes are serialized.
 ;; LMDB advice: http://www.lmdb.tech/doc/index.html
 ;; Conclusion: It's ok to have long transactions if using a single thread.
-(scan/visit db misc-table
-            (fn [kv]               
-               (let [k (b/read-buffer (.key kv) :data)
-                     v (b/read-buffer (.val kv) :data)]
+(d/visit db misc-table
+            (fn [kv]
+               (let [k (d/read-buffer (.key kv) :data)]
                   (when (= k 42)
                     (d/transact-kv db [[:put misc-table 42 "Don't panic"]]))))
-              [:all] :any)
-              
-(d/get-range db misc-table [:all])              
+              [:all])
+
+(d/get-range db misc-table [:all])
 ;; => [[42 "Don't panic"] [:datalevin "Hello, world!"]]
+
+;; Delete some data
+(d/transact-kv db [[:del misc-table 42]])
+
+;; Now it's gone
+(d/get-value db misc-table 42)
+;; => nil
 
 ;; Close key value db
 (d/close-kv db)

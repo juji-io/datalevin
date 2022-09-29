@@ -9,7 +9,8 @@
             [clojure.string :as str]
             #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
                :clj  [clojure.test :as t :refer [is are deftest testing]])
-            [datalevin.datom :as d])
+            [datalevin.datom :as d]
+            [datalevin.lmdb :as l])
   (:import [java.util UUID Arrays]
            [java.nio.charset StandardCharsets]
            [java.lang Thread]
@@ -1196,3 +1197,32 @@
 
     (sut/close conn)
     (s/stop server)))
+
+(deftest kv-test
+  (let [dir  (u/tmp-dir (str "datalevin-kv-test-" (UUID/randomUUID)))
+        lmdb (sut/open-kv dir)]
+    (sut/open-dbi lmdb "misc")
+
+    (sut/transact-kv
+      lmdb
+      [[:put "misc" :datalevin "Hello, world!"]
+       [:put "misc" 42 {:saying "So Long, and thanks for all the fish"
+                        :source "The Hitchhiker's Guide to the Galaxy"}]])
+    (is (= [[42
+             {:saying "So Long, and thanks for all the fish",
+              :source "The Hitchhiker's Guide to the Galaxy"}]
+            [:datalevin "Hello, world!"]]
+           (sut/get-range lmdb "misc" [:all])))
+
+    (sut/visit
+      lmdb "misc"
+      (fn [kv]
+        (let [k (sut/read-buffer (sut/k kv) :data)]
+          (when (= k 42)
+            (sut/transact-kv
+              lmdb
+              [[:put "misc" 42 "Don't panic"]]))))
+      [:all])
+    (is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
+           (sut/get-range lmdb "misc" [:all])))
+    (sut/close-kv lmdb)))
