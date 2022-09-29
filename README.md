@@ -483,7 +483,7 @@ for EDN data.
 ;; Conclusion: It's ok to have long transactions if using a single thread.
 (d/visit db misc-table
             (fn [kv]
-               (let [k (d/read-buffer (.key kv) :data)]
+               (let [k (d/read-buffer (d/k kv) :data)]
                   (when (= k 42)
                     (d/transact-kv db [[:put misc-table 42 "Don't panic"]]))))
               [:all])
