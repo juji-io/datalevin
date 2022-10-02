@@ -55,6 +55,7 @@
   (q [store query inputs]
     "For special case of queries with a single remote store as source,
      send the query and inputs over to remote server")
+  (fulltext-datoms [store query opts])
   (tx-data [store data simulated?]
     "Send to remote server the data from call to `db/transact-tx-data`"))
 
@@ -163,6 +164,8 @@
   IRemoteDB
   (q [_ query inputs]
     (cl/normal-request client :q [db-name query inputs]))
+  (fulltext-datoms [_ query opts]
+    (cl/normal-request client :fulltext-datoms [db-name query opts]))
   (tx-data [store data simulated?]
     (load-datoms* client db-name data :txs simulated?)))
 

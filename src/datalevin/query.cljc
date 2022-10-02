@@ -208,7 +208,7 @@
   (reduce (fn [a b]
             (if b (reduced b) b)) nil args))
 
-(defn- fulltext
+(defn fulltext
   ([db query]
    (fulltext db query nil))
   ([^DB db query opts]

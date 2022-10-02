@@ -139,6 +139,14 @@
    (when-let [d (get @dl-dbs db)]
      (map dd/datom-eav (d/seek-datoms d index c1 c2 c3 c4)))))
 
+(defn fulltext-datoms
+  ([{:keys [::db]} query]
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/fulltext-datoms d query))))
+  ([{:keys [::db]} query opts]
+   (when-let [d (get @dl-dbs db)]
+     (map dd/datom-eav (d/fulltext-datoms d query opts)))))
+
 (defn rseek-datoms
   ([{:keys [::db]} index]
    (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/rseek-datoms d index))))
@@ -368,6 +376,7 @@
    'close-db           close-db
    'datoms             datoms
    'seek-datoms        seek-datoms
+   'fulltext-datoms    fulltext-datoms
    'rseek-datoms       rseek-datoms
    'index-range        index-range
    'conn?              conn?

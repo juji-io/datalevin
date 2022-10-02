@@ -406,6 +406,15 @@ Only usable for debug output.
   ([db index c1 c2 c3]    {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3]))
   ([db index c1 c2 c3 c4] {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3 c4])))
 
+(defn fulltext-datoms
+  "Return datoms that found by the given fulltext search query"
+  ([db query]
+   (fulltext-datoms db query nil))
+  ([^DB db query opts]
+   (let [store (.-store db)]
+     (if (instance? DatalogStore store)
+       (r/fulltext-datoms store query opts)
+       (dq/fulltext db query opts)))))
 
 (defn index-range
   "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
@@ -1357,7 +1366,7 @@ the `pred`.
   ([lmdb]
    (new-search-engine lmdb nil))
   ([lmdb opts]
-   (if (instance? datalevin.remote.KVStore lmdb)
+   (if (instance? KVStore lmdb)
      (r/new-search-engine lmdb opts)
      (sc/new-search-engine lmdb opts))))
 
@@ -1429,7 +1438,7 @@ words.
   ([lmdb]
    (search-index-writer lmdb nil))
   ([lmdb opts]
-   (if (instance? datalevin.remote.KVStore lmdb)
+   (if (instance? KVStore lmdb)
      (r/search-index-writer lmdb opts)
      (sc/search-index-writer lmdb opts))))
 

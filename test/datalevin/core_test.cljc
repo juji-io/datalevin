@@ -843,17 +843,22 @@
                    (map-indexed (fn [i ^String t]
                                   [t i (.indexOf text t)])
                                 (str/split text #"\s")))
-        conn     (sut/create-conn (u/tmp-dir (str "fulltext-fns-" (UUID/randomUUID)))
+        conn     (sut/create-conn (u/tmp-dir (str "fulltext-fns-"
+                                                  (UUID/randomUUID)))
                                   {:a/string {:db/valueType :db.type/string
                                               :db/fulltext  true}}
                                   {:auto-entity-time? true
-                                   :search-engine     {:analyzer analyzer}})
+                                   :search-opts       {:analyzer analyzer}})
         s        "The quick brown fox jumps over the lazy dog"]
     (sut/transact! conn [{:a/string s}])
     (is (= (sut/q '[:find ?v .
                     :in $ ?q
                     :where [(fulltext $ ?q) [[?e ?a ?v]]]]
-                  (sut/db conn) "brown fox") s))
+                  (sut/db conn) "brown fox")
+           s))
+    (is (= (sut/datom-v
+             (first (sut/fulltext-datoms (sut/db conn) "brown fox")))
+           s))
     (sut/close conn)))
 
 (deftest remote-fulltext-fns-test
@@ -887,6 +892,9 @@
                   db "red fox")
            #{[1 :text "The quick red fox jumped over the lazy red dogs."]
              [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
+    (is (= (sut/datom-v
+             (first (sut/fulltext-datoms db "red fox")))
+           "The quick red fox jumped over the lazy red dogs."))
     (sut/close-db db)
     (s/stop server)))
 

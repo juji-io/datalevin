@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Added
+- [Datalog] `fulltext-datoms` function that return datoms that found by full
+  text search query
+
 ## 0.6.21
 ### Fixed
 - [Datalog] Caching issue introduced in 0.6.20 (thx @cgrand)

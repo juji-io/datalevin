@@ -1661,6 +1661,16 @@
           (copy-out skey data c/+wire-datom-batch-size+))
         (write-message skey {:type :command-complete :result data})))))
 
+(defn- fulltext-datoms
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[db-name query opts] args
+          db                   (get-db server db-name)
+          data                 (q/fulltext db query opts)]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
 (defn- add-doc
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error (search-handler add-doc)))
@@ -1774,6 +1784,7 @@
    'range-filter-count
    'visit
    'q
+   'fulltext-datoms
    'new-search-engine
    'add-doc
    'remove-doc
