@@ -212,8 +212,9 @@
   ([db query]
    (fulltext db query nil))
   ([^DB db query opts]
-   (let [^SearchEngine engine (.-search-engine ^Store (.-store db))]
-     (s/search engine query opts))))
+   (when-not (str/blank? query)
+     (let [^SearchEngine engine (.-search-engine ^Store (.-store db))]
+       (s/search engine query opts)))))
 
 (def built-ins {'=                           =,
                 '==                          ==,

@@ -856,6 +856,10 @@
                     :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                   (sut/db conn) "brown fox")
            s))
+    (is (empty? (sut/q '[:find ?v .
+                         :in $ ?q
+                         :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                       (sut/db conn) "")))
     (is (= (sut/datom-v
              (first (sut/fulltext-datoms (sut/db conn) "brown fox")))
            s))
@@ -892,6 +896,10 @@
                   db "red fox")
            #{[1 :text "The quick red fox jumped over the lazy red dogs."]
              [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
+    (is (empty? (sut/q '[:find ?e ?a ?v
+                         :in $ ?q
+                         :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                       db "")))
     (is (= (sut/datom-v
              (first (sut/fulltext-datoms db "red fox")))
            "The quick red fox jumped over the lazy red dogs."))
