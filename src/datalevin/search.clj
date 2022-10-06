@@ -364,39 +364,40 @@
                        :or   {display    :refs
                               top        10
                               doc-filter (constantly true)}}]
-    (let [tokens (->> (query-analyzer query)
-                      (mapv first)
-                      (into-array String))
-          qterms (->> (hydrate-query this max-doc tokens)
-                      (sort-by :df)
-                      vec)
-          n      (count qterms)]
-      (when-not (zero? n)
-        (let [tids    (mapv :id qterms)
-              sls     (mapv :sl qterms)
-              bms     (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
-                                         sls))
-              sls     (zipmap tids sls)
-              tms     (zipmap tids (mapv :tm qterms))
-              mws     (get-ws tids qterms :mw)
-              wqs     (get-ws tids qterms :wq)
-              mxs     (get-mxs tids wqs mws)
-              result  (RoaringBitmap.)
-              scoring (score-docs n tids sls bms mxs wqs norms result)]
-          (sequence
-            (display-xf this doc-filter display tms)
-            (persistent!
-              (reduce
-                (fn [coll tao]
-                  (let [so-far (count coll)
-                        to-get (- top so-far)]
-                    (if (< 0 to-get)
-                      (let [^PriorityQueue pq (priority-queue to-get)]
-                        (scoring pq tao)
-                        (pouring coll pq result))
-                      (reduced coll))))
-                (transient [])
-                (range n 0 -1))))))))
+    (when-not (s/blank? query)
+      (let [tokens (->> (query-analyzer query)
+                        (mapv first)
+                        (into-array String))
+            qterms (->> (hydrate-query this max-doc tokens)
+                        (sort-by :df)
+                        vec)
+            n      (count qterms)]
+        (when-not (zero? n)
+          (let [tids    (mapv :id qterms)
+                sls     (mapv :sl qterms)
+                bms     (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
+                                           sls))
+                sls     (zipmap tids sls)
+                tms     (zipmap tids (mapv :tm qterms))
+                mws     (get-ws tids qterms :mw)
+                wqs     (get-ws tids qterms :wq)
+                mxs     (get-mxs tids wqs mws)
+                result  (RoaringBitmap.)
+                scoring (score-docs n tids sls bms mxs wqs norms result)]
+            (sequence
+              (display-xf this doc-filter display tms)
+              (persistent!
+                (reduce
+                  (fn [coll tao]
+                    (let [so-far (count coll)
+                          to-get (- top so-far)]
+                      (if (< 0 to-get)
+                        (let [^PriorityQueue pq (priority-queue to-get)]
+                          (scoring pq tao)
+                          (pouring coll pq result))
+                        (reduced coll))))
+                  (transient [])
+                  (range n 0 -1)))))))))
 
   (analyzer [_]
     analyzer)

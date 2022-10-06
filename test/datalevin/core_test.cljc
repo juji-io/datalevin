@@ -845,12 +845,18 @@
                                 (str/split text #"\s")))
         conn     (sut/create-conn (u/tmp-dir (str "fulltext-fns-"
                                                   (UUID/randomUUID)))
-                                  {:a/string {:db/valueType :db.type/string
+                                  {:a/id     {:db/valueType :db.type/long
+                                              :db/unique    :db.unique/identity
+                                              }
+                                   :a/string {:db/valueType :db.type/string
+                                              :db/fulltext  true}
+                                   :b/string {:db/valueType :db.type/string
                                               :db/fulltext  true}}
                                   {:auto-entity-time? true
                                    :search-opts       {:analyzer analyzer}})
         s        "The quick brown fox jumps over the lazy dog"]
-    (sut/transact! conn [{:a/string s}])
+    (sut/transact! conn [{:a/id 1 :a/string s :b/string ""}])
+    (sut/transact! conn [{:a/id 1 :a/string s :b/string "bar"}])
     (is (= (sut/q '[:find ?v .
                     :in $ ?q
                     :where [(fulltext $ ?q) [[?e ?a ?v]]]]

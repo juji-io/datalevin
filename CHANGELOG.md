@@ -2,8 +2,11 @@
 
 ## WIP
 ### Added
-- [Datalog] `fulltext-datoms` function that return datoms that found by full
-  text search query
+- [Datalog] `fulltext-datoms` function that return datoms found by full
+  text search query, #157
+### Fixed
+- [Search] Don't throw for blank search query, return `nil` instead, #158
+- [Datalog] Correctly handle transacting empty string as a full text value, #159
 
 ## 0.6.21
 ### Fixed

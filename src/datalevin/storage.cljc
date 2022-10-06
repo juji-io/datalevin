@@ -5,7 +5,9 @@
             [datalevin.bits :as b]
             [datalevin.search :as s]
             [datalevin.constants :as c]
-            [datalevin.datom :as d])
+            [datalevin.datom :as d]
+            [clojure.string :as str]
+            )
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -550,7 +552,8 @@
     (or (not (:validate-data? (.-opts store)))
         (b/valid-data? v vt)
         (u/raise "Invalid data, expecting " vt {:input v}))
-    (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
+    (when (and (:db/fulltext props) (not (str/blank? (str v))))
+      (vswap! ft-ds conj [:a d]))
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
                 [:put c/ave i max-gt :ave :id]
@@ -567,11 +570,13 @@
   (let [props  ((schema store) (.-a d))
         vt     (:db/valueType props)
         ref?   (= :db.type/ref vt)
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d) vt)
+        v      (.-v d)
+        i      (b/indexable (.-e d) (:db/aid props) v vt)
         giant? (b/giant? i)
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (when (:db/fulltext props) (vswap! ft-ds conj [:d d]))
+    (when (and (:db/fulltext props) (not (str/blank? (str v))))
+      (vswap! ft-ds conj [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
