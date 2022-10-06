@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.22
 ### Added
 - [Datalog] `fulltext-datoms` function that return datoms found by full
   text search query, #157
