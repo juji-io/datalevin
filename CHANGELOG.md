@@ -8,7 +8,7 @@
 - [Search] Don't throw for blank search query, return `nil` instead, #158
 - [Datalog] Correctly handle transacting empty string as a full text value, #159
 ### Improved
-- Datalevin is now usable in deps.edn (thx @ieugen), #98.
+- Datalevin is now usable in deps.edn, #98 (thx @ieugen)
 
 ## 0.6.21
 ### Fixed

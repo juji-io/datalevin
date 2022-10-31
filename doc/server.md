@@ -189,9 +189,9 @@ built-in role `:datalevin.role/datalevin`. This role is granted the permission
 :datalevin.server/server}`, which permits the role to do everything on the
 server.
 
-In the command line REPL, after connecting to a server, issue [`(create-user
-...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-create-user) to create a user, [`(create-role ...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-create-role) to create a role, [`(assign-role
-...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-assign-role) to assign a role to a user, [`(grant-permission ...)`](https://juji-io.github.io/datalevin/datalevin.client.html#var-grant-permission) to grant a permission
+In the command line REPL, after connecting to a server, issue `(create-user
+...)` to create a user, `(create-role ...)` to create a role, `(assign-role
+...)` to assign a role to a user, `(grant-permission ...)` to grant a permission
 to a role.
 
 User password is stored as a salt and a hash. The password hashing algorithm

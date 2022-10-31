@@ -65,8 +65,8 @@ user> (+ 1 2 3 4)
 user>
 ```
 
-As a REPL for Datalevin, all Datalevin [public
-functions](https://juji-io.github.io/datalevin/index.html) can be directly used, without
+As a REPL for Datalevin, all Datalevin public
+functions can be directly used, without
 needing to require the namespace.
 
 ```console
