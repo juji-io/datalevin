@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.scan
-  "Index scan routines"
+  "Index scan routines common to all bindings"
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :refer [raise]]
@@ -139,12 +139,16 @@
   `(do
      (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
      (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
-           ~'rtx (l/get-rtx ~'lmdb)]
+           ~'rtx (if (l/writing? ~'lmdb)
+                   @(l/write-txn ~'lmdb)
+                   (l/get-rtx ~'lmdb))]
        (try
          ~call
          (catch Exception ~'e
            ~error)
-         (finally (l/return-rtx ~'lmdb ~'rtx))))))
+         (finally
+           (when-not (l/writing? ~'lmdb)
+             (l/return-rtx ~'lmdb ~'rtx)))))))
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]

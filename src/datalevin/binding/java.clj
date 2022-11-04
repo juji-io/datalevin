@@ -6,7 +6,7 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB]]
+                     IDB IKV IInvertedList ILMDB IWritingLMDB]]
             [clojure.stacktrace :as st])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
@@ -263,6 +263,9 @@
                ^ByteBuffer start-kb-w
                ^ByteBuffer stop-kb-w
                write-txn]
+  IWritingLMDB
+  (writing? [_] false)
+
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -431,22 +434,23 @@
 
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (try
-      (if @write-txn
-        (transact* txs dbis (.-txn ^Rtx @write-txn))
-        (with-open [txn (.txnWrite env)]
-          (transact* txs dbis txn)
-          (.commit txn)))
-      :transacted
-      (catch Env$MapFullException _
-        (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
-        (up-db-size env)
+    (locking  write-txn
+      (try
         (if @write-txn
-          (raise "Map is resized" {:resized true})
-          (.transact-kv this txs)))
-      (catch Exception e
-        (st/print-stack-trace e)
-        (raise "Fail to transact to LMDB: " (ex-message e) {}))))
+          (transact* txs dbis (.-txn ^Rtx @write-txn))
+          (with-open [txn (.txnWrite env)]
+            (transact* txs dbis txn)
+            (.commit txn)))
+        :transacted
+        (catch Env$MapFullException _
+          (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
+          (up-db-size env)
+          (if @write-txn
+            (raise "Map is resized" {:resized true})
+            (.transact-kv this txs)))
+        (catch Exception e
+          (st/print-stack-trace e)
+          (raise "Fail to transact to LMDB: " (ex-message e) {})))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -642,6 +646,8 @@
           (finally (.return-rtx this rtx)
                    (.return-cursor dbi cur))))
       false)))
+
+
 
 (defmethod open-kv :java
   ([dir]

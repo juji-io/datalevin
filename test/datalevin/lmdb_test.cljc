@@ -1,5 +1,6 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as l]
+            [datalevin.writing-lmdb :as w]
             [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
@@ -114,6 +115,8 @@
           (is (thrown? Exception (l/get-value lmdb "a" 1)))
           (l/close-kv lmdb))))
     (u/delete-files dir)))
+
+
 
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
@@ -555,4 +558,45 @@
                        #{"org.eclipse.collections.impl.list.mutable.FastList"}]
                (l/get-value lmdb "a" 1)))))
     (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest read-during-transaction-test
+  (let [dir   (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
+        lmdb  (l/open-kv dir)
+        lmdb1 (w/->WritingLMDB lmdb)]
+    (l/open-dbi lmdb "a")
+    (l/open-dbi lmdb "d")
+
+    (l/open-transact-kv lmdb)
+
+    (testing "get-value"
+      (is (nil? (l/get-value lmdb1 "a" 1 :data :data false)))
+      (l/transact-kv lmdb
+                     [[:put "a" 1 2]
+                      [:put "a" 'a 1]
+                      [:put "a" 5 {}]
+                      [:put "a" :annunaki/enki true :attr :data]
+                      [:put "a" :datalevin ["hello" "world"]]
+                      [:put "a" 42 (d/datom 1 :a/b {:id 4}) :long :datom]])
+
+      (is (= [1 2] (l/get-value lmdb1 "a" 1 :data :data false)))
+      ;; non-writing txn will still read pre-transaction values
+      (is (nil? (l/get-value lmdb "a" 1 :data :data false)))
+
+      (is (nil? (l/get-value lmdb1 "d" #inst "1969-01-01" :instant :string
+                             true)))
+      (l/transact-kv lmdb
+                     [[:put "d" 3.14 :pi :double :keyword]
+                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]])
+      (is (= "nice year"
+             (l/get-value lmdb1 "d" #inst "1969-01-01" :instant :string
+                          true)))
+      (is (nil? (l/get-value lmdb "d" #inst "1969-01-01" :instant :string
+                             true))))
+
+    (l/close-transact-kv lmdb)
+
+    (testing "entries after transaction"
+      (is (= 6 (l/entries lmdb "a")))
+      (is (= 2 (l/entries lmdb "d"))))
     (u/delete-files dir)))
