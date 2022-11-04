@@ -13,6 +13,8 @@
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
 (defprotocol IRtx
+  (read-only? [this] "is this a read only transaction")
+  (get-txn [this] "access the transaction object")
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
@@ -86,6 +88,9 @@
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-rtx [db])
   (return-rtx [db rtx])
+  (open-transact-kv [db] "open and return a read/write rtx")
+  (close-transact-kv [db] "close and commit the read/write rtx")
+  (write-txn [db] "return the write-txn")
   (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.")
   (get-value

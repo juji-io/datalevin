@@ -6,7 +6,8 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB]])
+                     IDB IKV IInvertedList ILMDB]]
+            [clojure.stacktrace :as st])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
@@ -135,6 +136,10 @@
                  {:value x :type t})))))
 
   IRtx
+  (read-only? [_]
+    (.isReadOnly txn))
+  (get-txn [_]
+    txn)
   (close-rtx [_]
     (.close txn))
   (reset [this]
@@ -210,9 +215,10 @@
   (iterate-kv [_ rtx range-info]
     (.iterate db (.-txn ^Rtx rtx) range-info))
   (get-cursor [_ txn]
-    (or (when-let [^Cursor cur (.poll curs)]
-          (.renew cur txn)
-          cur)
+    (or (when (.isReadOnly ^Txn txn)
+          (when-let [^Cursor cur (.poll curs)]
+            (.renew cur txn)
+            cur))
         (.openCursor db txn)))
   (return-cursor [this cur]
     (.add curs cur)))
@@ -223,37 +229,40 @@
 
 
 (defn- transact*
-  [^Env env txs ^UnifiedMap dbis]
-  (with-open [txn (.txnWrite env)]
-    (doseq [[op dbi-name k & r] txs]
-      (let [^DBI dbi (or (.get dbis dbi-name)
-                         (raise dbi-name " is not open" {}))]
-        (case op
-          :put      (let [[v kt vt flags] r]
-                      (.put-key dbi k kt)
+  [txs ^UnifiedMap dbis txn]
+  (doseq [[op dbi-name k & r] txs]
+    (let [^DBI dbi (or (.get dbis dbi-name)
+                       (raise dbi-name " is not open" {}))]
+      (case op
+        :put      (let [[v kt vt flags] r]
+                    (.put-key dbi k kt)
+                    (.put-val dbi v vt)
+                    (if flags
+                      (.put dbi txn flags)
+                      (.put dbi txn)))
+        :del      (let [[kt] r]
+                    (.put-key dbi k kt)
+                    (.del dbi txn))
+        :put-list (let [[vs kt vt] r]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
                       (.put-val dbi v vt)
-                      (if flags
-                        (.put dbi txn flags)
-                        (.put dbi txn)))
-          :del      (let [[kt] r]
-                      (.put-key dbi k kt)
-                      (.del dbi txn))
-          :put-list (let [[vs kt vt] r]
-                      (.put-key dbi k kt)
-                      (doseq [v vs]
-                        (.put-val dbi v vt)
-                        (.put dbi txn)))
-          :del-list (let [[vs kt vt] r]
-                      (.put-key dbi k kt)
-                      (doseq [v vs]
-                        (.put-val dbi v vt)
-                        (.del dbi txn false))))))
-    (.commit txn)))
+                      (.put dbi txn)))
+        :del-list (let [[vs kt vt] r]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.del dbi txn false)))
+        (raise "Unknown kv operator: " op {})))))
 
 (deftype LMDB [^Env env
                ^String dir
                ^ConcurrentLinkedQueue pool
-               ^UnifiedMap dbis]
+               ^UnifiedMap dbis
+               ^ByteBuffer kb-w
+               ^ByteBuffer start-kb-w
+               ^ByteBuffer stop-kb-w
+               write-txn]
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -388,15 +397,55 @@
                  {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
 
+  (open-transact-kv [this]
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (try
+      (.clear kb-w)
+      (.clear start-kb-w)
+      (.clear stop-kb-w)
+      (vreset! write-txn (->Rtx this
+                                (.txnWrite env)
+                                kb-w
+                                start-kb-w
+                                stop-kb-w))
+      (catch Exception e
+        (st/print-stack-trace e)
+        (raise "Fail to open read/write transaction in LMDB: "
+               (ex-message e) {}))))
+
+  (close-transact-kv [this]
+    (try
+      (when-let [^Rtx wtxn @write-txn]
+        (when-let [^Txn txn (.-txn wtxn)]
+          (.commit txn)
+          (.close txn)
+          (vreset! write-txn nil)
+          :committed))
+      (catch Exception e
+        (st/print-stack-trace e)
+        (raise "Fail to commit read/write transaction in LMDB: "
+               (ex-message e) {}))))
+
+  (write-txn [this]
+    write-txn)
+
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
-      (transact* env txs dbis)
+      (if @write-txn
+        (transact* txs dbis (.-txn ^Rtx @write-txn))
+        (with-open [txn (.txnWrite env)]
+          (transact* txs dbis txn)
+          (.commit txn)))
       :transacted
       (catch Env$MapFullException _
+        (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
         (up-db-size env)
-        (.transact-kv this txs))
+        (if @write-txn
+          (raise "Map is resized" {:resized true})
+          (.transact-kv this txs)))
       (catch Exception e
+        (st/print-stack-trace e)
         (raise "Fail to transact to LMDB: " (ex-message e) {}))))
 
   (get-value [this dbi-name k]
@@ -610,9 +659,14 @@
            lmdb     (->LMDB env
                             dir
                             (ConcurrentLinkedQueue.)
-                            (UnifiedMap.))]
+                            (UnifiedMap.)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (volatile! nil))]
        lmdb)
      (catch Exception e
+       (st/print-stack-trace e)
        (raise
          "Fail to open database: " (ex-message e)
          {:dir dir})))))
