@@ -563,7 +563,7 @@
 (deftest read-during-transaction-test
   (let [dir   (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
         lmdb  (l/open-kv dir)
-        lmdb1 (w/->WritingLMDB lmdb)]
+        lmdb1 (w/->WritingLMDB lmdb)]  ; mark as writing
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "d")
 

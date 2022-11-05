@@ -6,7 +6,7 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB]])
+                     IDB IKV IInvertedList ILMDB IWritingLMDB]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
            [java.nio ByteBuffer BufferOverflowException]
@@ -76,7 +76,8 @@
          ^BufVal kp
          ^BufVal vp
          ^BufVal start-kp
-         ^BufVal stop-kp]
+         ^BufVal stop-kp
+         ]
 
   IBuffer
   (put-key [_ x t]
@@ -389,8 +390,8 @@
                     (.put-key dbi k kt)
                     (doseq [v vs]
                       (.put-val dbi v vt)
-                      (.del dbi txn false))))))
-  (.commit txn))
+                      (.del dbi txn false)))
+        (raise "Unknown kv operator: " op {})))))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -399,7 +400,15 @@
           ^ConcurrentLinkedQueue pool
           ^ConcurrentHashMap dbis
           ^:volatile-mutable closed?
-          writing?]
+          ^BufVal kp-w
+          ^BufVal vp-w
+          ^BufVal start-kp-w
+          ^BufVal stop-kp-w
+          write-txn]
+
+  IWritingLMDB
+  (writing? [_] false)
+
   ILMDB
   (close-kv [_]
     (when-not closed?
@@ -483,7 +492,8 @@
                  (BufVal/create c/+max-key-size+)
                  (BufVal/create 1)
                  (BufVal/create c/+max-key-size+)
-                 (BufVal/create c/+max-key-size+)))
+                 (BufVal/create c/+max-key-size+)
+                 ))
       (catch Lib$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
@@ -571,26 +581,60 @@
           (raise "Fail to get entries: " (ex-message e) {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
 
+  (open-transact-kv [this]
+    (assert (not closed?) "LMDB env is closed.")
+    (try
+      (.clear kp-w)
+      (.clear start-kp-w)
+      (.clear stop-kp-w)
+      (vreset! write-txn (->Rtx this
+                                (Txn/create env)
+                                kp-w
+                                vp-w
+                                start-kp-w
+                                stop-kp-w))
+      (catch Exception e
+        (raise "Fail to open read/write transaction in LMDB: "
+               (ex-message e) {}))))
+
+  (close-transact-kv [this]
+    (when-let [^Rtx wtxn @write-txn]
+      (when-let [^Txn txn (.-txn wtxn)]
+        (try
+          (.commit txn)
+          (vreset! write-txn nil)
+          :committed
+          (catch Exception e
+            (.close txn)
+            (vreset! write-txn nil)
+            (raise "Fail to commit read/write transaction in LMDB: "
+                   (ex-message e) {}))))))
+
+  (write-txn [this]
+    write-txn)
+
   (transact-kv [this txs]
     (assert (not closed?) "LMDB env is closed.")
-    (locking writing?
-      (let [^Txn txn (Txn/create env)]
+    (locking write-txn
+      (let [^Rtx rtx  @write-txn
+            one-shot? (nil? rtx)
+            ^Txn txn  (if one-shot? (Txn/create env) (.-txn rtx))]
         (try
-          (vreset! writing? true)
           (transact* txs dbis txn)
+          (when one-shot? (.commit txn))
           :transacted
           (catch Lib$MapFullException _
             (.close txn)
             (let [^Info info (Info/create env)]
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-              (.close info)
+              (.close info))
+            (if @write-txn
+              (raise "Map is resized" {:resized true})
               (.transact-kv this txs)))
           (catch Exception e
-            (.close txn)
-            (raise "Fail to transact to LMDB: " (ex-message e) {}))
-          (finally
-            (vreset! writing? false))))))
+            (when one-shot? (.close txn))
+            (raise "Fail to transact to LMDB: " (ex-message e) {}))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -892,7 +936,11 @@
                (ConcurrentLinkedQueue.)
                (ConcurrentHashMap.)
                false
-               (volatile! false)))
+               (BufVal/create c/+max-key-size+)
+               (BufVal/create 1)
+               (BufVal/create c/+max-key-size+)
+               (BufVal/create c/+max-key-size+)
+               (volatile! nil)))
      (catch Exception e
        (raise
          "Fail to open database: " (ex-message e)
