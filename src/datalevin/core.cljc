@@ -10,6 +10,7 @@
    [datalevin.storage :as s]
    [datalevin.constants :as c]
    [datalevin.lmdb :as l]
+   [datalevin.writing-lmdb :as w]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
@@ -813,6 +814,21 @@ Only usable for debug output.
        (let [~(first spec) conn#] ~@body)
        (finally
          (close conn#)))))
+
+(defmacro with-transaction-kv
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of key-value operations.
+
+  Writes in the body are not visible to outside readers until the end of
+  the transaction."
+  [binding & body]
+  `(let [db#              ~(second binding)
+         ~(first binding) (w/->WritingLMDB db#)]
+     (try
+       (l/open-transact-kv db#)
+       ~@body
+       (finally
+         (l/close-transact-kv db#)))))
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.

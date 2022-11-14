@@ -1248,3 +1248,28 @@
     (is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
            (sut/get-range lmdb "misc" [:all])))
     (sut/close-kv lmdb)))
+
+(deftest with-transaction-kv-test
+  (let [dir  (u/tmp-dir (str "datalevin-kv-test-" (UUID/randomUUID)))
+        lmdb (sut/open-kv dir)]
+    (sut/open-dbi lmdb "a")
+
+    (testing "new value is invisible to outside readers"
+      (sut/with-transaction-kv [db lmdb]
+        (is (nil? (l/get-value db "a" 1 :data :data false)))
+        (sut/transact-kv db [[:put "a" 1 2]
+                             [:put "a" :counter 0]])
+        (is (= [1 2] (sut/get-value db "a" 1 :data :data false)))
+        (is (nil? (sut/get-value lmdb "a" 1 :data :data false)))))
+
+    (testing "concurrent writes do not overwrite each other"
+        (let [count-f
+              (fn []
+                (sut/with-transaction-kv [db lmdb]
+                  (let [^long now (sut/get-value db "a" :counter)]
+                    (sut/transact-kv db [[:put "a" :counter (inc now)]])
+                    (sut/get-value db "a" :counter))))]
+          (is (= (set [1 2 3 4 5])
+                 (set (pcalls count-f count-f count-f count-f count-f))))))
+
+    (sut/close-kv lmdb)))
