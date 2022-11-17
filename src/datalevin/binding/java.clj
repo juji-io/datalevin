@@ -7,6 +7,7 @@
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
                      IDB IKV IInvertedList ILMDB IWritingLMDB]]
+            [datalevin.writing-lmdb :as w]
             [clojure.stacktrace :as st])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
@@ -412,6 +413,7 @@
                                   kb-w
                                   start-kb-w
                                   stop-kb-w))
+        (w/->WritingLMDB this)
         (catch Exception e
           (st/print-stack-trace e)
           (raise "Fail to open read/write transaction in LMDB: "

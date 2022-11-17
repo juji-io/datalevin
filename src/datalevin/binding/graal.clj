@@ -6,7 +6,8 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB IWritingLMDB]])
+                     IDB IKV IInvertedList ILMDB IWritingLMDB]]
+            [datalevin.writing-lmdb :as w])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
            [java.nio ByteBuffer BufferOverflowException]
@@ -594,6 +595,7 @@
                                   vp-w
                                   start-kp-w
                                   stop-kp-w))
+        (w/->WritingLMDB this)
         (catch Exception e
           (raise "Fail to open read/write transaction in LMDB: "
                  (ex-message e) {})))))

@@ -10,7 +10,6 @@
    [datalevin.storage :as s]
    [datalevin.constants :as c]
    [datalevin.lmdb :as l]
-   [datalevin.writing-lmdb :as w]
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
@@ -820,12 +819,25 @@ Only usable for debug output.
   ensuring atomicity of key-value operations.
 
   Writes in the body are not visible to outside readers until the end of
-  the transaction."
+  the transaction.
+
+  `binding` is a vector of a new identifier of the kv database with
+  a new read/write transaction attached, and the identifier of the original
+  kv database.
+
+  `body` should refer to the new identifier of the kv database.
+
+  Example:
+
+          (with-transaction-kv [db lmdb]
+            (let [^long now (get-value db \"a\" :counter)]
+              (transact-kv db [[:put \"a\" :counter (inc now)]])
+              (get-value db \"a\" :counter)))
+  "
   [binding & body]
   `(let [db#              ~(second binding)
-         ~(first binding) (w/->WritingLMDB db#)]
+         ~(first binding) (l/open-transact-kv db#)]
      (try
-       (l/open-transact-kv db#)
        ~@body
        (finally
          (l/close-transact-kv db#)))))
