@@ -364,6 +364,8 @@
 
   (transact-kv [_ txs] (l/transact-kv db txs))
 
+  (close-transact-kv [_] (l/close-transact-kv db))
+
   (get-value [this dbi-name k]
     (l/get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]

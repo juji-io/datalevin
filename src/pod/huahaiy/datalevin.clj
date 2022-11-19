@@ -360,47 +360,54 @@
    (when-let [d (get @kv-dbs kv-db)]
      (d/range-count d dbi-name pred k-range k-type))))
 
+(defn visit
+  ([{:keys [::kv-db]} dbi-name pred k-range]
+   (when-let [d (get @kv-dbs kv-db)] (d/visit d dbi-name pred k-range)))
+  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
+   (when-let [d (get @kv-dbs kv-db)]
+     (d/visit d dbi-name pred k-range k-type))))
 
 ;; pods
 
 (def ^:private exposed-vars
-  {'pod-fn             pod-fn
-   'entid              entid
-   'entity             entity
-   'touch              touch
-   'pull               pull
-   'pull-many          pull-many
-   'empty-db           empty-db
-   'db?                db?
-   'init-db            init-db
-   'close-db           close-db
-   'datoms             datoms
-   'seek-datoms        seek-datoms
-   'fulltext-datoms    fulltext-datoms
-   'rseek-datoms       rseek-datoms
-   'index-range        index-range
-   'conn?              conn?
-   'conn-from-db       conn-from-db
-   'create-conn        create-conn
-   'close              close
-   'closed?            closed?
-   'transact!          transact!
-   'db                 db
-   'schema             schema
-   'update-schema      update-schema
-   'get-conn           get-conn
-   'q                  q
-   'open-kv            open-kv
-   'close-kv           close-kv
-   'closed-kv?         closed-kv?
-   'dir                dir
-   'open-dbi           open-dbi
-   'clear-dbi          clear-dbi
-   'drop-dbi           drop-dbi
-   'list-dbis          list-dbis
-   'copy               copy
-   'stat               stat
-   'entries            entries
+  {'pod-fn          pod-fn
+   'entid           entid
+   'entity          entity
+   'touch           touch
+   'pull            pull
+   'pull-many       pull-many
+   'empty-db        empty-db
+   'db?             db?
+   'init-db         init-db
+   'close-db        close-db
+   'datoms          datoms
+   'seek-datoms     seek-datoms
+   'fulltext-datoms fulltext-datoms
+   'rseek-datoms    rseek-datoms
+   'index-range     index-range
+   'conn?           conn?
+   'conn-from-db    conn-from-db
+   'create-conn     create-conn
+   'close           close
+   'closed?         closed?
+   'transact!       transact!
+   'db              db
+   'schema          schema
+   'update-schema   update-schema
+   'get-conn        get-conn
+   'q               q
+   'open-kv         open-kv
+   'close-kv        close-kv
+   'closed-kv?      closed-kv?
+   'dir             dir
+   'open-dbi        open-dbi
+   'clear-dbi       clear-dbi
+   'drop-dbi        drop-dbi
+   'list-dbis       list-dbis
+   'copy            copy
+   'stat            stat
+   'entries         entries
+
    'transact-kv        transact-kv
    'get-value          get-value
    'get-first          get-first
@@ -409,6 +416,7 @@
    'get-some           get-some
    'range-filter       range-filter
    'range-filter-count range-filter-count
+   'visit              visit
    })
 
 (defmacro defpodfn

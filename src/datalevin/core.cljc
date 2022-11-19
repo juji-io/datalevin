@@ -814,35 +814,6 @@ Only usable for debug output.
        (finally
          (close conn#)))))
 
-(defmacro with-transaction-kv
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of key-value operations.
-
-  Writes in the body are not visible to outside readers until the end of
-  the transaction.
-
-  `binding` is a vector of a new identifier of the kv database with
-  a new read/write transaction attached, and the identifier of the original
-  kv database.
-
-  `body` should refer to the new identifier of the kv database.
-
-  Example:
-
-          (with-transaction-kv [db lmdb]
-            (let [^long now (get-value db \"a\" :counter)]
-              (transact-kv db [[:put \"a\" :counter (inc now)]])
-              (get-value db \"a\" :counter)))
-  "
-  [binding & body]
-  `(let [db# ~(second binding)]
-     (locking db#
-       (try
-         (let [~(first binding) (l/open-transact-kv db#)]
-           ~@body)
-         (finally
-           (l/close-transact-kv db#))))))
-
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
 
@@ -1049,6 +1020,43 @@ Only usable for debug output.
 (def ^{:arglists '([db dbi-name])
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries l/entries)
+
+(def ^{:arglists '([db])
+       :doc      "Return a modified KV db with a new read/write transaction attached, must call [[close-transact-kv]] to finish the transaction"}
+  open-transact-kv l/open-transact-kv)
+
+(def ^{:arglists '([db])
+       :doc      "Close the attached read/write transaction of a KV db returned by [[open-transact-kv]]"}
+  close-transact-kv l/close-transact-kv)
+
+(defmacro with-transaction-kv
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of key-value operations.
+
+  Writes in the body are not visible to outside readers until the end of
+  the transaction.
+
+  `binding` is a vector of a new identifier of the kv database with
+  a new read/write transaction attached, and the identifier of the original
+  kv database.
+
+  `body` should refer to the new identifier of the kv database.
+
+  Example:
+
+          (with-transaction-kv [db lmdb]
+            (let [^long now (get-value db \"a\" :counter)]
+              (transact-kv db [[:put \"a\" :counter (inc now)]])
+              (get-value db \"a\" :counter)))
+  "
+  [binding & body]
+  `(let [db# ~(second binding)]
+     (locking db#
+       (try
+         (let [~(first binding) (open-transact-kv db#)]
+           ~@body)
+         (finally
+           (close-transact-kv db#))))))
 
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.

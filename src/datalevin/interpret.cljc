@@ -6,7 +6,6 @@
             [clojure.pprint :as p]
             [clojure.java.io :as io]
             [sci.core :as sci]
-            [sci.impl.vars :as vars]
             [taoensso.nippy :as nippy]
             [datalevin.query :as q]
             [datalevin.util :as u]

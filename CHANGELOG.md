@@ -5,6 +5,8 @@
 ### Added
 - [KV] `with-transaction-kv` macro, allows atomic read/write within a
   transaction, e.g. to enable compare and swap semantics, #110
+- [Datalog] `with-transaction` macro, same as above
+- [Pod] missing `visit` function
 ### Improved
 - bump deps
 

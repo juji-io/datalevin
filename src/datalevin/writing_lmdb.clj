@@ -45,6 +45,8 @@
 
   (transact-kv [_ txs] (l/transact-kv lmdb txs))
 
+  (close-transact-kv [_] (l/close-transact-kv lmdb))
+
   (get-value [db dbi-name k]
     (.get-value db dbi-name k :data :data true))
   (get-value [db dbi-name k k-type]
