@@ -330,14 +330,17 @@
 
 (defn ^:no-doc normal-request
   "Send request to server and returns results. Does not use the
-  copy-in protocol. `call` is a keyword, `args` is a vector"
-  [client call args]
-  (let [{:keys [type message result]}
-        (request client {:type call :args args})]
-    (if (= type :error-response)
-      (u/raise "Request to Datalevin server failed: " message
-               {:call call :args args})
-      result)))
+  copy-in protocol. `call` is a keyword, `args` is a vector,
+  `writing?` is a boolean indicating if write-txn should be used"
+  ([client call args]
+   (normal-request client call args false))
+  ([client call args writing?]
+   (let [req {:type call :args args :writing? writing?}
+
+         {:keys [type message result]} (request client req)]
+     (if (= type :error-response)
+       (u/raise "Request to Datalevin server failed: " message req)
+       result))))
 
 ;; we do input validation and normalization in the server, as
 ;; 3rd party clients may be written

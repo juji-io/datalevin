@@ -1,5 +1,13 @@
 # Change Log
 
+## WIP
+
+### Added
+- [KV] `with-transaction-kv` macro, allows atomic read/write within a
+  transaction, e.g. to enable compare and swap semantics, #110
+### Improved
+- bump deps
+
 ## 0.6.22
 ### Added
 - [Datalog] `fulltext-datoms` function that return datoms found by full

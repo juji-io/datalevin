@@ -835,12 +835,13 @@ Only usable for debug output.
               (get-value db \"a\" :counter)))
   "
   [binding & body]
-  `(let [db#              ~(second binding)
-         ~(first binding) (l/open-transact-kv db#)]
-     (try
-       ~@body
-       (finally
-         (l/close-transact-kv db#)))))
+  `(let [db# ~(second binding)]
+     (locking db#
+       (try
+         (let [~(first binding) (l/open-transact-kv db#)]
+           ~@body)
+         (finally
+           (l/close-transact-kv db#))))))
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.

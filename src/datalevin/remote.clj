@@ -6,8 +6,7 @@
             [datalevin.storage :as s]
             [datalevin.bits :as b]
             [datalevin.search :as sc]
-            [datalevin.lmdb :as l]
-            [taoensso.nippy :as nippy]
+            [datalevin.lmdb :as l :refer [IWritingLMDB]]
             [clojure.string :as str])
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
@@ -186,11 +185,17 @@
          (->DatalogStore uri-str db-name opts client))
        (u/raise "URI should contain a database name" {})))))
 
+
 ;; remote kv store
+
+(declare ->WritingKVStore)
 
 (deftype KVStore [^String uri
                   ^String db-name
                   ^Client client]
+  IWritingLMDB
+  (writing? [_] false)
+
   ILMDB
   (close-kv [_]
     (when-not (cl/disconnected? client)
@@ -234,6 +239,12 @@
   (stat [db dbi-name] (cl/normal-request client :stat [db-name dbi-name]))
 
   (entries [db dbi-name] (cl/normal-request client :entries [db-name dbi-name]))
+
+  (open-transact-kv [db]
+    (cl/normal-request client :open-transact-kv [db-name])
+    (->WritingKVStore db))
+
+  (close-transact-kv [db] (cl/normal-request client :close-transact-kv [db-name]))
 
   (transact-kv [db txs]
     (let [{:keys [type message]}
@@ -320,6 +331,128 @@
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request client :visit
                          [db-name dbi-name frozen-visitor k-range k-type]))))
+
+(deftype WritingKVStore [^KVStore db]
+  IWritingLMDB
+  (writing? [_] true)
+
+  ILMDB
+  (close-kv [_] (l/close-kv db))
+
+  (closed-kv? [_] (l/closed-kv? db))
+
+  (dir [_] (l/dir db))
+
+  (open-dbi [this dbi-name]
+    (l/open-dbi this dbi-name nil))
+  (open-dbi [_ dbi-name opts]
+    (l/open-dbi db dbi-name opts))
+
+  (clear-dbi [_ dbi-name] (l/clear-dbi db dbi-name))
+
+  (drop-dbi [_ dbi-name] (l/drop-dbi db dbi-name))
+
+  (list-dbis [_] (l/list-dbis db))
+
+  (copy [this dest] (l/copy this dest false))
+  (copy [_ dest compact?] (l/copy db dest compact?))
+
+  (stat [this] (l/stat this nil))
+  (stat [_ dbi-name] (l/stat db dbi-name))
+
+  (entries [_ dbi-name] (l/entries db dbi-name))
+
+  (transact-kv [_ txs] (l/transact-kv db txs))
+
+  (get-value [this dbi-name k]
+    (l/get-value this dbi-name k :data :data true))
+  (get-value [this dbi-name k k-type]
+    (l/get-value this dbi-name k k-type :data true))
+  (get-value [this dbi-name k k-type v-type]
+    (l/get-value this dbi-name k k-type v-type true))
+  (get-value [_ dbi-name k k-type v-type ignore-key?]
+    (cl/normal-request
+      (.-client db) :get-value
+      [(.-db-name db) dbi-name k k-type v-type ignore-key?]
+      true))
+
+  (get-first [this dbi-name k-range]
+    (l/get-first this dbi-name k-range :data :data false))
+  (get-first [this dbi-name k-range k-type]
+    (l/get-first this dbi-name k-range k-type :data false))
+  (get-first [this dbi-name k-range k-type v-type]
+    (l/get-first this dbi-name k-range k-type v-type false))
+  (get-first [_ dbi-name k-range k-type v-type ignore-key?]
+    (cl/normal-request
+      (.-client db) :get-first
+      [(.-db-name db) dbi-name k-range k-type v-type ignore-key?]
+      true))
+
+  (get-range [this dbi-name k-range]
+    (l/get-range this dbi-name k-range :data :data false))
+  (get-range [this dbi-name k-range k-type]
+    (l/get-range this dbi-name k-range k-type :data false))
+  (get-range [this dbi-name k-range k-type v-type]
+    (l/get-range this dbi-name k-range k-type v-type false))
+  (get-range [_ dbi-name k-range k-type v-type ignore-key?]
+    (cl/normal-request
+      (.-client db) :get-range
+      [(.-db-name db) dbi-name k-range k-type v-type ignore-key?]
+      true))
+
+  (range-count [this dbi-name k-range]
+    (l/range-count this dbi-name k-range :data))
+  (range-count [_ dbi-name k-range k-type]
+    (cl/normal-request
+      (.-client db) :range-count
+      [(.-db-name db) dbi-name k-range k-type]
+      true))
+
+  (get-some [this dbi-name pred k-range]
+    (l/get-some this dbi-name pred k-range :data :data false))
+  (get-some [this dbi-name pred k-range k-type]
+    (l/get-some this dbi-name pred k-range k-type :data false))
+  (get-some [this dbi-name pred k-range k-type v-type]
+    (l/get-some this dbi-name pred k-range k-type v-type false))
+  (get-some [_ dbi-name pred k-range k-type v-type ignore-key?]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        (.-client db) :get-some
+        [(.-db-name db) dbi-name frozen-pred k-range k-type v-type
+         ignore-key?]
+        true)))
+
+  (range-filter [this dbi-name pred k-range]
+    (l/range-filter this dbi-name pred k-range :data :data false))
+  (range-filter [this dbi-name pred k-range k-type]
+    (l/range-filter this dbi-name pred k-range k-type :data false))
+  (range-filter [this dbi-name pred k-range k-type v-type]
+    (l/range-filter this dbi-name pred k-range k-type v-type false))
+  (range-filter [_ dbi-name pred k-range k-type v-type ignore-key?]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        (.-client db) :range-filter
+        [(.-db-name db) dbi-name frozen-pred k-range k-type v-type
+         ignore-key?]
+        true)))
+
+  (range-filter-count [this dbi-name pred k-range]
+    (l/range-filter-count this dbi-name pred k-range :data))
+  (range-filter-count [_ dbi-name pred k-range k-type]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        (.-client db) :range-filter-count
+        [(.-db-name db) dbi-name frozen-pred k-range k-type]
+        true)))
+
+  (visit [this dbi-name visitor k-range]
+    (l/visit this dbi-name visitor k-range :data))
+  (visit [_ dbi-name visitor k-range k-type]
+    (let [frozen-visitor (b/serialize visitor)]
+      (cl/normal-request
+        (.-client db) :visit
+        [(.-db-name db) dbi-name frozen-visitor k-range k-type]
+        true))))
 
 (defn open-kv
   "Open a remote kv store."
