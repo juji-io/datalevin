@@ -584,21 +584,20 @@
 
   (open-transact-kv [this]
     (assert (not closed?) "LMDB env is closed.")
-    (locking this
-      (try
-        (.clear kp-w)
-        (.clear start-kp-w)
-        (.clear stop-kp-w)
-        (vreset! write-txn (->Rtx this
-                                  (Txn/create env)
-                                  kp-w
-                                  vp-w
-                                  start-kp-w
-                                  stop-kp-w))
-        (w/->WritingLMDB this)
-        (catch Exception e
-          (raise "Fail to open read/write transaction in LMDB: "
-                 (ex-message e) {})))))
+    (try
+      (.clear kp-w)
+      (.clear start-kp-w)
+      (.clear stop-kp-w)
+      (vreset! write-txn (->Rtx this
+                                (Txn/create env)
+                                kp-w
+                                vp-w
+                                start-kp-w
+                                stop-kp-w))
+      (w/->WritingLMDB this)
+      (catch Exception e
+        (raise "Fail to open read/write transaction in LMDB: "
+               (ex-message e) {}))))
 
   (close-transact-kv [this]
     (when-let [^Rtx wtxn @write-txn]
