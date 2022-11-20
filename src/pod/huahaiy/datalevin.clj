@@ -41,11 +41,14 @@
 ;; uuid -> conn
 (defonce ^:private dl-conns (atom {}))
 
-;; uuid -> db
+;; uuid -> dl db
 (defonce ^:private dl-dbs (atom {}))
 
-;; uuid -> db
+;; uuid -> kv db
 (defonce ^:private kv-dbs (atom {}))
+
+;; uuid -> writing kv db
+(defonce ^:private wkv-dbs (atom {}))
 
 ;; exposed functions
 
@@ -281,133 +284,150 @@
   (when-let [d (get @kv-dbs kv-db)]
     (d/entries d dbi-name)))
 
+(defn open-transact-kv [{:keys [::kv-db] :as db}]
+  (when-let [d (get @kv-dbs kv-db)]
+    (let [wdb (d/open-transact-kv d)]
+      (swap! wkv-dbs assoc kv-db wdb)
+      (assoc db :writing? true))))
+
+(defn close-transact-kv [{:keys [::kv-db] :as db}]
+  (when-let [d (get @kv-dbs kv-db)]
+    (swap! wkv-dbs dissoc kv-db)
+    (d/close-transact-kv d)))
+
 (defn transact-kv [{:keys [::kv-db]} txs]
   (when-let [d (get @kv-dbs kv-db)]
     (d/transact-kv d txs)))
 
+(defn- get-db [{:keys [::kv-db writing?]}]
+  (if writing?
+    (get @wkv-dbs kv-db)
+    (get @kv-dbs kv-db)))
+
 (defn get-value
-  ([{:keys [::kv-db]} dbi-name k]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-value d dbi-name k)))
-  ([{:keys [::kv-db]} dbi-name k k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-value d dbi-name k k-type)))
-  ([{:keys [::kv-db]} dbi-name k k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k]
+   (when-let [d (get-db db)] (d/get-value d dbi-name k)))
+  ([db dbi-name k k-type]
+   (when-let [d (get-db db)] (d/get-value d dbi-name k k-type)))
+  ([db dbi-name k k-type v-type]
+   (when-let [d (get-db db)]
      (d/get-value d dbi-name k k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name k k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k k-type v-type ignore-key?]
+   (when-let [d (get-db db)]
      (d/get-value d dbi-name k k-type v-type ignore-key?))))
 
 (defn get-first
-  ([{:keys [::kv-db]} dbi-name k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-first d dbi-name k-range)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-first d dbi-name k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k-range]
+   (when-let [d (get-db db)] (d/get-first d dbi-name k-range)))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-db db)] (d/get-first d dbi-name k-range k-type)))
+  ([db dbi-name k-range k-type v-type]
+   (when-let [d (get-db db)]
      (d/get-first d dbi-name k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k-range k-type v-type ignore-key?]
+   (when-let [d (get-db db)]
      (d/get-first d dbi-name k-range k-type v-type ignore-key?))))
 
 (defn get-range
-  ([{:keys [::kv-db]} dbi-name k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-range d dbi-name k-range)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-range d dbi-name k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k-range]
+   (when-let [d (get-db db)] (d/get-range d dbi-name k-range)))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-db db)] (d/get-range d dbi-name k-range k-type)))
+  ([db dbi-name k-range k-type v-type]
+   (when-let [d (get-db db)]
      (d/get-range d dbi-name k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k-range k-type v-type ignore-key?]
+   (when-let [d (get-db db)]
      (d/get-range d dbi-name k-range k-type v-type ignore-key?))))
 
 (defn range-count
-  ([{:keys [::kv-db]} dbi-name k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-count d dbi-name k-range)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-count d dbi-name k-range k-type))))
+  ([db dbi-name k-range]
+   (when-let [d (get-db db)] (d/range-count d dbi-name k-range)))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-db db)] (d/range-count d dbi-name k-range k-type))))
 
 (defn get-some
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-some d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range]
+   (when-let [d (get-db db)] (d/get-some d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-db db)]
      (d/get-some d dbi-name pred k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range k-type v-type]
+   (when-let [d (get-db db)]
      (d/get-some d dbi-name pred k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range k-type v-type ignore-key?]
+   (when-let [d (get-db db)]
      (d/get-some d dbi-name pred k-range k-type v-type ignore-key?))))
 
 (defn range-filter
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-filter d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range]
+   (when-let [d (get-db db)] (d/range-filter d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-db db)]
      (d/range-filter d dbi-name pred k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range k-type v-type]
+   (when-let [d (get-db db)]
      (d/range-filter d dbi-name pred k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range k-type v-type ignore-key?]
+   (when-let [d (get-db db)]
      (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?))))
 
 (defn range-filter-count
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-count d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range]
+   (when-let [d (get-db db)] (d/range-count d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-db db)]
      (d/range-count d dbi-name pred k-range k-type))))
 
 (defn visit
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/visit d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range]
+   (when-let [d (get-db db)] (d/visit d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-db db)]
      (d/visit d dbi-name pred k-range k-type))))
 
 ;; pods
 
 (def ^:private exposed-vars
-  {'pod-fn          pod-fn
-   'entid           entid
-   'entity          entity
-   'touch           touch
-   'pull            pull
-   'pull-many       pull-many
-   'empty-db        empty-db
-   'db?             db?
-   'init-db         init-db
-   'close-db        close-db
-   'datoms          datoms
-   'seek-datoms     seek-datoms
-   'fulltext-datoms fulltext-datoms
-   'rseek-datoms    rseek-datoms
-   'index-range     index-range
-   'conn?           conn?
-   'conn-from-db    conn-from-db
-   'create-conn     create-conn
-   'close           close
-   'closed?         closed?
-   'transact!       transact!
-   'db              db
-   'schema          schema
-   'update-schema   update-schema
-   'get-conn        get-conn
-   'q               q
-   'open-kv         open-kv
-   'close-kv        close-kv
-   'closed-kv?      closed-kv?
-   'dir             dir
-   'open-dbi        open-dbi
-   'clear-dbi       clear-dbi
-   'drop-dbi        drop-dbi
-   'list-dbis       list-dbis
-   'copy            copy
-   'stat            stat
-   'entries         entries
-
+  {'pod-fn             pod-fn
+   'entid              entid
+   'entity             entity
+   'touch              touch
+   'pull               pull
+   'pull-many          pull-many
+   'empty-db           empty-db
+   'db?                db?
+   'init-db            init-db
+   'close-db           close-db
+   'datoms             datoms
+   'seek-datoms        seek-datoms
+   'fulltext-datoms    fulltext-datoms
+   'rseek-datoms       rseek-datoms
+   'index-range        index-range
+   'conn?              conn?
+   'conn-from-db       conn-from-db
+   'create-conn        create-conn
+   'close              close
+   'closed?            closed?
+   'transact!          transact!
+   'db                 db
+   'schema             schema
+   'update-schema      update-schema
+   'get-conn           get-conn
+   'q                  q
+   'open-kv            open-kv
+   'close-kv           close-kv
+   'closed-kv?         closed-kv?
+   'dir                dir
+   'open-dbi           open-dbi
+   'clear-dbi          clear-dbi
+   'drop-dbi           drop-dbi
+   'list-dbis          list-dbis
+   'copy               copy
+   'stat               stat
+   'entries            entries
+   'open-transact-kv   open-transact-kv
+   'close-transact-kv  close-transact-kv
    'transact-kv        transact-kv
    'get-value          get-value
    'get-first          get-first
@@ -423,9 +443,40 @@
   [fn-name args & body]
   `(pod-fn '~fn-name '~args '~@body))
 
+(defmacro with-transaction-kv
+  [binding & body]
+  `(let [db# ~(second binding)]
+     (try
+       (let [~(first binding) (open-transact-kv db#)]
+         ~@body)
+       (finally
+         (close-transact-kv db#)))))
+
 (def ^:private lookup
   (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
           (vals exposed-vars)))
+
+(defn- all-vars []
+  (concat (mapv (fn [k] {"name" (name k)})
+                (keys exposed-vars))
+          [{"name" "defpodfn"
+            "code"
+            "(defmacro defpodfn
+              [fn-name args & body]
+              `(pod-fn '~fn-name
+                      '~args
+                      '~@body))"}
+           {"name" "with-transaction-kv"
+            "code"
+            "(defmacro with-transaction-kv
+              [binding & body]
+              `(let [db# ~(second binding)]
+                (try
+                  (let [~(first binding) (open-transact-kv db#)]
+                    ~@body)
+                  (finally
+                    (close-transact-kv db#)))))"}
+           ]))
 
 (defn run []
   (loop []
@@ -439,16 +490,7 @@
             :describe
             (do (write {"format"     "transit+json"
                         "namespaces" [{"name" "pod.huahaiy.datalevin"
-                                       "vars"
-                                       (conj (mapv (fn [k] {"name" (name k)})
-                                                   (keys exposed-vars))
-                                             {"name" "defpodfn"
-                                              "code"
-                                              "(defmacro defpodfn
-                                                 [fn-name args & body]
-                                                 `(pod-fn '~fn-name
-                                                          '~args
-                                                          '~@body))"})}]
+                                       "vars" (all-vars)}]
                         "id"         id
                         "ops"        {"shutdown" {}}})
                 (recur))

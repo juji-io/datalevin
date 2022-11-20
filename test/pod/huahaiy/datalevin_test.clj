@@ -19,6 +19,19 @@
         (* 1000 60 60 24 365)))
 
 (deftest pod-test
+  (testing "with-transaction-kv"
+    (let [dir  (u/tmp-dir (str "pod-with-tx-kv-test-" (UUID/randomUUID)))
+          lmdb (pd/open-kv dir)]
+      (pd/open-dbi lmdb "a")
+      (pd/with-transaction-kv [db lmdb]
+        (is (nil? (pd/get-value db "a" 1 :data :data false)))
+        (pd/transact-kv db [[:put "a" 1 2]
+                            [:put "a" :counter 0]])
+        (is (= [1 2] (pd/get-value db "a" 1 :data :data false)))
+        (is (nil? (pd/get-value lmdb "a" 1 :data :data false))))
+      (pd/close-kv lmdb)
+      (u/delete-files dir)))
+
   (testing "defpodfn"
     (let [dir    (u/tmp-dir (str "datalevin-podfn-test-" (UUID/randomUUID)))
           schema (i/load-edn "movie-schema.edn")
