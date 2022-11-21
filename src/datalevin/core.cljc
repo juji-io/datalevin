@@ -1058,6 +1058,39 @@ Only usable for debug output.
          (finally
            (close-transact-kv db#))))))
 
+(defmacro with-transaction
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of Datalog database operations.
+
+  Writes in the body are not visible to outside readers until the end of
+  the transaction.
+
+  `binding` is a vector of a new identifier of the Datalog database
+  connection with a new read/write transaction attached, and the identifier
+  of the original database connection.
+
+  `body` should refer to the new identifier of the database connection.
+
+  Example:
+
+          (with-transaction [conn orig-conn]
+            (let [query  '[:find ?c .
+                           :in $ ?e
+                           :where [?e :counter ?c]]
+                  ^long now (q query @conn 1)]
+              (transact! conn [{:db/id 1 :counter (inc now)}])
+              (q query @conn 1)))
+  "
+  [binding & body]
+  `(let [conn# ~(second binding)
+         m#    (meta conn#)
+         s#    (.-store ^DB (deref conn#))
+         kv#   (.-lmdb ^Store s#)]
+     (with-transaction-kv [kv kv#]
+       (let [~(first binding)
+             (with-meta (atom (db/new-db (s/copy s# kv#))) m#)]
+         ~@body))))
+
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
 

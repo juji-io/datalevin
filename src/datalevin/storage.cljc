@@ -629,3 +629,17 @@
                 (init-max-aid schema)
                 (init-max-gt lmdb)
                 (init-max-tx lmdb))))))
+
+(defn copy
+  "copy state of an existing store, except the lmdb field"
+  [^Store old lmdb]
+  (locking old
+    (->Store lmdb
+             (.-search-engine old)
+             (.-opts old)
+             (schema old)
+             (rschema old)
+             (attrs old)
+             (max-aid old)
+             (max-gt old)
+             (max-tx old))))
