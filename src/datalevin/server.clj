@@ -24,9 +24,8 @@
            [java.security SecureRandom]
            [java.util Iterator UUID]
            [java.util.concurrent.atomic AtomicBoolean]
-           [java.util.concurrent.locks ReentrantLock]
            [java.util.concurrent Executors Executor ExecutorService
-            ConcurrentLinkedQueue]
+            ConcurrentLinkedQueue Semaphore]
            [datalevin.db DB]
            [datalevin.storage IStore Store]
            [datalevin.lmdb ILMDB]
@@ -1593,11 +1592,10 @@
   (wrap-error (normal-kv-store-handler entries)))
 
 (defn- kv-lock [locks db-name]
-  (locking locks
-    (or (@locks db-name)
-        (let [lock (ReentrantLock.)]
-          (vswap! locks assoc db-name lock)
-          lock))))
+  (or (@locks db-name)
+      (let [lock (Semaphore. 1 true)]
+        (vswap! locks assoc db-name lock)
+        lock)))
 
 (defn- open-transact-kv
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1610,11 +1608,10 @@
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
-        (let [^ReentrantLock lock (kv-lock locks db-name)]
-          (.lock lock)
-          (let [lmdb (l/open-transact-kv kv-store)]
-            (vswap! wlmdbs assoc db-name lmdb)
-            (write-message skey {:type :command-complete})))))))
+        (.acquireUninterruptibly ^Semaphore (kv-lock locks db-name))
+        (let [lmdb (l/open-transact-kv kv-store)]
+          (vswap! wlmdbs assoc db-name lmdb)
+          (write-message skey {:type :command-complete}))))))
 
 (defn- close-transact-kv
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1627,11 +1624,10 @@
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
-        (let [^ReentrantLock lock (@locks db-name)]
-          (l/close-transact-kv kv-store)
-          (vswap! wlmdbs dissoc db-name)
-          (.unlock lock)
-          (write-message skey {:type :command-complete}))))))
+        (l/close-transact-kv kv-store)
+        (vswap! wlmdbs dissoc db-name)
+        (write-message skey {:type :command-complete})
+        (.release ^Semaphore (@locks db-name))))))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -1898,14 +1894,14 @@
         (> readn 0)  (if (= (.position read-bf) capacity)
                        (let [size (* ^long c/+buffer-grow-factor+ capacity)
                              bf   (b/allocate-buffer size)]
-                         (.flip read-bf)
-                         (b/buffer-transfer read-bf bf)
-                         (vswap! state assoc :read-bf bf))
-                       (p/extract-message
-                         read-bf
-                         (fn [fmt msg]
-                           (execute server
-                                    #(handle-message server skey fmt msg)))))
+                        (.flip read-bf)
+                        (b/buffer-transfer read-bf bf)
+                        (vswap! state assoc :read-bf bf))
+                      (p/extract-message
+                        read-bf
+                        (fn [fmt msg]
+                          (execute server
+                                   #(handle-message server skey fmt msg)))))
         (= readn 0)  :continue
         (= readn -1) (.close ch)))
     (catch java.io.IOException e

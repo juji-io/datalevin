@@ -2,6 +2,8 @@
 
 ## WIP
 
+### Changed
+- Manage locks on our own, i.e. default to NOLOCK env flag for LMDB
 ### Added
 - [KV] `with-transaction-kv` macro, allows atomic read/write within a
   transaction, e.g. to enable compare and swap semantics, #110

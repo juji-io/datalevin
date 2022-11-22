@@ -403,29 +403,31 @@
 
   (open-transact-kv [this]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (try
-      (.clear kb-w)
-      (.clear start-kb-w)
-      (.clear stop-kb-w)
-      (vreset! write-txn (->Rtx this
-                                (.txnWrite env)
-                                kb-w
-                                start-kb-w
-                                stop-kb-w))
-      (w/->WritingLMDB this)
-      (catch Exception e
-        (st/print-stack-trace e)
-        (raise "Fail to open read/write transaction in LMDB: "
-               (ex-message e) {}))))
+    (locking env
+      (try
+        (.clear kb-w)
+        (.clear start-kb-w)
+        (.clear stop-kb-w)
+        (vreset! write-txn (->Rtx this
+                                  (.txnWrite env)
+                                  kb-w
+                                  start-kb-w
+                                  stop-kb-w))
+        (w/->WritingLMDB this)
+        (catch Exception e
+          (st/print-stack-trace e)
+          (raise "Fail to open read/write transaction in LMDB: "
+                 (ex-message e) {})))))
 
   (close-transact-kv [this]
     (try
-      (when-let [^Rtx wtxn @write-txn]
+      (if-let [^Rtx wtxn @write-txn]
         (when-let [^Txn txn (.-txn wtxn)]
           (.commit txn)
-          (.close txn)
           (vreset! write-txn nil)
-          :committed))
+          (.close txn)
+          :committed)
+        (raise "Calling `close-transact-kv` without opening" {}))
       (catch Exception e
         (st/print-stack-trace e)
         (raise "Fail to commit read/write transaction in LMDB: "

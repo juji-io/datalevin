@@ -244,7 +244,8 @@
     (cl/normal-request client :open-transact-kv [db-name])
     (->WritingKVStore db))
 
-  (close-transact-kv [db] (cl/normal-request client :close-transact-kv [db-name]))
+  (close-transact-kv [db]
+    (cl/normal-request client :close-transact-kv [db-name]))
 
   (transact-kv [db txs]
     (let [{:keys [type message]}
