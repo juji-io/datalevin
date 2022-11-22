@@ -1250,7 +1250,7 @@
     (sut/close-kv lmdb)))
 
 (deftest with-transaction-kv-test
-  (let [dir  (u/tmp-dir (str "datalevin-kv-test-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "with-tx-kv-test-" (UUID/randomUUID)))
         lmdb (sut/open-kv dir)]
     (sut/open-dbi lmdb "a")
 
@@ -1260,15 +1260,15 @@
         (sut/transact-kv db [[:put "a" 1 2]
                              [:put "a" :counter 0]])
         (is (= [1 2] (sut/get-value db "a" 1 :data :data false)))
-        (is (nil? (sut/get-value lmdb "a" 1 :data :data false)))))
+        (is (nil? (sut/get-value lmdb "a" 1 :data :data false))))
+      (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
 
     (testing "concurrent writes do not overwrite each other"
       (let [count-f
-            (fn []
-              (sut/with-transaction-kv [db lmdb]
-                (let [^long now (sut/get-value db "a" :counter)]
-                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
-                  (sut/get-value db "a" :counter))))]
+            #(sut/with-transaction-kv [db lmdb]
+               (let [^long now (sut/get-value db "a" :counter)]
+                 (sut/transact-kv db [[:put "a" :counter (inc now)]])
+                 (sut/get-value db "a" :counter)))]
         (is (= (set [1 2 3 4 5])
                (set (pcalls count-f count-f count-f count-f count-f))))))
 
@@ -1292,27 +1292,56 @@
         (sut/transact-kv db [[:put "a" 1 2]
                              [:put "a" :counter 0]])
         (is (= [1 2] (sut/get-value db "a" 1 :data :data false)))
-        (is (nil? (sut/get-value lmdb "a" 1 :data :data false)))))
+        (is (nil? (sut/get-value lmdb "a" 1 :data :data false))))
+      (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
 
     (testing "concurrent writes from same client do not overwrite each other"
       (let [count-f
-            (fn []
-              (sut/with-transaction-kv [db lmdb]
-                (let [^long now (sut/get-value db "a" :counter)]
-                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
-                  (sut/get-value db "a" :counter))))]
+            #(sut/with-transaction-kv [db lmdb]
+               (let [^long now (sut/get-value db "a" :counter)]
+                 (sut/transact-kv db [[:put "a" :counter (inc now)]])
+                 (sut/get-value db "a" :counter)))]
         (is (= (set [1 2 3 4 5])
                (set (pcalls count-f count-f count-f count-f count-f))))))
 
     (testing "concurrent writes from diff clients do not overwrite each other"
       (let [count-f
-            (fn []
-              (sut/with-transaction-kv [db (sut/open-kv dir)]
-                (let [^long now (sut/get-value db "a" :counter)]
-                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
-                  (sut/get-value db "a" :counter))))]
-        (is (= (set [6 7 8 9 10])
-               (set (pcalls count-f count-f count-f count-f count-f))))))
+            #(sut/with-transaction-kv [db (sut/open-kv dir)]
+               (let [^long now (sut/get-value db "a" :counter)]
+                 (sut/transact-kv db [[:put "a" :counter (inc now)]])
+                 (sut/get-value db "a" :counter)))
+            read-f (fn []
+                     (Thread/sleep (rand-int 1000))
+                     (sut/get-value lmdb "a" :counter))]
+        (is (#{(set [6 7 8 9 10]) (set [5 6 7 8 9 10])}
+              (set (pcalls count-f count-f read-f  read-f
+                           count-f count-f count-f read-f))))))
 
     (sut/close-kv lmdb)
     (s/stop server)))
+
+(deftest with-transaction-test
+  (let [dir   (u/tmp-dir (str "with-tx-test-" (UUID/randomUUID)))
+        conn  (sut/create-conn dir)
+        query '[:find ?c .
+                :in $ ?e
+                :where [?e :counter ?c]]]
+
+    (testing "new value is invisible to outside readers"
+      (sut/with-transaction [cn conn]
+        (is (nil? (sut/q query @cn 1)))
+        (sut/transact! cn [{:db/id 1 :counter 1}])
+        (is (= 1 (sut/q query @cn 1)))
+        (is (nil? (sut/q query @conn 1))))
+      (is (= 1 (sut/q query @conn 1))))
+
+    (testing "concurrent writes do not overwrite each other"
+      (let [count-f
+            #(sut/with-transaction [cn conn]
+               (let [^long now (sut/q query @cn 1)]
+                 (sut/transact! cn [{:db/id 1 :counter (inc now)}])
+                 (sut/q query @cn 1)))]
+        (is (= (set [2 3 4 5 6])
+               (set (pcalls count-f count-f count-f count-f count-f))))))
+
+    (sut/close conn)))

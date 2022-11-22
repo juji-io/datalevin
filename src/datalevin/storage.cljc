@@ -630,8 +630,8 @@
                 (init-max-gt lmdb)
                 (init-max-tx lmdb))))))
 
-(defn copy
-  "copy state of an existing store, except the lmdb field"
+(defn transfer
+  "transfer state of an existing store to create a new store"
   [^Store old lmdb]
   (locking old
     (->Store lmdb

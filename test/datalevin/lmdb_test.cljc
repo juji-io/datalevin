@@ -116,8 +116,6 @@
           (l/close-kv lmdb))))
     (u/delete-files dir)))
 
-
-
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]

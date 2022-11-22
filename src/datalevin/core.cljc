@@ -1086,10 +1086,12 @@ Only usable for debug output.
          m#    (meta conn#)
          s#    (.-store ^DB (deref conn#))
          kv#   (.-lmdb ^Store s#)]
-     (with-transaction-kv [kv kv#]
-       (let [~(first binding)
-             (with-meta (atom (db/new-db (s/copy s# kv#))) m#)]
-         ~@body))))
+     (with-transaction-kv [kv1# kv#]
+       (let [db#  (db/new-db (s/transfer s# kv1#))
+             res# (let [~(first binding) (atom db# :meta m#)]
+                    ~@body)]
+         (reset! conn# (db/new-db (s/transfer (.-store ^DB db#) kv#)))
+         res#))))
 
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
