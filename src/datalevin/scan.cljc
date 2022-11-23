@@ -3,7 +3,8 @@
   (:require [datalevin.bits :as b]
             [datalevin.constants :as c]
             [datalevin.util :refer [raise]]
-            [datalevin.lmdb :as l])
+            [datalevin.lmdb :as l]
+            [clojure.stacktrace :as st])
   (:import [java.nio ByteBuffer]
            [java.util Iterator]
            [java.lang AutoCloseable]))
@@ -145,6 +146,7 @@
        (try
          ~call
          (catch Exception ~'e
+           (st/print-stack-trace ~'e)
            ~error)
          (finally
            (when-not (l/writing? ~'lmdb)

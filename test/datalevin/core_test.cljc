@@ -192,6 +192,7 @@
     (sut/update-schema conn schema-update)
     (is (:regions/country (sut/schema conn)))
     (is (:db/created-at (sut/schema conn)))
+
     (is (sut/conn? conn))
     (sut/clear conn)
     (let [conn1 (sut/create-conn dir)]
@@ -1307,7 +1308,9 @@
     (testing "concurrent writes from diff clients do not overwrite each other"
       (let [count-f
             #(sut/with-transaction-kv [db (sut/open-kv dir)]
+
                (let [^long now (sut/get-value db "a" :counter)]
+
                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
                  (sut/get-value db "a" :counter)))
             read-f (fn []
@@ -1326,7 +1329,7 @@
         query '[:find ?c .
                 :in $ ?e
                 :where [?e :counter ?c]]]
-
+    (is (nil? (sut/q query @conn 1)))
     (testing "new value is invisible to outside readers"
       (sut/with-transaction [cn conn]
         (is (nil? (sut/q query @cn 1)))
@@ -1343,5 +1346,4 @@
                  (sut/q query @cn 1)))]
         (is (= (set [2 3 4 5 6])
                (set (pcalls count-f count-f count-f count-f count-f))))))
-
     (sut/close conn)))

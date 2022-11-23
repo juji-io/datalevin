@@ -77,8 +77,7 @@
          ^BufVal kp
          ^BufVal vp
          ^BufVal start-kp
-         ^BufVal stop-kp
-         ]
+         ^BufVal stop-kp]
 
   IBuffer
   (put-key [_ x t]
@@ -264,9 +263,10 @@
       (->CursorIterable cur this rtx f? sk? is? ek? ie? sk ek)))
 
   (get-cursor [_ txn]
-    (or (when-let [^Cursor cur (.poll curs)]
-          (.renew cur txn)
-          cur)
+    (or (when (.isReadOnly ^Txn txn)
+          (when-let [^Cursor cur (.poll curs)]
+            (.renew cur txn)
+            cur))
         (Cursor/create txn db)))
 
   (return-cursor [_ cur]
@@ -286,7 +286,9 @@
                     ^BufVal ek]
   AutoCloseable
   (close [_]
-    (.return-cursor db cursor))
+    (if (.isReadOnly ^Txn (.-txn rtx))
+      (.return-cursor db cursor)
+      (.close cursor)))
 
   Iterable
   (iterator [this]
