@@ -1597,19 +1597,24 @@
         (vswap! locks assoc db-name lock)
         lock)))
 
+(defn- get-kv-store
+  [server db-name]
+  (let [s (get-store server db-name)]
+    (if (instance? ILMDB s) s (.-lmdb ^Store s))))
+
 (defn- open-transact-kv
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [db-name  (nth args 0)
-          kv-store (get-store server db-name)
-          wlmdbs   (.-wlmdbs server)
           locks    (.-kvlocks server)
           sys-conn (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (.acquireUninterruptibly ^Semaphore (kv-lock locks db-name))
-        (let [lmdb (l/open-transact-kv kv-store)]
+        (let [wlmdbs   (.-wlmdbs server)
+              kv-store (get-kv-store server db-name)
+              lmdb     (l/open-transact-kv kv-store)]
           (vswap! wlmdbs assoc db-name lmdb)
           (write-message skey {:type :command-complete}))))))
 
@@ -1617,7 +1622,7 @@
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [db-name  (nth args 0)
-          kv-store (get-store server db-name)
+          kv-store (get-kv-store server db-name)
           wlmdbs   (.-wlmdbs server)
           locks    (.-kvlocks server)
           sys-conn (.-sys-conn server)]

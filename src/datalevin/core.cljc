@@ -1083,15 +1083,22 @@ Only usable for debug output.
   "
   [binding & body]
   `(let [conn# ~(second binding)
-         m#    (meta conn#)
-         s#    (.-store ^DB (deref conn#))
-         kv#   (.-lmdb ^Store s#)]
-     (with-transaction-kv [kv1# kv#]
-       (let [db#  (db/new-db (s/transfer s# kv1#))
-             res# (let [~(first binding) (atom db# :meta m#)]
-                    ~@body)]
-         (reset! conn# (db/new-db (s/transfer (.-store ^DB db#) kv#)))
-         res#))))
+         s#    (.-store ^DB (deref conn#))]
+     (if (instance? DatalogStore s#)
+       (let [db# (db/new-db (r/->WritingStore s#))]
+         (r/open-transact db#)
+         (try
+           (let [~(first binding) (atom db# :meta (meta conn#))]
+             ~@body)
+           (finally
+             (r/close-transact db#))))
+       (let [kv# (.-lmdb ^Store s#)]
+         (with-transaction-kv [kv1# kv#]
+           (let [db#  (db/new-db (s/transfer s# kv1#))
+                 res# (let [~(first binding) (atom db# :meta (meta conn#))]
+                        ~@body)]
+             (reset! conn# (db/new-db (s/transfer (.-store ^DB db#) kv#)))
+             res#))))))
 
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.

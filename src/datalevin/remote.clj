@@ -165,7 +165,7 @@
     (cl/normal-request client :q [db-name query inputs]))
   (fulltext-datoms [_ query opts]
     (cl/normal-request client :fulltext-datoms [db-name query opts]))
-  (tx-data [store data simulated?]
+  (tx-data [_ data simulated?]
     (load-datoms* client db-name data :txs simulated?)))
 
 (defn open
@@ -185,6 +185,107 @@
          (->DatalogStore uri-str db-name opts client))
        (u/raise "URI should contain a database name" {})))))
 
+(deftype WritingStore [^DatalogStore store]
+  IStore
+
+  (opts [_] (s/opts store))
+
+  (db-name [_] (s/db-name store))
+
+  (dir [_] (s/dir store))
+
+  (close [_] (s/close store))
+
+  (closed? [_] (s/closed? store))
+
+  (last-modified [_] (s/last-modified store))
+
+  (schema [_] (s/schema store))
+
+  (rschema [_] (s/rschema store))
+
+  (set-schema [_ new-schema] (s/set-schema store new-schema))
+
+  (init-max-eid [_] (s/init-max-eid store))
+
+  (max-tx [_] (s/max-tx store))
+
+  (swap-attr [this attr f] (s/swap-attr this attr f nil nil))
+  (swap-attr [this attr f x] (s/swap-attr this attr f x nil))
+  (swap-attr [_ attr f x y] (s/swap-attr store attr f x y))
+
+  (del-attr [_ attr] (s/del-attr store attr))
+
+  (rename-attr [_ attr new-attr] (s/rename-attr store attr new-attr))
+
+  (datom-count [_ index] (s/datom-count store index))
+
+  (load-datoms [_ datoms] (s/load-datoms store datoms))
+
+  (fetch [_ datom]
+    (cl/normal-request client :fetch [db-name datom] true))
+
+  (populated? [_ index low-datom high-datom]
+    (cl/normal-request client :populated?
+                       [db-name index low-datom high-datom] true))
+
+  (size [_ index low-datom high-datom]
+    (cl/normal-request client :size
+                       [db-name index low-datom high-datom] true))
+
+  (head [_ index low-datom high-datom]
+    (cl/normal-request client :head
+                       [db-name index low-datom high-datom] true))
+
+  (tail [_ index high-datom low-datom]
+    (cl/normal-request client :tail
+                       [db-name index high-datom low-datom] true))
+
+  (slice [_ index low-datom high-datom]
+    (cl/normal-request client :slice
+                       [db-name index low-datom high-datom] true))
+
+  (rslice [_ index high-datom low-datom]
+    (cl/normal-request client :rslice
+                       [db-name index high-datom low-datom] true))
+
+  (size-filter [_ index pred low-datom high-datom]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :size-filter
+        [db-name index frozen-pred low-datom high-datom] true)))
+
+  (head-filter [_ index pred low-datom high-datom]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :head-filter
+        [db-name index frozen-pred low-datom high-datom] true)))
+
+  (tail-filter [_ index pred high-datom low-datom]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :tail-filter
+        [db-name index frozen-pred high-datom low-datom] true)))
+
+  (slice-filter [_ index pred low-datom high-datom]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :slice-filter
+        [db-name index frozen-pred low-datom high-datom] true)))
+
+  (rslice-filter [_ index pred high-datom low-datom]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :rslice-filter
+        [db-name index frozen-pred high-datom low-datom] true)))
+
+  IRemoteDB
+  (q [_ query inputs]
+    (cl/normal-request client :q [db-name query inputs] true))
+  (fulltext-datoms [_ query opts]
+    (cl/normal-request client :fulltext-datoms [db-name query opts] true))
+  (tx-data [_ data simulated?]
+    (load-datoms* client db-name data :txs simulated?)))
 
 ;; remote kv store
 
