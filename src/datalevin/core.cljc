@@ -1086,12 +1086,12 @@ Only usable for debug output.
          s#    (.-store ^DB (deref conn#))]
      (if (instance? DatalogStore s#)
        (let [db# (db/new-db (r/->WritingStore s#))]
-         (r/open-transact db#)
+         #_(r/open-transact db#)
          (try
            (let [~(first binding) (atom db# :meta (meta conn#))]
              ~@body)
            (finally
-             (r/close-transact db#))))
+             #_(r/close-transact db#))))
        (let [kv# (.-lmdb ^Store s#)]
          (with-transaction-kv [kv1# kv#]
            (let [db#  (db/new-db (s/transfer s# kv1#))

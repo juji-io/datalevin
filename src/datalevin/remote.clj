@@ -223,69 +223,74 @@
   (load-datoms [_ datoms] (s/load-datoms store datoms))
 
   (fetch [_ datom]
-    (cl/normal-request client :fetch [db-name datom] true))
+    (cl/normal-request
+      (.-client store) :fetch [(.-db-name store) datom] true))
 
   (populated? [_ index low-datom high-datom]
-    (cl/normal-request client :populated?
-                       [db-name index low-datom high-datom] true))
+    (cl/normal-request
+      (.-client store) :populated?
+      [(.-db-name store) index low-datom high-datom] true))
 
   (size [_ index low-datom high-datom]
-    (cl/normal-request client :size
-                       [db-name index low-datom high-datom] true))
+    (cl/normal-request (.-client store) :size
+                       [(.-db-name store) index low-datom high-datom] true))
 
   (head [_ index low-datom high-datom]
-    (cl/normal-request client :head
-                       [db-name index low-datom high-datom] true))
+    (cl/normal-request (.-client store) :head
+                       [(.-db-name store) index low-datom high-datom] true))
 
   (tail [_ index high-datom low-datom]
-    (cl/normal-request client :tail
-                       [db-name index high-datom low-datom] true))
+    (cl/normal-request (.-client store) :tail
+                       [(.-db-name store) index high-datom low-datom] true))
 
   (slice [_ index low-datom high-datom]
-    (cl/normal-request client :slice
-                       [db-name index low-datom high-datom] true))
+    (cl/normal-request (.-client store) :slice
+                       [(.-db-name store) index low-datom high-datom] true))
 
   (rslice [_ index high-datom low-datom]
-    (cl/normal-request client :rslice
-                       [db-name index high-datom low-datom] true))
+    (cl/normal-request (.-client store) :rslice
+                       [(.-db-name store) index high-datom low-datom] true))
 
   (size-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
-        client :size-filter
-        [db-name index frozen-pred low-datom high-datom] true)))
+        (.-client store) :size-filter
+        [(.-db-name store) index frozen-pred low-datom high-datom] true)))
 
   (head-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
-        client :head-filter
-        [db-name index frozen-pred low-datom high-datom] true)))
+        (.-client store) :head-filter
+        [(.-db-name store) index frozen-pred low-datom high-datom] true)))
 
   (tail-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
-        client :tail-filter
-        [db-name index frozen-pred high-datom low-datom] true)))
+        (.-client store) :tail-filter
+        [(.-db-name store) index frozen-pred high-datom low-datom] true)))
 
   (slice-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
-        client :slice-filter
-        [db-name index frozen-pred low-datom high-datom] true)))
+        (.-client store) :slice-filter
+        [(.-db-name store) index frozen-pred low-datom high-datom] true)))
 
   (rslice-filter [_ index pred high-datom low-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
-        client :rslice-filter
-        [db-name index frozen-pred high-datom low-datom] true)))
+        (.-client store) :rslice-filter
+        [(.-db-name store) index frozen-pred high-datom low-datom] true)))
 
   IRemoteDB
   (q [_ query inputs]
-    (cl/normal-request client :q [db-name query inputs] true))
+    (cl/normal-request
+      (.-client store) :q [(.-db-name store) query inputs] true))
   (fulltext-datoms [_ query opts]
-    (cl/normal-request client :fulltext-datoms [db-name query opts] true))
+    (cl/normal-request
+      (.-client store) :fulltext-datoms
+      [(.-db-name store) query opts] true))
   (tx-data [_ data simulated?]
-    (load-datoms* client db-name data :txs simulated?)))
+    (load-datoms* (.-client store) (.-db-name store) data :txs simulated?)))
 
 ;; remote kv store
 
