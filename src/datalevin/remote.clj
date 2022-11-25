@@ -56,7 +56,9 @@
      send the query and inputs over to remote server")
   (fulltext-datoms [store query opts])
   (tx-data [store data simulated?]
-    "Send to remote server the data from call to `db/transact-tx-data`"))
+    "Send to remote server the data from call to `db/transact-tx-data`")
+  (open-transact [store])
+  (close-transact [store]))
 
 (deftype DatalogStore [^String uri
                        ^String db-name
