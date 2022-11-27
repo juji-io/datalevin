@@ -134,10 +134,8 @@
                   (l/close-kv lmdb2)
                   1))]
       (is (= 1 @res)))
-    ;; we use :nolock now to manage our own locks
-    #_(is (thrown-with-msg? Exception #"multiple LMDB"
-                            (l/get-value lmdb "a" :something)))
-    (is (= 1 (l/get-value lmdb "a" :something)))
+    (is (thrown-with-msg? Exception #"multiple LMDB"
+                          (l/get-value lmdb "a" :something)))
     (l/close-kv lmdb)
     (u/delete-files dir)))
 

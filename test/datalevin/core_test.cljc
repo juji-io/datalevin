@@ -1302,6 +1302,7 @@
                (let [^long now (sut/get-value db "a" :counter)]
                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
                  (sut/get-value db "a" :counter)))]
+        (println "prepare pcalls")
         (is (= (set [1 2 3 4 5])
                (set (pcalls count-f count-f count-f count-f count-f))))))
 

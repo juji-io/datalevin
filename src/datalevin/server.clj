@@ -495,6 +495,7 @@
                  ^ConcurrentLinkedQueue register-queue
                  ^ExecutorService work-executor
                  sys-conn
+                 ;; TODO use ConcurrentHashMap instead
                  ;; session data, a map of
                  ;; client-id -> { ip, uid, username, roles, permissions,
                  ;;                stores -> { db-name -> { datalog?
@@ -503,12 +504,14 @@
                  ;;                writers -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
                  clients
+                 ;; TODO consolidate these into a dbs ConcurrentHashMap
                  stores    ; db-name -> store
                  engines   ; db-name -> search engine
                  writers   ; db-name -> search writer
                  dt-dbs    ; db-name -> datalog db
                  wlmdbs    ; db-name -> writing lmdb
                  kvlocks   ; db-name -> kv locks
+                 runners   ; db-name -> kv write txn runner
                  ]
   IServer
   (start [server]
@@ -1005,6 +1008,105 @@
          (select-keys [:ip :username :roles :permissions :open-dbs]))]))
 
 ;; BEGIN message handlers
+
+(def message-handlers
+  ['authentication
+   'disconnect
+   'set-client-id
+   'create-user
+   'reset-password
+   'drop-user
+   'list-users
+   'create-role
+   'drop-role
+   'list-roles
+   'create-database
+   'close-database
+   'drop-database
+   'list-databases
+   'list-databases-in-use
+   'assign-role
+   'withdraw-role
+   'list-user-roles
+   'grant-permission
+   'revoke-permission
+   'list-role-permissions
+   'list-user-permissions
+   'query-system
+   'show-clients
+   'disconnect-client
+   'open
+   'close
+   'closed?
+   'last-modified
+   'schema
+   'rschema
+   'set-schema
+   'init-max-eid
+   'max-tx
+   'swap-attr
+   'del-attr
+   'rename-attr
+   'datom-count
+   'load-datoms
+   'tx-data
+   'fetch
+   'populated?
+   'size
+   'head
+   'tail
+   'slice
+   'rslice
+   'size-filter
+   'head-filter
+   'tail-filter
+   'slice-filter
+   'rslice-filter
+   'open-kv
+   'close-kv
+   'closed-kv?
+   'open-dbi
+   'clear-dbi
+   'drop-dbi
+   'list-dbis
+   'copy
+   'stat
+   'entries
+   'open-transact-kv
+   'close-transact-kv
+   'transact-kv
+   'get-value
+   'get-first
+   'get-range
+   'range-count
+   'get-some
+   'range-filter
+   'range-filter-count
+   'visit
+   'q
+   'fulltext-datoms
+   'new-search-engine
+   'add-doc
+   'remove-doc
+   'clear-docs
+   'doc-indexed?
+   'doc-count
+   'doc-refs
+   'search
+   'search-index-writer
+   'write
+   'commit])
+
+(defmacro ^:no-doc message-cases
+  "Message handler function should have the same name as the incoming message
+  type, e.g. '(authentication skey message) for :authentication message type"
+  [skey type]
+  `(case ~type
+     ~@(mapcat
+         (fn [sym]
+           [(keyword sym) (list sym 'server 'skey 'message)])
+         message-handlers)
+     (error-response ~skey (str "Unknown message type " ~type))))
 
 (defn- authentication
   [^Server server skey message]
@@ -1592,18 +1694,21 @@
   (wrap-error (normal-kv-store-handler entries)))
 
 (defn- kv-lock [locks db-name]
-  (or (@locks db-name)
-      (let [lock (Semaphore. 1 true)]
-        (vswap! locks assoc db-name lock)
-        lock)))
+  (locking locks
+    (or (@locks db-name)
+        (let [lock (Semaphore. 1)]
+          (vswap! locks assoc db-name lock)
+          lock))))
 
 (defn- get-kv-store
   [server db-name]
   (let [s (get-store server db-name)]
     (if (instance? ILMDB s) s (.-lmdb ^Store s))))
 
+(declare write-txn-runner run halt)
+
 (defn- open-transact-kv
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args] :as message}]
   (wrap-error
     (let [db-name  (nth args 0)
           locks    (.-kvlocks server)
@@ -1611,28 +1716,22 @@
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
-        (.acquireUninterruptibly ^Semaphore (kv-lock locks db-name))
-        (let [wlmdbs   (.-wlmdbs server)
-              kv-store (get-kv-store server db-name)
-              lmdb     (l/open-transact-kv kv-store)]
-          (vswap! wlmdbs assoc db-name lmdb)
-          (write-message skey {:type :command-complete}))))))
+        (.acquire ^Semaphore (kv-lock locks db-name))
+        (run (write-txn-runner server skey db-name))))))
 
 (defn- close-transact-kv
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [db-name  (nth args 0)
           kv-store (get-kv-store server db-name)
-          wlmdbs   (.-wlmdbs server)
           locks    (.-kvlocks server)
-          sys-conn (.-sys-conn server)]
-      (wrap-permission
-        ::alter ::database (db-eid sys-conn db-name)
-        "Don't have permission to alter the database"
-        (l/close-transact-kv kv-store)
-        (vswap! wlmdbs dissoc db-name)
-        (write-message skey {:type :command-complete})
-        (.release ^Semaphore (@locks db-name))))))
+          runners  (.-runners server)]
+      (l/close-transact-kv kv-store)
+      (halt (@runners db-name))
+      (vswap! (.-wlmdbs server) dissoc db-name)
+      (vswap! runners dissoc db-name)
+      (write-message skey {:type :command-complete})
+      (.release ^Semaphore (@locks db-name)))))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -1771,121 +1870,61 @@
 
 ;; END message handlers
 
-;; messages
+(defprotocol Runner
+  (new-message [this skey message])
+  (run [this])
+  (halt [this]))
 
-(def message-handlers
-  ['authentication
-   'disconnect
-   'set-client-id
-   'create-user
-   'reset-password
-   'drop-user
-   'list-users
-   'create-role
-   'drop-role
-   'list-roles
-   'create-database
-   'close-database
-   'drop-database
-   'list-databases
-   'list-databases-in-use
-   'assign-role
-   'withdraw-role
-   'list-user-roles
-   'grant-permission
-   'revoke-permission
-   'list-role-permissions
-   'list-user-permissions
-   'query-system
-   'show-clients
-   'disconnect-client
-   'open
-   'close
-   'closed?
-   'last-modified
-   'schema
-   'rschema
-   'set-schema
-   'init-max-eid
-   'max-tx
-   'swap-attr
-   'del-attr
-   'rename-attr
-   'datom-count
-   'load-datoms
-   'tx-data
-   'fetch
-   'populated?
-   'size
-   'head
-   'tail
-   'slice
-   'rslice
-   'size-filter
-   'head-filter
-   'tail-filter
-   'slice-filter
-   'rslice-filter
-   'open-kv
-   'close-kv
-   'closed-kv?
-   'open-dbi
-   'clear-dbi
-   'drop-dbi
-   'list-dbis
-   'copy
-   'stat
-   'entries
-   'open-transact-kv
-   'close-transact-kv
-   'transact-kv
-   'get-value
-   'get-first
-   'get-range
-   'range-count
-   'get-some
-   'range-filter
-   'range-filter-count
-   'visit
-   'q
-   'fulltext-datoms
-   'new-search-engine
-   'add-doc
-   'remove-doc
-   'clear-docs
-   'doc-indexed?
-   'doc-count
-   'doc-refs
-   'search
-   'search-index-writer
-   'write
-   'commit])
-
-(defmacro ^:no-doc message-cases
-  "Message handler function should have the same name as the incoming message
-  type, e.g. '(authentication skey message) for :authentication message type"
-  [skey type]
-  `(case ~type
-     ~@(mapcat
-         (fn [sym]
-           [(keyword sym) (list sym 'server 'skey 'message)])
-         message-handlers)
-     (error-response ~skey (str "Unknown message type " ~type))))
-
-(defn- handle-message
-  [^Server server ^SelectionKey skey fmt msg ]
-  (try
-    (let [{:keys [type] :as message} (p/read-value fmt msg)]
-      (log/debug "Message received:" (dissoc message :password))
-      (message-cases skey type))
-    (catch Exception e
-      (stt/print-stack-trace e)
-      (log/error "Error Handling message:" (ex-message e)))))
+(defn- write-txn-runner
+  [^Server server skey db-name]
+  (let [kv-store (get-kv-store server db-name)]
+    (locking kv-store
+      (vswap! (.-wlmdbs server) assoc db-name (l/open-transact-kv kv-store))
+      (let [runner (let [sk       (volatile! nil)
+                         msg      (volatile! nil)
+                         running? (volatile! true)]
+                     (reify
+                       Runner
+                       (new-message [_ skey message]
+                         (vreset! sk skey)
+                         (vreset! msg message))
+                       (halt [_] (vreset! running? false))
+                       (run [_]
+                         (locking kv-store
+                           (loop []
+                             (.wait kv-store)
+                             (let [{:keys [type] :as message} @msg
+                                   skey                       @sk]
+                               (message-cases skey type))
+                             (when @running? (recur)))))))]
+        (vswap! (.-runners server) assoc db-name runner)
+        (write-message skey {:type :command-complete})
+        runner))))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
   [^Server server f]
   (.execute ^Executor (.-work-executor server) f))
+
+(defn- handle-writing
+  [^Server server ^SelectionKey skey {:keys [args] :as message}]
+  (let [db-name  (nth args 0)
+        kv-store (get-kv-store server db-name)
+        runner   (@(.-runners server) db-name)]
+    (new-message runner skey message)
+    (locking kv-store (.notify kv-store))))
+
+(defn- handle-message
+  [^Server server ^SelectionKey skey fmt msg ]
+  (try
+    (let [{:keys [type writing?] :as message} (p/read-value fmt msg)]
+      (log/debug "Message received:" (dissoc message :password))
+      (if writing?
+        (handle-writing server skey message)
+        (message-cases skey type)))
+    (catch Exception e
+      (stt/print-stack-trace e)
+      (log/error "Error Handling message:" (ex-message e)))))
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
@@ -1899,14 +1938,14 @@
         (> readn 0)  (if (= (.position read-bf) capacity)
                        (let [size (* ^long c/+buffer-grow-factor+ capacity)
                              bf   (b/allocate-buffer size)]
-                        (.flip read-bf)
-                        (b/buffer-transfer read-bf bf)
-                        (vswap! state assoc :read-bf bf))
-                      (p/extract-message
-                        read-bf
-                        (fn [fmt msg]
-                          (execute server
-                                   #(handle-message server skey fmt msg)))))
+                         (.flip read-bf)
+                         (b/buffer-transfer read-bf bf)
+                         (vswap! state assoc :read-bf bf))
+                       (p/extract-message
+                         read-bf
+                         (fn [fmt msg]
+                           (execute
+                             server #(handle-message server skey fmt msg)))))
         (= readn 0)  :continue
         (= readn -1) (.close ch)))
     (catch java.io.IOException e
@@ -1928,7 +1967,7 @@
         (recur)))))
 
 (defn- event-loop
-  [^Server server ]
+  [^Server server]
   (let [^Selector selector     (.-selector server)
         ^AtomicBoolean running (.-running server)]
     (loop []
@@ -1967,13 +2006,15 @@
                 server-socket
                 selector
                 (ConcurrentLinkedQueue.)
-                (Executors/newWorkStealingPool)
+                (Executors/newCachedThreadPool)
+                ;; (Executors/newWorkStealingPool)
                 sys-conn
                 (volatile! clients)
                 stores
                 engines
                 writers
                 dt-dbs
+                (volatile! {})
                 (volatile! {})
                 (volatile! {})
                 ))

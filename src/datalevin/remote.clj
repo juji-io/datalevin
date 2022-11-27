@@ -353,7 +353,7 @@
     (->WritingKVStore db))
 
   (close-transact-kv [db]
-    (cl/normal-request client :close-transact-kv [db-name]))
+    (cl/normal-request client :close-transact-kv [db-name] true))
 
   (transact-kv [db txs]
     (let [{:keys [type message]}
@@ -471,7 +471,23 @@
 
   (entries [_ dbi-name] (l/entries db dbi-name))
 
-  (transact-kv [_ txs] (l/transact-kv db txs))
+  (transact-kv [_ txs]
+    (let [{:keys [type message]}
+          (if (< (count txs) ^long c/+wire-datom-batch-size+)
+            (cl/request (.-client db)
+                        {:type     :transact-kv
+                         :mode     :request
+                         :writing? true
+                         :args     [(.-db-name db) txs]})
+            (cl/copy-in (.-client db)
+                        {:type     :transact-kv
+                         :mode     :copy-in
+                         :writing? true
+                         :args     [(.-db-name db)]}
+                        txs c/+wire-datom-batch-size+))]
+      (when (= type :error-response)
+        (u/raise "Error transacting kv to server:" message
+                 {:uri (.-uri db)}))))
 
   (close-transact-kv [_] (l/close-transact-kv db))
 
