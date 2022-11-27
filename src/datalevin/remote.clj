@@ -27,26 +27,30 @@
     s))
 
 (defn- load-datoms*
-  [client db-name datoms datom-type simulated?]
-  (let [t (if (= datom-type :txs)
-            :tx-data
-            :load-datoms)
-        {:keys [type message result]}
-        (if (< (count datoms) ^long c/+wire-datom-batch-size+)
-          (cl/request client {:type t
-                              :mode :request
-                              :args (if (= datom-type :txs)
-                                      [db-name datoms simulated?]
-                                      [db-name datoms])})
-          (cl/copy-in client {:type t
-                              :mode :copy-in
-                              :args (if (= datom-type :txs)
-                                      [db-name simulated?]
-                                      [db-name])}
-                      datoms c/+wire-datom-batch-size+))]
-    (when (= type :error-response)
-      (u/raise "Error loading datoms to server:" message {}))
-    result))
+  ([client db-name datoms datom-type simulated?]
+   (load-datoms* client db-name datoms datom-type simulated? false))
+  ([client db-name datoms datom-type simulated? writing?]
+   (let [t (if (= datom-type :txs)
+             :tx-data
+             :load-datoms)
+         {:keys [type message result]}
+         (if (< (count datoms) ^long c/+wire-datom-batch-size+)
+           (cl/request client {:type     t
+                               :mode     :request
+                               :writing? writing?
+                               :args     (if (= datom-type :txs)
+                                           [db-name datoms simulated?]
+                                           [db-name datoms])})
+           (cl/copy-in client {:type     t
+                               :mode     :copy-in
+                               :writing? writing?
+                               :args     (if (= datom-type :txs)
+                                           [db-name simulated?]
+                                           [db-name])}
+                       datoms c/+wire-datom-batch-size+))]
+     (when (= type :error-response)
+       (u/raise "Error loading datoms to server:" message {}))
+     result)))
 
 ;; remote datalog db
 
@@ -200,29 +204,48 @@
 
   (closed? [_] (s/closed? store))
 
-  (last-modified [_] (s/last-modified store))
+  (last-modified [_]
+    (cl/normal-request
+      (.-client store) :last-modified [(.-db-name store)] true))
 
-  (schema [_] (s/schema store))
+  (schema [_]
+    (cl/normal-request
+      (.-client store) :schema [(.-db-name store)] true))
 
-  (rschema [_] (s/rschema store))
+  (rschema [_]
+    (cl/normal-request (.-client store) :rschema [(.-db-name store)] true))
 
-  (set-schema [_ new-schema] (s/set-schema store new-schema))
+  (set-schema [_ new-schema]
+    (cl/normal-request
+      (.-client store) :set-schema [(.-db-name store) new-schema] true))
 
-  (init-max-eid [_] (s/init-max-eid store))
+  (init-max-eid [_]
+    (cl/normal-request (.-client store) :init-max-eid [(.-db-name store)] true))
 
-  (max-tx [_] (s/max-tx store))
+  (max-tx [_]
+    (cl/normal-request (.-client store) :max-tx [(.-db-name store)] true))
 
   (swap-attr [this attr f] (s/swap-attr this attr f nil nil))
   (swap-attr [this attr f x] (s/swap-attr this attr f x nil))
-  (swap-attr [_ attr f x y] (s/swap-attr store attr f x y))
+  (swap-attr [_ attr f x y]
+    (let [frozen-f (b/serialize f)]
+      (cl/normal-request
+        (.-client store) :swap-attr [(.-db-name store) attr frozen-f x y] true)))
 
-  (del-attr [_ attr] (s/del-attr store attr))
+  (del-attr [_ attr]
+    (cl/normal-request
+      (.-client store) :del-attr [(.-db-name store) attr] true))
 
-  (rename-attr [_ attr new-attr] (s/rename-attr store attr new-attr))
+  (rename-attr [_ attr new-attr]
+    (cl/normal-request
+      (.-client store) :rename-attr [(.-db-name store) attr new-attr] true))
 
-  (datom-count [_ index] (s/datom-count store index))
+  (datom-count [_ index]
+    (cl/normal-request
+      (.-client store) :datom-count [(.-db-name store) index] true))
 
-  (load-datoms [_ datoms] (s/load-datoms store datoms))
+  (load-datoms [_ datoms]
+    (load-datoms* (.-client store) (.-db-name store) datoms :raw false true))
 
   (fetch [_ datom]
     (cl/normal-request
@@ -292,7 +315,9 @@
       (.-client store) :fulltext-datoms
       [(.-db-name store) query opts] true))
   (tx-data [_ data simulated?]
-    (load-datoms* (.-client store) (.-db-name store) data :txs simulated?)))
+    (load-datoms* (.-client store) (.-db-name store) data :txs simulated?))
+  (open-transact [_])
+  (close-transact [_]))
 
 ;; remote kv store
 

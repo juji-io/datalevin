@@ -1245,6 +1245,7 @@
             (sut/transact-kv
               lmdb
               [[:put "misc" 42 "Don't panic"]]))))
+
       [:all])
     (is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
            (sut/get-range lmdb "misc" [:all])))
@@ -1348,3 +1349,37 @@
         (is (= (set [2 3 4 5 6])
                (set (pcalls count-f count-f count-f count-f count-f))))))
     (sut/close conn)))
+
+(deftest remote-with-transaction-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "remote-with-tx-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+        conn   (sut/create-conn dir)
+        query  '[:find ?c .
+                 :in $ ?e
+                 :where [?e :counter ?c]]]
+
+    (is (nil? (sut/q query @conn 1)))
+
+    #_(testing "new value is invisible to outside readers"
+        (sut/with-transaction [cn conn]
+          (is (nil? (sut/q query @cn 1)))
+          (sut/transact! cn [{:db/id 1 :counter 1}])
+          (is (= 1 (sut/q query @cn 1)))
+          (is (nil? (sut/q query @conn 1))))
+        (is (= 1 (sut/q query @conn 1))))
+
+    #_(testing "concurrent writes do not overwrite each other"
+        (let [count-f
+              #(sut/with-transaction [cn conn]
+                 (let [^long now (sut/q query @cn 1)]
+                   (sut/transact! cn [{:db/id 1 :counter (inc now)}])
+                   (sut/q query @cn 1)))]
+          (is (= (set [2 3 4 5 6])
+                 (set (pcalls count-f count-f count-f count-f count-f))))))
+
+    (sut/close conn)
+    (s/stop server)))

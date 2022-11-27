@@ -1724,14 +1724,18 @@
   (wrap-error
     (let [db-name  (nth args 0)
           kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)
           locks    (.-kvlocks server)
           runners  (.-runners server)]
-      (l/close-transact-kv kv-store)
-      (halt (@runners db-name))
-      (vswap! (.-wlmdbs server) dissoc db-name)
-      (vswap! runners dissoc db-name)
-      (write-message skey {:type :command-complete})
-      (.release ^Semaphore (@locks db-name)))))
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn db-name)
+        "Don't have permission to alter the database"
+        (l/close-transact-kv kv-store)
+        (halt (@runners db-name))
+        (vswap! runners dissoc db-name)
+        (vswap! (.-wlmdbs server) dissoc db-name)
+        (write-message skey {:type :command-complete})
+        (.release ^Semaphore (@locks db-name))))))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -1871,6 +1875,8 @@
 ;; END message handlers
 
 (defprotocol Runner
+  "Ensure calls within `with-transaction-kv` run in the same thread that
+  runs `open-transact-kv`, otherwise LMDB will deadlock"
   (new-message [this skey message])
   (run [this])
   (halt [this]))
@@ -2006,8 +2012,7 @@
                 server-socket
                 selector
                 (ConcurrentLinkedQueue.)
-                (Executors/newCachedThreadPool)
-                ;; (Executors/newWorkStealingPool)
+                (Executors/newCachedThreadPool) ; # of with-txn may be large
                 sys-conn
                 (volatile! clients)
                 stores

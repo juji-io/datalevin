@@ -1053,10 +1053,8 @@ Only usable for debug output.
   `(let [db# ~(second binding)]
      (locking db#
        (try
-         (let [~(first binding) (open-transact-kv db#)]
-           ~@body)
-         (finally
-           (close-transact-kv db#))))))
+         (let [~(first binding) (open-transact-kv db#)] ~@body)
+         (finally (close-transact-kv db#))))))
 
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
@@ -1086,12 +1084,10 @@ Only usable for debug output.
          s#    (.-store ^DB (deref conn#))]
      (if (instance? DatalogStore s#)
        (let [db# (db/new-db (r/->WritingStore s#))]
-         #_(r/open-transact db#)
+         (r/open-transact db#)
          (try
-           (let [~(first binding) (atom db# :meta (meta conn#))]
-             ~@body)
-           (finally
-             #_(r/close-transact db#))))
+           (let [~(first binding) (atom db# :meta (meta conn#))] ~@body)
+           (finally (r/close-transact db#))))
        (let [kv# (.-lmdb ^Store s#)]
          (with-transaction-kv [kv1# kv#]
            (let [db#  (db/new-db (s/transfer s# kv1#))
