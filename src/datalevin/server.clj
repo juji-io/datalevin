@@ -6,7 +6,6 @@
             [datalevin.query :as q]
             [datalevin.db :as db]
             [datalevin.lmdb :as l]
-            [datalevin.writing-lmdb :as w]
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.search :as sc]
@@ -1050,6 +1049,8 @@
    'datom-count
    'load-datoms
    'tx-data
+   ;; 'open-transact
+   ;; 'close-transact
    'fetch
    'populated?
    'size
@@ -1450,19 +1451,19 @@
       (write-message skey {:type :command-complete :result res}))))
 
 (defn- last-modified
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler last-modified)))
 
 (defn- schema
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler schema)))
 
 (defn- rschema
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler rschema)))
 
 (defn- set-schema
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (wrap-permission
       ::alter ::database (db-eid (.-sys-conn server)
@@ -1473,34 +1474,34 @@
       (normal-dt-store-handler set-schema))))
 
 (defn- init-max-eid
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler init-max-eid)))
 
 (defn- max-tx
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler max-tx)))
 
 (defn- swap-attr
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler swap-attr))))
 
 (defn- del-attr
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler del-attr)))
 
 (defn- rename-attr
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler rename-attr)))
 
 (defn- datom-count
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler datom-count)))
 
 (defn- load-datoms
-  [^Server server ^SelectionKey skey {:keys [mode args]}]
+  [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
   (wrap-error
     (let [db-name  (nth args 0)
           dt-store (get-store server db-name)
@@ -1515,7 +1516,7 @@
           (u/raise "Missing :mode when loading datoms" {}))))))
 
 (defn- tx-data
-  [^Server server ^SelectionKey skey {:keys [mode args]}]
+  [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
   (wrap-error
     (let [db-name  (nth args 0)
           sys-conn (.-sys-conn server)]
@@ -1541,27 +1542,27 @@
                         c/+wire-datom-batch-size+))))))))
 
 (defn- fetch
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler fetch)))
 
 (defn- populated?
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler populated?)))
 
 (defn- size
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler size)))
 
 (defn- head
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler head)))
 
 (defn- tail
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler tail)))
 
 (defn- slice
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [datoms (apply st/slice
                         (db-store server skey (nth args 0)) (rest args))]
@@ -1570,7 +1571,7 @@
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- rslice
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [datoms (apply st/rslice
                         (db-store server skey (nth args 0)) (rest args))]
@@ -1579,28 +1580,28 @@
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- size-filter
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler size-filter))))
 
 (defn- head-filter
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler head-filter))))
 
 (defn- tail-filter
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-dt-store-handler tail-filter))))
 
 (defn- slice-filter
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)
@@ -1612,7 +1613,7 @@
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
 
 (defn- rslice-filter
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)
@@ -1693,7 +1694,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler entries)))
 
-(defn- kv-lock [locks db-name]
+(defn- get-lock [locks db-name]
   (locking locks
     (or (@locks db-name)
         (let [lock (Semaphore. 1)]
@@ -1716,7 +1717,7 @@
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
-        (.acquire ^Semaphore (kv-lock locks db-name))
+        (.acquire ^Semaphore (get-lock locks db-name))
         (run (write-txn-runner server skey db-name))))))
 
 (defn- close-transact-kv
@@ -1736,6 +1737,14 @@
         (vswap! (.-wlmdbs server) dissoc db-name)
         (write-message skey {:type :command-complete})
         (.release ^Semaphore (@locks db-name))))))
+
+;; (defn- open-transact
+;;   [^Server server ^SelectionKey skey {:keys [args] :as message}]
+;;   (open-transact-kv server skey message))
+
+;; (defn- close-transact
+;;   [^Server server ^SelectionKey skey {:keys [args]}]
+;;   (close-transact))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -1814,7 +1823,7 @@
       (normal-kv-store-handler visit))))
 
 (defn- q
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [[db-name query inputs] args
           db                     (get-db server db-name)
@@ -1827,7 +1836,7 @@
         (write-message skey {:type :command-complete :result data})))))
 
 (defn- fulltext-datoms
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [[db-name query opts] args
           db                   (get-db server db-name)
@@ -1837,44 +1846,44 @@
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
 (defn- add-doc
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler add-doc)))
 
 (defn- remove-doc
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler remove-doc)))
 
 (defn- clear-docs
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler clear-docs)))
 
 (defn- doc-indexed?
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler doc-indexed?)))
 
 (defn- doc-count
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler doc-count)))
 
 (defn- doc-refs
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler doc-refs)))
 
 (defn- search
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler search)))
 
 (defn- write
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (index-writer-handler write)))
 
 (defn- commit
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (index-writer-handler commit)))
 
 ;; END message handlers
 
-(defprotocol Runner
+(defprotocol IRunner
   "Ensure calls within `with-transaction-kv` run in the same thread that
   runs `open-transact-kv`, otherwise LMDB will deadlock"
   (new-message [this skey message])
@@ -1890,7 +1899,7 @@
                          msg      (volatile! nil)
                          running? (volatile! true)]
                      (reify
-                       Runner
+                       IRunner
                        (new-message [_ skey message]
                          (vreset! sk skey)
                          (vreset! msg message))
@@ -1914,11 +1923,16 @@
 
 (defn- handle-writing
   [^Server server ^SelectionKey skey {:keys [args] :as message}]
-  (let [db-name  (nth args 0)
-        kv-store (get-kv-store server db-name)
-        runner   (@(.-runners server) db-name)]
-    (new-message runner skey message)
-    (locking kv-store (.notify kv-store))))
+  (try
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          runner   (@(.-runners server) db-name)]
+      (new-message runner skey message)
+      (locking kv-store (.notify kv-store)))
+    (catch Exception e
+      (stt/print-stack-trace e)
+      (log/error "Error Handling with-transaction message:"
+                 (ex-message e)))))
 
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]

@@ -6,8 +6,7 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB IWritingLMDB]]
-            [datalevin.writing-lmdb :as w])
+                     IDB IKV IInvertedList ILMDB IWriting]])
   (:import [java.util Iterator]
            [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
            [java.nio ByteBuffer BufferOverflowException]
@@ -396,6 +395,8 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
+(declare ->LMDB)
+
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
     LMDB [^Env env
@@ -407,10 +408,15 @@
           ^BufVal vp-w
           ^BufVal start-kp-w
           ^BufVal stop-kp-w
-          write-txn]
+          write-txn
+          writing?]
 
-  IWritingLMDB
-  (writing? [_] false)
+  IWriting
+  (writing? [_] writing?)
+
+  (mark-write [_]
+    (->LMDB env dir pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
+            write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -596,7 +602,7 @@
                                 vp-w
                                 start-kp-w
                                 stop-kp-w))
-      (w/->WritingLMDB this)
+      (.mark-write this)
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: "
                (ex-message e) {}))))
@@ -944,7 +950,8 @@
                (BufVal/create 1)
                (BufVal/create c/+max-key-size+)
                (BufVal/create c/+max-key-size+)
-               (volatile! nil)))
+               (volatile! nil)
+               false))
      (catch Exception e
        (raise
          "Fail to open database: " (ex-message e)

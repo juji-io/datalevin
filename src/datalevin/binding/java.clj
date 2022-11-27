@@ -6,8 +6,7 @@
             [datalevin.scan :as scan]
             [datalevin.lmdb :as l
              :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB IWritingLMDB]]
-            [datalevin.writing-lmdb :as w]
+                     IDB IKV IInvertedList ILMDB IWriting]]
             [clojure.stacktrace :as st])
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
@@ -256,6 +255,8 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
+(declare ->LMDB)
+
 (deftype LMDB [^Env env
                ^String dir
                ^ConcurrentLinkedQueue pool
@@ -263,9 +264,13 @@
                ^ByteBuffer kb-w
                ^ByteBuffer start-kb-w
                ^ByteBuffer stop-kb-w
-               write-txn]
-  IWritingLMDB
-  (writing? [_] false)
+               write-txn
+               writing?]
+  IWriting
+  (writing? [_] writing?)
+
+  (mark-write [_]
+    (->LMDB env dir pool dbis kb-w start-kb-w stop-kb-w write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -413,7 +418,7 @@
                                   kb-w
                                   start-kb-w
                                   stop-kb-w))
-        (w/->WritingLMDB this)
+        (.mark-write this)
         (catch Exception e
           (st/print-stack-trace e)
           (raise "Fail to open read/write transaction in LMDB: "
@@ -673,7 +678,8 @@
                             (b/allocate-buffer c/+max-key-size+)
                             (b/allocate-buffer c/+max-key-size+)
                             (b/allocate-buffer c/+max-key-size+)
-                            (volatile! nil))]
+                            (volatile! nil)
+                            false)]
        lmdb)
      (catch Exception e
        (st/print-stack-trace e)

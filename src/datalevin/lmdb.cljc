@@ -140,8 +140,10 @@
     "Call `visitor` function on each kv pairs in the specified key range, presumably
      for side effects. Return nil."))
 
-(defprotocol IWritingLMDB
-  (writing? [db] "mark the LMDB so it should use the write-txn"))
+(defprotocol IWriting
+  "Used to mark the db so it should use the write-txn"
+  (writing? [db] "return true if this db should use write-txn")
+  (mark-write [db] "return a new db what uses write-txn"))
 
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 

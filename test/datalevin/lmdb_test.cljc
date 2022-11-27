@@ -1,6 +1,5 @@
 (ns datalevin.lmdb-test
   (:require [datalevin.lmdb :as l]
-            [datalevin.writing-lmdb :as w]
             [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
@@ -561,7 +560,7 @@
 (deftest read-during-transaction-test
   (let [dir   (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
         lmdb  (l/open-kv dir)
-        lmdb1 (w/->WritingLMDB lmdb)]  ; mark as writing
+        lmdb1 (l/mark-write lmdb)]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "d")
 
