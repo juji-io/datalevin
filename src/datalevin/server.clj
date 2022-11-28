@@ -20,10 +20,10 @@
             SocketChannel]
            [java.net InetSocketAddress]
            [java.security SecureRandom]
-           [java.util Iterator UUID]
+           [java.util Iterator UUID Map]
            [java.util.concurrent.atomic AtomicBoolean]
            [java.util.concurrent Executors Executor ExecutorService
-            ConcurrentLinkedQueue Semaphore]
+            ConcurrentLinkedQueue ConcurrentHashMap Semaphore]
            [datalevin.db DB]
            [datalevin.storage IStore Store]
            [datalevin.lmdb ILMDB]
@@ -492,16 +492,18 @@
                  ^ConcurrentLinkedQueue register-queue
                  ^ExecutorService work-executor
                  sys-conn
-                 ;; TODO use ConcurrentHashMap instead
-                 ;; session data, a map of
+                 ;; client session data, a map of
                  ;; client-id -> { ip, uid, username, roles, permissions,
-                 ;;                stores -> { db-name -> { datalog?
-                 ;;                                         dbis -> #{dbi-name}}}
+                 ;;                stores -> { db-name -> {datalog?
+                 ;;                                        dbis -> #{dbi-name}}}
                  ;;                engines -> #{ db-name }
                  ;;                writers -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
                  clients
-                 ;; TODO consolidate these into a dbs ConcurrentHashMap
+                 ;; db data, a map of
+                 ;; db-name -> { store, search engine, search writer,
+                 ;;              datalog db, lock, write txn runner,
+                 ;;              and writing variants of stores }
                  stores    ; db-name -> store
                  engines   ; db-name -> search engine
                  writers   ; db-name -> search writer
@@ -531,9 +533,10 @@
     (d/close sys-conn)
     (log/info "Datalevin server shuts down.")))
 
-(defn- get-clients [^Server server] @(.-clients server))
+(defn- get-clients [^Server server] (.-clients server))
 
-(defn- get-client [^Server server client-id] (@(.-clients server) client-id))
+(defn- get-client [^Server server client-id]
+  (get (.-clients server) client-id))
 
 (defn- add-client
   [^Server server ip client-id username]
@@ -551,25 +554,24 @@
                   :permissions perms}]
     (d/transact-kv (session-lmdb sys-conn)
                    [[:put session-dbi client-id session :uuid :data]])
-    (vswap! (.-clients server) assoc client-id session)
+    (.put ^Map (.-clients server) client-id session)
     (log/info "Added client " client-id
               "from:" ip
-              "for user:" username
-              "with roles:" (pr-str roles))))
+              "for user:" username)))
 
 (defn- remove-client
-[^Server server client-id]
-(d/transact-kv (session-lmdb (.-sys-conn server))
-[[:del session-dbi client-id :uuid]])
-(vswap! (.-clients server) dissoc client-id)
-(log/info "Removed client:" client-id))
+  [^Server server client-id]
+  (d/transact-kv (session-lmdb (.-sys-conn server))
+                 [[:del session-dbi client-id :uuid]])
+  (.remove ^Map (.-clients server) client-id)
+  (log/info "Removed client:" client-id))
 
 (defn- update-client
   [^Server server client-id f]
   (let [session (f (get-client server client-id))]
     (d/transact-kv (session-lmdb (.-sys-conn server))
                    [[:put session-dbi client-id session :uuid :data]])
-    (vswap! (.-clients server) assoc client-id session)))
+    (.put ^Map (.-clients server) client-id session)))
 
 (defn- get-stores [^Server server] @(.-stores server))
 
@@ -974,7 +976,8 @@
   [sys-conn]
   (let [lmdb (session-lmdb sys-conn)]
     (d/open-dbi lmdb session-dbi)
-    (into {} (d/get-range lmdb session-dbi [:all] :uuid :data))))
+    (ConcurrentHashMap.
+      ^Map (into {} (d/get-range lmdb session-dbi [:all] :uuid :data)))))
 
 (defn- reopen-dbs
   [root clients]
@@ -988,7 +991,8 @@
         (vswap! vstores assoc db-name (open-store root db-name dbis datalog?)))
       (doseq [db-name engines
               :when   (not (@vengines db-name))]
-        (vswap! vengines assoc db-name (d/new-search-engine (@vstores db-name))))
+        (vswap! vengines assoc db-name
+                (d/new-search-engine (@vstores db-name))))
       (doseq [db-name writers
               :when   (not (@vwriters db-name))]
         (vswap! vwriters assoc db-name
@@ -2087,7 +2091,7 @@
                 (ConcurrentLinkedQueue.)
                 (Executors/newCachedThreadPool) ; with-txn may be many
                 sys-conn
-                (volatile! clients)
+                clients
                 stores
                 engines
                 writers

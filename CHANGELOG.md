@@ -3,12 +3,13 @@
 ## WIP
 
 ### Added
-- [KV] `with-transaction-kv` macro, allows atomic read/write within a
-  transaction, e.g. to enable compare and swap semantics, #110
-- [Datalog] `with-transaction` macro, same as above
+- [KV] `with-transaction-kv` macro to support explicit transactions, that
+  enable atomic reads and writes within a transaction, e.g. to implement
+  compare and swap semantics, and so on, #110
+- [Datalog] `with-transaction` macro, same as the above
 - [Pod] missing `visit` function
 ### Improved
-- smaller server memory footprint
+- [Server] smaller memory footprint
 - bump deps
 
 ## 0.6.22

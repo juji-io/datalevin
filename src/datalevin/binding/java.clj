@@ -11,8 +11,7 @@
   (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
             PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
             Cursor CursorIterable$KeyVal GetOp SeekOp]
-           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue
-            ExecutorService Executors Future Callable]
+           [java.util.concurrent ConcurrentLinkedQueue]
            [java.util Iterator]
            [org.eclipse.collections.impl.map.mutable UnifiedMap]
            [java.nio ByteBuffer BufferOverflowException]))
