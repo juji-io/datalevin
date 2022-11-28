@@ -582,6 +582,21 @@
                      (AtomicInteger. (init-max-doc lmdb docs-dbi))
                      (AtomicInteger. (init-max-term lmdb positions-dbi))))))
 
+(defn transfer
+  "transfer state of an existing engine to an new engine that has a
+  different LMDB instance"
+  [^SearchEngine old lmdb]
+  (locking old
+    (->SearchEngine lmdb
+                    (.-analyzer old)
+                    (.-query-analyzer old)
+                    (.-terms-dbi old)
+                    (.-docs-dbi old)
+                    (.-positions-dbi old)
+                    (.-norms old)
+                    (.-max-doc old)
+                    (.-max-term old))))
+
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])
   (commit [this]))

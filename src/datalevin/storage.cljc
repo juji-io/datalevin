@@ -631,11 +631,12 @@
                 (init-max-tx lmdb))))))
 
 (defn transfer
-  "transfer state of an existing store to create a new store"
+  "transfer state of an existing store to a new store that has a different
+  LMDB instance"
   [^Store old lmdb]
   (locking old
     (->Store lmdb
-             (.-search-engine old)
+             (s/transfer (.-search-engine old) lmdb)
              (.-opts old)
              (schema old)
              (rschema old)
