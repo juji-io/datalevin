@@ -1085,8 +1085,7 @@ Only usable for debug output.
      (if (instance? DatalogStore s#)
        (try
          (let [db#              (db/new-db (r/open-transact s#))
-               ~(first binding) (atom db# :meta (meta conn#))]
-           ~@body)
+               ~(first binding) (atom db# :meta (meta conn#))] ~@body)
          (finally (r/close-transact s#)))
        (let [kv# (.-lmdb ^Store s#)]
          (with-transaction-kv [kv1# kv#]

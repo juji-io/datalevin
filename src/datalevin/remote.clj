@@ -197,11 +197,11 @@
     (load-datoms* client db-name data :txs simulated? writing?))
 
   (open-transact [this]
-    (cl/normal-request client :open-transact-kv [db-name])
+    (cl/normal-request client :open-transact [db-name])
     (.mark-write this))
 
   (close-transact [_]
-    (cl/normal-request client :close-transact-kv [db-name] writing?)))
+    (cl/normal-request client :close-transact [db-name] true)))
 
 (defn open
   "Open a remote Datalog store"

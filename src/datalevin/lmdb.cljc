@@ -141,7 +141,7 @@
      for side effects. Return nil."))
 
 (defprotocol IWriting
-  "Used to mark the db so it should use the write-txn"
+  "Used to mark the db so that it should use the write-txn"
   (writing? [db] "return true if this db should use write-txn")
   (mark-write [db] "return a new db what uses write-txn"))
 

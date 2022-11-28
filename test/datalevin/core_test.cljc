@@ -1303,7 +1303,6 @@
                (let [^long now (sut/get-value db "a" :counter)]
                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
                  (sut/get-value db "a" :counter)))]
-        (println "prepare pcalls")
         (is (= (set [1 2 3 4 5])
                (set (pcalls count-f count-f count-f count-f count-f))))))
 
@@ -1364,22 +1363,31 @@
 
     (is (nil? (sut/q query @conn 1)))
 
-    #_(testing "new value is invisible to outside readers"
-        (sut/with-transaction [cn conn]
-          (is (nil? (sut/q query @cn 1)))
-          (sut/transact! cn [{:db/id 1 :counter 1}])
-          (is (= 1 (sut/q query @cn 1)))
-          (is (nil? (sut/q query @conn 1))))
-        (is (= 1 (sut/q query @conn 1))))
+    (testing "new value is invisible to outside readers"
+      (sut/with-transaction [cn conn]
+        (is (nil? (sut/q query @cn 1)))
+        (sut/transact! cn [{:db/id 1 :counter 1}])
+        (is (= 1 (sut/q query @cn 1)))
+        (is (nil? (sut/q query @conn 1))))
+      (is (= 1 (sut/q query @conn 1))))
 
-    #_(testing "concurrent writes do not overwrite each other"
-        (let [count-f
-              #(sut/with-transaction [cn conn]
-                 (let [^long now (sut/q query @cn 1)]
-                   (sut/transact! cn [{:db/id 1 :counter (inc now)}])
-                   (sut/q query @cn 1)))]
-          (is (= (set [2 3 4 5 6])
-                 (set (pcalls count-f count-f count-f count-f count-f))))))
+    (testing "concurrent writes do not overwrite each other"
+      (let [count-f
+            #(sut/with-transaction [cn conn]
+               (let [^long now (sut/q query @cn 1)]
+                 (sut/transact! cn [{:db/id 1 :counter (inc now)}])
+                 (sut/q query @cn 1)))]
+        (is (= (set [2 3 4 5 6])
+               (set (pcalls count-f count-f count-f count-f count-f))))))
+
+    (testing "concurrent writes from diff clients do not overwrite each other"
+      (let [count-f
+            #(sut/with-transaction [cn (sut/create-conn dir)]
+               (let [^long now (sut/q query @cn 1)]
+                 (sut/transact! cn [{:db/id 1 :counter (inc now)}])
+                 (sut/q query @cn 1)))]
+        (is (= (set [7 8 9 10 11])
+               (set (pcalls count-f count-f count-f count-f count-f))))))
 
     (sut/close conn)
     (s/stop server)))

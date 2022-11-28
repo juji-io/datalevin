@@ -10,7 +10,6 @@
             [datalevin.storage :as st]
             [datalevin.search :as sc]
             [datalevin.constants :as c]
-            [taoensso.nippy :as nippy]
             [taoensso.timbre :as log]
             [clojure.stacktrace :as stt]
             [clojure.string :as s])
@@ -28,7 +27,6 @@
            [datalevin.db DB]
            [datalevin.storage IStore Store]
            [datalevin.lmdb ILMDB]
-           [datalevin.datom Datom]
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
             Argon2Parameters$Builder]))
@@ -511,6 +509,8 @@
                  wlmdbs    ; db-name -> writing lmdb
                  kvlocks   ; db-name -> kv locks
                  runners   ; db-name -> kv write txn runner
+                 wstores   ; db-name -> writing store
+                 wdt-dbs   ; db-name -> writing dbs
                  ]
   IServer
   (start [server]
@@ -580,9 +580,15 @@
   (vswap! (.-stores server) assoc db-name store)
   (when (instance? IStore store)
     (vswap! (.-dt-dbs server) assoc db-name (db/new-db store)))
-  (log/info "Opened database:" db-name))
+  #_(log/info "Opened database:" db-name))
 
-(defn- get-db [^Server server db-name] (@(.-dt-dbs server) db-name))
+(defn- get-db
+  ([server db-name]
+   (get-db server db-name false))
+  ([^Server server db-name writing?]
+   (if writing?
+     (@(.-wdt-dbs server) db-name)
+     (@(.-dt-dbs server) db-name))))
 
 (defn- remove-store
   [^Server server db-name]
@@ -777,6 +783,20 @@
 
 (defn- writing-lmdb [^Server server db-name] (@(.-wlmdbs server) db-name))
 
+(defn- writing-store [^Server server db-name] (@(.-wstores server) db-name))
+
+(defn- store
+  [^Server server ^SelectionKey skey db-name writing?]
+  (if writing?
+    (writing-store server db-name)
+    (db-store server skey db-name)))
+
+(defn- lmdb
+  [^Server server ^SelectionKey skey db-name writing?]
+  (if writing?
+    (writing-lmdb server db-name)
+    (db-store server skey db-name)))
+
 (defn- store-closed?
   [store]
   (cond
@@ -801,7 +821,7 @@
      {:type   :command-complete
       :result (apply
                 ~(symbol "datalevin.storage" (str f))
-                (db-store ~'server ~'skey (nth ~'args 0))
+                (store ~'server ~'skey (nth ~'args 0) ~'writing?)
                 (rest ~'args))}))
 
 (defmacro ^:no-doc normal-kv-store-handler
@@ -812,9 +832,7 @@
      {:type   :command-complete
       :result (apply
                 ~(symbol "datalevin.lmdb" (str f))
-                (if ~'writing?
-                  (writing-lmdb ~'server (nth ~'args 0))
-                  (db-store ~'server ~'skey (nth ~'args 0)))
+                (lmdb ~'server ~'skey (nth ~'args 0) ~'writing?)
                 (rest ~'args))}))
 
 (defn- search-engine
@@ -1049,8 +1067,8 @@
    'datom-count
    'load-datoms
    'tx-data
-   ;; 'open-transact
-   ;; 'close-transact
+   'open-transact
+   'close-transact
    'fetch
    'populated?
    'size
@@ -1439,15 +1457,16 @@
   (open-server-store server skey message c/dl-type))
 
 (defn- close
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-dt-store-handler close)))
 
 (defn- closed?
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
-    (let [res (if-let [store (db-store server skey (nth args 0))]
-                (st/closed? store)
-                true)]
+    (let [db-name (nth args 0)
+          res     (if-let [s (store server skey db-name writing?)]
+                    (st/closed? s)
+                    true)]
       (write-message skey {:type :command-complete :result res}))))
 
 (defn- last-modified
@@ -1504,14 +1523,14 @@
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
   (wrap-error
     (let [db-name  (nth args 0)
-          dt-store (get-store server db-name)
           sys-conn (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (case mode
-          :copy-in (do (st/load-datoms dt-store (copy-in server skey))
-                       (write-message skey {:type :command-complete}))
+          :copy-in (let [dt-store (store server skey db-name writing?)]
+                     (st/load-datoms dt-store (copy-in server skey))
+                     (write-message skey {:type :command-complete}))
           :request (normal-dt-store-handler load-datoms)
           (u/raise "Missing :mode when loading datoms" {}))))))
 
@@ -1527,11 +1546,12 @@
                     :copy-in (copy-in server skey)
                     :request (nth args 1)
                     (u/raise "Missing :mode when transact data" {}))
-              db  (get-db server db-name)
+              db  (get-db server db-name writing?)
               s?  (last args)
               rp  (d/with db txs {} s?)
               db  (:db-after rp)
-              _   (vswap! (.-dt-dbs server) assoc db-name db)
+              dbs (if writing? (.-wdt-dbs server) (.-dt-dbs server))
+              _   (vswap! dbs assoc db-name db)
               rp  (assoc-in rp [:tempids :max-eid] (:max-eid db))
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (select-keys rp [:tx-data :tempids])]
@@ -1564,8 +1584,10 @@
 (defn- slice
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
-    (let [datoms (apply st/slice
-                        (db-store server skey (nth args 0)) (rest args))]
+    (let [db-name (nth args 0)
+          datoms  (apply st/slice
+                         (store server skey db-name writing?)
+                         (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
@@ -1573,8 +1595,10 @@
 (defn- rslice
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
-    (let [datoms (apply st/rslice
-                        (db-store server skey (nth args 0)) (rest args))]
+    (let [db-name (nth args 0)
+          datoms  (apply st/rslice
+                         (store server skey db-name writing?)
+                         (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
@@ -1605,9 +1629,9 @@
   (wrap-error
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)
-
           datoms (apply st/slice-filter
-                        (db-store server skey (nth args 0)) (rest args))]
+                        (store server skey (nth args 0) writing?)
+                        (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
@@ -1618,7 +1642,8 @@
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)
           datoms (apply st/rslice-filter
-                        (db-store server skey (nth args 0)) (rest args))]
+                        (store server skey (nth args 0) writing?)
+                        (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result datoms})
         (copy-out skey datoms c/+wire-datom-batch-size+)))))
@@ -1639,14 +1664,14 @@
   (wrap-error (normal-kv-store-handler closed-kv?)))
 
 (defn- open-dbi
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
           db-name             (nth args 0)
-          lmdb                (db-store server skey db-name)
+          kv                  (lmdb server skey db-name writing?)
           args                (rest args)
           dbi-name            (first args)]
-      (apply l/open-dbi lmdb args)
+      (apply l/open-dbi kv args)
       (update-client server client-id
                      #(update-in % [:stores db-name :dbis] conj dbi-name)))
     (write-message skey {:type :command-complete})))
@@ -1656,14 +1681,14 @@
   (wrap-error (normal-kv-store-handler clear-dbi)))
 
 (defn- drop-dbi
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [{:keys [client-id]} @(.attachment skey)
           db-name             (nth args 0)
-          lmdb                (db-store server skey db-name)
+          kv                  (lmdb server skey db-name writing?)
           args                (rest args)
           dbi-name            (first args)]
-      (l/drop-dbi lmdb dbi-name)
+      (l/drop-dbi kv dbi-name)
       (update-client server client-id
                      #(update-in % [:stores db-name :dbis] disj dbi-name)))
     (write-message skey {:type :command-complete})))
@@ -1675,13 +1700,13 @@
 ;; TODO use LMDB copyfd to write to socket directly
 ;; However, LMDBJava does not wrap copyfd
 (defn- copy
-  [^Server server ^SelectionKey skey {:keys [args]}]
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [[db-name compact?] args
           tf                 (u/tmp-dir (str "copy-" (UUID/randomUUID)))
           path               (Paths/get (str tf u/+separator+ "data.mdb")
                                         (into-array String []))]
-      (l/copy (db-store server skey db-name) tf compact?)
+      (l/copy (lmdb server skey db-name writing?) tf compact?)
       (copy-out skey
                 (u/encode-base64 (Files/readAllBytes path))
                 8192))))
@@ -1706,7 +1731,7 @@
   (let [s (get-store server db-name)]
     (if (instance? ILMDB s) s (.-lmdb ^Store s))))
 
-(declare write-txn-runner run halt)
+(declare write-txn-runner run-calls halt-run)
 
 (defn- open-transact-kv
   [^Server server ^SelectionKey skey {:keys [args] :as message}]
@@ -1718,7 +1743,13 @@
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (.acquire ^Semaphore (get-lock locks db-name))
-        (run (write-txn-runner server skey db-name))))))
+        (let [kv-store (get-kv-store server db-name)]
+          (locking kv-store
+            (vswap! (.-wlmdbs server)
+                    assoc db-name (l/open-transact-kv kv-store))
+            (let [runner (write-txn-runner server skey db-name kv-store)]
+              (write-message skey {:type :command-complete})
+              (run-calls runner))))))))
 
 (defn- close-transact-kv
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -1732,19 +1763,55 @@
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (l/close-transact-kv kv-store)
-        (halt (@runners db-name))
+        (halt-run (@runners db-name))
         (vswap! runners dissoc db-name)
         (vswap! (.-wlmdbs server) dissoc db-name)
         (write-message skey {:type :command-complete})
         (.release ^Semaphore (@locks db-name))))))
 
-;; (defn- open-transact
-;;   [^Server server ^SelectionKey skey {:keys [args] :as message}]
-;;   (open-transact-kv server skey message))
+(defn- open-transact
+  [^Server server ^SelectionKey skey {:keys [args] :as message}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          locks    (.-kvlocks server)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn db-name)
+        "Don't have permission to alter the database"
+        (.acquire ^Semaphore (get-lock locks db-name))
+        (let [kv-store (get-kv-store server db-name)]
+          (locking kv-store
+            (let [wlmdb  (l/open-transact-kv kv-store)
+                  ostore (get-store server db-name)
+                  wstore (st/transfer ostore wlmdb)
+                  runner (write-txn-runner server skey db-name kv-store)]
+              (vswap! (.-wlmdbs server) assoc db-name wlmdb)
+              (vswap! (.-wstores server) assoc db-name wstore)
+              (vswap! (.-wdt-dbs server) assoc db-name (db/new-db wstore))
+              (write-message skey {:type :command-complete})
+              (run-calls runner))))))))
 
-;; (defn- close-transact
-;;   [^Server server ^SelectionKey skey {:keys [args]}]
-;;   (close-transact))
+(defn- close-transact
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)
+          locks    (.-kvlocks server)
+          runners  (.-runners server)
+          wstores  (.-wstores server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn db-name)
+        "Don't have permission to alter the database"
+        (l/close-transact-kv kv-store)
+        (halt-run (@runners db-name))
+        (vswap! runners dissoc db-name)
+        (add-store server db-name (st/transfer (@wstores db-name) kv-store))
+        (vswap! wstores dissoc db-name)
+        (vswap! (.-wlmdbs server) dissoc db-name)
+        (vswap! (.-wdt-dbs server) dissoc db-name)
+        (write-message skey {:type :command-complete})
+        (.release ^Semaphore (@locks db-name))))))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -1774,9 +1841,7 @@
   (wrap-error
     (let [db-name (nth args 0)
           data    (apply l/get-range
-                         (if writing?
-                           (writing-lmdb server db-name)
-                           (db-store server skey db-name))
+                         (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
@@ -1800,9 +1865,7 @@
           args    (replace {frozen (b/deserialize frozen)} args)
           db-name (nth args 0)
           data    (apply l/range-filter
-                         (if writing?
-                           (writing-lmdb server db-name)
-                           (db-store server skey db-name))
+                         (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
@@ -1826,7 +1889,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [[db-name query inputs] args
-          db                     (get-db server db-name)
+          db                     (get-db server db-name writing?)
           inputs                 (replace {:remote-db-placeholder db} inputs)
           data                   (apply q/q query inputs)]
       (if (coll? data)
@@ -1839,7 +1902,7 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
     (let [[db-name query opts] args
-          db                   (get-db server db-name)
+          db                   (get-db server db-name writing?)
           data                 (q/fulltext db query opts)]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
@@ -1887,34 +1950,30 @@
   "Ensure calls within `with-transaction-kv` run in the same thread that
   runs `open-transact-kv`, otherwise LMDB will deadlock"
   (new-message [this skey message])
-  (run [this])
-  (halt [this]))
+  (run-calls [this])
+  (halt-run [this]))
 
 (defn- write-txn-runner
-  [^Server server skey db-name]
-  (let [kv-store (get-kv-store server db-name)]
-    (locking kv-store
-      (vswap! (.-wlmdbs server) assoc db-name (l/open-transact-kv kv-store))
-      (let [runner (let [sk       (volatile! nil)
-                         msg      (volatile! nil)
-                         running? (volatile! true)]
-                     (reify
-                       IRunner
-                       (new-message [_ skey message]
-                         (vreset! sk skey)
-                         (vreset! msg message))
-                       (halt [_] (vreset! running? false))
-                       (run [_]
-                         (locking kv-store
-                           (loop []
-                             (.wait kv-store)
-                             (let [{:keys [type] :as message} @msg
-                                   skey                       @sk]
-                               (message-cases skey type))
-                             (when @running? (recur)))))))]
-        (vswap! (.-runners server) assoc db-name runner)
-        (write-message skey {:type :command-complete})
-        runner))))
+  [^Server server skey db-name kv-store]
+  (let [runner (let [sk       (volatile! nil)
+                     msg      (volatile! nil)
+                     running? (volatile! true)]
+                 (reify
+                   IRunner
+                   (new-message [_ skey message]
+                     (vreset! sk skey)
+                     (vreset! msg message))
+                   (halt-run [_] (vreset! running? false))
+                   (run-calls [_]
+                     (locking kv-store
+                       (loop []
+                         (.wait ^Object kv-store)
+                         (let [{:keys [type] :as message} @msg
+                               skey                       @sk]
+                           (message-cases skey type))
+                         (when @running? (recur)))))))]
+    (vswap! (.-runners server) assoc db-name runner)
+    runner))
 
 (defn- execute
   "Execute a function in a thread from the worker thread pool"
@@ -2026,13 +2085,15 @@
                 server-socket
                 selector
                 (ConcurrentLinkedQueue.)
-                (Executors/newCachedThreadPool) ; # of with-txn may be large
+                (Executors/newCachedThreadPool) ; with-txn may be many
                 sys-conn
                 (volatile! clients)
                 stores
                 engines
                 writers
                 dt-dbs
+                (volatile! {})
+                (volatile! {})
                 (volatile! {})
                 (volatile! {})
                 (volatile! {})
