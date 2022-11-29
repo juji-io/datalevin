@@ -1022,19 +1022,19 @@ Only usable for debug output.
   entries l/entries)
 
 (def ^{:arglists '([db])
-       :doc      "Return a modified KV db with a new read/write transaction attached, must call [[close-transact-kv]] to finish the transaction"}
+       :doc      "Return a modified KV db with a new read/write transaction attached, must call [[close-transact-kv]] to finish the transaction. Recommend to use [[with-transaction-kv]] instead of calling this directly."}
   open-transact-kv l/open-transact-kv)
 
 (def ^{:arglists '([db])
-       :doc      "Close the attached read/write transaction of a KV db returned by [[open-transact-kv]]"}
+       :doc      "Close the attached read/write transaction of a KV db returned by [[open-transact-kv]]. Recommend to use [[with-transaction-kv]] instead of calling this directly."}
   close-transact-kv l/close-transact-kv)
 
 (defmacro with-transaction-kv
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of key-value operations.
 
-  Writes in the body are not visible to outside readers until the end of
-  the transaction.
+  Concurrent calls of this macro will be serialized. Writes in the body are
+  not visible to outside readers until the end of the transaction.
 
   `binding` is a vector of a new identifier of the kv database with
   a new read/write transaction attached, and the identifier of the original
@@ -1060,8 +1060,8 @@ Only usable for debug output.
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
 
-  Writes in the body are not visible to outside readers until the end of
-  the transaction.
+  Concurrent calls of this macro will be serialized. Writes in the body are
+  not visible to outside readers until the end of the transaction.
 
   `binding` is a vector of a new identifier of the Datalog database
   connection with a new read/write transaction attached, and the identifier
@@ -1574,23 +1574,3 @@ one of the following data types:
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
-
-
-(comment
-
-  (def schema {:name   {:db/valueType :db.type/string}
-               :height {:db/valueType :db.type/float}})
-
-  (def conn (get-conn "/tmp/mydb1" schema))
-
-  (transact! conn [{:name "John" :height 1.73}
-                   {:name "Peter" :height 1.92}])
-
-  (def *dbs (atom []))
-
-  (doseq [i (range 2000)]
-    (prn "Creating" i)
-    (swap! *dbs conj (create-conn (str "/tmp/dl-" i))))
-
-
-  )

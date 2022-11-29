@@ -500,20 +500,11 @@
                  ;;                writers -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
                  clients
-                 ;; db data, a map of
+                 ;; db state data, a map of
                  ;; db-name -> { store, search engine, search writer,
                  ;;              datalog db, lock, write txn runner,
                  ;;              and writing variants of stores }
-                 stores    ; db-name -> store
-                 engines   ; db-name -> search engine
-                 writers   ; db-name -> search writer
-                 dt-dbs    ; db-name -> datalog db
-                 wlmdbs    ; db-name -> writing lmdb
-                 kvlocks   ; db-name -> kv locks
-                 runners   ; db-name -> kv write txn runner
-                 wstores   ; db-name -> writing store
-                 wdt-dbs   ; db-name -> writing dbs
-                 ]
+                 dbs]
   IServer
   (start [server]
     (.set running true)
@@ -529,7 +520,7 @@
     (.close server-socket)
     (when (.isOpen selector) (.close selector))
     (.shutdown work-executor)
-    (doseq [db-name (keys @stores)] (remove-store server db-name))
+    (doseq [db-name (keys dbs)] (remove-store server db-name))
     (d/close sys-conn)
     (log/info "Datalevin server shuts down.")))
 
@@ -573,34 +564,40 @@
                    [[:put session-dbi client-id session :uuid :data]])
     (.put ^Map (.-clients server) client-id session)))
 
-(defn- get-stores [^Server server] @(.-stores server))
+(defn- get-stores
+  [^Server server]
+  (into {} (map (fn [[db-name m]] [db-name (:store m)]) (.-dbs server))))
 
-(defn- get-store [^Server server db-name] (@(.-stores server) db-name))
+(defn- get-store
+  [^Server server db-name]
+  (get-in (.-dbs server) [db-name :store]))
+
+(defn- update-db
+  [^Server server db-name f]
+  (let [^Map dbs (.-dbs server)
+        m        (get dbs db-name {})]
+    (.put dbs db-name (f m))))
 
 (defn- add-store
   [^Server server db-name store]
-  (vswap! (.-stores server) assoc db-name store)
-  (when (instance? IStore store)
-    (vswap! (.-dt-dbs server) assoc db-name (db/new-db store)))
-  #_(log/info "Opened database:" db-name))
+  (update-db server db-name
+             #(cond-> (assoc % :store store)
+                (instance? IStore store) (assoc :dt-db (db/new-db store)))))
 
 (defn- get-db
   ([server db-name]
    (get-db server db-name false))
   ([^Server server db-name writing?]
-   (if writing?
-     (@(.-wdt-dbs server) db-name)
-     (@(.-dt-dbs server) db-name))))
+   (let [m (get (.-dbs server) db-name)]
+     (if writing? (:wdt-db m) (:dt-db m)))))
 
 (defn- remove-store
   [^Server server db-name]
   (when-let [store (get-store server db-name)]
     (if-let [db (get-db server db-name)]
-      (do (db/close-db db)
-          (vswap! (.-dt-dbs server) dissoc db-name))
-      (close-store store))
-    (log/info "Closed database:" db-name))
-  (vswap! (.-stores server) dissoc db-name))
+      (db/close-db db)
+      (close-store store)))
+  (.remove ^Map (.-dbs server) db-name))
 
 (defn- update-cached-role
   [^Server server target-username]
@@ -783,9 +780,13 @@
          db-name)
     (get-store server db-name)))
 
-(defn- writing-lmdb [^Server server db-name] (@(.-wlmdbs server) db-name))
+(defn- writing-lmdb
+  [^Server server db-name]
+  (get-in (.-dbs server) [db-name :wlmdb]))
 
-(defn- writing-store [^Server server db-name] (@(.-wstores server) db-name))
+(defn- writing-store
+  [^Server server db-name]
+  (get-in (.-dbs server) [db-name :wstore]))
 
 (defn- store
   [^Server server ^SelectionKey skey db-name writing?]
@@ -841,7 +842,7 @@
   [^Server server ^SelectionKey skey db-name]
   (when (((get-client server (@(.attachment skey) :client-id)) :engines)
          db-name)
-    (@(.-engines server) db-name)))
+    (get-in (.-dbs server) [db-name :engine])))
 
 (defn- new-search-engine
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -852,7 +853,7 @@
           engine              (or (search-engine server skey db-name)
                                   (sc/new-search-engine store opts))]
       (update-client server client-id #(update % :engines conj db-name))
-      (vswap! (.-engines server) assoc db-name engine)
+      (update-db server db-name #(assoc % :engine engine))
       (write-message skey {:type :command-complete}))))
 
 (defmacro ^:no-doc search-handler
@@ -870,7 +871,7 @@
   [^Server server ^SelectionKey skey db-name]
   (when (((get-client server (@(.attachment skey) :client-id)) :writers)
          db-name)
-    (@(.-writers server) db-name)))
+    (get-in (.-dbs server) [db-name :writer])))
 
 (defn- search-index-writer
   [^Server server ^SelectionKey skey {:keys [args]}]
@@ -881,7 +882,7 @@
           writer              (or (index-writer server skey db-name)
                                   (sc/search-index-writer store opts))]
       (update-client server client-id #(update % :writers conj db-name))
-      (vswap! (.-writers server) assoc db-name writer)
+      (update-db server db-name #(assoc % :writer writer))
       (write-message skey {:type :command-complete}))))
 
 (defmacro ^:no-doc index-writer-handler
@@ -980,27 +981,32 @@
       ^Map (into {} (d/get-range lmdb session-dbi [:all] :uuid :data)))))
 
 (defn- reopen-dbs
-  [root clients]
-  (let [vstores  (volatile! {})
-        vengines (volatile! {})
-        vwriters (volatile! {})
-        vdt-dbs  (volatile! {})]
-    (doseq [[_ {:keys [stores engines writers dt-dbs]}] clients]
-      (doseq [[db-name {:keys [datalog? dbis]}] stores
-              :when                             (not (@vstores db-name))]
-        (vswap! vstores assoc db-name (open-store root db-name dbis datalog?)))
-      (doseq [db-name engines
-              :when   (not (@vengines db-name))]
-        (vswap! vengines assoc db-name
-                (d/new-search-engine (@vstores db-name))))
-      (doseq [db-name writers
-              :when   (not (@vwriters db-name))]
-        (vswap! vwriters assoc db-name
-                (d/search-index-writer (@vstores db-name))))
-      (doseq [db-name dt-dbs
-              :when   (not (@vdt-dbs db-name))]
-        (vswap! vdt-dbs assoc db-name (db/new-db (@vstores db-name)))))
-    [vstores vengines vwriters vdt-dbs]))
+  [root clients ^ConcurrentHashMap dbs]
+  (doseq [[_ {:keys [stores engines writers dt-dbs]}] clients]
+    (doseq [[db-name {:keys [datalog? dbis]}]
+            stores
+            :when (not (get-in dbs [db-name :store]))
+            :let  [m (get dbs db-name {})]]
+      (.put dbs db-name
+            (assoc m :store (open-store root db-name dbis datalog?))))
+    (doseq [db-name engines
+            :when   (not (get-in dbs [db-name :engine]))
+            :let    [m (get dbs db-name {})]]
+      (.put dbs db-name
+            (assoc m :engine
+                   (d/new-search-engine (get-in dbs [db-name :store])))))
+    (doseq [db-name writers
+            :when   (not (get-in dbs [db-name :writer]))
+            :let    [m (get dbs db-name {})]]
+      (.put dbs db-name
+            (assoc m :writer
+                   (d/search-index-writer (get-in dbs [db-name :store])))))
+    (doseq [db-name dt-dbs
+            :when   (not (get-in dbs [db-name :dt-db]))
+            :let    [m (get dbs db-name {})]]
+      (.put dbs db-name
+            (assoc m :dt-db
+                   (db/new-db (get-in dbs [db-name :store])))))))
 
 (defn- authenticate
   [^Server server ^SelectionKey skey {:keys [username password]}]
@@ -1554,8 +1560,8 @@
               s?  (last args)
               rp  (d/with db txs {} s?)
               db  (:db-after rp)
-              dbs (if writing? (.-wdt-dbs server) (.-dt-dbs server))
-              _   (vswap! dbs assoc db-name db)
+              _   (update-db server db-name
+                             #(assoc % (if writing? :wdt-db :dt-db) db))
               rp  (assoc-in rp [:tempids :max-eid] (:max-eid db))
               ct  (+ (count (:tx-data rp)) (count (:tempids rp)))
               res (select-keys rp [:tx-data :tempids])]
@@ -1659,8 +1665,7 @@
 (defn- close-kv
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
-    (vswap! (.-wlmdbs server) dissoc (nth args 0))
-    (vswap! (.-kvlocks server) dissoc (nth args 0))
+    (update-db server (nth args 0) #(dissoc % :wlmdb :lock))
     (normal-kv-store-handler close-kv)))
 
 (defn- closed-kv?
@@ -1723,12 +1728,14 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler entries)))
 
-(defn- get-lock [locks db-name]
-  (locking locks
-    (or (@locks db-name)
-        (let [lock (Semaphore. 1)]
-          (vswap! locks assoc db-name lock)
-          lock))))
+(defn- get-lock
+  [^Server server db-name]
+  (let [dbs (.-dbs server)]
+    (locking dbs
+      (or (get-in dbs [db-name :lock])
+          (let [lock (Semaphore. 1)]
+            (update-db server db-name #(assoc % :lock lock))
+            lock)))))
 
 (defn- get-kv-store
   [server db-name]
@@ -1741,16 +1748,15 @@
   [^Server server ^SelectionKey skey {:keys [args] :as message}]
   (wrap-error
     (let [db-name  (nth args 0)
-          locks    (.-kvlocks server)
           sys-conn (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
-        (.acquire ^Semaphore (get-lock locks db-name))
+        (.acquire ^Semaphore (get-lock server db-name))
         (let [kv-store (get-kv-store server db-name)]
           (locking kv-store
-            (vswap! (.-wlmdbs server)
-                    assoc db-name (l/open-transact-kv kv-store))
+            (update-db server db-name
+                       #(assoc % :wlmdb (l/open-transact-kv kv-store)))
             (let [runner (write-txn-runner server skey db-name kv-store)]
               (write-message skey {:type :command-complete})
               (run-calls runner))))))))
@@ -1761,37 +1767,36 @@
     (let [db-name  (nth args 0)
           kv-store (get-kv-store server db-name)
           sys-conn (.-sys-conn server)
-          locks    (.-kvlocks server)
-          runners  (.-runners server)]
+          dbs      (.-dbs server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (l/close-transact-kv kv-store)
-        (halt-run (@runners db-name))
-        (vswap! runners dissoc db-name)
-        (vswap! (.-wlmdbs server) dissoc db-name)
+        (halt-run (get-in dbs [db-name :runner]))
+        (update-db server db-name #(dissoc % :runner :wlmdb))
         (write-message skey {:type :command-complete})
-        (.release ^Semaphore (@locks db-name))))))
+        (.release ^Semaphore (get-in dbs [db-name :lock]))))))
 
 (defn- open-transact
   [^Server server ^SelectionKey skey {:keys [args] :as message}]
   (wrap-error
     (let [db-name  (nth args 0)
-          locks    (.-kvlocks server)
           sys-conn (.-sys-conn server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
-        (.acquire ^Semaphore (get-lock locks db-name))
+        (.acquire ^Semaphore (get-lock server db-name))
         (let [kv-store (get-kv-store server db-name)]
           (locking kv-store
             (let [wlmdb  (l/open-transact-kv kv-store)
                   ostore (get-store server db-name)
                   wstore (st/transfer ostore wlmdb)
                   runner (write-txn-runner server skey db-name kv-store)]
-              (vswap! (.-wlmdbs server) assoc db-name wlmdb)
-              (vswap! (.-wstores server) assoc db-name wstore)
-              (vswap! (.-wdt-dbs server) assoc db-name (db/new-db wstore))
+              (update-db
+                server db-name #(assoc %
+                                       :wlmdb wlmdb
+                                       :wstore wstore
+                                       :wdt-db (db/new-db wstore)))
               (write-message skey {:type :command-complete})
               (run-calls runner))))))))
 
@@ -1801,21 +1806,20 @@
     (let [db-name  (nth args 0)
           kv-store (get-kv-store server db-name)
           sys-conn (.-sys-conn server)
-          locks    (.-kvlocks server)
-          runners  (.-runners server)
-          wstores  (.-wstores server)]
+          dbs      (.-dbs server)]
       (wrap-permission
         ::alter ::database (db-eid sys-conn db-name)
         "Don't have permission to alter the database"
         (l/close-transact-kv kv-store)
-        (halt-run (@runners db-name))
-        (vswap! runners dissoc db-name)
-        (add-store server db-name (st/transfer (@wstores db-name) kv-store))
-        (vswap! wstores dissoc db-name)
-        (vswap! (.-wlmdbs server) dissoc db-name)
-        (vswap! (.-wdt-dbs server) dissoc db-name)
+        (halt-run (get-in dbs [db-name :runner]))
+        (add-store
+          server db-name
+          (st/transfer (get-in dbs [db-name :wstore]) kv-store))
+        (update-db
+          server db-name
+          #(dissoc % :wlmdb :wstore :wdt-db :runner))
         (write-message skey {:type :command-complete})
-        (.release ^Semaphore (@locks db-name))))))
+        (.release ^Semaphore (get-in dbs [db-name :lock]))))))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -1976,7 +1980,7 @@
                                skey                       @sk]
                            (message-cases skey type))
                          (when @running? (recur)))))))]
-    (vswap! (.-runners server) assoc db-name runner)
+    (update-db server db-name #(assoc % :runner runner))
     runner))
 
 (defn- execute
@@ -1989,7 +1993,7 @@
   (try
     (let [db-name  (nth args 0)
           kv-store (get-kv-store server db-name)
-          runner   (@(.-runners server) db-name)]
+          runner   (get-in (.-dbs server) [db-name :runner])]
       (new-message runner skey message)
       (locking kv-store (.notify kv-store)))
     (catch Exception e
@@ -2081,7 +2085,8 @@
           running                            (AtomicBoolean. false)
           sys-conn                           (init-sys-db root)
           clients                            (load-sessions sys-conn)
-          [stores engines writers dt-dbs]    (reopen-dbs root clients)]
+          dbs                                (ConcurrentHashMap.)]
+      (reopen-dbs root clients dbs)
       (.register server-socket selector SelectionKey/OP_ACCEPT)
       (->Server running
                 port
@@ -2092,15 +2097,6 @@
                 (Executors/newCachedThreadPool) ; with-txn may be many
                 sys-conn
                 clients
-                stores
-                engines
-                writers
-                dt-dbs
-                (volatile! {})
-                (volatile! {})
-                (volatile! {})
-                (volatile! {})
-                (volatile! {})
-                ))
+                dbs))
     (catch Exception e
       (u/raise "Error creating server:" (ex-message e) {}))))
