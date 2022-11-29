@@ -1757,7 +1757,7 @@
           (locking kv-store
             (update-db server db-name
                        #(assoc % :wlmdb (l/open-transact-kv kv-store)))
-            (let [runner (write-txn-runner server skey db-name kv-store)]
+            (let [runner (write-txn-runner server db-name kv-store)]
               (write-message skey {:type :command-complete})
               (run-calls runner))))))))
 
@@ -1791,7 +1791,7 @@
             (let [wlmdb  (l/open-transact-kv kv-store)
                   ostore (get-store server db-name)
                   wstore (st/transfer ostore wlmdb)
-                  runner (write-txn-runner server skey db-name kv-store)]
+                  runner (write-txn-runner server db-name kv-store)]
               (update-db
                 server db-name #(assoc %
                                        :wlmdb wlmdb
@@ -1961,25 +1961,27 @@
   (run-calls [this])
   (halt-run [this]))
 
+(deftype Runner [server kv-store sk msg running?]
+  IRunner
+  (new-message [_ skey message]
+    (vreset! sk skey)
+    (vreset! msg message))
+
+  (halt-run [_] (vreset! running? false))
+
+  (run-calls [_]
+    (locking kv-store
+      (loop []
+        (.wait ^Object kv-store)
+        (let [{:keys [type] :as message} @msg
+              skey                       @sk]
+          (message-cases skey type))
+        (when @running? (recur))))))
+
 (defn- write-txn-runner
-  [^Server server skey db-name kv-store]
-  (let [runner (let [sk       (volatile! nil)
-                     msg      (volatile! nil)
-                     running? (volatile! true)]
-                 (reify
-                   IRunner
-                   (new-message [_ skey message]
-                     (vreset! sk skey)
-                     (vreset! msg message))
-                   (halt-run [_] (vreset! running? false))
-                   (run-calls [_]
-                     (locking kv-store
-                       (loop []
-                         (.wait ^Object kv-store)
-                         (let [{:keys [type] :as message} @msg
-                               skey                       @sk]
-                           (message-cases skey type))
-                         (when @running? (recur)))))))]
+  [^Server server db-name kv-store]
+  (let [runner (->Runner server kv-store (volatile! nil)
+                         (volatile! nil) (volatile! true))]
     (update-db server db-name #(assoc % :runner runner))
     runner))
 
