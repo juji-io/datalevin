@@ -1,4 +1,4 @@
-(ns ^:no-doc datalevin.server
+(ns datalevin.server
   "Non-blocking event-driven database server with role based access control"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
@@ -467,7 +467,7 @@
                  (if tgt false true))))
         user-permissions))
 
-(defmacro ^:no-doc wrap-permission
+(defmacro wrap-permission
   [req-act req-obj req-tgt message & body]
   `(let [{:keys [~'client-id ~'write-bf]} @(~'.attachment ~'skey)
          ~'ch                             (~'.channel ~'skey)
@@ -740,7 +740,7 @@
     (p/write-message-blocking ch write-bf
                               {:type :error-response :message error-msg})))
 
-(defmacro ^:no-doc wrap-error
+(defmacro wrap-error
   [& body]
   `(try
      ~@body
@@ -816,7 +816,7 @@
 
 (defn- in-use-dbs [server] (keep store-in-use? (get-stores server)))
 
-(defmacro ^:no-doc normal-dt-store-handler
+(defmacro normal-dt-store-handler
   "Handle request to Datalog store that needs no copy-in or copy-out"
   [f]
   `(write-message
@@ -827,7 +827,7 @@
                 (store ~'server ~'skey (nth ~'args 0) ~'writing?)
                 (rest ~'args))}))
 
-(defmacro ^:no-doc normal-kv-store-handler
+(defmacro normal-kv-store-handler
   "Handle request to key-value store that needs no copy-in or copy-out"
   [f]
   `(write-message
@@ -856,7 +856,7 @@
       (update-db server db-name #(assoc % :engine engine))
       (write-message skey {:type :command-complete}))))
 
-(defmacro ^:no-doc search-handler
+(defmacro search-handler
   "Handle request to search engine"
   [f]
   `(write-message
@@ -885,7 +885,7 @@
       (update-db server db-name #(assoc % :writer writer))
       (write-message skey {:type :command-complete}))))
 
-(defmacro ^:no-doc index-writer-handler
+(defmacro index-writer-handler
   "Handle request to index writer"
   [f]
   `(write-message
@@ -1126,7 +1126,7 @@
    'write
    'commit])
 
-(defmacro ^:no-doc message-cases
+(defmacro message-cases
   "Message handler function should have the same name as the incoming message
   type, e.g. '(authentication skey message) for :authentication message type"
   [skey type]

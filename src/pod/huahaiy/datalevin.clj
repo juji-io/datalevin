@@ -44,6 +44,9 @@
 ;; uuid -> dl db
 (defonce ^:private dl-dbs (atom {}))
 
+;; uuid -> writing dl db
+(defonce ^:private wdl-dbs (atom {}))
+
 ;; uuid -> kv db
 (defonce ^:private kv-dbs (atom {}))
 
