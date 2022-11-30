@@ -1,7 +1,11 @@
 # Change Log
 
-## 0.6.25
+## WIP
+### Added
+- `abort-transaction` function to abort an explicit transaction. #161
+- [Server] `:session-idle-timeout` server option, so server can clean up idle client session and close relevant databases, #122
 
+## 0.6.25
 ### Added
 - [KV] `with-transaction-kv` macro to expose explicit transactions for KV
   database. This allows arbitrary code within a transaction to achieve
