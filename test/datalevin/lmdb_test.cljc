@@ -596,4 +596,6 @@
     (testing "entries after transaction"
       (is (= 6 (l/entries lmdb "a")))
       (is (= 2 (l/entries lmdb "d"))))
+
+    (l/close-kv lmdb)
     (u/delete-files dir)))
