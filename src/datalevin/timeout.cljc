@@ -1,4 +1,4 @@
-(ns datalevin.timeout)
+(ns ^:no-doc datalevin.timeout)
 
 (def ^:dynamic *deadline*
   "When non nil, query pr pull will throw if its not done before *deadline* -- as returned by (System/currentTimeMillis) or (.now js/Date)"

@@ -1,4 +1,4 @@
-(ns datalevin.server
+(ns ^:no-doc datalevin.server
   "Non-blocking event-driven database server with role based access control"
   (:require [datalevin.util :as u]
             [datalevin.core :as d]
