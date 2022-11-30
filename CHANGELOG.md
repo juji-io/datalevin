@@ -3,10 +3,10 @@
 ## WIP
 
 ### Added
-- [KV] `with-transaction-kv` macro to support explicit transactions for KV
+- [KV] `with-transaction-kv` macro to expose explicit transactions for KV
   database. This allows arbitrary code within a transaction to achieve
   atomicity, e.g. to implement compare-and-swap semantics, etc, #110
-- [Datalog] `with-transaction` macro, same as the above for Datalog database
+- [Datalog] `with-transaction` macro, the same as the above for Datalog database
 - [Pod] Missing `visit` function
 
 ### Improved

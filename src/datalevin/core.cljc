@@ -1033,9 +1033,6 @@ Only usable for debug output.
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of key-value operations.
 
-  Concurrent calls of this macro will be serialized. Writes in the body are
-  not visible to outside readers until the end of the transaction.
-
   `binding` is a vector of a new identifier of the kv database with
   a new read/write transaction attached, and the identifier of the original
   kv database.
@@ -1060,9 +1057,6 @@ Only usable for debug output.
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
 
-  Concurrent calls of this macro will be serialized. Writes in the body are
-  not visible to outside readers until the end of the transaction.
-
   `binding` is a vector of a new identifier of the Datalog database
   connection with a new read/write transaction attached, and the identifier
   of the original database connection.
@@ -1085,7 +1079,8 @@ Only usable for debug output.
      (if (instance? DatalogStore s#)
        (try
          (let [db#              (db/new-db (r/open-transact s#))
-               ~(first binding) (atom db# :meta (meta conn#))] ~@body)
+               ~(first binding) (atom db# :meta (meta conn#))]
+           ~@body)
          (finally (r/close-transact s#)))
        (let [kv# (.-lmdb ^Store s#)]
          (with-transaction-kv [kv1# kv#]
