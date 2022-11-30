@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.23
 
 ### Added
 - [KV] `with-transaction-kv` macro to expose explicit transactions for KV

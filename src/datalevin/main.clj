@@ -28,7 +28,7 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.6.22")
+(def ^:private version "0.6.23")
 
 (def ^:private version-str
   (str

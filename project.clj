@@ -1,4 +1,4 @@
-(def version "0.6.22")
+(def version "0.6.23")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -8,9 +8,9 @@
   :managed-dependencies [
                          [babashka/babashka.pods "0.1.0"]
                          [com.cognitect/transit-clj "1.0.329"]
-                         [com.fasterxml.jackson.core/jackson-core "2.14.0"]
+                         [com.fasterxml.jackson.core/jackson-core "2.14.1"]
                          [com.github.clj-easy/graal-build-time "0.1.4"]
-                         [com.taoensso/encore "3.36.0"]
+                         [com.taoensso/encore "3.39.0"]
                          [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "6.0.2"]
                          [joda-time/joda-time "2.12.1"]
@@ -29,7 +29,7 @@
                          [org.graalvm.nativeimage/svm "21.3.0"]
                          [org.lmdbjava/lmdbjava "0.8.2"]
                          [org.roaringbitmap/RoaringBitmap "0.9.35"]
-                         [persistent-sorted-set "0.2.2"]
+                         [persistent-sorted-set "0.2.3"]
                          ]
   :dependencies [[org.clojure/clojure :scope "provided"]
                  [org.lmdbjava/lmdbjava]
@@ -59,11 +59,11 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              :jvm-opts
-                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
+                              ;; :jvm-opts
+                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]
