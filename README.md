@@ -4,7 +4,7 @@
 <p align="center">
 <a href="https://cljdoc.org/d/datalevin/datalevin"><img src="https://cljdoc.org/badge/datalevin/datalevin" alt="datalevin on cljdoc"></img></a>
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.25" alt="datalevin linux/macos build status"></img></a>
+<a href="https://github.com/juji-io/datalevin/actions"><img src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.6.26" alt="datalevin linux/macos build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 
 </p>
@@ -102,14 +102,14 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.6.25"]
+[datalevin "0.6.26"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.6.25"}
+{:deps {datalevin/datalevin {:mvn/version "0.6.26"}
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
@@ -187,16 +187,16 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.25/dtlv-0.6.25-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.26/dtlv-0.6.26-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.25/dtlv-0.6.25-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.26/dtlv-0.6.26-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.25/dtlv-0.6.25-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.26/dtlv-0.6.26-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.6.25)
+  Datalevin (version: 0.6.26)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -233,7 +233,7 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.6.25)
+  Datalevin (version: 0.6.26)
 
   Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
@@ -292,7 +292,7 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 #### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.25/datalevin-0.6.25-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.26/datalevin-0.6.26-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
 image is AOT and not as efficient as JVM for long running programs, or when a
@@ -300,12 +300,12 @@ pre-built native version is not available for your platform. For example,
 assuming your Java is newer than version 11:
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.25-standalone.jar
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.26-standalone.jar
 ```
 This will start the Datalevin REPL.
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.25-standalone.jar serv -r /tmp/test-server
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.26-standalone.jar serv -r /tmp/test-server
 ```
 Will run the Datalevin server on default port 8898, with root data path at
 `/tmp/test-server`.

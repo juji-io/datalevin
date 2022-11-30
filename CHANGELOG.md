@@ -1,9 +1,9 @@
 # Change Log
 
-## WIP
+## 0.6.26
 ### Added
 
-## WIP
+## 0.6.26
 ### Added
 - [KV] `with-transaction-kv` macro to expose explicit transactions for KV
   database. This allows arbitrary code within a transaction to achieve
