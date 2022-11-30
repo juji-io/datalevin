@@ -653,6 +653,43 @@
     (sut/close local-conn)
     (s/stop server)))
 
+(deftest update-schema-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "update-schema-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        dir  "dtlv://datalevin:datalevin@localhost/update-schema"
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}})]
+    (sut/transact! conn [{:id 1}])
+    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (thrown-with-msg? Exception #"unique constraint"
+                          (sut/transact! conn [[:db/add 2 :id 1]])))
+
+    (sut/update-schema conn {:id {:db/valueType :db.type/long}})
+    (sut/transact! conn [[:db/add 2 :id 1]])
+    (is (= (count (sut/datoms @conn :eav)) 2))
+
+    (is (thrown-with-msg? Exception #"uniqueness change is inconsistent"
+                          (sut/update-schema
+                            conn {:id {:db/unique    :db.unique/identity
+                                       :db/valueType :db.type/long}})))
+
+    (is (thrown-with-msg? Exception #"Cannot delete attribute with datom"
+                          (sut/update-schema conn nil #{:id})))
+
+    (sut/update-schema conn nil nil {:id :identifer})
+    (is (= (:identifer (sut/schema conn))
+           {:db/valueType :db.type/long :db/aid 3}))
+    (is (= (sut/datoms @conn :eav)
+           [(d/datom 1 :identifer 1) (d/datom 2 :identifer 1)]))
+
+    (sut/close conn)
+    (s/stop server)))
+
 (deftest restart-server-test
   (let [root    (u/tmp-dir (str "remote-schema-test-" (UUID/randomUUID)))
         server1 (s/create {:port c/default-port
@@ -1152,43 +1189,7 @@
     (sut/close conn)
     (u/delete-files dir)))
 
-(deftest update-schema-test
-  (let [server (s/create {:port c/default-port
-                          :root (u/tmp-dir
-                                  (str "update-schema-test-"
-                                       (UUID/randomUUID)))})
-        _      (s/start server)
 
-        dir  "dtlv://datalevin:datalevin@localhost/update-schema"
-        conn (sut/create-conn dir
-                              {:id {:db/unique    :db.unique/identity
-                                    :db/valueType :db.type/long}})]
-    (sut/transact! conn [{:id 1}])
-    (is (= (sut/datoms @conn :eav) [(d/datom 1 :id 1)]))
-    ;; TODO somehow this cannot pass in graal
-    ;; (is (thrown-with-msg? Exception #"unique constraint"
-    ;;                       (sut/transact! conn [[:db/add 2 :id 1]])))
-
-    (sut/update-schema conn {:id {:db/valueType :db.type/long}})
-    (sut/transact! conn [[:db/add 2 :id 1]])
-    (is (= (count (sut/datoms @conn :eav)) 2))
-
-    (is (thrown-with-msg? Exception #"uniqueness change is inconsistent"
-                          (sut/update-schema
-                            conn {:id {:db/unique    :db.unique/identity
-                                       :db/valueType :db.type/long}})))
-
-    (is (thrown-with-msg? Exception #"Cannot delete attribute with datom"
-                          (sut/update-schema conn nil #{:id})))
-
-    (sut/update-schema conn nil nil {:id :identifer})
-    (is (= (:identifer (sut/schema conn))
-           {:db/valueType :db.type/long :db/aid 3}))
-    (is (= (sut/datoms @conn :eav)
-           [(d/datom 1 :identifer 1) (d/datom 2 :identifer 1)]))
-
-    (sut/close conn)
-    (s/stop server)))
 
 (deftest simulated-tx-test
   (let [server (s/create {:port c/default-port
@@ -1265,14 +1266,21 @@
         (is (nil? (sut/get-value lmdb "a" 1 :data :data false))))
       (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
 
+    (testing "abort"
+      (sut/with-transaction-kv [db lmdb]
+        (sut/transact-kv db [[:put "a" 1 3]])
+        (is (= [1 3] (sut/get-value db "a" 1 :data :data false)))
+        (sut/abort-transact-kv db))
+      (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
+
     (testing "concurrent writes do not overwrite each other"
       (let [count-f
             #(sut/with-transaction-kv [db lmdb]
                (let [^long now (sut/get-value db "a" :counter)]
                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
                  (sut/get-value db "a" :counter)))]
-        (is (= (set [1 2 3 4 5])
-               (set (pcalls count-f count-f count-f count-f count-f))))))
+        (is (= (set [1 2 3])
+               (set (pcalls count-f count-f count-f))))))
 
     (sut/close-kv lmdb)))
 
@@ -1297,14 +1305,21 @@
         (is (nil? (sut/get-value lmdb "a" 1 :data :data false))))
       (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
 
+    (testing "abort"
+      (sut/with-transaction-kv [db lmdb]
+        (sut/transact-kv db [[:put "a" 1 3]])
+        (is (= [1 3] (sut/get-value db "a" 1 :data :data false)))
+        (sut/abort-transact-kv db))
+      (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
+
     (testing "concurrent writes from same client do not overwrite each other"
       (let [count-f
             #(sut/with-transaction-kv [db lmdb]
                (let [^long now (sut/get-value db "a" :counter)]
                  (sut/transact-kv db [[:put "a" :counter (inc now)]])
                  (sut/get-value db "a" :counter)))]
-        (is (= (set [1 2 3 4 5])
-               (set (pcalls count-f count-f count-f count-f count-f))))))
+        (is (= (set [1 2 3])
+               (set (pcalls count-f count-f count-f))))))
 
     (testing "concurrent writes from diff clients do not overwrite each other"
       (let [count-f
@@ -1317,9 +1332,9 @@
             read-f (fn []
                      (Thread/sleep (rand-int 1000))
                      (sut/get-value lmdb "a" :counter))]
-        (is (#{(set [6 7 8 9 10]) (set [5 6 7 8 9 10])}
-              (set (pcalls count-f count-f read-f  read-f
-                           count-f count-f count-f read-f))))))
+        (is (#{(set [4 5 6]) (set [3 4 5 6])}
+              (set (pcalls count-f read-f  read-f
+                           count-f count-f read-f))))))
 
     (sut/close-kv lmdb)
     (s/stop server)))
@@ -1331,6 +1346,7 @@
                 :in $ ?e
                 :where [?e :counter ?c]]]
     (is (nil? (sut/q query @conn 1)))
+
     (testing "new value is invisible to outside readers"
       (sut/with-transaction [cn conn]
         (is (nil? (sut/q query @cn 1)))
@@ -1339,14 +1355,21 @@
         (is (nil? (sut/q query @conn 1))))
       (is (= 1 (sut/q query @conn 1))))
 
+    (testing "abort"
+      (sut/with-transaction [cn conn]
+        (sut/transact! cn [{:db/id 1 :counter 2}])
+        (is (= 2 (sut/q query @cn 1)))
+        (sut/abort-transact cn))
+      (is (= 1 (sut/q query @conn 1))))
+
     (testing "concurrent writes do not overwrite each other"
       (let [count-f
             #(sut/with-transaction [cn conn]
                (let [^long now (sut/q query @cn 1)]
                  (sut/transact! cn [{:db/id 1 :counter (inc now)}])
                  (sut/q query @cn 1)))]
-        (is (= (set [2 3 4 5 6])
-               (set (pcalls count-f count-f count-f count-f count-f))))))
+        (is (= (set [2 3 4])
+               (set (pcalls count-f count-f count-f))))))
     (sut/close conn)))
 
 (deftest remote-with-transaction-test
@@ -1371,14 +1394,21 @@
         (is (nil? (sut/q query @conn 1))))
       (is (= 1 (sut/q query @conn 1))))
 
+    (testing "abort"
+      (sut/with-transaction [cn conn]
+        (sut/transact! cn [{:db/id 1 :counter 2}])
+        (is (= 2 (sut/q query @cn 1)))
+        (sut/abort-transact cn))
+      (is (= 1 (sut/q query @conn 1))))
+
     (testing "concurrent writes do not overwrite each other"
       (let [count-f
             #(sut/with-transaction [cn conn]
                (let [^long now (sut/q query @cn 1)]
                  (sut/transact! cn [{:db/id 1 :counter (inc now)}])
                  (sut/q query @cn 1)))]
-        (is (= (set [2 3 4 5 6])
-               (set (pcalls count-f count-f count-f count-f count-f))))))
+        (is (= (set [2 3 4])
+               (set (pcalls count-f count-f count-f))))))
 
     (testing "concurrent writes from diff clients do not overwrite each other"
       (let [count-f
@@ -1386,8 +1416,8 @@
                (let [^long now (sut/q query @cn 1)]
                  (sut/transact! cn [{:db/id 1 :counter (inc now)}])
                  (sut/q query @cn 1)))]
-        (is (= (set [7 8 9 10 11])
-               (set (pcalls count-f count-f count-f count-f count-f))))))
+        (is (= (set [5 6 7])
+               (set (pcalls count-f count-f count-f))))))
 
     (sut/close conn)
     (s/stop server)))

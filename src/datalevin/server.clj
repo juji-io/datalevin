@@ -574,9 +574,8 @@
 
 (defn- update-db
   [^Server server db-name f]
-  (let [^Map dbs (.-dbs server)
-        m        (get dbs db-name {})]
-    (.put dbs db-name (f m))))
+  (let [^Map dbs (.-dbs server)]
+    (.put dbs db-name (f (get dbs db-name {})))))
 
 (defn- add-store
   [^Server server db-name store]
@@ -1079,6 +1078,7 @@
    'tx-data
    'open-transact
    'close-transact
+   'abort-transact
    'fetch
    'populated?
    'size
@@ -1103,6 +1103,7 @@
    'entries
    'open-transact-kv
    'close-transact-kv
+   'abort-transact-kv
    'transact-kv
    'get-value
    'get-first
@@ -1777,6 +1778,16 @@
         (write-message skey {:type :command-complete})
         (.release ^Semaphore (get-in dbs [db-name :lock]))))))
 
+(defn- abort-transact-kv
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn db-name)
+        "Don't have permission to alter the database"
+        (normal-kv-store-handler abort-transact-kv)))))
+
 (defn- open-transact
   [^Server server ^SelectionKey skey {:keys [args] :as message}]
   (wrap-error
@@ -1820,6 +1831,18 @@
           #(dissoc % :wlmdb :wstore :wdt-db :runner))
         (write-message skey {:type :command-complete})
         (.release ^Semaphore (get-in dbs [db-name :lock]))))))
+
+(defn- abort-transact
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [db-name  (nth args 0)
+          kv-store (get-kv-store server db-name)
+          sys-conn (.-sys-conn server)]
+      (wrap-permission
+        ::alter ::database (db-eid sys-conn db-name)
+        "Don't have permission to alter the database"
+        (l/abort-transact-kv kv-store)
+        (write-message skey {:type :command-complete})))))
 
 (defn- transact-kv
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
@@ -2000,8 +2023,8 @@
       (locking kv-store (.notify kv-store)))
     (catch Exception e
       (stt/print-stack-trace e)
-      (log/error "Error Handling with-transaction message:"
-                 (ex-message e)))))
+      (error-response skey (str "Error Handling with-transaction message:"
+                                (ex-message e))))))
 
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]

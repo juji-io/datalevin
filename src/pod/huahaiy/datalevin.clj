@@ -285,6 +285,10 @@
     (swap! wkv-dbs dissoc kv-db)
     (d/close-transact-kv d)))
 
+(defn abort-transact-kv [{:keys [::kv-db]}]
+  (when-let [d (get @wkv-dbs kv-db)]
+    (d/abort-transact-kv d)))
+
 (defn open-transact [{:keys [::conn] :as cn}]
   (when-let [c (get @dl-conns conn)]
     (let [s  (.-store ^DB @c)
@@ -305,6 +309,13 @@
       (swap! wdl-dbs dissoc conn)
       (swap! wdl-conns dissoc conn)
       (d/close-transact-kv l))))
+
+(defn abort-transact [{:keys [::conn]}]
+  (when-let [c (get @dl-conns conn)]
+    (let [wc (get @wdl-conns conn)
+          ws (.-store ^DB @wc)
+          wl (.-lmdb ^Store ws)]
+      (d/abort-transact-kv wl))))
 
 (defn transact-kv [db txs] (when-let [d (get-kv db)] (d/transact-kv d txs)))
 
@@ -432,8 +443,10 @@
    'entries            entries
    'open-transact-kv   open-transact-kv
    'close-transact-kv  close-transact-kv
+   'abort-transact-kv  abort-transact-kv
    'open-transact      open-transact
    'close-transact     close-transact
+   'abort-transact     abort-transact
    'transact-kv        transact-kv
    'get-value          get-value
    'get-first          get-first

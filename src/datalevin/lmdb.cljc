@@ -88,8 +88,9 @@
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-rtx [db])
   (return-rtx [db rtx])
-  (open-transact-kv [db] "open a read/write rtx, return a writing db")
+  (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
   (close-transact-kv [db] "close and commit the read/write rtx")
+  (abort-transact-kv [db] "abort the explicit read/write rtx")
   (write-txn [db] "return the write-txn")
   (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.")

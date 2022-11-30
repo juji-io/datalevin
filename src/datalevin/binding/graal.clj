@@ -76,7 +76,8 @@
          ^BufVal kp
          ^BufVal vp
          ^BufVal start-kp
-         ^BufVal stop-kp]
+         ^BufVal stop-kp
+         aborted?]
 
   IBuffer
   (put-key [_ x t]
@@ -502,7 +503,7 @@
                  (BufVal/create 1)
                  (BufVal/create c/+max-key-size+)
                  (BufVal/create c/+max-key-size+)
-                 ))
+                 (volatile! false)))
       (catch Lib$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
@@ -601,7 +602,8 @@
                                 kp-w
                                 vp-w
                                 start-kp-w
-                                stop-kp-w))
+                                stop-kp-w
+                                (volatile! false)))
       (.mark-write this)
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: "
@@ -611,14 +613,21 @@
     (when-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
         (try
-          (.commit txn)
-          (vreset! write-txn nil)
-          :committed
+          (let [aborted? @(.-aborted? wtxn)]
+            (if aborted? (.close txn) (.commit txn))
+            (vreset! write-txn nil)
+            (if aborted? :aborted :committed))
           (catch Exception e
             (.close txn)
             (vreset! write-txn nil)
             (raise "Fail to commit read/write transaction in LMDB: "
                    (ex-message e) {}))))))
+
+  (abort-transact-kv [this]
+    (when-let [^Rtx wtxn @write-txn]
+      (vreset! (.-aborted? wtxn) true)
+      (vreset! write-txn wtxn)
+      nil))
 
   (write-txn [this]
     write-txn)

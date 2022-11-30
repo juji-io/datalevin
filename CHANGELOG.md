@@ -2,15 +2,15 @@
 
 ## WIP
 ### Added
-- `abort-transaction` function to abort an explicit transaction. #161
-- [Server] `:session-idle-timeout` server option, so server can clean up idle client session and close relevant databases, #122
 
-## 0.6.25
+## WIP
 ### Added
 - [KV] `with-transaction-kv` macro to expose explicit transactions for KV
   database. This allows arbitrary code within a transaction to achieve
   atomicity, e.g. to implement compare-and-swap semantics, etc, #110
 - [Datalog] `with-transaction` macro, the same as the above for Datalog database
+- [KV]`abort-transact-kv` function to rollback writes from within an explicit KV transaction.
+- [Datalog] `abort-transact` function, same for Datalog transaction.
 - [Pod] Missing `visit` function
 
 ### Improved

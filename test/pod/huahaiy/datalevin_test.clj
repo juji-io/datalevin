@@ -16,13 +16,23 @@
   (let [dir  (u/tmp-dir (str "pod-with-tx-kv-test-" (UUID/randomUUID)))
         lmdb (pd/open-kv dir)]
     (pd/open-dbi lmdb "a")
-    (pd/with-transaction-kv [db lmdb]
-      (is (nil? (pd/get-value db "a" 1 :data :data false)))
-      (pd/transact-kv db [[:put "a" 1 2]
-                          [:put "a" :counter 0]])
-      (is (= [1 2] (pd/get-value db "a" 1 :data :data false)))
-      (is (nil? (pd/get-value lmdb "a" 1 :data :data false))))
+
+    (testing "new value is invisible to outside readers"
+      (pd/with-transaction-kv [db lmdb]
+        (is (nil? (pd/get-value db "a" 1 :data :data false)))
+        (pd/transact-kv db [[:put "a" 1 2]
+                            [:put "a" :counter 0]])
+        (is (= [1 2] (pd/get-value db "a" 1 :data :data false)))
+        (is (nil? (pd/get-value lmdb "a" 1 :data :data false)))))
     (is (= [1 2] (pd/get-value lmdb "a" 1 :data :data false)))
+
+    (testing "abort"
+      (pd/with-transaction-kv [db lmdb]
+        (pd/transact-kv db [[:put "a" 1 3]])
+        (is (= [1 3] (pd/get-value db "a" 1 :data :data false)))
+        (pd/abort-transact-kv db))
+      (is (= [1 2] (pd/get-value lmdb "a" 1 :data :data false))))
+
     (pd/close-kv lmdb)
     (u/delete-files dir)))
 
@@ -40,6 +50,14 @@
         (is (= 1 (pd/q query (pd/db cn) 1)))
         (is (nil? (pd/q query (pd/db conn) 1))))
       (is (= 1 (pd/q query (pd/db conn) 1))))
+
+    (testing "abort"
+      (pd/with-transaction [cn conn]
+        (pd/transact! cn [{:db/id 1 :counter 2}])
+        (is (= 2 (pd/q query (pd/db cn) 1)))
+        (pd/abort-transact cn))
+      (is (= 1 (pd/q query (pd/db conn) 1))))
+
     (pd/close conn)
     (u/delete-files dir)))
 

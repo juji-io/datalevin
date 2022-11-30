@@ -62,6 +62,7 @@
   (tx-data [store data simulated?]
     "Send to remote server the data from call to `db/transact-tx-data`")
   (open-transact [store])
+  (abort-transact [store])
   (close-transact [store]))
 
 (declare ->DatalogStore)
@@ -200,6 +201,9 @@
     (cl/normal-request client :open-transact [db-name])
     (.mark-write this))
 
+  (abort-transact [this]
+    (cl/normal-request client :abort-transact [db-name] true))
+
   (close-transact [_]
     (cl/normal-request client :close-transact [db-name] true)))
 
@@ -286,6 +290,9 @@
 
   (close-transact-kv [db]
     (cl/normal-request client :close-transact-kv [db-name] true))
+
+  (abort-transact-kv [db]
+    (cl/normal-request client :abort-transact-kv [db-name] true))
 
   (transact-kv [db txs]
     (let [{:keys [type message]}

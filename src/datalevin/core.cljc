@@ -1029,6 +1029,10 @@ Only usable for debug output.
        :doc      "Close the attached read/write transaction of a KV db returned by [[open-transact-kv]]. Recommend to use [[with-transaction-kv]] instead of calling this directly."}
   close-transact-kv l/close-transact-kv)
 
+(def ^{:arglists '([db])
+       :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
+  abort-transact-kv l/abort-transact-kv)
+
 (defmacro with-transaction-kv
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of key-value operations.
@@ -1089,6 +1093,14 @@ Only usable for debug output.
                         ~@body)]
              (reset! conn# (db/new-db (s/transfer (.-store ^DB db#) kv#)))
              res#))))))
+
+(defn abort-transact
+  "Rollback writes of the transaction from inside [[with-transaction]]."
+  [conn]
+  (let [s (.-store ^DB (deref conn))]
+    (if (instance? DatalogStore s)
+      (r/abort-transact s)
+      (abort-transact-kv (.-lmdb ^Store s)))))
 
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.

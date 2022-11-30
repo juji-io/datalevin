@@ -76,7 +76,8 @@
               ^Txn txn
               ^ByteBuffer kb
               ^ByteBuffer start-kb
-              ^ByteBuffer stop-kb]
+              ^ByteBuffer stop-kb
+              aborted?]
   IBuffer
   (put-key [_ x t]
     (try
@@ -362,7 +363,8 @@
                  (.txnRead env)
                  (b/allocate-buffer c/+max-key-size+)
                  (b/allocate-buffer c/+max-key-size+)
-                 (b/allocate-buffer c/+max-key-size+)))
+                 (b/allocate-buffer c/+max-key-size+)
+                 (volatile! false)))
       (catch Txn$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
@@ -416,7 +418,8 @@
                                   (.txnWrite env)
                                   kb-w
                                   start-kb-w
-                                  stop-kb-w))
+                                  stop-kb-w
+                                  (volatile! false)))
         (.mark-write this)
         (catch Exception e
           (st/print-stack-trace e)
@@ -427,15 +430,22 @@
     (try
       (if-let [^Rtx wtxn @write-txn]
         (when-let [^Txn txn (.-txn wtxn)]
-          (.commit txn)
-          (vreset! write-txn nil)
-          (.close txn)
-          :committed)
+          (let [aborted? @(.-aborted? wtxn)]
+            (when-not aborted? (.commit txn))
+            (vreset! write-txn nil)
+            (.close txn)
+            (if aborted? :aborted :committed)))
         (raise "Calling `close-transact-kv` without opening" {}))
       (catch Exception e
         (st/print-stack-trace e)
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
+
+  (abort-transact-kv [this]
+    (when-let [^Rtx wtxn @write-txn]
+      (vreset! (.-aborted? wtxn) true)
+      (vreset! write-txn wtxn)
+      nil))
 
   (write-txn [this]
     write-txn)
