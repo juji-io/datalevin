@@ -310,7 +310,7 @@
 
   The following can be set in the optional map:
   * `:pool-size` determines number of connections maintained in the connection
-  pool, default is 5.
+  pool, default is 3.
   * `:time-out` specifies the time (milliseconds) before an exception is thrown
   when obtaining an open network connection, default is 60000."
   ([uri-str]

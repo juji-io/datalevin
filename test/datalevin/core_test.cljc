@@ -716,7 +716,7 @@
                                        (UUID/randomUUID)))})
         _      (s/start server)
         dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
-        end    5000
+        end    3000
         conn   (sut/create-conn dir nil {:auto-entity-time? true})
         vs     (range 0 end)
         txs    (map (fn [a v] {a v}) (repeat :id) vs)]
@@ -1058,7 +1058,7 @@
     (u/delete-files dir)))
 
 (deftest id-large-bytes-test
-  (let [dir        (u/tmp-dir (str "datalevin-bytes-test-" (UUID/randomUUID)))
+  (let [dir        (u/tmp-dir (str "id-large-bytes-test-" (UUID/randomUUID)))
         ^bytes bs  (.getBytes ^String (apply str (range 1000)))
         ^bytes bs1 (.getBytes ^String (apply str (range 1000)))
         db         (-> (sut/empty-db

@@ -210,7 +210,7 @@
 
 (def +wire-datom-batch-size+ 1000)
 
-(def connection-pool-size 5)
+(def connection-pool-size 3)
 (def connection-timeout 60000) ; in milliseconds
 
 ;;search engine
