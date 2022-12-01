@@ -1,14 +1,16 @@
 (ns datalevin.test.entity
   (:require
-    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-    #?(:cljs [cljs.test :as t :refer-macros [is deftest testing]]
-       :clj  [clojure.test :as t :refer [is deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.server :as s]
-    [datalevin.util :as u]
-    [datalevin.constants :as c]
-    [datalevin.test.core :as tdc])
-  (:import [java.util UUID]))
+   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   #?(:cljs [cljs.test :as t :refer-macros [is deftest testing]]
+      :clj  [clojure.test :as t :refer [is deftest testing]])
+   [datalevin.core :as d]
+   [datalevin.server :as s]
+   [datalevin.util :as u]
+   [datalevin.interpret :as i]
+   [datalevin.constants :as c]
+   [datalevin.test.core :as tdc])
+  (:import [java.util UUID]
+           [datalevin.entity Entity]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
 
@@ -256,3 +258,98 @@
       (testing "and refer to the same database"
         (is (not= e1 (d/entity db2 1)))
         (is (not= e1 (d/entity db3 1)))))))
+
+(deftest entity-fn-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "entity-fn-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        f1 (i/inter-fn [db eid] (d/entity db eid))
+        f2 (i/inter-fn [db eid] (d/touch (d/entity db eid)))
+
+        end 3
+        vs  (range 0 end)
+        txs (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :value) vs)
+
+        q '[:find [?ent ...] :in $ ent :where [?e _ _] [(ent $ ?e) ?ent]]
+
+        get-eid (fn [^Entity e] (.-eid e))
+
+        uri    "dtlv://datalevin:datalevin@localhost/entity-fn"
+        r-conn (d/get-conn uri)
+
+        dir    (u/tmp-dir (str "entity-fn-test-" (UUID/randomUUID)))
+        l-conn (d/get-conn dir)]
+    (d/transact! r-conn txs)
+    (d/transact! l-conn txs)
+
+    (is (i/inter-fn? f1))
+    (is (i/inter-fn? f2))
+
+    (is (= (set (map get-eid (d/q q @r-conn f1)))
+           (set (map get-eid (d/q q @l-conn d/entity)))))
+    (is (= (set (map get-eid (d/q q @r-conn f2)))
+           (set (map get-eid (d/q q @l-conn
+                                  (fn [db eid]
+                                    (d/touch (d/entity db eid))))))))
+    (d/close r-conn)
+    (d/close l-conn)
+    (s/stop server)))
+
+(deftest remote-db-ident-fn
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir (str "remote-fn-test-"
+                                                (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/remote-fn-test"
+
+        conn    (d/create-conn dir
+                               {:name {:db/unique :db.unique/identity}})
+        inc-age (i/inter-fn
+                  [db name]
+                  (if-some [ent (d/entity db [:name name])]
+                    [{:db/id (:db/id ent)
+                      :age   (inc ^long (:age ent))}
+                     [:db/add (:db/id ent) :had-birthday true]]
+                    (throw (ex-info (str "No entity with name: " name) {}))))]
+    (d/transact! conn [{:db/id    1
+                        :name     "Petr"
+                        :age      31
+                        :db/ident :Petr}
+                       {:db/ident :inc-age
+                        :db/fn    inc-age}])
+    (is (thrown-with-msg? Exception
+                          #"Can’t find entity for transaction fn :unknown-fn"
+                          (d/transact! conn [[:unknown-fn]])))
+    (is (thrown-with-msg? Exception
+                          #"Entity :Petr expected to have :db/fn attribute"
+                          (d/transact! conn [[:Petr]])))
+    (is (thrown-with-msg? Exception
+                          #"No entity with name: Bob"
+                          (d/transact! conn [[:inc-age "Bob"]])))
+    (d/transact! conn [[:inc-age "Petr"]])
+    (let [e (d/entity @conn 1)]
+      (is (= (:age e) 32))
+      (is (:had-birthday e)))
+    (d/close conn)
+    (s/stop server)))
+
+(deftest auto-entity-time-test
+  (let [dir  (u/tmp-dir (str "auto-entity-time-test-" (UUID/randomUUID)))
+        conn (d/create-conn dir
+                            {:id {:db/unique    :db.unique/identity
+                                  :db/valueType :db.type/long}}
+                            {:auto-entity-time? true})]
+    (d/transact! conn [{:id 1}])
+    (is (= (count (d/datoms @conn :eav)) 3))
+    (is (:db/created-at (d/touch (d/entity @conn [:id 1]))))
+    (is (:db/updated-at (d/touch (d/entity @conn [:id 1]))))
+
+    (d/transact! conn [[:db/retractEntity [:id 1]]])
+    (is (= (count (d/datoms @conn :eav)) 0))
+    (is (nil? (d/entity @conn [:id 1])))
+
+    (d/close conn)
+    (u/delete-files dir)))

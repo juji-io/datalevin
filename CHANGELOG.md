@@ -1,7 +1,9 @@
 # Change Log
 
-## 0.6.26
+## WIP
 ### Added
+- [Server] `session-idel-timeout` option, so server can clean up resources of
+  idle sessions
 
 ## 0.6.26
 ### Added

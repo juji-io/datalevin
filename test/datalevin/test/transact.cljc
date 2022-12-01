@@ -3,11 +3,13 @@
    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer [is are deftest testing]])
    [datalevin.core :as d]
+   [datalevin.datom :as dd]
+   [datalevin.server :as s]
    [datalevin.interpret :as i]
-   [datalevin.db :as db]
    [datalevin.util :as u]
-   [datalevin.constants :refer [tx0]]
-   [datalevin.test.core :as tdc]))
+   [datalevin.constants :as c :refer [tx0]]
+   [datalevin.test.core :as tdc])
+  (:import [java.util UUID]))
 
 (deftest test-auto-update-entity-time
   (let [conn (d/create-conn
@@ -444,37 +446,6 @@
     (is (= (d/q q @conn "Oleg") #{["Boris"]}))
     (d/close conn)))
 
-;; We don't have immutable semantics and don't care about these tx particulars
-#_(deftest test-resolve-current-tx
-   (doseq [tx-tempid [:db/current-tx "datomic.tx" "datalevin.tx"]]
-     (testing tx-tempid
-       (let [conn (d/create-conn nil {:created-at {:db/valueType :db.type/ref}})
-             tx1  (d/transact! conn [{:name "X", :created-at tx-tempid}
-                                     {:db/id tx-tempid, :prop1 "prop1"}
-                                     [:db/add tx-tempid :prop2 "prop2"]
-                                     [:db/add -1 :name "Y"]
-                                     [:db/add -1 :created-at tx-tempid]])]
-         (is (= (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)
-                #{[1 :name "X"]
-                  [1 :created-at (+ tx0 1)]
-                  [(+ tx0 1) :prop1 "prop1"]
-                  [(+ tx0 1) :prop2 "prop2"]
-                  [2 :name "Y"]
-                  [2 :created-at (+ tx0 1)]}))
-         (is (= (:tempids tx1) (assoc {1 1, -1 2, :db/current-tx (+ tx0 1)}
-                                      tx-tempid (+ tx0 1))))
-         (let [tx2   (d/transact! conn [[:db/add tx-tempid :prop3 "prop3"]])
-               tx-id (get-in tx2 [:tempids tx-tempid])]
-           (is (= tx-id (+ tx0 2)))
-           (is (= (into {} (d/entity @conn tx-id))
-                  {:prop3 "prop3"})))
-         (let [tx3   (d/transact! conn [{:db/id tx-tempid, :prop4 "prop4"}])
-               tx-id (get-in tx3 [:tempids tx-tempid])]
-           (is (= tx-id (+ tx0 3)))
-           (is (= (into {} (d/entity @conn tx-id))
-                  {:prop4 "prop4"})))
-         (d/close conn)))))
-
 (deftest test-transient-294
   "db.fn/retractEntity retracts attributes of adjacent entities https://github.com/tonsky/datalevin/issues/294"
   (let [db     (reduce #(d/db-with %1 [{:db/id %2 :a1 1 :a2 2 :a3 3}])
@@ -524,3 +495,63 @@
                        (map #(java.util.Arrays/equals ^bytes %1 ^bytes %2)
                             byte-arrays
                             (map :v (:tx-data (d/with db ents)))))))))))
+
+(deftest datalog-larger-tx-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "large-tx-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+        dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
+        end    3000
+        conn   (d/create-conn dir nil {:auto-entity-time? true})
+        vs     (range 0 end)
+        txs    (map (fn [a v] {a v}) (repeat :id) vs)]
+    (d/transact! conn txs)
+    (is (= (d/q '[:find (count ?e)
+                  :where [?e :id]]
+                @conn)
+           [[end]]))
+    (let [[c u] (d/q '[:find [?c ?u]
+                       :in $ ?i
+                       :where
+                       [?e :id ?i]
+                       [?e :db/created-at ?c]
+                       [?e :db/updated-at ?u]]
+                     @conn 1)]
+      (is c)
+      (is u)
+      (is (= c u)))
+    (d/close conn)
+    (s/stop server)))
+
+(deftest simulated-tx-test
+  (let [server (s/create {:port c/default-port
+                          :root (u/tmp-dir
+                                  (str "simulated-tx-test-"
+                                       (UUID/randomUUID)))})
+        _      (s/start server)
+
+        dir  "dtlv://datalevin:datalevin@localhost/simulated-tx"
+        conn (d/create-conn dir
+                            {:id {:db/unique    :db.unique/identity
+                                  :db/valueType :db.type/long}})]
+    (let [rp (d/transact! conn [{:id 1}])]
+      (is (= (:tx-data rp) [(d/datom 1 :id 1)]))
+      (is (= (dd/datom-tx (first (:tx-data rp))) 2)))
+    (is (= (d/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
+
+    (let [rp (d/tx-data->simulated-report @conn [{:id 2}])]
+      (is (= (:tx-data rp) [(d/datom 2 :id 2)]))
+      (is (= (dd/datom-tx (first (:tx-data rp))) 3))
+      (is (= (:max-eid (:db-after rp)) 2))
+      (is (= (:max-tx (:db-after rp)) 3)))
+
+    (is (= (d/datoms @conn :eav) [(d/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
+
+    (d/close conn)
+    (s/stop server)))

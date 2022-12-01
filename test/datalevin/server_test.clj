@@ -170,3 +170,19 @@
     (d/close conn1)
     (sut/stop server)
     ))
+
+(deftest restart-server-test
+  (let [root    (u/tmp-dir (str "remote-schema-test-" (UUID/randomUUID)))
+        server1 (sut/create {:port c/default-port
+                             :root root})
+        _       (sut/start server1)
+        client  (cl/new-client "dtlv://datalevin:datalevin@localhost"
+                               {:time-out 5000})]
+    (is (= (cl/list-databases client) []))
+    (sut/stop server1)
+    (is (thrown? Exception (cl/list-databases client)))
+    (let [server2 (sut/create {:port c/default-port
+                               :root root})
+          _       (sut/start server2)]
+      (is (= (cl/list-databases client) []))
+      (sut/stop server2))))
