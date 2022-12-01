@@ -13,7 +13,8 @@
             [clojure.string :as str]
             [clojure.test :refer [is testing deftest use-fixtures]])
   (:import [java.util UUID Arrays HashMap]
-           [datalevin.datom Datom]))
+           [datalevin.datom Datom]
+           [java.lang Thread]))
 
 (use-fixtures :each server-fixture)
 
@@ -830,3 +831,92 @@
              (first (dc/fulltext-datoms db "red fox")))
            "The quick red fox jumped over the lazy red dogs."))
     (dc/close-db db)))
+
+(deftest remote-with-transaction-kv-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+        lmdb (sut/open-kv dir)]
+    (dc/open-dbi lmdb "a")
+
+    (testing "new value is invisible to outside readers"
+      (dc/with-transaction-kv [db lmdb]
+        (is (nil? (dc/get-value db "a" 1 :data :data false)))
+        (dc/transact-kv db [[:put "a" 1 2]
+                            [:put "a" :counter 0]])
+        (is (= [1 2] (dc/get-value db "a" 1 :data :data false)))
+        (is (nil? (dc/get-value lmdb "a" 1 :data :data false))))
+      (is (= [1 2] (dc/get-value lmdb "a" 1 :data :data false))))
+
+    (testing "abort"
+      (dc/with-transaction-kv [db lmdb]
+        (dc/transact-kv db [[:put "a" 1 3]])
+        (is (= [1 3] (dc/get-value db "a" 1 :data :data false)))
+        (dc/abort-transact-kv db))
+      (is (= [1 2] (dc/get-value lmdb "a" 1 :data :data false))))
+
+    (testing "concurrent writes from same client do not overwrite each other"
+      (let [count-f
+            #(dc/with-transaction-kv [db lmdb]
+               (let [^long now (dc/get-value db "a" :counter)]
+                 (dc/transact-kv db [[:put "a" :counter (inc now)]])
+                 (dc/get-value db "a" :counter)))]
+        (is (= (set [1 2 3])
+               (set (pcalls count-f count-f count-f))))))
+
+    (testing "concurrent writes from diff clients do not overwrite each other"
+      (let [count-f
+            #(dc/with-transaction-kv [db (dc/open-kv dir)]
+               (let [^long now (dc/get-value db "a" :counter)]
+                 (dc/transact-kv db [[:put "a" :counter (inc now)]])
+                 (dc/get-value db "a" :counter)))
+            read-f (fn []
+                     (Thread/sleep (rand-int 1000))
+                     (dc/get-value lmdb "a" :counter))]
+        (is (#{(set [4 5 6]) (set [3 4 5 6])}
+              (set (pcalls count-f read-f  read-f
+                           count-f count-f read-f))))))
+
+    (dc/close-kv lmdb)))
+
+(deftest remote-with-transaction-test
+  (let [dir   "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+        conn  (dc/create-conn dir)
+        query '[:find ?c .
+                :in $ ?e
+                :where [?e :counter ?c]]]
+
+    (is (nil? (dc/q query @conn 1)))
+
+    (testing "new value is invisible to outside readers"
+      (dc/with-transaction [cn conn]
+        (is (nil? (dc/q query @cn 1)))
+        (dc/transact! cn [{:db/id 1 :counter 1}])
+        (is (= 1 (dc/q query @cn 1)))
+        (is (nil? (dc/q query @conn 1))))
+      (is (= 1 (dc/q query @conn 1))))
+
+    (testing "abort"
+      (dc/with-transaction [cn conn]
+        (dc/transact! cn [{:db/id 1 :counter 2}])
+        (is (= 2 (dc/q query @cn 1)))
+        (dc/abort-transact cn))
+      (is (= 1 (dc/q query @conn 1))))
+
+    (testing "concurrent writes do not overwrite each other"
+      (let [count-f
+            #(dc/with-transaction [cn conn]
+               (let [^long now (dc/q query @cn 1)]
+                 (dc/transact! cn [{:db/id 1 :counter (inc now)}])
+                 (dc/q query @cn 1)))]
+        (is (= (set [2 3 4])
+               (set (pcalls count-f count-f count-f))))))
+
+    (testing "concurrent writes from diff clients do not overwrite each other"
+      (let [count-f
+            #(dc/with-transaction [cn (dc/create-conn dir)]
+               (let [^long now (dc/q query @cn 1)]
+                 (dc/transact! cn [{:db/id 1 :counter (inc now)}])
+                 (dc/q query @cn 1)))]
+        (is (= (set [5 6 7])
+               (set (pcalls count-f count-f count-f))))))
+
+    (dc/close conn)))

@@ -2,7 +2,7 @@
 
 ## WIP
 ### Added
-- [Server] `session-idel-timeout` option, so server can clean up resources of
+- [Server] `session-idle-timeout` option, so server can clean up resources of
   idle sessions
 
 ## 0.6.26
