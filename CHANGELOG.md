@@ -3,16 +3,8 @@
 ## WIP
 
 ### Fixed
--  [KV] `with-transaction-kv` when DB is resizing.
-
-### Added
-- [Server] `session-idle-timeout` option, so server can clean up resources of
-  idle sessions
-- [Datalog] `:limit` and `:offset` clauses for `q` function.
-
-### Improved
-- [KV] range functions automatically spill to disk when results do not fit in
-  memory. The same `seq` API is supported.
+- [KV] `with-transaction-kv` when DB is resizing.
+- [Native] glibc version mismatch
 
 ## 0.6.26
 ### Added

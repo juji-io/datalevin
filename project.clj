@@ -13,7 +13,7 @@
                          [com.taoensso/encore "3.39.0"]
                          [com.taoensso/nippy "3.2.0"]
                          [com.taoensso/timbre "6.0.2"]
-                         [joda-time/joda-time "2.12.1"]
+                         [joda-time/joda-time "2.12.2"]
                          [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
                          [nrepl/bencode "1.1.0"]
                          [org.babashka/sci "0.5.36"]
@@ -59,11 +59,11 @@
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
-                              :jvm-opts
-                              ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
-                               "--add-opens" "java.base/java.lang=ALL-UNNAMED"
-                               "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
-                               "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
+                              ;; :jvm-opts
+                              ;; ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/java.lang=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
+                              ;;  "--add-opens" "java.base/jdk.internal.ref=ALL-UNNAMED"]
                               :dependencies
                               [[org.clojure/test.check]
                                [org.clojure/tools.cli]
