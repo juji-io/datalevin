@@ -1,10 +1,14 @@
 # Change Log
 
+## WIP
+### Imprvoed
+- [Native] github action runner image pin to 20.04 to avoid using too new a
+  glibc version (2.32) that does not exist on most people's machines.
+
 ## 0.6.27
 
 ### Fixed
 - [KV] `with-transaction-kv` when DB is resizing.
-- [Native] glibc version mismatch
 
 ## 0.6.26
 ### Added
