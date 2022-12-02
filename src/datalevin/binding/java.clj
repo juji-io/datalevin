@@ -255,7 +255,9 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
-(declare ->LMDB)
+
+
+(declare ->LMDB reset-write-txn)
 
 (deftype LMDB [^Env env
                ^String dir
@@ -411,15 +413,7 @@
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (locking env
       (try
-        (.clear kb-w)
-        (.clear start-kb-w)
-        (.clear stop-kb-w)
-        (vreset! write-txn (->Rtx this
-                                  (.txnWrite env)
-                                  kb-w
-                                  start-kb-w
-                                  stop-kb-w
-                                  (volatile! false)))
+        (reset-write-txn this)
         (.mark-write this)
         (catch Exception e
           (st/print-stack-trace e)
@@ -463,9 +457,8 @@
         (catch Env$MapFullException _
           (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
           (up-db-size env)
-          (if @write-txn
-            (raise "Map is resized" {:resized true})
-            (.transact-kv this txs)))
+          (when @write-txn (reset-write-txn this))
+          (.transact-kv this txs))
         (catch Exception e
           (st/print-stack-trace e)
           (raise "Fail to transact to LMDB: " (ex-message e) {})))))
@@ -665,7 +658,20 @@
                    (.return-cursor dbi cur))))
       false)))
 
-
+(defn- reset-write-txn
+  [^LMDB lmdb]
+  (let [kb-w       ^ByteBuffer (.-kb-w lmdb)
+        start-kb-w ^ByteBuffer (.-start-kb-w lmdb)
+        stop-kb-w  ^ByteBuffer (.-stop-kb-w lmdb)]
+    (.clear kb-w)
+    (.clear start-kb-w)
+    (.clear stop-kb-w)
+    (vreset! (.-write-txn lmdb) (->Rtx lmdb
+                                       (.txnWrite ^Env (.-env lmdb))
+                                       kb-w
+                                       start-kb-w
+                                       stop-kb-w
+                                       (volatile! false)))))
 
 (defmethod open-kv :java
   ([dir]

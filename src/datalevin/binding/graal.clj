@@ -396,7 +396,7 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
-(declare ->LMDB)
+(declare ->LMDB reset-write-txn)
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
            CContext  {:value Lib$Directives}}
@@ -594,16 +594,7 @@
   (open-transact-kv [this]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (.clear kp-w)
-      (.clear start-kp-w)
-      (.clear stop-kp-w)
-      (vreset! write-txn (->Rtx this
-                                (Txn/create env)
-                                kp-w
-                                vp-w
-                                start-kp-w
-                                stop-kp-w
-                                (volatile! false)))
+      (reset-write-txn this)
       (.mark-write this)
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: "
@@ -648,9 +639,8 @@
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
               (.close info))
-            (if @write-txn
-              (raise "Map is resized" {:resized true})
-              (.transact-kv this txs)))
+            (when @write-txn (reset-write-txn this))
+            (.transact-kv this txs))
           (catch Exception e
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " (ex-message e) {}))))))
@@ -933,8 +923,23 @@
                    (ex-message e) {:dbi dbi-name}))
           (finally (.return-rtx this rtx)
                    (.return-cursor dbi cur))))
-      false))
-  )
+      false)))
+
+(defn- reset-write-txn
+  [^LMDB lmdb]
+  (let [kp-w       ^BufVal (.-kp-w lmdb)
+        start-kp-w ^BufVal (.-start-kp-w lmdb)
+        stop-kp-w  ^BufVal (.-stop-kp-w lmdb)]
+    (.clear kp-w)
+    (.clear start-kp-w)
+    (.clear stop-kp-w)
+    (vreset! (.-write-txn lmdb) (->Rtx lmdb
+                                       (Txn/create (.-env lmdb))
+                                       kp-w
+                                       (.-vp-w lmdb)
+                                       start-kp-w
+                                       stop-kp-w
+                                       (volatile! false)))))
 
 (defmethod open-kv :graal
   ([dir]

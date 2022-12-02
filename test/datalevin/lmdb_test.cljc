@@ -3,6 +3,7 @@
             [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
+            [datalevin.core :as dc]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
             [clojure.test :refer [deftest testing is]]
@@ -596,6 +597,22 @@
     (testing "entries after transaction"
       (is (= 6 (l/entries lmdb "a")))
       (is (= 2 (l/entries lmdb "d"))))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest with-txn-map-resize-test
+  (let [dir  (u/tmp-dir (str "map-size-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:mapsize 1})
+        data {:description "this is going to be bigger than 1MB"
+              :numbers     (range 1000000)}]
+    (l/open-dbi lmdb "a")
+
+    (dc/with-transaction-kv [db lmdb]
+      (l/transact-kv db [[:put "a" 1 data]])
+      (is (= data (l/get-value db "a" 1))))
+
+    (is (= data (l/get-value lmdb "a" 1)))
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
