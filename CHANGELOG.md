@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.28
 ### Imprvoed
 - [Native] Add github action runner image ubuntu-20.04 to avoid using too new a
   glibc version (2.32) that does not exist on most people's machines.
