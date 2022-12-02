@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.27
 
 ### Fixed
 - [KV] `with-transaction-kv` when DB is resizing.
