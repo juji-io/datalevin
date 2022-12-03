@@ -3,8 +3,8 @@
 ## WIP
 ### Added
 - [Client] `:client-opts` option map that is passed to the client when opening remote databases.
-### Improved
-- [Datalog] `transact!` itself is now atomic, and will rollback when exception occurs.
+### Fixed
+- [KV] `with-transaction-kv` does not drop prior data when DB is resizing.
 
 ## 0.6.28
 ### Improved

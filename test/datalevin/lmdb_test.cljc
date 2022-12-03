@@ -609,9 +609,12 @@
     (l/open-dbi lmdb "a")
 
     (dc/with-transaction-kv [db lmdb]
+      (l/transact-kv db [[:put "a" 0 :prior]])
+      (is (= :prior (l/get-value db "a" 0)))
       (l/transact-kv db [[:put "a" 1 data]])
       (is (= data (l/get-value db "a" 1))))
 
+    (is (= :prior (l/get-value lmdb "a" 0)))
     (is (= data (l/get-value lmdb "a" 1)))
 
     (l/close-kv lmdb)

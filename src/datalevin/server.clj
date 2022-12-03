@@ -733,11 +733,13 @@
   (.close ^SocketChannel (.channel skey)))
 
 (defn- error-response
-  [^SelectionKey skey error-msg]
+  [^SelectionKey skey error-msg error-data]
   (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
         ^SocketChannel                 ch (.channel skey)]
     (p/write-message-blocking ch write-bf
-                              {:type :error-response :message error-msg})))
+                              {:type    :error-response
+                               :message error-msg
+                               :data    error-data})))
 
 (defmacro wrap-error
   [& body]
@@ -745,7 +747,7 @@
      ~@body
      (catch Exception ~'e
        (log/error ~'e)
-       (error-response ~'skey (ex-message ~'e)))))
+       (error-response ~'skey (ex-message ~'e) (ex-data ~'e)))))
 
 ;; db
 

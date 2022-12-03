@@ -24,4 +24,4 @@ lein with-profile native-uberjar uberjar
 lein clean
 lein with-profile test-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image"  -jar "$TEST_JAR" ${test_name}
+"$GRAALVM_HOME/bin/native-image"  -R:MaxHeapSize=5g -jar "$TEST_JAR" ${test_name}

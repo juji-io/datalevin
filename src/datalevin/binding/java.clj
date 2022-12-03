@@ -457,8 +457,10 @@
         (catch Env$MapFullException _
           (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
           (up-db-size env)
-          (when @write-txn (reset-write-txn this))
-          (.transact-kv this txs))
+          (if @write-txn
+            (do (reset-write-txn this)
+                (raise "DB needs resize" {:resized true}))
+            (.transact-kv this txs)))
         (catch Exception e
           (st/print-stack-trace e)
           (raise "Fail to transact to LMDB: " (ex-message e) {})))))

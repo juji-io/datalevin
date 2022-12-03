@@ -3,6 +3,7 @@
   (:require [bencode.core :as bencode]
             [sci.core :as sci]
             [datalevin.core :as d]
+            [datalevin.lmdb :as l]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
             [datalevin.datom :as dd]
@@ -276,14 +277,14 @@
 
 (defn open-transact-kv [{:keys [::kv-db] :as db}]
   (when-let [d (get @kv-dbs kv-db)]
-    (let [wdb (d/open-transact-kv d)]
+    (let [wdb (l/open-transact-kv d)]
       (swap! wkv-dbs assoc kv-db wdb)
       (assoc db :writing? true))))
 
 (defn close-transact-kv [{:keys [::kv-db]}]
   (when-let [d (get @kv-dbs kv-db)]
     (swap! wkv-dbs dissoc kv-db)
-    (d/close-transact-kv d)))
+    (l/close-transact-kv d)))
 
 (defn abort-transact-kv [{:keys [::kv-db]}]
   (when-let [d (get @wkv-dbs kv-db)]
@@ -293,7 +294,7 @@
   (when-let [c (get @dl-conns conn)]
     (let [s  (.-store ^DB @c)
           l  (.-lmdb ^Store s)
-          wl (d/open-transact-kv l)
+          wl (l/open-transact-kv l)
           ws (st/transfer s wl)
           wd (db/new-db ws)]
       (swap! wdl-dbs assoc conn wd)
@@ -308,7 +309,7 @@
       (reset! c (db/new-db (st/transfer ws l)))
       (swap! wdl-dbs dissoc conn)
       (swap! wdl-conns dissoc conn)
-      (d/close-transact-kv l))))
+      (l/close-transact-kv l))))
 
 (defn abort-transact [{:keys [::conn]}]
   (when-let [c (get @dl-conns conn)]

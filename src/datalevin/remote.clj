@@ -295,7 +295,7 @@
     (cl/normal-request client :abort-transact-kv [db-name] true))
 
   (transact-kv [db txs]
-    (let [{:keys [type message]}
+    (let [{:keys [type message data]}
           (if (< (count txs) ^long c/+wire-datom-batch-size+)
             (cl/request client {:type     :transact-kv
                                 :mode     :request
@@ -307,7 +307,9 @@
                                 :args     [db-name]}
                         txs c/+wire-datom-batch-size+))]
       (when (= type :error-response)
-        (u/raise "Error transacting kv to server:" message {:uri uri}))))
+        (if (:resized data)
+          (u/raise message data)
+          (u/raise "Error transacting kv to server:" message {:uri uri})))))
 
   (get-value [db dbi-name k]
     (l/get-value db dbi-name k :data :data true))
