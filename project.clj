@@ -46,7 +46,7 @@
   :java-source-paths ["src/java"]
   :profiles {:uberjar        {:main           datalevin.main
                               :aot            [datalevin.main]
-                              :jar-inclusions [#"graal"]
+                              :jar-inclusions [#"graal" #"test"]
                               :dependencies
                               [[nrepl/bencode]
                                [org.clojure/tools.cli]
@@ -81,8 +81,7 @@
   :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"
                        #"datalevin.remote-withtxn-test"
-                       #"datalevin.remote-withtxnkv-test"
-                       ]
+                       #"datalevin.remote-withtxnkv-test"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password

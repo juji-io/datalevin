@@ -4,6 +4,7 @@
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    #?(:clj [clojure.java.shell :as sh])
    datalevin.lmdb-test
+   datalevin.scan-test
    datalevin.util-test
    datalevin.search-test
    datalevin.search-utils-test
@@ -59,6 +60,7 @@
   (let [{:keys [fail error]}
         (t/run-tests
           'datalevin.lmdb-test
+          'datalevin.scan-test
           'datalevin.util-test
           'datalevin.search-test
           'datalevin.search-utils-test

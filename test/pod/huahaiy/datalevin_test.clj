@@ -36,6 +36,25 @@
     (pd/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest with-txn-map-resize-test
+  (let [dir  (u/tmp-dir (str "pod-with-tx-kv-test-" (UUID/randomUUID)))
+        lmdb (pd/open-kv dir {:mapsize 1})
+        data {:description "this is going to be bigger than 1MB"
+              :numbers     (range 1000000)}]
+    (pd/open-dbi lmdb "a")
+
+    (pd/with-transaction-kv [db lmdb]
+      (pd/transact-kv db [[:put "a" 0 :prior]])
+      (is (= :prior (pd/get-value db "a" 0)))
+      (pd/transact-kv db [[:put "a" 1 data]])
+      (is (= data (pd/get-value db "a" 1))))
+
+    (is (= :prior (pd/get-value lmdb "a" 0)))
+    (is (= data (pd/get-value lmdb "a" 1)))
+
+    (pd/close-kv lmdb)
+    (u/delete-files dir)))
+
 (deftest with-transaction-test
   (let [dir   (u/tmp-dir (str "pod-with-tx-test-" (UUID/randomUUID)))
         conn  (pd/create-conn dir)

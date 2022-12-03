@@ -737,9 +737,9 @@
   (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
         ^SocketChannel                 ch (.channel skey)]
     (p/write-message-blocking ch write-bf
-                              {:type    :error-response
-                               :message error-msg
-                               :data    error-data})))
+                              {:type     :error-response
+                               :message  error-msg
+                               :err-data error-data})))
 
 (defmacro wrap-error
   [& body]

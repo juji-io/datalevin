@@ -237,11 +237,14 @@
          (swap! dl-conns assoc id conn)
          {::conn id})))))
 
-(defn open-kv [dir]
-  (let [db (d/open-kv dir)
-        id (UUID/randomUUID)]
-    (swap! kv-dbs assoc id db)
-    {::kv-db id}))
+(defn open-kv
+  ([dir]
+   (open-kv dir nil))
+  ([dir opts]
+   (let [db (d/open-kv dir opts)
+         id (UUID/randomUUID)]
+     (swap! kv-dbs assoc id db)
+     {::kv-db id})))
 
 (defn close-kv [db] (when-let [d (get-kv db)] (d/close-kv d)))
 
@@ -468,7 +471,12 @@
   `(let [db# ~(second binding)]
      (try
        (let [~(first binding) (open-transact-kv db#)]
-         ~@body)
+         (try
+           ~@body
+           (catch Exception ~'e
+             (if (:resized (ex-data ~'e))
+               (do ~@body)
+               (throw ~'e)))))
        (finally (close-transact-kv db#)))))
 
 (defmacro with-transaction
@@ -500,7 +508,12 @@
               `(let [db# ~(second binding)]
                 (try
                   (let [~(first binding) (open-transact-kv db#)]
-                    ~@body)
+                    (try
+                      ~@body
+                      (catch Exception ~'e
+                        (if (:resized (ex-data ~'e))
+                          (do ~@body)
+                          (throw ~'e)))))
                   (finally
                     (close-transact-kv db#)))))"}
            {"name" "with-transaction"
@@ -547,15 +560,16 @@
                         (write reply))
                       (throw (ex-info (str "Var not found: " var) {}))))
                   (catch Throwable e
-                    (binding [*out* *err*]
-                      (println e))
-                    (let [reply {"ex-message" (.getMessage e)
+                    (let [edata (ex-data e)
+                          reply {"ex-message" (.getMessage e)
                                  "ex-data"    (u/write-transit-string
-                                                (assoc (ex-data e)
+                                                (assoc edata
                                                        :type
                                                        (str (class e))))
                                  "id"         id
                                  "status"     ["done" "error"]}]
+                      (when-not (:resized edata)
+                        (binding [*out* *err*] (println e)))
                       (write reply))))
                 (recur))
             :shutdown

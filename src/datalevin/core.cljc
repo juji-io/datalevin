@@ -1030,14 +1030,6 @@ Only usable for debug output.
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries l/entries)
 
-#_(def ^{:arglists '([db])
-         :doc      "Return a modified KV db with a new read/write transaction attached, must call [[close-transact-kv]] to finish the transaction. Recommend to use [[with-transaction-kv]] instead of calling this directly."}
-    open-transact-kv l/open-transact-kv)
-
-#_(def ^{:arglists '([db])
-        :doc      "Close the attached read/write transaction of a KV db returned by [[open-transact-kv]]. Recommend to use [[with-transaction-kv]] instead of calling this directly."}
-   close-transact-kv l/close-transact-kv)
-
 (def ^{:arglists '([db])
        :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
