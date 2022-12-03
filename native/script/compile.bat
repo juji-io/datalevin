@@ -13,7 +13,7 @@ call ..\lein.bat with-profile test-uberjar do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 call %GRAALVM_HOME%\bin\native-image.cmd ^
-  "-R:MaxHeapSize=5g"
+  "-R:MaxHeapSize=5g" ^
   "-jar" "target/test.uberjar.jar" ^
   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
   dtlv-test
