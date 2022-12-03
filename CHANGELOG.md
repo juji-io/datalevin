@@ -1,12 +1,17 @@
 # Change Log
 
+## WIP
+### Added
+- [Client] `:client-opts` option map that is passed to the client when opening remote databases.
+### Improved
+- [Datalog] `transact!` itself is now atomic, and will rollback when exception occurs.
+
 ## 0.6.28
-### Imprvoed
+### Improved
 - [Native] Add github action runner image ubuntu-20.04 to avoid using too new a
   glibc version (2.32) that does not exist on most people's machines.
 
 ## 0.6.27
-
 ### Fixed
 - [KV] `with-transaction-kv` when DB is resizing.
 

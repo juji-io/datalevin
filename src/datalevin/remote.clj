@@ -214,7 +214,7 @@
   ([uri-str schema]
    (open (cl/new-client uri-str) uri-str schema nil))
   ([uri-str schema opts]
-   (open (cl/new-client uri-str) uri-str schema opts))
+   (open (cl/new-client uri-str (:client-opts opts)) uri-str schema opts))
   ([client uri-str schema opts]
    (let [uri (URI. uri-str)]
      (if-let [db-name (cl/parse-db uri)]
@@ -395,7 +395,7 @@
   ([uri-str]
    (open-kv uri-str nil))
   ([uri-str opts]
-   (open-kv (cl/new-client uri-str) uri-str opts))
+   (open-kv (cl/new-client uri-str (:client-opts opts)) uri-str opts))
   ([client uri-str opts]
    (let [uri     (URI. uri-str)
          uri-str (str uri-str

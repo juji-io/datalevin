@@ -14,6 +14,12 @@
    datalevin.server-test
    datalevin.client-test
    datalevin.remote-test
+   datalevin.remote-kv-test
+   datalevin.remote-dl-test
+   datalevin.remote-search-test
+   datalevin.remote-sutil-test
+   datalevin.remote-entity-test
+   datalevin.remote-transact-test
    datalevin.interpret-test
    datalevin.core-test
    datalevin.test.core
@@ -63,6 +69,12 @@
           'datalevin.server-test
           'datalevin.client-test
           'datalevin.remote-test
+          'datalevin.remote-kv-test
+          'datalevin.remote-dl-test
+          'datalevin.remote-search-test
+          'datalevin.remote-sutil-test
+          'datalevin.remote-entity-test
+          'datalevin.remote-transact-test
           'datalevin.interpret-test
           'datalevin.core-test
           'datalevin.test.core

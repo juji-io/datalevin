@@ -1,7 +1,5 @@
 (ns datalevin.core-test
   (:require [datalevin.core :as sut]
-            [datalevin.server :as s]
-            [datalevin.constants :as c]
             [datalevin.util :as u]
             #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
                :clj  [clojure.test :as t :refer [is are deftest testing]]))

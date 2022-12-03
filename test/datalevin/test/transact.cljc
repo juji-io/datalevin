@@ -3,8 +3,6 @@
    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer [is are deftest testing]])
    [datalevin.core :as d]
-   [datalevin.datom :as dd]
-   [datalevin.server :as s]
    [datalevin.interpret :as i]
    [datalevin.util :as u]
    [datalevin.constants :as c :refer [tx0]]
@@ -212,7 +210,6 @@
                     db)
                #{[:friend 2] [:age 15] [:name "Ivan"]}))))
     (d/close-db db)))
-
 
 (deftest test-retract-fns-not-found
   (let [db  (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
@@ -495,63 +492,3 @@
                        (map #(java.util.Arrays/equals ^bytes %1 ^bytes %2)
                             byte-arrays
                             (map :v (:tx-data (d/with db ents)))))))))))
-
-(deftest datalog-larger-tx-test
-  (let [server (s/create {:port c/default-port
-                          :root (u/tmp-dir
-                                  (str "large-tx-test-"
-                                       (UUID/randomUUID)))})
-        _      (s/start server)
-        dir    "dtlv://datalevin:datalevin@localhost/large-tx-test"
-        end    3000
-        conn   (d/create-conn dir nil {:auto-entity-time? true})
-        vs     (range 0 end)
-        txs    (map (fn [a v] {a v}) (repeat :id) vs)]
-    (d/transact! conn txs)
-    (is (= (d/q '[:find (count ?e)
-                  :where [?e :id]]
-                @conn)
-           [[end]]))
-    (let [[c u] (d/q '[:find [?c ?u]
-                       :in $ ?i
-                       :where
-                       [?e :id ?i]
-                       [?e :db/created-at ?c]
-                       [?e :db/updated-at ?u]]
-                     @conn 1)]
-      (is c)
-      (is u)
-      (is (= c u)))
-    (d/close conn)
-    (s/stop server)))
-
-(deftest simulated-tx-test
-  (let [server (s/create {:port c/default-port
-                          :root (u/tmp-dir
-                                  (str "simulated-tx-test-"
-                                       (UUID/randomUUID)))})
-        _      (s/start server)
-
-        dir  "dtlv://datalevin:datalevin@localhost/simulated-tx"
-        conn (d/create-conn dir
-                            {:id {:db/unique    :db.unique/identity
-                                  :db/valueType :db.type/long}})]
-    (let [rp (d/transact! conn [{:id 1}])]
-      (is (= (:tx-data rp) [(d/datom 1 :id 1)]))
-      (is (= (dd/datom-tx (first (:tx-data rp))) 2)))
-    (is (= (d/datoms @conn :eav) [(d/datom 1 :id 1)]))
-    (is (= (:max-eid @conn) 1))
-    (is (= (:max-tx @conn) 2))
-
-    (let [rp (d/tx-data->simulated-report @conn [{:id 2}])]
-      (is (= (:tx-data rp) [(d/datom 2 :id 2)]))
-      (is (= (dd/datom-tx (first (:tx-data rp))) 3))
-      (is (= (:max-eid (:db-after rp)) 2))
-      (is (= (:max-tx (:db-after rp)) 3)))
-
-    (is (= (d/datoms @conn :eav) [(d/datom 1 :id 1)]))
-    (is (= (:max-eid @conn) 1))
-    (is (= (:max-tx @conn) 2))
-
-    (d/close conn)
-    (s/stop server)))

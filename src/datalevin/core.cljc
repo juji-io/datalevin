@@ -198,7 +198,9 @@ Only usable for debug output.
 ;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
-       :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
+       :doc      "Open a Datalog database at the given location.
+
+`dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
  `opts` map has keys:
 
@@ -209,6 +211,9 @@ Only usable for debug output.
    * `:search-opts`, an option map that will be passed to the built-in full-text search engine
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
+
+   * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
+
 
   Usage:
 
@@ -484,6 +489,7 @@ Only usable for debug output.
   "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
+
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map may have keys:
@@ -495,6 +501,8 @@ Only usable for debug output.
    * `:search-opts`, an option map that will be passed to the built-in full-text search engine
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
+
+   * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -933,6 +941,7 @@ Only usable for debug output.
   * `:mapsize` is the initial size of the database. This will be expanded as needed
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
      `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
+  * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
 
   Please note:
 
