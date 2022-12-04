@@ -2,7 +2,8 @@
   (:require [datalevin.core :as sut]
             [datalevin.util :as u]
             #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-               :clj  [clojure.test :as t :refer [is are deftest testing]]))
+               :clj  [clojure.test :as t :refer [is are deftest testing]])
+            [datalevin.core :as d])
   (:import [java.util UUID Arrays]
            [java.lang Thread]))
 
@@ -400,7 +401,8 @@
       [:all])
     (is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
            (sut/get-range lmdb "misc" [:all])))
-    (sut/close-kv lmdb)))
+    (sut/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest with-transaction-kv-test
   (let [dir  (u/tmp-dir (str "with-tx-kv-test-" (UUID/randomUUID)))
@@ -432,7 +434,8 @@
         (is (= (set [1 2 3])
                (set (pcalls count-f count-f count-f))))))
 
-    (sut/close-kv lmdb)))
+    (sut/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest with-transaction-test
   (let [dir   (u/tmp-dir (str "with-tx-test-" (UUID/randomUUID)))
@@ -465,4 +468,30 @@
                  (sut/q query @cn 1)))]
         (is (= (set [2 3 4])
                (set (pcalls count-f count-f count-f))))))
-    (sut/close conn)))
+    (sut/close conn)
+    (u/delete-files dir)))
+
+(deftest with-txn-map-resize-test
+  (let [dir    (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
+        conn   (d/create-conn dir nil {:kv-opts {:mapsize 1}})
+        query1 '[:find ?d .
+                 :in $ ?e
+                 :where [?e :content ?d]]
+        query2 '[:find ?d .
+                 :in $ ?e
+                 :where [?e :description ?d]]
+        prior  "prior data"
+        big    "bigger than 1MB"]
+
+    (d/with-transaction [cn conn]
+      (d/transact! cn [{:content prior}])
+      (is (= prior (d/q query1 @cn 1)))
+      (d/transact! cn [{:description big
+                        :numbers     (range 1000000)}])
+      (is (= big (d/q query2 @cn 2))))
+
+    (is (= prior (d/q query1 @conn 1)))
+    (is (= big (d/q query2 @conn 2)))
+
+    (d/close conn)
+    (u/delete-files dir)))

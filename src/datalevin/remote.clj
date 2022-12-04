@@ -33,7 +33,7 @@
    (let [t (if (= datom-type :txs)
              :tx-data
              :load-datoms)
-         {:keys [type message result]}
+         {:keys [type message result err-data]}
          (if (< (count datoms) ^long c/+wire-datom-batch-size+)
            (cl/request client {:type     t
                                :mode     :request
@@ -49,7 +49,9 @@
                                            [db-name])}
                        datoms c/+wire-datom-batch-size+))]
      (when (= type :error-response)
-       (u/raise "Error loading datoms to server:" message {}))
+       (if (:resized err-data)
+         (u/raise message err-data)
+         (u/raise "Error loading datoms to server:" message {})))
      result)))
 
 ;; remote datalog db

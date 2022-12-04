@@ -1091,7 +1091,12 @@ Only usable for debug output.
        (try
          (let [db#              (db/new-db (r/open-transact s#))
                ~(first binding) (atom db# :meta (meta conn#))]
-           ~@body)
+           (try
+             ~@body
+             (catch Exception ~'e
+               (if (:resized (ex-data ~'e))
+                 (do ~@body)
+                 (throw ~'e)))))
          (finally (r/close-transact s#)))
        (let [kv# (.-lmdb ^Store s#)]
          (with-transaction-kv [kv1# kv#]
