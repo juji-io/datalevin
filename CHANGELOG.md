@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.6.29
 ### Added
 - [Client] `:client-opts` option map that is passed to the client when opening remote databases.
 ### Fixed
