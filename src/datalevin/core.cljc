@@ -1088,16 +1088,18 @@ Only usable for debug output.
   `(let [conn# ~(second binding)
          s#    (.-store ^DB (deref conn#))]
      (if (instance? DatalogStore s#)
-       (try
-         (let [db#              (db/new-db (r/open-transact s#))
-               ~(first binding) (atom db# :meta (meta conn#))]
-           (try
-             ~@body
-             (catch Exception ~'e
-               (if (:resized (ex-data ~'e))
-                 (do ~@body)
-                 (throw ~'e)))))
-         (finally (r/close-transact s#)))
+       (let [s1# (r/open-transact s#)]
+         (try
+           (let [db#              (db/new-db s1#)
+                 ~(first binding) (atom db# :meta (meta conn#))]
+             ~@body)
+           (catch Exception ~'e
+             (if (:resized (ex-data ~'e))
+               (let [db#              (db/new-db s1#)
+                     ~(first binding) (atom db# :meta (meta conn#))]
+                 ~@body)
+               (throw ~'e)))
+           (finally (r/close-transact s#))))
        (let [kv# (.-lmdb ^Store s#)]
          (with-transaction-kv [kv1# kv#]
            (let [db#  (db/new-db (s/transfer s# kv1#))

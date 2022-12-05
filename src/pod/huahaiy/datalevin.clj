@@ -104,9 +104,12 @@
 (defn empty-db
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
-  ([dir schema]
+  ([dir schema] (empty-db dir schema nil))
+  ([dir schema opts]
    (let [id (UUID/randomUUID)
-         db (d/empty-db dir schema {:db-name id})]
+         db (d/empty-db dir schema (if opts
+                                     (assoc opts :db-name id)
+                                     {:db-name id}))]
      (swap! dl-dbs assoc id db)
      {::db id})))
 
@@ -194,7 +197,9 @@
 (defn create-conn
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
-  ([dir schema] (conn-from-db (empty-db dir schema))))
+  ([dir schema] (conn-from-db (empty-db dir schema)))
+  ([dir schema opts] (conn-from-db (empty-db dir schema opts)))
+  )
 
 (defn close [{:keys [::conn]}]
   (let [[old _] (swap-vals! dl-conns dissoc conn)]
@@ -206,9 +211,19 @@
 (defn transact!
   ([cn tx-data]
    (transact! cn tx-data nil))
-  ([cn tx-data tx-meta]
+  ([{:keys [::conn writing?] :as cn} tx-data tx-meta]
    (when-let [c (get-cn cn)]
-     (let [rp (d/transact! c tx-data tx-meta)]
+     (let [rp (try
+                (d/transact! c tx-data tx-meta)
+                (catch Exception e
+                  (when (:resized (ex-data e))
+                    (let [s (.-store ^DB @c)
+                          d (db/new-db s)]
+                      (swap! (if writing? wdl-dbs dl-dbs)
+                             assoc conn d)
+                      (swap! (if writing? wdl-conns dl-conns)
+                             assoc conn (atom d :meta (meta c)))))
+                  (throw e)))]
        {:datoms-transacted (count (:tx-data rp))}))))
 
 (defn db [{:keys [::conn] :as cn}]
@@ -484,7 +499,12 @@
   `(let [conn# ~(second binding)]
      (try
        (let [~(first binding) (open-transact conn#)]
-         ~@body)
+         (try
+           ~@body
+           (catch Exception ~'e
+             (if (:resized (ex-data ~'e))
+               (do ~@body)
+               (throw ~'e)))))
        (finally (close-transact conn#)))))
 
 (def ^:private lookup
@@ -523,7 +543,12 @@
                `(let [conn# ~(second binding)]
                   (try
                     (let [~(first binding) (open-transact conn#)]
-                      ~@body)
+                      (try
+                        ~@body
+                        (catch Exception ~'e
+                          (if (:resized (ex-data ~'e))
+                            (do ~@body)
+                            (throw ~'e)))))
                     (finally (close-transact conn#)))))"}]))
 
 (defn run []

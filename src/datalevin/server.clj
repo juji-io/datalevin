@@ -569,8 +569,10 @@
   (into {} (map (fn [[db-name m]] [db-name (:store m)]) (.-dbs server))))
 
 (defn- get-store
-  [^Server server db-name]
-  (get-in (.-dbs server) [db-name :store]))
+  ([^Server server db-name writing?]
+   (get-in (.-dbs server) [db-name (if writing? :wstore :store)]))
+  ([server db-name]
+   (get-store server db-name false)))
 
 (defn- update-db
   [^Server server db-name f]
@@ -1547,6 +1549,18 @@
           :request (normal-dt-store-handler load-datoms)
           (u/raise "Missing :mode when loading datoms" {}))))))
 
+(defn- transact*
+  [db txs s? server db-name writing?]
+  (try
+    (d/with db txs {} s?)
+    (catch Exception e
+      (when (:resized (ex-data e))
+        (let [^DB new-db (db/new-db (get-store server db-name writing?))]
+          (update-db server db-name
+                     #(assoc % (if writing? :wdt-db :dt-db)
+                             new-db))))
+      (throw e))))
+
 (defn- tx-data
   [^Server server ^SelectionKey skey {:keys [mode args writing?]}]
   (wrap-error
@@ -1561,7 +1575,7 @@
                     (u/raise "Missing :mode when transact data" {}))
               db  (get-db server db-name writing?)
               s?  (last args)
-              rp  (d/with db txs {} s?)
+              rp  (transact* db txs s? server db-name writing?)
               db  (:db-after rp)
               _   (update-db server db-name
                              #(assoc % (if writing? :wdt-db :dt-db) db))
@@ -2032,7 +2046,7 @@
   [^Server server ^SelectionKey skey fmt msg ]
   (try
     (let [{:keys [type writing?] :as message} (p/read-value fmt msg)]
-      (log/debug "Message received:" (dissoc message :password))
+      (log/debug "Message received:" (dissoc message :password :args))
       (if writing?
         (handle-writing server skey message)
         (message-cases skey type)))

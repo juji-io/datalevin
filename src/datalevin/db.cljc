@@ -1036,8 +1036,10 @@
                                 (#(if simulated? (update % :max-tx inc) %)))
                   :tx-data tx-data
                   :tempids tempids))
-         (catch Exception _
-           (local-transact-tx-data initial-report initial-es simulated?)))
+         (catch Exception e
+           (if (:resized (ex-data e))
+             (throw e)
+             (local-transact-tx-data initial-report initial-es simulated?))))
        (local-transact-tx-data initial-report initial-es simulated?)))))
 
 (defn tx-data->simulated-report

@@ -36,7 +36,7 @@
     (pd/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest with-txn-map-resize-test
+(deftest with-txn-kv-map-resize-test
   (let [dir  (u/tmp-dir (str "pod-with-tx-kv-test-" (UUID/randomUUID)))
         lmdb (pd/open-kv dir {:mapsize 1})
         data {:description "this is going to be bigger than 1MB"
@@ -76,6 +76,31 @@
         (is (= 2 (pd/q query (pd/db cn) 1)))
         (pd/abort-transact cn))
       (is (= 1 (pd/q query (pd/db conn) 1))))
+
+    (pd/close conn)
+    (u/delete-files dir)))
+
+(deftest with-txn-map-resize-test
+  (let [dir    (u/tmp-dir (str "pod-with-tx-test-" (UUID/randomUUID)))
+        conn   (pd/create-conn dir nil {:kv-opts {:mapsize 1}})
+        query1 '[:find ?d .
+                 :in $ ?e
+                 :where [?e :content ?d]]
+        query2 '[:find ?d .
+                 :in $ ?e
+                 :where [?e :description ?d]]
+        prior  "prior data"
+        big    "bigger than 1MB"]
+
+    (pd/with-transaction [cn conn]
+      (pd/transact! cn [{:content prior}])
+      (is (= prior (pd/q query1 (pd/db cn) 1)))
+      (pd/transact! cn [{:description big
+                         :numbers     (range 1000000)}])
+      (is (= big (pd/q query2 (pd/db cn) 2))))
+
+    (is (= prior (pd/q query1 (pd/db conn) 1)))
+    (is (= big (pd/q query2 (pd/db conn) 2)))
 
     (pd/close conn)
     (u/delete-files dir)))
@@ -216,7 +241,6 @@
             {:name "Eunan"} {:name "Rebecca"}]
            (pd/pull-many test-db '[:name] [1 5 7 9])))
     (pd/close-db test-db)))
-
 
 (deftest datoms-test
   (let [datoms (set [[1 :name "Oleg"]

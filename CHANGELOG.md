@@ -5,6 +5,7 @@
 - [Client] `:client-opts` option map that is passed to the client when opening remote databases.
 ### Fixed
 - [KV] `with-transaction-kv` does not drop prior data when DB is resizing.
+- [Datalog] `with-transaction` does not drop prior data when DB is resizing.
 
 ## 0.6.28
 ### Improved
@@ -24,7 +25,6 @@
 - [KV]`abort-transact-kv` function to rollback writes from within an explicit KV transaction.
 - [Datalog] `abort-transact` function, same for Datalog transaction.
 - [Pod] Missing `visit` function
-
 ### Improved
 - [Server] Smaller memory footprint
 - bump deps

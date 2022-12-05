@@ -48,11 +48,11 @@
                                            [db-name simulated?]
                                            [db-name])}
                        datoms c/+wire-datom-batch-size+))]
-     (when (= type :error-response)
+     (if (= type :error-response)
        (if (:resized err-data)
          (u/raise message err-data)
-         (u/raise "Error loading datoms to server:" message {})))
-     result)))
+         (u/raise "Error loading datoms to server:" message {}))
+       result))))
 
 ;; remote datalog db
 
