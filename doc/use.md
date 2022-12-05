@@ -6,7 +6,7 @@
 
 The most straightforward method of transacting one map at a time using
 `transact!` works well, as
-Datalevin by default use asynchronous commit, so the overhead of many commits is
+Datalevin by default uses asynchronous commit, so the overhead of many commits is
 not significant.
 
 To avoid this small overhead, one can wrap these `transact!`

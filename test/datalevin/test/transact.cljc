@@ -492,3 +492,16 @@
                        (map #(java.util.Arrays/equals ^bytes %1 ^bytes %2)
                             byte-arrays
                             (map :v (:tx-data (d/with db ents)))))))))))
+
+
+(deftest issue-127-test
+  (let [schema {:foo/id    {:db/valueType   :db.type/string
+                            :db/cardinality :db.cardinality/one
+                            :db/unique      :db.unique/identity}
+                :foo/stats {:db/doc "Blob of additional stats"}}
+        dir    (u/tmp-dir (str "issue-127-" (random-uuid)))
+        conn   (d/create-conn dir schema)]
+    (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
+    (dotimes [n 100000]
+      (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
+    (is (= 100001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))))

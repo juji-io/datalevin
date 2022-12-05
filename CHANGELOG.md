@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Improved
+- [KV] range functions automatically spill to disk when results do not fit in
+  memory. The on-disk temporary result file behaves like an `IPersistentVector`,
+  so there is no API difference from the in-memory results. #108
+
 ## 0.6.29
 ### Added
 - [Client] `:client-opts` option map that is passed to the client when opening remote databases.
@@ -14,7 +20,7 @@
 
 ## 0.6.27
 ### Fixed
-- [KV] `with-transaction-kv` when DB is resizing.
+- [KV] `with-transaction-kv` does not crash when DB is resizing.
 
 ## 0.6.26
 ### Added
