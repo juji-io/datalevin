@@ -701,6 +701,4 @@
        lmdb)
      (catch Exception e
        (st/print-stack-trace e)
-       (raise
-         "Fail to open database: " (ex-message e)
-         {:dir dir})))))
+       (raise "Fail to open database: " (ex-message e) {:dir dir})))))

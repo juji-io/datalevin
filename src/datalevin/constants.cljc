@@ -1,9 +1,11 @@
 (ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
-  (:require [taoensso.nippy :as nippy])
-  (:import [java.util UUID Arrays HashSet]
-           [java.math BigInteger BigDecimal]
-           ))
+  (:require
+   [taoensso.nippy :as nippy]
+   [datalevin.util :as u])
+  (:import
+   [java.util UUID Arrays HashSet]
+   [java.math BigInteger BigDecimal]))
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -52,9 +54,14 @@
 
 ;; tmp lmdb
 
+(def ^:const +default-spill-threshold+ 104857600)   ; 100mb
+
+(def ^:const +default-spill-path+ (u/tmp-dir))   ; 100mb
+
+(def ^:const tmp-dbi "t")
+
 (def tmp-env-flags [:nordahead :mapasync :writemap :nosubdir :nolock])
 
-(def ^:const tmp-dbi "a")
 
 ;; index storage
 

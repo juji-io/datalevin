@@ -2,6 +2,7 @@
   "Index scan routines common to all bindings"
   (:require
    [datalevin.bits :as b]
+   [datalevin.spill :as sp]
    [datalevin.constants :as c]
    [datalevin.util :refer [raise]]
    [datalevin.lmdb :as l]
@@ -50,6 +51,7 @@
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
   (let [info (l/range-info rtx range-type k1 k2)]
+    (sp/new-spillable {})
     (when k1 (l/put-start-key rtx k1 k-type))
     (when k2 (l/put-stop-key rtx k2 k-type))
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]

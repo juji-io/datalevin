@@ -2,13 +2,9 @@
 
 ## WIP
 ### Added
-- [KV] range functions automatically spill to disk when results do not fit in
-  memory. The results as a whole still behave like an `IPersistentVector`,
-  so there is no API level change from the user's point of view. #108
-- [KV] `:spill-threshold` option, in MB, to control the threshold of available free
-  memory, below which spill-to-disk will be triggered.
-- [KV] `:spill-interval` option, the number of result items added before a check
-  for spill should be performed.
+- [KV] range functions automatically spill to disk when memory pressure is high. The results still behave like an `IPersistentVector`, so there is no API level change from the user's point of view. #108
+- [KV] `:spill-threshold` option, a percentage of memory pressure (default 80), above which spill-to-disk will be triggered.
+- [KV] `:spill-path` option, a file directory, in which the spilled data is written.
 
 ## 0.6.29
 ### Added

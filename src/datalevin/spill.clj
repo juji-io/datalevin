@@ -1,42 +1,59 @@
 (ns ^:no-doc datalevin.spill
-  "KV range query results that spills to disk automatically when there is
-  not enough available free memory. Present an `IPersistentVector` API"
+  "KV range query results that spills to disk automatically when memory
+  pressure is high. Present an `IPersistentVector` API"
   (:require
-   [datalevin.bits :as b]
    [datalevin.constants :as c]
    [datalevin.util :refer [raise]]
    [datalevin.lmdb :as l]
-   [clojure.stacktrace :as st])
+   [clojure.string :as s]
+   [clojure.stacktrace :as st]
+   [datalevin.util :as u])
   (:import
    [java.lang Runtime]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]))
 
-(defonce free-memory (volatile! Long/MAX_VALUE))
+(defonce memory-pressure (volatile! 0))
 
-(defonce runtime (Runtime/getRuntime))
+(defonce ^Runtime runtime (Runtime/getRuntime))
+
+(defn- set-memory-pressure []
+  (let [fm (.freeMemory runtime)
+        tm (.totalMemory runtime)
+        mm (.maxMemory runtime)
+        pr (int (/ (- tm fm) mm))]
+    (vreset! memory-pressure pr)))
+
+(defonce listeners (volatile! {}))
 
 (defn install-memory-updater []
   (doseq [^NotificationEmitter gcbean
           (ManagementFactory/getGarbageCollectorMXBeans)]
-    (let [obj (random-uuid)
-          ^NotificationListener listener
+    (let [^NotificationListener listener
           (reify NotificationListener
-            (^void handleNotification [this ^Notification notif obj]
+            (^void handleNotification [this ^Notification notif _]
              (when (= (.getType notif)
                       GarbageCollectionNotificationInfo/GARBAGE_COLLECTION_NOTIFICATION)
-               (let [fm (.freeMemory ^Runtime runtime)]
-                 (println "free memory:" fm)
-                 (vreset! free-memory fm)))))]
-      (.addNotificationListener gcbean listener nil obj))))
+               (set-memory-pressure))))]
+      (vswap! listeners assoc gcbean listener)
+      (.addNotificationListener gcbean listener nil nil))))
+
+(defn uninstall-memory-updater []
+  (doseq [[^NotificationEmitter gcbean listener] @listeners]
+    (vswap! listeners dissoc gcbean)
+    (.removeNotificationListener gcbean listener nil nil)))
+
+(def memory-updater (memoize install-memory-updater)) ; do it once
 
 (defprotocol ISpillable
   (memory-count [this] "The number of items reside in memory")
-  (disk-count [this] "The number of items reside on disk"))
+  (disk-count [this] "The number of items reside on disk")
+  (spill [this] "Spill to disk"))
 
 (deftype Spillable [spill-threshold
-                    spill-interval
+                    spill-path
+                    spill-file
                     memory-vec
                     disk-lmdb]
   ISpillable
@@ -44,11 +61,26 @@
 
   (disk-count [_] (l/entries @disk-lmdb c/tmp-dbi))
 
+  (spill [_]
+    (let [fp (str spill-path "datalevin-spill-" (random-uuid))]
+      (vreset! spill-file fp)
+      (vreset! disk-lmdb (l/open-kv fp {:flags c/tmp-env-flags}))))
+
+  Object
+  (finalize [_]
+    (when @disk-lmdb
+      (l/close-kv @disk-lmdb)
+      (u/delete-files @spill-file)))
 
   )
 
-(comment
-
-  (install-memory-updater)
-
-  )
+(defn new-spillable
+  [{:keys [spill-threshold spill-path]
+    :or   {spill-threshold c/+default-spill-threshold+
+           spill-path      c/+default-spill-path+}}]
+  (when (empty? @listeners) (memory-updater))
+  (->Spillable spill-threshold
+               spill-path
+               (volatile! nil)
+               (volatile! [])
+               (volatile! nil)))
