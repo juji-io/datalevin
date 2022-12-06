@@ -9,10 +9,11 @@
    [clojure.stacktrace :as st]
    [datalevin.util :as u])
   (:import
-   [java.lang Runtime]
+   [java.lang Runtime IndexOutOfBoundsException]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
-   [com.sun.management GarbageCollectionNotificationInfo]))
+   [com.sun.management GarbageCollectionNotificationInfo]
+   [clojure.lang IPersistentVector]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -21,9 +22,8 @@
 (defn- set-memory-pressure []
   (let [fm (.freeMemory runtime)
         tm (.totalMemory runtime)
-        mm (.maxMemory runtime)
-        pr (int (/ (- tm fm) mm))]
-    (vreset! memory-pressure pr)))
+        mm (.maxMemory runtime)]
+    (vreset! memory-pressure (int (/ (- tm fm) mm)))))
 
 (defonce listeners (volatile! {}))
 
@@ -52,35 +52,57 @@
   (spill [this] "Spill to disk"))
 
 (deftype Spillable [spill-threshold
-                    spill-path
-                    spill-file
+                    spill-root
+                    spill-dir
                     memory-vec
                     disk-lmdb]
   ISpillable
-  (memory-count [_] (count @memory-vec))
 
-  (disk-count [_] (l/entries @disk-lmdb c/tmp-dbi))
+  (memory-count ^long [_] (count @memory-vec))
+
+  (disk-count ^long [_] (l/entries @disk-lmdb c/tmp-dbi))
 
   (spill [_]
-    (let [fp (str spill-path "datalevin-spill-" (random-uuid))]
-      (vreset! spill-file fp)
-      (vreset! disk-lmdb (l/open-kv fp {:flags c/tmp-env-flags}))))
+    (let [dir (str spill-root "dtlv-spill-" (random-uuid))]
+      (vreset! spill-dir dir)
+      (vreset! disk-lmdb (l/open-kv dir))
+      (l/open-dbi @disk-lmdb c/tmp-dbi {:key-size (inc Long/BYTES)})))
+
+  IPersistentVector
+
+  (assocN [this i v]
+    (let [mc  (memory-count this)
+          dc  (disk-count this)
+          cnt (+ ^long mc ^long dc)]
+      (cond
+        (or (< 0 i mc)
+            (= i 0)) (vswap! memory-vec assoc i v)
+        (<= i cnt)   (l/transact-kv @disk-lmdb [[:put c/tmp-dbi i v :long]])
+        :else        (throw (IndexOutOfBoundsException.))))
+    this)
+
+  (cons [this v]
+    (l/transact-kv
+      @disk-lmdb
+      [[:put c/tmp-dbi (+ (memory-count this) (disk-count this)) v :long]])
+    this)
 
   Object
   (finalize [_]
     (when @disk-lmdb
       (l/close-kv @disk-lmdb)
-      (u/delete-files @spill-file)))
+      (u/delete-files @spill-dir)))
 
   )
 
 (defn new-spillable
-  [{:keys [spill-threshold spill-path]
-    :or   {spill-threshold c/+default-spill-threshold+
-           spill-path      c/+default-spill-path+}}]
-  (when (empty? @listeners) (memory-updater))
-  (->Spillable spill-threshold
-               spill-path
-               (volatile! nil)
-               (volatile! [])
-               (volatile! nil)))
+  ([] (new-spillable nil))
+  ([{:keys [spill-threshold spill-root]
+     :or   {spill-threshold c/+default-spill-threshold+
+            spill-root      c/+default-spill-root+}}]
+   (when (empty? @listeners) (memory-updater))
+   (->Spillable spill-threshold
+                spill-root
+                (volatile! nil)
+                (volatile! [])
+                (volatile! nil))))

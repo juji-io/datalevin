@@ -54,13 +54,11 @@
 
 ;; tmp lmdb
 
-(def ^:const +default-spill-threshold+ 104857600)   ; 100mb
+(def ^:const +default-spill-threshold+ 80)   ; percentage
 
-(def ^:const +default-spill-path+ (u/tmp-dir))   ; 100mb
+(def ^:const +default-spill-root+ (u/tmp-dir))
 
 (def ^:const tmp-dbi "t")
-
-(def tmp-env-flags [:nordahead :mapasync :writemap :nosubdir :nolock])
 
 
 ;; index storage

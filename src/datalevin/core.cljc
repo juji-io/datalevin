@@ -1119,7 +1119,7 @@ Only usable for debug output.
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
 
-  `txs` is a seq of `[op dbi-name k v k-type v-type flags]`
+  `txs` is a seq of Clojure vectors, `[op dbi-name k v k-type v-type flags]`
   when `op` is `:put`, for insertion of a key value pair `k` and `v`;
   or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
@@ -1138,20 +1138,20 @@ Only usable for debug output.
           (transact-kv
             lmdb
             [ [:put \"a\" 1 2]
-            [:put \"a\" 'a 1]
-            [:put \"a\" 5 {}]
-            [:put \"a\" :annunaki/enki true :attr :data]
-            [:put \"a\" :datalevin [\"hello\" \"world\"]]
-            [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-            [:put \"a\" (byte 0x01) #{1 2} :byte :data]
-            [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
-            [:put \"a\" [-1 -235254457N] 5]
-            [:put \"a\" :a 4]
-            [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-            [:put \"a\" :long 1 :data :long]
-            [:put \"a\" 2 3 :long :long]
-            [:del \"a\" 1]
-            [:del \"a\" :non-exist] ])"}
+              [:put \"a\" 'a 1]
+              [:put \"a\" 5 {}]
+              [:put \"a\" :annunaki/enki true :attr :data]
+              [:put \"a\" :datalevin [\"hello\" \"world\"]]
+              [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+              [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+              [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+              [:put \"a\" [-1 -235254457N] 5]
+              [:put \"a\" :a 4]
+              [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+              [:put \"a\" :long 1 :data :long]
+              [:put \"a\" 2 3 :long :long]
+              [:del \"a\" 1]
+              [:del \"a\" :non-exist] ])"}
   transact-kv l/transact-kv)
 
 (def ^{:arglists '([db dbi-name k]

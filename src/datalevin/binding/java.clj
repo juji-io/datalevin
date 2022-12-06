@@ -14,6 +14,7 @@
     Cursor CursorIterable$KeyVal GetOp SeekOp]
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator]
+   [clojure.lang IPersistentVector]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.nio ByteBuffer BufferOverflowException]))
 
@@ -228,35 +229,43 @@
   (.setMapSize env
                (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
-
 (defn- transact*
   [txs ^UnifiedMap dbis txn]
-  (doseq [[op dbi-name k & r] txs]
-    (let [^DBI dbi (or (.get dbis dbi-name)
+  (doseq [^IPersistentVector tx txs]
+    (let [cnt      (count tx)
+          op       (.nth tx 0)
+          dbi-name (.nth tx 1)
+          k        (.nth tx 2)
+          ^DBI dbi (or (.get dbis dbi-name)
                        (raise dbi-name " is not open" {}))]
       (case op
-        :put      (let [[v kt vt flags] r]
+        :put      (let [v     (.nth tx 3)
+                        kt    (when (< 4 cnt) (.nth tx 4))
+                        vt    (when (< 5 cnt) (.nth tx 5))
+                        flags (when (< 6 cnt) (.nth tx 6))]
                     (.put-key dbi k kt)
                     (.put-val dbi v vt)
                     (if flags
                       (.put dbi txn flags)
                       (.put dbi txn)))
-        :del      (let [[kt] r]
+        :del      (let [kt (when (< 3 cnt) (.nth tx 3)) ]
                     (.put-key dbi k kt)
                     (.del dbi txn))
-        :put-list (let [[vs kt vt] r]
+        :put-list (let [vs (.nth tx 3)
+                        kt (when (< 4 cnt) (.nth tx 4))
+                        vt (when (< 5 cnt) (.nth tx 5))]
                     (.put-key dbi k kt)
                     (doseq [v vs]
                       (.put-val dbi v vt)
                       (.put dbi txn)))
-        :del-list (let [[vs kt vt] r]
+        :del-list (let [vs (.nth tx 3)
+                        kt (when (< 4 cnt) (.nth tx 4))
+                        vt (when (< 5 cnt) (.nth tx 5))]
                     (.put-key dbi k kt)
                     (doseq [v vs]
                       (.put-val dbi v vt)
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
-
-
 
 (declare ->LMDB reset-write-txn)
 

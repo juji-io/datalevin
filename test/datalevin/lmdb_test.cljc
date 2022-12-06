@@ -1,18 +1,20 @@
 (ns datalevin.lmdb-test
-  (:require [datalevin.lmdb :as l]
-            [datalevin.bits :as b]
-            [datalevin.interpret :as i]
-            [datalevin.util :as u]
-            [datalevin.core :as dc]
-            [datalevin.constants :as c]
-            [datalevin.datom :as d]
-            [clojure.test :refer [deftest testing is]]
-            [clojure.test.check.generators :as gen]
-            [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop])
-  (:import [java.util UUID Arrays]
-           [java.lang Long]
-           [org.eclipse.collections.impl.list.mutable FastList]))
+  (:require
+   [datalevin.lmdb :as l]
+   [datalevin.bits :as b]
+   [datalevin.interpret :as i]
+   [datalevin.util :as u]
+   [datalevin.core :as dc]
+   [datalevin.constants :as c]
+   [datalevin.datom :as d]
+   [clojure.test :refer [deftest testing is]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop])
+  (:import
+   [java.util UUID Arrays]
+   [java.lang Long]
+   [org.eclipse.collections.impl.list.mutable FastList]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
