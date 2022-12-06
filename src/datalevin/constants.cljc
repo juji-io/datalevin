@@ -40,7 +40,7 @@
 
 ;; lmdb
 
-(def default-env-flags [:nordahead :mapasync :writemap])
+(def default-env-flags [:nordahead :mapasync :writemap :notls])
 
 (def default-dbi-flags [:create])
 
@@ -49,6 +49,12 @@
 (def default-put-flags [])
 
 (def ^:const +max-key-size+     511)   ; in bytes
+
+;; tmp lmdb
+
+(def tmp-env-flags [:nordahead :mapasync :writemap :nosubdir :nolock])
+
+(def ^:const tmp-dbi "a")
 
 ;; index storage
 

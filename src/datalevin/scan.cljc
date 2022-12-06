@@ -1,13 +1,15 @@
 (ns ^:no-doc datalevin.scan
   "Index scan routines common to all bindings"
-  (:require [datalevin.bits :as b]
-            [datalevin.constants :as c]
-            [datalevin.util :refer [raise]]
-            [datalevin.lmdb :as l]
-            [clojure.stacktrace :as st])
-  (:import [java.nio ByteBuffer]
-           [java.util Iterator]
-           [java.lang AutoCloseable]))
+  (:require
+   [datalevin.bits :as b]
+   [datalevin.constants :as c]
+   [datalevin.util :refer [raise]]
+   [datalevin.lmdb :as l]
+   [clojure.stacktrace :as st])
+  (:import
+   [java.nio ByteBuffer]
+   [java.util Iterator]
+   [java.lang AutoCloseable]))
 
 (defn- fetch-value
   [dbi rtx k k-type v-type ignore-key?]

@@ -1,20 +1,21 @@
 (ns ^:no-doc datalevin.binding.java
   "LMDB binding for Java"
-  (:require [datalevin.bits :as b]
-            [datalevin.util :refer [raise] :as u]
-            [datalevin.constants :as c]
-            [datalevin.scan :as scan]
-            [datalevin.lmdb :as l
-             :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB IWriting]]
-            [clojure.stacktrace :as st])
-  (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
-            Cursor CursorIterable$KeyVal GetOp SeekOp]
-           [java.util.concurrent ConcurrentLinkedQueue]
-           [java.util Iterator]
-           [org.eclipse.collections.impl.map.mutable UnifiedMap]
-           [java.nio ByteBuffer BufferOverflowException]))
+  (:require
+   [datalevin.bits :as b]
+   [datalevin.util :refer [raise] :as u]
+   [datalevin.constants :as c]
+   [datalevin.scan :as scan]
+   [datalevin.lmdb :as l :refer [open-kv open-inverted-list IBuffer IRange
+                                 IRtx IDB IKV IInvertedList ILMDB IWriting]]
+   [clojure.stacktrace :as st])
+  (:import
+   [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
+    PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
+    Cursor CursorIterable$KeyVal GetOp SeekOp]
+   [java.util.concurrent ConcurrentLinkedQueue]
+   [java.util Iterator]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [java.nio ByteBuffer BufferOverflowException]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal
