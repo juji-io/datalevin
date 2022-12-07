@@ -13,7 +13,7 @@
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
-   [clojure.lang IPersistentVector]))
+   [clojure.lang IPersistentVector MapEntry]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -46,46 +46,87 @@
 
 (def memory-updater (memoize install-memory-updater)) ; do it once
 
+(defn- long-inc [^long i] (inc i))
+
 (defprotocol ISpillable
   (memory-count [this] "The number of items reside in memory")
   (disk-count [this] "The number of items reside on disk")
   (spill [this] "Spill to disk"))
 
-(deftype Spillable [spill-threshold
-                    spill-root
-                    spill-dir
-                    memory-vec
-                    disk-lmdb]
+(deftype SpillableVector [^long spill-threshold
+                          ^String spill-root
+                          ^String spill-dir
+                          memory-vec
+                          disk-lmdb]
   ISpillable
 
-  (memory-count ^long [_] (count @memory-vec))
+  (memory-count ^long [_]
+    (.length ^IPersistentVector @memory-vec))
 
-  (disk-count ^long [_] (l/entries @disk-lmdb c/tmp-dbi))
+  (disk-count ^long [_]
+    (if @disk-lmdb (l/entries @disk-lmdb c/tmp-dbi) 0))
 
-  (spill [_]
+  (spill [this]
     (let [dir (str spill-root "dtlv-spill-" (random-uuid))]
       (vreset! spill-dir dir)
       (vreset! disk-lmdb (l/open-kv dir))
-      (l/open-dbi @disk-lmdb c/tmp-dbi {:key-size (inc Long/BYTES)})))
+      (l/open-dbi @disk-lmdb c/tmp-dbi {:key-size (inc Long/BYTES)}))
+    this)
 
   IPersistentVector
 
   (assocN [this i v]
     (let [mc  (memory-count this)
-          dc  (disk-count this)
-          cnt (+ ^long mc ^long dc)]
+          cnt (+ ^long mc ^long (disk-count this))]
       (cond
-        (or (< 0 i mc)
-            (= i 0)) (vswap! memory-vec assoc i v)
-        (<= i cnt)   (l/transact-kv @disk-lmdb [[:put c/tmp-dbi i v :long]])
-        :else        (throw (IndexOutOfBoundsException.))))
+        (or (< 0 i mc) (= i 0))
+        (vswap! memory-vec clojure.core/assoc i v)
+
+        (= i cnt) (.cons this v)
+
+        :else (throw (IndexOutOfBoundsException.))))
     this)
 
   (cons [this v]
-    (l/transact-kv
-      @disk-lmdb
-      [[:put c/tmp-dbi (+ (memory-count this) (disk-count this)) v :long]])
+    (if (and (not @disk-lmdb) (< ^long @memory-pressure spill-threshold))
+      (vswap! memory-vec conj v)
+      (do (when-not @disk-lmdb (spill this))
+          (l/transact-kv @disk-lmdb [[:put c/tmp-dbi (.length this) v :long]])))
     this)
+
+  (length [this] (+ ^long (memory-count this) ^long (disk-count this)))
+
+  (assoc [this k v]
+    (if (integer? k)
+      (.assocN this k v)
+      (throw (IllegalArgumentException. "Key must be integer"))))
+
+  (containsKey [this k]
+    (if (integer? k)
+      (or (contains? this k)
+          (if (l/get-value @disk-lmdb c/tmp-dbi k :long) true false))
+      false))
+
+  (entryAt [this k]
+    (when (integer? k)
+      (if-let [v (get @memory-vec k)]
+        (MapEntry. k v)
+        (when-let [v (l/get-value @disk-lmdb c/tmp-dbi k :long)]
+          (MapEntry. k v)))))
+
+  (valAt [this k nf]
+    (if (integer? k)
+      (or (get @memory-vec k)
+          (l/get-value @disk-lmdb c/tmp-dbi k :long)
+          nf)
+      nf))
+  (valAt [this k]
+    (.valAt this k nil))
+
+  (peek [this]
+    (if (zero? ^long (disk-count this))
+      (clojure.core/peek @memory-vec)
+      (l/get-first @disk-lmdb c/tmp-dbi [:all-back] :long :data true)))
 
   Object
   (finalize [_]
@@ -95,14 +136,14 @@
 
   )
 
-(defn new-spillable
-  ([] (new-spillable nil))
+(defn new-spillable-vector
+  ([] (new-spillable-vector nil))
   ([{:keys [spill-threshold spill-root]
      :or   {spill-threshold c/+default-spill-threshold+
             spill-root      c/+default-spill-root+}}]
    (when (empty? @listeners) (memory-updater))
-   (->Spillable spill-threshold
-                spill-root
-                (volatile! nil)
-                (volatile! [])
-                (volatile! nil))))
+   (->SpillableVector spill-threshold
+                      spill-root
+                      (volatile! nil)
+                      (volatile! [])
+                      (volatile! nil))))

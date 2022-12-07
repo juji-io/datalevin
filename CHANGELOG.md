@@ -5,6 +5,8 @@
 - [KV] range functions automatically spill to disk when memory pressure is high. The results still behave like an `IPersistentVector`, so there is no API level change from the user's point of view. #108
 - [KV] `:spill-threshold` option, a percentage of memory pressure (default 80), above which spill-to-disk will be triggered.
 - [KV] `:spill-path` option, a file directory, in which the spilled data is written.
+### Improved
+- [KV] write performance improvement
 
 ## 0.6.29
 ### Added

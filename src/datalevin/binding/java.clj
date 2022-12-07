@@ -232,7 +232,7 @@
 (defn- transact*
   [txs ^UnifiedMap dbis txn]
   (doseq [^IPersistentVector tx txs]
-    (let [cnt      (count tx)
+    (let [cnt      (.length tx)
           op       (.nth tx 0)
           dbi-name (.nth tx 1)
           k        (.nth tx 2)
