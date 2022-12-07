@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.spill
-  "KV range query results that spills to disk automatically when memory
-  pressure is high. Present an `IPersistentVector` API"
+  "An `IPersistentVector` implementation that spills to disk automatically
+  when memory pressure is high."
   (:require
    [datalevin.constants :as c]
    [datalevin.util :refer [raise]]
@@ -45,8 +45,6 @@
     (.removeNotificationListener gcbean listener nil nil)))
 
 (def memory-updater (memoize install-memory-updater)) ; do it once
-
-(defn- long-inc [^long i] (inc i))
 
 (defprotocol ISpillable
   (memory-count [this] "The number of items reside in memory")
