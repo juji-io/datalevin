@@ -14,7 +14,7 @@
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [clojure.lang IPersistentVector MapEntry]))
+   [clojure.lang ISeq Cons IPersistentVector MapEntry]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -51,6 +51,8 @@
   (memory-count [this] "The number of items reside in memory")
   (disk-count [this] "The number of items reside on disk")
   (spill [this] "Spill to disk"))
+
+(declare ->Seq ->RSeq)
 
 (deftype SpillableVector [^long spill-threshold
                           ^String spill-root
@@ -153,11 +155,16 @@
   (equiv [this other]
     (if (identical? this other)
       true
-      ()))
+      (if (instance? IPersistentVector other)
+        (if (not= (.count this) (.count ^IPersistentVector other))
+          false
+          ))))
 
-  (seq [this])
+  (seq ^ISeq [this] (when (< 0 ^long @total) (->Seq this 0)))
 
-  (rseq [this])
+  (rseq ^ISeq [this]
+    (when (< 0 ^long @total)
+      (->RSeq this (dec ^long @total))))
 
   (nth [this i]
     (if (and (<= 0 i) (< i ^long @total))
@@ -176,6 +183,35 @@
       (u/delete-files @spill-dir)))
 
   )
+
+
+(deftype Seq [^SpillableVector v
+              ^long i]
+  ISeq
+
+  (first ^Object [this] (nth v i))
+
+  (next ^ISeq [this]
+    (let [i+1 (inc i)]
+      (when (< i+1 (count v)) (->Seq v i+1))))
+
+  (more ^ISeq [this] (let [s (.next this)] (if s s '())))
+
+  (cons ^ISeq [this o] (Cons. o this))
+
+  )
+
+(deftype RSeq [^SpillableVector v
+               ^long i]
+  ISeq
+
+  (first ^Object [this] (nth v i))
+
+  (next ^ISeq [this] (when (< 0 i) (->RSeq v (dec i))))
+
+  (more ^ISeq [this] (let [s (.next this)] (if s s '())))
+
+  (cons ^ISeq [this o] (Cons. o this)))
 
 (defn new-spillable-vector
   ([] (new-spillable-vector nil))
