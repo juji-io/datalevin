@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.spill
-  "An `IPersistentVector` implementation that spills to disk automatically
-  when memory pressure is high."
+  "A mutable vector that spills to disk automatically
+  when memory pressure is high. Presents a `IPersistentVector` API"
   (:require
    [datalevin.constants :as c]
    [datalevin.util :refer [raise]]
@@ -9,10 +9,11 @@
    [clojure.stacktrace :as st]
    [datalevin.util :as u])
   (:import
-   [java.lang Runtime IndexOutOfBoundsException]
+   [java.util List]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [clojure.lang IPersistentVector MapEntry]))
 
 (defonce memory-pressure (volatile! 0))
@@ -54,45 +55,42 @@
 (deftype SpillableVector [^long spill-threshold
                           ^String spill-root
                           ^String spill-dir
-                          memory-vec
-                          disk-lmdb]
+                          ^FastList memory
+                          disk
+                          total]
   ISpillable
 
-  (memory-count ^long [_]
-    (.length ^IPersistentVector @memory-vec))
+  (memory-count ^long [_] (.size memory))
 
   (disk-count ^long [_]
-    (if @disk-lmdb (l/entries @disk-lmdb c/tmp-dbi) 0))
+    (if @disk (l/entries @disk c/tmp-dbi) 0))
 
   (spill [this]
     (let [dir (str spill-root "dtlv-spill-" (random-uuid))]
       (vreset! spill-dir dir)
-      (vreset! disk-lmdb (l/open-kv dir))
-      (l/open-dbi @disk-lmdb c/tmp-dbi {:key-size (inc Long/BYTES)}))
+      (vreset! disk (l/open-kv dir))
+      (l/open-dbi @disk c/tmp-dbi {:key-size (inc Long/BYTES)}))
     this)
 
   IPersistentVector
 
   (assocN [this i v]
-    (let [mc  (memory-count this)
-          cnt (+ ^long mc ^long (disk-count this))]
+    (let [mc (memory-count this)]
       (cond
-        (or (< 0 i mc) (= i 0))
-        (vswap! memory-vec clojure.core/assoc i v)
-
-        (= i cnt) (.cons this v)
-
-        :else (throw (IndexOutOfBoundsException.))))
+        (= i @total)            (.cons this v)
+        (or (< 0 i mc) (= i 0)) (.add memory i v)
+        :else                   (throw (IndexOutOfBoundsException.))))
     this)
 
   (cons [this v]
-    (if (and (not @disk-lmdb) (< ^long @memory-pressure spill-threshold))
-      (vswap! memory-vec conj v)
-      (do (when-not @disk-lmdb (spill this))
-          (l/transact-kv @disk-lmdb [[:put c/tmp-dbi (.length this) v :long]])))
+    (if (and (not @disk) (< ^long @memory-pressure spill-threshold))
+      (.add memory v)
+      (do (when-not @disk (spill this))
+          (l/transact-kv @disk [[:put c/tmp-dbi @total v :long]])))
+    (vswap! total #(inc ^long %))
     this)
 
-  (length [this] (+ ^long (memory-count this) ^long (disk-count this)))
+  (length [this] @total)
 
   (assoc [this k v]
     (if (integer? k)
@@ -101,21 +99,23 @@
 
   (containsKey [this k]
     (if (integer? k)
-      (or (contains? this k)
-          (if (l/get-value @disk-lmdb c/tmp-dbi k :long) true false))
+      (or (if (get this k) true false)
+          (if @disk
+            (if (l/get-value @disk c/tmp-dbi k :long) true false)
+            false))
       false))
 
   (entryAt [this k]
     (when (integer? k)
-      (if-let [v (get @memory-vec k)]
+      (if-let [v (.get memory k)]
         (MapEntry. k v)
-        (when-let [v (l/get-value @disk-lmdb c/tmp-dbi k :long)]
+        (when-let [v (l/get-value @disk c/tmp-dbi k :long)]
           (MapEntry. k v)))))
 
   (valAt [this k nf]
     (if (integer? k)
-      (or (get @memory-vec k)
-          (l/get-value @disk-lmdb c/tmp-dbi k :long)
+      (or (when-not (.isEmpty memory) (.get memory k))
+          (when @disk (l/get-value @disk c/tmp-dbi k :long))
           nf)
       nf))
   (valAt [this k]
@@ -123,13 +123,56 @@
 
   (peek [this]
     (if (zero? ^long (disk-count this))
-      (clojure.core/peek @memory-vec)
-      (l/get-first @disk-lmdb c/tmp-dbi [:all-back] :long :data true)))
+      (.getLast memory)
+      (l/get-first @disk c/tmp-dbi [:all-back] :long :data true)))
+
+  (pop [this]
+    (cond
+      (zero? ^long @total)
+      (throw (IllegalStateException. "Can't pop empty vector"))
+
+      (< 0 ^long (disk-count this))
+      (let [[lk _] (l/get-first @disk c/tmp-dbi [:all-back]
+                                :long :ignore)]
+        (l/transact-kv @disk [[:del c/tmp-dbi lk :long]])
+        this)
+
+      :else (do (.remove memory (dec ^long (memory-count this)))
+                this)))
+
+  (count [this] @total)
+
+  (empty [this]
+    (.clear memory)
+    (when @disk
+      (l/close-kv @disk)
+      (u/delete-files @spill-dir)
+      (vreset! disk nil))
+    this)
+
+  (equiv [this other]
+    (if (identical? this other)
+      true
+      ()))
+
+  (seq [this])
+
+  (rseq [this])
+
+  (nth [this i]
+    (if (and (<= 0 i) (< i ^long @total))
+      (.valAt this i)
+      (throw (IndexOutOfBoundsException.))))
+  (nth [this i nf]
+    (if (and (<= 0 i) (< i ^long @total))
+      (.nth this i)
+      nf))
 
   Object
-  (finalize [_]
-    (when @disk-lmdb
-      (l/close-kv @disk-lmdb)
+
+  (finalize ^void [_]
+    (when @disk
+      (l/close-kv @disk)
       (u/delete-files @spill-dir)))
 
   )
@@ -143,5 +186,6 @@
    (->SpillableVector spill-threshold
                       spill-root
                       (volatile! nil)
-                      (volatile! [])
-                      (volatile! nil))))
+                      (FastList.)
+                      (volatile! nil)
+                      (volatile! 0))))
