@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.spill
   "A mutable vector that spills to disk automatically
-  when memory pressure is high. Presents a `IPersistentVector` API"
+  when memory pressure is high. Presents a `IPersistentVector` API
+  for compatibility and convenience."
   (:require
    [datalevin.constants :as c]
    [datalevin.util :refer [raise]]
@@ -14,7 +15,7 @@
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [clojure.lang ISeq Cons IPersistentVector MapEntry]))
+   [clojure.lang ISeq Cons IPersistentVector MapEntry Util Sequential]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -136,11 +137,11 @@
       (< 0 ^long (disk-count this))
       (let [[lk _] (l/get-first @disk c/tmp-dbi [:all-back]
                                 :long :ignore)]
-        (l/transact-kv @disk [[:del c/tmp-dbi lk :long]])
-        this)
+        (l/transact-kv @disk [[:del c/tmp-dbi lk :long]]))
 
-      :else (do (.remove memory (dec ^long (memory-count this)))
-                this)))
+      :else (.remove memory (dec ^long (memory-count this))))
+    (vswap! total #(dec ^long %))
+    this)
 
   (count [this] @total)
 
@@ -153,18 +154,24 @@
     this)
 
   (equiv [this other]
-    (if (identical? this other)
-      true
-      (if (instance? IPersistentVector other)
-        (if (not= (.count this) (.count ^IPersistentVector other))
-          false
-          ))))
+    (cond
+      (identical? this other) true
+
+      (or (instance? IPersistentVector other)
+          (instance? List other)
+          (instance? Sequential other))
+      (if (not= (count this) (count other))
+        false
+        (if (every? true? (map #(Util/equiv %1 %2) this other))
+          true
+          false))
+
+      :else false))
 
   (seq ^ISeq [this] (when (< 0 ^long @total) (->Seq this 0)))
 
   (rseq ^ISeq [this]
-    (when (< 0 ^long @total)
-      (->RSeq this (dec ^long @total))))
+    (when (< 0 ^long @total) (->RSeq this (dec ^long @total))))
 
   (nth [this i]
     (if (and (<= 0 i) (< i ^long @total))
@@ -180,14 +187,13 @@
   (finalize ^void [_]
     (when @disk
       (l/close-kv @disk)
-      (u/delete-files @spill-dir)))
-
-  )
-
+      (u/delete-files @spill-dir))))
 
 (deftype Seq [^SpillableVector v
               ^long i]
   ISeq
+
+  (seq ^ISeq [this] this)
 
   (first ^Object [this] (nth v i))
 
@@ -197,13 +203,13 @@
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons ^ISeq [this o] (Cons. o this))
-
-  )
+  (cons ^ISeq [this o] (Cons. o this)))
 
 (deftype RSeq [^SpillableVector v
                ^long i]
   ISeq
+
+  (seq ^ISeq [this] this)
 
   (first ^Object [this] (nth v i))
 
