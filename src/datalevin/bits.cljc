@@ -1,21 +1,39 @@
 (ns ^:no-doc datalevin.bits
   "Handle binary encoding, byte buffers, etc."
-  (:require [datalevin.datom :as d]
-            [datalevin.constants :as c]
-            [datalevin.util :as u]
-            [datalevin.sparselist :as sl]
-            [clojure.string :as s]
-            [taoensso.nippy :as nippy])
-  (:import [java.util ArrayList Arrays UUID Date Base64]
-           [java.util.regex Pattern]
-           [java.math BigInteger BigDecimal]
-           [java.io Writer DataInput DataOutput ObjectInput ObjectOutput]
-           [java.nio ByteBuffer]
-           [java.nio.charset StandardCharsets]
-           [java.lang String Character]
-           [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
-           [datalevin.datom Datom]
-           [datalevin.utl BitOps]))
+  (:require
+   [datalevin.constants :as c]
+   [datalevin.util :as u]
+   [datalevin.spill :as sp]
+   [datalevin.sparselist :as sl]
+   [clojure.string :as s]
+   [cognitect.transit :as transit]
+   [taoensso.nippy :as nippy])
+  (:import
+   [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder]
+   [java.util.regex Pattern]
+   [java.math BigInteger BigDecimal]
+   [java.io Writer ByteArrayInputStream ByteArrayOutputStream]
+   [java.nio ByteBuffer]
+   [java.nio.charset StandardCharsets]
+   [java.lang String Character]
+   [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
+   [datalevin.utl BitOps]
+   [datalevin.spill SpillableVector]))
+
+
+(def base64-encoder (.withoutPadding (Base64/getEncoder)))
+
+(def base64-decoder (Base64/getDecoder))
+
+(defn encode-base64
+  "encode bytes into a base64 string"
+  [bs]
+  (.encodeToString ^Base64$Encoder base64-encoder bs))
+
+(defn decode-base64
+  "decode a base64 string to return the bytes"
+  [^String s]
+  (.decode ^Base64$Decoder base64-decoder s))
 
 ;; bytes <-> text
 
@@ -57,12 +75,10 @@
   [^bytes bs, ^Writer w]
   (.write w "#datalevin/bytes ")
   (.write w "\"")
-  (.write w ^String (u/encode-base64 bs))
+  (.write w ^String (encode-base64 bs))
   (.write w "\""))
 
-(defn ^bytes bytes-from-reader
-  [s]
-  (u/decode-base64 s))
+(defn ^bytes bytes-from-reader [s] (decode-base64 s))
 
 (defmethod print-method Pattern
   [^Pattern p, ^Writer w]
@@ -71,9 +87,7 @@
   (.write w ^String (s/escape (.toString p) {\\ "\\\\"}))
   (.write w "\""))
 
-(defn ^Pattern regex-from-reader
-  [s]
-  (Pattern/compile s))
+(defn ^Pattern regex-from-reader [s] (Pattern/compile s))
 
 ;; nippy
 

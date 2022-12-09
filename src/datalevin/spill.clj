@@ -4,13 +4,13 @@
   for compatibility and convenience."
   (:require
    [datalevin.constants :as c]
-   [datalevin.util :refer [raise]]
+   [datalevin.util :as u]
    [datalevin.lmdb :as l]
-   [clojure.string :as s]
-   [clojure.stacktrace :as st]
-   [datalevin.util :as u])
+   [taoensso.nippy :as nippy]
+   [datalevin.spill :as sp])
   (:import
    [java.util List]
+   [java.io DataInput DataOutput]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
@@ -184,6 +184,8 @@
 
   Object
 
+  (toString [this] (str (into [] this)))
+
   (finalize ^void [_]
     (when @disk
       (l/close-kv @disk)
@@ -203,7 +205,17 @@
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons ^ISeq [this o] (Cons. o this)))
+  (cons ^ISeq [this o] (Cons. o this))
+
+  (equiv [this other]
+    (if (or (instance? List other)
+            (instance? Sequential other))
+      (if (not= (count this) (count other))
+        false
+        (if (every? true? (map #(Util/equiv %1 %2) this other))
+          true
+          false))
+      false)))
 
 (deftype RSeq [^SpillableVector v
                ^long i]
@@ -217,17 +229,40 @@
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons ^ISeq [this o] (Cons. o this)))
+  (cons ^ISeq [this o] (Cons. o this))
+
+  (equiv [this other]
+    (if (or (instance? List other)
+            (instance? Sequential other))
+      (if (not= (count this) (count other))
+        false
+        (if (every? true? (map #(Util/equiv %1 %2) this other))
+          true
+          false))
+      false)))
 
 (defn new-spillable-vector
-  ([] (new-spillable-vector nil))
-  ([{:keys [spill-threshold spill-root]
-     :or   {spill-threshold c/+default-spill-threshold+
-            spill-root      c/+default-spill-root+}}]
+  ([] (new-spillable-vector nil nil))
+  ([vs] (new-spillable-vector vs nil))
+  ([vs {:keys [spill-threshold spill-root]
+        :or   {spill-threshold c/+default-spill-threshold+
+               spill-root      c/+default-spill-root+}}]
    (when (empty? @listeners) (memory-updater))
-   (->SpillableVector spill-threshold
-                      spill-root
-                      (volatile! nil)
-                      (FastList.)
-                      (volatile! nil)
-                      (volatile! 0))))
+   (let [svec (->SpillableVector spill-threshold
+                                 spill-root
+                                 (volatile! nil)
+                                 (FastList.)
+                                 (volatile! nil)
+                                 (volatile! 0))]
+     (doseq [v vs] (conj svec v))
+     svec)))
+
+(nippy/extend-freeze
+  SpillableVector :spillable
+  [^SpillableVector x ^DataOutput out]
+  (nippy/freeze-to-out! out (into [] x)))
+
+(nippy/extend-thaw
+  :spillable
+  [^DataInput in]
+  (new-spillable-vector (nippy/thaw-from-in! in)))

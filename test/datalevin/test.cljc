@@ -6,7 +6,6 @@
    datalevin.lmdb-test
    datalevin.spill-test
    datalevin.scan-test
-   datalevin.util-test
    datalevin.search-test
    datalevin.search-utils-test
    datalevin.main-test
@@ -63,7 +62,6 @@
           'datalevin.lmdb-test
           'datalevin.spill-test
           'datalevin.scan-test
-          'datalevin.util-test
           'datalevin.search-test
           'datalevin.search-utils-test
           'datalevin.main-test

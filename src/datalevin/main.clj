@@ -10,16 +10,15 @@
             [sci.core :as sci]
             [datalevin.core :as d]
             [datalevin.datom :as dd]
-            [datalevin.util :as u]
+            [datalevin.util :as u :refer [raise]]
             [datalevin.interpret :as i]
-            [datalevin.util :refer [raise]]
             [datalevin.lmdb :as l]
             [datalevin.db :as db]
             [datalevin.bits :as b]
             [datalevin.server :as srv]
             [pod.huahaiy.datalevin :as pod]
             [datalevin.constants :as c])
-  (:import [java.io BufferedReader PushbackReader IOException Writer]
+  (:import [java.io BufferedReader PushbackReader IOException]
            [java.lang RuntimeException]
            [datalevin.datom Datom])
   (:gen-class))
@@ -362,7 +361,7 @@
 (defn- dump-dbi [lmdb dbi]
   (p/pprint {:dbi dbi :entries (l/entries lmdb dbi) :ver version})
   (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
-    (p/pprint [(u/encode-base64 k) (u/encode-base64 v)])))
+    (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
 
 (defn- dump-all [lmdb]
   (doseq [dbi (set (l/list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
@@ -434,7 +433,7 @@
       (raise "Error loading Datalog data: " (ex-message e) {}))))
 
 (defn- load-kv [dbi [k v]]
-  [:put dbi (u/decode-base64 k) (u/decode-base64 v) :raw :raw])
+  [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
 
 (defn- load-dbi [lmdb dbi in]
   (try

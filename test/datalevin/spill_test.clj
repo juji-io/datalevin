@@ -12,6 +12,7 @@
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop])
   (:import
+   [clojure.lang ISeq IPersistentVector]
    [datalevin.spill SpillableVector]))
 
 (if (u/graal?)
@@ -24,6 +25,9 @@
   (let [^SpillableVector vs (sp/new-spillable-vector)]
     (vreset! sp/memory-pressure 0)
 
+    (is (vector? vs))
+    (is (nil? (seq vs)))
+    (is (= "[]" (.toString vs)))
     (is (= [] vs))
     (is (nil? (get vs 0)))
     (is (nil? (peek vs)))
@@ -42,6 +46,7 @@
     (is (= [] (map inc vs)))
     (is (= 0 (reduce + vs)))
     (is (= [] (subvec vs 0)))
+    (is (= [] (into [] vs)))
     (is (thrown? Exception (pop vs)))
 
     (assoc vs 0 0)
@@ -63,6 +68,7 @@
     (is (= [1] (map inc vs)))
     (is (= 0 (reduce + vs)))
     (is (= [0] (subvec vs 0)))
+    (is (= [0] (into [] vs)))
     (is (= [] (pop vs)))
 
     (conj vs 0)
@@ -87,6 +93,7 @@
     (is (= [1 2 3] (map inc vs)))
     (is (= 3 (reduce + vs)))
     (is (= [1] (subvec vs 1 2)))
+    (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))))
 
 (deftest spill=in-middle-test
@@ -112,6 +119,7 @@
     (is (= [1] (map inc vs)))
     (is (= 0 (reduce + vs)))
     (is (= [0] (subvec vs 0)))
+    (is (= [0] (into [] vs)))
     (is (= [0] vs))
     (is (= [] (pop vs)))
 
@@ -139,6 +147,7 @@
     (is (= [1 2 3] (map inc vs)))
     (is (= 3 (reduce + vs)))
     (is (= [1] (subvec vs 1 2)))
+    (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))))
 
 (deftest spill=at-start-test
@@ -165,6 +174,7 @@
     (is (= [1] (map inc vs)))
     (is (= 0 (reduce + vs)))
     (is (= [0] (subvec vs 0)))
+    (is (= [0] (into [] vs)))
     (is (= [0] vs))
     (is (= [] (pop vs)))
 
@@ -190,4 +200,7 @@
     (is (= [1 2 3] (map inc vs)))
     (is (= 3 (reduce + vs)))
     (is (= [1] (subvec vs 1 2)))
-    (is (= [0 1] (pop vs)))))
+    (is (= [0 1 2] (into [] vs)))
+    (is (= [0 1] (pop vs)))
+    (is (= @(.total vs)
+           (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))))

@@ -7,8 +7,9 @@
   #?(:cljs
      (:require-macros [datalevin.util :refer [combine-cmp]]))
   #?(:clj
-     (:import [java.util Arrays]
-              [java.io DataInput DataOutput])))
+     (:import
+      [java.util Arrays]
+      [java.io DataInput DataOutput])))
 
 (declare hash-datom equiv-datom seq-datom nth-datom assoc-datom val-at-datom)
 

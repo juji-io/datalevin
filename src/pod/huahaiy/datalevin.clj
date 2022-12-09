@@ -1,23 +1,24 @@
 (ns ^:no-doc pod.huahaiy.datalevin
   (:refer-clojure :exclude [read read-string])
-  (:require [bencode.core :as bencode]
-            [sci.core :as sci]
-            [datalevin.core :as d]
-            [datalevin.lmdb :as l]
-            [datalevin.interpret :as i]
-            [datalevin.util :as u]
-            [datalevin.datom :as dd]
-            [datalevin.db :as db]
-            [datalevin.storage :as st]
-            [clojure.java.io :as io]
-            [clojure.walk :as w])
-  (:import [java.io PushbackInputStream]
-           [java.nio.charset StandardCharsets]
-           [datalevin.datom Datom]
-           [datalevin.db DB TxReport]
-           [datalevin.storage Store]
-           [datalevin.entity Entity]
-           [java.util UUID])
+  (:require
+   [bencode.core :as bencode]
+   [sci.core :as sci]
+   [datalevin.core :as d]
+   [datalevin.lmdb :as l]
+   [datalevin.interpret :as i]
+   [datalevin.protocol :as p]
+   [datalevin.datom :as dd]
+   [datalevin.db :as db]
+   [datalevin.storage :as st]
+   [clojure.java.io :as io]
+   [clojure.walk :as w])
+  (:import
+   [java.io PushbackInputStream]
+   [java.nio.charset StandardCharsets]
+   [datalevin.storage Store]
+   [datalevin.entity Entity]
+   [datalevin.db DB]
+   [java.util UUID])
   (:gen-class))
 
 (def pod-ns "pod.huahaiy.datalevin")
@@ -364,15 +365,17 @@
 
 (defn get-range
   ([db dbi-name k-range]
-   (when-let [d (get-kv db)] (d/get-range d dbi-name k-range)))
+   (when-let [d (get-kv db)]
+     (into [](d/get-range d dbi-name k-range))))
   ([db dbi-name k-range k-type]
-   (when-let [d (get-kv db)] (d/get-range d dbi-name k-range k-type)))
+   (when-let [d (get-kv db)]
+     (into [](d/get-range d dbi-name k-range k-type))))
   ([db dbi-name k-range k-type v-type]
    (when-let [d (get-kv db)]
-     (d/get-range d dbi-name k-range k-type v-type)))
+     (into [] (d/get-range d dbi-name k-range k-type v-type))))
   ([db dbi-name k-range k-type v-type ignore-key?]
    (when-let [d (get-kv db)]
-     (d/get-range d dbi-name k-range k-type v-type ignore-key?))))
+     (into [] (d/get-range d dbi-name k-range k-type v-type ignore-key?)))))
 
 (defn range-count
   ([db dbi-name k-range]
@@ -395,16 +398,17 @@
 
 (defn range-filter
   ([db dbi-name pred k-range]
-   (when-let [d (get-kv db)] (d/range-filter d dbi-name pred k-range)))
+   (when-let [d (get-kv db)]
+     (into [] (d/range-filter d dbi-name pred k-range))))
   ([db dbi-name pred k-range k-type]
    (when-let [d (get-kv db)]
-     (d/range-filter d dbi-name pred k-range k-type)))
+     (into [] (d/range-filter d dbi-name pred k-range k-type))))
   ([db dbi-name pred k-range k-type v-type]
    (when-let [d (get-kv db)]
-     (d/range-filter d dbi-name pred k-range k-type v-type)))
+     (into [] (d/range-filter d dbi-name pred k-range k-type v-type))))
   ([db dbi-name pred k-range k-type v-type ignore-key?]
    (when-let [d (get-kv db)]
-     (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?))))
+     (into [] (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?)))))
 
 (defn range-filter-count
   ([db dbi-name pred k-range]
@@ -574,11 +578,12 @@
                                  symbol)
                         args (-> (get message "args")
                                  read-string
-                                 u/read-transit-string)]
+                                 p/read-transit-string)]
                     ;; (debug "var" var "args" args)
                     (if-let [f (lookup var)]
-                      (let [value (u/write-transit-string
-                                    (apply f args))
+                      (let [res   (apply f args)
+                            value (p/write-transit-string
+                                    res)
                             reply {"value"  value
                                    "id"     id
                                    "status" ["done"]}]
@@ -587,7 +592,7 @@
                   (catch Throwable e
                     (let [edata (ex-data e)
                           reply {"ex-message" (.getMessage e)
-                                 "ex-data"    (u/write-transit-string
+                                 "ex-data"    (p/write-transit-string
                                                 (assoc edata
                                                        :type
                                                        (str (class e))))

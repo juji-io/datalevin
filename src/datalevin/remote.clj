@@ -269,7 +269,7 @@
   (copy [db dest compact?]
     (let [bs   (->> (cl/normal-request client :copy [db-name compact?] writing?)
                     (apply str)
-                    u/decode-base64)
+                    b/decode-base64)
           dir  (Paths/get dest (into-array String []))
           file (Paths/get (str dest u/+separator+ "data.mdb")
                           (into-array String []))]

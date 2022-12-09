@@ -1,17 +1,14 @@
 (ns ^:no-doc datalevin.util
   (:refer-clojure :exclude [seqable?])
-  (:require [clojure.walk]
-            [clojure.string :as s]
-            [clojure.java.io :as io]
-            [cognitect.transit :as transit])
+  (:require
+   [clojure.walk]
+   [clojure.string :as s]
+   [clojure.java.io :as io])
   #?(:clj
      (:import
-      [java.io ByteArrayInputStream ByteArrayOutputStream File]
-      [java.nio ByteBuffer]
+      [java.io File]
       [java.nio.file Files Paths LinkOption AccessDeniedException]
-      [java.nio.file.attribute PosixFilePermissions FileAttribute]
-      [java.net URI]
-      [java.util Base64 Base64$Decoder Base64$Encoder])))
+      [java.nio.file.attribute PosixFilePermissions FileAttribute])))
 
 (defn #?@(:clj  [^Boolean seqable?]
           :cljs [^boolean seqable?])
@@ -122,42 +119,6 @@
    neutral temporary directory path."
   ([] +tmp+)
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
-
-;; en/decode
-
-(defn read-transit-string
-  "Read a transit+json encoded string into a Clojure value"
-  [^String s]
-  (try
-    (transit/read
-      (transit/reader
-        (ByteArrayInputStream. (.getBytes s "utf-8")) :json))
-    (catch Exception e
-      (raise "Unable to read transit:" (ex-message e) {:string s}))))
-
-(defn write-transit-string
-  "Write a Clojure value as a transit+json encoded string"
-  [v]
-  (try
-    (let [baos (ByteArrayOutputStream.)]
-      (transit/write (transit/writer baos :json) v)
-      (.toString baos "utf-8"))
-    (catch Exception e
-      (raise "Unable to write transit:" (ex-message e) {:value v}))))
-
-(def base64-encoder (.withoutPadding (Base64/getEncoder)))
-
-(def base64-decoder (Base64/getDecoder))
-
-(defn encode-base64
-  "encode bytes into a base64 string"
-  [bs]
-  (.encodeToString ^Base64$Encoder base64-encoder bs))
-
-(defn decode-base64
-  "decode a base64 string to return the bytes"
-  [^String s]
-  (.decode ^Base64$Decoder base64-decoder s))
 
 
 ;; ----------------------------------------------------------------------------

@@ -6,6 +6,7 @@
    [datalevin.constants :as c]
    [datalevin.util :refer [raise]]
    [datalevin.lmdb :as l]
+   [datalevin.spill :as sp]
    [clojure.stacktrace :as st])
   (:import
    [java.nio ByteBuffer]
@@ -56,17 +57,17 @@
     (when k2 (l/put-stop-key rtx k2 k-type))
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)
-             holder         (transient [])]
+             holder         (sp/new-spillable-vector)]
         (if (.hasNext iter)
           (let [kv      (.next iter)
                 v       (when (not= v-type :ignore)
                           (b/read-buffer (l/v kv) v-type))
-                holder' (conj! holder
-                               (if ignore-key?
-                                 v
-                                 [(read-key kv k-type v) v]))]
+                holder' (conj holder
+                              (if ignore-key?
+                                v
+                                [(read-key kv k-type v) v]))]
             (recur iter holder'))
-          (persistent! holder))))))
+          holder)))))
 
 (defn- fetch-range-count
   [dbi rtx [range-type k1 k2] k-type]
@@ -109,20 +110,20 @@
     (when k2 (l/put-stop-key rtx k2 k-type))
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)
-             holder         (transient [])]
+             holder         (sp/new-spillable-vector)]
         (if (.hasNext iter)
           (let [kv (.next iter)]
             (if (pred kv)
               (let [v       (when (not= v-type :ignore)
                               (b/read-buffer
                                 (.rewind ^ByteBuffer (l/v kv)) v-type))
-                    holder' (conj! holder
-                                   (if ignore-key?
-                                     v
-                                     [(read-key kv k-type v true) v]))]
+                    holder' (conj holder
+                                  (if ignore-key?
+                                    v
+                                    [(read-key kv k-type v true) v]))]
                 (recur iter holder'))
               (recur iter holder)))
-          (persistent! holder))))))
+          holder)))))
 
 (defn- fetch-range-filtered-count
   [dbi rtx pred [range-type k1 k2] k-type]

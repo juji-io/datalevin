@@ -1,14 +1,29 @@
 (ns datalevin.protocol-test
-  (:require [datalevin.protocol :as sut]
-            [datalevin.constants :as c]
-            [datalevin.bits :as b]
-            [clojure.test :refer [deftest testing is]]
-            [clojure.test.check.generators :as gen]
-            [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop])
-  (:import [java.nio ByteBuffer]))
+  (:require
+   [datalevin.protocol :as sut]
+   [datalevin.constants :as c]
+   [datalevin.spill :as sp]
+   [datalevin.bits :as b]
+   [clojure.test :refer [deftest testing is]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop])
+  (:import
+   [java.nio ByteBuffer]))
 
-(test/defspec transite-bf-test
+(test/defspec transit-string-test
+  100
+  (prop/for-all [k gen/any-equatable]
+                (= k (sut/read-transit-string (sut/write-transit-string k)))))
+
+(test/defspec spillable-transit-string-test
+  100
+  (prop/for-all
+    [k (gen/vector gen/any-equatable)]
+    (let [vs (sp/new-spillable-vector k)]
+      (= vs (sut/read-transit-string (sut/write-transit-string vs))))))
+
+(test/defspec transit-bf-test
   100
   (prop/for-all [k gen/any-equatable]
                 (let [bf (ByteBuffer/allocateDirect c/+default-buffer-size+)]
@@ -16,7 +31,7 @@
                   (.flip bf)
                   (= k (sut/read-transit-bf bf)))))
 
-(test/defspec transite-bytes-test
+(test/defspec transit-bytes-test
   100
   (prop/for-all [k gen/any-equatable]
                 (= k (sut/read-transit-bytes (sut/write-transit-bytes k)))))

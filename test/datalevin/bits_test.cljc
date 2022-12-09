@@ -1,22 +1,23 @@
 (ns datalevin.bits-test
-  (:require [datalevin.bits :as sut]
-            [datalevin.sparselist :as sl]
-            [datalevin.datom :as d]
-            [datalevin.constants :as c]
-            [taoensso.nippy :as nippy]
-            [clojure.test :refer [deftest is]]
-            [clojure.test.check.generators :as gen]
-            [clojure.test.check.clojure-test :as test]
-            [clojure.test.check.properties :as prop]
-            [datalevin.util :as u])
-  (:import [java.util Arrays UUID Date]
-           [java.util.concurrent Semaphore]
-           [java.nio ByteBuffer]
-           [java.nio.charset StandardCharsets]
-           [org.joda.time DateTime]
-           [org.roaringbitmap RoaringBitmap]
-           [datalevin.sparselist SparseIntArrayList]
-           [datalevin.bits Indexable Retrieved]))
+  (:require
+   [datalevin.bits :as sut]
+   [datalevin.sparselist :as sl]
+   [datalevin.datom :as d]
+   [datalevin.constants :as c]
+   [clojure.test :refer [deftest is]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop]
+   [datalevin.util :as u])
+  (:import
+   [java.util Arrays Date]
+   [java.util.concurrent Semaphore]
+   [java.nio ByteBuffer]
+   [java.nio.charset StandardCharsets]
+   [org.joda.time DateTime]
+   [org.roaringbitmap RoaringBitmap]
+   [datalevin.sparselist SparseIntArrayList]
+   [datalevin.bits Indexable Retrieved]))
 
 ;; binary index preserves the order of values
 
@@ -959,3 +960,10 @@
       (is (not (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))
       (binding [c/*data-serializable-classes* #{"java.util.concurrent.Semaphore"}]
         (is (instance? java.util.concurrent.Semaphore (sut/deserialize bs)))))))
+
+(test/defspec base64-test
+  100
+  (prop/for-all [^bytes k (gen/not-empty gen/bytes)]
+                (Arrays/equals k
+                               ^bytes (sut/decode-base64
+                                        (sut/encode-base64 k)))))

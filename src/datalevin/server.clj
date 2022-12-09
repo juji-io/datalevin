@@ -123,7 +123,7 @@
          out-bs  (byte-array out-length)
          in-bs   (.getBytes password StandardCharsets/UTF_8)]
      (.generateBytes gen in-bs out-bs (int 0) (int out-length))
-     (u/encode-base64 out-bs))))
+     (b/encode-base64 out-bs))))
 
 (defn password-matches?
   [in-password password-hash salt]
@@ -1734,7 +1734,7 @@
                                         (into-array String []))]
       (l/copy (lmdb server skey db-name writing?) tf compact?)
       (copy-out skey
-                (u/encode-base64 (Files/readAllBytes path))
+                (b/encode-base64 (Files/readAllBytes path))
                 8192))))
 
 (defn- stat
