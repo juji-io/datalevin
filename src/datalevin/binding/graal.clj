@@ -1,24 +1,25 @@
 (ns ^:no-doc datalevin.binding.graal
   "LMDB binding for GraalVM native image"
-  (:require [datalevin.bits :as b]
-            [datalevin.util :refer [raise] :as u]
-            [datalevin.constants :as c]
-            [datalevin.scan :as scan]
-            [datalevin.lmdb :as l
-             :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB IWriting]])
-  (:import [java.util Iterator]
-           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
-           [java.nio ByteBuffer BufferOverflowException]
-           [java.lang AutoCloseable]
-           [java.lang.annotation Retention RetentionPolicy]
-           [clojure.lang IPersistentVector]
-           [org.graalvm.nativeimage.c CContext]
-           [org.graalvm.word WordFactory]
-           [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
-            Lib$Directives Lib$BadReaderLockException
-            Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
-            Lib$MapFullException]))
+  (:require
+   [datalevin.bits :as b]
+   [datalevin.util :refer [raise] :as u]
+   [datalevin.constants :as c]
+   [datalevin.scan :as scan]
+   [datalevin.lmdb :as l :refer [open-kv open-inverted-list IBuffer IRange
+                                 IRtx IDB IKV IInvertedList ILMDB IWriting]]
+   [clojure.stacktrace :as st])
+  (:import
+   [java.util Iterator]
+   [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
+   [java.nio ByteBuffer BufferOverflowException]
+   [java.lang AutoCloseable]
+   [java.lang.annotation Retention RetentionPolicy]
+   [clojure.lang IPersistentVector]
+   [org.graalvm.nativeimage.c CContext]
+   [org.graalvm.word WordFactory]
+   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info Lib$Directives
+    Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
+    Lib$MapFullException]))
 
 (defprotocol IFlag
   (value [this flag-key]))
@@ -223,6 +224,7 @@
               (b/put-buffer vb x t)
               (.flip ^BufVal vp))))
         (catch Exception e
+          (st/print-stack-trace e)
           (raise "Error putting r/w value buffer of "
                  dbi-name ": " (ex-message e)
                  {:value x :type t :dbi dbi-name})))))

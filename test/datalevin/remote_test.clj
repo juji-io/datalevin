@@ -151,7 +151,7 @@
 
 (deftest dt-store-larger-test
   (let [dir   "dtlv://datalevin:datalevin@localhost/larger-test"
-        end   10000
+        end   1000
         store (sut/open dir)
         vs    (range 0 end)
         txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)

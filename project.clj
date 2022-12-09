@@ -52,10 +52,15 @@
                                [org.clojure/tools.cli]
                                [org.bouncycastle/bcprov-jdk15on]
                                [com.taoensso/timbre]]}
-             :native-uberjar {:aot          [pod.huahaiy.datalevin],
-                              :uberjar-name "main.uberjar.jar"}
-             :test-uberjar   {:main         datalevin.test
-                              :uberjar-name "test.uberjar.jar"}
+             :native-uberjar {:aot            [pod.huahaiy.datalevin],
+                              :jar-inclusions [#"test"]
+                              :uberjar-name   "main.uberjar.jar"}
+             :test0-uberjar  {:main         datalevin.test0
+                              :uberjar-name "test0.uberjar.jar"}
+             :test1-uberjar  {:main         datalevin.test1
+                              :uberjar-name "test1.uberjar.jar"}
+             :test2-uberjar  {:main         datalevin.test2
+                              :uberjar-name "test2.uberjar.jar"}
              :dev            {:source-paths      ["src" "test"]
                               :java-source-paths ["native/src/java"]
                               ;; uncomment on java 11 and above
@@ -79,9 +84,7 @@
                                *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal"]
   :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
-  :uberjar-exclusions [#"pod.huahaiy.datalevin-test"
-                       #"datalevin.remote-withtxn-test"
-                       #"datalevin.remote-withtxnkv-test"]
+  :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username
                                     :password      :env/clojars_password

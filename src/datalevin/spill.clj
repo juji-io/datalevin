@@ -25,6 +25,7 @@
   (let [fm (.freeMemory runtime)
         tm (.totalMemory runtime)
         mm (.maxMemory runtime)]
+    ;; (println "used" (int (/ (- tm fm) (* 1024 1024))))
     (vreset! memory-pressure (int (/ (- tm fm) mm)))))
 
 (defonce listeners (volatile! {}))
@@ -260,9 +261,14 @@
 (nippy/extend-freeze
   SpillableVector :spillable
   [^SpillableVector x ^DataOutput out]
-  (nippy/freeze-to-out! out (into [] x)))
+  (let [n (count x)]
+    (.writeLong out n)
+    (dotimes [i n] (nippy/freeze-to-out! out (nth x i)))))
 
 (nippy/extend-thaw
   :spillable
   [^DataInput in]
-  (new-spillable-vector (nippy/thaw-from-in! in)))
+  (let [n  (.readLong in)
+        vs (new-spillable-vector)]
+    (dotimes [_ n] (conj vs (nippy/thaw-from-in! in)))
+    vs))

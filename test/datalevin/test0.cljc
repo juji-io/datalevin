@@ -1,4 +1,4 @@
-(ns datalevin.test
+(ns datalevin.test0
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
@@ -12,15 +12,6 @@
    datalevin.bits-test
    datalevin.storage-test
    datalevin.protocol-test
-   datalevin.server-test
-   datalevin.client-test
-   datalevin.remote-test
-   datalevin.remote-kv-test
-   datalevin.remote-dl-test
-   datalevin.remote-search-test
-   datalevin.remote-sutil-test
-   datalevin.remote-entity-test
-   datalevin.remote-transact-test
    datalevin.interpret-test
    datalevin.core-test
    datalevin.test.core
@@ -52,8 +43,7 @@
    datalevin.test.transact
    datalevin.test.validation
    datalevin.test.upsert
-   datalevin.test.issues
-   )
+   datalevin.test.issues)
   (:gen-class))
 
 (defn ^:export test-clj []
@@ -68,15 +58,6 @@
           'datalevin.bits-test
           'datalevin.storage-test
           'datalevin.protocol-test
-          'datalevin.server-test
-          'datalevin.client-test
-          'datalevin.remote-test
-          'datalevin.remote-kv-test
-          'datalevin.remote-dl-test
-          'datalevin.remote-search-test
-          'datalevin.remote-sutil-test
-          'datalevin.remote-entity-test
-          'datalevin.remote-transact-test
           'datalevin.interpret-test
           'datalevin.core-test
           'datalevin.test.core
@@ -108,20 +89,19 @@
           'datalevin.test.transact
           'datalevin.test.validation
           'datalevin.test.upsert
-          'datalevin.test.issues
-          )]
+          'datalevin.test.issues)]
     (System/exit (if (zero? (+ fail error)) 0 1))))
 
-(defn ^:export test-cljs []
-  (datalevin.test.core/wrap-res #(t/run-all-tests #"datalevin\..*")))
+;; (defn ^:export test-cljs []
+;;   (datalevin.test.core/wrap-res #(t/run-all-tests #"datalevin\..*")))
 
-#?(:clj
-   (defn test-node [& args]
-     (let [res (apply sh/sh "node" "test_node.js" args)]
-       (println (:out res))
-       (binding [*out* *err*]
-         (println (:err res)))
-       (System/exit (:exit res)))))
+;; #?(:clj
+;;    (defn test-node [& args]
+;;      (let [res (apply sh/sh "node" "test_node.js" args)]
+;;        (println (:out res))
+;;        (binding [*out* *err*]
+;;          (println (:err res)))
+;;        (System/exit (:exit res)))))
 
 #?(:clj
    (defn -main [& _args]

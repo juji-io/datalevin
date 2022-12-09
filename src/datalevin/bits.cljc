@@ -3,22 +3,19 @@
   (:require
    [datalevin.constants :as c]
    [datalevin.util :as u]
-   [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [clojure.string :as s]
-   [cognitect.transit :as transit]
    [taoensso.nippy :as nippy])
   (:import
    [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder]
    [java.util.regex Pattern]
    [java.math BigInteger BigDecimal]
-   [java.io Writer ByteArrayInputStream ByteArrayOutputStream]
+   [java.io Writer]
    [java.nio ByteBuffer]
    [java.nio.charset StandardCharsets]
    [java.lang String Character]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
-   [datalevin.utl BitOps]
-   [datalevin.spill SpillableVector]))
+   [datalevin.utl BitOps]))
 
 
 (def base64-encoder (.withoutPadding (Base64/getEncoder)))
