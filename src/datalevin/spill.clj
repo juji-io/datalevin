@@ -87,9 +87,9 @@
     this)
 
   (cons [this v]
-    (if (and (not @disk) (< ^long @memory-pressure spill-threshold))
+    (if (and (nil? @disk) (< ^long @memory-pressure spill-threshold))
       (.add memory v)
-      (do (when-not @disk (spill this))
+      (do (when (nil? @disk) (spill this))
           (l/transact-kv @disk [[:put c/tmp-dbi @total v :long]])))
     (vswap! total #(inc ^long %))
     this)

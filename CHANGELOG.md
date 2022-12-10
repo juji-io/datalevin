@@ -2,9 +2,10 @@
 
 ## WIP
 ### Added
-- [KV] range functions automatically spill to disk when memory pressure is high. The results still behave like an `IPersistentVector`, so there is no API level change from the user's point of view. #108
+- [KV] range query functions automatically spill to disk when memory pressure is high.
+  The results, though mutable, still implement `IPersistentVector`, so there is no API level change from the user's point of view. #108
 - [KV] `:spill-threshold` option, a percentage of memory pressure (default 80), above which spill-to-disk will be triggered.
-- [KV] `:spill-path` option, a file directory, in which the spilled data is written.
+- [KV] `:spill-root` option, a file directory, in which the spilled data is written.
 ### Improved
 - [KV] write performance improvement
 
