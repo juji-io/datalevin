@@ -941,7 +941,11 @@ Only usable for debug output.
   * `:mapsize` is the initial size of the database. This will be expanded as needed
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
      `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
-  * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
+  * `:client-opts` is the option map passed to the client if `dir` is a remote server URI string.
+  * `:spill-opts` is the option map that controls the spill-to-disk behavior for `get-range` and `range-filter` functions, which may have the following keys:
+      - `:spill-threshold`, a percentage of memory pressure (default 80), above which spill-to-disk will be triggered.
+      - `:spill-root`, a file directory, in which the spilled data is written (default is the system temporary directory).
+
 
   Please note:
 

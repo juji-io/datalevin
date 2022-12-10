@@ -416,6 +416,7 @@
            CContext  {:value Lib$Directives}}
     LMDB [^Env env
           ^String dir
+          opts
           ^ConcurrentLinkedQueue pool
           ^ConcurrentHashMap dbis
           ^:volatile-mutable closed?
@@ -430,7 +431,7 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->LMDB env dir pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
+    (->LMDB env dir opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
             write-txn true))
 
   ILMDB
@@ -453,11 +454,11 @@
       (set! closed? true)
       nil))
 
-  (closed-kv? [_]
-    closed?)
+  (closed-kv? [_] closed?)
 
-  (dir [_]
-    dir)
+  (dir [_] dir)
+
+  (opts [_] opts)
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
@@ -962,7 +963,8 @@
    (open-kv dir {}))
   ([dir {:keys [mapsize flags]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}}]
+                flags   c/default-env-flags}
+         :as   opts}]
    (try
      (u/file dir)
      (let [^Env env (Env/create
@@ -973,6 +975,7 @@
                       (kv-flags flags))]
        (->LMDB env
                dir
+               opts
                (ConcurrentLinkedQueue.)
                (ConcurrentHashMap.)
                false

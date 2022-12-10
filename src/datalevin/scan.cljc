@@ -48,7 +48,7 @@
               [(read-key kv k-type v) v])))))))
 
 (defn- fetch-range
-  [dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
+  [lmdb dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
   (let [info (l/range-info rtx range-type k1 k2)]
@@ -56,7 +56,8 @@
     (when k1 (l/put-start-key rtx k1 k-type))
     (when k2 (l/put-stop-key rtx k2 k-type))
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (let [^SpillableVector holder (sp/new-spillable-vector)]
+      (let [^SpillableVector holder
+            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
         (loop [^Iterator iter (.iterator ^Iterable iterable)]
           (if (.hasNext iter)
             (let [kv (.next iter)
@@ -101,14 +102,15 @@
               (recur iter))))))))
 
 (defn- fetch-range-filtered
-  [dbi rtx pred [range-type k1 k2] k-type v-type ignore-key?]
+  [lmdb dbi rtx pred [range-type k1 k2] k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
   (let [info (l/range-info rtx range-type k1 k2)]
     (when k1 (l/put-start-key rtx k1 k-type))
     (when k2 (l/put-stop-key rtx k2 k-type))
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (let [^SpillableVector holder (sp/new-spillable-vector)]
+      (let [^SpillableVector holder
+            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
         (loop [^Iterator iter (.iterator ^Iterable iterable)]
           (if (.hasNext iter)
             (let [kv (.next iter)]
@@ -173,7 +175,7 @@
 (defn get-range
   [lmdb dbi-name k-range k-type v-type ignore-key?]
   (scan
-    (fetch-range dbi rtx k-range k-type v-type ignore-key?)
+    (fetch-range lmdb dbi rtx k-range k-type v-type ignore-key?)
     (raise "Fail to get-range: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
@@ -196,7 +198,7 @@
 (defn range-filter
   [lmdb dbi-name pred k-range k-type v-type ignore-key?]
   (scan
-    (fetch-range-filtered dbi rtx pred k-range k-type v-type ignore-key?)
+    (fetch-range-filtered lmdb dbi rtx pred k-range k-type v-type ignore-key?)
     (raise "Fail to range-filter: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))

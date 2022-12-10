@@ -22,7 +22,10 @@
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
+
+    (is (= 50 (-> lmdb l/opts :spill-opts :spill-threshold)))
+
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "b")
     (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})

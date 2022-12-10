@@ -271,6 +271,7 @@
 
 (deftype LMDB [^Env env
                ^String dir
+               opts
                ^ConcurrentLinkedQueue pool
                ^UnifiedMap dbis
                ^ByteBuffer kb-w
@@ -282,7 +283,7 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->LMDB env dir pool dbis kb-w start-kb-w stop-kb-w write-txn true))
+    (->LMDB env dir opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -296,11 +297,11 @@
       (.close env))
     nil)
 
-  (closed-kv? [_]
-    (.isClosed env))
+  (closed-kv? [_] (.isClosed env))
 
-  (dir [_]
-    dir)
+  (dir [_] dir)
+
+  (opts [_] opts)
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
@@ -690,7 +691,8 @@
    (open-kv dir {}))
   ([dir {:keys [mapsize flags]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}}]
+                flags   c/default-env-flags}
+         :as   opts}]
    (try
      (let [file     (u/file dir)
            builder  (doto (Env/create)
@@ -700,6 +702,7 @@
            ^Env env (.open builder file (kv-flags :env flags))
            lmdb     (->LMDB env
                             dir
+                            opts
                             (ConcurrentLinkedQueue.)
                             (UnifiedMap.)
                             (b/allocate-buffer c/+max-key-size+)

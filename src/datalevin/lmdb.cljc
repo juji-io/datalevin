@@ -57,6 +57,7 @@
   (close-kv [db] "Close this LMDB env")
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
+  (opts [db] "Rturn the option map")
   (open-dbi
     [db dbi-name]
     [db dbi-name opts]
