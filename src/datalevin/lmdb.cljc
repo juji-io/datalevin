@@ -107,12 +107,18 @@
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
     "Return the first kv pair in the specified key range;")
+  (range-seq
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type v-type]
+    [db dbi-name k-range k-type v-type ignore-key?]
+    "Return a lazy seq of kv pairs in the specified key range;")
   (get-range
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
-    "Return a seq of kv pairs in the specified key range;")
+    "Return a eager seq of kv pairs in the specified key range;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]

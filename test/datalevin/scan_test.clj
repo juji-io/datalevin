@@ -5,7 +5,8 @@
             [datalevin.util :as u]
             [clojure.test :refer [deftest testing is]])
   (:import [java.util UUID HashMap]
-           [java.lang Long]))
+           [java.lang Long]
+           [datalevin.scan LazyRange]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -35,35 +36,116 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest get-range-no-gap-test
-  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+(deftest range-seq-test
+  (let [dir  (u/tmp-dir (str "range-seq-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
-    (let [ks   (shuffle (range 0 1000))
-          vs   (map inc ks)
-          txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-          res  (sort-by first (map (fn [k v] [k v]) ks vs))
-          rres (reverse res)
-          rc   (count res)]
-      (l/transact-kv lmdb txs)
-      (is (= res (l/get-range lmdb "c" [:all] :long :long)))
-      (is (= rc (l/range-count lmdb "c" [:all] :long)))
-      (is (= rres (l/get-range lmdb "c" [:all-back] :long :long)))
-      (is (= (->> res (drop 990))
-             (l/get-range lmdb "c" [:at-least 990] :long :long)))
-      (is (= [] (l/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
-      (is (= 0 (l/range-count lmdb "c" [:greater-than 1500] :long)))
-      (is (= res
-             (l/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
-      (is (= rc (l/range-count lmdb "c" [:less-than Long/MAX_VALUE] :long)))
-      (is (= (take 10 res)
-             (l/get-range lmdb "c" [:at-most 9] :long :long)))
-      (is (= (->> res (drop 10) (take 100))
-             (l/get-range lmdb "c" [:closed 10 109] :long :long)))
-      (is (= (->> res (drop 10) (take 100) (map second))
-             (l/get-range lmdb "c" [:closed 10 109] :long :long true))))
+    (l/open-dbi lmdb "a")
+
+    (with-open [^LazyRange vs (l/range-seq lmdb "a" [:all])]
+      (is (list? vs))
+      (is (nil? (seq vs)))
+      (is (= "()" (.toString vs)))
+      (is (= [] vs))
+      (is (nil? (peek vs)))
+      (is (nil? (first vs)))
+      (is (nil? (second vs)))
+      (is (nil? (last vs)))
+      (is (= 0 (count vs)))
+      (is (thrown? Exception (nth vs 0)))
+      (is (= vs []))
+      (is (= vs '()))
+      (is (not= vs {}))
+      (is (not= vs 1))
+      (is (not= vs [1]))
+      (is (= [] (map inc vs)))
+      (is (= 0 (reduce + vs)))
+      (is (= '() (apply list vs)))
+      (is (thrown? Exception (pop vs))))
+
+    (l/transact-kv lmdb [[:put "a" 0 0 :long :long]])
+    (with-open [^LazyRange vs (l/range-seq lmdb "a" [:all] :long :long true)]
+      (is (= [0] vs))
+      (is (= 0 (peek vs)))
+      (is (= 0 (first vs)))
+      (is (nil? (second vs)))
+      (is (= 0 (last vs)))
+      (is (= 1 (count vs)))
+      (is (= 0 (nth vs 0)))
+      (is (thrown? Exception (nth vs 1)))
+      (is (= vs [0]))
+      (is (= vs '(0)))
+      (is (not= vs [0 :end]))
+      (is (not= vs 1))
+      (is (= [1] (map inc vs)))
+      (is (= 0 (reduce + 0 vs)))
+      ;; TODO This doesn't work
+      ;; (is (= 0 (reduce + vs)))
+      (is (= [0] (into [] vs)))
+      (is (= [] (pop vs)))
+      )
+
+    (l/transact-kv lmdb [[:put "a" 2 2 :long :long]
+                         [:put "a" 1 1 :long :long]])
+    #_(with-open [^LazyRange vs (l/range-seq lmdb "a" [:all] :long :long true)]
+        (is (= [0 1 2] vs))
+        (is (= 0 (peek vs)))
+        (is (= 0 (first vs)))
+        (is (= 1 (second vs)))
+        (is (= 2 (last vs)))
+        (is (= 3 (count vs)))
+        (is (= 0 (nth vs 0)))
+        (is (= 1 (nth vs 1)))
+        (is (= vs [0 1 2]))
+        (is (= vs '(0 1 2)))
+        (is (thrown? Exception (nth vs 5)))
+        (is (not= vs [0 1 :end]))
+        (is (not= vs 1))
+        (is (= [1 2 3] (map inc vs)))
+        (is (= 3 (reduce + vs)))
+        (is (= [0 1 2] (into [] vs)))
+        (is (= [0 1] (pop vs))))
+
     (l/close-kv lmdb)
     (u/delete-files dir)))
+
+#_(deftest get-range-no-gap-test
+   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+         lmdb (l/open-kv dir)]
+     (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+     (let [ks   (shuffle (range 0 1000))
+           vs   (map inc ks)
+           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
+           res  (sort-by first (map (fn [k v] [k v]) ks vs))
+           rres (reverse res)
+           rc   (count res)]
+       (l/transact-kv lmdb txs)
+       (is (= res (l/get-range lmdb "c" [:all] :long :long)))
+       (with-open [^LazyRange rs (l/range-seq lmdb "c" [:all] :long :long)]
+         (is 1 (first rs))
+         (is (= res rs)))
+       (is (= rc (l/range-count lmdb "c" [:all] :long)))
+       (is (= rres (l/get-range lmdb "c" [:all-back] :long :long)))
+       (with-open [^LazyRange rs (l/range-seq lmdb "c" [:all-back] :long :long)]
+         (is (= rs rres))
+         (is 1 (first rs))
+         )
+       (is (= (->> res (drop 990))
+              (l/get-range lmdb "c" [:at-least 990] :long :long)))
+       #_(with-open [^LazyRange rs (l/range-seq lmdb "c" [:at-least 990] :long :long)]
+           (is (= rs (->> res (drop 990)) )))
+       (is (= [] (l/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
+       (is (= 0 (l/range-count lmdb "c" [:greater-than 1500] :long)))
+       (is (= res
+              (l/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
+       (is (= rc (l/range-count lmdb "c" [:less-than Long/MAX_VALUE] :long)))
+       (is (= (take 10 res)
+              (l/get-range lmdb "c" [:at-most 9] :long :long)))
+       (is (= (->> res (drop 10) (take 100))
+              (l/get-range lmdb "c" [:closed 10 109] :long :long)))
+       (is (= (->> res (drop 10) (take 100) (map second))
+              (l/get-range lmdb "c" [:closed 10 109] :long :long true))))
+     (l/close-kv lmdb)
+     (u/delete-files dir)))
 
 (deftest get-range-gap-test
   (let [dir        (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))

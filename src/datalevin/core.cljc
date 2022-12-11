@@ -1231,7 +1231,9 @@ Only usable for debug output.
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
                    [db dbi-name k-range k-type v-type ignore-key?])
-       :doc      "Return a seq of kv pairs in the specified key range in the key-value store;
+       :doc      "Return a seq of kv pairs in the specified key range in the key-value store.
+
+This function is eager and attempts to load all data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]]. See [[range-seq]] for a lazy version of this function.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1245,6 +1247,7 @@ Only usable for debug output.
      default is `false`;
 
      If value is to be ignored, put `:ignore` as `v-type`
+
 
      Examples:
 
@@ -1264,6 +1267,37 @@ Only usable for debug output.
               (get-range lmdb \"c\" [:greater-than 1500] :long :ignore)
               ;;==> [] "}
   get-range l/get-range)
+
+(def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type]
+                   [db dbi-name k-range k-type v-type]
+                   [db dbi-name k-range k-type v-type ignore-key?])
+       :doc      "Return a seq of kv pairs in the specified key range in the key-value store. This function is similar to `get-range`, but the result is lazy, so it only loads the data items into memory when needed.
+
+Be aware that the returned structure `LazyRange` holds an open read transaction. `close` function must be invoked on it after done with data access, otherwise an open read transaction may blow up the database size and return stale data. It is strongly recommended to use it in `with-open`.
+
+    `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+    `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+    `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+    `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`,
+     default is `false`;
+
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     See [[get-range]] for usage of the augments.
+
+     Examples:
+
+              (with-open [^datalevin.scan.LazyRange range
+                           (range-seq db \"c\" [:at-least 9] :long)]
+                ;; do data processing on range
+                )"}
+  range-seq l/range-seq)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type])
@@ -1332,6 +1366,8 @@ Only usable for debug output.
        :doc      "Return a seq of kv pair in the specified key range in the key-value store, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
      is an `IKV`, with both key and value fields being a `ByteBuffer`.
+
+This function is eager and attempts to load all matching data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
 
      `pred` can use [[read-buffer]] to read the buffer content.
 

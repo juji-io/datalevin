@@ -689,6 +689,15 @@
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
     (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
 
+  (range-seq [this dbi-name k-range]
+    (.range-seq this dbi-name k-range :data :data false))
+  (range-seq [this dbi-name k-range k-type]
+    (.range-seq this dbi-name k-range k-type :data false))
+  (range-seq [this dbi-name k-range k-type v-type]
+    (.range-seq this dbi-name k-range k-type v-type false))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key?]
+    (scan/range-seq this dbi-name k-range k-type v-type ignore-key?))
+
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
   (range-count [this dbi-name k-range k-type]

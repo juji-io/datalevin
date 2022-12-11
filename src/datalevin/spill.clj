@@ -6,8 +6,7 @@
    [datalevin.constants :as c]
    [datalevin.util :as u]
    [datalevin.lmdb :as l]
-   [taoensso.nippy :as nippy]
-   [datalevin.spill :as sp])
+   [taoensso.nippy :as nippy])
   (:import
    [java.util List]
    [java.io DataInput DataOutput]
@@ -15,7 +14,7 @@
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [clojure.lang ISeq Cons IPersistentVector MapEntry Util Sequential]))
+   [clojure.lang ISeq IPersistentVector MapEntry Util Sequential]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -158,9 +157,7 @@
     (cond
       (identical? this other) true
 
-      (or (instance? IPersistentVector other)
-          (instance? List other)
-          (instance? Sequential other))
+      (or (instance? Sequential other) (instance? List other))
       (if (not= (count this) (count other))
         false
         (if (every? true? (map #(Util/equiv %1 %2) this other))
@@ -198,19 +195,20 @@
 
   (seq ^ISeq [this] this)
 
-  (first ^Object [this] (nth v i))
+  (first ^Object [_] (nth v i))
 
-  (next ^ISeq [this]
+  (next ^ISeq [_]
     (let [i+1 (inc i)]
       (when (< i+1 (count v)) (->Seq v i+1))))
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons ^ISeq [this o] (Cons. o this))
+  (cons [_ _] (throw "Changing SpillableVector.Seq is not supported"))
+
+  (count [_] (- (count v) i))
 
   (equiv [this other]
-    (if (or (instance? List other)
-            (instance? Sequential other))
+    (if (or (instance? List other) (instance? Sequential other))
       (if (not= (count this) (count other))
         false
         (if (every? true? (map #(Util/equiv %1 %2) this other))
@@ -230,7 +228,9 @@
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons ^ISeq [this o] (Cons. o this))
+  (cons [_ _] (throw "Changing SpillableVector.RSeq is not supported"))
+
+  (count [_] (inc i))
 
   (equiv [this other]
     (if (or (instance? List other)

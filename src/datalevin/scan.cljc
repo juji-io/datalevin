@@ -9,9 +9,10 @@
    [clojure.stacktrace :as st])
   (:import
    [datalevin.spill SpillableVector]
+   [clojure.lang ISeq Util Sequential IPersistentList]
    [java.nio ByteBuffer]
-   [java.util Iterator]
-   [java.lang AutoCloseable]))
+   [java.util Iterator List]
+   [java.lang AutoCloseable Iterable]))
 
 (defn- fetch-value
   [dbi rtx k k-type v-type ignore-key?]
@@ -52,7 +53,6 @@
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
   (let [info (l/range-info rtx range-type k1 k2)]
-    (sp/new-spillable-vector {})
     (when k1 (l/put-start-key rtx k1 k-type))
     (when k2 (l/put-stop-key rtx k2 k-type))
     (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
@@ -68,6 +68,119 @@
                               [(read-key kv k-type v) v]))
               (recur iter))
             holder))))))
+
+(declare ->LazyRange ->RangeSeq)
+
+(deftype RangeSeq [^Iterator iter
+                   cur
+                   k-type
+                   v-type
+                   ignore-key?]
+  ISeq
+
+  (seq [this] this)
+
+  (first ^Object [_]
+    (when-let [kv cur]
+      (when-let [bf (l/v kv)]
+        (let [v (when (not= v-type :ignore)
+                  (b/read-buffer bf v-type))]
+          (if ignore-key?
+            (if v v true)
+            [(read-key kv k-type v) v])))))
+
+  (next ^ISeq [_]
+    (when (.hasNext iter)
+      (->RangeSeq iter (.next iter) k-type v-type ignore-key?)))
+
+  (more ^ISeq [this] (let [s (.next this)] (if s s '())))
+
+  (cons [_ _] (raise "Altering RangeSeq is not supported" {}))
+
+  (count [this]
+    (if-let [^ISeq s this]
+      (loop [i 1 s s]
+        (if-let [ns (next s)]
+          (recur (inc i) ns)
+          i))
+      0))
+
+  (equiv [this other]
+    (if (or (instance? Sequential other) (instance? List other))
+      (loop [s (seq this) os (seq other)]
+        (let [i (first s) j (first os)]
+          (if (= i j nil)
+            true
+            (if (or (not (Util/equiv i j)) (nil? i) (nil? j) )
+              false
+              (recur (next s) (next os))))))
+      false)))
+
+(deftype LazyRange [lmdb
+                    dbi
+                    info
+                    rtx
+                    k-type
+                    v-type
+                    ignore-key?
+                    iterable]
+  IPersistentList
+
+  (seq ^ISeq [_]
+    (when-let [^AutoCloseable old @iterable] (.close old))
+    (vreset! iterable (l/iterate-kv dbi rtx info))
+    (let [^Iterator iter (.iterator ^Iterable @iterable)]
+      (when (.hasNext iter)
+        (->RangeSeq iter (.next iter) k-type v-type ignore-key?))))
+
+  (cons [_ _] (raise "Altering LazyRange is not supported" {}))
+
+  (empty [_] (raise "Altering LazyRange is not supported" {}))
+
+  (count [this]
+    (if-let [^ISeq s (.seq this)]
+      (loop [i 1 s s]
+        (if-let [ns (next s)]
+          (recur (inc i) ns)
+          i))
+      0))
+
+  (equiv [this other]
+    (if (or (instance? Sequential other) (instance? List other))
+      (loop [s (seq this) os (seq other)]
+        (let [i (first s) j (first os)]
+          (if (= i j nil)
+            true
+            (if (or (not (Util/equiv i j)) (nil? i) (nil? j) )
+              false
+              (recur (next s) (next os))))))
+      false))
+
+  (peek [this] (first this))
+
+  (pop [this]
+    (if-let [^ISeq s (.seq this)]
+      (.more s)
+      (throw (IllegalStateException. "Can't pop empty list"))))
+
+  AutoCloseable
+
+  (close [_]
+    (.close ^AutoCloseable @iterable)
+    (l/return-rtx lmdb rtx))
+
+  Object
+
+  (toString [this] (str (apply list this))))
+
+(defn- range-seq*
+  [lmdb dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
+  (let [info (l/range-info rtx range-type k1 k2)]
+    (when k1 (l/put-start-key rtx k1 k-type))
+    (when k2 (l/put-stop-key rtx k2 k-type))
+    (->LazyRange lmdb dbi info rtx k-type v-type ignore-key? (volatile! nil))))
 
 (defn- fetch-range-count
   [dbi rtx [range-type k1 k2] k-type]
@@ -141,21 +254,23 @@
           c)))))
 
 (defmacro scan
-  [call error]
-  `(do
-     (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
-     (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
-           ~'rtx (if (l/writing? ~'lmdb)
-                   @(l/write-txn ~'lmdb)
-                   (l/get-rtx ~'lmdb))]
-       (try
-         ~call
-         (catch Exception ~'e
-           (st/print-stack-trace ~'e)
-           ~error)
-         (finally
-           (when-not (l/writing? ~'lmdb)
-             (l/return-rtx ~'lmdb ~'rtx)))))))
+  ([call error]
+   `(scan ~call ~error false))
+  ([call error keep-rtx?]
+   `(do
+      (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
+      (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
+            ~'rtx (if (l/writing? ~'lmdb)
+                    @(l/write-txn ~'lmdb)
+                    (l/get-rtx ~'lmdb))]
+        (try
+          ~call
+          (catch Exception ~'e
+            (st/print-stack-trace ~'e)
+            ~error)
+          (finally
+            (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
+              (l/return-rtx ~'lmdb ~'rtx))))))))
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
@@ -179,6 +294,15 @@
     (raise "Fail to get-range: " (ex-message e)
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
+
+(defn range-seq
+  [lmdb dbi-name k-range k-type v-type ignore-key?]
+  (scan
+    (range-seq* lmdb dbi rtx k-range k-type v-type ignore-key?)
+    (raise "Fail in range-seq: " (ex-message e)
+           {:dbi    dbi-name :k-range k-range
+            :k-type k-type   :v-type  v-type})
+    true))
 
 (defn range-count
   [lmdb dbi-name k-range k-type]

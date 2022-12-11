@@ -2,7 +2,11 @@
 
 ## WIP
 ### Added
-- [KV] the existent range functions that are eager, `get-range` and `range-filter`, now automatically spill to disk when
+- [KV] A new range function `range-seq` that has the same signature as `get-range` but is
+  more memory efficient, as it returns a lazy data structure that implements
+  `IPersistentList`, and reads data items into memory on demand. It should be used
+  inside `with-open` for proper cleanup afterwards.
+- [KV] The existent eager range functions, `get-range` and `range-filter`, now automatically spill to disk when
   memory pressure is high. The results, though mutable, still implement
   `IPersistentVector`, so there is no API level change from the user's point of
   view. The spill-to-disk behavior is controlled by `spill-opts` option map when open the
