@@ -1,5 +1,6 @@
 {:cljdoc.doc/tree
  [["Readme" {:file "README.md"}]
+  ["Installation" {:file "doc/install.md"}]
   ["Changelog" {:file "CHANGELOG.md"}]
   ["Command Line Tool" {:file "doc/dtlv.md"}]
   ["Search Engine" {:file "doc/search.md"}]

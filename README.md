@@ -92,7 +92,7 @@ Presentation:
 ## :truck: [Installation](doc/install.md)
 
 As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
-project. There are also several other options. Please details in [Installation Documentation](doc/install.md)
+project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
 
 ## :tada: Usage
 
