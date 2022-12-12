@@ -346,6 +346,21 @@
       client :get-range
       [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
 
+  ;; TODO implements batch remote request
+  (range-seq [this dbi-name k-range]
+    (l/range-seq this dbi-name k-range :data :data false nil))
+  (range-seq [this dbi-name k-range k-type]
+    (l/range-seq this dbi-name k-range k-type :data false nil))
+  (range-seq [this dbi-name k-range k-type v-type]
+    (l/range-seq this dbi-name k-range k-type v-type false nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key?]
+    (l/range-seq this dbi-name k-range k-type v-type ignore-key? nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key? opts]
+    (cl/normal-request
+      client :get-range
+      [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
+
+
   (range-count [db dbi-name k-range]
     (l/range-count db dbi-name k-range :data))
   (range-count [db dbi-name k-range k-type]
