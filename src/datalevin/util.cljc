@@ -262,3 +262,9 @@
   {:pre  [(string? s)]
    :post [(string? %)]}
   (s/join "-" (map s/lower-case (split-words s))))
+
+(defn lazy-concat
+  [colls]
+  (lazy-seq
+    (when-first [c colls]
+      (lazy-cat c (lazy-concat (rest colls))))))

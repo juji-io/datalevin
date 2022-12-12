@@ -112,6 +112,7 @@
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type ignore-key? opts]
     "Return a lazy seq of kv pairs in the specified key range;")
   (get-range
     [db dbi-name k-range]

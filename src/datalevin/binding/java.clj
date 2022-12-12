@@ -222,7 +222,7 @@
             (.renew cur txn)
             cur))
         (.openCursor db txn)))
-  (return-cursor [this cur]
+  (return-cursor [_ cur]
     (.add curs cur)))
 
 (defn- up-db-size [^Env env]
@@ -504,13 +504,15 @@
     (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
 
   (range-seq [this dbi-name k-range]
-    (.range-seq this dbi-name k-range :data :data false))
+    (.range-seq this dbi-name k-range :data :data false nil))
   (range-seq [this dbi-name k-range k-type]
-    (.range-seq this dbi-name k-range k-type :data false))
+    (.range-seq this dbi-name k-range k-type :data false nil))
   (range-seq [this dbi-name k-range k-type v-type]
-    (.range-seq this dbi-name k-range k-type v-type false))
+    (.range-seq this dbi-name k-range k-type v-type false nil))
   (range-seq [this dbi-name k-range k-type v-type ignore-key?]
-    (scan/range-seq this dbi-name k-range k-type v-type ignore-key?))
+    (.range-seq this dbi-name k-range k-type v-type ignore-key? nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key? opts]
+    (scan/range-seq this dbi-name k-range k-type v-type ignore-key? opts))
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))

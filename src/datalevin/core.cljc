@@ -1271,10 +1271,13 @@ This function is eager and attempts to load all data in range into memory. When 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
-                   [db dbi-name k-range k-type v-type ignore-key?])
-       :doc      "Return a seq of kv pairs in the specified key range in the key-value store. This function is similar to `get-range`, but the result is lazy, so it only loads the data items into memory when needed.
+                   [db dbi-name k-range k-type v-type ignore-key?]
+                   [db dbi-name k-range k-type v-type ignore-key? opts])
+       :doc      "Return a seq of kv pairs in the specified key range in the key-value store. This function is similar to `get-range`, but the result is lazy, as it loads the data items in batches into memory. `:batch-size` in `opts` controls the batch size (default 100).
 
-Be aware that the returned structure `LazyRange` holds an open read transaction. `close` function must be invoked on it after done with data access, otherwise an open read transaction may blow up the database size and return stale data. It is strongly recommended to use it in `with-open`.
+The returned data structure implements `Seqable` and `IReduceInit`, similar to Clojure's `iteration` function. It represents only one pass over the data range, and `seq` function needs to be called to obtain a persistent collection.
+
+Be aware that the returned structure holds an open read transaction. It implements `AutoCloseable`, and `close` should be invoked on it after done with data access, otherwise an open read transaction may blow up the database size and return stale data. It is strongly recommended to use it in `with-open`.
 
     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1293,10 +1296,10 @@ Be aware that the returned structure `LazyRange` holds an open read transaction.
 
      Examples:
 
-              (with-open [^datalevin.scan.LazyRange range
-                           (range-seq db \"c\" [:at-least 9] :long)]
-                ;; do data processing on range
-                )"}
+              (with-open [^AutoCloseable range (range-seq db \"c\" [:at-least 9] :long)]
+                (doseq [item range]
+                  ;; do processing on each item
+                  ))"}
   range-seq l/range-seq)
 
 (def ^{:arglists '([db dbi-name k-range]
