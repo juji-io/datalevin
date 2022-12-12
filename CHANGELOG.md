@@ -3,15 +3,16 @@
 ## WIP
 ### Added
 - [KV] A new range function `range-seq` that has similar signature as
-  `get-range` but returns a structure similar to Clojure `iteration`, that implements
-  `Seqable` and `IReduceInit`. It lazily reads data items into memory
-  in batch (controlled by `:batch-size` option). It should be used
-  inside `with-open` for proper cleanup.
-- [KV] The existent eager range functions, `get-range` and `range-filter`, now automatically spill to disk when
-  memory pressure is high. The results, though mutable, still implement
-  `IPersistentVector`, so there is no API level change from the user's point of
-  view. The spill-to-disk behavior is controlled by `spill-opts` option map when open the
-  KV db, containing `:spill-threshold` and `:spill-root` options.
+  `get-range` but returns a structure similar to Clojure `iteration`, that
+  implements `Seqable` and `IReduceInit`. It lazily reads data items into memory
+  in batches (controlled by `:batch-size` option). It should be used inside
+  `with-open` for proper cleanup.
+- [KV] The existent eager range functions, `get-range` and `range-filter`, now
+  automatically spill to disk when memory pressure is high. The results, though
+  mutable, still implement `IPersistentVector`, so there is no API level change
+  from the user's point of view. The spill-to-disk behavior is controlled by
+  `spill-opts` option map when open the KV db, containing `:spill-threshold` and
+  `:spill-root` options.
 ### Improved
 - [KV] write performance improvement
 
@@ -92,9 +93,11 @@
 ## 0.6.16
 ### Added
 - [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
-- [Search] `clear-docs` function to wipe out search index, as it might be faster to rebuild search index than updating individual documents sometimes. #132
+- [Search] `clear-docs` function to wipe out search index, as it might be faster
+  to rebuild search index than updating individual documents sometimes. #132
 - `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
-  used for `binding` if additional Java classes are to be serialized as part of the default `:data` data type. #134
+  used for `binding` if additional Java classes are to be serialized as part of
+  the default `:data` data type. #134
 ### Improved
 - [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
 - bump deps
