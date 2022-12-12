@@ -24,6 +24,8 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+del dtlv-test0
+
 call ..\lein.bat with-profile test1-uberjar do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
@@ -39,6 +41,8 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+del dtlv-test1
+
 call ..\lein.bat with-profile test2-uberjar do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
 
@@ -53,6 +57,8 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 .\dtlv-test2 -Xmx5g
 
 if %errorlevel% neq 0 exit /b %errorlevel%
+
+del dtlv-test2
 
 call ..\lein.bat with-profile native-uberjar uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%

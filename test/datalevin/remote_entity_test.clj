@@ -112,7 +112,8 @@
                                   (fn [db eid]
                                     (d/touch (d/entity db eid))))))))
     (d/close r-conn)
-    (d/close l-conn)))
+    (d/close l-conn)
+    (u/delete-files dir)))
 
 (deftest remote-db-ident-fn
   (let [dir     "dtlv://datalevin:datalevin@localhost/remote-fn-test"

@@ -36,13 +36,16 @@
                          (map-indexed (fn [i ^String t]
                                         [t i (.indexOf text t)])
                                       (s/split text #"\s")))
-        lmdb           (l/open-kv (u/tmp-dir (str "analyzer-" (UUID/randomUUID))))
+        dir            (u/tmp-dir (str "analyzer-" (UUID/randomUUID)))
+        lmdb           (l/open-kv dir)
         engine         ^SearchEngine (sut/new-search-engine
                                        lmdb {:analyzer blank-analyzer})]
     (add-docs sut/add-doc engine)
     (is (= [[:doc1 [["dogs." [43]]]]]
            (sut/search engine "dogs." {:display :offsets})))
-    (is (= [:doc5] (sut/search engine "dogs")))))
+    (is (= [:doc5] (sut/search engine "dogs")))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))

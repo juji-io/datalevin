@@ -1,6 +1,7 @@
 (ns datalevin.remote-transact-test
   (:require
    [datalevin.core :as d]
+   [datalevin.util :as u]
    [datalevin.datom :as dd]
    [datalevin.constants :as c]
    [datalevin.test.core :as tdc :refer [server-fixture]]
@@ -61,7 +62,8 @@
                 :country/long  {:db/valueType :db.type/string}}
         conn   (d/create-conn "dtlv://datalevin:datalevin@localhost:8898/dl-test"
                               schema)
-        conn1  (d/create-conn nil schema)]
+        dir    (u/tmp-dir (str "lmdb-test-" (random-uuid)))
+        conn1  (d/create-conn dir schema)]
 
     (is (= (:max-eid @conn) (:max-eid @conn1) c/e0))
     (d/transact! conn [{:country/short "RU" :country/long "Russia"}
@@ -78,4 +80,5 @@
     (is (= 4 (d/q '[:find (count ?e) . :in $ :where [?e]] (d/db conn))))
 
     (d/close conn)
-    (d/close conn1)))
+    (d/close conn1)
+    (u/delete-files dir)))

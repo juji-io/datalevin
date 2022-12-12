@@ -141,4 +141,5 @@
       (is (= (l/get-range rstore "z" [:all] :long :long)
              (l/get-range cstore "z" [:all] :long :long)))
       (l/close-kv cstore))
-    (l/close-kv rstore)))
+    (l/close-kv rstore)
+    (u/delete-files dst)))

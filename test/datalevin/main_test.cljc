@@ -114,7 +114,9 @@
     (let [db-load (d/open-kv dest-dir)]
       (d/open-dbi db-load "b")
       (is (= "Datalevin" (d/get-value db-load "b" "Hello")))
-      (d/close-kv db-load))))
+      (d/close-kv db-load))
+    (u/delete-files src-dir)
+    (u/delete-files dest-dir)))
 
 (deftest dump-load-datalog-test
   (let [analyzer (i/inter-fn [^String text]
@@ -196,4 +198,7 @@
       (is (= (set
                (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
              (set vs)))
-      (d/close conn1))))
+      (d/close conn1)
+      (u/delete-files src-dir)
+      (u/delete-files dest-dir)
+      (u/delete-files (str (u/tmp-dir) "dl")))))

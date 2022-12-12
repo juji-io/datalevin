@@ -331,7 +331,9 @@
     (sut/transact! conn [{:name "John" :height 1.73}
                          {:name "Peter" :height 1.92}])
     (is (= (sut/pull (sut/db conn) '[*] 1)
-           {:name "John" :height (float 1.73) :db/id 1}))))
+           {:name "John" :height (float 1.73) :db/id 1}))
+    (sut/close conn)
+    (u/delete-files dir)))
 
 (deftest copy-test
   (testing "kv db copy"

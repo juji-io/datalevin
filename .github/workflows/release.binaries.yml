@@ -56,6 +56,9 @@ jobs:
           native/dtlv-test0
           native/dtlv-test1
           native/dtlv-test2
+          rm native/dtlv-test0
+          rm native/dtlv-test1
+          rm native/dtlv-test2
 
       - name: Zip Binary
         run: |

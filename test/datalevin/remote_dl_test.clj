@@ -442,7 +442,8 @@
                    :where
                    [?e :db/ident]] @local-conn)))
     (dc/close conn)
-    (dc/close local-conn)))
+    (dc/close local-conn)
+    (u/delete-files l-dir)))
 
 (deftest update-schema-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/update-schema"

@@ -2,11 +2,12 @@
 
 ## WIP
 ### Added
+- [Platform] aarch64 build for macos M1
 - [KV] A new range function `range-seq` that has similar signature as
-  `get-range` but returns a structure similar to Clojure `iteration`, that
-  implements `Seqable` and `IReduceInit`. It lazily reads data items into memory
-  in batches (controlled by `:batch-size` option). It should be used inside
-  `with-open` for proper cleanup.
+  `get-range` but returns a structure that implements `Seqable` and
+  `IReduceInit`. It lazily reads data items into memory in batches (controlled
+  by `:batch-size` option). It should be used inside `with-open` for proper
+  cleanup.
 - [KV] The existent eager range functions, `get-range` and `range-filter`, now
   automatically spill to disk when memory pressure is high. The results, though
   mutable, still implement `IPersistentVector`, so there is no API level change

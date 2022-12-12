@@ -1275,7 +1275,7 @@ This function is eager and attempts to load all data in range into memory. When 
                    [db dbi-name k-range k-type v-type ignore-key? opts])
        :doc      "Return a seq of kv pairs in the specified key range in the key-value store. This function is similar to `get-range`, but the result is lazy, as it loads the data items in batches into memory. `:batch-size` in `opts` controls the batch size (default 100).
 
-The returned data structure implements `Seqable` and `IReduceInit`, similar to Clojure's `iteration` function. It represents only one pass over the data range, and `seq` function needs to be called to obtain a persistent collection.
+The returned data structure implements `Seqable` and `IReduceInit`. It represents only one pass over the data range, and `seq` function needs to be called to obtain a persistent collection.
 
 Be aware that the returned structure holds an open read transaction. It implements `AutoCloseable`, and `close` should be invoked on it after done with data access, otherwise an open read transaction may blow up the database size and return stale data. It is strongly recommended to use it in `with-open`.
 

@@ -1732,10 +1732,12 @@
           tf                 (u/tmp-dir (str "copy-" (UUID/randomUUID)))
           path               (Paths/get (str tf u/+separator+ "data.mdb")
                                         (into-array String []))]
-      (l/copy (lmdb server skey db-name writing?) tf compact?)
-      (copy-out skey
-                (b/encode-base64 (Files/readAllBytes path))
-                8192))))
+      (try
+        (l/copy (lmdb server skey db-name writing?) tf compact?)
+        (copy-out skey
+                  (b/encode-base64 (Files/readAllBytes path))
+                  8192)
+        (finally (u/delete-files tf))))))
 
 (defn- stat
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
