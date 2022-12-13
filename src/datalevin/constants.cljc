@@ -54,7 +54,7 @@
 
 ;; tmp lmdb
 
-(def ^:const +default-spill-threshold+ 80)   ; percentage
+(def ^:const +default-spill-threshold+ 70)   ; percentage of Xmx
 
 (def ^:const +default-spill-root+ (u/tmp-dir))
 

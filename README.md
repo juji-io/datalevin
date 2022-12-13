@@ -346,21 +346,19 @@ These are the tentative goals that we try to reach as soon as we can. We may
 adjust the priorities based on feedback.
 
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
-* 0.5.0 ~~Native networked server mode with access control.~~ [Done 2021/09/06]
+* 0.5.0 ~~Native networked server mode with role based access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
-* 0.7.0 Explicit transactions, lazy query results, and more data types:
-  bigint, bigdec, tuples, and composite tuples
-* 0.8.0 A new Datalog query engine with improved performance.
-* 0.9.0 As a production rule engine: implement iterative rules application and
-  truth maintenance.
-* 1.0.0 First major release with good documentation.
+* 0.7.0 Explicit transactions, lazy results loading, and results spill to disk
+  when memory is low.
+* 0.8.0 Tuples and composite tuples.
+* 0.9.0 A new Datalog query engine with improved performance.
+* 1.0.0 As a production rule engine: iterative rules application and truth maintenance.
 * 1.1.0 Transaction log storage and access API.
 * 1.2.0 Read-only replicas for server.
-* 1.3.0 Distributed mode with raft based replication.
-* 2.0.0 Second major release with a book.
-* 2.2.0 Option to store data in compressed form.
-* 2.3.0 Arbitrary data as attribute.
-* 2.4.0 Fully automatic schema migration on write.
+* 1.3.0 Option to store data in compressed form.
+* 1.4.0 Arbitrary data as attribute.
+* 1.5.0 Fully automatic schema migration on write.
+* 2.0.0 Distributed mode with raft based replication.
 * 3.0.0 As a document store: automatic indexing.
 * 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
 

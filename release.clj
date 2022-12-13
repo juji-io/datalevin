@@ -43,6 +43,7 @@
     (update-file "test-jar/deps.edn" old->new)
     (update-file "test-jar/test-uber.sh" old->new)
     (update-file "test-jar/project.clj" old->new)
+    (update-file "doc/install.md" old->new)
     (update-file "doc/dtlv.md" old->new)
     (update-file "src/datalevin/main.clj" old->new)
     (update-file "native/project.clj"  old->new)

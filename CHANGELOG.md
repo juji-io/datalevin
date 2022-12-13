@@ -2,20 +2,26 @@
 
 ## WIP
 ### Added
-- [Platform] aarch64 build for macos M1
+- [Platform] aarch64 build for Apple Silicon.
 - [KV] A new range function `range-seq` that has similar signature as
   `get-range` but returns a structure that implements `Seqable` and
   `IReduceInit`. It lazily reads data items into memory in batches (controlled
   by `:batch-size` option). It should be used inside `with-open` for proper
-  cleanup.
+  cleanup. #108
 - [KV] The existent eager range functions, `get-range` and `range-filter`, now
   automatically spill to disk when memory pressure is high. The results, though
   mutable, still implement `IPersistentVector`, so there is no API level change
   from the user's point of view. The spill-to-disk behavior is controlled by
-  `spill-opts` option map when open the KV db, containing `:spill-threshold` and
+  `spill-opts` option map when open the db, containing `:spill-threshold` and
   `:spill-root` options.
+- [Datalog] Additional arity-1 version of `q` that takes `:query` and `:args`
+  in a map, which allows additional options for `:offset`, `:limit`, and
+  `:timeout`. #126
 ### Improved
 - [KV] write performance improvement
+- [Datalog] `q` and `pull` results are also lazy and spill to disk under memory pressure.
+### Changed
+- [KV] Upgrade LMDB to 0.9.29
 
 ## 0.6.29
 ### Added
