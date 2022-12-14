@@ -14,7 +14,7 @@ task:
   script: |
 
     brew install leiningen
-    lein test
+    lein test datalevin.bits-test
 
     # cd native
     # script/install-graalvm
