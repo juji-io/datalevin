@@ -1,6 +1,5 @@
 (ns datalevin.storage-test
   (:require [datalevin.storage :as sut]
-            [datalevin.bits :as b]
             [datalevin.util :as u]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
@@ -20,6 +19,7 @@
     (is (= 3 (sut/max-aid store)))
     (is (= (merge c/entity-time-schema c/implicit-schema) (sut/schema store)))
     (is (= c/e0 (sut/init-max-eid store)))
+    (is (= c/tx0 (sut/max-tx store)))
     (let [a   :a/b
           v   (UUID/randomUUID)
           d   (d/datom c/e0 a v)
@@ -37,6 +37,7 @@
           dir (lmdb/dir (.-lmdb ^Store store))
           t1  (sut/last-modified store)]
       (sut/load-datoms store [d])
+      (is (= (inc c/tx0) (sut/max-tx store)))
       (is (<= t1 (sut/last-modified store)))
       (is (= s (sut/schema store)))
       (is (= 1 (sut/datom-count store :eav)))
@@ -50,6 +51,7 @@
       (is (= d (sut/tail store :eav d d)))
       (sut/swap-attr store b merge p1)
       (sut/load-datoms store [d1])
+      (is (= (+ 2 c/tx0) (sut/max-tx store)))
       (is (= s1 (sut/schema store)))
       (is (= 2 (sut/datom-count store :eav)))
       (is (= 2 (sut/datom-count store :ave)))
@@ -98,6 +100,7 @@
                                    (d/datom c/e0 nil nil))))
       (sut/swap-attr store c merge p2)
       (sut/load-datoms store [d2])
+      (is (= (+ 3 c/tx0) (sut/max-tx store)))
       (is (= s2 (sut/schema store)))
       (is (= 3 (sut/datom-count store c/eav)))
       (is (= 3 (sut/datom-count store c/ave)))
@@ -106,16 +109,20 @@
                              (d/datom c/e0 nil v2)
                              (d/datom c/emax nil v2))))
       (sut/load-datoms store [(d/delete d)])
+      (is (= (+ 4 c/tx0) (sut/max-tx store)))
       (is (= 2 (sut/datom-count store c/eav)))
       (is (= 2 (sut/datom-count store c/ave)))
       (is (= 1 (sut/datom-count store c/vea)))
       (sut/close store)
       (is (sut/closed? store))
       (let [store (sut/open dir)]
+        (is (= (+ 4 c/tx0) (sut/max-tx store)))
         (is (= [d1] (sut/slice store :eav d1 d1)))
         (sut/load-datoms store [(d/delete d1)])
+        (is (= (+ 5 c/tx0) (sut/max-tx store)))
         (is (= 1 (sut/datom-count store c/eav)))
         (sut/load-datoms store [d d1])
+        (is (= (+ 6 c/tx0) (sut/max-tx store)))
         (is (= 3 (sut/datom-count store c/eav)))
         (sut/close store))
       (let [d     :d/e
@@ -123,11 +130,12 @@
             s3    (assoc s2 d (merge p3 {:db/aid 6}))
             s4    (assoc s3 :f/g {:db/aid 7 :db/valueType :db.type/string})
             store (sut/open dir {d p3})]
+        (is (= (+ 6 c/tx0) (sut/max-tx store)))
         (is (= s3 (sut/schema store)))
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
         (is (= s4 (sut/schema store)))
         (sut/close store)))
-    ))
+    (u/delete-files dir)))
 
 (deftest schema-test
   (let [s     {:a {:db/valueType :db.type/string}
@@ -207,7 +215,7 @@
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
       (sut/close store))
-    ))
+    (u/delete-files dir)))
 
 (deftest false-value-test
   (let [d     (d/datom c/e0 :a false)
@@ -230,4 +238,5 @@
           _     (sut/load-datoms store [d])
           r     (sut/fetch store d)]
       (sut/close store)
+      (u/delete-files dir)
       (is (= [d] r)))))

@@ -67,13 +67,35 @@
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
     (sut/copy src dst true)
     (is (= (l/stat db)
-           {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
-            :overflow-pages 0,    :entries 1}))
+           (if (u/apple-silicon?)
+             {:psize          16384,
+              :depth          1,
+              :branch-pages   0,
+              :leaf-pages     1,
+              :overflow-pages 0,
+              :entries        1}
+             {:psize          4096,
+              :depth          1,
+              :branch-pages   0,
+              :leaf-pages     1,
+              :overflow-pages 0,
+              :entries        1})))
     (doseq [i (l/list-dbis db)]
       (println i)
       (is (= (l/stat db i)
-             {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
-              :overflow-pages 0,    :entries 1})))
+             (if (u/apple-silicon?)
+               {:psize          16384,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        1}
+               {:psize          4096,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        1}))))
     (let [db-copied (d/open-kv dst)]
       (d/open-dbi db-copied dbi)
       (is (= (d/get-value db-copied dbi "Hello") "Datalevin"))
@@ -114,7 +136,9 @@
     (let [db-load (d/open-kv dest-dir)]
       (d/open-dbi db-load "b")
       (is (= "Datalevin" (d/get-value db-load "b" "Hello")))
-      (d/close-kv db-load))))
+      (d/close-kv db-load))
+    (u/delete-files src-dir)
+    (u/delete-files dest-dir)))
 
 (deftest dump-load-datalog-test
   (let [analyzer (i/inter-fn [^String text]
@@ -196,4 +220,7 @@
       (is (= (set
                (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
              (set vs)))
-      (d/close conn1))))
+      (d/close conn1)
+      (u/delete-files src-dir)
+      (u/delete-files dest-dir)
+      (u/delete-files (str (u/tmp-dir) "dl")))))

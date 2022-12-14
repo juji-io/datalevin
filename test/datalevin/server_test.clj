@@ -2,12 +2,10 @@
   (:require [datalevin.server :as sut]
             [datalevin.client :as cl]
             [datalevin.core :as d]
-            [datalevin.storage :as st]
             [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.test :refer [is deftest testing]])
-  (:import [java.nio ByteBuffer]
-           [java.util UUID]
+  (:import [java.util UUID]
            [java.nio.channels SocketChannel]
            [java.net Socket]
            [datalevin.db DB]
@@ -141,32 +139,18 @@
                       [?e :id ?i]] (d/db conn) "John")))
       (sut/stop server))))
 
-(deftest dl-txn-test
-  (let [server (sut/create {:root (u/tmp-dir (str "remote-dl-test-"
-                                                  (UUID/randomUUID)))})
-        _      (sut/start server)
-        schema {:country/short {:db/valueType :db.type/string
-                                :db/unique    :db.unique/identity}
-                :country/long  {:db/valueType :db.type/string}}
-        conn   (d/create-conn "dtlv://datalevin:datalevin@localhost:8898/dl-test"
-                              schema)
-        conn1  (d/create-conn nil schema)]
-
-    (is (= (:max-eid @conn) (:max-eid @conn1) c/e0))
-    (d/transact! conn [{:country/short "RU" :country/long "Russia"}
-                       {:country/short "FR" :country/long "France"}
-                       {:country/short "DE" :country/long "Germany"}])
-    (d/transact! conn1 [{:country/short "RU" :country/long "Russia"}
-                        {:country/short "FR" :country/long "France"}
-                        {:country/short "DE" :country/long "Germany"}])
-    (is (= (:max-eid @conn) (:max-eid @conn1) 3))
-
-    (d/transact! conn [{:country/short "AZ" :country/long "Azerbaijan"}])
-    (d/transact! conn1 [{:country/short "AZ" :country/long "Azerbaijan"}])
-    (is (= (:max-eid @conn) (:max-eid @conn1) 4))
-    (is (= 4 (d/q '[:find (count ?e) . :in $ :where [?e]] (d/db conn))))
-
-    (d/close conn)
-    (d/close conn1)
-    (sut/stop server)
-    ))
+(deftest restart-server-test
+  (let [root    (u/tmp-dir (str "remote-schema-test-" (UUID/randomUUID)))
+        server1 (sut/create {:port c/default-port
+                             :root root})
+        _       (sut/start server1)
+        client  (cl/new-client "dtlv://datalevin:datalevin@localhost"
+                               {:time-out 5000})]
+    (is (= (cl/list-databases client) []))
+    (sut/stop server1)
+    (is (thrown? Exception (cl/list-databases client)))
+    (let [server2 (sut/create {:port c/default-port
+                               :root root})
+          _       (sut/start server2)]
+      (is (= (cl/list-databases client) []))
+      (sut/stop server2))))

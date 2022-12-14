@@ -1,4 +1,4 @@
-(ns datalevin.lmdb
+(ns ^:no-doc datalevin.lmdb
   "API for LMDB Key Value Store"
   (:require [datalevin.util :as u]))
 
@@ -13,6 +13,8 @@
   (put-stop-key [this data k-type] "put data in stop-key buffer."))
 
 (defprotocol IRtx
+  (read-only? [this] "is this a read only transaction")
+  (get-txn [this] "access the transaction object")
   (close-rtx [this] "close the read-only transaction")
   (reset [this] "reset transaction so it can be reused upon renew")
   (renew [this] "renew and return previously reset transaction for reuse"))
@@ -55,6 +57,7 @@
   (close-kv [db] "Close this LMDB env")
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
+  (opts [db] "Rturn the option map")
   (open-dbi
     [db dbi-name]
     [db dbi-name opts]
@@ -86,6 +89,10 @@
     "Get the number of data entries in a DBI (i.e. sub-db)")
   (get-rtx [db])
   (return-rtx [db rtx])
+  (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
+  (close-transact-kv [db] "close and commit the read/write rtx")
+  (abort-transact-kv [db] "abort the explicit read/write rtx")
+  (write-txn [db] "return the write-txn")
   (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.")
   (get-value
@@ -100,12 +107,19 @@
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
     "Return the first kv pair in the specified key range;")
+  (range-seq
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type v-type]
+    [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type ignore-key? opts]
+    "Return a lazy seq of kv pairs in the specified key range;")
   (get-range
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
-    "Return a seq of kv pairs in the specified key range;")
+    "Return a eager seq of kv pairs in the specified key range;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
@@ -134,6 +148,11 @@
     [db dbi-name visitor k-range k-type]
     "Call `visitor` function on each kv pairs in the specified key range, presumably
      for side effects. Return nil."))
+
+(defprotocol IWriting
+  "Used to mark the db so that it should use the write-txn"
+  (writing? [db] "return true if this db should use write-txn")
+  (mark-write [db] "return a new db what uses write-txn"))
 
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 

@@ -1,4 +1,4 @@
-(ns datalevin.datafy
+(ns ^:no-doc datalevin.datafy
   (:require [clojure.core.protocols :as cp]
             [datalevin.pull-api :as dp]
             [datalevin.db :as db]

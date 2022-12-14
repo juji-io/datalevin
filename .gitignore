@@ -47,8 +47,12 @@ reading
 *.a
 native/*.zip
 native/dtlv
-native/dtlv-test
+native/dtlv-test*
 native/test-jar/jar-test
 */reports/
 */*/reports/
 *.build_artifacts.txt
+
+.lsp/.cache
+.portal
+output.calva-repl

@@ -5,7 +5,9 @@
             [datalevin.bits :as b]
             [datalevin.search :as s]
             [datalevin.constants :as c]
-            [datalevin.datom :as d])
+            [datalevin.datom :as d]
+            [clojure.string :as str]
+            )
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -86,6 +88,11 @@
         (inc ^long gt))
       c/gt0))
 
+(defn- init-max-tx
+  [lmdb]
+  (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
+      c/tx0))
+
 (defn- low-datom->indexable
   [schema ^Datom d]
   (let [e (.-e d)]
@@ -154,6 +161,8 @@
     "Return the unix timestamp of when the store is last modified")
   (max-gt [this])
   (advance-max-gt [this])
+  (max-tx [this])
+  (advance-max-tx [this])
   (max-aid [this])
   (schema [this] "Return the schema map")
   (rschema [this] "Return the reverse schema map")
@@ -163,9 +172,10 @@
   (init-max-eid [this] "Initialize and return the max entity id")
   (datom-count [this index] "Return the number of datoms in the index")
   (swap-attr [this attr f] [this attr f x] [this attr f x y]
-    "Update an attribute, f is similar to that of swap!")
+    "Update the properties of an attribute, f is similar to that of swap!")
   (del-attr [this attr]
     "Delete an attribute, throw if there is still datom related to it")
+  (rename-attr [this attr new-attr] "Rename an attribute")
   (load-datoms [this datoms] "Load datams into storage")
   (fetch [this datom] "Return [datom] if it exists in store, otherwise '()")
   (populated? [this index low-datom high-datom]
@@ -205,7 +215,8 @@
                 ^:volatile-mutable rschema
                 ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
-                ^:volatile-mutable max-gt]
+                ^:volatile-mutable max-gt
+                ^:volatile-mutable max-tx]
   IStore
 
   (opts [_]
@@ -231,6 +242,12 @@
 
   (advance-max-gt [_]
     (set! max-gt (inc ^long max-gt)))
+
+  (max-tx [_]
+    max-tx)
+
+  (advance-max-tx [_]
+    (set! max-tx (inc ^long max-tx)))
 
   (max-aid [_]
     max-aid)
@@ -286,11 +303,24 @@
     (if (populated? this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
       (let [aid (:db/aid (schema attr))]
-        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]])
+        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                                [:put c/meta :last-modified
+                                 (System/currentTimeMillis) :attr :long]])
         (set! schema (dissoc schema attr))
         (set! rschema (schema->rschema schema))
         (set! attrs (dissoc attrs aid))
         attrs)))
+
+  (rename-attr [this attr new-attr]
+    (let [props (schema attr)]
+      (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
+                              [:put c/schema new-attr props :attr]
+                              [:put c/meta :last-modified
+                               (System/currentTimeMillis) :attr :long]])
+      (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
+      (set! rschema (schema->rschema schema))
+      (set! attrs (assoc attrs (:db/aid props) new-attr))
+      attrs))
 
   (datom-count [_ index]
     (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
@@ -317,6 +347,9 @@
                                  nil
                                  datoms)]
           (batch-fn batch))
+        (lmdb/transact-kv
+          lmdb
+          [[:put c/meta :max-tx (advance-max-tx this) :attr :long]])
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op
@@ -519,7 +552,8 @@
     (or (not (:validate-data? (.-opts store)))
         (b/valid-data? v vt)
         (u/raise "Invalid data, expecting " vt {:input v}))
-    (when (:db/fulltext props) (vswap! ft-ds conj [:a d]))
+    (when (and (:db/fulltext props) (not (str/blank? (str v))))
+      (vswap! ft-ds conj [:a d]))
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
                 [:put c/ave i max-gt :ave :id]
@@ -536,11 +570,13 @@
   (let [props  ((schema store) (.-a d))
         vt     (:db/valueType props)
         ref?   (= :db.type/ref vt)
-        i      (b/indexable (.-e d) (:db/aid props) (.-v d) vt)
+        v      (.-v d)
+        i      (b/indexable (.-e d) (:db/aid props) v vt)
         giant? (b/giant? i)
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
-    (when (:db/fulltext props) (vswap! ft-ds conj [:d d]))
+    (when (and (:db/fulltext props) (not (str/blank? (str v))))
+      (vswap! ft-ds conj [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
@@ -591,4 +627,20 @@
                 (schema->rschema schema)
                 (init-attrs schema)
                 (init-max-aid schema)
-                (init-max-gt lmdb))))))
+                (init-max-gt lmdb)
+                (init-max-tx lmdb))))))
+
+(defn transfer
+  "transfer state of an existing store to a new store that has a different
+  LMDB instance"
+  [^Store old lmdb]
+  (locking old
+    (->Store lmdb
+             (s/transfer (.-search-engine old) lmdb)
+             (.-opts old)
+             (schema old)
+             (rschema old)
+             (attrs old)
+             (max-aid old)
+             (max-gt old)
+             (max-tx old))))

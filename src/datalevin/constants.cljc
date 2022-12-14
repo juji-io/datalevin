@@ -1,6 +1,11 @@
-(ns datalevin.constants
+(ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
-  (:import [java.util UUID Arrays HashSet]))
+  (:require
+   [taoensso.nippy :as nippy]
+   [datalevin.util :as u])
+  (:import
+   [java.util UUID Arrays HashSet]
+   [java.math BigInteger BigDecimal]))
 
 ;;---------------------------------------------
 ;; system constants, fixed
@@ -8,8 +13,8 @@
 ;; datom
 
 (def ^:const e0    0)
-(def ^:const tx0   0x20000000)
 (def ^:const emax  0x7FFFFFFF)
+(def ^:const tx0   1)
 (def ^:const txmax 0x7FFFFFFF)
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)
@@ -37,7 +42,7 @@
 
 ;; lmdb
 
-(def default-env-flags [:nordahead :mapasync :writemap])
+(def default-env-flags [:nordahead :mapasync :writemap :notls])
 
 (def default-dbi-flags [:create])
 
@@ -47,6 +52,15 @@
 
 (def ^:const +max-key-size+     511)   ; in bytes
 
+;; tmp lmdb
+
+(def ^:const +default-spill-threshold+ 70)   ; percentage of Xmx
+
+(def ^:const +default-spill-root+ (u/tmp-dir))
+
+(def ^:const tmp-dbi "t")
+
+
 ;; index storage
 
 (def ^:const +val-prefix-size+  498)  ; - eid - aid - s
@@ -55,13 +69,13 @@
 
 (def ^:const +id-bytes+ Long/BYTES)
 
-(def ^:const lmdb-data-types #{:data :string :int :long :id :float :double
-                               :byte :bytes :keyword :boolean :instant :uuid
-                               :datom :attr :eav :ave :vea})
-
 ;; value headers
-(def ^:const type-long-neg (unchecked-byte 0xC0))
-(def ^:const type-long-pos (unchecked-byte 0xC1))
+(def ^:const type-long-neg   (unchecked-byte 0xC0))
+(def ^:const type-long-pos   (unchecked-byte 0xC1))
+(def ^:const type-bigint     (unchecked-byte 0xF1))
+(def ^:const type-bigdec     (unchecked-byte 0xF2))
+;; (def ^:const type-tuple-hete (unchecked-byte 0xF3))
+;; (def ^:const type-tuple-homo (unchecked-byte 0xF4))
 (def ^:const type-float    (unchecked-byte 0xF5))
 (def ^:const type-double   (unchecked-byte 0xF6))
 (def ^:const type-instant  (unchecked-byte 0xF7))
@@ -89,6 +103,28 @@
                  (Arrays/fill ba (unchecked-byte 0xFF))
                  ba))
 (def min-bytes (byte-array 0))
+
+(defn- max-bigint-bs
+  ^bytes []
+  (let [^bytes bs (byte-array 127)]
+    (aset bs 0 (unchecked-byte 0x7f))
+    (dotimes [i 126] (aset bs (inc i) (unchecked-byte 0xff)))
+    bs))
+
+(def max-bigint (BigInteger. (max-bigint-bs)))
+
+(defn- min-bigint-bs
+  ^bytes []
+  (let [bs (byte-array 127)]
+    (aset bs 0 (unchecked-byte 0x80))
+    (dotimes [i 126] (aset bs (inc i) (unchecked-byte 0x00)))
+    bs))
+
+(def min-bigint (BigInteger. (min-bigint-bs)))
+
+(def max-bigdec (BigDecimal. ^BigInteger max-bigint Integer/MIN_VALUE))
+
+(def min-bigdec (BigDecimal. ^BigInteger min-bigint Integer/MIN_VALUE))
 
 (def ^:const overflown :overflown-key)
 (def ^:const normal 0)
@@ -156,6 +192,13 @@
 
 (def +buffer-grow-factor+ 10)
 
+;; serialization
+
+(def ^{:dynamic true
+       :doc     "set of additional serializable classes, e.g.
+                  `#{\"my.package.*\"}`"}
+  *data-serializable-classes* #{})
+
 ;; lmdb
 
 (def +max-dbs+          128)
@@ -178,7 +221,7 @@
 
 (def +wire-datom-batch-size+ 1000)
 
-(def connection-pool-size 5)
+(def connection-pool-size 3)
 (def connection-timeout 60000) ; in milliseconds
 
 ;;search engine

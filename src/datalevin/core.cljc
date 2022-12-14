@@ -185,7 +185,8 @@ Only usable for debug output.
 
           ```
           (q '[:find ?value
-               :where [_ :likes ?value]]
+               :where [_ :likes ?value]
+               :timeout 5000]
              db)
           ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
           ```"
@@ -197,7 +198,9 @@ Only usable for debug output.
 ;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
-       :doc      "Open a Datalog database at the given location. `dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
+       :doc      "Open a Datalog database at the given location.
+
+`dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
 
  `opts` map has keys:
 
@@ -208,6 +211,9 @@ Only usable for debug output.
    * `:search-opts`, an option map that will be passed to the built-in full-text search engine
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
+
+   * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
+
 
   Usage:
 
@@ -274,19 +280,25 @@ Only usable for debug output.
 
 (defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
-  ([db tx-data] (with db tx-data nil))
-  ([db tx-data tx-meta]
+  ([db tx-data] (with db tx-data {} false))
+  ([db tx-data tx-meta] (with db tx-data tx-meta false))
+  ([db tx-data tx-meta simulated?]
    {:pre [(db/db? db)]}
    (db/transact-tx-data (db/map->TxReport
                           {:db-before db
                            :db-after  db
                            :tx-data   []
                            :tempids   {}
-                           :tx-meta   tx-meta}) tx-data)))
+                           :tx-meta   tx-meta}) tx-data simulated?)))
 
+(defn tx-data->simulated-report
+  "Returns a transaction report without side-effects. Useful for obtaining
+  the would-be db state and the would-be set of datoms."
+  [db tx-data]
+  (db/tx-data->simulated-report db tx-data))
 
 (defn ^:no-doc db-with
-  "Applies transaction. Return the db."
+  "Applies transaction. Return the Datalog db."
   [db tx-data]
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
@@ -295,7 +307,7 @@ Only usable for debug output.
 ;; Index lookups
 
 (defn datoms
-  "Index lookup. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
+  "Index lookup in Datalog db. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
 
@@ -399,6 +411,15 @@ Only usable for debug output.
   ([db index c1 c2 c3]    {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3]))
   ([db index c1 c2 c3 c4] {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3 c4])))
 
+(defn fulltext-datoms
+  "Return datoms that found by the given fulltext search query"
+  ([db query]
+   (fulltext-datoms db query nil))
+  ([^DB db query opts]
+   (let [store (.-store db)]
+     (if (instance? DatalogStore store)
+       (r/fulltext-datoms store query opts)
+       (dq/fulltext db query opts)))))
 
 (defn index-range
   "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
@@ -438,13 +459,13 @@ Only usable for debug output.
        (db/db? @conn)))
 
 (defn conn-from-db
-  "Creates a mutable reference to a given database. See [[create-conn]]."
+  "Creates a mutable reference to a given Datalog database. See [[create-conn]]."
   [db]
   {:pre [(db/db? db)]}
   (atom db :meta { :listeners (atom {}) }))
 
 (defn conn-from-datoms
-  "Create a mutable reference to a database with the given datoms added to it.
+  "Create a mutable reference to a Datalog database with the given datoms added to it.
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map has keys:
@@ -468,6 +489,7 @@ Only usable for debug output.
   "Creates a mutable reference (a “connection”) to a Datalog database at the given
   location and opens the database. Creates the database if it doesn't
   exist yet. Update the schema if one is given. Return the connection.
+
   `dir` could be a local directory path or a dtlv connection URI string.
 
   `opts` map may have keys:
@@ -479,6 +501,8 @@ Only usable for debug output.
    * `:search-opts`, an option map that will be passed to the built-in full-text search engine
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
+
+   * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
 
   Please note that the connection should be managed like a stateful resource.
   Application should hold on to the same connection rather than opening
@@ -505,14 +529,14 @@ Only usable for debug output.
   ([dir schema opts] (conn-from-db (empty-db dir schema opts))))
 
 (defn close
-  "Close the connection"
+  "Close the connection to a Datalog db"
   [conn]
   (when-let [store (.-store ^DB @conn)]
     (s/close ^Store store))
   nil)
 
 (defn closed?
-  "Return true when the underlying DB is closed or when `conn` is nil or contains nil"
+  "Return true when the underlying Datalog DB is closed or when `conn` is nil or contains nil"
   [conn]
   (or (nil? conn)
       (nil? @conn)
@@ -529,7 +553,7 @@ Only usable for debug output.
     @report))
 
 (defn transact!
-  "Applies transaction to the underlying database.
+  "Applies transaction to the underlying Datalog database of a connection.
 
   Returns transaction report, a map:
 
@@ -623,7 +647,7 @@ Only usable for debug output.
 
 
 (defn reset-conn!
-  "Forces underlying `conn` value to become `db`. Will generate a tx-report that
+  "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that
   will remove everything from old value and insert everything from the new one."
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
@@ -646,7 +670,7 @@ Only usable for debug output.
 
 
 (defn listen!
-  "Listen for changes on the given connection. Whenever a transaction is applied
+  "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
   to the database via [[transact!]], the callback is called with the transaction
   report. `key` is any opaque unique value.
 
@@ -694,14 +718,12 @@ Only usable for debug output.
 
 
 (defn db
-  "Returns the underlying database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
+  "Returns the underlying Datalog database object from a connection. Note that Datalevin does not have \"db as a value\" feature, the returned object is NOT a database value, but a reference to the database object.
 
   Exists for Datomic API compatibility. "
   [conn]
   {:pre [(conn? conn)]}
   @conn)
-
-;; datalog db
 
 (defn opts
   "Return the option map of the Datalog DB"
@@ -716,10 +738,16 @@ Only usable for debug output.
   (s/schema ^Store (.-store ^DB @conn)))
 
 (defn update-schema
-  "Update the schema of an open connection. `schema-update` is a map from
-  attribute keywords to maps of corresponding properties. `del-attrs` is a
-  set of attributes to be removed from the schema, if there is no
-  datoms associated with them, otherwise an exception will be thrown.
+  "Update the schema of an open connection to a Datalog db.
+
+  * `schema-update` is a map from attribute keywords to maps of corresponding
+  properties.
+
+  * `del-attrs` is a set of attributes to be removed from the schema, if there is
+  no datoms associated with them, otherwise an exception will be thrown.
+
+  * `rename-map` is a map of old attributes to new attributes, for renaming
+  attributes
 
   Return the updated schema.
 
@@ -727,15 +755,19 @@ Only usable for debug output.
 
         (update-schema conn {:new/attr {:db/valueType :db.type/string}})
         (update-schema conn {:new/attr {:db/valueType :db.type/string}}
-                            #{:old/attr1 :old/attr2})"
+                            #{:old/attr1 :old/attr2})
+        (update-schema conn nil nil {:old/attr :new/attr}) "
   ([conn schema-update]
-   (update-schema conn schema-update nil))
+   (update-schema conn schema-update nil nil))
   ([conn schema-update del-attrs]
+   (update-schema conn schema-update del-attrs nil))
+  ([conn schema-update del-attrs rename-map]
    {:pre [(conn? conn)]}
    (let [^DB db       (db conn)
          ^Store store (.-store db)]
      (s/set-schema store schema-update)
      (doseq [attr del-attrs] (s/del-attr store attr))
+     (doseq [[old new] rename-map] (s/rename-attr store old new))
      (schema conn))))
 
 (defonce ^:private connections (atom {}))
@@ -749,7 +781,7 @@ Only usable for debug output.
     conn))
 
 (defn get-conn
-  "Obtain an open connection to a database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
+  "Obtain an open connection to a Datalog database. `dir` could be a local directory path or a dtlv connection URI string. Create the database if it does not exist. Reuse the same connection if a connection to the same database already exists. Open the database if it is closed. Return the connection.
 
   See also [[create-conn]] and [[with-conn]]"
   ([dir]
@@ -762,7 +794,7 @@ Only usable for debug output.
      (new-conn dir schema opts))))
 
 (defmacro with-conn
-  "Evaluate body in the context of an connection to the database.
+  "Evaluate body in the context of an connection to the Datalog database.
 
   If the database does not exist, this will create it. If it is closed,
   this will open it. However, the connection will be closed in the end of
@@ -909,6 +941,11 @@ Only usable for debug output.
   * `:mapsize` is the initial size of the database. This will be expanded as needed
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
      `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
+  * `:client-opts` is the option map passed to the client if `dir` is a remote server URI string.
+  * `:spill-opts` is the option map that controls the spill-to-disk behavior for `get-range` and `range-filter` functions, which may have the following keys:
+      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx` (default 70), above which spill-to-disk will be triggered.
+      - `:spill-root`, a file directory, in which the spilled data is written (default is the system temporary directory).
+
 
   Please note:
 
@@ -972,7 +1009,7 @@ Only usable for debug output.
   list-dbis l/list-dbis)
 
 (defn copy
-  "Copy a database to a destination directory path, optionally compact while copying, default not compact. "
+  "Copy a Datalog or key-value database to a destination directory path, optionally compact while copying, default not compact. "
   ([db dest]
    (copy db dest false))
   ([db dest compact?]
@@ -997,41 +1034,128 @@ Only usable for debug output.
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries l/entries)
 
+(def ^{:arglists '([db])
+       :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
+  abort-transact-kv l/abort-transact-kv)
+
+(defmacro with-transaction-kv
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of key-value operations.
+
+  `binding` is a vector of a new identifier of the kv database with
+  a new read/write transaction attached, and the identifier of the original
+  kv database.
+
+  `body` should refer to the new identifier of the kv database.
+
+  Example:
+
+          (with-transaction-kv [db lmdb]
+            (let [^long now (get-value db \"a\" :counter)]
+              (transact-kv db [[:put \"a\" :counter (inc now)]])
+              (get-value db \"a\" :counter)))
+  "
+  [binding & body]
+  `(let [db# ~(second binding)]
+     (locking db#
+       (try
+         (let [~(first binding) (l/open-transact-kv db#)]
+           (try
+             ~@body
+             (catch Exception ~'e
+               (if (:resized (ex-data ~'e))
+                 (do ~@body)
+                 (throw ~'e)))))
+         (finally (l/close-transact-kv db#))))))
+
+(defmacro with-transaction
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of Datalog database operations.
+
+  `binding` is a vector of a new identifier of the Datalog database
+  connection with a new read/write transaction attached, and the identifier
+  of the original database connection.
+
+  `body` should refer to the new identifier of the database connection.
+
+  Example:
+
+          (with-transaction [conn orig-conn]
+            (let [query  '[:find ?c .
+                           :in $ ?e
+                           :where [?e :counter ?c]]
+                  ^long now (q query @conn 1)]
+              (transact! conn [{:db/id 1 :counter (inc now)}])
+              (q query @conn 1)))
+  "
+  [binding & body]
+  `(let [conn# ~(second binding)
+         s#    (.-store ^DB (deref conn#))]
+     (if (instance? DatalogStore s#)
+       (let [s1# (r/open-transact s#)]
+         (try
+           (let [db#              (db/new-db s1#)
+                 ~(first binding) (atom db# :meta (meta conn#))]
+             ~@body)
+           (catch Exception ~'e
+             (if (:resized (ex-data ~'e))
+               (let [db#              (db/new-db s1#)
+                     ~(first binding) (atom db# :meta (meta conn#))]
+                 ~@body)
+               (throw ~'e)))
+           (finally (r/close-transact s#))))
+       (let [kv# (.-lmdb ^Store s#)]
+         (with-transaction-kv [kv1# kv#]
+           (let [db#  (db/new-db (s/transfer s# kv1#))
+                 res# (let [~(first binding) (atom db# :meta (meta conn#))]
+                        ~@body)]
+             (reset! conn# (db/new-db (s/transfer (.-store ^DB db#) kv#)))
+             res#))))))
+
+(defn abort-transact
+  "Rollback writes of the transaction from inside [[with-transaction]]."
+  [conn]
+  (let [s (.-store ^DB (deref conn))]
+    (if (instance? DatalogStore s)
+      (r/abort-transact s)
+      (abort-transact-kv (.-lmdb ^Store s)))))
+
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.
 
-  `txs` is a seq of `[op dbi-name k v k-type v-type append?]`
+  `txs` is a seq of Clojure vectors, `[op dbi-name k v k-type v-type flags]`
   when `op` is `:put`, for insertion of a key value pair `k` and `v`;
   or `[op dbi-name k k-type]` when `op` is `:del`, for deletion of key `k`;
 
   `dbi-name` is the name of the DBI (i.e sub-db) to be transacted, a string.
 
-  `k-type`, `v-type` and `append?` are optional.
+  `k-type`, `v-type` and `flags` are optional.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
   of `v`. The allowed data types are described in [[put-buffer]]
 
-  Set `append?` to true when the data is sorted to gain better write performance.
+  `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
+       Pass in `:append` when the data is sorted to gain better write performance.
 
   Example:
 
           (transact-kv
             lmdb
             [ [:put \"a\" 1 2]
-            [:put \"a\" 'a 1]
-            [:put \"a\" 5 {}]
-            [:put \"a\" :annunaki/enki true :attr :data]
-            [:put \"a\" :datalevin [\"hello\" \"world\"]]
-            [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
-            [:put \"a\" (byte 0x01) #{1 2} :byte :data]
-            [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
-            [:put \"a\" [-1 -235254457N] 5]
-            [:put \"a\" :a 4]
-            [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
-            [:put \"a\" :long 1 :data :long]
-            [:put \"a\" 2 3 :long :long]
-            [:del \"a\" 1]
-            [:del \"a\" :non-exist] ])"}
+              [:put \"a\" 'a 1]
+              [:put \"a\" 5 {}]
+              [:put \"a\" :annunaki/enki true :attr :data]
+              [:put \"a\" :datalevin [\"hello\" \"world\"]]
+              [:put \"a\" 42 (d/datom 1 :a/b {:id 4}) :long :datom]
+              [:put \"a\" (byte 0x01) #{1 2} :byte :data]
+              [:put \"a\" (byte-array [0x41 0x42]) :bk :bytes :data]
+              [:put \"a\" [-1 -235254457N] 5]
+              [:put \"a\" :a 4]
+              [:put \"a\" :bv (byte-array [0x41 0x42 0x43]) :data :bytes]
+              [:put \"a\" :long 1 :data :long]
+              [:put \"a\" 2 3 :long :long]
+              [:del \"a\" 1]
+              [:del \"a\" :non-exist] ])"}
   transact-kv l/transact-kv)
 
 (def ^{:arglists '([db dbi-name k]
@@ -1107,7 +1231,9 @@ Only usable for debug output.
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
                    [db dbi-name k-range k-type v-type ignore-key?])
-       :doc      "Return a seq of kv pairs in the specified key range in the key-value store;
+       :doc      "Return a seq of kv pairs in the specified key range in the key-value store.
+
+This function is eager and attempts to load all data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]]. See [[range-seq]] for a lazy version of this function.
 
      `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
      `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
@@ -1121,6 +1247,7 @@ Only usable for debug output.
      default is `false`;
 
      If value is to be ignored, put `:ignore` as `v-type`
+
 
      Examples:
 
@@ -1140,6 +1267,40 @@ Only usable for debug output.
               (get-range lmdb \"c\" [:greater-than 1500] :long :ignore)
               ;;==> [] "}
   get-range l/get-range)
+
+(def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type]
+                   [db dbi-name k-range k-type v-type]
+                   [db dbi-name k-range k-type v-type ignore-key?]
+                   [db dbi-name k-range k-type v-type ignore-key? opts])
+       :doc      "Return a seq of kv pairs in the specified key range in the key-value store. This function is similar to `get-range`, but the result is lazy, as it loads the data items in batches into memory. `:batch-size` in `opts` controls the batch size (default 100).
+
+The returned data structure implements `Seqable` and `IReduceInit`. It represents only one pass over the data range, and `seq` function needs to be called to obtain a persistent collection.
+
+Be aware that the returned structure holds an open read transaction. It implements `AutoCloseable`, and `close` should be invoked on it after done with data access, otherwise an open read transaction may blow up the database size and return stale data. It is strongly recommended to use it in `with-open`.
+
+    `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+    `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+    `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+    `-back` suffix to each of the above, e.g. `:all-back`;
+
+    `k-type` and `v-type` are data types of `k` and `v`, respectively.
+     The allowed data types are described in [[read-buffer]].
+
+     Only the value will be returned if `ignore-key?` is `true`,
+     default is `false`;
+
+     If value is to be ignored, put `:ignore` as `v-type`
+
+     See [[get-range]] for usage of the augments.
+
+     Examples:
+
+              (with-open [^AutoCloseable range (range-seq db \"c\" [:at-least 9] :long)]
+                (doseq [item range]
+                  ;; do processing on each item
+                  ))"}
+  range-seq l/range-seq)
 
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type])
@@ -1208,6 +1369,8 @@ Only usable for debug output.
        :doc      "Return a seq of kv pair in the specified key range in the key-value store, for only those
      return true value for `(pred x)`, where `pred` is a function, and `x`
      is an `IKV`, with both key and value fields being a `ByteBuffer`.
+
+This function is eager and attempts to load all matching data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
 
      `pred` can use [[read-buffer]] to read the buffer content.
 
@@ -1303,8 +1466,9 @@ the `pred`.
   visit l/visit)
 
 (defn clear
-  "Clear all data in the Datalog database, including schema."
+  "Close the Datalog database, then clear all data, including schema."
   [conn]
+  (close conn)
   (let [dir  (s/dir ^Store (.-store ^DB @conn))
         lmdb (open-kv dir)]
     (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
@@ -1340,7 +1504,7 @@ the `pred`.
   ([lmdb]
    (new-search-engine lmdb nil))
   ([lmdb opts]
-   (if (instance? datalevin.remote.KVStore lmdb)
+   (if (instance? KVStore lmdb)
      (r/new-search-engine lmdb opts)
      (sc/new-search-engine lmdb opts))))
 
@@ -1358,6 +1522,11 @@ the `pred`.
        :doc      "Remove a document referred to by `doc-ref` from the search
 engine index. A slow operation."}
   remove-doc sc/remove-doc)
+
+(def ^{:arglists '([engine])
+       :doc      "Remove all documents from the search engine index. It is useful
+  because rebuilding search index may be faster than updating some documents."}
+  clear-docs sc/clear-docs)
 
 (def ^{:arglists '([engine doc-ref])
        :doc      "Test if a `doc-ref` is already in the search index"}
@@ -1407,7 +1576,7 @@ words.
   ([lmdb]
    (search-index-writer lmdb nil))
   ([lmdb opts]
-   (if (instance? datalevin.remote.KVStore lmdb)
+   (if (instance? KVStore lmdb)
      (r/search-index-writer lmdb opts)
      (sc/search-index-writer lmdb opts))))
 
@@ -1429,7 +1598,6 @@ all documents."}
 
     - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
     - `:string`, UTF-8 string
-    - `:int`, 32 bits integer
     - `:long`, 64 bits integer
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
@@ -1451,7 +1619,6 @@ one of the following data types:
 
   - `:data` (default), arbitrary EDN data
   - `:string`, UTF-8 string
-  - `:int`, 32 bits integer
   - `:long`, 64 bits integer
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
@@ -1471,23 +1638,3 @@ one of the following data types:
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
-
-
-(comment
-
-  (def schema {:name   {:db/valueType :db.type/string}
-               :height {:db/valueType :db.type/float}})
-
-  (def conn (get-conn "/tmp/mydb1" schema))
-
-  (transact! conn [{:name "John" :height 1.73}
-                   {:name "Peter" :height 1.92}])
-
-  (def *dbs (atom []))
-
-  (doseq [i (range 2000)]
-    (prn "Creating" i)
-    (swap! *dbs conj (create-conn (str "/tmp/dl-" i))))
-
-
-  )

@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-20.04, ubuntu-latest]
 
     steps:
       - name: Checkout repository and submodules
@@ -53,7 +53,12 @@ jobs:
 
       - name: Run Native Tests
         run: |
-          native/dtlv-test
+          native/dtlv-test0
+          native/dtlv-test1
+          native/dtlv-test2
+          rm native/dtlv-test0
+          rm native/dtlv-test1
+          rm native/dtlv-test2
 
       - name: Zip Binary
         run: |

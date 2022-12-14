@@ -1,9 +1,115 @@
 # Change Log
 
 ## WIP
+### Added
+- [Platform] aarch64 build for Apple Silicon.
+- [KV] A new range function `range-seq` that has similar signature as
+  `get-range`, but returns a `Seqable`, which lazily reads data items into
+  memory in batches (controlled by `:batch-size` option). It should be used
+  inside `with-open` for proper cleanup. #108
+- [KV] The existent eager range functions, `get-range` and `range-filter`, now
+  automatically spill to disk when memory pressure is high. The results, though
+  mutable, still implement `IPersistentVector`, so there is no API level
+  change. The spill-to-disk behavior is controlled by `spill-opts` option map
+  when opening the db, allowing `:spill-threshold` and `:spill-root` options.
+- [Datalog] Additional arity-1 version of `q` that takes `:query` and `:args`
+  in a map, which allows additional options for `:offset`, `:limit`, and
+  `:timeout`. These options are also supported in the vector form of `q`. #126
 ### Improved
-- [Datalog] Allow passing LMDB option map as `:kv-opts` when `create-conn`
+- [KV] write performance improvement
+- [Datalog] `q` and `pull` results are also lazy and spill to disk under memory pressure.
+### Changed
+- [KV] Upgrade LMDB to 0.9.29
+
+## 0.6.29
+### Added
+- [Client] `:client-opts` option map that is passed to the client when opening remote databases.
+### Fixed
+- [KV] `with-transaction-kv` does not drop prior data when DB is resizing.
+- [Datalog] `with-transaction` does not drop prior data when DB is resizing.
+
+## 0.6.28
+### Improved
+- [Native] Add github action runner image ubuntu-20.04 to avoid using too new a
+  glibc version (2.32) that does not exist on most people's machines.
+
+## 0.6.27
+### Fixed
+- [KV] `with-transaction-kv` does not crash when DB is resizing.
+
+## 0.6.26
+### Added
+- [KV] `with-transaction-kv` macro to expose explicit transactions for KV
+  database. This allows arbitrary code within a transaction to achieve
+  atomicity, e.g. to implement compare-and-swap semantics, etc, #110
+- [Datalog] `with-transaction` macro, the same as the above for Datalog database
+- [KV]`abort-transact-kv` function to rollback writes from within an explicit KV transaction.
+- [Datalog] `abort-transact` function, same for Datalog transaction.
+- [Pod] Missing `visit` function
+### Improved
+- [Server] Smaller memory footprint
 - bump deps
+
+## 0.6.22
+### Added
+- [Datalog] `fulltext-datoms` function that return datoms found by full
+  text search query, #157
+### Fixed
+- [Search] Don't throw for blank search query, return `nil` instead, #158
+- [Datalog] Correctly handle transacting empty string as a full text value, #159
+### Improved
+- Datalevin is now usable in deps.edn, #98 (thx @ieugen)
+
+## 0.6.21
+### Fixed
+- [Datalog] Caching issue introduced in 0.6.20 (thx @cgrand)
+
+## 0.6.20
+### Added
+- [Pod] `entity` and `touch` function to babashka pod, these return regular
+  maps, as the `Entity` type does not exist in a babashka script. #148 (thx
+  @ngrunwald)
+- [Datalog] `:timeout` option to terminate on deadline for query/pull. #150 (thx
+  @cgrand).
+
+## 0.6.19
+### Changed
+- [Datalog] Entity equality requires DB identity in order to better support
+  reactive applications, #146 (thx @den1k)
+### Improved
+- bump deps
+
+## 0.6.18
+### Fixed
+- [Search] corner case of search in document collection containing only one term, #143
+- [Datalog] entity IDs has smaller than expected range, now they cover full 32 bit integer range, #140
+### Added
+- [Datalog] Persistent `max-tx`, #142
+
+## 0.6.17
+### Added
+- [Datalog] `tx-data->simulated-report` to obtain a transaction report without actually persisting the changes. (thx @TheExGenesis)
+- [KV] Support `:bigint` and `:bigdec` data types, corresponding to
+  `java.math.BigInteger` and `java.math.BigDecimal`, respectively.
+- [Datalog] Support `:db.type/bigdec` and `:db.type/bigint`, correspondingly, #138.
+### Improved
+ - Better documentation so that cljdoc can build successfully. (thx @lread)
+
+## 0.6.16
+### Added
+- [Datalog] Additional arity to `update-schema` to allow renaming attributes. #131
+- [Search] `clear-docs` function to wipe out search index, as it might be faster
+  to rebuild search index than updating individual documents sometimes. #132
+- `datalevin.constants/*data-serializable-classes*` dynamic var, which can be
+  used for `binding` if additional Java classes are to be serialized as part of
+  the default `:data` data type. #134
+### Improved
+- [Datalog] Allow passing option map as `:kv-opts` to underlying KV store when `create-conn`
+- bump deps
+### Fixed
+- [Datalog] `clear` function on server. #133
+### Changed
+- [Datalog] Changed `:search-engine` option map key to `:search-opts` for consistency [**Breaking**]
 
 ## 0.6.15
 ### Improved

@@ -1,13 +1,13 @@
 (ns datalevin.search-test
   (:require [datalevin.search :as sut]
             [datalevin.lmdb :as l]
+            [datalevin.interpret :as i]
+            [datalevin.core :as d]
             [datalevin.sparselist :as sl]
-            [datalevin.constants :as c]
             [datalevin.util :as u]
             [clojure.string :as s]
             [clojure.test :refer [is deftest testing]])
-  (:import [java.util UUID Map ArrayList]
-           [org.roaringbitmap RoaringBitmap]
+  (:import [java.util UUID ]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.search SearchEngine IndexWriter]))
 
@@ -28,20 +28,24 @@
   (f engine :doc3 "Moby Dick is a story of a whale and a man obsessed.")
   (f engine :doc4 "The robber wore a red fleece jacket and a baseball cap.")
   (f engine :doc5
-     "The English Springer Spaniel is the best of all red dogs I know."))
+     "The English Springer Spaniel is the best of all red dogs I know.")
+  )
 
 (deftest blank-analyzer-test
   (let [blank-analyzer (fn [^String text]
                          (map-indexed (fn [i ^String t]
                                         [t i (.indexOf text t)])
                                       (s/split text #"\s")))
-        lmdb           (l/open-kv (u/tmp-dir (str "analyzer-" (UUID/randomUUID))))
+        dir            (u/tmp-dir (str "analyzer-" (UUID/randomUUID)))
+        lmdb           (l/open-kv dir)
         engine         ^SearchEngine (sut/new-search-engine
                                        lmdb {:analyzer blank-analyzer})]
     (add-docs sut/add-doc engine)
     (is (= [[:doc1 [["dogs." [43]]]]]
            (sut/search engine "dogs." {:display :offsets})))
-    (is (= [:doc5] (sut/search engine "dogs")))))
+    (is (= [:doc5] (sut/search engine "dogs")))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest index-test
   (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
@@ -110,8 +114,10 @@
         (is (not (sl/contains-index? sl 1)))
         (is (= (sl/size sl) 3))
         (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 1] :int-id) 0))
-        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-id :int-int)))))
+        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-id :int-int))))
 
+      (sut/clear-docs engine)
+      (is (= (sut/doc-count engine) 0)))
     (l/close-kv lmdb)))
 
 (deftest search-test
@@ -119,6 +125,8 @@
         engine ^SearchEngine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
+    (is (= [:doc1 :doc4 :doc2 :doc5] (sut/search engine "red cat")))
+    (is (empty? (sut/search engine "")))
     (is (= (sut/search engine "cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (is (= (sut/search engine "notaword cap" {:display :offsets})
@@ -141,6 +149,48 @@
     (is (empty? (sut/search engine "solar wind")))
     (is (= (sut/search engine "solar cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
+    (l/close-kv lmdb)))
+
+(deftest search-143-test
+  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-143-" (UUID/randomUUID))))
+        engine ^SearchEngine (sut/new-search-engine lmdb)]
+
+    (sut/add-doc engine 1 "a tent")
+    (sut/add-doc engine 2 "tent")
+
+    (is (= (sut/doc-count engine) 2))
+    (is (= (sut/doc-refs engine) [1 2]))
+
+    (let [[tid mw ^SparseIntArrayList sl]
+          (l/get-value lmdb (.-terms-dbi engine) "tent" :string :term-info true)]
+      (is (= (l/range-count lmdb (.-terms-dbi engine) [:all] :string) 1))
+      (is (= (l/get-value lmdb (.-terms-dbi engine) "tent" :string :int) tid))
+      (is (= mw 1.0))
+
+      (is (sl/contains-index? sl 1))
+      (is (= (sl/size sl) 2))
+      (is (= (seq (.-indices sl)) [1 2]))
+
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 1] :int-int)
+             (sl/get sl 1)
+             1))
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 2] :int-int)
+             (sl/get sl 2)
+             1))
+
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 3] :int-int)
+             0))
+      (is (nil? (sl/get sl 3)))
+
+      (is (= (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-int :int-int)
+             [[1 2]]))
+
+      (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :int :doc-info true) [1 1]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) 2 :int :doc-info true) [1 2]))
+      (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 2))
+      )
+
+    (is (= (sut/search engine "tent") [2 1]))
     (l/close-kv lmdb)))
 
 (deftest multi-domains-test
@@ -211,3 +261,37 @@
       (is (= (sut/search engine "truth" ) [4])))
 
     (l/close-kv lmdb)))
+
+(deftest fulltext-fns-test
+  (let [analyzer (i/inter-fn
+                   [^String text]
+                   (map-indexed (fn [i ^String t]
+                                  [t i (.indexOf text t)])
+                                (s/split text #"\s")))
+        conn     (d/create-conn (u/tmp-dir (str "fulltext-fns-"
+                                                (UUID/randomUUID)))
+                                {:a/id     {:db/valueType :db.type/long
+                                            :db/unique    :db.unique/identity
+                                            }
+                                 :a/string {:db/valueType :db.type/string
+                                            :db/fulltext  true}
+                                 :b/string {:db/valueType :db.type/string
+                                            :db/fulltext  true}}
+                                {:auto-entity-time? true
+                                 :search-opts       {:analyzer analyzer}})
+        s        "The quick brown fox jumps over the lazy dog"]
+    (d/transact! conn [{:a/id 1 :a/string s :b/string ""}])
+    (d/transact! conn [{:a/id 1 :a/string s :b/string "bar"}])
+    (is (= (d/q '[:find ?v .
+                  :in $ ?q
+                  :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                (d/db conn) "brown fox")
+           s))
+    (is (empty? (d/q '[:find ?v .
+                       :in $ ?q
+                       :where [(fulltext $ ?q) [[?e ?a ?v]]]]
+                     (d/db conn) "")))
+    (is (= (d/datom-v
+             (first (d/fulltext-datoms (d/db conn) "brown fox")))
+           s))
+    (d/close conn)))

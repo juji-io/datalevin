@@ -1,4 +1,4 @@
-(ns datalevin.search
+(ns ^:no-doc datalevin.search
   "Full-text search engine"
   (:require [datalevin.lmdb :as l]
             [datalevin.util :as u]
@@ -259,7 +259,7 @@
 (defn- current-threshold
   [^PriorityQueue pq]
   (if (< (.size pq) (.maxSize pq))
-    0.0
+    -0.1
     (nth (.top pq) 0)))
 
 (defn- score-term
@@ -298,6 +298,7 @@
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text])
   (remove-doc [this doc-ref])
+  (clear-docs [this])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
   (doc-refs [this])
@@ -345,6 +346,11 @@
       (remove-doc* this norms doc-id)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
+  (clear-docs [this]
+    (l/clear-dbi lmdb terms-dbi)
+    (l/clear-dbi lmdb docs-dbi)
+    (l/clear-dbi lmdb positions-dbi))
+
   (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref))
 
   (doc-count [_] (l/entries lmdb docs-dbi))
@@ -358,39 +364,40 @@
                        :or   {display    :refs
                               top        10
                               doc-filter (constantly true)}}]
-    (let [tokens (->> (query-analyzer query)
-                      (mapv first)
-                      (into-array String))
-          qterms (->> (hydrate-query this max-doc tokens)
-                      (sort-by :df)
-                      vec)
-          n      (count qterms)]
-      (when-not (zero? n)
-        (let [tids    (mapv :id qterms)
-              sls     (mapv :sl qterms)
-              bms     (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
-                                         sls))
-              sls     (zipmap tids sls)
-              tms     (zipmap tids (mapv :tm qterms))
-              mws     (get-ws tids qterms :mw)
-              wqs     (get-ws tids qterms :wq)
-              mxs     (get-mxs tids wqs mws)
-              result  (RoaringBitmap.)
-              scoring (score-docs n tids sls bms mxs wqs norms result)]
-          (sequence
-            (display-xf this doc-filter display tms)
-            (persistent!
-              (reduce
-                (fn [coll tao]
-                  (let [so-far (count coll)
-                        to-get (- top so-far)]
-                    (if (< 0 to-get)
-                      (let [^PriorityQueue pq (priority-queue to-get)]
-                        (scoring pq tao)
-                        (pouring coll pq result))
-                      (reduced coll))))
-                (transient [])
-                (range n 0 -1))))))))
+    (when-not (s/blank? query)
+      (let [tokens (->> (query-analyzer query)
+                        (mapv first)
+                        (into-array String))
+            qterms (->> (hydrate-query this max-doc tokens)
+                        (sort-by :df)
+                        vec)
+            n      (count qterms)]
+        (when-not (zero? n)
+          (let [tids    (mapv :id qterms)
+                sls     (mapv :sl qterms)
+                bms     (zipmap tids (mapv #(.-indices ^SparseIntArrayList %)
+                                           sls))
+                sls     (zipmap tids sls)
+                tms     (zipmap tids (mapv :tm qterms))
+                mws     (get-ws tids qterms :mw)
+                wqs     (get-ws tids qterms :wq)
+                mxs     (get-mxs tids wqs mws)
+                result  (RoaringBitmap.)
+                scoring (score-docs n tids sls bms mxs wqs norms result)]
+            (sequence
+              (display-xf this doc-filter display tms)
+              (persistent!
+                (reduce
+                  (fn [coll tao]
+                    (let [so-far (count coll)
+                          to-get (- top so-far)]
+                      (if (< 0 to-get)
+                        (let [^PriorityQueue pq (priority-queue to-get)]
+                          (scoring pq tao)
+                          (pouring coll pq result))
+                        (reduced coll))))
+                  (transient [])
+                  (range n 0 -1)))))))))
 
   (analyzer [_]
     analyzer)
@@ -411,8 +418,7 @@
     max-term)
 
   (lmdb [_]
-    lmdb)
-  )
+    lmdb))
 
 (defn- get-term-info
   [engine term]
@@ -575,6 +581,21 @@
                      (init-norms lmdb docs-dbi)
                      (AtomicInteger. (init-max-doc lmdb docs-dbi))
                      (AtomicInteger. (init-max-term lmdb positions-dbi))))))
+
+(defn transfer
+  "transfer state of an existing engine to an new engine that has a
+  different LMDB instance"
+  [^SearchEngine old lmdb]
+  (locking old
+    (->SearchEngine lmdb
+                    (.-analyzer old)
+                    (.-query-analyzer old)
+                    (.-terms-dbi old)
+                    (.-docs-dbi old)
+                    (.-positions-dbi old)
+                    (.-norms old)
+                    (.-max-doc old)
+                    (.-max-term old))))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])

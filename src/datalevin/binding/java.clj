@@ -1,20 +1,26 @@
 (ns ^:no-doc datalevin.binding.java
   "LMDB binding for Java"
-  (:require [datalevin.bits :as b]
-            [datalevin.util :refer [raise] :as u]
-            [datalevin.constants :as c]
-            [datalevin.scan :as scan]
-            [datalevin.lmdb :as l
-             :refer [open-kv open-inverted-list IBuffer IRange IRtx
-                     IDB IKV IInvertedList ILMDB]])
-  (:import [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-            PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
-            Cursor CursorIterable$KeyVal GetOp SeekOp]
-           [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue
-            ExecutorService Executors Future Callable]
-           [java.util Iterator]
-           [org.eclipse.collections.impl.map.mutable UnifiedMap]
-           [java.nio ByteBuffer BufferOverflowException]))
+  (:require
+   [datalevin.bits :as b]
+   [datalevin.util :refer [raise] :as u]
+   [datalevin.constants :as c]
+   [datalevin.scan :as scan]
+   [datalevin.lmdb :as l :refer [open-kv open-inverted-list IBuffer IRange
+                                 IRtx IDB IKV IInvertedList ILMDB IWriting]]
+   [clojure.stacktrace :as st]
+   [clojure.java.io :as io]
+   [clojure.string :as s])
+  (:import
+   [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
+    PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
+    Cursor CursorIterable$KeyVal GetOp SeekOp]
+   [java.util.concurrent ConcurrentLinkedQueue]
+   [java.util Iterator]
+   [java.io File InputStream OutputStream]
+   [java.nio.file Files OpenOption StandardOpenOption]
+   [clojure.lang IPersistentVector]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [java.nio ByteBuffer BufferOverflowException]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal
@@ -76,7 +82,8 @@
               ^Txn txn
               ^ByteBuffer kb
               ^ByteBuffer start-kb
-              ^ByteBuffer stop-kb]
+              ^ByteBuffer stop-kb
+              aborted?]
   IBuffer
   (put-key [_ x t]
     (try
@@ -135,6 +142,10 @@
                  {:value x :type t})))))
 
   IRtx
+  (read-only? [_]
+    (.isReadOnly txn))
+  (get-txn [_]
+    txn)
   (close-rtx [_]
     (.close txn))
   (reset [this]
@@ -210,50 +221,74 @@
   (iterate-kv [_ rtx range-info]
     (.iterate db (.-txn ^Rtx rtx) range-info))
   (get-cursor [_ txn]
-    (or (when-let [^Cursor cur (.poll curs)]
-          (.renew cur txn)
-          cur)
+    (or (when (.isReadOnly ^Txn txn)
+          (when-let [^Cursor cur (.poll curs)]
+            (.renew cur txn)
+            cur))
         (.openCursor db txn)))
-  (return-cursor [this cur]
+  (return-cursor [_ cur]
     (.add curs cur)))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env
                (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
 
-
 (defn- transact*
-  [^Env env txs ^UnifiedMap dbis]
-  (with-open [txn (.txnWrite env)]
-    (doseq [[op dbi-name k & r] txs]
-      (let [^DBI dbi (or (.get dbis dbi-name)
-                         (raise dbi-name " is not open" {}))]
-        (case op
-          :put      (let [[v kt vt flags] r]
-                      (.put-key dbi k kt)
+  [txs ^UnifiedMap dbis txn]
+  (doseq [^IPersistentVector tx txs]
+    (let [cnt      (.length tx)
+          op       (.nth tx 0)
+          dbi-name (.nth tx 1)
+          k        (.nth tx 2)
+          ^DBI dbi (or (.get dbis dbi-name)
+                       (raise dbi-name " is not open" {}))]
+      (case op
+        :put      (let [v     (.nth tx 3)
+                        kt    (when (< 4 cnt) (.nth tx 4))
+                        vt    (when (< 5 cnt) (.nth tx 5))
+                        flags (when (< 6 cnt) (.nth tx 6))]
+                    (.put-key dbi k kt)
+                    (.put-val dbi v vt)
+                    (if flags
+                      (.put dbi txn flags)
+                      (.put dbi txn)))
+        :del      (let [kt (when (< 3 cnt) (.nth tx 3)) ]
+                    (.put-key dbi k kt)
+                    (.del dbi txn))
+        :put-list (let [vs (.nth tx 3)
+                        kt (when (< 4 cnt) (.nth tx 4))
+                        vt (when (< 5 cnt) (.nth tx 5))]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
                       (.put-val dbi v vt)
-                      (if flags
-                        (.put dbi txn flags)
-                        (.put dbi txn)))
-          :del      (let [[kt] r]
-                      (.put-key dbi k kt)
-                      (.del dbi txn))
-          :put-list (let [[vs kt vt] r]
-                      (.put-key dbi k kt)
-                      (doseq [v vs]
-                        (.put-val dbi v vt)
-                        (.put dbi txn)))
-          :del-list (let [[vs kt vt] r]
-                      (.put-key dbi k kt)
-                      (doseq [v vs]
-                        (.put-val dbi v vt)
-                        (.del dbi txn false))))))
-    (.commit txn)))
+                      (.put dbi txn)))
+        :del-list (let [vs (.nth tx 3)
+                        kt (when (< 4 cnt) (.nth tx 4))
+                        vt (when (< 5 cnt) (.nth tx 5))]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.del dbi txn false)))
+        (raise "Unknown kv operator: " op {})))))
+
+(declare ->LMDB reset-write-txn)
 
 (deftype LMDB [^Env env
                ^String dir
+               opts
                ^ConcurrentLinkedQueue pool
-               ^UnifiedMap dbis]
+               ^UnifiedMap dbis
+               ^ByteBuffer kb-w
+               ^ByteBuffer start-kb-w
+               ^ByteBuffer stop-kb-w
+               write-txn
+               writing?]
+  IWriting
+  (writing? [_] writing?)
+
+  (mark-write [_]
+    (->LMDB env dir opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
+
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
@@ -266,11 +301,11 @@
       (.close env))
     nil)
 
-  (closed-kv? [_]
-    (.isClosed env))
+  (closed-kv? [_] (.isClosed env))
 
-  (dir [_]
-    dir)
+  (dir [_] dir)
+
+  (opts [_] opts)
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
@@ -345,7 +380,8 @@
                  (.txnRead env)
                  (b/allocate-buffer c/+max-key-size+)
                  (b/allocate-buffer c/+max-key-size+)
-                 (b/allocate-buffer c/+max-key-size+)))
+                 (b/allocate-buffer c/+max-key-size+)
+                 (volatile! false)))
       (catch Txn$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
@@ -388,16 +424,61 @@
                  {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
 
+  (open-transact-kv [this]
+    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (locking env
+      (try
+        (reset-write-txn this)
+        (.mark-write this)
+        (catch Exception e
+          (st/print-stack-trace e)
+          (raise "Fail to open read/write transaction in LMDB: "
+                 (ex-message e) {})))))
+
+  (close-transact-kv [this]
+    (try
+      (if-let [^Rtx wtxn @write-txn]
+        (when-let [^Txn txn (.-txn wtxn)]
+          (let [aborted? @(.-aborted? wtxn)]
+            (when-not aborted? (.commit txn))
+            (vreset! write-txn nil)
+            (.close txn)
+            (if aborted? :aborted :committed)))
+        (raise "Calling `close-transact-kv` without opening" {}))
+      (catch Exception e
+        (st/print-stack-trace e)
+        (raise "Fail to commit read/write transaction in LMDB: "
+               (ex-message e) {}))))
+
+  (abort-transact-kv [this]
+    (when-let [^Rtx wtxn @write-txn]
+      (vreset! (.-aborted? wtxn) true)
+      (vreset! write-txn wtxn)
+      nil))
+
+  (write-txn [this]
+    write-txn)
+
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (try
-      (transact* env txs dbis)
-      :transacted
-      (catch Env$MapFullException _
-        (up-db-size env)
-        (.transact-kv this txs))
-      (catch Exception e
-        (raise "Fail to transact to LMDB: " (ex-message e) {}))))
+    (locking  write-txn
+      (try
+        (if @write-txn
+          (transact* txs dbis (.-txn ^Rtx @write-txn))
+          (with-open [txn (.txnWrite env)]
+            (transact* txs dbis txn)
+            (.commit txn)))
+        :transacted
+        (catch Env$MapFullException _
+          (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
+          (up-db-size env)
+          (if @write-txn
+            (do (reset-write-txn this)
+                (raise "DB needs resize" {:resized true}))
+            (.transact-kv this txs)))
+        (catch Exception e
+          (st/print-stack-trace e)
+          (raise "Fail to transact to LMDB: " (ex-message e) {})))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -425,6 +506,17 @@
     (.get-range this dbi-name k-range k-type v-type false))
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
     (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
+
+  (range-seq [this dbi-name k-range]
+    (.range-seq this dbi-name k-range :data :data false nil))
+  (range-seq [this dbi-name k-range k-type]
+    (.range-seq this dbi-name k-range k-type :data false nil))
+  (range-seq [this dbi-name k-range k-type v-type]
+    (.range-seq this dbi-name k-range k-type v-type false nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key?]
+    (.range-seq this dbi-name k-range k-type v-type ignore-key? nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key? opts]
+    (scan/range-seq this dbi-name k-range k-type v-type ignore-key? opts))
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
@@ -594,12 +686,28 @@
                    (.return-cursor dbi cur))))
       false)))
 
+(defn- reset-write-txn
+  [^LMDB lmdb]
+  (let [kb-w       ^ByteBuffer (.-kb-w lmdb)
+        start-kb-w ^ByteBuffer (.-start-kb-w lmdb)
+        stop-kb-w  ^ByteBuffer (.-stop-kb-w lmdb)]
+    (.clear kb-w)
+    (.clear start-kb-w)
+    (.clear stop-kb-w)
+    (vreset! (.-write-txn lmdb) (->Rtx lmdb
+                                       (.txnWrite ^Env (.-env lmdb))
+                                       kb-w
+                                       start-kb-w
+                                       stop-kb-w
+                                       (volatile! false)))))
+
 (defmethod open-kv :java
   ([dir]
    (open-kv dir {}))
   ([dir {:keys [mapsize flags]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}}]
+                flags   c/default-env-flags}
+         :as   opts}]
    (try
      (let [file     (u/file dir)
            builder  (doto (Env/create)
@@ -609,10 +717,43 @@
            ^Env env (.open builder file (kv-flags :env flags))
            lmdb     (->LMDB env
                             dir
+                            opts
                             (ConcurrentLinkedQueue.)
-                            (UnifiedMap.))]
+                            (UnifiedMap.)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (volatile! nil)
+                            false)]
        lmdb)
      (catch Exception e
-       (raise
-         "Fail to open database: " (ex-message e)
-         {:dir dir})))))
+       (st/print-stack-trace e)
+       (raise "Fail to open database: " (ex-message e) {:dir dir})))))
+
+;; TODO remove after LMDBJava supports apple silicon
+(defn apple-silicon-lmdb []
+  (when (u/apple-silicon?)
+    (try
+      (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
+                                            (random-uuid)) )
+            ^File file      (File. ^String dir "liblmdb.dylib")
+            path            (.toPath file)
+            fpath           (.getAbsolutePath file)
+            ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
+        (u/create-dirs dir)
+        (.deleteOnExit file)
+        (System/setProperty "lmdbjava.native.lib" fpath)
+
+        (with-open [^InputStream in
+                    (.getResourceAsStream
+                      cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
+                    ^OutputStream out
+                    (Files/newOutputStream path (into-array OpenOption []))]
+          (io/copy in out))
+        (println "Library extraction is successful:" fpath
+                 "with size" (Files/size path)))
+      (catch Exception e
+        (st/print-stack-trace e)
+        (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
+
+(apple-silicon-lmdb)

@@ -1,26 +1,62 @@
-(ns datalevin.protocol
+(ns ^:no-doc datalevin.protocol
   "Shared code of client/server"
-  (:require [datalevin.bits :as b]
-            [datalevin.constants :as c]
-            [datalevin.datom :as d]
-            [datalevin.util :as u]
-            [cognitect.transit :as transit]
-            [taoensso.nippy :as nippy]
-            [clojure.stacktrace :as st])
-  (:import [java.io ByteArrayInputStream ByteArrayOutputStream]
-           [java.nio ByteBuffer]
-           [java.nio.channels SocketChannel]
-           [datalevin.io ByteBufferInputStream ByteBufferOutputStream]
-           [datalevin.datom Datom]))
+  (:require
+   [datalevin.bits :as b]
+   [datalevin.constants :as c]
+   [datalevin.datom :as d]
+   [datalevin.util :as u]
+   [datalevin.spill :as sp]
+   [cognitect.transit :as transit]
+   [taoensso.nippy :as nippy])
+  (:import
+   [java.io ByteArrayInputStream ByteArrayOutputStream]
+   [java.nio ByteBuffer]
+   [java.nio.channels SocketChannel]
+   [datalevin.io ByteBufferInputStream ByteBufferOutputStream]
+   [datalevin.spill SpillableVector]
+   [datalevin.datom Datom]))
+
+;; en/decode
+
+(def transit-read-handlers
+  {"datalevin/Datom" (transit/read-handler d/datom-from-reader)
+   "spillable"       (transit/read-handler sp/new-spillable-vector)})
+
+(def transit-write-handlers
+  {Datom           (transit/write-handler
+                     "datalevin/Datom"
+                     (fn [^Datom d] [(.-e d) (.-a d) (.-v d) (.-tx d)]))
+   SpillableVector (transit/write-handler
+                     "spillable"
+                     (fn [v] (into [] v)))})
+
+(defn read-transit-string
+  "Read a transit+json encoded string into a Clojure value"
+  [^String s]
+  (try
+    (transit/read
+      (transit/reader
+        (ByteArrayInputStream. (.getBytes s "utf-8")) :json
+        {:handlers transit-read-handlers}))
+    (catch Exception e
+      (u/raise "Unable to read transit:" (ex-message e) {:string s}))))
+
+(defn write-transit-string
+  "Write a Clojure value as a transit+json encoded string"
+  [v]
+  (try
+    (let [baos (ByteArrayOutputStream.)]
+      (transit/write
+        (transit/writer baos :json {:handlers transit-write-handlers}) v)
+      (.toString baos "utf-8"))
+    (catch Exception e
+      (u/raise "Unable to write transit:" (ex-message e) {:value v}))))
 
 (defn read-nippy-bf
   "Read from a ByteBuffer containing nippy encoded bytes, return a Clojure
   value."
   [^ByteBuffer bf]
-  (nippy/fast-thaw (b/get-bytes bf)))
-
-(def transit-read-handlers
-  {"datalevin/Datom" (transit/read-handler d/datom-from-reader)})
+  (b/deserialize (b/get-bytes bf)))
 
 (defn read-transit-bf
   "Read from a ByteBuffer containing transit+json encoded bytes,
@@ -33,12 +69,7 @@
 (defn write-nippy-bf
   "Write a Clojure value as nippy encoded bytes into a ByteBuffer"
   [^ByteBuffer bf v]
-  (b/put-bytes bf (nippy/fast-freeze v)))
-
-(def transit-write-handlers
-  {Datom (transit/write-handler
-           "datalevin/Datom"
-           (fn [^Datom d] [(.-e d) (.-a d) (.-v d) (.-tx d)]))})
+  (b/put-bytes bf (b/serialize v)))
 
 (defn write-transit-bf
   "Write a Clojure value as transit+json encoded bytes into a ByteBuffer"

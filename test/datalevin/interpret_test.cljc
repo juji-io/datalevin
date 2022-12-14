@@ -3,6 +3,7 @@
             [datalevin.util :as u]
             [datalevin.datom :as d]
             [datalevin.core :as dc]
+            [datalevin.bits :as b]
             [taoensso.nippy :as nippy]
             [clojure.string :as s]
             #?(:clj [clojure.test :refer [is deftest]]
@@ -37,11 +38,11 @@
 
 (deftest inter-fn-test
   (let [equal-v   (sut/inter-fn [datom v] (= (dc/datom-v datom) v))
-        equal-v'  (nippy/thaw (nippy/freeze equal-v))
+        equal-v'  (b/deserialize (b/serialize equal-v))
         start     10
         end       20
         in-range  (sut/inter-fn [k] (< start ^long k end))
-        in-range' (nippy/thaw (nippy/freeze in-range))]
+        in-range' (b/deserialize (b/serialize in-range))]
     (is (sut/inter-fn? equal-v))
     (is (equal-v (d/datom 1 :a 2) 2))
     (is (sut/inter-fn? in-range))

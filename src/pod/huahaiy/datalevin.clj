@@ -1,19 +1,24 @@
-(ns pod.huahaiy.datalevin
+(ns ^:no-doc pod.huahaiy.datalevin
   (:refer-clojure :exclude [read read-string])
-  (:require [bencode.core :as bencode]
-            [sci.core :as sci]
-            [datalevin.core :as d]
-            [datalevin.query :as q]
-            [datalevin.interpret :as i]
-            [datalevin.util :as u]
-            [datalevin.datom :as dd]
-            [clojure.java.io :as io]
-            [clojure.walk :as w])
-  (:import [java.io PushbackInputStream]
-           [java.nio.charset StandardCharsets]
-           [datalevin.datom Datom]
-           [datalevin.db TxReport]
-           [java.util UUID])
+  (:require
+   [bencode.core :as bencode]
+   [sci.core :as sci]
+   [datalevin.core :as d]
+   [datalevin.lmdb :as l]
+   [datalevin.interpret :as i]
+   [datalevin.protocol :as p]
+   [datalevin.datom :as dd]
+   [datalevin.db :as db]
+   [datalevin.storage :as st]
+   [clojure.java.io :as io]
+   [clojure.walk :as w])
+  (:import
+   [java.io PushbackInputStream]
+   [java.nio.charset StandardCharsets]
+   [datalevin.storage Store]
+   [datalevin.entity Entity]
+   [datalevin.db DB]
+   [java.util UUID])
   (:gen-class))
 
 (def pod-ns "pod.huahaiy.datalevin")
@@ -22,7 +27,7 @@
 
 (defn debug [& args]
   (when debug?
-    (binding [*out* (io/writer "/tmp/pod-debug.log" :append true)]
+    (binding [*out* (io/writer "/tmp/datalevin-pod-debug.log" :append true)]
       (apply println args))))
 
 (def stdin (PushbackInputStream. System/in))
@@ -37,14 +42,26 @@
 (defn- read []
   (bencode/read-bencode stdin))
 
+
+;; dbs
+
 ;; uuid -> conn
 (defonce ^:private dl-conns (atom {}))
 
-;; uuid -> db
+;; uuid -> writing wconn
+(defonce ^:private wdl-conns (atom {}))
+
+;; uuid -> dl db
 (defonce ^:private dl-dbs (atom {}))
 
-;; uuid -> db
+;; uuid -> writing dl db
+(defonce ^:private wdl-dbs (atom {}))
+
+;; uuid -> kv db
 (defonce ^:private kv-dbs (atom {}))
+
+;; uuid -> writing kv db
+(defonce ^:private wkv-dbs (atom {}))
 
 ;; exposed functions
 
@@ -53,34 +70,51 @@
           (sci/eval-form i/ctx (apply list 'fn args body)))
   {::inter-fn fn-name})
 
-(defn entid [{:keys [::db]} eid]
-  (when-let [d (get @dl-dbs db)]
-    (d/entid d eid)))
+(defn- get-cn [{:keys [::conn writing?]}]
+  (if writing? (get @wdl-conns conn) (get @dl-conns conn)))
 
-(defn pull [{:keys [::db]} selector eid]
-  (when-let [d (get @dl-dbs db)]
+(defn- get-db [{:keys [::db writing?]}]
+  (if writing? (get @wdl-dbs db) (get @dl-dbs db)))
+
+(defn- get-kv [{:keys [::kv-db writing?]}]
+  (if writing? (get @wkv-dbs kv-db) (get @kv-dbs kv-db)))
+
+(defn entid [dl eid] (when-let [d (get-db dl)] (d/entid d eid)))
+
+(defn entity [{:keys [::db] :as dl} eid]
+  (when-let [^DB d (get-db dl)]
+    (let [^Entity e (d/entity d eid)]
+      (assoc @(.-cache e) :db/id (.-eid e) :db-name db))))
+
+(defn touch [{:keys [db-name db/id]}]
+  (when-let [d (get @dl-dbs db-name)]
+    (let [^Entity e (d/touch (d/entity d id))]
+      (assoc @(.-cache e) :db/id id :db-name db-name))))
+
+(defn pull [dl selector eid]
+  (when-let [d (get-db dl)]
     (d/pull d selector eid)))
 
-(defn pull-many [{:keys [::db]} selector eids]
-  (when-let [d (get @dl-dbs db)]
+(defn pull-many [dl selector eids]
+  (when-let [d (get-db dl)]
     (d/pull-many d selector eids)))
 
 (defn q [q & inputs]
-  (apply d/q q (w/postwalk #(if-let [db (::db %)] (get @dl-dbs db) %)
-                           inputs)))
+  (apply d/q q (w/postwalk #(if (::db %) (get-db %) %) inputs)))
 
 (defn empty-db
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
-  ([dir schema]
-   (let [db (d/empty-db dir schema)
-         id (UUID/randomUUID)]
+  ([dir schema] (empty-db dir schema nil))
+  ([dir schema opts]
+   (let [id (UUID/randomUUID)
+         db (d/empty-db dir schema (if opts
+                                     (assoc opts :db-name id)
+                                     {:db-name id}))]
      (swap! dl-dbs assoc id db)
      {::db id})))
 
-(defn db? [{:keys [::db]}]
-  (when-let [d (get @dl-dbs db)]
-    (d/db? d)))
+(defn db? [dl] (when-let [d (get-db dl)] (d/db? d)))
 
 (defn init-db
   ([datoms]
@@ -93,65 +127,70 @@
      (swap! dl-dbs assoc id db)
      {::db id})))
 
-(defn close-db [{:keys [::db]}]
-  (when-let [d (get @dl-dbs db)]
-    (d/close-db d)))
+(defn close-db [dl] (when-let [d (get-db dl)] (d/close-db d)))
 
 (defn datoms
-  ([{:keys [::db]} index]
-   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/datoms d index))))
-  ([{:keys [::db]} index c1]
-   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/datoms d index c1))))
-  ([{:keys [::db]} index c1 c2]
-   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/datoms d index c1 c2))))
-  ([{:keys [::db]} index c1 c2 c3]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index]
+   (when-let [d (get-db dl)] (map dd/datom-eav (d/datoms d index))))
+  ([dl index c1]
+   (when-let [d (get-db dl)] (map dd/datom-eav (d/datoms d index c1))))
+  ([dl index c1 c2]
+   (when-let [d (get-db dl)] (map dd/datom-eav (d/datoms d index c1 c2))))
+  ([dl index c1 c2 c3]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/datoms d index c1 c2 c3))))
-  ([{:keys [::db]} index c1 c2 c3 c4]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2 c3 c4]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/datoms d index c1 c2 c3 c4)))))
 
 (defn seek-datoms
-  ([{:keys [::db]} index]
-   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/seek-datoms d index))))
-  ([{:keys [::db]} index c1]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index]
+   (when-let [d (get-db dl)] (map dd/datom-eav (d/seek-datoms d index))))
+  ([dl index c1]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/seek-datoms d index c1))))
-  ([{:keys [::db]} index c1 c2]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/seek-datoms d index c1 c2))))
-  ([{:keys [::db]} index c1 c2 c3]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2 c3]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/seek-datoms d index c1 c2 c3))))
-  ([{:keys [::db]} index c1 c2 c3 c4]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2 c3 c4]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/seek-datoms d index c1 c2 c3 c4)))))
 
+(defn fulltext-datoms
+  ([dl query]
+   (when-let [d (get-db dl)]
+     (map dd/datom-eav (d/fulltext-datoms d query))))
+  ([dl query opts]
+   (when-let [d (get-db dl)]
+     (map dd/datom-eav (d/fulltext-datoms d query opts)))))
+
 (defn rseek-datoms
-  ([{:keys [::db]} index]
-   (when-let [d (get @dl-dbs db)] (map dd/datom-eav (d/rseek-datoms d index))))
-  ([{:keys [::db]} index c1]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index]
+   (when-let [d (get-db dl)] (map dd/datom-eav (d/rseek-datoms d index))))
+  ([dl index c1]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/rseek-datoms d index c1))))
-  ([{:keys [::db]} index c1 c2]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/rseek-datoms d index c1 c2))))
-  ([{:keys [::db]} index c1 c2 c3]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2 c3]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3))))
-  ([{:keys [::db]} index c1 c2 c3 c4]
-   (when-let [d (get @dl-dbs db)]
+  ([dl index c1 c2 c3 c4]
+   (when-let [d (get-db dl)]
      (map dd/datom-eav (d/rseek-datoms d index c1 c2 c3 c4)))))
 
-(defn index-range [{:keys [::db]} attr start end]
-  (when-let [d (get @dl-dbs db)]
+(defn index-range [dl attr start end]
+  (when-let [d (get-db dl)]
     (map dd/datom-eav (d/index-range d attr start end))))
 
-(defn conn? [{:keys [::conn]}]
-  (when-let [c (get @dl-conns conn)] (d/conn? c)))
+(defn conn? [cn] (when-let [c (get-cn cn)] (d/conn? c)))
 
-(defn conn-from-db [{:keys [::db]}]
-  (when-let [d (get @dl-dbs db)]
+(defn conn-from-db [{:keys [::db] :as dl}]
+  (when-let [d (get-db dl)]
     (let [conn (d/conn-from-db d)]
       (swap! dl-conns assoc db conn)
       {::conn db})))
@@ -159,40 +198,48 @@
 (defn create-conn
   ([] (conn-from-db (empty-db)))
   ([dir] (conn-from-db (empty-db dir)))
-  ([dir schema] (conn-from-db (empty-db dir schema))))
+  ([dir schema] (conn-from-db (empty-db dir schema)))
+  ([dir schema opts] (conn-from-db (empty-db dir schema opts)))
+  )
 
 (defn close [{:keys [::conn]}]
   (let [[old _] (swap-vals! dl-conns dissoc conn)]
     (when-let [c (get old conn)]
       (d/close c))))
 
-(defn closed? [{:keys [::conn]}]
-  (when-let [c (get @dl-conns conn)]
-    (d/closed? c)))
+(defn closed? [cn] (when-let [c (get-cn cn)] (d/closed? c)))
 
 (defn transact!
-  ([conn tx-data]
-   (transact! conn tx-data nil))
-  ([{:keys [::conn]} tx-data tx-meta]
-   (when-let [c (get @dl-conns conn)]
-     (let [rp (d/transact! c tx-data tx-meta)]
+  ([cn tx-data]
+   (transact! cn tx-data nil))
+  ([{:keys [::conn writing?] :as cn} tx-data tx-meta]
+   (when-let [c (get-cn cn)]
+     (let [rp (try
+                (d/transact! c tx-data tx-meta)
+                (catch Exception e
+                  (when (:resized (ex-data e))
+                    (let [s (.-store ^DB @c)
+                          d (db/new-db s)]
+                      (swap! (if writing? wdl-dbs dl-dbs)
+                             assoc conn d)
+                      (swap! (if writing? wdl-conns dl-conns)
+                             assoc conn (atom d :meta (meta c)))))
+                  (throw e)))]
        {:datoms-transacted (count (:tx-data rp))}))))
 
-(defn db [{:keys [::conn]}]
-  (when-let [c (get @dl-conns conn)]
+(defn db [{:keys [::conn] :as cn}]
+  (when-let [c (get-cn cn)]
     (let [db (d/db c)]
       (if-let [i (some (fn [[i d]] (when (= db d) i)) @dl-dbs)]
         {::db i}
         (do (swap! dl-dbs assoc conn db)
             {::db conn})))))
 
-(defn schema [{:keys [::conn]}]
-  (when-let [c (get @dl-conns conn)]
-    (d/schema c)))
+(defn schema [cn] (when-let [c (get-cn cn)] (d/schema c)))
 
-(defn update-schema [{:keys [::conn]} schema-update]
-  (when-let [c (get @dl-conns conn)]
-    (d/update-schema c schema-update)))
+(defn update-schema
+  [cn schema-update]
+  (when-let [c (get-cn cn)] (d/update-schema c schema-update)))
 
 (defn get-conn
   ([dir]
@@ -206,146 +253,184 @@
          (swap! dl-conns assoc id conn)
          {::conn id})))))
 
-(defn open-kv [dir]
-  (let [db (d/open-kv dir)
-        id (UUID/randomUUID)]
-    (swap! kv-dbs assoc id db)
-    {::kv-db id}))
+(defn open-kv
+  ([dir]
+   (open-kv dir nil))
+  ([dir opts]
+   (let [db (d/open-kv dir opts)
+         id (UUID/randomUUID)]
+     (swap! kv-dbs assoc id db)
+     {::kv-db id})))
 
-(defn close-kv [{:keys [::kv-db]}]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/close-kv d)))
+(defn close-kv [db] (when-let [d (get-kv db)] (d/close-kv d)))
 
-(defn closed-kv? [{:keys [::kv-db]}]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/closed-kv? d)))
+(defn closed-kv? [db] (when-let [d (get-kv db)] (d/closed-kv? d)))
 
-(defn dir [{:keys [::kv-db]}]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/dir d)))
+(defn dir [db] (when-let [d (get-kv db)] (d/dir d)))
 
 (defn open-dbi
-  ([{:keys [::kv-db]} dbi-name]
-   (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name) nil))
-  ([{:keys [::kv-db]} dbi-name opts]
-   (when-let [d (get @kv-dbs kv-db)] (d/open-dbi d dbi-name opts) nil)))
+  ([db dbi-name]
+   (when-let [d (get-kv db)] (d/open-dbi d dbi-name) nil))
+  ([db dbi-name opts]
+   (when-let [d (get-kv db)] (d/open-dbi d dbi-name opts) nil)))
 
-(defn clear-dbi [{:keys [::kv-db]}]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/clear-dbi d)))
+(defn clear-dbi [db] (when-let [d (get-kv db)] (d/clear-dbi d)))
 
-(defn drop-dbi [{:keys [::kv-db]}]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/drop-dbi d)))
+(defn drop-dbi [db] (when-let [d (get-kv db)] (d/drop-dbi d)))
 
-(defn list-dbis [{:keys [::kv-db]}]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/list-dbis d)))
+(defn list-dbis [db] (when-let [d (get-kv db)] (d/list-dbis d)))
 
 (defn copy
   ([db dest]
    (copy db dest false))
-  ([{:keys [::kv-db]} dest compact?]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/copy d dest compact?))))
+  ([db dest compact?]
+   (when-let [d (get-kv db)] (d/copy d dest compact?))))
 
 (defn stat
-  ([{:keys [::kv-db]}]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/stat d)))
-  ([{:keys [::kv-db]} dbi-name]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/stat d dbi-name))))
+  ([db]
+   (when-let [d (get-kv db)] (d/stat d)))
+  ([db dbi-name]
+   (when-let [d (get-kv db)] (d/stat d dbi-name))))
 
-(defn entries [{:keys [::kv-db]} dbi-name]
-  (when-let [d (get @kv-dbs kv-db)]
-    (d/entries d dbi-name)))
+(defn entries [db dbi-name] (when-let [d (get-kv db)] (d/entries d dbi-name)))
 
-(defn transact-kv [{:keys [::kv-db]} txs]
+(defn open-transact-kv [{:keys [::kv-db] :as db}]
   (when-let [d (get @kv-dbs kv-db)]
-    (d/transact-kv d txs)))
+    (let [wdb (l/open-transact-kv d)]
+      (swap! wkv-dbs assoc kv-db wdb)
+      (assoc db :writing? true))))
+
+(defn close-transact-kv [{:keys [::kv-db]}]
+  (when-let [d (get @kv-dbs kv-db)]
+    (swap! wkv-dbs dissoc kv-db)
+    (l/close-transact-kv d)))
+
+(defn abort-transact-kv [{:keys [::kv-db]}]
+  (when-let [d (get @wkv-dbs kv-db)]
+    (d/abort-transact-kv d)))
+
+(defn open-transact [{:keys [::conn] :as cn}]
+  (when-let [c (get @dl-conns conn)]
+    (let [s  (.-store ^DB @c)
+          l  (.-lmdb ^Store s)
+          wl (l/open-transact-kv l)
+          ws (st/transfer s wl)
+          wd (db/new-db ws)]
+      (swap! wdl-dbs assoc conn wd)
+      (swap! wdl-conns assoc conn (atom wd :meta (meta c)))
+      (assoc cn :writing? true))))
+
+(defn close-transact [{:keys [::conn]}]
+  (when-let [c (get @dl-conns conn)]
+    (let [wc (get @wdl-conns conn)
+          ws (.-store ^DB @wc)
+          l  (.-lmdb ^Store (.-store ^DB @c))]
+      (reset! c (db/new-db (st/transfer ws l)))
+      (swap! wdl-dbs dissoc conn)
+      (swap! wdl-conns dissoc conn)
+      (l/close-transact-kv l))))
+
+(defn abort-transact [{:keys [::conn]}]
+  (when-let [c (get @dl-conns conn)]
+    (let [wc (get @wdl-conns conn)
+          ws (.-store ^DB @wc)
+          wl (.-lmdb ^Store ws)]
+      (d/abort-transact-kv wl))))
+
+(defn transact-kv [db txs] (when-let [d (get-kv db)] (d/transact-kv d txs)))
 
 (defn get-value
-  ([{:keys [::kv-db]} dbi-name k]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-value d dbi-name k)))
-  ([{:keys [::kv-db]} dbi-name k k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-value d dbi-name k k-type)))
-  ([{:keys [::kv-db]} dbi-name k k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k]
+   (when-let [d (get-kv db)] (d/get-value d dbi-name k)))
+  ([db dbi-name k k-type]
+   (when-let [d (get-kv db)] (d/get-value d dbi-name k k-type)))
+  ([db dbi-name k k-type v-type]
+   (when-let [d (get-kv db)]
      (d/get-value d dbi-name k k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name k k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
      (d/get-value d dbi-name k k-type v-type ignore-key?))))
 
 (defn get-first
-  ([{:keys [::kv-db]} dbi-name k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-first d dbi-name k-range)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-first d dbi-name k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k-range]
+   (when-let [d (get-kv db)] (d/get-first d dbi-name k-range)))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-kv db)] (d/get-first d dbi-name k-range k-type)))
+  ([db dbi-name k-range k-type v-type]
+   (when-let [d (get-kv db)]
      (d/get-first d dbi-name k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name k-range k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
      (d/get-first d dbi-name k-range k-type v-type ignore-key?))))
 
 (defn get-range
-  ([{:keys [::kv-db]} dbi-name k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-range d dbi-name k-range)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-range d dbi-name k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/get-range d dbi-name k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/get-range d dbi-name k-range k-type v-type ignore-key?))))
+  ([db dbi-name k-range]
+   (when-let [d (get-kv db)]
+     (into [](d/get-range d dbi-name k-range))))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-kv db)]
+     (into [](d/get-range d dbi-name k-range k-type))))
+  ([db dbi-name k-range k-type v-type]
+   (when-let [d (get-kv db)]
+     (into [] (d/get-range d dbi-name k-range k-type v-type))))
+  ([db dbi-name k-range k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
+     (into [] (d/get-range d dbi-name k-range k-type v-type ignore-key?)))))
 
 (defn range-count
-  ([{:keys [::kv-db]} dbi-name k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-count d dbi-name k-range)))
-  ([{:keys [::kv-db]} dbi-name k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-count d dbi-name k-range k-type))))
+  ([db dbi-name k-range]
+   (when-let [d (get-kv db)] (d/range-count d dbi-name k-range)))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-kv db)] (d/range-count d dbi-name k-range k-type))))
 
 (defn get-some
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/get-some d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range]
+   (when-let [d (get-kv db)] (d/get-some d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-kv db)]
      (d/get-some d dbi-name pred k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range k-type v-type]
+   (when-let [d (get-kv db)]
      (d/get-some d dbi-name pred k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
      (d/get-some d dbi-name pred k-range k-type v-type ignore-key?))))
 
 (defn range-filter
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-filter d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/range-filter d dbi-name pred k-range k-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/range-filter d dbi-name pred k-range k-type v-type)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type v-type ignore-key?]
-   (when-let [d (get @kv-dbs kv-db)]
-     (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?))))
+  ([db dbi-name pred k-range]
+   (when-let [d (get-kv db)]
+     (into [] (d/range-filter d dbi-name pred k-range))))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-kv db)]
+     (into [] (d/range-filter d dbi-name pred k-range k-type))))
+  ([db dbi-name pred k-range k-type v-type]
+   (when-let [d (get-kv db)]
+     (into [] (d/range-filter d dbi-name pred k-range k-type v-type))))
+  ([db dbi-name pred k-range k-type v-type ignore-key?]
+   (when-let [d (get-kv db)]
+     (into [] (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?)))))
 
 (defn range-filter-count
-  ([{:keys [::kv-db]} dbi-name pred k-range]
-   (when-let [d (get @kv-dbs kv-db)] (d/range-count d dbi-name pred k-range)))
-  ([{:keys [::kv-db]} dbi-name pred k-range k-type]
-   (when-let [d (get @kv-dbs kv-db)]
+  ([db dbi-name pred k-range]
+   (when-let [d (get-kv db)] (d/range-count d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-kv db)]
      (d/range-count d dbi-name pred k-range k-type))))
 
+(defn visit
+  ([db dbi-name pred k-range]
+   (when-let [d (get-kv db)] (d/visit d dbi-name pred k-range)))
+  ([db dbi-name pred k-range k-type]
+   (when-let [d (get-kv db)]
+     (d/visit d dbi-name pred k-range k-type))))
 
 ;; pods
 
 (def ^:private exposed-vars
   {'pod-fn             pod-fn
    'entid              entid
+   'entity             entity
+   'touch              touch
    'pull               pull
    'pull-many          pull-many
    'empty-db           empty-db
@@ -354,6 +439,7 @@
    'close-db           close-db
    'datoms             datoms
    'seek-datoms        seek-datoms
+   'fulltext-datoms    fulltext-datoms
    'rseek-datoms       rseek-datoms
    'index-range        index-range
    'conn?              conn?
@@ -378,6 +464,12 @@
    'copy               copy
    'stat               stat
    'entries            entries
+   'open-transact-kv   open-transact-kv
+   'close-transact-kv  close-transact-kv
+   'abort-transact-kv  abort-transact-kv
+   'open-transact      open-transact
+   'close-transact     close-transact
+   'abort-transact     abort-transact
    'transact-kv        transact-kv
    'get-value          get-value
    'get-first          get-first
@@ -386,15 +478,82 @@
    'get-some           get-some
    'range-filter       range-filter
    'range-filter-count range-filter-count
+   'visit              visit
    })
 
 (defmacro defpodfn
   [fn-name args & body]
   `(pod-fn '~fn-name '~args '~@body))
 
+(defmacro with-transaction-kv
+  [binding & body]
+  `(let [db# ~(second binding)]
+     (try
+       (let [~(first binding) (open-transact-kv db#)]
+         (try
+           ~@body
+           (catch Exception ~'e
+             (if (:resized (ex-data ~'e))
+               (do ~@body)
+               (throw ~'e)))))
+       (finally (close-transact-kv db#)))))
+
+(defmacro with-transaction
+  [binding & body]
+  `(let [conn# ~(second binding)]
+     (try
+       (let [~(first binding) (open-transact conn#)]
+         (try
+           ~@body
+           (catch Exception ~'e
+             (if (:resized (ex-data ~'e))
+               (do ~@body)
+               (throw ~'e)))))
+       (finally (close-transact conn#)))))
+
 (def ^:private lookup
   (zipmap (map (fn [sym] (symbol pod-ns (name sym))) (keys exposed-vars))
           (vals exposed-vars)))
+
+(defn- all-vars []
+  (concat (mapv (fn [k] {"name" (name k)})
+                (keys exposed-vars))
+          [{"name" "defpodfn"
+            "code"
+            "(defmacro defpodfn
+              [fn-name args & body]
+              `(pod-fn '~fn-name
+                      '~args
+                      '~@body))"}
+           {"name" "with-transaction-kv"
+            "code"
+            "(defmacro with-transaction-kv
+              [binding & body]
+              `(let [db# ~(second binding)]
+                (try
+                  (let [~(first binding) (open-transact-kv db#)]
+                    (try
+                      ~@body
+                      (catch Exception ~'e
+                        (if (:resized (ex-data ~'e))
+                          (do ~@body)
+                          (throw ~'e)))))
+                  (finally
+                    (close-transact-kv db#)))))"}
+           {"name" "with-transaction"
+            "code"
+            "(defmacro with-transaction
+               [binding & body]
+               `(let [conn# ~(second binding)]
+                  (try
+                    (let [~(first binding) (open-transact conn#)]
+                      (try
+                        ~@body
+                        (catch Exception ~'e
+                          (if (:resized (ex-data ~'e))
+                            (do ~@body)
+                            (throw ~'e)))))
+                    (finally (close-transact conn#)))))"}]))
 
 (defn run []
   (loop []
@@ -408,16 +567,7 @@
             :describe
             (do (write {"format"     "transit+json"
                         "namespaces" [{"name" "pod.huahaiy.datalevin"
-                                       "vars"
-                                       (conj (mapv (fn [k] {"name" (name k)})
-                                                   (keys exposed-vars))
-                                             {"name" "defpodfn"
-                                              "code"
-                                              "(defmacro defpodfn
-                                                 [fn-name args & body]
-                                                 `(pod-fn '~fn-name
-                                                          '~args
-                                                          '~@body))"})}]
+                                       "vars" (all-vars)}]
                         "id"         id
                         "ops"        {"shutdown" {}}})
                 (recur))
@@ -428,26 +578,28 @@
                                  symbol)
                         args (-> (get message "args")
                                  read-string
-                                 u/read-transit-string)]
+                                 p/read-transit-string)]
                     ;; (debug "var" var "args" args)
                     (if-let [f (lookup var)]
-                      (let [value (u/write-transit-string
-                                    (apply f args))
+                      (let [res   (apply f args)
+                            value (p/write-transit-string
+                                    res)
                             reply {"value"  value
                                    "id"     id
                                    "status" ["done"]}]
                         (write reply))
                       (throw (ex-info (str "Var not found: " var) {}))))
                   (catch Throwable e
-                    (binding [*out* *err*]
-                      (println e))
-                    (let [reply {"ex-message" (.getMessage e)
-                                 "ex-data"    (u/write-transit-string
-                                                (assoc (ex-data e)
+                    (let [edata (ex-data e)
+                          reply {"ex-message" (.getMessage e)
+                                 "ex-data"    (p/write-transit-string
+                                                (assoc edata
                                                        :type
                                                        (str (class e))))
                                  "id"         id
                                  "status"     ["done" "error"]}]
+                      (when-not (:resized edata)
+                        (binding [*out* *err*] (println e)))
                       (write reply))))
                 (recur))
             :shutdown

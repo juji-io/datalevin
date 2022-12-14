@@ -11,15 +11,17 @@
 
 ;; #94
 (deftest test-instant
-  (let [db (-> (d/empty-db (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
-                           {:person/born {:db/valueType :db.type/instant}})
-               (d/db-with [{:person/born #inst "1969-01-01"}
-                           {:person/born #inst "1971-01-01"}]))]
+  (let [dir (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir
+                            {:person/born {:db/valueType :db.type/instant}})
+                (d/db-with [{:person/born #inst "1969-01-01"}
+                            {:person/born #inst "1971-01-01"}]))]
     (is (= 2 (count (d/datoms db :eav))))
     (is (= 2 (count
                (d/q '[:find [?born ...]
                       :where [?e :person/born ?born]] db))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 ;; #8
 (deftest test-many-joins
@@ -34,7 +36,8 @@
                           :f     (rand-int 3)
                           :g     (rand-int 3)
                           :h     (rand-int 3)})))
-        db   (-> (d/empty-db nil {:a {:db/valueType :db.type/string}
+        dir  (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        db   (-> (d/empty-db dir {:a {:db/valueType :db.type/string}
                                   :b {:db/valueType :db.type/string}
                                   :c {:db/valueType :db.type/string}
                                   :d {:db/valueType :db.type/string}
@@ -55,14 +58,16 @@
                         [?eid1 :h ?h1]
                         [?eid2 :e ?e1]]
                       db)))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-joins
-  (let [db (-> (d/empty-db)
-               (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
-                           { :db/id 2, :name "Petr", :age 37 }
-                           { :db/id 3, :name "Ivan", :age 37 }
-                           { :db/id 4, :age 15 }]))]
+  (let [dir (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir)
+                (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
+                            { :db/id 2, :name "Petr", :age 37 }
+                            { :db/id 3, :name "Ivan", :age 37 }
+                            { :db/id 4, :age 15 }]))]
     (is (= (d/q '[:find ?e
                   :where [?e :name]] db)
            #{[1] [2] [3]}))
@@ -82,17 +87,19 @@
            #{[1 1 "Ivan"]
              [3 3 "Ivan"]
              [3 2 "Petr"]}))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 
 (deftest test-q-many
-  (let [db (-> (d/empty-db nil {:aka {:db/cardinality :db.cardinality/many}})
-               (d/db-with [ [:db/add 1 :name "Ivan"]
-                           [:db/add 1 :aka  "ivolga"]
-                           [:db/add 1 :aka  "pi"]
-                           [:db/add 2 :name "Petr"]
-                           [:db/add 2 :aka  "porosenok"]
-                           [:db/add 2 :aka  "pi"] ]))]
+  (let [dir (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})
+                (d/db-with [ [:db/add 1 :name "Ivan"]
+                            [:db/add 1 :aka  "ivolga"]
+                            [:db/add 1 :aka  "pi"]
+                            [:db/add 2 :name "Petr"]
+                            [:db/add 2 :aka  "porosenok"]
+                            [:db/add 2 :aka  "pi"] ]))]
     (is (= (d/q '[:find  ?n1 ?n2
                   :where [?e1 :aka ?x]
                   [?e2 :aka ?x]
@@ -102,11 +109,12 @@
              ["Petr" "Petr"]
              ["Ivan" "Petr"]
              ["Petr" "Ivan"]}))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 
 (deftest test-q-coll
-  (let [db [ [1 :name "Ivan"]
+  (let [db [[1 :name "Ivan"]
             [1 :age  19]
             [1 :aka  "dragon_killer_94"]
             [1 :aka  "-=autobot=-"] ] ]
@@ -128,7 +136,8 @@
 
 
 (deftest test-q-in
-  (let [db    (-> (d/empty-db)
+  (let [dir   (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        db    (-> (d/empty-db dir)
                   (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
                               { :db/id 2, :name "Petr", :age 37 }
                               { :db/id 3, :name "Ivan", :age 37 }]))
@@ -164,13 +173,15 @@
                     :in   ?a ?b]
                   10 20)
              #{[10 20]})))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-bindings
-  (let [db (-> (d/empty-db)
-               (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
-                           { :db/id 2, :name "Petr", :age 37 }
-                           { :db/id 3, :name "Ivan", :age 37 }]))]
+  (let [dir (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir)
+                (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
+                            { :db/id 2, :name "Petr", :age 37 }
+                            { :db/id 3, :name "Ivan", :age 37 }]))]
     (testing "Relation binding"
       (is (= (d/q '[:find  ?e ?email
                     :in    $ [[?n ?email]]
@@ -231,7 +242,8 @@
       (is (thrown-with-msg? ExceptionInfo #"Not enough elements in a collection \[:a\] to bind tuple \[\?a \?b\]"
                             (d/q '[:find ?a ?b :in [?a ?b]] [:a]))))
 
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-nested-bindings
   (is (= (d/q '[:find  ?k ?v
@@ -270,7 +282,8 @@
          #{["abcX"] ["aXb"]})))
 
 (deftest test-some-strings
-  (let [conn (d/create-conn nil {:id   {:db/valueType :db.type/long}
+  (let [dir  (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        conn (d/create-conn dir {:id   {:db/valueType :db.type/long}
                                  :text {:db/valueType :db.type/string}})]
     (d/transact! conn [{:text "[7/3, 15:36]"
                         :id   3}])
@@ -279,4 +292,5 @@
                   :where
                   [?e :id 3]]
                 @conn)))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))

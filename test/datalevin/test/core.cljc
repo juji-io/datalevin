@@ -3,10 +3,9 @@
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-   [clojure.string :as str]
    [datalevin.core :as d]
-   [datalevin.constants :as c]
    [datalevin.entity :as de]
+   [datalevin.constants :as c]
    [datalevin.util :as u #?@(:cljs [:refer-macros [defrecord-updatable]]
                              :clj  [:refer [defrecord-updatable]])]
    #?(:clj [datalevin.server :as srv])
@@ -84,4 +83,5 @@
          (catch Exception e (throw e))
          (finally
            (srv/stop server)
-           (u/delete-files dir))))))
+           (u/delete-files dir))))
+     (System/gc)))

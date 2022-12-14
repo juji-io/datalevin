@@ -8,7 +8,7 @@ server.
 
 $ dtlv help
 
-  Datalevin (version: 0.6.15)
+  Datalevin (version: 0.6.29)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -49,7 +49,7 @@ will initiate an interactive console (REPL).
 ```console
 $ dtlv
 
-  Datalevin (version: 0.6.15)
+  Datalevin (version: 0.6.29)
 
   Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
@@ -65,8 +65,8 @@ user> (+ 1 2 3 4)
 user>
 ```
 
-As a REPL for Datalevin, all Datalevin [public
-functions](https://juji-io.github.io/datalevin/index.html) can be directly used, without
+As a REPL for Datalevin, all Datalevin public
+functions can be directly used, without
 needing to require the namespace.
 
 ```console

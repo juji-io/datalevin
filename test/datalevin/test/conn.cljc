@@ -9,18 +9,22 @@
   (:import [java.util Date UUID]))
 
 (deftest test-close
-  (let [conn (d/create-conn)]
+  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+        conn (d/create-conn dir)]
     (is (not (d/closed? conn)))
     (d/close conn)
-    (is (d/closed? conn))))
+    (is (d/closed? conn))
+    (u/delete-files dir)))
 
 (deftest test-update-schema
-  (let [conn1 (d/create-conn)
+  (let [dir1  (u/tmp-dir (str "test-" (random-uuid)))
+        dir2  (u/tmp-dir (str "test-" (random-uuid)))
+        conn1 (d/create-conn dir1)
         s     {:a/b {:db/valueType :db.type/string}}
         s1    {:c/d {:db/valueType :db.type/string}}
         txs   [{:c/d "cd" :db/id -1}
                {:a/b "ab" :db/id -2}]
-        conn2 (d/create-conn nil s)]
+        conn2 (d/create-conn dir2 s)]
     (is (= (d/schema conn2) (d/update-schema conn1 s)))
     (d/update-schema conn1 s1)
     (is (= (d/schema conn1) (-> (merge c/implicit-schema s s1)
@@ -37,11 +41,18 @@
            (d/update-schema conn1 {} #{:c/d})
            (d/schema conn1)))
 
+    (d/update-schema conn1 nil nil {:a/b :e/f})
+    (is (= (d/schema conn1) (assoc c/implicit-schema :e/f
+                                   {:db/valueType :db.type/string :db/aid 3})))
+
     (d/close conn1)
-    (d/close conn2)))
+    (d/close conn2)
+    (u/delete-files dir1)
+    (u/delete-files dir2)))
 
 (deftest test-update-schema-1
-  (let [conn (d/create-conn)]
+  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+        conn (d/create-conn dir)]
     (d/update-schema conn {:things {}})
     (is (= (d/schema conn) (-> c/implicit-schema
                                (assoc-in [:things :db/aid] 3))))
@@ -55,60 +66,71 @@
     (d/update-schema conn {:things {}})
     (is (= (d/schema conn) (-> c/implicit-schema
                                (assoc-in [:stuff :db/aid] 4)
-                               (assoc-in [:things :db/aid] 5))))))
+                               (assoc-in [:things :db/aid] 5))))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest test-update-schema-ensure-no-duplicate-aids
-  (let [conn (d/create-conn)]
+  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+        conn (d/create-conn dir)]
     (d/update-schema conn {:up/a {}})
     (d/transact! conn [{:foo 1}])
     (let [aids (map :db/aid (vals (d/schema conn)))]
       (is (= (count aids) (count (set aids))))
-      (d/close conn))))
+      (d/close conn)
+      (u/delete-files dir))))
 
 (deftest test-ways-to-create-conn-1
-  (let [conn (d/create-conn)]
+  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+        conn (d/create-conn dir)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= c/implicit-schema (db/-schema @conn)))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest test-ways-to-create-conn-2
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 3}}
-        conn   (d/create-conn nil schema)]
+        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        conn   (d/create-conn dir schema)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= (db/-schema @conn) (merge schema c/implicit-schema)))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest test-ways-to-create-conn-3
   (let [datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-
-        conn (d/conn-from-datoms datoms)]
+        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        conn   (d/conn-from-datoms datoms dir)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
-    (d/close conn))
+    (d/close conn)
+    (u/delete-files dir))
 
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
         datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-
-        conn (d/conn-from-datoms datoms nil schema)]
+        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        conn   (d/conn-from-datoms datoms dir schema)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
-    (d/close conn))
+    (d/close conn)
+    (u/delete-files dir))
 
   (let [datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-
-        conn (d/conn-from-db (d/init-db datoms))]
+        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        conn   (d/conn-from-db (d/init-db datoms dir))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
-    (d/close conn))
+    (d/close conn)
+    (u/delete-files dir))
 
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
         datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-
-        conn (d/conn-from-db (d/init-db datoms nil schema))]
+        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        conn   (d/conn-from-db (d/init-db datoms dir schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)))

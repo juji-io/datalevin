@@ -37,6 +37,14 @@
         "allPublicMethods":true
     },
     {
+      "name": "org.eclipse.collections.impl.list.mutable.AbstractMutableList",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.list.mutable.FastList",
+      "allPublicMethods":true
+    },
+    {
         "name": "java.text.Normalizer",
         "allPublicConstructors" : true,
         "allPublicMethods" : true,
@@ -91,6 +99,17 @@
     },
     {
         "name":"datalevin.entity.Entity",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"datalevin.bits.Retrieved",
         "allDeclaredConstructors" : true,
         "allPublicConstructors" : true,
         "allDeclaredMethods" : true,
