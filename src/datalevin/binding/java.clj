@@ -752,7 +752,8 @@
           (when-not (= -1 b)
             (.write out buffer 0 b)))
         (.close out)
-        (.close in))
+        (.close in)
+        (println "Library extraction is successful:" fpath))
       (catch Exception e
         (st/print-stack-trace e)
         (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
