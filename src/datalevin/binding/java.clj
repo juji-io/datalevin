@@ -8,6 +8,7 @@
    [datalevin.lmdb :as l :refer [open-kv open-inverted-list IBuffer IRange
                                  IRtx IDB IKV IInvertedList ILMDB IWriting]]
    [clojure.stacktrace :as st]
+   [clojure.java.io :as io]
    [clojure.string :as s])
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
@@ -737,24 +738,17 @@
       (let [fdir            (u/file (u/tmp-dir "lmdbjava-native-lib"))
             ^File file      (File/createTempFile "lmdb" ".dylib" fdir)
             fpath           (.getAbsolutePath file)
-            ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))
-
-            ^InputStream in
-            (.getResourceAsStream
-              cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
-
-            ^OutputStream out (Files/newOutputStream
-                                (.toPath file) (into-array OpenOption []))
-            buffer            (byte-array 4096)]
+            ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
         (.deleteOnExit file)
         (System/setProperty "lmdbjava.native.lib" fpath)
-        (loop []
-          (let [b (.read in buffer)]
-            (when-not (= -1 b)
-              (.write out buffer 0 b)
-              (recur))))
-        (.close out)
-        (.close in)
+
+        (with-open [^InputStream in
+                    (.getResourceAsStream
+                      cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
+                    ^OutputStream out
+                    (Files/newOutputStream
+                      (.toPath file) (into-array OpenOption []))]
+          (io/copy in out))
         (println "Library extraction is successful:" fpath))
       (catch Exception e
         (st/print-stack-trace e)
