@@ -67,7 +67,8 @@
                     :uberjar-name "test1.uberjar.jar"}
    :test2-uberjar  {:main         datalevin.test2
                     :uberjar-name "test2.uberjar.jar"}
-   :dev            {:source-paths      ["src" "test"]
+   :dev            {:main              datalevin.test0
+                    :source-paths      ["src" "test"]
                     :java-source-paths ["native/src/java"]
                     ;; uncomment on java 11 and above
                     :jvm-opts
