@@ -754,6 +754,7 @@
         (.close out)
         (.close in))
       (catch Exception e
-        (u/raise "Failed to extract LMDB library" {})))))
+        (st/print-stack-trace e)
+        (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
 
 (apple-silicon-lmdb)
