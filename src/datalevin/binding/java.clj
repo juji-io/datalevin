@@ -741,6 +741,7 @@
             path            (.toPath file)
             fpath           (.getAbsolutePath file)
             ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
+        (u/create-dirs dir)
         (.deleteOnExit file)
         (System/setProperty "lmdbjava.native.lib" fpath)
 
