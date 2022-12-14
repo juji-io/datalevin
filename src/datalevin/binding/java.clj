@@ -748,9 +748,11 @@
             buffer            (byte-array 4096)]
         (.deleteOnExit file)
         (System/setProperty "lmdbjava.native.lib" fpath)
-        (loop [b (.read in buffer)]
-          (when-not (= -1 b)
-            (.write out buffer 0 b)))
+        (loop []
+          (let [b (.read in buffer)]
+            (when-not (= -1 b)
+              (.write out buffer 0 b)
+              (recur))))
         (.close out)
         (.close in)
         (println "Library extraction is successful:" fpath))
