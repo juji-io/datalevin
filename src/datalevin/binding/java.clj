@@ -744,7 +744,7 @@
               cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
 
             ^OutputStream out (Files/newOutputStream
-                                (.toPath file) (into-array OpenOption))
+                                (.toPath file) (into-array OpenOption []))
             buffer            (byte-array 4096)]
         (.deleteOnExit file)
         (System/setProperty "lmdbjava.native.lib" fpath)
