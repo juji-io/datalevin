@@ -57,6 +57,11 @@
    (defn windows? []
      (s/starts-with? (System/getProperty "os.name") "Windows")))
 
+#?(:clj
+   (defn apple-silicon? []
+     (and (= (System/getProperty "os.name") "Mac OS X")
+          (= (System/getProperty "os.arch") "aarch64"))))
+
 (defn delete-files
   "Recursively delete file"
   [& fs]

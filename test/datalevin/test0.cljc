@@ -1,4 +1,5 @@
 (ns datalevin.test0
+  "tests for local embedded mode"
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])

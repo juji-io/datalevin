@@ -345,12 +345,34 @@
       (sut/transact-kv db [[:put dbi "Hello" "Datalevin"]])
       (sut/copy db dst true)
       (is (= (sut/stat db)
-             {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
-              :overflow-pages 0,    :entries 1}))
+             (if (u/apple-silicon?)
+               {:psize          16384,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        1}
+               {:psize          4096,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        1})))
       (doseq [i (sut/list-dbis db)]
         (is (= (sut/stat db i)
-               {:psize          4096, :depth   1, :branch-pages 0, :leaf-pages 1,
-                :overflow-pages 0,    :entries 1})))
+               (if (u/apple-silicon?)
+                 {:psize          16384,
+                  :depth          1,
+                  :branch-pages   0,
+                  :leaf-pages     1,
+                  :overflow-pages 0,
+                  :entries        1}
+                 {:psize          4096,
+                  :depth          1,
+                  :branch-pages   0,
+                  :leaf-pages     1,
+                  :overflow-pages 0,
+                  :entries        1}))))
       (let [db-copied (sut/open-kv dst)]
         (sut/open-dbi db-copied dbi)
         (is (= (sut/get-value db-copied dbi "Hello") "Datalevin"))
