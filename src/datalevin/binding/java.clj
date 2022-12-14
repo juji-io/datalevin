@@ -737,7 +737,7 @@
     (try
       (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
                                             (random-uuid)) )
-            ^File file      (File. dir "liblmdb.dylib")
+            ^File file      (File. ^String dir "liblmdb.dylib")
             path            (.toPath file)
             fpath           (.getAbsolutePath file)
             ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
@@ -748,10 +748,7 @@
                     (.getResourceAsStream
                       cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
                     ^OutputStream out
-                    (Files/newOutputStream
-                      path (into-array OpenOption
-                                       [StandardOpenOption/CREATE
-                                        StandardOpenOption/WRITE]))]
+                    (Files/newOutputStream path (into-array OpenOption []))]
           (io/copy in out))
         (println "Library extraction is successful:" fpath
                  "with size" (Files/size path)))
