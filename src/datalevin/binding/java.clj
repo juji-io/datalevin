@@ -17,7 +17,7 @@
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator]
    [java.io File InputStream OutputStream]
-   [java.nio.file Files OpenOption]
+   [java.nio.file Files OpenOption StandardOpenOption]
    [clojure.lang IPersistentVector]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.nio ByteBuffer BufferOverflowException]))
@@ -735,8 +735,10 @@
   (when (and (= (System/getProperty "os.name") "Mac OS X")
              (= (System/getProperty "os.arch") "aarch64"))
     (try
-      (let [fdir            (u/file (u/tmp-dir "lmdbjava-native-lib"))
-            ^File file      (File/createTempFile "lmdb" ".dylib" fdir)
+      (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
+                                            (random-uuid)) )
+            ^File file      (File. dir "liblmdb.dylib")
+            path            (.toPath file)
             fpath           (.getAbsolutePath file)
             ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
         (.deleteOnExit file)
@@ -747,9 +749,12 @@
                       cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
                     ^OutputStream out
                     (Files/newOutputStream
-                      (.toPath file) (into-array OpenOption []))]
+                      path (into-array OpenOption
+                                       [StandardOpenOption/CREATE
+                                        StandardOpenOption/WRITE]))]
           (io/copy in out))
-        (println "Library extraction is successful:" fpath))
+        (println "Library extraction is successful:" fpath
+                 "with size" (Files/size path)))
       (catch Exception e
         (st/print-stack-trace e)
         (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
