@@ -7,13 +7,16 @@
    [datalevin.scan :as scan]
    [datalevin.lmdb :as l :refer [open-kv open-inverted-list IBuffer IRange
                                  IRtx IDB IKV IInvertedList ILMDB IWriting]]
-   [clojure.stacktrace :as st])
+   [clojure.stacktrace :as st]
+   [clojure.string :as s])
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator]
+   [java.io File InputStream OutputStream]
+   [java.nio.file Files OpenOption]
    [clojure.lang IPersistentVector]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.nio ByteBuffer BufferOverflowException]))
@@ -725,3 +728,32 @@
      (catch Exception e
        (st/print-stack-trace e)
        (raise "Fail to open database: " (ex-message e) {:dir dir})))))
+
+;; TODO remove after LMDBJava supports apple silicon
+(defn apple-silicon-lmdb []
+  (when (and (= (System/getProperty "os.name") "Mac OS X")
+             (= (System/getProperty "os.arch") "aarch64"))
+    (try
+      (let [fdir            (u/file (u/tmp-dir "lmdbjava-native-lib"))
+            ^File file      (File/createTempFile "lmdb" ".dylib" fdir)
+            fpath           (.getAbsolutePath file)
+            ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))
+
+            ^InputStream in
+            (.getResourceAsStream
+              cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
+
+            ^OutputStream out (Files/newOutputStream
+                                (.toPath file) (into-array OpenOption))
+            buffer            (byte-array 4096)]
+        (.deleteOnExit file)
+        (System/setProperty "lmdbjava.native.lib" fpath)
+        (loop [b (.read in buffer)]
+          (when-not (= -1 b)
+            (.write out buffer 0 b)))
+        (.close out)
+        (.close in))
+      (catch Exception e
+        (u/raise "Failed to extract LMDB library" {})))))
+
+(apple-silicon-lmdb)

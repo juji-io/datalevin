@@ -4,19 +4,17 @@
 ### Added
 - [Platform] aarch64 build for Apple Silicon.
 - [KV] A new range function `range-seq` that has similar signature as
-  `get-range` but returns a structure that implements `Seqable` and
-  `IReduceInit`. It lazily reads data items into memory in batches (controlled
-  by `:batch-size` option). It should be used inside `with-open` for proper
-  cleanup. #108
+  `get-range`, but returns a `Seqable`, which lazily reads data items into
+  memory in batches (controlled by `:batch-size` option). It should be used
+  inside `with-open` for proper cleanup. #108
 - [KV] The existent eager range functions, `get-range` and `range-filter`, now
   automatically spill to disk when memory pressure is high. The results, though
-  mutable, still implement `IPersistentVector`, so there is no API level change
-  from the user's point of view. The spill-to-disk behavior is controlled by
-  `spill-opts` option map when open the db, containing `:spill-threshold` and
-  `:spill-root` options.
+  mutable, still implement `IPersistentVector`, so there is no API level
+  change. The spill-to-disk behavior is controlled by `spill-opts` option map
+  when opening the db, allowing `:spill-threshold` and `:spill-root` options.
 - [Datalog] Additional arity-1 version of `q` that takes `:query` and `:args`
   in a map, which allows additional options for `:offset`, `:limit`, and
-  `:timeout`. #126
+  `:timeout`. These options are also supported in the vector form of `q`. #126
 ### Improved
 - [KV] write performance improvement
 - [Datalog] `q` and `pull` results are also lazy and spill to disk under memory pressure.
