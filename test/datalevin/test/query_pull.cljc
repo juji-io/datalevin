@@ -119,7 +119,8 @@
                   :where [?e :age 25]]
                 test-db)
            [2 {:name "Ivan"}]))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-find-spec-input
   (let [dir     (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))

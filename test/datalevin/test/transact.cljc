@@ -522,12 +522,13 @@
         dir2 (u/tmp-dir (str "skip-" (random-uuid)))
         es   [{:db/id -1 :company "IBM" :country "US"}
               {:db/id -2 :company "PwC" :country "Germany"}]
-        db   (d/db-with (d/empty-db dir1) es)
-        dts1 (d/datoms db :eavt)
-        db   (d/db-with (d/empty-db dir2) es)
-        dts2 (d/datoms db :eavt)]
+        db1  (d/db-with (d/empty-db dir1) es)
+        dts1 (d/datoms db1 :eavt)
+        db2  (d/db-with (d/empty-db dir2) es)
+        dts2 (d/datoms db2 :eavt)]
     (is (= dts1 dts2))
-    (d/close-db db)
+    (d/close-db db1)
+    (d/close-db db2)
     (u/delete-files dir1)
     (u/delete-files dir2)))
 

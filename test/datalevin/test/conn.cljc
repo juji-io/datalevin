@@ -133,7 +133,8 @@
         conn   (d/conn-from-db (d/init-db datoms dir schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest test-recreate-conn
   (let [schema {:name          {:db/valueType :db.type/string}

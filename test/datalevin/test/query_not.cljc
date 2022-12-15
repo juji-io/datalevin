@@ -16,7 +16,7 @@
    {:db/id 6 :name "Ivan" :age 20} ])
 
 (deftest test-not
-  (let [dir     (u/tmp-dir (str "pull-test-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-not-test-" (random-uuid)))
         test-db (d/db-with (d/empty-db dir) test-data)]
     (testing "not"
       (are [q res] (= (set (d/q (concat '[:find [?e ...] :where] (quote q)) test-db))
@@ -144,8 +144,7 @@
         "Insufficient bindings: none of #{?a} is bound in (not [?a :name \"Ivan\"])"
         ))
     (d/close-db test-db)
-    (u/delete-files dir)
-    ))
+    (u/delete-files dir)))
 
 (deftest test-default-source
   (let [dir1 (u/tmp-dir (str "or-test-" (random-uuid)))
