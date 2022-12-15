@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- [KV] clean up spill files
+
 ## 0.7.0
 ### Added
 - [Platform] embedded library support for Apple Silicon.

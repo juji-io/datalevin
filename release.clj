@@ -9,7 +9,7 @@
 
 (require '[clojure.string :as str])
 (require '[clojure.java.shell :as sh])
-(require '[clojure.java.io :as io])
+(import '[java.time LocalDate])
 
 (defn update-file [f fn]
   (print "Updating" (str f "...")) (flush)
@@ -38,7 +38,11 @@
   (println "\n\n[ Updating version number ]\n")
   (let [old-v    (current-version)
         old->new #(str/replace % old-v new-v)]
-    (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
+    (update-file "CHANGELOG.md"
+                 #(str/replace % "# WIP"
+                               (str "# " new-v "("
+                                    (.toString (LocalDate/now))
+                                    ")")))
     (update-file "project.clj" old->new)
     (update-file "test-jar/deps.edn" old->new)
     (update-file "test-jar/test-uber.sh" old->new)
