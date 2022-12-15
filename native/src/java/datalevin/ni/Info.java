@@ -9,7 +9,7 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 /**
  * Wrap a MDB_envinfo pointer
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class Info {
 
     private Lib.MDB_envinfo info;

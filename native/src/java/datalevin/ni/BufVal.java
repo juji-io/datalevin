@@ -12,7 +12,7 @@ import java.nio.ByteOrder;
 /**
  * Wrap LMDB MDB_val to look like a ByteBuffer at the Java side
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class BufVal {
 
     private ByteBuffer inBuf;

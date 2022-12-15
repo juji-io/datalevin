@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Wrap a MDB_env pointer pointer
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class Env {
 
     private boolean closed;

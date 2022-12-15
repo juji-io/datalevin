@@ -10,7 +10,7 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 /**
  * Wrap a LMDB MDB_txn pointer pointer
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class Txn {
 
     private WordPointer ptr;

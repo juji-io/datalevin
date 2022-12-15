@@ -11,7 +11,7 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 /**
  * Wrap a MDB_cursor pointer pointer
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class Cursor {
 
     private WordPointer ptr;

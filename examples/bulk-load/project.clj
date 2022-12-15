@@ -7,8 +7,7 @@
                  [org.clojure/data.json "2.4.0"]
                  [medley "1.4.0"]
                  [datalevin "0.6.29"]]
-  :profiles {:dev {;; uncomment on java 11 and above
-                   :jvm-opts
+  :profiles {:dev {:jvm-opts
                    ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
                     "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"]}}
   :repl-options {:init-ns bulk-load.core})

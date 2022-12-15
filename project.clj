@@ -11,7 +11,7 @@
    [com.fasterxml.jackson.core/jackson-core "2.14.1"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.13"]
-   [com.taoensso/encore "3.43.0"]
+   [com.taoensso/encore "3.45.0"]
    [com.taoensso/nippy "3.2.0"]
    [com.taoensso/timbre "6.0.4"]
    [joda-time/joda-time "2.12.2"]
@@ -28,10 +28,11 @@
    [org.clojars.huahaiy/dtlvnative-macos-aarch64 "0.6.5"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.6.5"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
-   [org.graalvm.sdk/graal-sdk "21.3.0"]
-   [org.graalvm.nativeimage/svm "21.3.0"]
+   [org.graalvm.sdk/graal-sdk "22.3.0"]
+   [org.graalvm.nativeimage/svm "22.3.0"]
+   [org.graalvm.nativeimage/library-support "22.3.0"]
    [org.lmdbjava/lmdbjava "0.8.2"]
-   [org.roaringbitmap/RoaringBitmap "0.9.35"]
+   [org.roaringbitmap/RoaringBitmap "0.9.36"]
    [persistent-sorted-set "0.2.3"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
@@ -67,8 +68,8 @@
                     :uberjar-name "test1.uberjar.jar"}
    :test2-uberjar  {:main         datalevin.test2
                     :uberjar-name "test2.uberjar.jar"}
-   :dev            {:main              datalevin.test0
-                    :source-paths      ["src" "test"]
+   :dev            {:main         datalevin.test0
+                    :source-paths ["src" "test"]
                     :java-source-paths ["native/src/java"]
                     :jvm-opts
                     ["-XX:+IgnoreUnrecognizedVMOptions"
@@ -89,7 +90,7 @@
                     {*print-namespace-maps* false
                      *unchecked-math*       :warn-on-boxed
                      *warn-on-reflection*   true}}}
-  :jar-exclusions [#"graal"]
+  :jar-exclusions [#"graal" #"datalevin.ni"]
   :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"

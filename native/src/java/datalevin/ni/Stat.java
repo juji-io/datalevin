@@ -9,7 +9,7 @@ import org.graalvm.nativeimage.UnmanagedMemory;
 /**
  * Wrap a MDB_stat pointer
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class Stat {
 
     private Lib.MDB_stat stat;

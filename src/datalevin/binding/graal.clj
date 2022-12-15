@@ -17,18 +17,23 @@
    [clojure.lang IPersistentVector]
    [org.graalvm.nativeimage.c CContext]
    [org.graalvm.word WordFactory]
-   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info Lib$Directives
+   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info Directives
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
-    Lib$MapFullException]))
+    Lib$MapFullException])
+  (:gen-class
+   :name ^{Retention RetentionPolicy/RUNTIME
+           CContext  {:value Directives}} datalevin.binding.graal))
 
 (defprotocol IFlag
-  (value [this flag-key]))
+  (^{Retention RetentionPolicy/RUNTIME
+     CContext  {:value Directives}}
+   value [this flag-key]))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
+           CContext  {:value Directives}}
     Flag []
   IFlag
-  (value [_ flag-key]
+  (value  [_ flag-key]
     (case flag-key
       :fixedmap   (Lib/MDB_FIXEDMAP)
       :nosubdir   (Lib/MDB_NOSUBDIR)
@@ -65,14 +70,14 @@
 (defn- kv-flags
   [flags]
   (if (seq flags)
-    (let [flag (->Flag)]
+    (let [flag (Flag.)]
       (reduce (fn [r f] (bit-or ^int r ^int f))
               0
-              (map #(value flag %) flags)))
+              (map #(value ^Flag flag %) flags)))
     (int 0)))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
+           CContext  {:value Directives}}
     Rtx [lmdb
          ^Txn txn
          ^BufVal kp
@@ -170,7 +175,7 @@
     this))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
+           CContext  {:value Directives}}
     KV [^BufVal kp ^BufVal vp]
   IKV
   (k [this] (.outBuf kp))
@@ -185,7 +190,7 @@
 (declare ->CursorIterable)
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
+           CContext  {:value Directives}}
     DBI [^Dbi db
          ^ConcurrentLinkedQueue curs
          ^BufVal kp
@@ -276,7 +281,7 @@
     (.add curs cur)))
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
+           CContext  {:value Directives}}
     CursorIterable [^Cursor cursor
                     ^DBI db
                     ^Rtx rtx
@@ -410,10 +415,10 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
-(declare ->LMDB reset-write-txn)
+(declare reset-write-txn)
 
 (deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Lib$Directives}}
+           CContext  {:value Directives}}
     LMDB [^Env env
           ^String dir
           opts
@@ -431,8 +436,8 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->LMDB env dir opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
-            write-txn true))
+    (LMDB. env dir opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
+           write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -472,7 +477,7 @@
     (let [kp  (BufVal/create key-size)
           vp  (BufVal/create val-size)
           dbi (Dbi/create env dbi-name (kv-flags flags))
-          db  (->DBI dbi (ConcurrentLinkedQueue.) kp vp validate-data?)]
+          db  (DBI. dbi (ConcurrentLinkedQueue.) kp vp validate-data?)]
       (.put dbis dbi-name db)
       db))
 
@@ -512,13 +517,13 @@
     (try
       (or (when-let [^Rtx rtx (.poll pool)]
             (.renew rtx))
-          (->Rtx this
-                 (Txn/createReadOnly env)
-                 (BufVal/create c/+max-key-size+)
-                 (BufVal/create 1)
-                 (BufVal/create c/+max-key-size+)
-                 (BufVal/create c/+max-key-size+)
-                 (volatile! false)))
+          (Rtx. this
+                (Txn/createReadOnly env)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create 1)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (volatile! false)))
       (catch Lib$BadReaderLockException _
         (raise
           "Please do not open multiple LMDB connections to the same DB
@@ -961,13 +966,13 @@
     (.clear kp-w)
     (.clear start-kp-w)
     (.clear stop-kp-w)
-    (vreset! (.-write-txn lmdb) (->Rtx lmdb
-                                       (Txn/create (.-env lmdb))
-                                       kp-w
-                                       (.-vp-w lmdb)
-                                       start-kp-w
-                                       stop-kp-w
-                                       (volatile! false)))))
+    (vreset! (.-write-txn lmdb) (Rtx. lmdb
+                                      (Txn/create (.-env lmdb))
+                                      kp-w
+                                      (.-vp-w lmdb)
+                                      start-kp-w
+                                      stop-kp-w
+                                      (volatile! false)))))
 
 (defmethod open-kv :graal
   ([dir]
@@ -984,18 +989,18 @@
                       c/+max-readers+
                       c/+max-dbs+
                       (kv-flags flags))]
-       (->LMDB env
-               dir
-               opts
-               (ConcurrentLinkedQueue.)
-               (ConcurrentHashMap.)
-               false
-               (BufVal/create c/+max-key-size+)
-               (BufVal/create 1)
-               (BufVal/create c/+max-key-size+)
-               (BufVal/create c/+max-key-size+)
-               (volatile! nil)
-               false))
+       (LMDB. env
+              dir
+              opts
+              (ConcurrentLinkedQueue.)
+              (ConcurrentHashMap.)
+              false
+              (BufVal/create c/+max-key-size+)
+              (BufVal/create 1)
+              (BufVal/create c/+max-key-size+)
+              (BufVal/create c/+max-key-size+)
+              (volatile! nil)
+              false))
      (catch Exception e
        (raise
          "Fail to open database: " (ex-message e)

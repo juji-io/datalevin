@@ -10,7 +10,7 @@ import org.graalvm.nativeimage.c.struct.SizeOf;
 /**
  * Wrap MDB_dbi
  */
-@CContext(Lib.Directives.class)
+@CContext(Directives.class)
 public class Dbi {
 
     private CIntPointer ptr;
