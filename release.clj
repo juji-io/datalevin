@@ -51,6 +51,26 @@
     (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
 
+(defn make-commit []
+  (println "\n\n[ Making a commit ]\n")
+  (sh "git" "add"
+      "CHANGELOG.md"
+      "project.clj"
+      "test-jar/deps.edn"
+      "test-jar/test-uber.sh"
+      "test-jar/project.clj"
+      "doc/install.md"
+      "doc/dtlv.md"
+      "src/datalevin/main.clj"
+      "native/project.clj"
+      "native/test-jar/deps.edn"
+      "native/README.md"
+      "README.md")
+
+  (sh "git" "commit" "-m" (str "Version " new-v))
+  (sh "git" "tag" new-v)
+  (sh "git" "push" "origin" "master"))
+
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
   (sh "./lein-test")
@@ -72,25 +92,6 @@
   (sh "./dtlv-test0" :dir "native")
   (sh "./dtlv-test1" :dir "native")
   (sh "./dtlv-test2" :dir "native"))
-
-(defn make-commit []
-  (println "\n\n[ Making a commit ]\n")
-  (sh "git" "add"
-      "CHANGELOG.md"
-      "project.clj"
-      "test-jar/deps.edn"
-      "test-jar/test-uber.sh"
-      "test-jar/project.clj"
-      "doc/dtlv.md"
-      "src/datalevin/main.clj"
-      "native/project.clj"
-      "native/test-jar/deps.edn"
-      "native/README.md"
-      "README.md")
-
-  (sh "git" "commit" "-m" (str "Version " new-v))
-  (sh "git" "tag" new-v)
-  (sh "git" "push" "origin" "master"))
 
 (defn- str->json [s]
   (-> s
