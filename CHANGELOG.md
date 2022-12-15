@@ -2,7 +2,7 @@
 
 ## WIP
 ### Added
-- [Platform] aarch64 build for Apple Silicon.
+- [Platform] embedded library support for Apple Silicon.
 - [KV] A new range function `range-seq` that has similar signature as
   `get-range`, but returns a `Seqable`, which lazily reads data items into
   memory in batches (controlled by `:batch-size` option). It should be used
@@ -12,12 +12,8 @@
   mutable, still implement `IPersistentVector`, so there is no API level
   change. The spill-to-disk behavior is controlled by `spill-opts` option map
   when opening the db, allowing `:spill-threshold` and `:spill-root` options.
-- [Datalog] Additional arity-1 version of `q` that takes `:query` and `:args`
-  in a map, which allows additional options for `:offset`, `:limit`, and
-  `:timeout`. These options are also supported in the vector form of `q`. #126
 ### Improved
 - [KV] write performance improvement
-- [Datalog] `q` and `pull` results are also lazy and spill to disk under memory pressure.
 ### Changed
 - [KV] Upgrade LMDB to 0.9.29
 
