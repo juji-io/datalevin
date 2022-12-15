@@ -13,6 +13,7 @@
    [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
    [java.nio ByteBuffer BufferOverflowException]
    [java.lang AutoCloseable]
+   [java.io File]
    [java.lang.annotation Retention RetentionPolicy]
    [clojure.lang IPersistentVector]
    [org.graalvm.nativeimage.c CContext]
@@ -972,18 +973,21 @@
 (defmethod open-kv :graal
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags]
+  ([dir {:keys [mapsize flags temp?]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}
+                flags   c/default-env-flags
+                temp?   false}
          :as   opts}]
    (try
-     (u/file dir)
-     (let [^Env env (Env/create
+
+     (let [file     (u/file dir)
+           ^Env env (Env/create
                       dir
                       (* ^long mapsize 1024 1024)
                       c/+max-readers+
                       c/+max-dbs+
                       (kv-flags flags))]
+       (when temp? (.deleteOnExit file))
        (->LMDB env
                dir
                opts

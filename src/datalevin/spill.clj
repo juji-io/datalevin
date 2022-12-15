@@ -71,7 +71,7 @@
   (spill [this]
     (let [dir (str spill-root "dtlv-spill-" (random-uuid))]
       (vreset! spill-dir dir)
-      (vreset! disk (l/open-kv dir))
+      (vreset! disk (l/open-kv dir {:temp? true}))
       (l/open-dbi @disk c/tmp-dbi {:key-size (inc Long/BYTES)}))
     this)
 

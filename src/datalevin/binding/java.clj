@@ -704,27 +704,29 @@
 (defmethod open-kv :java
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags]
+  ([dir {:keys [mapsize flags temp?]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}
+                flags   c/default-env-flags
+                temp?   false}
          :as   opts}]
    (try
-     (let [file     (u/file dir)
-           builder  (doto (Env/create)
-                      (.setMapSize (* ^long mapsize 1024 1024))
-                      (.setMaxReaders c/+max-readers+)
-                      (.setMaxDbs c/+max-dbs+))
-           ^Env env (.open builder file (kv-flags :env flags))
-           lmdb     (->LMDB env
-                            dir
-                            opts
-                            (ConcurrentLinkedQueue.)
-                            (UnifiedMap.)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (volatile! nil)
-                            false)]
+     (let [^File file (u/file dir)
+           builder    (doto (Env/create)
+                        (.setMapSize (* ^long mapsize 1024 1024))
+                        (.setMaxReaders c/+max-readers+)
+                        (.setMaxDbs c/+max-dbs+))
+           ^Env env   (.open builder file (kv-flags :env flags))
+           lmdb       (->LMDB env
+                              dir
+                              opts
+                              (ConcurrentLinkedQueue.)
+                              (UnifiedMap.)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (volatile! nil)
+                              false)]
+       (when temp? (.deleteOnExit file))
        lmdb)
      (catch Exception e
        (st/print-stack-trace e)
