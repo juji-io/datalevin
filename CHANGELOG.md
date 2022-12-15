@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.0
 ### Added
 - [Platform] embedded library support for Apple Silicon.
 - [KV] A new range function `range-seq` that has similar signature as
