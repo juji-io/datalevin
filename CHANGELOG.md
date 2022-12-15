@@ -1,6 +1,10 @@
 # Change Log
 
-## 0.7.1(2022-12-15)
+## WIP
+### Fixed
+- [KV] fix deleteOnExit
+
+## 0.7.1 (2022-12-15)
 ### Improved
 - [KV] clean up spill files
 

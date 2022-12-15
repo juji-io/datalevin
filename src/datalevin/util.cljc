@@ -71,6 +71,16 @@
       (do (io/delete-file f)
           (recur (rest fs))))))
 
+(defn delete-on-exit
+  "Recursively register file to be deleted. NB. new files in
+  a directory will prevent it from deletion."
+  [^File dir]
+  (.deleteOnExit dir)
+  (doseq [^File f (.listFiles dir)]
+    (if (.isDirectory f)
+      (delete-on-exit f)
+      (.deleteOnExit f))))
+
 (defn file-exists
   "check if a file exists"
   [fname]

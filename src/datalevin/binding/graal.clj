@@ -989,21 +989,22 @@
                       (* ^long mapsize 1024 1024)
                       c/+max-readers+
                       c/+max-dbs+
-                      (kv-flags flags))]
-       (when temp? (.deleteOnExit file))
-       (->LMDB env
-               dir
-               temp?
-               opts
-               (ConcurrentLinkedQueue.)
-               (ConcurrentHashMap.)
-               false
-               (BufVal/create c/+max-key-size+)
-               (BufVal/create 1)
-               (BufVal/create c/+max-key-size+)
-               (BufVal/create c/+max-key-size+)
-               (volatile! nil)
-               false))
+                      (kv-flags flags))
+           lmdb     (->LMDB env
+                            dir
+                            temp?
+                            opts
+                            (ConcurrentLinkedQueue.)
+                            (ConcurrentHashMap.)
+                            false
+                            (BufVal/create c/+max-key-size+)
+                            (BufVal/create 1)
+                            (BufVal/create c/+max-key-size+)
+                            (BufVal/create c/+max-key-size+)
+                            (volatile! nil)
+                            false)]
+       (when temp? (u/delete-on-exit file))
+       lmdb)
      (catch Exception e
        (raise
          "Fail to open database: " (ex-message e)

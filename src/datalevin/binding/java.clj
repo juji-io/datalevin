@@ -730,7 +730,7 @@
                               (b/allocate-buffer c/+max-key-size+)
                               (volatile! nil)
                               false)]
-       (when temp? (.deleteOnExit file))
+       (when temp? (u/delete-on-exit file))
        lmdb)
      (catch Exception e
        (st/print-stack-trace e)

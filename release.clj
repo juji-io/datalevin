@@ -40,7 +40,7 @@
         old->new #(str/replace % old-v new-v)]
     (update-file "CHANGELOG.md"
                  #(str/replace % "# WIP"
-                               (str "# " new-v "("
+                               (str "# " new-v " ("
                                     (.toString (LocalDate/now))
                                     ")")))
     (update-file "project.clj" old->new)
