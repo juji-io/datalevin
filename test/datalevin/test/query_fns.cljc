@@ -2,19 +2,21 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.util :as u]
    [datalevin.core :as d])
   #?(:clj
      (:import [clojure.lang ExceptionInfo])))
 
 (deftest test-string-fn
-  (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string}})
-               (d/db-with
-                 [{:db/id 1,
-                   :text  "The quick red fox jumped over the lazy red dogs."}
-                  {:db/id 2,
-                   :text  "Mary had a little lamb whose fleece was red as fire."}
-                  {:db/id 3,
-                   :text  "Moby Dick is a story of a whale and a man obsessed?"}]))]
+  (let [dir (u/tmp-dir (str "fns-test-" (random-uuid)))
+        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
+                (d/db-with
+                  [{:db/id 1,
+                    :text  "The quick red fox jumped over the lazy red dogs."}
+                   {:db/id 2,
+                    :text  "Mary had a little lamb whose fleece was red as fire."}
+                   {:db/id 3,
+                    :text  "Moby Dick is a story of a whale and a man obsessed?"}]))]
     (is (= (d/q '[:find ?e .
                   :in $ ?ext
                   :where
@@ -33,24 +35,29 @@
                                  :where
                                  [?e :text ?v]
                                  [(ends-with? ?v ?ext)]]
-                               db "?") 3))))
+                               db "?") 3))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-fulltext-fns
-  (let [db (-> (d/empty-db nil {:text {:db/valueType :db.type/string
-                                       :db/fulltext  true}})
-               (d/db-with
-                 [{:db/id 1,
-                   :text  "The quick red fox jumped over the lazy red dogs."}
-                  {:db/id 2,
-                   :text  "Mary had a little lamb whose fleece was red as fire."}
-                  {:db/id 3,
-                   :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+  (let [dir (u/tmp-dir (str "fns-test-" (random-uuid)))
+        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string
+                                        :db/fulltext  true}})
+                (d/db-with
+                  [{:db/id 1,
+                    :text  "The quick red fox jumped over the lazy red dogs."}
+                   {:db/id 2,
+                    :text  "Mary had a little lamb whose fleece was red as fire."}
+                   {:db/id 3,
+                    :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
     (is (= (d/q '[:find ?e ?a ?v
                   :in $ ?q
                   :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                 db "red fox")
            #{[1 :text "The quick red fox jumped over the lazy red dogs."]
-             [2 :text "Mary had a little lamb whose fleece was red as fire."]}))))
+             [2 :text "Mary had a little lamb whose fleece was red as fire."]}))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-query-fns
   (testing "predicate without free variables"
@@ -59,10 +66,11 @@
                   :where [(> 2 1)]] [:a :b :c])
            #{[:a] [:b] [:c]})))
 
-  (let [db (-> (d/empty-db nil {:parent {:db/valueType :db.type/ref}})
-               (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
-                           { :db/id 2, :name "Petr", :age 22, :height 240, :parent 1}
-                           { :db/id 3, :name "Slava", :age 37, :parent 2}]))]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (-> (d/empty-db dir {:parent {:db/valueType :db.type/ref}})
+                (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
+                            { :db/id 2, :name "Petr", :age 22, :height 240, :parent 1}
+                            { :db/id 3, :name "Slava", :age 37, :parent 2}]))]
     (testing "ground"
       (is (= (d/q '[:find ?vowel
                     :where [(ground [:a :e :i :o :u]) [?vowel ...]]])
@@ -238,15 +246,16 @@
                     :where [(ground ?in) _]]
                   [])
              #{})))
-    (d/close-db db)))
-
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-predicates
   (let [entities [{:db/id 1 :name "Ivan" :age 10}
                   {:db/id 2 :name "Ivan" :age 20}
                   {:db/id 3 :name "Oleg" :age 10}
                   {:db/id 4 :name "Oleg" :age 20}]
-        db       (d/db-with (d/empty-db) entities)]
+        dir      (u/tmp-dir (str "query-or-" (random-uuid)))
+        db       (d/db-with (d/empty-db dir) entities)]
     (are [q res] (= (d/q (quote q) db) res)
       ;; plain predicate
       [:find  ?e ?a
@@ -296,47 +305,57 @@
                     [(?pred $ ?e 10)]]
                   db pred)
              #{[1] [3]})))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 
 (deftest test-exceptions
-  (is (thrown-with-msg? ExceptionInfo #"Unknown predicate 'fun in \[\(fun \?e\)\]"
+  (is (thrown-with-msg? ExceptionInfo
+                        #"Unknown predicate 'fun in \[\(fun \?e\)\]"
                         (d/q '[:find ?e
                                :in   [?e ...]
                                :where [(fun ?e)]]
                              [1])))
 
-  (is (thrown-with-msg? ExceptionInfo #"Unknown function 'fun in \[\(fun \?e\) \?x\]"
+  (is (thrown-with-msg? ExceptionInfo
+                        #"Unknown function 'fun in \[\(fun \?e\) \?x\]"
                         (d/q '[:find ?e ?x
                                :in   [?e ...]
                                :where [(fun ?e) ?x]]
                              [1])))
 
-  ;; (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(zero? ?x)]"
-  ;;                  (d/q '[:find ?x
-  ;;                         :where [(zero? ?x)]])))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"Insufficient bindings"
+                        (d/q '[:find ?x
+                               :where [(zero? ?x)]])))
 
-  ;; (is (thrown-msg? "Insufficient bindings: #{?x} not bound in [(inc ?x) ?y]"
-  ;;                  (d/q '[:find ?x
-  ;;                         :where [(inc ?x) ?y]])))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"Insufficient bindings"
+                        (d/q '[:find ?x
+                               :where [(inc ?x) ?y]])))
 
-  ;; (is (thrown-msg? "Where uses unknown source vars: [$2]"
-  ;;                  (d/q '[:find ?x
-  ;;                         :where [?x] [(zero? $2 ?x)]])))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"Where uses unknown source vars:"
+                        (d/q '[:find ?x
+                               :where [?x] [(zero? $2 ?x)]])))
 
-  ;; (is (thrown-msg? "Where uses unknown source vars: [$]"
-  ;;                  (d/q '[:find  ?x
-  ;;                         :in    $2
-  ;;                         :where [$2 ?x] [(zero? $ ?x)]])))
-  )
+  (is (thrown-with-msg? ExceptionInfo
+                        #"Where uses unknown source vars:"
+                        (d/q '[:find  ?x
+                               :in    $2
+                               :where [$2 ?x] [(zero? $ ?x)]]))))
 
 (deftest test-issue-180
-  (is (= #{}
-         (d/q '[:find ?e ?a
-                :where [_ :pred ?pred]
-                [?e :age ?a]
-                [(?pred ?a)]]
-              (d/db-with (d/empty-db) [[:db/add 1 :age 20]])))))
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/empty-db dir)]
+    (is (= #{}
+           (d/q '[:find ?e ?a
+                  :where [_ :pred ?pred]
+                  [?e :age ?a]
+                  [(?pred ?a)]]
+                (d/db-with db [[:db/add 1 :age 20]]))))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (defn sample-query-fn [] 42)
 

@@ -2,6 +2,7 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
       :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.util :as u]
    [datalevin.core :as d]))
 
 (def test-schema
@@ -59,7 +60,8 @@
     (map #(apply d/datom %))))
 
 (deftest test-pull-attr-spec
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "pull-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
            (d/pull test-db '[:name :aka] 1)))
 
@@ -69,10 +71,12 @@
     (is (= [{:name "Petr"} {:name "Elizabeth"}
             {:name "Eunan"} {:name "Rebecca"}]
            (d/pull-many test-db '[:name] [1 5 7 9])))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-reverse-attr-spec
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "pull-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "David" :_child [{:db/id 1}]}
            (d/pull test-db '[:name :_child] 2)))
 
@@ -91,10 +95,12 @@
 
       (is (= {:name "Petr" :_father [{:name "David"} {:name "Thomas"}]}
              (d/pull test-db '[:name {:_father [:name]}] 1))))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-component-attr
-  (let [test-db (d/init-db test-datoms nil test-schema)
+  (let [dir1    (u/tmp-dir (str "pull-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir1 test-schema)
         parts   {:name "Part A",
                  :part
                  [{:db/id 11
@@ -115,16 +121,10 @@
                       {:db/id 18 :name "Part A.B.A.B"}]}]}]}
         rpart   (update-in parts [:part 0 :part 0 :part]
                            (partial into [{:db/id 10}]))
+        dir2    (u/tmp-dir (str "pull-or-" (random-uuid)))
         recdb   (d/init-db
                   (concat test-datoms [(d/datom 12 :part 10)])
-                  nil
-                  test-schema)
-        _       (d/init-db
-                  (concat test-datoms [(d/datom 12 :part 10)
-                                       (d/datom 12 :spec 10)
-                                       (d/datom 10 :spec 13)
-                                       (d/datom 13 :spec 12)])
-                  nil
+                  dir2
                   test-schema)]
 
     (testing "Component entities are expanded recursively"
@@ -140,30 +140,35 @@
     (testing "Like explicit recursion, expansion will not allow loops"
       (is (= rpart (d/pull recdb '[:name :part] 10))))
     (d/close-db test-db)
-    (d/close-db recdb)))
+    (d/close-db recdb)
+    (u/delete-files dir1)
+    (u/delete-files dir2)))
 
 (deftest test-pull-wildcard
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "pull-wild-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"]
             :child [{:db/id 2} {:db/id 3}]}
            (d/pull test-db '[*] 1)))
 
     (is (= {:db/id 2 :name "David" :_child [{:db/id 1}] :father {:db/id 1}}
            (d/pull test-db '[* :_child] 2)))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-limit
-  (let [db (d/init-db
-             (concat
-               test-datoms
-               [(d/datom 4 :friend 5)
-                (d/datom 4 :friend 6)
-                (d/datom 4 :friend 7)
-                (d/datom 4 :friend 8)]
-               (for [idx (range 2000)]
-                 (d/datom 8 :aka (str "aka-" idx))))
-             nil
-             test-schema)]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/init-db
+              (concat
+                test-datoms
+                [(d/datom 4 :friend 5)
+                 (d/datom 4 :friend 6)
+                 (d/datom 4 :friend 7)
+                 (d/datom 4 :friend 8)]
+                (for [idx (range 2000)]
+                  (d/datom 8 :aka (str "aka-" idx))))
+              dir
+              test-schema)]
 
     (testing "Without an explicit limit, the default is 1000"
       (is (= 1000 (->> (d/pull db '[:aka] 8) :aka count))))
@@ -182,10 +187,12 @@
       (is (= {:name   "Lucy"
               :friend [{:name "Elizabeth"} {:name "Matthew"}]}
              (d/pull db '[:name {(limit :friend 2) [:name]}] 4))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-pull-default
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (testing "Empty results return nil"
       (is (nil? (d/pull test-db '[:foo] 1))))
 
@@ -194,22 +201,28 @@
              (d/pull test-db '[(default :foo "bar")] 1)))
       (is (= {:foo "bar"}
              (d/pull test-db '[[:foo :default "bar"]] 1))))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-as
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {"Name" "Petr", :alias ["Devil" "Tupen"]}
            (d/pull test-db '[[:name :as "Name"] [:aka :as :alias]] 1)))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-attr-with-opts
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {"Name" "Nothing"}
            (d/pull test-db '[[:x :as "Name" :default "Nothing"]] 1)))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-map
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (testing "Single attrs yield a map"
       (is (= {:name "Matthew" :father {:name "Thomas"}}
              (d/pull test-db '[:name {:father [:name]}] 6))))
@@ -234,10 +247,12 @@
 
         (is (= parts
                (d/pull test-db '[:name {:part 1}] 10)))))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-recursion
-  (let [test-db (d/init-db test-datoms nil test-schema)
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)
         db      (-> test-db
                     (d/db-with [[:db/add 4 :friend 5]
                                 [:db/add 5 :friend 6]
@@ -296,10 +311,12 @@
         (is (= (update-in friends (take 8 (cycle [:friend 0]))
                           assoc :friend [{:db/id 4 :name "Lucy" :friend [{:db/id 5}]}])
                (d/pull db '[:db/id :name {:friend ...}] 4)))))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-dual-recursion
-  (let [empty (d/empty-db nil {:part { :db/valueType :db.type/ref }
+  (let [dir   (u/tmp-dir (str "query-or-" (random-uuid)))
+        empty (d/empty-db dir {:part { :db/valueType :db.type/ref }
                                :spec { :db/valueType :db.type/ref }})
         db    (d/db-with empty [[:db/add 1 :part 2]
                                 [:db/add 2 :part 3]
@@ -321,7 +338,8 @@
                             :part  {:db/id 1,
                                     :spec  {:db/id 2},
                                     :part  {:db/id 2}}}}}))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-deep-recursion
   (let [start  100
@@ -331,11 +349,12 @@
                    [(d/datom idx :name (str "Person-" idx))
                     (d/datom (dec idx) :friend idx)])
                  (range (inc start) depth))
+        dir    (u/tmp-dir (str "query-or-" (random-uuid)))
         db     (d/init-db (concat
                             test-datoms
                             [(d/datom start :name (str "Person-" start))]
                             txd)
-                          nil
+                          dir
                           test-schema)
         pulled (d/pull db '[:name {:friend ...}] start)
         path   (->> [:friend 0]
@@ -343,4 +362,5 @@
                     (into [] cat))]
     (is (= (str "Person-" (dec depth))
            (:name (get-in pulled path))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))

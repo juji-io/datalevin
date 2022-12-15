@@ -1,12 +1,11 @@
 (ns datalevin.test.db
   (:require
-    [clojure.data]
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.util #?@(:cljs [:refer-macros [defrecord-updatable]]
-                             :clj  [:refer [defrecord-updatable]])]))
+   [clojure.data]
+   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.core :as d]
+   [datalevin.util #?@(:cljs [:refer-macros [defrecord-updatable]]
+                       :clj  [:refer [defrecord-updatable]])]))
 
 ;;
 ;; verify that defrecord-updatable works with compiler/core macro configuration
@@ -19,8 +18,6 @@
 
 (deftest test-defrecord-updatable
   (is (= 0xBEEF (-> (map->HashBeef {:x :ignored}) hash))))
-
-
 
 (defn- now []
   #?(:clj  (System/currentTimeMillis)

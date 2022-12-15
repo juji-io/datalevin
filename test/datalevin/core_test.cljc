@@ -2,8 +2,7 @@
   (:require [datalevin.core :as sut]
             [datalevin.util :as u]
             #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-               :clj  [clojure.test :as t :refer [is are deftest testing]])
-            [datalevin.core :as d])
+               :clj  [clojure.test :as t :refer [is are deftest testing]]))
   (:import [java.util UUID Arrays]
            [java.lang Thread]))
 
@@ -497,7 +496,7 @@
 
 (deftest with-txn-map-resize-test
   (let [dir    (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
-        conn   (d/create-conn dir nil {:kv-opts {:mapsize 1}})
+        conn   (sut/create-conn dir nil {:kv-opts {:mapsize 1}})
         query1 '[:find ?d .
                  :in $ ?e
                  :where [?e :content ?d]]
@@ -507,15 +506,15 @@
         prior  "prior data"
         big    "bigger than 1MB"]
 
-    (d/with-transaction [cn conn]
-      (d/transact! cn [{:content prior}])
-      (is (= prior (d/q query1 @cn 1)))
-      (d/transact! cn [{:description big
-                        :numbers     (range 1000000)}])
-      (is (= big (d/q query2 @cn 2))))
+    (sut/with-transaction [cn conn]
+      (sut/transact! cn [{:content prior}])
+      (is (= prior (sut/q query1 @cn 1)))
+      (sut/transact! cn [{:description big
+                          :numbers     (range 1000000)}])
+      (is (= big (sut/q query2 @cn 2))))
 
-    (is (= prior (d/q query1 @conn 1)))
-    (is (= big (d/q query2 @conn 2)))
+    (is (= prior (sut/q query1 @conn 1)))
+    (is (= big (sut/q query2 @conn 2)))
 
-    (d/close conn)
+    (sut/close conn)
     (u/delete-files dir)))

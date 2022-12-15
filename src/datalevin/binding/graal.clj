@@ -417,6 +417,7 @@
            CContext  {:value Lib$Directives}}
     LMDB [^Env env
           ^String dir
+          temp?
           opts
           ^ConcurrentLinkedQueue pool
           ^ConcurrentHashMap dbis
@@ -432,8 +433,9 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->LMDB env dir opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
-            write-txn true))
+    (->LMDB
+      env dir temp? opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
+      write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -453,6 +455,7 @@
       (when-not (.isClosed env) (.sync env))
       (.close env)
       (set! closed? true)
+      (when temp? (u/delete-files dir))
       nil))
 
   (closed-kv? [_] closed?)
@@ -990,6 +993,7 @@
        (when temp? (.deleteOnExit file))
        (->LMDB env
                dir
+               temp?
                opts
                (ConcurrentLinkedQueue.)
                (ConcurrentHashMap.)

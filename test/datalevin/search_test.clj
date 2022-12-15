@@ -48,7 +48,8 @@
     (u/delete-files dir)))
 
 (deftest index-test
-  (let [lmdb   (l/open-kv (u/tmp-dir (str "index-" (UUID/randomUUID))))
+  (let [dir    (u/tmp-dir (str "index-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
         engine ^SearchEngine (sut/new-search-engine lmdb)]
 
     (is (= (sut/doc-count engine) 0))
@@ -118,10 +119,12 @@
 
       (sut/clear-docs engine)
       (is (= (sut/doc-count engine) 0)))
-    (l/close-kv lmdb)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest search-test
-  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-" (UUID/randomUUID))))
+  (let [dir    (u/tmp-dir (str "search-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
         engine ^SearchEngine (sut/new-search-engine lmdb)]
     (add-docs sut/add-doc engine)
 
@@ -149,10 +152,12 @@
     (is (empty? (sut/search engine "solar wind")))
     (is (= (sut/search engine "solar cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
-    (l/close-kv lmdb)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest search-143-test
-  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-143-" (UUID/randomUUID))))
+  (let [dir    (u/tmp-dir (str "search-143-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
         engine ^SearchEngine (sut/new-search-engine lmdb)]
 
     (sut/add-doc engine 1 "a tent")
@@ -191,10 +196,12 @@
       )
 
     (is (= (sut/search engine "tent") [2 1]))
-    (l/close-kv lmdb)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest multi-domains-test
-  (let [lmdb    (l/open-kv (u/tmp-dir (str "search-multi" (UUID/randomUUID))))
+  (let [dir     (u/tmp-dir (str "search-multi" (UUID/randomUUID)))
+        lmdb    (l/open-kv dir)
         engine1 ^SearchEngine (sut/new-search-engine lmdb)
         engine2 ^SearchEngine (sut/new-search-engine lmdb {:domain "another"})]
     (sut/add-doc engine1 1 "hello world")
@@ -206,10 +213,12 @@
     (is (empty? (sut/search engine2 "solar")))
     (is (= (sut/search engine1 "red") [2]))
     (is (= (sut/search engine2 "red") [:doc1 :doc4 :doc2 :doc5]))
-    (l/close-kv lmdb)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest index-writer-test
-  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-" (UUID/randomUUID))))
+  (let [dir    (u/tmp-dir (str "writer-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
         writer ^IndexWriter (sut/search-index-writer lmdb)]
     (add-docs sut/write writer)
     (sut/commit writer)
@@ -217,10 +226,12 @@
     (let [engine (sut/new-search-engine lmdb)]
       (is (= (sut/search engine "cap" {:display :offsets})
              [[:doc4 [["cap" [51]]]]])))
-    (l/close-kv lmdb)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest search-kv-test
-  (let [lmdb   (l/open-kv (u/tmp-dir (str "search-kv-" (UUID/randomUUID))))
+  (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
         engine (sut/new-search-engine lmdb)]
     (l/open-dbi lmdb "raw")
     (l/transact-kv
@@ -260,7 +271,8 @@
                    "do you know the game truth or dare <p>What's your biggest fear? I want to see if you could tell me the truth :-)")
       (is (= (sut/search engine "truth" ) [4])))
 
-    (l/close-kv lmdb)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 (deftest fulltext-fns-test
   (let [analyzer (i/inter-fn
@@ -268,8 +280,8 @@
                    (map-indexed (fn [i ^String t]
                                   [t i (.indexOf text t)])
                                 (s/split text #"\s")))
-        conn     (d/create-conn (u/tmp-dir (str "fulltext-fns-"
-                                                (UUID/randomUUID)))
+        dir      (u/tmp-dir (str "fulltext-fns-" (UUID/randomUUID)))
+        conn     (d/create-conn dir
                                 {:a/id     {:db/valueType :db.type/long
                                             :db/unique    :db.unique/identity
                                             }
@@ -294,4 +306,5 @@
     (is (= (d/datom-v
              (first (d/fulltext-datoms (d/db conn) "brown fox")))
            s))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))

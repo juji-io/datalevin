@@ -2,13 +2,15 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest]]
       :clj  [clojure.test :as t :refer        [is are deftest]])
+   [datalevin.util :as u]
    [datalevin.core :as d]))
 
 #?(:cljs
    (def Throwable js/Error))
 
 (deftest test-with-validation
-  (let [db (d/empty-db nil {:profile { :db/valueType :db.type/ref }})]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/empty-db dir {:profile { :db/valueType :db.type/ref }})]
     (are [tx] (thrown-with-msg? Throwable #"Expected number, string or lookup ref for :db/id" (d/db-with db tx))
       [{:db/id #"" :name "Ivan"}])
 
@@ -31,15 +33,19 @@
     (is (thrown-with-msg? Throwable #"Bad entity type at" (d/db-with db [:db/add "aaa" :name "Ivan"])))
     (is (thrown-with-msg? Throwable #"Tempids are allowed in :db/add only" (d/db-with db [[:db/retract -1 :name "Ivan"]])))
     (is (thrown-with-msg? Throwable #"Bad transaction data" (d/db-with db {:profile "aaa"})))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-unique
-  (let [db (d/db-with (d/empty-db nil {:name { :db/unique :db.unique/value }})
-                      [[:db/add 1 :name "Ivan"]
-                       [:db/add 2 :name "Petr"]])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name { :db/unique :db.unique/value }})
+              [[:db/add 1 :name "Ivan"]
+               [:db/add 2 :name "Petr"]])]
     (are [tx] (thrown-with-msg? Throwable #"unique constraint" (d/db-with db tx))
       [[:db/add 3 :name "Ivan"]]
       [{:db/add 3 :name "Petr"}])
     (d/db-with db [[:db/add 3 :name "Igor"]])
     (d/db-with db [[:db/add 3 :nick "Ivan"]])
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))

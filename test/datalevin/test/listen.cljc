@@ -1,15 +1,15 @@
 (ns datalevin.test.listen
   (:require
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.datom :as dd]
-    [datalevin.constants :refer [tx0]]
-    [datalevin.test.core :as tdc]))
+   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.core :as d]
+   [datalevin.datom :as dd]
+   [datalevin.util :as u]
+   [datalevin.constants :refer [tx0]]))
 
 (deftest test-listen!
-  (let [conn    (d/create-conn)
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        conn    (d/create-conn dir)
         reports (atom [])]
     (d/transact! conn [[:db/add -1 :name "Alex"]
                        [:db/add -2 :name "Boris"]])
@@ -37,4 +37,5 @@
             (dd/datom 4 :name "Evgeny" (+ tx0 3) false)]))
     (is (= (:tx-meta (second @reports))
            nil))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))

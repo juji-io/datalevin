@@ -275,6 +275,7 @@
 
 (deftype LMDB [^Env env
                ^String dir
+               temp?
                opts
                ^ConcurrentLinkedQueue pool
                ^UnifiedMap dbis
@@ -287,7 +288,8 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->LMDB env dir opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
+    (->LMDB
+      env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -299,6 +301,7 @@
           (recur iter)))
       (.sync env true)
       (.close env))
+    (when temp? (u/delete-files dir))
     nil)
 
   (closed-kv? [_] (.isClosed env))
@@ -718,6 +721,7 @@
            ^Env env   (.open builder file (kv-flags :env flags))
            lmdb       (->LMDB env
                               dir
+                              temp?
                               opts
                               (ConcurrentLinkedQueue.)
                               (UnifiedMap.)

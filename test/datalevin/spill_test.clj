@@ -2,17 +2,9 @@
   (:require
    [datalevin.lmdb :as l]
    [datalevin.spill :as sp]
-   [datalevin.interpret :as i]
    [datalevin.util :as u]
-   [datalevin.core :as dc]
-   [datalevin.constants :as c]
-   [datalevin.datom :as d]
-   [clojure.test :refer [deftest testing is]]
-   [clojure.test.check.generators :as gen]
-   [clojure.test.check.clojure-test :as test]
-   [clojure.test.check.properties :as prop])
+   [clojure.test :refer [deftest testing is]])
   (:import
-   [clojure.lang ISeq IPersistentVector]
    [datalevin.spill SpillableVector]))
 
 (if (u/graal?)

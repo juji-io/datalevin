@@ -5,9 +5,7 @@
             [datalevin.util :as u]
             [clojure.test :refer [deftest testing is]])
   (:import [java.util UUID HashMap]
-           [java.lang Long AutoCloseable]
-           [clojure.lang ISeq]
-           ))
+           [java.lang Long AutoCloseable]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)

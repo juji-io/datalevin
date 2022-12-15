@@ -3,12 +3,12 @@
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    [datalevin.core :as d]
-   [datalevin.db :as db]
-   [datalevin.test.core :as tdc]))
+   [datalevin.util :as u]))
 
 (deftest test-find-specs
-  (let [test-db (d/db-with
-                  (d/empty-db)
+  (let [dir     (u/tmp-dir (str "find-test-" (random-uuid)))
+        test-db (d/db-with
+                  (d/empty-db dir)
                   [[:db/add 1 :name "Petr"]
                    [:db/add 1 :age 44]
                    [:db/add 2 :name "Ivan"]
@@ -47,4 +47,5 @@
       (is (= (d/q '[:find (count ?name) .
                     :where [_ :name ?name]] test-db)
              3)))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))

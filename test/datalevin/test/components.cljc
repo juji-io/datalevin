@@ -4,6 +4,7 @@
    #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
       :clj  [clojure.test :as t :refer        [is deftest testing]])
    [datalevin.core :as d]
+   [datalevin.util :as u]
    [datalevin.test.core :as tdc]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
@@ -17,8 +18,9 @@
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
                    (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
-  (let [db      (d/db-with
-                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        db      (d/db-with
+                  (d/empty-db dir {:profile {:db/valueType   :db.type/ref
                                              :db/isComponent true}})
                   [{:db/id 1 :name "Ivan" :profile 3}
                    {:db/id 3 :email "@3"}
@@ -50,7 +52,8 @@
       (let [db (d/db-with db [[:db.fn/retractAttribute 1 :profile]])]
         (is (= (d/q '[:find ?a ?v :where [3 ?a ?v]] db)
                #{}))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 
 (deftest test-components-2
@@ -59,8 +62,9 @@
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
                    (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
-  (let [db      (d/db-with
-                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        db      (d/db-with
+                  (d/empty-db dir {:profile {:db/valueType   :db.type/ref
                                              :db/isComponent true}})
                   [{:db/id 1 :name "Ivan" :profile 3}
                    {:db/id 3 :email "@3"}
@@ -71,13 +75,16 @@
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
              {:db/id 1})))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-components-multival-1
-  (let [db      (d/db-with
-                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
-                                             :db/cardinality :db.cardinality/many
-                                             :db/isComponent true}})
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        db      (d/db-with
+                  (d/empty-db
+                    dir {:profile {:db/valueType   :db.type/ref
+                                   :db/cardinality :db.cardinality/many
+                                   :db/isComponent true}})
                   [{:db/id 1 :name "Ivan" :profile [3 4]}
                    {:db/id 3 :email "@3"}
                    {:db/id 4 :email "@4"}])
@@ -100,13 +107,16 @@
       (let [db (d/db-with db [[:db.fn/retractAttribute 1 :profile]])]
         (is (= (d/q '[:find ?a ?v :in $ [?e ...] :where [?e ?a ?v]] db [3 4])
                #{}))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-components-multival-2
-  (let [db      (d/db-with
-                  (d/empty-db nil {:profile {:db/valueType   :db.type/ref
-                                             :db/cardinality :db.cardinality/many
-                                             :db/isComponent true}})
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        db      (d/db-with
+                  (d/empty-db
+                    dir {:profile {:db/valueType   :db.type/ref
+                                   :db/cardinality :db.cardinality/many
+                                   :db/isComponent true}})
                   [{:db/id 1 :name "Ivan" :profile [3 4]}
                    {:db/id 3 :email "@3"}
                    {:db/id 4 :email "@4"}])
@@ -116,4 +126,5 @@
     (testing "reverse navigation"
       (is (= (visible (:_profile (d/entity db 3)))
              {:db/id 1})))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
