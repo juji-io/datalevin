@@ -69,7 +69,9 @@
 
   (println "\n\n[ Testing native jar ]\n")
   (sh "script/compile" :dir "native")
-  (sh "./dtlv-test" :dir "native"))
+  (sh "./dtlv-test0" :dir "native"))
+  (sh "./dtlv-test1" :dir "native"))
+  (sh "./dtlv-test2" :dir "native") 
 
 (defn make-commit []
   (println "\n\n[ Making a commit ]\n")
