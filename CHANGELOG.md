@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.1(2022-12-15)
 ### Improved
 - [KV] clean up spill files
 
