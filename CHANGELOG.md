@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.2 (2022-12-15)
 ### Fixed
 - [KV] fix deleteOnExit
 
