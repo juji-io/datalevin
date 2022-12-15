@@ -21,10 +21,7 @@
    [datalevin.db DB]
    [datalevin.datom Datom]
    [datalevin.remote DatalogStore KVStore]
-   [java.util UUID]
-   [java.time LocalDate]))
-
-(println (.toString (LocalDate/now)))
+   [java.util UUID]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
