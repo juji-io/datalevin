@@ -4,11 +4,14 @@
             [datalevin.core :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
-            [clojure.test :refer [is deftest testing]])
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID]
            [java.nio.channels SocketChannel]
            [java.net Socket]
            [datalevin.client Client ConnectionPool Connection]))
+
+(use-fixtures :each db-fixture)
 
 (deftest password-test
   (let [s  (sut/salt)

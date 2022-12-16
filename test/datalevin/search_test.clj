@@ -6,10 +6,13 @@
             [datalevin.sparselist :as sl]
             [datalevin.util :as u]
             [clojure.string :as s]
-            [clojure.test :refer [is deftest testing]])
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID ]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.search SearchEngine IndexWriter]))
+
+(use-fixtures :each db-fixture)
 
 (deftest english-analyzer-test
   (let [s1 "This is a Datalevin-Analyzers test"

@@ -1,12 +1,14 @@
 (ns datalevin.test.conn
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest]]
-      :clj  [clojure.test :as t :refer        [is deftest]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.db :as db]
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import [java.util Date UUID]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-close
   (let [dir  (u/tmp-dir (str "test-" (random-uuid)))

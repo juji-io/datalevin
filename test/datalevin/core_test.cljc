@@ -1,10 +1,15 @@
 (ns datalevin.core-test
-  (:require [datalevin.core :as sut]
-            [datalevin.util :as u]
-            #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-               :clj  [clojure.test :as t :refer [is are deftest testing]]))
-  (:import [java.util UUID Arrays]
-           [java.lang Thread]))
+  (:require
+   [datalevin.core :as sut]
+   [datalevin.util :as u]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer [is deftest testing use-fixtures]]))
+  (:import
+   [java.util UUID Arrays]
+   [java.lang Thread]))
+
+(use-fixtures :each db-fixture)
 
 (deftest basic-ops-test
   (let [schema

@@ -1,13 +1,14 @@
 (ns datalevin.test.query
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.util :as u]
-   )
+   [datalevin.util :as u])
   #?(:clj
      (:import [clojure.lang ExceptionInfo]
               [java.util UUID])))
+
+(use-fixtures :each db-fixture)
 
 ;; #94
 (deftest test-instant

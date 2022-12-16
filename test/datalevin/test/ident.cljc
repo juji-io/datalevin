@@ -1,8 +1,11 @@
 (ns datalevin.test.ident
   (:require
-   [clojure.test :as t :refer [is deftest]]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.util :as u]
    [datalevin.core :as d]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-q
   (let [dir (u/tmp-dir (str "q-test-" (random-uuid)))

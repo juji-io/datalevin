@@ -1,9 +1,11 @@
 (ns datalevin.test.pull-api
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.util :as u]
    [datalevin.core :as d]))
+
+(use-fixtures :each db-fixture)
 
 (def test-schema
   {:aka    { :db/cardinality :db.cardinality/many }

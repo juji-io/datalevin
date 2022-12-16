@@ -1,4 +1,5 @@
 (ns datalevin.test1
+  "tests for remote operations"
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
@@ -8,7 +9,12 @@
    datalevin.remote-withtxnkv-test
    datalevin.remote-search-test
    datalevin.remote-sutil-test
-   datalevin.remote-kv-test)
+   datalevin.remote-kv-test
+   datalevin.remote-test
+   datalevin.remote-dl-test
+   datalevin.remote-withtxn-test
+   datalevin.remote-entity-test
+   datalevin.remote-transact-test)
   (:gen-class))
 
 (defn ^:export test-clj []
@@ -19,7 +25,12 @@
           'datalevin.remote-kv-test
           'datalevin.remote-withtxnkv-test
           'datalevin.remote-search-test
-          'datalevin.remote-sutil-test)]
+          'datalevin.remote-sutil-test
+          'datalevin.remote-test
+          'datalevin.remote-dl-test
+          'datalevin.remote-withtxn-test
+          'datalevin.remote-entity-test
+          'datalevin.remote-transact-test)]
     (System/exit (if (zero? (+ fail error)) 0 1))))
 
 (defn ^:export test-cljs []

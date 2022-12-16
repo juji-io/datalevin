@@ -3,13 +3,16 @@
             [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
-            [clojure.test :refer [deftest testing is]])
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID HashMap]
            [java.lang Long AutoCloseable]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
+
+(use-fixtures :each db-fixture)
 
 (deftest get-first-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))

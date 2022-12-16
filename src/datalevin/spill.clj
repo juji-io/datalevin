@@ -23,9 +23,10 @@
 (defn- set-memory-pressure []
   (let [fm (.freeMemory runtime)
         tm (.totalMemory runtime)
-        mm (.maxMemory runtime)]
-    ;; (println "used" (int (/ (- tm fm) (* 1024 1024))))
-    (vreset! memory-pressure (int (/ (- tm fm) mm)))))
+        mm (.maxMemory runtime)
+        pr (int (/ (- tm fm) mm))]
+    ;; (println "used" pr "% of" (int (/ mm (* 1024 1024))))
+    (vreset! memory-pressure pr)))
 
 (defonce listeners (volatile! {}))
 
@@ -86,6 +87,7 @@
     this)
 
   (cons [this v]
+    ;; (println "pr" @memory-pressure)
     (if (and (nil? @disk) (< ^long @memory-pressure spill-threshold))
       (.add memory v)
       (do (when (nil? @disk) (spill this))

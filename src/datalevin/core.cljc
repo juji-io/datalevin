@@ -944,7 +944,7 @@ Only usable for debug output.
   * `:temp?` a boolean, indicating if this db is temporary, if so, the file will be deleted on JVM exit.
   * `:client-opts` is the option map passed to the client if `dir` is a remote server URI string.
   * `:spill-opts` is the option map that controls the spill-to-disk behavior for `get-range` and `range-filter` functions, which may have the following keys:
-      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx` (default 70), above which spill-to-disk will be triggered.
+      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx` (default 80), above which spill-to-disk will be triggered.
       - `:spill-root`, a file directory, in which the spilled data is written (default is the system temporary directory).
 
 

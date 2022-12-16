@@ -65,8 +65,6 @@
                     :uberjar-name "test0.uberjar.jar"}
    :test1-uberjar  {:main         datalevin.test1
                     :uberjar-name "test1.uberjar.jar"}
-   :test2-uberjar  {:main         datalevin.test2
-                    :uberjar-name "test2.uberjar.jar"}
    :dev            {:main              datalevin.test0
                     :source-paths      ["src" "test"]
                     :java-source-paths ["native/src/java"]

@@ -1,9 +1,11 @@
 (ns datalevin.test.validation
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest]]
-      :clj  [clojure.test :as t :refer        [is are deftest]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.util :as u]
    [datalevin.core :as d]))
+
+(use-fixtures :each db-fixture)
 
 #?(:cljs
    (def Throwable js/Error))

@@ -1,13 +1,14 @@
 (ns datalevin.test.transact
   (:require
-   #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.interpret :as i]
    [datalevin.util :as u]
-   [datalevin.constants :as c :refer [tx0]]
-   [datalevin.test.core :as tdc])
+   [datalevin.constants :as c :refer [tx0]])
   (:import [java.util UUID]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-auto-update-entity-time
   (let [dir  (u/tmp-dir (str "auto-entity-time-" (random-uuid)))

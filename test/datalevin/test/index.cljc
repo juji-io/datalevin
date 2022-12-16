@@ -1,9 +1,11 @@
 (ns datalevin.test.index
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.util :as u]
    [datalevin.core :as d]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-datoms
   (let [dir  (u/tmp-dir (str "reset-test-" (random-uuid)))

@@ -1,11 +1,13 @@
 (ns datalevin.test.query-not
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.util :as u])
   #?(:clj
      (:import [clojure.lang ExceptionInfo])))
+
+(use-fixtures :each db-fixture)
 
 (def test-data
   [ {:db/id 1 :name "Ivan" :age 10}

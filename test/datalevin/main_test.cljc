@@ -4,13 +4,13 @@
             [datalevin.core :as d]
             [datalevin.interpret :as i]
             [datalevin.lmdb :as l]
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.test.check.generators :as gen]
-            [clojure.string :as s]
-            #?(:clj [clojure.test :refer [is deftest]]
-               :cljs [cljs.test :as t :include-macros true])
-            [clojure.java.io :as io])
-  (:import [java.util UUID Date Arrays]
-           [java.io ByteArrayInputStream]))
+            [clojure.string :as s])
+  (:import [java.util UUID Date Arrays]))
+
+(use-fixtures :each db-fixture)
 
 (deftest command-line-args-test
   (let [r (sut/validate-args ["-V"])]

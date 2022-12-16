@@ -2,9 +2,11 @@
   (:require [datalevin.util :as u]
             [datalevin.interpret :as i]
             [babashka.pods :as pods]
-            [clojure.test :refer [deftest is testing]]
-            [datalevin.core :as d])
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID Date]))
+
+(use-fixtures :each db-fixture)
 
 ;; TODO uberjar build hangs if this ns is included
 ;; not include this in native test for now

@@ -3,6 +3,7 @@
    [datalevin.lmdb :as l]
    [datalevin.spill :as sp]
    [datalevin.util :as u]
+   [datalevin.constants :as c]
    [clojure.test :refer [deftest testing is]])
   (:import
    [datalevin.spill SpillableVector]))
@@ -10,8 +11,6 @@
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
-
-(sp/uninstall-memory-updater)
 
 (deftest before-spill-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
@@ -195,4 +194,5 @@
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))
     (is (= @(.total vs)
-           (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))))
+           (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))
+    (vreset! sp/memory-pressure 0)))

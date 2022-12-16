@@ -1,11 +1,13 @@
 (ns datalevin.test.listen
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.datom :as dd]
    [datalevin.util :as u]
    [datalevin.constants :refer [tx0]]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-listen!
   (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))

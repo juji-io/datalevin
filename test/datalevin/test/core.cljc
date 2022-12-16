@@ -85,3 +85,9 @@
            (srv/stop server)
            (u/delete-files dir))))
      (System/gc)))
+
+#?(:clj
+   (defn db-fixture
+     [f]
+     (f)
+     (System/gc)))

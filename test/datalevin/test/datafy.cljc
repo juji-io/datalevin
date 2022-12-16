@@ -1,12 +1,14 @@
 (ns datalevin.test.datafy
   (:require
-   #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.datafy :as datafy]
    [datalevin.util :as u]
    [datalevin.core :as d]
    [clojure.core.protocols :as cp]
    [datalevin.entity :as e]))
+
+(use-fixtures :each db-fixture)
 
 (defn- nav [coll k]
   (cp/nav coll k (coll k)))

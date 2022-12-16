@@ -1,10 +1,11 @@
 (ns datalevin.test.query-rules
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.util :as u]
-   ))
+   [datalevin.util :as u]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-rules
   (let [db [[5 :follow 3] [1 :follow 2] [2 :follow 3] [3 :follow 4]
