@@ -2,9 +2,11 @@
 
 ## WIP
 ### Fixed
-- [Server] error when granting permission to a db
+- [Server] error when granting permission to a db created by `create-database`
+  instead of being created by opening a connection URI
 ### Improved
-- avoid printing all datoms when print a db
+- [Datalog] avoid printing all datoms when print a db
+- [Doc] clarify that `db-name` is unique on the server. (thx @dvingo)
 
 ## 0.7.5 (2022-12-16)
 ### Improved
