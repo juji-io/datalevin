@@ -33,7 +33,7 @@ This library supports Java 8 and above.
 Or you will get errors such as "Could not initialize class
 org.lmdbjava.ByteBufferProxy", and so on.
 
-For `lein`, add a top level `:jvm-opts` in your `porject.clj` like so:
+For `lein`, add a top level `:jvm-opts` in your `project.clj` like so:
 
 ```
 :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"

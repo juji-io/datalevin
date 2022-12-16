@@ -351,8 +351,8 @@ adjust the priorities based on feedback.
 * 0.4.0 ~~Native image and native command line tool.~~ [Done 2021/02/27]
 * 0.5.0 ~~Native networked server mode with role based access control.~~ [Done 2021/09/06]
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
-* 0.7.4 Explicit transactions, lazy results loading, and results spill to disk
-  when memory is low.
+* 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk
+  when memory pressure is high.~~ [Done 2022/12/15]
 * 0.8.0 Tuples and composite tuples.
 * 0.9.0 A new Datalog query engine with improved performance.
 * 1.0.0 As a production rule engine: iterative rules application and truth maintenance.
