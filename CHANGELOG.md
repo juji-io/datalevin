@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.5 (2022-12-16)
 ### Improved
 - avoid `(random-uuid)`, since not every one is on Clojure 1.11 yet.
 
