@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- typo prevent build on CI
+
 ## 0.7.3 (2022-12-15)
 ### Fixed
 - [KV] spill test that prevents tests on MacOS CI from succeeding.
