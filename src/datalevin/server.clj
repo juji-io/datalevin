@@ -261,7 +261,7 @@
             [?p :permission/act ?act]
             [?p :permission/obj ?obj]
             [?p :permission/tgt ?tgt]]
-          @sys-conn perm-act perm-obj)
+          @sys-conn perm-act perm-obj perm-tgt)
      (d/q '[:find ?p .
             :in $ ?act ?obj
             :where
@@ -917,6 +917,7 @@
           db-name             (u/lisp-case db-name)
           existing-db?        (db-exists? server db-name)
           sys-conn            (.-sys-conn server)]
+      (log/info "open" db-name "that exist?" existing-db?)
       (wrap-permission
         (if existing-db? ::view ::create)
         ::database
@@ -1265,10 +1266,13 @@
         "Don't have permission to create database"
         (if (db-exists? server db-name)
           (u/raise "Database already exists." {:db db-name})
-          (do (transact-new-db sys-conn username db-type db-name)
-              (update-client server client-id
-                             #(assoc % :permissions
-                                     (user-permissions sys-conn username)))))
+          (do
+            (open-server-store server skey
+                               {:db-name db-name} db-type)
+            (transact-new-db sys-conn username db-type db-name)
+            (update-client server client-id
+                           #(assoc % :permissions
+                                   (user-permissions sys-conn username)))))
         (write-message skey {:type :command-complete})))))
 
 (defn- close-database
@@ -1313,7 +1317,7 @@
   [^Server server ^SelectionKey skey _]
   (wrap-error
     (wrap-permission
-      ::view ::server nil
+      ::create ::database nil
       "Don't have permission to list databases"
       (write-message skey {:type   :command-complete
                            :result (query-databases (.-sys-conn server))}))))
@@ -1322,7 +1326,7 @@
   [^Server server ^SelectionKey skey _]
   (wrap-error
     (wrap-permission
-      ::view ::server nil
+      ::create ::database nil
       "Don't have permission to list databases in use"
       (write-message skey {:type   :command-complete
                            :result (in-use-dbs server)}))))

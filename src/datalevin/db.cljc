@@ -257,6 +257,15 @@
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
 
+(defmethod print-method DB [^DB db, ^java.io.Writer w]
+  (binding [*out* w]
+    (let [store (:dtore db)]
+      (pr {:db-name       (s/db-name store)
+           :last-modified (s/last-modified store)
+           :datom-count   (count :eavt)
+           :max-eid       (:max-eid db)
+           :max-tx        (:max-tx db)}))))
+
 (defn db?
   "Check if x is an instance of DB, also refresh its cache if it's stale.
   Often used in the :pre condition of a DB access function"
