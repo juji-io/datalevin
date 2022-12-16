@@ -8,7 +8,7 @@
    [datalevin.lmdb :as l]
    [taoensso.nippy :as nippy])
   (:import
-   [java.util List]
+   [java.util List UUID]
    [java.io DataInput DataOutput]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
@@ -70,7 +70,7 @@
     (if @disk (l/entries @disk c/tmp-dbi) 0))
 
   (spill [this]
-    (let [dir (str spill-root "dtlv-spill-" (random-uuid))]
+    (let [dir (str spill-root "dtlv-spill-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
       (vreset! disk (l/open-kv dir {:temp? true}))
       (l/open-dbi @disk c/tmp-dbi {:key-size (inc Long/BYTES)}))

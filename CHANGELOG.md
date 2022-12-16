@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- avoid `(random-uuid)`, since not every one is on Clojure 1.11 yet.
+
 ## 0.7.4 (2022-12-15)
 ### Fixed
 - typo prevent build on CI

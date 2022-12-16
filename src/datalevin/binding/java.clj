@@ -15,7 +15,7 @@
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
    [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator]
+   [java.util Iterator UUID]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption StandardOpenOption]
    [clojure.lang IPersistentVector]
@@ -741,7 +741,7 @@
   (when (u/apple-silicon?)
     (try
       (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
-                                            (random-uuid)) )
+                                            (UUID/randomUUID)) )
             ^File file      (File. ^String dir "liblmdb.dylib")
             path            (.toPath file)
             fpath           (.getAbsolutePath file)

@@ -55,9 +55,6 @@ jobs:
         run: |
           ulimit -a
           native/dtlv-test0
-          rm native/dtlv-test0
-          native/dtlv-test1
-          rm native/dtlv-test1
 
       - name: Zip Binary
         run: |

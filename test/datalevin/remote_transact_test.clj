@@ -5,7 +5,9 @@
    [datalevin.datom :as dd]
    [datalevin.constants :as c]
    [datalevin.test.core :as tdc :refer [server-fixture]]
-   [clojure.test :as t :refer [is are deftest testing use-fixtures]]))
+   [clojure.test :as t :refer [is are deftest testing use-fixtures]])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each server-fixture)
 
@@ -62,7 +64,7 @@
                 :country/long  {:db/valueType :db.type/string}}
         conn   (d/create-conn "dtlv://datalevin:datalevin@localhost:8898/dl-test"
                               schema)
-        dir    (u/tmp-dir (str "lmdb-test-" (random-uuid)))
+        dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         conn1  (d/create-conn dir schema)]
 
     (is (= (:max-eid @conn) (:max-eid @conn1) c/e0))

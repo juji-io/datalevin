@@ -30,7 +30,7 @@ lein with-profile test0-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" -jar "$TEST0_JAR" ${test0_name}
 
-lein clean
-lein with-profile test1-uberjar uberjar
+#lein clean
+#lein with-profile test1-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image" -jar "$TEST1_JAR" ${test1_name}
+#"$GRAALVM_HOME/bin/native-image" -jar "$TEST1_JAR" ${test1_name}
