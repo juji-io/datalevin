@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.4 (2022-12-15)
 ### Fixed
 - typo prevent build on CI
 
