@@ -22,13 +22,33 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
-This JVM library supports Java 8 and above. For **JVM version newer than 11**, you may want to add the following JVM options:
+This library supports Java 8 and above.
+
+**Important:**  For JVM version newer than 11, you need to add the following JVM options:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
-Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy".
 
+Or you will get errors such as "Could not initialize class
+org.lmdbjava.ByteBufferProxy", and so on.
+
+For `lein`, add a top level `:jvm-opts` in your `porject.clj` like so:
+
+```
+:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+           "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
+
+```
+
+For `dep.edn`, this is known to work:
+
+```
+:aliases {:jvm-base
+           {:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}}
+```
+Then `clj -A:jvm-base`
 
 ### GraalVM Native Image
 
@@ -40,7 +60,9 @@ This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
 [note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image).
 
-Note: only Graalvm version 21.3.0 works for now, see [issue](https://github.com/oracle/graal/issues/4771)
+Note: only Graalvm version 21.3.0 works for now, see
+[issue](https://github.com/oracle/graal/issues/5615). We are going to switch to
+a different native binding to address the problem.
 
 ## Command Line Tool
 
