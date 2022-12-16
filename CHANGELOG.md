@@ -1,8 +1,12 @@
 # Change Log
 
+## 0.7.3 (2022-12-15)
+### Fixed
+- [KV] spill test that prevents tests on MacOS CI from succeeding.
+
 ## 0.7.2 (2022-12-15)
 ### Fixed
-- [KV] fix deleteOnExit
+- [KV] broken deleteOnExit for temporary files
 
 ## 0.7.1 (2022-12-15)
 ### Improved
