@@ -92,10 +92,10 @@
   (sh "./test.sh" :dir "native/test-jar")
 
   (println "\n\n[ Testing native jar ]\n")
-  (sh "script/compile" :dir "native")
+  (sh "script/compile-local" :dir "native")
   (sh "./dtlv-test0" :dir "native")
   (sh "./dtlv-test1" :dir "native")
-  (sh "./dtlv-test2" :dir "native"))
+  )
 
 (defn- str->json [s]
   (-> s
