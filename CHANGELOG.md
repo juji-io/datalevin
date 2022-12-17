@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.6 (2022-12-16)
 ### Fixed
 - [Server] error when granting permission to a db created by `create-database`
   instead of being created by opening a connection URI
