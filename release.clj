@@ -91,7 +91,7 @@
   (sh "script/jar" :dir "native")
   (sh "./test.sh" :dir "native/test-jar")
 
-  (println "\n\n[ Testing native jar ]\n")
+  (println "\n\n[ Running native tests ]\n")
   (sh "script/compile-local" :dir "native")
   (sh "./dtlv-test0" :dir "native")
   (sh "./dtlv-test1" :dir "native")
