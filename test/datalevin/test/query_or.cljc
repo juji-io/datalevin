@@ -147,6 +147,7 @@
                               :where (or-join [[?e]]
                                               [?e :name "Ivan"])]
                             test-db))))
+    (d/close-db test-db)
     (u/delete-files dir)))
 
 (deftest test-default-source
