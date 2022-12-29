@@ -348,6 +348,9 @@
   ([datoms dir schema] (init-db datoms dir schema nil))
   ([datoms dir schema opts]
    {:pre [(or (nil? schema) (map? schema))]}
+   (when-some [not-datom (first (drop-while datom? datoms))]
+     (raise "init-db expects list of Datoms, got " (type not-datom)
+            {:error :init-db}))
    (validate-schema schema)
    (let [store (open-store dir schema opts)]
      (s/load-datoms store datoms)

@@ -123,6 +123,10 @@
                  (d/datom 1 :name "Ivan")}
         dir    (u/tmp-dir (str "test-" (random-uuid)))
         conn   (d/conn-from-db (d/init-db datoms dir))]
+    (is (thrown-with-msg? Exception
+                          #"init-db expects list of Datoms, got "
+                          (d/init-db [[:add -1 :name "Ivan"]
+                                      {:add -1 :age 35}])))
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)
