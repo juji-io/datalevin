@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- Ported applicable Datascript improvements since 0.8.13, up to 1.4.0. #3
+
 ## 0.7.6 (2022-12-16)
 ### Fixed
 - [Server] error when granting permission to a db created by `create-database`

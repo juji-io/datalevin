@@ -160,6 +160,14 @@
                    [?y ?a]
                    [(>= ?a 18)]]])
            #{["Oleg"]})))
+
+  (testing "Rule name validation #319"
+    (is (thrown-msg? "Unknown rule 'wat in (wat ?x)"
+                     (d/q '[:find  ?x
+                            :in    $ %
+                            :where (wat ?x)]
+                          [] []))))
+
   )
 
 ;; https://github.com/tonsky/datascript/issues/218
