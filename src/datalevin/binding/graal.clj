@@ -225,7 +225,7 @@
               (b/put-buffer vb x t)
               (.flip ^BufVal vp))))
         (catch Exception e
-          (st/print-stack-trace e)
+          ;; (st/print-stack-trace e)
           (raise "Error putting r/w value buffer of "
                  dbi-name ": " (ex-message e)
                  {:value x :type t :dbi dbi-name})))))

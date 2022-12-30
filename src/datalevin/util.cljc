@@ -283,3 +283,16 @@
   (lazy-seq
     (when-first [c colls]
       (lazy-cat c (lazy-concat (rest colls))))))
+
+(defn reduce-indexed
+  "Same as reduce, but `f` takes [acc el idx]"
+  [f init xs]
+  (first
+    (reduce
+      (fn [[acc ^long idx] x]
+        (let [res (f acc x idx)]
+          (if (reduced? res)
+            (reduced [res idx])
+            [res (inc idx)])))
+      [init 0]
+      xs)))

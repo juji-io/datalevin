@@ -213,7 +213,7 @@
         (try
           ~call
           (catch Exception ~'e
-            (st/print-stack-trace ~'e)
+            ;; (st/print-stack-trace ~'e)
             ~error)
           (finally
             (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)

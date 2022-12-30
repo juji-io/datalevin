@@ -5,12 +5,14 @@
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    [datalevin.core :as d]
    [datalevin.entity :as de]
+   [taoensso.timbre :as log]
    [datalevin.constants :as c]
    [datalevin.util :as u #?@(:cljs [:refer-macros [defrecord-updatable]]
                              :clj  [:refer [defrecord-updatable]])]
    #?(:clj [datalevin.server :as srv])
    #?(:cljs [datalevin.test.cljs]))
   #?(:clj (:import [java.util UUID])))
+
 
 #?(:cljs
    (enable-console-print!))
@@ -77,6 +79,7 @@
      (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
            server (srv/create {:port c/default-port
                                :root dir})]
+       (log/set-min-level! :report)
        (try
          (srv/start server)
          (f)
@@ -89,5 +92,6 @@
 #?(:clj
    (defn db-fixture
      [f]
+     (log/set-min-level! :report)
      (f)
      (System/gc)))

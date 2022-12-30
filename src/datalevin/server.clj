@@ -31,8 +31,6 @@
            [org.bouncycastle.crypto.params Argon2Parameters
             Argon2Parameters$Builder]))
 
-(log/refer-timbre)
-
 (defprotocol IServer
   (start [srv] "Start the server")
   (stop [srv] "Stop the server"))
@@ -2044,7 +2042,7 @@
       (new-message runner skey message)
       (locking kv-store (.notify kv-store)))
     (catch Exception e
-      (stt/print-stack-trace e)
+      ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"
                                 (ex-message e))))))
 
@@ -2057,7 +2055,7 @@
         (handle-writing server skey message)
         (message-cases skey type)))
     (catch Exception e
-      (stt/print-stack-trace e)
+      ;; (stt/print-stack-trace e)
       (log/error "Error Handling message:" (ex-message e)))))
 
 (defn- handle-read
@@ -2087,7 +2085,7 @@
         (.close (.channel skey))
         (log/error "Read IOException:" (ex-message e))))
     (catch Exception e
-      (stt/print-stack-trace e)
+      ;; (stt/print-stack-trace e)
       (log/error "Read error:" (ex-message e)))))
 
 (defn- handle-registration
@@ -2126,7 +2124,7 @@
     :or   {port 8898 root "/var/lib/datalevin" verbose false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try
-    (log/set-level! (if verbose :debug :info))
+    (log/set-min-level! (if verbose :debug :info))
     (let [^ServerSocketChannel server-socket (open-port port)
           ^Selector selector                 (Selector/open)
           running                            (AtomicBoolean. false)

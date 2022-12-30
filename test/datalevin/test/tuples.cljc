@@ -25,21 +25,26 @@
            (:db/attrTuples (:rschema db))))
 
     (is (thrown-msg? ":t2 :db/tupleAttrs can’t depend on another tuple attribute: :t1"
-                     (d/empty-db {:t1 {:db/tupleAttrs [:a :b]}
+                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
+                                 {:t1 {:db/tupleAttrs [:a :b]}
                                   :t2 {:db/tupleAttrs [:c :d :e :t1]}})))
 
     (is (thrown-msg? ":t1 :db/tupleAttrs must be a sequential collection, got: :a"
-                     (d/empty-db {:t1 {:db/tupleAttrs :a}})))
+                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
+                                 {:t1 {:db/tupleAttrs :a}})))
 
     (is (thrown-msg? ":t1 :db/tupleAttrs can’t be empty"
-                     (d/empty-db {:t1 {:db/tupleAttrs ()}})))
+                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
+                                 {:t1 {:db/tupleAttrs ()}})))
 
     (is (thrown-msg? ":t1 has :db/tupleAttrs, must be :db.cardinality/one"
-                     (d/empty-db {:t1 {:db/tupleAttrs  [:a :b :c]
+                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
+                                 {:t1 {:db/tupleAttrs  [:a :b :c]
                                        :db/cardinality :db.cardinality/many}})))
 
     (is (thrown-msg? ":t1 :db/tupleAttrs can’t depend on :db.cardinality/many attribute: :a"
-                     (d/empty-db {:a  {:db/cardinality :db.cardinality/many}
+                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
+                                 {:a  {:db/cardinality :db.cardinality/many}
                                   :t1 {:db/tupleAttrs [:a :b :c]}})))
     (d/close-db db)
     (u/delete-files dir)))

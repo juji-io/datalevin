@@ -42,6 +42,7 @@
    datalevin.test.query-pull
    datalevin.test.query-rules
    datalevin.test.transact
+   datalevin.test.tuples
    datalevin.test.validation
    datalevin.test.upsert
    datalevin.test.issues)
@@ -88,6 +89,7 @@
           'datalevin.test.query-pull
           'datalevin.test.query-rules
           'datalevin.test.transact
+          'datalevin.test.tuples
           'datalevin.test.validation
           'datalevin.test.upsert
           'datalevin.test.issues)]

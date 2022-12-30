@@ -434,7 +434,7 @@
         (reset-write-txn this)
         (.mark-write this)
         (catch Exception e
-          (st/print-stack-trace e)
+          ;; (st/print-stack-trace e)
           (raise "Fail to open read/write transaction in LMDB: "
                  (ex-message e) {})))))
 
@@ -449,7 +449,7 @@
             (if aborted? :aborted :committed)))
         (raise "Calling `close-transact-kv` without opening" {}))
       (catch Exception e
-        (st/print-stack-trace e)
+        ;; (st/print-stack-trace e)
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
 
@@ -480,7 +480,7 @@
                 (raise "DB needs resize" {:resized true}))
             (.transact-kv this txs)))
         (catch Exception e
-          (st/print-stack-trace e)
+          ;; (st/print-stack-trace e)
           (raise "Fail to transact to LMDB: " (ex-message e) {})))))
 
   (get-value [this dbi-name k]
@@ -733,7 +733,7 @@
        (when temp? (u/delete-on-exit file))
        lmdb)
      (catch Exception e
-       (st/print-stack-trace e)
+       ;; (st/print-stack-trace e)
        (raise "Fail to open database: " (ex-message e) {:dir dir})))))
 
 ;; TODO remove after LMDBJava supports apple silicon
@@ -759,7 +759,7 @@
         (println "Library extraction is successful:" fpath
                  "with size" (Files/size path)))
       (catch Exception e
-        (st/print-stack-trace e)
+        ;; (st/print-stack-trace e)
         (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
 
 (apple-silicon-lmdb)

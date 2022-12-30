@@ -6,7 +6,7 @@
    [clojure.walk :as walk]
    [datalevin.db :as db]
    [datalevin.search :as s]
-   [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]
+   [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise cond+]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
    [datalevin.lru]
    [datalevin.entity :as de]
@@ -282,7 +282,9 @@
                 'get-some                    -get-some,
                 'missing?                    -missing?,
                 'ground                      identity,
-                'fulltext                    fulltext,
+                'fulltext                    fulltext, 
+                'tuple vector, 
+                'untuple identity
                 'clojure.string/blank?       str/blank?,
                 'clojure.string/includes?    str/includes?,
                 'clojure.string/starts-with? str/starts-with?,
@@ -359,7 +361,7 @@
 
 (defn parse-rules [rules]
   (let [rules (if (string? rules) (edn/read-string rules) rules)]
-    (dp/parse-rules rules) ;; validation
+    ;(dp/parse-rules rules) ;; validation
     (group-by ffirst rules)))
 
 (defn ^Relation empty-rel [binding]
@@ -715,7 +717,7 @@
 (def rule-head #{'_ 'or 'or-join 'and 'not 'not-join})
 
 (defn rule? [context clause]
-  (u/cond+
+  (cond+
     (not (sequential? clause))
     false
 
@@ -911,12 +913,12 @@
    (condp looks-like? clause
      [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
      (do
-       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       ;(check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
        (filter-by-pred context clause))
 
      [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
      (do
-       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       ;(check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
        (bind-by-fn context clause))
 
      [source? '*] ;; source + anything

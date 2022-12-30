@@ -1,6 +1,7 @@
 (ns datalevin.server-test
   (:require [datalevin.server :as sut]
             [datalevin.client :as cl]
+            [taoensso.timbre :as log]
             [datalevin.core :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
@@ -34,6 +35,7 @@
         ^Client client1 (cl/new-client "dtlv://datalevin:datalevin@localhost"
                                        {:pool-size 1 :time-out 100})
         ^Client client2 (cl/new-client "dtlv://datalevin:datalevin@localhost")]
+    (log/set-min-level! :report)
     (is (= (cl/list-databases client1) []))
     (is (= (cl/list-databases client2) []))
 
@@ -63,6 +65,7 @@
         engine         (d/new-search-engine lmdb)
         ^Client client (cl/new-client "dtlv://datalevin:datalevin@localhost"
                                       {:pool-size 1 :time-out 2000})]
+    (log/set-min-level! :report)
     (is (= (cl/list-databases client) ["server-restart-test"]))
 
     (d/open-dbi lmdb "raw")
@@ -79,6 +82,9 @@
     ;; existing clients should work with restarted server normally
     (let [^Server server (sut/create {:port c/default-port :root root})
           _              (sut/start server)]
+
+
+      (log/set-min-level! :report)
       (is (= (cl/list-databases client) ["server-restart-test"]))
 
       (d/transact-kv
@@ -99,6 +105,8 @@
         ^Server server (sut/create {:port c/default-port :root root})
         _              (sut/start server)
         conn           (d/create-conn dir)]
+
+    (log/set-min-level! :report)
     (d/transact! conn [{:name "John" :id 2}
                        {:name "Matt" :id 3}])
     (is (= 2 (d/q '[:find ?i .
@@ -112,6 +120,7 @@
     (let [^Server server (sut/create {:port c/default-port :root root})
           _              (sut/start server)]
 
+      (log/set-min-level! :report)
       (is (= 2 (d/q '[:find ?i .
                       :in $ ?n
                       :where
@@ -128,6 +137,8 @@
         ^Server server (sut/create {:root root})
         _              (sut/start server)
         conn           (d/create-conn dir)]
+
+    (log/set-min-level! :report)
     (d/transact! conn [{:name "John" :id 2}
                        {:name "Matt" :id 3}])
     (is (thrown? Exception
@@ -154,12 +165,16 @@
         _       (sut/start server1)
         client  (cl/new-client "dtlv://datalevin:datalevin@localhost"
                                {:time-out 5000})]
+
+    (log/set-min-level! :report)
     (is (= (cl/list-databases client) []))
     (sut/stop server1)
     (is (thrown? Exception (cl/list-databases client)))
     (let [server2 (sut/create {:port c/default-port
                                :root root})
           _       (sut/start server2)]
+
+      (log/set-min-level! :report)
       (is (= (cl/list-databases client) []))
       (sut/stop server2))
     (u/delete-files root)))
