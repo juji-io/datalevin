@@ -455,7 +455,7 @@
         (nil? value)
         nil
         :else
-        (or (-> (set/slice (get db :avet)
+        (or (-> (set/slice (:avet db)
                            (datom e0 attr value tx0)
                            (datom emax attr value txmax))
                 first :e)
@@ -464,7 +464,7 @@
     #?@(:cljs [(array? eid) (recur db (array-seq eid))])
 
     (keyword? eid)
-    (or (-> (set/slice (get db :avet)
+    (or (-> (set/slice (:avet db)
                        (datom e0 :db/ident eid tx0)
                        (datom emax :db/ident eid txmax))
             first :e)
@@ -491,7 +491,7 @@
     (when-some [found (let [a (.-a datom)
                             v (.-v datom)]
                         (or
-                          (not-empty (set/slice (get db :avet)
+                          (not-empty (set/slice (:avet db)
                                                 (d/datom e0 a v tx0)
                                                 (d/datom emax a v txmax)))
                           (-populated? db :avet [a v])))]
@@ -581,7 +581,7 @@
           true (advance-max-eid (.-e datom))))
       (if-some [removing (first
                            (set/slice
-                             (get db :eavt)
+                             (:eavt db)
                              (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
                              (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))]
         (cond-> db
@@ -592,8 +592,11 @@
 
 (defn- queue-tuple [queue tuple idx db e a v]
   (let [tuple-value  (or (get queue tuple)
-                       (:v (first (-datoms db :eavt [e tuple])))
-                       (vec (repeat (-> db (-schema) (get tuple) :db/tupleAttrs count) nil)))
+                         (:v (first (set/slice (:eavt db)
+                                               (d/datom e tuple nil tx0)
+                                               (d/datom e tuple nil txmax))))
+                         (:v (-first-datom db :eavt [e tuple]))
+                         (vec (repeat (-> db (-schema) (get tuple) :db/tupleAttrs count) nil)))
         tuple-value' (assoc tuple-value idx v)]
     (assoc queue tuple tuple-value')))
 
@@ -660,14 +663,18 @@
   [db entity]
   (if-some [idents (not-empty (-attrs-by db :db.unique/identity))]
     (let [resolve (fn [a v]
-                    (:e (first (-datoms db :avet [a v]))))
-          split   (fn [a vs]
-                    (reduce
-                      (fn [acc v]
-                        (if-some [e (resolve a v)]
-                          (update acc 1 assoc v e)
-                          (update acc 0 conj v)))
-                      [[] {}] vs))]
+                    (or (:e (first (set/slice (:avet db)
+                                              (d/datom e0 a v tx0)
+                                              (d/datom emax a v txmax))))
+                        (:e (-first-datom db :avet [a v]))))
+
+          split (fn [a vs]
+                  (reduce
+                    (fn [acc v]
+                      (if-some [e (resolve a v)]
+                        (update acc 1 assoc v e)
+                        (update acc 0 conj v)))
+                    [[] {}] vs))]
       (reduce-kv
         (fn [[entity upserts] a v]
           (cond
@@ -723,64 +730,6 @@
                   :assertion [upsert-id a v]
                   :conflict  {:db/id eid}}))
         upsert-id))))
-#_(defn- check-upsert-conflict [entity acc]
-  (let [[e a v] acc
-        _e      (:db/id entity)]
-    (if (or (nil? _e)
-            (tempid? _e)
-            (nil? acc)
-            (== ^long _e ^long e))
-      acc
-      (raise "Conflicting upsert: " [a v] " resolves to " e
-             ", but entity already has :db/id " _e
-             { :error    :transact/upsert
-              :entity    entity
-              :assertion acc }))))
-
-#_(defn- upsert-reduce-fn [db eav a v]
-  (let [e (or (:e (first (set/slice (get db :avet)
-                                    (d/datom e0 a v tx0)
-                                    (d/datom emax a v txmax))))
-              (:e (-first-datom db :avet [a v])))]
-    (cond
-      (nil? e) ;; value not yet in db
-      eav
-
-      (nil? eav) ;; first upsert
-      [e a v]
-
-      (= (get eav 0) e) ;; second+ upsert, but does not conflict
-      eav
-
-      :else
-      (let [[_e _a _v] eav]
-        (raise "Conflicting upserts: " [_a _v] " resolves to " _e
-               ", but " [a v] " resolves to " e
-               { :error    :transact/upsert
-                :assertion [e a v]
-                :conflict  [_e _a _v] })))))
-
-#_(defn- upsert-eid [db entity]
-  (when-some [idents (not-empty (-attrs-by db :db.unique/identity))]
-    (->>
-     (reduce-kv
-      (fn [eav a v] ;; eav = [e a v]
-        (cond
-          (not (contains? idents a))
-          eav
-
-          (and
-           (multival? db a)
-           (and (coll? v) (not (map? v))))
-          (reduce #(upsert-reduce-fn db %1 a %2) eav v)
-
-          :else
-          (upsert-reduce-fn db eav a v)))
-      nil
-      entity)
-     (check-upsert-conflict entity)
-     first))) ;; getting eid from eav
-
 
 ;; multivals/reverse can be specified as coll or as a single value, trying to guess
 (defn- maybe-wrap-multival [db a vs]
@@ -829,13 +778,13 @@
         v         (if (ref? db a) (entid-strict db v) v)
         new-datom (datom e a v tx)]
     (if (multival? db a)
-      (if (and (empty? (set/slice (get db :eavt)
+      (if (and (empty? (set/slice (:eavt db)
                                   (datom e a v tx0)
                                   (datom e a v txmax)))
                (= (-count db [e a v]) 0))
         (transact-report report new-datom)
         report)
-      (if-some [^Datom old-datom (or (first (set/slice (get db :eavt)
+      (if-some [^Datom old-datom (or (first (set/slice (:eavt db)
                                                        (datom e a nil tx0)
                                                        (datom e a nil txmax)))
                                      (-first db [e a]))]
@@ -927,7 +876,11 @@
         (reduce-kv
           (fn [entities tuple value]
             (let [value   (if (every? nil? value) nil value)
-                  current (:v (first (-datoms db :eavt [eid tuple])))]
+                  current (or (:v (first (set/slice
+                                           (:eavt db)
+                                           (d/datom eid tuple nil tx0)
+                                           (d/datom eid tuple nil txmax))))
+                              (:v (-first-datom db :eavt [eid tuple])))]
               (cond
                 (= value current) entities
                 (nil? value)      (conj entities ^::internal [:db/retract eid tuple current])
@@ -1038,12 +991,12 @@
                  (if-some [ident (or (:e
                                       (first
                                         (set/slice
-                                          (get db :avet)
+                                          (:avet db)
                                           (d/datom e0 op nil tx0)
                                           (d/datom emax op nil txmax))))
                                      (entid db op))]
                    (let [fun  (or (-> (set/slice
-                                        (get db :eavt)
+                                        (:eavt db)
                                         (d/datom ident :db/fn nil tx0)
                                         (d/datom ident :db/fn nil txmax))
                                       first :v)
@@ -1070,7 +1023,7 @@
                        _             (validate-val nv entity)
                        datoms        (clojure.set/union
                                        (set/slice
-                                         (get db :eavt)
+                                         (:eavt db)
                                          (datom e a nil tx0)
                                          (datom e a nil txmax))
                                        (-search db [e a]))]
@@ -1101,7 +1054,7 @@
                                        (or (:e
                                             (first
                                               (set/slice
-                                                (get db :avet)
+                                                (:avet db)
                                                 (d/datom e0 a v tx0)
                                                 (d/datom emax a v txmax))))
                                            (:e (-first-datom db :avet [a v]))))
@@ -1126,7 +1079,7 @@
                      (validate-val v entity)
                      (if-some [old-datom (or
                                            (first (set/slice
-                                                    (get db :eavt)
+                                                    (:eavt db)
                                                     (datom e a v tx0)
                                                     (datom e a v txmax)))
                                            (-first db [e a v]))]
@@ -1140,7 +1093,7 @@
                    (let [_      (validate-attr a entity)
                          datoms (vec
                                   (concat
-                                    (set/slice (get db :eavt)
+                                    (set/slice (:eavt db)
                                                (datom e a nil tx0)
                                                (datom e a nil txmax))
                                     (-search db [e a])))]
@@ -1153,13 +1106,13 @@
                  (if-some [e (entid db e)]
                    (let [e-datoms (vec
                                     (concat
-                                      (set/slice (get db :eavt)
+                                      (set/slice (:eavt db)
                                                  (datom e nil nil tx0)
                                                  (datom e nil nil txmax))
                                       (-search db [e])))
                          v-datoms (vec
                                     (concat
-                                      (set/slice (get db :veat)
+                                      (set/slice (:veat db)
                                                  (datom e0 nil e tx0)
                                                  (datom emax nil e txmax))
                                       (-search db [nil nil e])))]

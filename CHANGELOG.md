@@ -1,8 +1,12 @@
 # Change Log
 
 ## WIP
+### Added
+- Composite tuples #57, #168
+### Fixed
+- [KV] `get-range` regression when results are used in `sequence`. #172
 ### Improved
-- Ported applicable Datascript improvements since 0.8.13, up to 1.4.0. #3
+- Ported applicable Datascript improvements since 0.8.13 up to 1.4.0. #3
 
 ## 0.7.6 (2022-12-16)
 ### Fixed

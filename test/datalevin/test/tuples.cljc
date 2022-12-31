@@ -3,49 +3,55 @@
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    [datalevin.core :as d]
+   [datalevin.db :as db]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc])
   (:import #?(:clj [clojure.lang ExceptionInfo])))
 
 (deftest test-schema
-  (let [dir (u/tmp-dir (str "tuples-" (random-uuid)))
-        db  (d/empty-db
-              dir
-              {:year+session            {:db/tupleAttrs [:year :session]}
-               :semester+course+student {:db/tupleAttrs [:semester :course :student]}
-               :session+student         {:db/tupleAttrs [:session :student]}})]
+  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+        dir1 (u/tmp-dir (str "tuples-" (random-uuid)))
+        dir2 (u/tmp-dir (str "tuples-" (random-uuid)))
+        dir3 (u/tmp-dir (str "tuples-" (random-uuid)))
+        dir4 (u/tmp-dir (str "tuples-" (random-uuid)))
+        dir5 (u/tmp-dir (str "tuples-" (random-uuid)))
+        db   (d/empty-db
+               dir
+               {:year+session    {:db/tupleAttrs [:year :session]}
+                :semester+course+student
+                {:db/tupleAttrs [:semester :course :student]}
+                :session+student {:db/tupleAttrs [:session :student]}})]
     (is (= #{:year+session :semester+course+student :session+student}
-           (:db.type/tuple (:rschema db))))
+           (:db.type/tuple (db/-rschema db))))
 
     (is (= {:year     {:year+session 0}
             :session  {:year+session 1, :session+student 0}
             :semester {:semester+course+student 0}
             :course   {:semester+course+student 1}
             :student  {:semester+course+student 2, :session+student 1}}
-           (:db/attrTuples (:rschema db))))
+           (:db/attrTuples (db/-rschema db))))
 
-    (is (thrown-msg? ":t2 :db/tupleAttrs can’t depend on another tuple attribute: :t1"
-                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
-                                 {:t1 {:db/tupleAttrs [:a :b]}
-                                  :t2 {:db/tupleAttrs [:c :d :e :t1]}})))
+    (is (thrown-msg?
+          ":t2 :db/tupleAttrs can’t depend on another tuple attribute: :t1"
+          (d/empty-db dir1 {:t1 {:db/tupleAttrs [:a :b]}
+                            :t2 {:db/tupleAttrs [:c :d :e :t1]}})))
 
-    (is (thrown-msg? ":t1 :db/tupleAttrs must be a sequential collection, got: :a"
-                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
-                                 {:t1 {:db/tupleAttrs :a}})))
+    (is (thrown-msg?
+          ":t1 :db/tupleAttrs must be a sequential collection, got: :a"
+          (d/empty-db dir2 {:t1 {:db/tupleAttrs :a}})))
 
     (is (thrown-msg? ":t1 :db/tupleAttrs can’t be empty"
-                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
-                                 {:t1 {:db/tupleAttrs ()}})))
+                     (d/empty-db dir3 {:t1 {:db/tupleAttrs ()}})))
 
-    (is (thrown-msg? ":t1 has :db/tupleAttrs, must be :db.cardinality/one"
-                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
-                                 {:t1 {:db/tupleAttrs  [:a :b :c]
-                                       :db/cardinality :db.cardinality/many}})))
+    (is (thrown-msg?
+          ":t1 has :db/tupleAttrs, must be :db.cardinality/one"
+          (d/empty-db dir4 {:t1 {:db/tupleAttrs  [:a :b :c]
+                                 :db/cardinality :db.cardinality/many}})))
 
-    (is (thrown-msg? ":t1 :db/tupleAttrs can’t depend on :db.cardinality/many attribute: :a"
-                     (d/empty-db (u/tmp-dir (str "tuples-" (random-uuid)))
-                                 {:a  {:db/cardinality :db.cardinality/many}
-                                  :t1 {:db/tupleAttrs [:a :b :c]}})))
+    (is (thrown-msg?
+          ":t1 :db/tupleAttrs can’t depend on :db.cardinality/many attribute: :a"
+          (d/empty-db dir5 {:a  {:db/cardinality :db.cardinality/many}
+                            :t1 {:db/tupleAttrs [:a :b :c]}})))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -113,8 +119,9 @@
         [1 :d     "D"]
         [1 :a+c+d [nil "C" "D"]]})
 
-    (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 1 :a+b [\"A\" \"B\"]]"
-                     (d/transact! conn [{:db/id 1 :a+b ["A" "B"]}])))
+    (is (thrown-msg?
+          "Can’t modify tuple attrs directly: [:db/add 1 :a+b [\"A\" \"B\"]]"
+          (d/transact! conn [{:db/id 1 :a+b ["A" "B"]}])))
     (d/close conn)
     (u/delete-files dir)))
 

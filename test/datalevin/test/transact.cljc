@@ -570,8 +570,8 @@
         dir    (u/tmp-dir (str "issue-127-" (random-uuid)))
         conn   (d/create-conn dir schema)]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
-    (dotimes [n 100000]
+    (dotimes [n 10000]
       (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
-    (is (= 100001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
+    (is (= 10001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
     (d/close conn)
     (u/delete-files dir)))

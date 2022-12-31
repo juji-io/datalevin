@@ -915,7 +915,7 @@
           db-name             (u/lisp-case db-name)
           existing-db?        (db-exists? server db-name)
           sys-conn            (.-sys-conn server)]
-      (log/info "open" db-name "that exist?" existing-db?)
+      (log/debug "open" db-name "that exist?" existing-db?)
       (wrap-permission
         (if existing-db? ::view ::create)
         ::database
