@@ -315,7 +315,7 @@
                             (.get cursor) (.getVal k) (.getVal v) op-get))]
       (reify
         Iterator
-        (hasNext [this]
+        (hasNext [_]
           (let [end       #(do (vreset! ended? true) false)
                 continue? #(if stop-key?
                              (let [_ (get-cur)
@@ -361,7 +361,7 @@
                     (if forward?
                       (check op-first)
                       (check op-last))))))))
-        (next [this]
+        (next [_]
           (get-cur)
           (->KV k v))))))
 

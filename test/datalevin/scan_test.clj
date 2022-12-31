@@ -457,3 +457,16 @@
         (is (= (into {} res) hm))))
     (l/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest get-range-transduce-test
+  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "a")
+    (l/transact-kv lmdb [[:put "a" 1 2]
+                         [:put "a" 3 4]
+                         [:put "a" 5 6]])
+    (is (= [[1 2] [3 4] [5 6]]
+           (sequence (map identity) (l/get-range lmdb "a" [:all]))
+           (eduction (map identity) (l/get-range lmdb "a" [:all]))))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))

@@ -8,7 +8,7 @@
    [datalevin.lmdb :as l]
    [taoensso.nippy :as nippy])
   (:import
-   [java.util List UUID]
+   [java.util Iterator List UUID NoSuchElementException]
    [java.io DataInput DataOutput]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
@@ -87,7 +87,6 @@
     this)
 
   (cons [this v]
-    ;; (println "pr" @memory-pressure)
     (if (and (nil? @disk) (< ^long @memory-pressure spill-threshold))
       (.add memory v)
       (do (when (nil? @disk) (spill this))
@@ -95,7 +94,7 @@
     (vswap! total #(inc ^long %))
     this)
 
-  (length [this] @total)
+  (length [_] @total)
 
   (assoc [this k v]
     (if (integer? k)
@@ -181,6 +180,20 @@
     (if (and (<= 0 i) (< i ^long @total))
       (.nth this i)
       nf))
+
+  Iterable
+
+  (iterator [this]
+    (let [i (volatile! 0)]
+      (reify
+        Iterator
+        (hasNext [_] (< ^long @i ^long @total))
+        (next [_]
+          (if (< ^long @i ^long @total)
+            (let [res (.nth this @i)]
+              (vswap! i #(inc ^long %))
+              res)
+            (throw (NoSuchElementException.)))))))
 
   Object
 
