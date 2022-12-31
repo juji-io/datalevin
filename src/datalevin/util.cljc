@@ -296,3 +296,5 @@
             [res (inc idx)])))
       [init 0]
       xs)))
+
+(def long-inc #(inc ^long %))

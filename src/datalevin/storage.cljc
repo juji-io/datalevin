@@ -88,7 +88,7 @@
                  (if-let [old-props (old attr)]
                    [attr (assoc props :db/aid (old-props :db/aid))]
                    (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
-                     (vswap! i #(inc ^long %))
+                     (vswap! i u/long-inc)
                      res))))
           schema)))
 

@@ -35,7 +35,7 @@
           (ManagementFactory/getGarbageCollectorMXBeans)]
     (let [^NotificationListener listener
           (reify NotificationListener
-            (^void handleNotification [this ^Notification notif _]
+            (^void handleNotification [_ ^Notification notif _]
              (when (= (.getType notif)
                       GarbageCollectionNotificationInfo/GARBAGE_COLLECTION_NOTIFICATION)
                (set-memory-pressure))))]
@@ -91,7 +91,7 @@
       (.add memory v)
       (do (when (nil? @disk) (spill this))
           (l/transact-kv @disk [[:put c/tmp-dbi @total v :long]])))
-    (vswap! total #(inc ^long %))
+    (vswap! total u/long-inc)
     this)
 
   (length [_] @total)
@@ -109,14 +109,14 @@
             false))
       false))
 
-  (entryAt [this k]
+  (entryAt [_ k]
     (when (integer? k)
       (if-let [v (.get memory k)]
         (MapEntry. k v)
         (when-let [v (l/get-value @disk c/tmp-dbi k :long)]
           (MapEntry. k v)))))
 
-  (valAt [this k nf]
+  (valAt [_ k nf]
     (if (integer? k)
       (or (when-not (.isEmpty memory) (.get memory k))
           (when @disk (l/get-value @disk c/tmp-dbi k :long))
@@ -144,7 +144,7 @@
     (vswap! total #(dec ^long %))
     this)
 
-  (count [this] @total)
+  (count [_] @total)
 
   (empty [this]
     (.clear memory)
@@ -191,7 +191,7 @@
         (next [_]
           (if (< ^long @i ^long @total)
             (let [res (.nth this @i)]
-              (vswap! i #(inc ^long %))
+              (vswap! i u/long-inc)
               res)
             (throw (NoSuchElementException.)))))))
 
@@ -237,9 +237,9 @@
 
   (seq ^ISeq [this] this)
 
-  (first ^Object [this] (nth v i))
+  (first ^Object [_] (nth v i))
 
-  (next ^ISeq [this] (when (< 0 i) (->RSeq v (dec i))))
+  (next ^ISeq [_] (when (< 0 i) (->RSeq v (dec i))))
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
