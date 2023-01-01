@@ -186,8 +186,8 @@
 (defn nil-check-cmp-fn [cmp-fn]
   (fn nil-check-cmp [o1 o2]
     (if (nil? o1) 0
-                  (if (nil? o2) 0
-                                (cmp-fn o1 o2)))))
+        (if (nil? o2) 0
+            (cmp-fn o1 o2)))))
 
 (defn- compare-with-type [a b]
   (if (identical? (type a) (type b))

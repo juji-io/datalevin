@@ -613,3 +613,56 @@
                      (d/with db [{:db/id 285873023227265 :name "Valerii"}])))
     (is (thrown-msg? "Highest supported entity id is 2147483647, got 285873023227265"
                      (d/with db [{:db/id 1 :ref 285873023227265}])))))
+
+(deftest test-uncomparable-356-1
+  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:multi {:db/cardinality :db.cardinality/many}
+                             :index {:db/index true}})
+                (d/db-with [[:db/add     1 :single {:map 1}]])
+                (d/db-with [[:db/retract 1 :single {:map 1}]])
+                (d/db-with [[:db/add     1 :single {:map 2}]])
+                (d/db-with [[:db/add     1 :single {:map 3}]]))]
+    (is (= #{[1 :single {:map 3}]}
+           (tdc/all-datoms db)))
+    (is (= [(dd/datom 1 :single {:map 3})]
+           (vec (d/datoms db :eavt 1 :single {:map 3}))))
+    (is (= [(dd/datom 1 :single {:map 3})]
+           (vec (d/datoms db :avet :single {:map 3} 1))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-uncomparable-356-2
+  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:multi {:db/cardinality :db.cardinality/many}
+                             :index {:db/index true}})
+                (d/db-with [[:db/add 1 :multi {:map 1}]])
+                (d/db-with [[:db/add 1 :multi {:map 1}]])
+                (d/db-with [[:db/add 1 :multi {:map 2}]]))]
+    (is (= #{[1 :multi {:map 1}] [1 :multi {:map 2}]}
+           (tdc/all-datoms db)))
+    (is (= [(dd/datom 1 :multi {:map 2})]
+           (vec (d/datoms db :eavt 1 :multi {:map 2}))))
+    (is (= [(dd/datom 1 :multi {:map 2})]
+           (vec (d/datoms db :avet :multi {:map 2} 1))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-uncomparable-356-3
+  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:multi {:db/cardinality :db.cardinality/many}
+                             :index {:db/index true}})
+                (d/db-with [[:db/add     1 :index {:map 1}]])
+                (d/db-with [[:db/retract 1 :single {:map 1}]])
+                (d/db-with [[:db/add     1 :index {:map 2}]])
+                (d/db-with [[:db/add     1 :index {:map 3}]]))]
+    (is (= #{[1 :index {:map 3}]}
+           (tdc/all-datoms db)))
+    (is (= [(dd/datom 1 :index {:map 3})]
+           (vec (d/datoms db :eavt 1 :index {:map 3}))))
+    (is (= [(dd/datom 1 :index {:map 3})]
+           (vec (d/datoms db :avet :index {:map 3} 1 ))))
+    (d/close-db db)
+    (u/delete-files dir)))
