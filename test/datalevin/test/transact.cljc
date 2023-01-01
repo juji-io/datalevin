@@ -480,9 +480,11 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-refs
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
-        conn (d/create-conn dir {:friend {:db/valueType   :db.type/ref
-                                          :db/cardinality :db.cardinality/many}})
+  (let [dir  (u/tmp-dir (str "resolve-" (random-uuid)))
+        conn (d/create-conn
+               dir
+               {:friend {:db/valueType   :db.type/ref
+                         :db/cardinality :db.cardinality/many}})
         tx   (d/transact! conn [{:name   "Sergey"
                                  :friend [-1 -2]}
                                 [:db/add -1 :name "Ivan"]
@@ -496,11 +498,33 @@
                :where [?e :name ?n]
                [?e :friend ?fe]
                [?fe :name ?fn]]]
-    (is (= (:tempids tx) {1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1)}))
+    (is (= (:tempids tx)
+           {1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1)}))
     (is (= (d/q q @conn "Sergey") #{["Ivan"] ["Petr"]}))
     (is (= (d/q q @conn "Boris") #{["Oleg"]}))
     (is (= (d/q q @conn "Oleg") #{["Boris"]}))
     (d/close conn)
+    (u/delete-files dir)))
+
+(deftest test-tempid
+  (let [dir (u/tmp-dir (str "tempid-" (random-uuid)))
+        db  (d/empty-db
+              dir
+              {:friend {:db/valueType :db.type/ref}
+               :comp   {:db/valueType :db.type/ref, :db/isComponent true}
+               :multi  {:db/cardinality :db.cardinality/many}})]
+    (testing "Unused tempid" ;; #304
+      (is (thrown-msg? "Tempids used only as value in transaction: (-2)"
+                       (d/db-with db [[:db/add -1 :friend -2]])))
+      (is (thrown-msg? "Tempids used only as value in transaction: (-2)"
+                       (d/db-with db [{:db/id -1 :friend -2}])))
+      (is (thrown-msg? "Tempids used only as value in transaction: (-1)"
+                       (d/db-with db [{:db/id -1}
+                                      [:db/add -2 :friend -1]])))
+      (is (thrown-msg? "Tempids used only as value in transaction: (-1)"
+                       (d/db-with db [{:db/id -1 :multi []}
+                                      [:db/add -2 :friend -1]]))))
+    (d/close-db db)
     (u/delete-files dir)))
 
 (deftest test-transient-294
