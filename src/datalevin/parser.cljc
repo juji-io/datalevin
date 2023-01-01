@@ -119,8 +119,8 @@
 
 (defn parse-var-required [form]
   (or (parse-variable form)
-    (raise "Cannot parse var, expected symbol starting with ?, got: " form
-      {:error :parser/rule-var, :form form})))
+      (raise "Cannot parse var, expected symbol starting with ?, got: " form
+             {:error :parser/rule-var, :form form})))
 
 (defn parse-src-var [form]
   (when (and (symbol? form)

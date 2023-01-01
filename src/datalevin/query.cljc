@@ -283,8 +283,8 @@
                 'missing?                    -missing?,
                 'ground                      identity,
                 'fulltext                    fulltext,
-                'tuple vector,
-                'untuple identity
+                'tuple                       vector,
+                'untuple                     identity
                 'clojure.string/blank?       str/blank?,
                 'clojure.string/includes?    str/includes?,
                 'clojure.string/starts-with? str/starts-with?,
@@ -361,7 +361,7 @@
 
 (defn parse-rules [rules]
   (let [rules (if (string? rules) (edn/read-string rules) rules)]
-    ;(dp/parse-rules rules) ;; validation
+    (dp/parse-rules rules) ;; validation
     (group-by ffirst rules)))
 
 (defn ^Relation empty-rel [binding]
