@@ -603,3 +603,13 @@
     (is (= 10001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-large-ids-292
+  (let [dir (u/tmp-dir (str "issue-292-" (random-uuid)))
+        db  (d/empty-db dir {:ref {:db/valueType :db.type/ref}})]
+    (is (thrown-msg? "Highest supported entity id is 2147483647, got 285873023227265"
+                     (d/with db [[:db/add 285873023227265 :name "Valerii"]])))
+    (is (thrown-msg? "Highest supported entity id is 2147483647, got 285873023227265"
+                     (d/with db [{:db/id 285873023227265 :name "Valerii"}])))
+    (is (thrown-msg? "Highest supported entity id is 2147483647, got 285873023227265"
+                     (d/with db [{:db/id 1 :ref 285873023227265}])))))

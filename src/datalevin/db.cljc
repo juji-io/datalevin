@@ -441,7 +441,10 @@
 (defn entid [db eid]
   (cond
     (and (integer? eid) (not (neg? (long eid))))
-    eid
+    (if (<= eid emax)
+      eid
+      (raise "Highest supported entity id is " emax
+             ", got " eid {:error :entity-id :value eid}))
 
     (sequential? eid)
     (let [[attr value] eid]
