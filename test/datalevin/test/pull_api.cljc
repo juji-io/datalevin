@@ -382,5 +382,6 @@
                          [:name "Petr"]
                          [:name "Eunan"]
                          [:name "Rebecca"]])))
+    (is (nil? (d/pull test-db '[*] [:name "No such name"])))
     (d/close-db test-db)
     (u/delete-files dir)))
