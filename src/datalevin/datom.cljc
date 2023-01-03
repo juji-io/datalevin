@@ -197,9 +197,7 @@
     ;; since `a` and `b` are of identical type
     ;; `coll?` check only one.
     (cond
-      (coll? a) (if (= a b)
-                  0
-                  1)
+      (coll? a) (if (= a b) 0 1)
       #?@(:clj [(bytes? a) (if (Arrays/equals ^bytes a ^bytes b) 0 1)])
       :else     (compare a b))
     -1))
