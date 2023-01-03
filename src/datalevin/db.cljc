@@ -441,7 +441,7 @@
 (defn entid [db eid]
   (cond
     (and (integer? eid) (not (neg? (long eid))))
-    (if (<= eid emax)
+    (if (<= ^long eid ^long emax)
       eid
       (raise "Highest supported entity id is " emax
              ", got " eid {:error :entity-id :value eid}))
@@ -576,11 +576,11 @@
           true (update :avet set/conj datom d/cmp-datoms-avet-quick)
           ref? (update :veat set/conj datom d/cmp-datoms-veat-quick)
           true (advance-max-eid (.-e datom))))
-      (if-some [removing (first
-                           (set/slice
-                             (:eavt db)
-                             (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
-                             (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))]
+      (if-some [_ (first
+                    (set/slice
+                      (:eavt db)
+                      (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
+                      (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))]
         (cond-> db
           true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
           true (update :avet set/disj datom d/cmp-datoms-avet-quick)
@@ -609,7 +609,7 @@
         a       (:a datom)
         report' (-> report
                     (assoc :db-after (with-datom db datom))
-                    (update :tx-data  conj datom))]
+                    (update :tx-data conj datom))]
     (if (tuple-source? db a)
       (let [e      (:e datom)
             v      (if (datom-added datom) (:v datom) nil)
@@ -766,31 +766,37 @@
           [:db/add v   straight-a eid]
           [:db/add eid straight-a v])))))
 
+(def conjv (fnil conj []))
+
 (defn- transact-add [report [_ e a v tx :as ent]]
   (validate-attr a ent)
   (validate-val  v ent)
-  (let [tx        (or tx (current-tx report))
-        db        (:db-after report)
-        e         (entid-strict db e)
-        v         (if (ref? db a) (entid-strict db v) v)
-        new-datom (datom e a v tx)]
-    (if (multival? db a)
-      (if (and (empty? (set/slice (:eavt db)
-                                  (datom e a v tx0)
-                                  (datom e a v txmax)))
-               (= (-count db [e a v]) 0))
-        (transact-report report new-datom)
-        report)
-      (if-some [^Datom old-datom (or (first (set/slice (:eavt db)
-                                                       (datom e a nil tx0)
-                                                       (datom e a nil txmax)))
-                                     (-first db [e a]))]
-        (if (= (.-v old-datom) v)
-          report
-          (-> report
-              (transact-report (datom e a (.-v old-datom) tx false))
-              (transact-report new-datom)))
-        (transact-report report new-datom)))))
+  (let [tx               (or tx (current-tx report))
+        db               (:db-after report)
+        e                (entid-strict db e)
+        v                (if (ref? db a) (entid-strict db v) v)
+        new-datom        (datom e a v tx)
+        multival?        (multival? db a)
+        ^Datom old-datom (if multival?
+                           (or (first (set/slice (:eavt db)
+                                                 (datom e a v tx0)
+                                                 (datom e a v txmax)))
+                               (-first db [e a v]))
+                           (or (first (set/slice (:eavt db)
+                                                 (datom e a nil tx0)
+                                                 (datom e a nil txmax)))
+                               (-first db [e a])))]
+    (cond
+      (nil? old-datom)
+      (transact-report report new-datom)
+
+      (= (.-v old-datom) v)
+      (update report ::tx-redundant conjv new-datom)
+
+      :else
+      (-> report
+          (transact-report (datom e a (.-v old-datom) tx false))
+          (transact-report new-datom)))))
 
 (defn- transact-retract-datom [report ^Datom d]
   (let [tx (current-tx report)]
@@ -807,9 +813,12 @@
                       (if (datom-added datom)
                         (dissoc tempids (:e datom))
                         tempids))
-        unused      (reduce reduce-fn all-tempids (:tx-data report))]
+        unused      (reduce
+                      reduce-fn
+                      all-tempids
+                      (concat (:tx-data report) (::tx-redundant report)))]
     (if (empty? unused)
-      (dissoc report ::value-tempids)
+      (dissoc report ::value-tempids ::tx-redundant)
       (raise "Tempids used only as value in transaction: " (sort (vals unused))
              {:error :transact/syntax, :tempids unused}))))
 

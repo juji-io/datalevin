@@ -445,24 +445,74 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest test-resolve-eid
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
-        conn (d/create-conn dir)
-        t1   (d/transact! conn [[:db/add -1 :name "Ivan"]
-                                [:db/add -1 :age 19]
-                                [:db/add -2 :name "Petr"]
-                                [:db/add -2 :age 22]])
-        t2   (d/transact! conn [[:db/add "Serg" :name "Sergey"]
-                                [:db/add "Serg" :age 30]])]
-    (is (= (:tempids t1) {-1 1, -2 2, :db/current-tx (+ tx0 1)}))
-    (is (= (:tempids t2) {"Serg" 3, :db/current-tx (+ tx0 2)}))
-    (is (= #{[1 "Ivan" 19 tx0]
-             [2 "Petr" 22 tx0]
-             [3 "Sergey" 30 tx0]}
-           (d/q '[:find ?e ?n ?a ?t
-                  :where [?e :name ?n ?t]
-                  [?e :age ?a]] @conn)))
-    (d/close conn)
+(deftest test-resolve-eid-1
+  (let [dir    (u/tmp-dir (str "eid-" (random-uuid)))
+        db     (d/empty-db
+                 dir {:name {:db/unique :db.unique/identity}
+                      :aka  {:db/unique      :db.unique/identity
+                             :db/cardinality :db.cardinality/many}
+                      :ref  {:db/valueType :db.type/ref}})
+        report (d/with db [[:db/add -1 :name "Ivan"]
+                           [:db/add -1 :age 19]
+                           [:db/add -2 :name "Petr"]
+                           [:db/add -2 :age 22]
+                           [:db/add "Serg" :name "Sergey"]
+                           [:db/add "Serg" :age 30]])]
+    (is (= (:tempids report)
+           {-1             1
+            -2             2
+            "Serg"         3
+            :db/current-tx (+ c/tx0 1) }))
+    (is (= #{[1 :name "Ivan"]
+             [1 :age 19]
+             [2 :name "Petr"]
+             [2 :age 22]
+             [3 :name "Sergey"]
+             [3 :age 30]}
+           (tdc/all-datoms (:db-after report))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-resolve-eid-2
+  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+        db  (-> (d/empty-db
+                  dir {:name {:db/unique :db.unique/identity}
+                       :aka  {:db/unique      :db.unique/identity
+                              :db/cardinality :db.cardinality/many}
+                       :ref  {:db/valueType :db.type/ref}})
+                (d/db-with [[:db/add -1 :name "Ivan"]
+                            [:db/add -2 :ref -1]]))]
+    (is (= #{[1 :name "Ivan"] [2 :ref 1]}
+           (tdc/all-datoms db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-resolve-eid-3
+  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+        db  (-> (d/empty-db
+                  dir {:name {:db/unique :db.unique/identity}
+                       :aka  {:db/unique      :db.unique/identity
+                              :db/cardinality :db.cardinality/many}
+                       :ref  {:db/valueType :db.type/ref}})
+                (d/db-with [[:db/add -1 :name "Ivan"]])
+                (d/db-with [[:db/add -1 :name "Ivan"]
+                            [:db/add -2 :ref -1]]))]
+    (is (= #{[1 :name "Ivan"] [2 :ref 1]} (tdc/all-datoms db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-resolve-eid-4
+  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+        db  (-> (d/empty-db
+                  dir {:name {:db/unique :db.unique/identity}
+                       :aka  {:db/unique      :db.unique/identity
+                              :db/cardinality :db.cardinality/many}
+                       :ref  {:db/valueType :db.type/ref}})
+                (d/db-with [[:db/add -1 :aka "Batman"]])
+                (d/db-with [[:db/add -1 :aka "Batman"]
+                            [:db/add -2 :ref -1]]))]
+    (is (= #{[1 :aka "Batman"] [2 :ref 1]} (tdc/all-datoms db)))
+    (d/close-db db)
     (u/delete-files dir)))
 
 (deftest test-tempid-ref-295
