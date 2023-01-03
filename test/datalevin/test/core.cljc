@@ -79,6 +79,7 @@
      (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
            server (srv/create {:port c/default-port
                                :root dir})]
+       ;; (log/set-min-level! :debug)
        (log/set-min-level! :report)
        (try
          (srv/start server)
