@@ -1,12 +1,12 @@
 (ns ^:no-doc datalevin.pull-api
   (:require
-    [datalevin.db :as db]
-    [datalevin.pull-parser :as dpp #?@(:cljs [:refer [PullSpec]])]
-    [datalevin.timeout :as timeout])
-    #?(:clj
-      (:import
-        [datalevin.datom Datom]
-        [datalevin.pull_parser PullSpec])))
+   [datalevin.db :as db]
+   [datalevin.pull-parser :as dpp #?@(:cljs [:refer [PullSpec]])]
+   [datalevin.timeout :as timeout])
+  #?(:clj
+     (:import
+      [datalevin.datom Datom]
+      [datalevin.pull_parser PullSpec])))
 
 (defn- into!
   [transient-coll items]
@@ -240,9 +240,9 @@
                      frames)
       (if-let [specs (seq (:specs frame))]
         (let [spec       (first specs)
-              pattern    (:pattern frame)
               new-frames (conj frames (assoc frame :specs (rest specs)))]
-          (pull-attr db spec (first eids) new-frames))
+          (when (first eids)
+            (pull-attr db spec (first eids) new-frames)))
         (->> frame :kvps persistent! not-empty
              (reset-frame frame (rest eids))
              (conj frames)
@@ -258,24 +258,25 @@
     :pattern    (recur db (pull-pattern-frame db frames))
     :recursion  (recur db (pull-recursion-frame db frames))
     :done       (let [[f & remaining] frames
-                      result (cond-> (persistent! (:results f))
-                               (not (:multi? f)) first)]
+                      result          (cond-> (persistent! (:results f))
+                                        (not (:multi? f)) first)]
                   (if (seq remaining)
                     (->> (cond-> (first remaining)
-                           result (update :kvps assoc! (:attr f) result))
+                           (seq result) (update :kvps assoc! (:attr f) result))
                          (conj (rest remaining))
                          (recur db))
-                    result))))
+                    result))
+    nil))
 
 (defn pull-spec
-  [db pattern eids multi?]
-  (let [eids (into [] (map #(db/entid-strict db %)) eids)]
-    (pull-pattern db (list (initial-frame pattern eids multi?)))))
+  [db pattern eid multi?]
+  (pull-pattern db (list (initial-frame pattern [(db/entid db eid)] multi?))))
 
 (defn pull [db selector eid & {:keys [timeout]}]
   (binding [timeout/*deadline* (timeout/to-deadline timeout)]
-    (pull-spec db (dpp/parse-pull selector) [eid] false)))
+    (pull-spec db (dpp/parse-pull selector) eid false)))
 
 (defn pull-many [db selector eids & {:keys [timeout]}]
   (binding [timeout/*deadline* (timeout/to-deadline timeout)]
-    (pull-spec db (dpp/parse-pull selector) eids true)))
+    (mapv #(pull-spec db (dpp/parse-pull selector) % false)
+          eids)))

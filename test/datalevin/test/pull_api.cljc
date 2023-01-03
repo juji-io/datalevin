@@ -8,7 +8,8 @@
 (use-fixtures :each db-fixture)
 
 (def test-schema
-  {:aka    { :db/cardinality :db.cardinality/many }
+  {:name   { :db/unique :db.unique/identity }
+   :aka    { :db/cardinality :db.cardinality/many }
    :child  { :db/cardinality :db.cardinality/many
             :db/valueType    :db.type/ref }
    :friend { :db/cardinality :db.cardinality/many
@@ -239,7 +240,7 @@
              (d/pull test-db '[:name {:father [:name]}] 1))))
 
     (testing "Non matching results are removed from collections"
-      (is (= {:name "Petr" :child []}
+      (is (= {:name "Petr"}
              (d/pull test-db '[:name {:child [:foo]}] 1))))
 
     (testing "Map specs can override component expansion"
@@ -365,4 +366,21 @@
     (is (= (str "Person-" (dec depth))
            (:name (get-in pulled path))))
     (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-lookup-ref-pull
+  (let [dir     (u/tmp-dir (str "pull-lookup-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
+    (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
+           (d/pull test-db '[:name :aka] [:name "Petr"])))
+    (is (= nil
+           (d/pull test-db '[:name :aka] [:name "NotInDatabase"])))
+    (is (= [nil {:aka ["Devil" "Tupen"]} nil nil]
+           (d/pull-many test-db
+                        '[:aka]
+                        [[:name "Elizabeth"]
+                         [:name "Petr"]
+                         [:name "Eunan"]
+                         [:name "Rebecca"]])))
+    (d/close-db test-db)
     (u/delete-files dir)))
