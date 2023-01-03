@@ -13,6 +13,7 @@
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
+   [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.bits :as b])
   (:import
@@ -419,7 +420,7 @@ Only usable for debug output.
    (let [store (.-store db)]
      (if (instance? DatalogStore store)
        (r/fulltext-datoms store query opts)
-       (dq/fulltext db query opts)))))
+       (dbq/fulltext db query opts)))))
 
 (defn index-range
   "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.

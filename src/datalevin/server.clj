@@ -9,6 +9,7 @@
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.search :as sc]
+            [datalevin.built-ins :as dbq]
             [datalevin.constants :as c]
             [taoensso.timbre :as log]
             [clojure.stacktrace :as stt]
@@ -1964,7 +1965,7 @@
   (wrap-error
     (let [[db-name query opts] args
           db                   (get-db server db-name writing?)
-          data                 (q/fulltext db query opts)]
+          data                 (dbq/fulltext db query opts)]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
