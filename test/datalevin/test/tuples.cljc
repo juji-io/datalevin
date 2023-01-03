@@ -125,6 +125,37 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest test-ignore-correct
+  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+        conn (d/create-conn dir {:a+b {:db/tupleAttrs [:a :b]}})]
+    (testing "insert"
+      (d/transact! conn [{:db/id 1 :a "a" :b "b" :a+b ["a" "b"]}])
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 2 :a+b [\"a\" \"b\"]]"
+                       (d/transact! conn [{:db/id 2 :a "x" :b "y" :a+b ["a" "b"]}])))
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 2 :a+b [\"a\" \"b\"]]"
+                       (d/transact! conn [{:db/id 2 :a+b ["a" "b"] :a "x" :b "y"}])))
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 2 :a+b [\"a\"]]"
+                       (d/transact! conn [{:db/id 2 :a "a" :b "b" :a+b ["a"]}])))
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 2 :a+b [\"a\" nil]]"
+                       (d/transact! conn [{:db/id 2 :a "a" :b "b" :a+b ["a" nil]}]))))
+
+    (testing "update"
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 1 :a+b [\"a\" \"b\"]]"
+                       (d/transact! conn [{:db/id 1 :a "x" :a+b ["a" "b"]}])))
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 1 :a+b [\"a\" \"B\"]]"
+                       (d/transact! conn [{:db/id 1 :a+b ["a" "B"]}])))
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 1 :a+b [\"a\"]]"
+                       (d/transact! conn [{:db/id 1 :a "a" :b "b" :a+b ["a"]}])))
+      (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 1 :a+b [\"a\" nil]]"
+                       (d/transact! conn [{:db/id 1 :a "a" :b "b" :a+b ["a" nil]}])))
+      (d/transact! conn [{:db/id 1 :a+b ["a" "b"]}])
+      (d/transact! conn [{:db/id 1 :b "B" :a+b ["a" "B"]}])
+      (d/transact! conn [{:db/id 1 :a+b ["A" "B"] :a "A"}]))
+    (is (= #{[1 :b "B"] [1 :a+b ["A" "B"]] [1 :a "A"]}
+           (tdc/all-datoms (d/db conn))))
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest test-unique
   (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
         conn (d/create-conn

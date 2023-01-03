@@ -750,8 +750,14 @@
 
 
 (defn- explode [db entity]
-  (let [eid (:db/id entity)]
-    (for [[a vs] entity
+  (let [eid  (:db/id entity)
+        ;; sort tuple attrs after non-tuple
+        a+vs (apply concat
+                    (reduce
+                      (fn [acc [a vs]]
+                        (update acc (if (tuple? db a) 1 0) conj [a vs]))
+                      [[] []] entity))]
+    (for [[a vs] a+vs
           :when  (not= a :db/id)
           :let   [_          (validate-attr a {:db/id eid, a vs})
                   reverse?   (reverse-ref? a)
@@ -950,7 +956,7 @@
                     (into entities (reverse (@de-entity->txs entity))))
 
 
-             :let [db      (:db-after report)
+             :let [^DB db      (:db-after report)
                    tempids (:tempids report)]
 
              (map? entity)
@@ -1091,8 +1097,29 @@
 
                  (and (not (::internal (meta entity)))
                       (tuple? db a))
-                 (raise "Can’t modify tuple attrs directly: " entity
-                        {:error :transact/syntax, :tx-data entity})
+                 ;; allow transacting in tuples if they fully match already existing values
+                 (let [tuple-attrs (get-in (s/schema (.-store db)) [a :db/tupleAttrs])]
+                   (if (and
+                         (= (count tuple-attrs) (count v))
+                         (every? some? v)
+                         (every?
+                           (fn [[tuple-attr tuple-value]]
+                             (let [db-value
+                                   (or (:v
+                                        (first
+                                          (set/slice
+                                            (:eavt db)
+                                            (d/datom e tuple-attr nil tx0)
+                                            (d/datom e tuple-attr nil txmax))))
+                                       (:v (-first-datom db :eavt [e tuple-attr])))]
+                               (= tuple-value db-value)))
+                           (map vector tuple-attrs v)))
+                     (recur report entities)
+                     (raise "Can’t modify tuple attrs directly: " entity
+                            {:error :transact/syntax, :tx-data entity})))
+
+                 #_ (raise "Can’t modify tuple attrs directly: " entity
+                           {:error :transact/syntax, :tx-data entity})
 
                  (= op :db/add)
                  (recur (transact-add report entity) entities)
