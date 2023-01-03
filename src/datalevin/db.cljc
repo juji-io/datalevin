@@ -983,7 +983,9 @@
                           (contains? tempids old-eid)
                           (not= upserted-eid (get tempids old-eid)))
                    (retry-with-tempid initial-report report initial-es old-eid upserted-eid)
-                   (recur (allocate-eid tx-time report old-eid upserted-eid)
+                   (recur (-> (allocate-eid tx-time report old-eid upserted-eid)
+                              (update ::tx-redundant conjv
+                                      (datom upserted-eid nil nil tx0)))
                           (concat (explode db (assoc entity' :db/id upserted-eid)) entities)))
 
                  ;; resolved | allocated-tempid | tempid | nil => explode
@@ -1117,9 +1119,6 @@
                      (recur report entities)
                      (raise "Can’t modify tuple attrs directly: " entity
                             {:error :transact/syntax, :tx-data entity})))
-
-                 #_ (raise "Can’t modify tuple attrs directly: " entity
-                           {:error :transact/syntax, :tx-data entity})
 
                  (= op :db/add)
                  (recur (transact-add report entity) entities)
