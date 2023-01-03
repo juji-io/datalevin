@@ -151,7 +151,7 @@
                                    :db.type/long :db.type/double
                                    :db.type/float :db.type/ref
                                    :db.type/instant :db.type/uuid
-                                   :db.type/bytes})
+                                   :db.type/bytes :db.type/tuple})
 
 ;; search engine
 

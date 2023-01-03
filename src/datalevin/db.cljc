@@ -310,6 +310,14 @@
     (validate-schema-key a :db/fulltext (:db/fulltext kv)
                          #{true false})
 
+    ;; tuple should have tupleAttrs
+    (when (and (= :db.type/tuple (:db/valueType kv))
+               (not (contains? kv :db/tupleAttrs)))
+      (raise "Bad attribute specification for " a ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs"
+             {:error     :schema/validation
+              :attribute a
+              :key       :db/valueType}))
+
     ;; :db/tupleAttrs is a non-empty sequential coll
     (when (contains? kv :db/tupleAttrs)
       (let [ex-data {:error     :schema/validation
