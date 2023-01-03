@@ -295,3 +295,17 @@
                 @conn)))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-join-unrelated
+  (let [dir (u/tmp-dir (str "test-query-" (UUID/randomUUID)))
+        db  (d/empty-db dir)]
+    (is (= #{}
+           (d/q '[:find ?name
+                  :in $ ?my-fn
+                  :where [?e :person/name ?name]
+                  [(?my-fn) ?result]
+                  [(< ?result 3)]]
+                (d/db-with db [{:person/name "Joe"}])
+                (fn [] 5))))
+    (d/close-db db)
+    (u/delete-files dir)))
