@@ -12,7 +12,8 @@
 
 (deftest test-with-validation
   (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
-        db  (d/empty-db dir {:profile { :db/valueType :db.type/ref }})]
+        db  (d/empty-db dir {:profile { :db/valueType :db.type/ref }
+                             :id      {:db/unique :db.unique/identity}})]
     (are [tx] (thrown-with-msg? Throwable #"Expected number, string or lookup ref for :db/id" (d/db-with db tx))
       [{:db/id #"" :name "Ivan"}])
 
@@ -23,7 +24,10 @@
 
     (are [tx] (thrown-with-msg? Throwable #"Cannot store nil as a value" (d/db-with db tx))
       [[:db/add -1 :name nil]]
-      [{:db/id -1 :name nil}])
+      [{:db/id -1 :name nil}]
+      [[:db/add -1 :id nil]]
+      [{:db/id -1 :id "A"}
+       {:db/id -1 :id nil}])
 
     (are [tx] (thrown-with-msg? Throwable #"Expected number or lookup ref for entity id" (d/db-with db tx))
       [[:db/add nil :name "Ivan"]]

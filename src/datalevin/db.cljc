@@ -693,10 +693,12 @@
                         (update acc 0 conj v)))
                     [[] {}] vs))]
       (reduce-kv
-        (fn [[entity upserts] a v]
+        (fn [[entity' upserts] a v]
+          (validate-attr a entity)
+          (validate-val v entity)
           (cond
             (not (contains? idents a))
-            [(assoc entity a v) upserts]
+            [(assoc entity' a v) upserts]
 
             (and
               (multival? db a)
@@ -704,15 +706,15 @@
                 (arrays/array? v)
                 (and (coll? v) (not (map? v)))))
             (let [[insert upsert] (split a v)]
-              [(cond-> entity
+              [(cond-> entity'
                  (not (empty? insert)) (assoc a insert))
                (cond-> upserts
                  (not (empty? upsert)) (assoc a upsert))])
 
             :else
             (if-some [e (resolve a v)]
-              [entity (assoc upserts a {v e})]
-              [(assoc entity a v) upserts])))
+              [entity' (assoc upserts a {v e})]
+              [(assoc entity' a v) upserts])))
         [{} {}]
         entity))
     [entity nil]))
