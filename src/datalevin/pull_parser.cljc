@@ -132,6 +132,13 @@
       :else
       (assoc pull-attr :pattern (parse-pattern db pattern)))))
 
+(defn- conj-attr [pull-pattern pull-attr]
+  (let [pattern-attr (if (:reverse? pull-attr) :reverse-attrs :attrs)]
+    (if-some [idx (u/index-of #(= (:as %) (:as pull-attr))
+                              (get pull-pattern pattern-attr))]
+      (update pull-pattern pattern-attr assoc idx pull-attr)
+      (update pull-pattern pattern-attr conj pull-attr))))
+
 (defn parse-pattern ^PullPattern [db pattern]
   (check (sequential? pattern) "pattern to be sequential?" pattern)
   (loop [pattern             pattern
@@ -167,15 +174,6 @@
 
       (or (= '* attr-spec) (= "*" attr-spec) (= :* attr-spec))
       (recur (next pattern) (assoc result :wildcard? true))
-
-      :let [conj-attr (fn [result pull-attr]
-                        (cond
-
-                          (:reverse? pull-attr)
-                          (update result :reverse-attrs conj pull-attr)
-
-                          :else
-                          (update result :attrs conj pull-attr)))]
 
       (map? attr-spec)
       (let [result' (reduce-kv

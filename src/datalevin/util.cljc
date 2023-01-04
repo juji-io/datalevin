@@ -300,3 +300,7 @@
       xs)))
 
 (def long-inc #(inc ^long %))
+
+(defn index-of
+  [pred xs]
+  (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
