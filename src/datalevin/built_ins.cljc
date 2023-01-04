@@ -107,6 +107,7 @@
                 'println-str                 println-str,
                 'prn-str                     prn-str,
                 'subs                        subs,
+                'get                         get
                 're-find                     re-find,
                 're-matches                  re-matches,
                 're-seq                      re-seq,

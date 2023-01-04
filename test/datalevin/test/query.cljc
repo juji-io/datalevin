@@ -296,6 +296,15 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(deftest test-built-in-get
+  (is (= (d/q '[:find ?m ?m-value
+                :in [[?k ?m] ...] ?m-key
+                :where [(get ?m ?m-key) ?m-value]]
+              {:a {:b 1}
+               :c {:d 2}}
+              :d)
+         #{[{:d 2} 2]})))
+
 (deftest test-join-unrelated
   (let [dir (u/tmp-dir (str "test-query-" (UUID/randomUUID)))
         db  (d/empty-db dir)]

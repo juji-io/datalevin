@@ -121,7 +121,24 @@
                     :in    [?x ...]
                     :where [(count ?x) ?c]]
                   ["a" "abc"])
-             #{["a" 1] ["abc" 3]})))
+             #{["a" 1] ["abc" 3]}))
+
+      (is (= (d/q '[:find  ?a1
+                    :where [_ :age ?a1]
+                    [(< ?a1 22)]] db)
+             #{[15]}))
+      (is (= (d/q '[:find  ?a1
+                    :where [_ :age ?a1]
+                    [(<= ?a1 22)]] db)
+             #{[15] [22]}))
+      (is (= (d/q '[:find  ?a1
+                    :where [_ :age ?a1]
+                    [(> ?a1 22)]] db)
+             #{[37]}))
+      (is (= (d/q '[:find  ?a1
+                    :where [_ :age ?a1]
+                    [(>= ?a1 22)]] db)
+             #{[22] [37]})))
 
     (testing "Built-in vector, hashmap"
       (is (= (d/q '[:find [?tx-data ...]
