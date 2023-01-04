@@ -4,7 +4,8 @@
    [datalevin.db :as db]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [cond+ raise]]))
 
-(defrecord PullAttr [as default limit name pattern recursion-limit recursive? reverse? xform multival? ref? component?])
+(defrecord PullAttr [as default limit name pattern recursion-limit recursive?
+                     reverse? xform multival? ref? component?])
 (defrecord PullPattern [attrs first-attr last-attr reverse-attrs wildcard?])
 
 (def default-db-id-attr (map->PullAttr {:name :db/id :as :db/id :xform identity}))
@@ -101,8 +102,8 @@
 
 (defn parse-attr-spec [db attr-spec]
   (cond
-    (or (keyword? attr-spec) 
-        (and (string? attr-spec) 
+    (or (keyword? attr-spec)
+        (and (string? attr-spec)
              (not (#{"default" "limit"} attr-spec))))
     (parse-attr-name db attr-spec)
 

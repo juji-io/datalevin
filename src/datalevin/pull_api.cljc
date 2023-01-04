@@ -5,6 +5,7 @@
    [datalevin.constants :as c]
    [datalevin.datom :as dd]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [cond+]]
+   [datalevin.timeout :as timeout]
    [datalevin.lru :as lru])
   #?(:clj
      (:import
@@ -279,6 +280,7 @@
          ^PullPattern pattern :pattern} parsed-opts]
     (when-some [eid (db/entid (.-db context) id)]
       (loop [stack (list (attrs-frame context #{} {} pattern eid))]
+        (timeout/assert-time-left)
         (cond+
           :let [last   (first-seq stack)
                 stack' (next-seq stack)]
@@ -310,14 +312,16 @@
    (:db.pull/wildcard e   nil nil) - when pulling every attribute on an entity
    (:db.pull/reverse  nil a   v  ) - when pulling reverse attribute"
   ([^DB db pattern id] (pull db pattern id {}))
-  ([^DB db pattern id opts]
+  ([^DB db pattern id {:keys [timeout] :as opts}]
    {:pre [(db/db? db)]}
-   (let [parsed-opts (parse-opts db pattern opts)]
-     (pull-impl parsed-opts id))))
+   (binding [timeout/*deadline* (timeout/to-deadline timeout)]
+     (let [parsed-opts (parse-opts db pattern opts)]
+       (pull-impl parsed-opts id)))))
 
 (defn pull-many
   ([^DB db pattern ids] (pull-many db pattern ids {}))
-  ([^DB db pattern ids opts]
+  ([^DB db pattern ids {:keys [timeout] :as opts}]
    {:pre [(db/db? db)]}
-   (let [parsed-opts (parse-opts db pattern opts)]
-     (mapv #(pull-impl parsed-opts %) ids))))
+   (binding [timeout/*deadline* (timeout/to-deadline timeout)]
+     (let [parsed-opts (parse-opts db pattern opts)]
+       (mapv #(pull-impl parsed-opts %) ids)))))
