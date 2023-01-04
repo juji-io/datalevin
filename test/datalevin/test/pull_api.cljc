@@ -506,6 +506,21 @@
     (d/close-db db)
     (u/delete-files dir)))
 
+(deftest test-component-reverse
+  (let [schema {:ref {:db/valueType   :db.type/ref
+                      :db/isComponent true}}
+        dir    (u/tmp-dir (str "pull-lookup-" (random-uuid)))
+        db     (d/db-with (d/empty-db dir schema)
+                          [{:name "1"
+                            :ref  {:name "2"
+                                   :ref  {:name "3"}}}])]
+    (is (= {:name "1", :ref {:name "2", :ref {:name "3", :_ref {:name "2"}}}}
+           (d/pull db
+                   [:name {:ref [:name {:ref [:name {:_ref [:name]}]}]}]
+                   1)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
 (deftest test-lookup-ref-pull
   (let [dir     (u/tmp-dir (str "pull-lookup-" (random-uuid)))
         test-db (d/init-db test-datoms dir test-schema)]
