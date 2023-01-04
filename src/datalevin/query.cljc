@@ -8,7 +8,7 @@
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise cond+]]
    [me.tonsky.persistent-sorted-set.arrays :as da]
-   [datalevin.lru]
+   [datalevin.lru :as lru]
    [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
                                                FindColl FindRel FindScalar FindTuple PlainSymbol
                                                RulesVar SrcVar Variable]])]
@@ -26,7 +26,8 @@
 
 ;; ----------------------------------------------------------------------------
 
-(def ^:const lru-cache-size 100)
+;; (def ^:const lru-cache-size 100)
+(def ^:dynamic *query-cache* (lru/cache 100 :constant))
 
 (declare -collect -resolve-clause resolve-clause)
 
@@ -977,47 +978,57 @@
 (defn- pull [find-elements context resultset]
   (let [resolved (for [find find-elements]
                    (when (dp/pull? find)
-                     [(-context-resolve (:source find) context)
-                      (dpp/parse-pull
-                        (-context-resolve (:pattern find) context))]))]
+                     (let [db      (-context-resolve (:source find) context)
+                           pattern (-context-resolve (:pattern find) context)]
+                       (dpa/parse-opts db pattern))
+                     #_[(-context-resolve (:source find) context)
+                        (dpp/parse-pull
+                          (-context-resolve (:pattern find) context))]))]
     (for [tuple resultset]
-      (mapv (fn [env el]
-              (if env
-                (let [[src spec] env]
-                  (dpa/pull-spec src spec el false))
-                el))
-            resolved
-            tuple))))
+      (mapv
+        (fn [parsed-opts el]
+          (if parsed-opts
+            (dpa/pull-impl parsed-opts el)
+            el))
+        resolved
+        tuple)
+      #_(mapv (fn [env el]
+                (if env
+                  (let [[src spec] env]
+                    (dpa/pull-spec src spec el false))
+                  el))
+              resolved
+              tuple))))
 
-(def ^:private query-cache (volatile! (datalevin.lru/lru lru-cache-size
-                                                         :constant)))
+;; (def ^:private query-cache (volatile! (datalevin.lru/lru lru-cache-size
+;;                                                          :constant)))
 
-(defn memoized-parse-query [q]
-  (if-some [cached (get @query-cache q nil)]
-    cached
-    (let [qp (dp/parse-query q)]
-      (vswap! query-cache assoc q qp)
-      qp)))
+;; (defn memoized-parse-query [q]
+;;   (if-some [cached (get @query-cache q nil)]
+;;     cached
+;;     (let [qp (dp/parse-query q)]
+;;       (vswap! query-cache assoc q qp)
+;;       qp)))
 
 (defn q [q & inputs]
-  (let [parsed-q      (memoized-parse-query q)
+  (let [parsed-q      (lru/-get *query-cache* q #(dp/parse-query q)) #_ (memoized-parse-query q)
         find          (:qfind parsed-q)
         find-elements (dp/find-elements find)
         find-vars     (dp/find-vars find)
         result-arity  (count find-elements)
         with          (:qwith parsed-q)
-        timeout      (:qtimeout parsed-q)]
+        timeout       (:qtimeout parsed-q)]
     (binding [timeout/*deadline* (timeout/to-deadline timeout)]
       (let [;; TODO utilize parser
-            all-vars      (concat find-vars (map :symbol with))
-            q             (cond-> q
-                            (sequential? q) dp/query->map)
-            wheres        (:where q)
-            context       (-> (Context. [] {} {})
-                              (resolve-ins (:qin parsed-q) inputs))
-            resultset     (-> context
-                              (-q wheres)
-                              (collect all-vars))]
+            all-vars  (concat find-vars (map :symbol with))
+            q         (cond-> q
+                        (sequential? q) dp/query->map)
+            wheres    (:where q)
+            context   (-> (Context. [] {} {})
+                          (resolve-ins (:qin parsed-q) inputs))
+            resultset (-> context
+                          (-q wheres)
+                          (collect all-vars))]
         (cond->> resultset
           (:with q)
           (mapv #(vec (subvec % 0 result-arity)))

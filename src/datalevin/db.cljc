@@ -39,6 +39,7 @@
 (defprotocol IIndexAccess
   (-populated? [db index components])
   (-datoms [db index components])
+  (-range-datoms [db index start-datom end-datom])
   (-first-datom [db index components])
   (-seek-datoms [db index components])
   (-rseek-datoms [db index components])
@@ -105,7 +106,9 @@
          (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
-(defrecord-updatable DB [^IStore store eavt avet veat max-eid max-tx hash]
+(defrecord-updatable DB [^IStore store eavt avet veat max-eid max-tx
+                         pull-patterns pull-attrs
+                         hash]
 
   clojure.lang.IEditableCollection
   (empty [db]         (with-meta (empty-db (s/dir store) (s/schema store))
@@ -221,6 +224,13 @@
       [:datoms index cs]
       (s/slice store index (components->pattern db index cs e0 tx0)
                (components->pattern db index cs emax txmax))))
+
+  (-range-datoms
+    [db index start-datom end-datom]
+    (wrap-cache
+      store
+      [:range-datoms index start-datom end-datom]
+      (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index cs]
@@ -358,12 +368,14 @@
   [^IStore store]
   (refresh-cache store)
   (map->DB
-    {:store   store
-     :eavt    (set/sorted-set-by d/cmp-datoms-eavt)
-     :avet    (set/sorted-set-by d/cmp-datoms-avet)
-     :veat    (set/sorted-set-by d/cmp-datoms-veat)
-     :max-eid (s/init-max-eid store)
-     :max-tx  (s/max-tx store)}))
+    {:store         store
+     :eavt          (set/sorted-set-by d/cmp-datoms-eavt)
+     :avet          (set/sorted-set-by d/cmp-datoms-avet)
+     :veat          (set/sorted-set-by d/cmp-datoms-veat)
+     :max-eid       (s/init-max-eid store)
+     :max-tx        (s/max-tx store)
+     :pull-patterns (lru/cache 100 :constant)
+     :pull-attrs    (lru/cache 100 :constant)}))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))

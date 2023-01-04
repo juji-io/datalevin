@@ -492,6 +492,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2022 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2023 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).

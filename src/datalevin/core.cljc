@@ -134,11 +134,19 @@ Only usable for debug output.
 
 ;; Pull API
 
-(defn pull
-  "Fetches data from a Datalog database using recursive declarative
+(def ^{:arglists '([db pattern id] [db pattern id opts])
+       :doc      "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
+
+  Supported opts:
+
+   `:visitor` a fn of 4 arguments, will be called for every entity/attribute pull touches
+
+   (:db.pull/attr     e   a   nil) - when pulling a normal attribute, no matter if it has value or not
+   (:db.pull/wildcard e   nil nil) - when pulling every attribute on an entity
+   (:db.pull/reverse  nil a   v  ) - when pulling reverse attribute
 
   Usage:
 
@@ -146,25 +154,20 @@ Only usable for debug output.
                 ; => {:db/id   1,
                 ;     :name    \"Ivan\"
                 ;     :likes   [:pizza]
-                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
-  [db selector eid]
-  {:pre [(db/db? db)]}
-  (dp/pull db selector eid))
+                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"}
+  pull dp/pull)
 
-
-(defn pull-many
-  "Same as [[pull]], but accepts sequence of ids and returns
+(def ^{:arglists '([db pattern ids] [db pattern ids opts])
+       :doc
+       "Same as [[pull]], but accepts sequence of ids and returns
   sequence of maps.
 
   Usage:
 
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
-             ;     {:db/id 2, :name \"Oleg\"}]"
-  [db selector eids]
-  {:pre [(db/db? db)]}
-  (dp/pull-many db selector eids))
-
+             ;     {:db/id 2, :name \"Oleg\"}]"}
+  pull-many dp/pull-many)
 
 ;; Query
 

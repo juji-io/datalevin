@@ -32,21 +32,21 @@
         limit     (.-limit lru)
         target    (.-target lru)]
     (if-let [g (key-gen k nil)]
-      (->LRU key-value
-             (-> gen-key
-                 (dissoc g)
-                 (assoc gen k))
-             (assoc key-gen k gen)
-             (inc ^long gen)
-             limit
-             target)
+      (LRU. key-value
+            (-> gen-key
+                (dissoc g)
+                (assoc gen k))
+            (assoc key-gen k gen)
+            (inc ^long gen)
+            limit
+            target)
       (cleanup-lru
-        (->LRU (assoc key-value k v)
-               (assoc gen-key gen k)
-               (assoc key-gen k gen)
-               (inc ^long gen)
-               limit
-               target)))))
+        (LRU. (assoc key-value k v)
+              (assoc gen-key gen k)
+              (assoc key-gen k gen)
+              (inc ^long gen)
+              limit
+              target)))))
 
 (defn cleanup-lru [^LRU lru]
   (if (> (count (.-key-value lru)) ^long (.-limit lru))
@@ -57,13 +57,26 @@
           limit     (.-limit lru)
           target    (.-target lru)
           [g k]     (first gen-key)]
-      (->LRU (dissoc key-value k)
-             (dissoc gen-key g)
-             (dissoc key-gen k)
-             gen
-             limit
-             target))
+      (LRU. (dissoc key-value k)
+            (dissoc gen-key g)
+            (dissoc key-gen k)
+            gen
+            limit
+            target))
     lru))
 
 (defn lru [limit target]
-  (->LRU {} (sorted-map) {} 0 limit target))
+  (LRU. {} (sorted-map) {} 0 limit target))
+
+(defprotocol ICache
+  (-get [this key compute-fn]))
+
+(defn cache [limit target]
+  (let [*impl (volatile! (lru limit target))]
+    (reify ICache
+      (-get [_ key compute-fn]
+        (if-some [cached (get @*impl key nil)]
+          cached
+          (let [computed (compute-fn)]
+            (vswap! *impl assoc key computed)
+            computed))))))
