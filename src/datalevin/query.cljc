@@ -350,7 +350,7 @@
 
 (defn lookup-pattern-db [db pattern]
   ;; TODO optimize with bound attrs min/max values here
-  (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)
+  (let [search-pattern (mapv #(if (or (= % '_) (free-var? %)) nil %) pattern)
         datoms         (db/-search db search-pattern)
         attr->prop     (->> (map vector pattern ["e" "a" "v" "tx"])
                             (filter (fn [[s _]] (free-var? s)))
@@ -363,7 +363,7 @@
     (if (and tuple pattern)
       (let [t (first tuple)
             p (first pattern)]
-        (if (or (symbol? p) (= t p))
+        (if (or (= p '_) (free-var? p) (= t p))
           (recur (next tuple) (next pattern))
           false))
       true)))
@@ -980,10 +980,7 @@
                    (when (dp/pull? find)
                      (let [db      (-context-resolve (:source find) context)
                            pattern (-context-resolve (:pattern find) context)]
-                       (dpa/parse-opts db pattern))
-                     #_[(-context-resolve (:source find) context)
-                        (dpp/parse-pull
-                          (-context-resolve (:pattern find) context))]))]
+                       (dpa/parse-opts db pattern))))]
     (for [tuple resultset]
       (mapv
         (fn [parsed-opts el]
@@ -991,27 +988,10 @@
             (dpa/pull-impl parsed-opts el)
             el))
         resolved
-        tuple)
-      #_(mapv (fn [env el]
-                (if env
-                  (let [[src spec] env]
-                    (dpa/pull-spec src spec el false))
-                  el))
-              resolved
-              tuple))))
-
-;; (def ^:private query-cache (volatile! (datalevin.lru/lru lru-cache-size
-;;                                                          :constant)))
-
-;; (defn memoized-parse-query [q]
-;;   (if-some [cached (get @query-cache q nil)]
-;;     cached
-;;     (let [qp (dp/parse-query q)]
-;;       (vswap! query-cache assoc q qp)
-;;       qp)))
+        tuple))))
 
 (defn q [q & inputs]
-  (let [parsed-q      (lru/-get *query-cache* q #(dp/parse-query q)) #_ (memoized-parse-query q)
+  (let [parsed-q      (lru/-get *query-cache* q #(dp/parse-query q))
         find          (:qfind parsed-q)
         find-elements (dp/find-elements find)
         find-vars     (dp/find-vars find)

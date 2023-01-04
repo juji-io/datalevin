@@ -318,3 +318,19 @@
                 (fn [] 5))))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest test-symbol-comparison
+  (is (= [2]
+         (d/q
+           '[:find [?e ...]
+             :where [?e :s b]]
+           '[[1 :s a]
+             [2 :s b]])))
+  (let [db (-> (d/empty-db)
+               (d/db-with '[{:db/id 1, :s a}
+                            {:db/id 2, :s b}]))]
+    (is (= [2]
+           (d/q
+             '[:find [?e ...]
+               :where [?e :s b]]
+             db)))))
