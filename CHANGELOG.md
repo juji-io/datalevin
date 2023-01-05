@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.8 (2023-01-04)
 ### Fixed
 - [KV] `get-range` regression when results are used in `sequence`. #172
 ### Improved
