@@ -6,8 +6,7 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [clojure.string :as str]
-            )
+            [clojure.string :as str])
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))

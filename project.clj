@@ -6,18 +6,18 @@
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
-  [[babashka/babashka.pods "0.1.0"]
+  [[babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.329"]
    [com.fasterxml.jackson.core/jackson-core "2.14.1"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.13"]
-   [com.taoensso/encore "3.43.0"]
+   [com.taoensso/encore "3.45.0"]
    [com.taoensso/nippy "3.2.0"]
    [com.taoensso/timbre "6.0.4"]
    [joda-time/joda-time "2.12.2"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
-   [org.babashka/sci "0.5.36"]
+   [org.babashka/sci "0.6.37"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
    [org.clojure/clojure "1.11.1"]
    [org.clojure/tools.cli "1.0.214"]
@@ -31,7 +31,7 @@
    [org.graalvm.sdk/graal-sdk "21.3.0"]
    [org.graalvm.nativeimage/svm "21.3.0"]
    [org.lmdbjava/lmdbjava "0.8.2"]
-   [org.roaringbitmap/RoaringBitmap "0.9.35"]
+   [org.roaringbitmap/RoaringBitmap "0.9.37"]
    [persistent-sorted-set "0.2.3"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]

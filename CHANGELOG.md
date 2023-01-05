@@ -7,6 +7,7 @@
 - [Datalog] Ported all applicable Datascript improvements since 0.8.13 up to now
   (1.4.0). Notably, added composite tuples feature, new pull implementation,
   many bug fixes and performance improvements. #3, #57, #168
+- bump deps
 
 ## 0.7.6 (2022-12-16)
 ### Fixed

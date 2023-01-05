@@ -7,15 +7,14 @@
    [me.tonsky.persistent-sorted-set.arrays :as arrays]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
    [datalevin.lru :as lru]
-   [datalevin.inline :refer [update]]
    [datalevin.datom :as d
     :refer [datom datom-added datom?]]
-   [datalevin.util
+   [datalevin.util :as u
     :refer [case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
    [datalevin.remote :as r]
    [datalevin.client :as cl]
-   [datalevin.util :as u])
+   [datalevin.inline :refer [update]])
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
@@ -25,7 +24,6 @@
               [datalevin.remote DatalogStore]
               [datalevin.lru LRU]
               [datalevin.bits Retrieved]
-              [clojure.lang IFn$OOL]
               [java.net URI]
               [java.util.concurrent ConcurrentHashMap])
      (:refer-clojure :exclude [update])))
