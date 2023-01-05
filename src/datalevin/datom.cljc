@@ -8,6 +8,7 @@
      (:require-macros [datalevin.util :refer [combine-cmp]]))
   #?(:clj
      (:import
+      [clojure.lang IFn$OOL]
       [java.util Arrays]
       [java.io DataInput DataOutput])))
 
@@ -205,33 +206,60 @@
 (def nil-cmp (nil-check-cmp-fn compare))
 (def nil-cmp-type (nil-check-cmp-fn compare-with-type))
 
+(defmacro compare-int
+  [x y]
+  `(long (Integer/compare ~x ~y)))
+
+(defmacro defcomp
+  [sym [arg1 arg2] & body]
+  (let [a1 (with-meta arg1 {})
+        a2 (with-meta arg2 {})]
+    `(def ~sym
+       (reify
+         java.util.Comparator
+         (compare [_# ~a1 ~a2]
+           (let [~arg1 ~arg1 ~arg2 ~arg2]
+             ~@body))
+         clojure.lang.IFn
+         (invoke [this# ~a1 ~a2]
+           (.compare this# ~a1 ~a2))
+         IFn$OOL
+         (invokePrim [this# ~a1 ~a2]
+           (.compare this# ~a1 ~a2))))))
+
 ;; Slower cmp-* fns allows for datom fields to be nil.
 ;; Such datoms come from slice method where they are used as boundary markers.
 
-(defn cmp-datoms-eavt [^Datom d1, ^Datom d2]
+(defcomp cmp-datoms-eavt [^Datom d1, ^Datom d2]
   (combine-cmp
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
     (nil-cmp (.-a d1) (.-a d2))
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-avet [^Datom d1, ^Datom d2]
+(defcomp cmp-datoms-avet [^Datom d1, ^Datom d2]
   (combine-cmp
     (nil-cmp (.-a d1) (.-a d2))
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-veat [^Datom d1, ^Datom d2]
+(defcomp cmp-datoms-veat [^Datom d1, ^Datom d2]
   (combine-cmp
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
     (nil-cmp (.-a d1) (.-a d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
 ;; fast versions without nil checks
 
-(defn- cmp-attr-quick [a1 a2]
+(defn- cmp-attr-quick
+  #?(:clj
+     {:inline
+      (fn [a1 a2]
+        `(long (.compareTo ~(with-meta a1 {:tag "Comparable"}) ~a2)))})
+  ^long [a1 a2]
+  [a1 a2]
   ;; either both are keywords or both are strings
   #?(:cljs
      (if (keyword? a1)
@@ -240,26 +268,26 @@
      :clj
      (.compareTo ^Comparable a1 a2)))
 
-(defn cmp-datoms-eavt-quick [^Datom d1, ^Datom d2]
+(defcomp cmp-datoms-eavt-quick ^long [^Datom d1, ^Datom d2]
   (combine-cmp
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
     (cmp-attr-quick (.-a d1) (.-a d2))
     (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-avet-quick [^Datom d1, ^Datom d2]
+(defcomp cmp-datoms-avet-quick ^long [^Datom d1, ^Datom d2]
   (combine-cmp
     (cmp-attr-quick (.-a d1) (.-a d2))
     (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
-(defn cmp-datoms-veat-quick [^Datom d1, ^Datom d2]
+(defcomp cmp-datoms-veat-quick ^long [^Datom d1, ^Datom d2]
   (combine-cmp
     (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj Integer/compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
     (cmp-attr-quick (.-a d1) (.-a d2))
-    (#?(:clj Integer/compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defn datom-e [^Datom d] (.-e d))
 

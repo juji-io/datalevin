@@ -7,13 +7,15 @@
    [me.tonsky.persistent-sorted-set.arrays :as arrays]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
    [datalevin.lru :as lru]
+   [datalevin.inline :refer [update]]
    [datalevin.datom :as d
     :refer [datom datom-added datom?]]
    [datalevin.util
     :refer [case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
    [datalevin.remote :as r]
-   [datalevin.client :as cl])
+   [datalevin.client :as cl]
+   [datalevin.util :as u])
   #?(:cljs
      (:require-macros [datalevin.util
                        :refer [case-tree raise defrecord-updatable cond+]]))
@@ -23,8 +25,10 @@
               [datalevin.remote DatalogStore]
               [datalevin.lru LRU]
               [datalevin.bits Retrieved]
+              [clojure.lang IFn$OOL]
               [java.net URI]
-              [java.util.concurrent ConcurrentHashMap])))
+              [java.util.concurrent ConcurrentHashMap])
+     (:refer-clojure :exclude [update])))
 
 (defonce dbs (atom {}))
 
@@ -106,6 +110,15 @@
          (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
 
+(defn vpred
+  [v]
+  (cond
+    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
+    (int? v)     (fn [x] (if (int? x) (= (long v) (long x)) false))
+    (keyword? v) (fn [x] (.equals ^Object v x))
+    (nil? v)     (fn [x] (nil? x))
+    :else        (fn [x] (= v x))))
+
 (defrecord-updatable DB [^IStore store eavt avet veat max-eid max-tx
                          pull-patterns pull-attrs
                          hash]
@@ -139,7 +152,7 @@
           [(s/fetch store (datom e a v)) ; e a v
            (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/slice-filter store :eav
-                           (fn [^Datom d] (= v (.-v d)))
+                           (fn [^Datom d] ((vpred v) (.-v d)))
                            (datom e nil nil)
                            (datom e nil nil))  ; e _ v
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
@@ -150,7 +163,8 @@
 
   (-first
     [db pattern]
-    (let [[e a v _] pattern]
+    (let [[e a v _] pattern
+          pred      (vpred v)]
       (wrap-cache
         store
         [:first e a v]
@@ -159,7 +173,7 @@
           [(first (s/fetch store (datom e a v))) ; e a v
            (s/head store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/head-filter store :eav
-                          (fn [^Datom d] (= v (.-v d)))
+                          (fn [^Datom d] ((vpred v) (.-v d)))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
            (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
@@ -179,7 +193,7 @@
           [(first (s/fetch store (datom e a v))) ; e a v
            (s/tail store :eav  (datom e a c/vmax) (datom e a c/v0)) ; e a _
            (s/tail-filter store :eav
-                          (fn [^Datom d] (= v (.-v d)))
+                          (fn [^Datom d] ((vpred v) (.-v d)))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
            (s/tail store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
@@ -199,7 +213,7 @@
           [(s/size store :eav (datom e a v) (datom e a v)) ; e a v
            (s/size store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/size-filter store :eav
-                          (fn [^Datom d] (= v (.-v d)))
+                          (fn [^Datom d] ((vpred v) (.-v d)))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
            (s/size store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
@@ -416,12 +430,12 @@
 (defn- resolve-datom [db e a v t default-e default-tx]
   (when a (validate-attr a (list 'resolve-datom 'db e a v t)))
   (datom
-   (or (entid-some db e) default-e)  ;; e
-   a                                 ;; a
-   (if (and (some? v) (ref? db a))   ;; v
-     (entid-strict db v)
-     v)
-   (or (entid-some db t) default-tx))) ;; t
+    (or (entid-some db e) default-e)  ;; e
+    a                                 ;; a
+    (if (and (some? v) (ref? db a))   ;; v
+      (entid-strict db v)
+      v)
+    (or (entid-some db t) default-tx))) ;; t
 
 (defn- components->pattern [db index [c0 c1 c2 c3] default-e default-tx]
   (case index
@@ -534,19 +548,31 @@
     (raise "Cannot store nil as a value at " at
            {:error :transact/syntax, :value v, :context at})))
 
-(defn- current-tx [report]
-  (inc ^long (get-in report [:db-before :max-tx])))
+(defn- current-tx
+  #?(:clj {:inline (fn [report] `(-> ~report :db-before :max-tx long inc))})
+  ^long [report]
+  (-> report :db-before :max-tx long inc))
 
-(defn- next-eid [db]
-  (inc ^long (:max-eid db)))
+(defn- next-eid
+  #?(:clj {:inline (fn [db] `(inc (long (:max-eid ~db))))})
+  ^long [db]
+  (inc (long (:max-eid db))))
 
-(defn- #?@(:clj  [^Boolean tx-id?]
-           :cljs [^boolean tx-id?])
-  [e]
-  (or (= e :db/current-tx)
-      (= e ":db/current-tx") ;; for datalevin.js interop
-      (= e "datomic.tx")
-      (= e "datalevin.tx")))
+#?(:clj
+   (defn- ^Boolean tx-id?
+     [e]
+     (or (identical? :db/current-tx e)
+         (.equals ":db/current-tx" e) ;; for datascript.js interop
+         (.equals "datomic.tx" e)
+         (.equals "datascript.tx" e)))
+
+   :cljs
+   (defn- ^boolean tx-id?
+     [e]
+     (or (= e :db/current-tx)
+         (= e ":db/current-tx") ;; for datascript.js interop
+         (= e "datomic.tx")
+         (= e "datascript.tx"))))
 
 (defn- #?@(:clj  [^Boolean tempid?]
            :cljs [^boolean tempid?])
@@ -836,19 +862,19 @@
               (map (fn [^Datom d] [:db.fn/retractEntity (.-v d)]))) datoms))
 
 (defn check-value-tempids [report]
-  (let [all-tempids (::value-tempids report)
-        reduce-fn   (fn [tempids datom]
-                      (if (datom-added datom)
-                        (dissoc tempids (:e datom))
-                        tempids))
-        unused      (reduce
-                      reduce-fn
-                      all-tempids
-                      (concat (:tx-data report) (::tx-redundant report)))]
-    (if (empty? unused)
-      (dissoc report ::value-tempids ::tx-redundant)
-      (raise "Tempids used only as value in transaction: " (sort (vals unused))
-             {:error :transact/syntax, :tempids unused}))))
+  (if-let [tempids (::value-tempids report)]
+    (let [all-tempids (transient tempids)
+          reduce-fn   (fn [tempids datom]
+                        (if (datom-added datom)
+                          (dissoc! tempids (:e datom))
+                          tempids))
+          unused      (reduce reduce-fn all-tempids (:tx-data report))
+          unused      (reduce reduce-fn unused (::tx-redundant report))]
+      (if (zero? (count unused))
+        (dissoc report ::value-tempids ::tx-redundant)
+        (raise "Tempids used only as value in transaction: " (sort (vals (persistent! unused)))
+               {:error :transact/syntax, :tempids unused})))
+    (dissoc report ::value-tempids ::tx-redundant)))
 
 (declare local-transact-tx-data)
 
@@ -958,7 +984,7 @@
              (-> report
                  check-value-tempids
                  (update :tempids assoc :db/current-tx (current-tx report))
-                 (update :db-after update :max-tx inc)
+                 (update :db-after update :max-tx u/long-inc)
                  (update :db-after persistent!))
 
              :let [[entity & entities] es]
@@ -1238,7 +1264,9 @@
            (assoc initial-report
                   :db-after (-> (new-db store)
                                 (assoc :max-eid max-eid)
-                                (#(if simulated? (update % :max-tx inc) %)))
+                                (#(if simulated?
+                                    (update % :max-tx u/long-inc)
+                                    %)))
                   :tx-data tx-data
                   :tempids tempids))
          (catch Exception e

@@ -288,12 +288,8 @@ Only usable for debug output.
   ([db tx-data tx-meta] (with db tx-data tx-meta false))
   ([db tx-data tx-meta simulated?]
    {:pre [(db/db? db)]}
-   (db/transact-tx-data (db/map->TxReport
-                          {:db-before db
-                           :db-after  db
-                           :tx-data   []
-                           :tempids   {}
-                           :tx-meta   tx-meta}) tx-data simulated?)))
+   (db/transact-tx-data (db/->TxReport db db [] {} tx-meta)
+                        tx-data simulated?)))
 
 (defn tx-data->simulated-report
   "Returns a transaction report without side-effects. Useful for obtaining

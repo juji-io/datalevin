@@ -1,12 +1,12 @@
 # Change Log
 
 ## WIP
-### Added
-- [Datalog] Composite tuples #57, #168
 ### Fixed
 - [KV] `get-range` regression when results are used in `sequence`. #172
 ### Improved
-- [Datalog] Ported applicable Datascript improvements since 0.8.13 up to 1.4.0. #3
+- [Datalog] Ported all applicable Datascript improvements since 0.8.13 up to now
+  (1.4.0). Notably, added composite tuples feature, new pull implementation,
+  many bug fixes and performance improvements. #3, #57, #168
 
 ## 0.7.6 (2022-12-16)
 ### Fixed
