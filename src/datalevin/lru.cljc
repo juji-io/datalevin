@@ -1,4 +1,5 @@
-(ns ^:no-doc datalevin.lru)
+(ns ^:no-doc datalevin.lru
+  (:import [clojure.lang IPersistentCollection]))
 
 (declare assoc-lru cleanup-lru)
 
@@ -23,10 +24,7 @@
      clojure.lang.Associative
      (containsKey [_ k] (.containsKey key-value k))
      (entryAt [_ k]     (.entryAt key-value k))
-     (assoc [this k v]  (assoc-lru this k v))
-
-     clojure.lang.IPersistentCollection
-     (equiv [_ that] true)))
+     (assoc [this k v]  (assoc-lru this k v))))
 
 (defn assoc-lru [^LRU lru k v]
   (let [key-value (.-key-value lru)

@@ -1,5 +1,4 @@
 (ns ^:no-doc ^:lean-ns datalevin.db
-  (:refer-clojure :exclude [update])
   (:require
    [clojure.walk]
    [clojure.data]
@@ -21,11 +20,12 @@
      (:import [datalevin.datom Datom]
               [datalevin.storage IStore]
               [datalevin.remote DatalogStore]
-              [datalevin.lru LRU ICache]
+              [datalevin.lru LRU]
               [datalevin.bits Retrieved]
-              [clojure.lang IPersistentCollection]
               [java.net URI]
-              [java.util SortedSet TreeSet Comparator])))
+              [java.util SortedSet TreeSet Comparator]
+              [java.util.concurrent ConcurrentHashMap])
+     (:refer-clojure :exclude [update])))
 
 ;;;;;;;;;; Protocols
 
@@ -64,7 +64,7 @@
 
 ;; ----------------------------------------------------------------------------
 
-(declare empty-db resolve-datom validate-attr components->pattern vpred)
+(declare empty-db resolve-datom validate-attr components->pattern)
 
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
@@ -73,31 +73,37 @@
      (binding [*out* w]
        (pr {:datoms-transacted (count (:tx-data rp))}))))
 
-(defn- refresh-cache
-  ([db]
-   (refresh-cache db (s/last-modified (:store db))))
-  ([db target]
-   (update db assoc :reads (lru/lru c/+cache-limit+ target))))
+(defn- sf [^SortedSet s] (when-not (.isEmpty s) (.first s)))
 
-(defn db?
-  "Check if x is an instance of DB, also refresh its cache if it's stale.
-  Often used in the :pre condition of a DB access function"
-  [x]
-  (when (-searchable? x)
-    (let [target (s/last-modified (:store x))
-          cache  ^LRU (:reads x)]
-      (when (< ^long (.-target cache) ^long target)
-        (refresh-cache x target)))
-    true))
+(defonce dbs (atom {}))
+
+;; read caches
+(defonce ^:private caches (ConcurrentHashMap.))
+
+(defn refresh-cache
+  ([store]
+   (refresh-cache store (s/last-modified store)))
+  ([store target]
+   (.put ^ConcurrentHashMap caches store
+         (lru/lru c/+cache-limit+ target))))
 
 (defmacro wrap-cache
-  [db pattern body]
-  `(let [cache# (:reads ~db)]
+  [store pattern body]
+  `(let [cache# (.get ^ConcurrentHashMap caches ~store)]
      (if-some [cached# (get ^LRU cache# ~pattern nil)]
        cached#
        (let [res# ~body]
-         (update ~db assoc :reads (assoc cache# ~pattern res#))
+         (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
          res#))))
+
+(defn vpred
+  [v]
+  (cond
+    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
+    (int? v)     (fn [x] (if (int? x) (= (long v) (long x)) false))
+    (keyword? v) (fn [x] (.equals ^Object v x))
+    (nil? v)     (fn [x] (nil? x))
+    :else        (fn [x] (= v x))))
 
 (defrecord-updatable DB [^IStore store
                          ^long max-eid
@@ -105,30 +111,30 @@
                          ^TreeSet eavt
                          ^TreeSet avet
                          ^TreeSet veat
-                         ^LRU reads
-                         ^ICache pull-patterns
-                         ^ICache pull-attrs]
+                         pull-patterns
+                         pull-attrs]
 
   Searchable
   (-searchable? [_] true)
 
   IDB
-  (-schema [db] (wrap-cache db :schema (s/schema store)))
-  (-rschema [db] (wrap-cache db :rschema (s/rschema store)))
+  (-schema [_] (wrap-cache store :schema (s/schema store)))
+  (-rschema [_] (wrap-cache store :rschema (s/rschema store)))
   (-attrs-by [db property] ((-rschema db) property))
   (-clear-tx-cache
     [db]
-    (.clear eavt)
-    (.clear avet)
-    (.clear veat)
-    db)
+    (let [clear #(.clear ^TreeSet %)]
+      (clear eavt)
+      (clear avet)
+      (clear veat)
+      db))
 
   ISearch
   (-search
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        db
+        store
         [:search e a v]
         (case-tree
           [e a (some? v)]
@@ -149,7 +155,7 @@
     (let [[e a v _] pattern
           pred      (vpred v)]
       (wrap-cache
-        db
+        store
         [:first e a v]
         (case-tree
           [e a (some? v)]
@@ -169,7 +175,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        db
+        store
         [:last e a v]
         (case-tree
           [e a (some? v)]
@@ -189,7 +195,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        db
+        store
         [:count e a v]
         (case-tree
           [e a (some? v)]
@@ -209,7 +215,7 @@
   (-populated?
     [db index cs]
     (wrap-cache
-      db
+      store
       [:populated? index cs]
       (s/populated? store index (components->pattern db index cs e0 tx0)
                     (components->pattern db index cs emax txmax))))
@@ -217,7 +223,7 @@
   (-datoms
     [db index cs]
     (wrap-cache
-      db
+      store
       [:datoms index cs]
       (s/slice store index (components->pattern db index cs e0 tx0)
                (components->pattern db index cs emax txmax))))
@@ -225,14 +231,14 @@
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
-      db
+      store
       [:range-datoms index start-datom end-datom]
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index cs]
     (wrap-cache
-      db
+      store
       [:first-datom index cs]
       (s/head store index (components->pattern db index cs e0 tx0)
               (components->pattern db index cs emax txmax))))
@@ -240,7 +246,7 @@
   (-seek-datoms
     [db index cs]
     (wrap-cache
-      db
+      store
       [:seek index cs]
       (s/slice store index (components->pattern db index cs e0 tx0)
                (datom emax nil nil txmax))))
@@ -248,7 +254,7 @@
   (-rseek-datoms
     [db index cs]
     (wrap-cache
-      db
+      store
       [:rseek index cs]
       (s/rslice store index (components->pattern db index cs emax txmax)
                 (datom e0 nil nil tx0))))
@@ -256,7 +262,7 @@
   (-index-range
     [db attr start end]
     (wrap-cache
-      db
+      store
       [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
@@ -274,18 +280,19 @@
            :max-eid       (:max-eid db)
            :max-tx        (:max-tx db)}))))
 
-(defonce dbs (atom {}))
+(defn db?
+  "Check if x is an instance of DB, also refresh its cache if it's stale.
+  Often used in the :pre condition of a DB access function"
+  [x]
+  (when (-searchable? x)
+    (let [store  (.-store ^DB x)
+          target (s/last-modified store)
+          cache  ^LRU (.get ^ConcurrentHashMap caches store)]
+      (when (< ^long (.-target cache) ^long target)
+        (refresh-cache store target)))
+    true))
 
-(defn- sf [^SortedSet s] (when-not (.isEmpty s) (.first s)))
-
-(defn vpred
-  [v]
-  (cond
-    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
-    (int? v)     (fn [x] (if (int? x) (= (long v) (long x)) false))
-    (keyword? v) (fn [x] (.equals ^Object v x))
-    (nil? v)     (fn [x] (nil? x))
-    :else        (fn [x] (= v x))))
+;; ----------------------------------------------------------------------------
 
 (defn- validate-schema-key [a k v expected]
   (when-not (or (nil? v)
@@ -362,6 +369,7 @@
 
 (defn new-db
   [^IStore store]
+  (refresh-cache store)
   (map->DB
     {:store         store
      :max-eid       (s/init-max-eid store)
@@ -369,7 +377,6 @@
      :eavt          (TreeSet. ^Comparator d/cmp-datoms-eavt)
      :avet          (TreeSet. ^Comparator d/cmp-datoms-avet)
      :veat          (TreeSet. ^Comparator d/cmp-datoms-veat)
-     :reads         (lru/lru c/+cache-limit+ (s/last-modified store))
      :pull-patterns (lru/cache 32 :constant)
      :pull-attrs    (lru/cache 16 :constant)}))
 
@@ -398,6 +405,7 @@
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
+    (.remove ^ConcurrentHashMap caches store)
     (s/close store)
     nil))
 
@@ -947,26 +955,23 @@
    (local-transact-tx-data initial-report initial-es false))
   ([initial-report initial-es simulated?]
    (let [tx-time         (System/currentTimeMillis)
-         initial-report1 (update initial-report :db-after -clear-tx-cache)
+         initial-report' (update initial-report :db-after -clear-tx-cache)
          has-tuples?     (not (empty? (-attrs-by (:db-after initial-report) :db.type/tuple)))
-         initial-es1     (cond-> initial-es
+         initial-es'     (cond-> initial-es
                            (:auto-entity-time?
                             (s/opts (.-store ^DB (:db-before initial-report))))
                            (update-entity-time tx-time)
                            has-tuples?
                            (interleave (repeat ::flush-tuples)))
          rp
-         (loop [report initial-report1
-                es     initial-es1]
+         (loop [report initial-report'
+                es     initial-es']
            (cond+
              (empty? es)
              (-> report
                  check-value-tempids
                  (update :tempids assoc :db/current-tx (current-tx report))
-                 (update :db-after update :max-tx u/long-inc)
-                 (update :db-after #(if-not simulated?
-                                      (refresh-cache %)
-                                      %)))
+                 (update :db-after update :max-tx u/long-inc))
 
              :let [[entity & entities] es]
 
@@ -1205,9 +1210,12 @@
 
              :else
              (raise "Bad entity type at " entity ", expected map, vector, or datom"
-                    {:error :transact/syntax, :tx-data entity})))
+                    {:error :transact/syntax, :tx-data entity})
+             ))
          pstore (.-store ^DB (:db-after rp))]
-     (when-not simulated? (s/load-datoms pstore (:tx-data rp)))
+     (when-not simulated?
+       (s/load-datoms pstore (:tx-data rp))
+       (refresh-cache pstore))
      rp)))
 
 (defn- remote-tx-result
