@@ -1,31 +1,31 @@
 {:paths ["src" "target/classes"]
- :deps {org.lmdbjava/lmdbjava {:mvn/version "0.8.2"}
-        com.taoensso/nippy    {:mvn/version "3.2.0"}
-        org.babashka/sci {:mvn/version "0.4.33"}
-        com.fasterxml.jackson.core/jackson-core {:mvn/version "2.13.4"}
-        org.roaringbitmap/RoaringBitmap {:mvn/version "0.9.32"}
-        org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
-        me.lemire.integercompression/JavaFastPFOR {:mvn/version "0.1.12"}
-        com.cognitect/transit-clj {:mvn/version "1.0.329"}
-        persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"} 
-        }
- :deps/prep-lib {:alias :build
-                 :fn compile-java
-                 :ensure "target/classes"} 
+ :deps  {org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
+         com.taoensso/nippy                          {:mvn/version "3.2.0"}
+         org.babashka/sci                            {:mvn/version "0.4.33"}
+         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.4"}
+         org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.32"}
+         org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
+         me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
+         com.cognitect/transit-clj                   {:mvn/version "1.0.329"}
+         }
+
+ :deps/prep-lib {:alias  :build
+                 :fn     compile-java
+                 :ensure "target/classes"}
 
  :aliases {
            :1.9 {
                  :extra-deps {
-                                 org.clojure/clojure {:mvn/version "1.9.0"}
-                                 }
+                              org.clojure/clojure {:mvn/version "1.9.0"}
+                              }
                  }
 
            :1.10 {
                   :extra-deps {
-                                  org.clojure/clojure {:mvn/version "1.10.0"}
-                                  }
+                               org.clojure/clojure {:mvn/version "1.10.0"}
+                               }
                   }
-           :1.11 {:extra-deps {org.clojure/clojure   {:mvn/version "1.11.0"}}}
+           :1.11 {:extra-deps {org.clojure/clojure {:mvn/version "1.11.0"}}}
 
            :dev {
                  :extra-paths ["dev" "target/classes"]
@@ -57,7 +57,7 @@
                                   com.datomic/datomic-free {:mvn/version "0.9.5697"}
                                   }
                      }
-           :build {:deps {io.github.clojure/tools.build {:git/tag "v0.8.3" :git/sha "0d20256"}}
-                   :ns-default build}
+           :build   {:deps       {io.github.clojure/tools.build {:git/tag "v0.8.3" :git/sha "0d20256"}}
+                     :ns-default build}
            }
  }

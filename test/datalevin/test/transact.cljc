@@ -154,8 +154,8 @@
                     :where [2 ?a ?v]] db)
              #{[:name "Petr"] [:age 37]})))
 
-    (is (= (d/db-with db [[:db.fn/retractEntity 1]])
-           (d/db-with db [[:db/retractEntity 1]])))
+    (is (= (d/datoms (d/db-with db [[:db.fn/retractEntity 1]]) :eavt)
+           (d/datoms (d/db-with db [[:db/retractEntity 1]]) :eavt)))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -719,29 +719,29 @@
 
 ;; TODO
 #_(deftest test-transitive-type-compare-386
-   (let [txs    [[{:block/uid "2LB4tlJGy"}]
-                 [{:block/uid "2ON453J0Z"}]
-                 [{:block/uid "2KqLLNbPg"}]
-                 [{:block/uid "2L0dcD7yy"}]
-                 [{:block/uid "2KqFNrhTZ"}]
-                 [{:block/uid "2KdQmItUD"}]
-                 [{:block/uid "2O8BcBfIL"}]
-                 [{:block/uid "2L4ZbI7nK"}]
-                 [{:block/uid "2KotiW36Z"}]
-                 [{:block/uid "2O4o-y5J8"}]
-                 [{:block/uid "2KimvuGko"}]
-                 [{:block/uid "dTR20ficj"}]
-                 [{:block/uid "wRmp6bXAx"}]
-                 [{:block/uid "rfL-iQOZm"}]
-                 [{:block/uid "tya6s422-"}]
-                 [{:block/uid 45619}]]
-         schema {:block/uid {:db/unique :db.unique/identity}}
-         dir    (u/tmp-dir (str "issue-386-" (random-uuid)))
-         conn   (d/create-conn dir schema)
-         _      (doseq [tx txs] (d/transact! conn tx))
-         db     @conn]
-     (is (empty? (->> (seq db)
-                      (map (fn [[_ a v]] [a v]))
-                      (remove #(d/entity db %)))))
-     (d/close conn)
-     (u/delete-files dir)))
+    (let [txs    [[{:block/uid "2LB4tlJGy"}]
+                  [{:block/uid "2ON453J0Z"}]
+                  [{:block/uid "2KqLLNbPg"}]
+                  [{:block/uid "2L0dcD7yy"}]
+                  [{:block/uid "2KqFNrhTZ"}]
+                  [{:block/uid "2KdQmItUD"}]
+                  [{:block/uid "2O8BcBfIL"}]
+                  [{:block/uid "2L4ZbI7nK"}]
+                  [{:block/uid "2KotiW36Z"}]
+                  [{:block/uid "2O4o-y5J8"}]
+                  [{:block/uid "2KimvuGko"}]
+                  [{:block/uid "dTR20ficj"}]
+                  [{:block/uid "wRmp6bXAx"}]
+                  [{:block/uid "rfL-iQOZm"}]
+                  [{:block/uid "tya6s422-"}]
+                  [{:block/uid 45619}]]
+          schema {:block/uid {:db/unique :db.unique/identity}}
+          dir    (u/tmp-dir (str "issue-386-" (random-uuid)))
+          conn   (d/create-conn dir schema)
+          _      (doseq [tx txs] (d/transact! conn tx))
+          db     @conn]
+      (is (empty? (->> (seq db)
+                       (map (fn [[_ a v]] [a v]))
+                       (remove #(d/entity db %)))))
+      (d/close conn)
+      (u/delete-files dir)))

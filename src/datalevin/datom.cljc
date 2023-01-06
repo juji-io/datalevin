@@ -251,44 +251,6 @@
     (nil-cmp (.-a d1) (.-a d2))
     (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
 
-;; fast versions without nil checks
-
-(defn- cmp-attr-quick
-  #?(:clj
-     {:inline
-      (fn [a1 a2]
-        `(long (.compareTo ~(with-meta a1 {:tag "Comparable"}) ~a2)))})
-  ^long [a1 a2]
-  [a1 a2]
-  ;; either both are keywords or both are strings
-  #?(:cljs
-     (if (keyword? a1)
-       (-compare a1 a2)
-       (garray/defaultCompare a1 a2))
-     :clj
-     (.compareTo ^Comparable a1 a2)))
-
-(defcomp cmp-datoms-eavt-quick ^long [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
-    (cmp-attr-quick (.-a d1) (.-a d2))
-    (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
-
-(defcomp cmp-datoms-avet-quick ^long [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (cmp-attr-quick (.-a d1) (.-a d2))
-    (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
-
-(defcomp cmp-datoms-veat-quick ^long [^Datom d1, ^Datom d2]
-  (combine-cmp
-    (compare-with-type (.-v d1) (.-v d2))
-    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
-    (cmp-attr-quick (.-a d1) (.-a d2))
-    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
-
 (defn datom-e [^Datom d] (.-e d))
 
 (defn datom-a [^Datom d] (.-a d))

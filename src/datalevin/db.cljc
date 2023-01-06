@@ -1,10 +1,9 @@
 (ns ^:no-doc ^:lean-ns datalevin.db
+  (:refer-clojure :exclude [update])
   (:require
    [clojure.walk]
    [clojure.data]
    [clojure.set]
-   [me.tonsky.persistent-sorted-set :as set]
-   [me.tonsky.persistent-sorted-set.arrays :as arrays]
    [datalevin.constants :as c :refer [e0 tx0 emax txmax]]
    [datalevin.lru :as lru]
    [datalevin.datom :as d
@@ -22,15 +21,13 @@
      (:import [datalevin.datom Datom]
               [datalevin.storage IStore]
               [datalevin.remote DatalogStore]
-              [datalevin.lru LRU]
+              [datalevin.lru LRU ICache]
               [datalevin.bits Retrieved]
+              [clojure.lang IPersistentCollection]
               [java.net URI]
-              [java.util.concurrent ConcurrentHashMap])
-     (:refer-clojure :exclude [update])))
+              [java.util SortedSet TreeSet Comparator])))
 
-(defonce dbs (atom {}))
-
-;;;;;;;;;; Searching
+;;;;;;;;;; Protocols
 
 (defprotocol ISearch
   (-search [data pattern])
@@ -50,34 +47,9 @@
 (defprotocol IDB
   (-schema [db])
   (-rschema [db])
-  (-attrs-by [db property]))
-
-;; ----------------------------------------------------------------------------
-
-(declare empty-db resolve-datom validate-attr components->pattern)
-#?(:cljs (declare pr-db))
-
-(defrecord TxReport [db-before db-after tx-data tempids tx-meta])
-
-#?(:clj
-   (defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
-     (binding [*out* w]
-       (pr {:datoms-transacted (count (:tx-data rp))}))))
-
-(defn db-transient [db]
-  (-> db
-      (assoc :eavt (set/sorted-set-by d/cmp-datoms-eavt))
-      (assoc :avet (set/sorted-set-by d/cmp-datoms-avet))
-      (assoc :veat (set/sorted-set-by d/cmp-datoms-veat))
-      (update :eavt transient)
-      (update :avet transient)
-      (update :veat transient)))
-
-(defn db-persistent! [db]
-  (-> db
-      (update :eavt persistent!)
-      (update :avet persistent!)
-      (update :veat persistent!)))
+  (-attrs-by [db property])
+  (-clear-tx-cache [db])
+  (-refresh-read-cache [db] [db target]))
 
 (defprotocol Searchable
   (-searchable? [_]))
@@ -90,60 +62,76 @@
   Searchable
   (-searchable? [_] false))
 
-(defonce ^:private caches (ConcurrentHashMap.))
+;; ----------------------------------------------------------------------------
 
-(defn refresh-cache
-  ([store]
-   (refresh-cache store (s/last-modified store)))
-  ([store target]
-   (.put ^ConcurrentHashMap caches store
-         (lru/lru c/+cache-limit+ target))))
+(declare empty-db resolve-datom validate-attr components->pattern vpred)
+
+(defrecord TxReport [db-before db-after tx-data tempids tx-meta])
+
+#?(:clj
+   (defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
+     (binding [*out* w]
+       (pr {:datoms-transacted (count (:tx-data rp))}))))
+
+(defn- refresh-cache
+  ([db]
+   (refresh-cache db (s/last-modified (:store db))))
+  ([db target]
+   (update db assoc :reads (lru/lru c/+cache-limit+ target))))
+
+(defn db?
+  "Check if x is an instance of DB, also refresh its cache if it's stale.
+  Often used in the :pre condition of a DB access function"
+  [x]
+  (when (-searchable? x)
+    (let [target (s/last-modified (:store x))
+          cache  ^LRU (:reads x)]
+      (when (< ^long (.-target cache) ^long target)
+        (refresh-cache x target)))
+    true))
 
 (defmacro wrap-cache
-  [store pattern body]
-  `(let [cache# (.get ^ConcurrentHashMap caches ~store)]
+  [db pattern body]
+  `(let [cache# (:reads ~db)]
      (if-some [cached# (get ^LRU cache# ~pattern nil)]
        cached#
        (let [res# ~body]
-         (.put ^ConcurrentHashMap caches ~store (assoc cache# ~pattern res#))
+         (update ~db assoc :reads (assoc cache# ~pattern res#))
          res#))))
 
-(defn vpred
-  [v]
-  (cond
-    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
-    (int? v)     (fn [x] (if (int? x) (= (long v) (long x)) false))
-    (keyword? v) (fn [x] (.equals ^Object v x))
-    (nil? v)     (fn [x] (nil? x))
-    :else        (fn [x] (= v x))))
-
-(defrecord-updatable DB [^IStore store eavt avet veat max-eid max-tx
-                         pull-patterns pull-attrs
-                         hash]
-
-  clojure.lang.IEditableCollection
-  (empty [db]         (with-meta (empty-db (s/dir store) (s/schema store))
-                        (meta db)))
-  (asTransient [db] (db-transient db))
-
-  clojure.lang.ITransientCollection
-  (conj [db key] (throw (ex-info "datalevin.DB/conj! is not supported" {})))
-  (persistent [db] (db-persistent! db))
+(defrecord-updatable DB [^IStore store
+                         ^long max-eid
+                         ^long max-tx
+                         ;; tx caches
+                         ^TreeSet eavt
+                         ^TreeSet avet
+                         ^TreeSet veat
+                         ;; read cache
+                         ^LRU reads
+                         ;; pull caches
+                         ^ICache pull-patterns
+                         ^ICache pull-attrs]
 
   Searchable
   (-searchable? [_] true)
 
   IDB
-  (-schema [_] (wrap-cache store :schema (s/schema store)))
-  (-rschema [_] (wrap-cache store :rschema (s/rschema store)))
+  (-schema [db] (wrap-cache db :schema (s/schema store)))
+  (-rschema [db] (wrap-cache db :rschema (s/rschema store)))
   (-attrs-by [db property] ((-rschema db) property))
+  (-clear-tx-cache
+    [db]
+    (.clear eavt)
+    (.clear avet)
+    (.clear veat)
+    db)
 
   ISearch
   (-search
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
+        db
         [:search e a v]
         (case-tree
           [e a (some? v)]
@@ -164,7 +152,7 @@
     (let [[e a v _] pattern
           pred      (vpred v)]
       (wrap-cache
-        store
+        db
         [:first e a v]
         (case-tree
           [e a (some? v)]
@@ -184,7 +172,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
+        db
         [:last e a v]
         (case-tree
           [e a (some? v)]
@@ -204,7 +192,7 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
+        db
         [:count e a v]
         (case-tree
           [e a (some? v)]
@@ -224,7 +212,7 @@
   (-populated?
     [db index cs]
     (wrap-cache
-      store
+      db
       [:populated? index cs]
       (s/populated? store index (components->pattern db index cs e0 tx0)
                     (components->pattern db index cs emax txmax))))
@@ -232,7 +220,7 @@
   (-datoms
     [db index cs]
     (wrap-cache
-      store
+      db
       [:datoms index cs]
       (s/slice store index (components->pattern db index cs e0 tx0)
                (components->pattern db index cs emax txmax))))
@@ -240,14 +228,14 @@
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
-      store
+      db
       [:range-datoms index start-datom end-datom]
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index cs]
     (wrap-cache
-      store
+      db
       [:first-datom index cs]
       (s/head store index (components->pattern db index cs e0 tx0)
               (components->pattern db index cs emax txmax))))
@@ -255,7 +243,7 @@
   (-seek-datoms
     [db index cs]
     (wrap-cache
-      store
+      db
       [:seek index cs]
       (s/slice store index (components->pattern db index cs e0 tx0)
                (datom emax nil nil txmax))))
@@ -263,7 +251,7 @@
   (-rseek-datoms
     [db index cs]
     (wrap-cache
-      store
+      db
       [:rseek index cs]
       (s/rslice store index (components->pattern db index cs emax txmax)
                 (datom e0 nil nil tx0))))
@@ -271,11 +259,16 @@
   (-index-range
     [db attr start end]
     (wrap-cache
-      store
+      db
       [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
                    (resolve-datom db nil attr end nil emax txmax)))))
+
+  IPersistentCollection
+  (equiv
+    [db other]
+    (and ()))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
@@ -289,19 +282,18 @@
            :max-eid       (:max-eid db)
            :max-tx        (:max-tx db)}))))
 
-(defn db?
-  "Check if x is an instance of DB, also refresh its cache if it's stale.
-  Often used in the :pre condition of a DB access function"
-  [x]
-  (when (-searchable? x)
-    (let [store  (.-store ^DB x)
-          target (s/last-modified store)
-          cache  ^LRU (.get ^ConcurrentHashMap caches store)]
-      (when (< ^long (.-target cache) ^long target)
-        (refresh-cache store target)))
-    true))
+(defonce dbs (atom {}))
 
-;; ----------------------------------------------------------------------------
+(defn- sf [^SortedSet s] (when-not (.isEmpty s) (.first s)))
+
+(defn vpred
+  [v]
+  (cond
+    (string? v)  (fn [x] (if (string? x) (.equals ^String v x) false))
+    (int? v)     (fn [x] (if (int? x) (= (long v) (long x)) false))
+    (keyword? v) (fn [x] (.equals ^Object v x))
+    (nil? v)     (fn [x] (nil? x))
+    :else        (fn [x] (= v x))))
 
 (defn- validate-schema-key [a k v expected]
   (when-not (or (nil? v)
@@ -378,16 +370,16 @@
 
 (defn new-db
   [^IStore store]
-  (refresh-cache store)
   (map->DB
     {:store         store
-     :eavt          (set/sorted-set-by d/cmp-datoms-eavt)
-     :avet          (set/sorted-set-by d/cmp-datoms-avet)
-     :veat          (set/sorted-set-by d/cmp-datoms-veat)
      :max-eid       (s/init-max-eid store)
      :max-tx        (s/max-tx store)
-     :pull-patterns (lru/cache 100 :constant)
-     :pull-attrs    (lru/cache 100 :constant)}))
+     :eavt          (TreeSet. ^Comparator d/cmp-datoms-eavt)
+     :avet          (TreeSet. ^Comparator d/cmp-datoms-avet)
+     :veat          (TreeSet. ^Comparator d/cmp-datoms-veat)
+     :reads         (lru/lru c/+cache-limit+ (s/last-modified store))
+     :pull-patterns (lru/cache 32 :constant)
+     :pull-attrs    (lru/cache 16 :constant)}))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))
@@ -414,7 +406,6 @@
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
-    (.remove ^ConcurrentHashMap caches store)
     (s/close store)
     nil))
 
@@ -490,19 +481,17 @@
         (nil? value)
         nil
         :else
-        (or (-> (set/slice (:avet db)
-                           (datom e0 attr value tx0)
-                           (datom emax attr value txmax))
-                first :e)
+        (or (:e (sf (.subSet ^TreeSet (:avet db)
+                             (datom e0 attr value tx0)
+                             (datom emax attr value txmax))))
             (:e (-first-datom db :avet eid)))))
 
     #?@(:cljs [(array? eid) (recur db (array-seq eid))])
 
     (keyword? eid)
-    (or (-> (set/slice (:avet db)
-                       (datom e0 :db/ident eid tx0)
-                       (datom emax :db/ident eid txmax))
-            first :e)
+    (or (:e (sf (.subSet ^TreeSet (:avet db)
+                         (datom e0 :db/ident eid tx0)
+                         (datom emax :db/ident eid txmax))))
         (:e (-first-datom db :avet [:db/ident eid])))
 
     :else
@@ -525,11 +514,11 @@
   (when (and (is-attr? db (.-a datom) :db/unique) (datom-added datom))
     (when-some [found (let [a (.-a datom)
                             v (.-v datom)]
-                        (or
-                          (not-empty (set/slice (:avet db)
-                                                (d/datom e0 a v tx0)
-                                                (d/datom emax a v txmax)))
-                          (-populated? db :avet [a v])))]
+                        (or (not (.isEmpty
+                                   (.subSet ^TreeSet (:avet db)
+                                            (d/datom e0 a v tx0)
+                                            (d/datom emax a v txmax))))
+                            (-populated? db :avet [a v])))]
       (raise "Cannot add " datom " because of unique constraint: " found
              {:error     :transact/unique
               :attribute (.-a datom)
@@ -607,37 +596,39 @@
        true
        (update :db-after advance-max-eid eid)))))
 
-;; In context of `with-datom` we can use faster comparators which
-;; do not check for nil (~10-15% performance gain in `transact`)
-
 (defn- with-datom [db ^Datom datom]
-  (let [ref? (ref? db (.-a datom))]
+  (let [ref? (ref? db (.-a datom))
+        add  #(do (.add ^TreeSet % datom) %)
+        del  #(do (.remove ^TreeSet % datom) %)]
     (if (datom-added datom)
       (do
         (validate-datom db datom)
         (cond-> db
-          true (update :eavt set/conj datom d/cmp-datoms-eavt-quick)
-          true (update :avet set/conj datom d/cmp-datoms-avet-quick)
-          ref? (update :veat set/conj datom d/cmp-datoms-veat-quick)
+          true (update :eavt add)
+          true (update :avet add)
+          ref? (update :veat add)
           true (advance-max-eid (.-e datom))))
-      (if-some [_ (first
-                    (set/slice
-                      (:eavt db)
-                      (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
-                      (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))]
+      (if (not
+            (.isEmpty
+              (.subSet ^TreeSet (:eavt db)
+                       (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
+                       (d/datom (.-e datom) (.-a datom) (.-v datom) txmax))))
         (cond-> db
-          true (update :eavt set/disj datom d/cmp-datoms-eavt-quick)
-          true (update :avet set/disj datom d/cmp-datoms-avet-quick)
-          ref? (update :veat set/conj datom d/cmp-datoms-veat-quick))
+          true (update :eavt del)
+          true (update :avet del)
+          ref? (update :veat del))
         db))))
 
 (defn- queue-tuple [queue tuple idx db e a v]
   (let [tuple-value  (or (get queue tuple)
-                         (:v (first (set/slice (:eavt db)
-                                               (d/datom e tuple nil tx0)
-                                               (d/datom e tuple nil txmax))))
+                         (:v (sf
+                               (.subSet ^TreeSet (:eavt db)
+                                        (d/datom e tuple nil tx0)
+                                        (d/datom e tuple nil txmax))))
                          (:v (-first-datom db :eavt [e tuple]))
-                         (vec (repeat (-> db (-schema) (get tuple) :db/tupleAttrs count) nil)))
+                         (vec (repeat (-> db -schema (get tuple)
+                                          :db/tupleAttrs count)
+                                      nil)))
         tuple-value' (assoc tuple-value idx v)]
     (assoc queue tuple tuple-value')))
 
@@ -704,9 +695,9 @@
   [db entity]
   (if-some [idents (not-empty (-attrs-by db :db.unique/identity))]
     (let [resolve (fn [a v]
-                    (or (:e (first (set/slice (:avet db)
-                                              (d/datom e0 a v tx0)
-                                              (d/datom emax a v txmax))))
+                    (or (:e (sf (.subSet ^TreeSet (:avet db)
+                                         (d/datom e0 a v tx0)
+                                         (d/datom emax a v txmax))))
                         (:e (-first-datom db :avet [a v]))))
 
           split (fn [a vs]
@@ -727,7 +718,7 @@
             (and
               (multival? db a)
               (or
-                (arrays/array? v)
+                ;; (arrays/array? v)
                 (and (coll? v) (not (map? v)))))
             (let [[insert upsert] (split a v)]
               [(cond-> entity'
@@ -783,8 +774,8 @@
     [vs]
 
     ;; not a collection at all, so definitely a single value
-    (not (or (arrays/array? vs)
-             (and (coll? vs) (not (map? vs)))))
+    (not (or ;;(arrays/array? vs)
+           (and (coll? vs) (not (map? vs)))))
     [vs]
 
     ;; probably lookup ref
@@ -830,13 +821,13 @@
         new-datom        (datom e a v tx)
         multival?        (multival? db a)
         ^Datom old-datom (if multival?
-                           (or (first (set/slice (:eavt db)
-                                                 (datom e a v tx0)
-                                                 (datom e a v txmax)))
+                           (or (sf (.subSet ^TreeSet (:eavt db)
+                                            (datom e a v tx0)
+                                            (datom e a v txmax)))
                                (-first db [e a v]))
-                           (or (first (set/slice (:eavt db)
-                                                 (datom e a nil tx0)
-                                                 (datom e a nil txmax)))
+                           (or (sf (.subSet ^TreeSet (:eavt db)
+                                            (datom e a nil tx0)
+                                            (datom e a nil txmax)))
                                (-first db [e a])))]
     (cond
       (nil? old-datom)
@@ -946,10 +937,9 @@
         (reduce-kv
           (fn [entities tuple value]
             (let [value   (if (every? nil? value) nil value)
-                  current (or (:v (first (set/slice
-                                           (:eavt db)
-                                           (d/datom eid tuple nil tx0)
-                                           (d/datom eid tuple nil txmax))))
+                  current (or (:v (sf (.subSet ^TreeSet (:eavt db)
+                                               (d/datom eid tuple nil tx0)
+                                               (d/datom eid tuple nil txmax))))
                               (:v (-first-datom db :eavt [eid tuple])))]
               (cond
                 (= value current) entities
@@ -965,25 +955,24 @@
    (local-transact-tx-data initial-report initial-es false))
   ([initial-report initial-es simulated?]
    (let [tx-time         (System/currentTimeMillis)
-         initial-report' (-> initial-report
-                             (update :db-after transient))
+         initial-report1 (update initial-report :db-after -clear-tx-cache)
          has-tuples?     (not (empty? (-attrs-by (:db-after initial-report) :db.type/tuple)))
-         initial-es'     (cond-> initial-es
+         initial-es1     (cond-> initial-es
                            (:auto-entity-time?
                             (s/opts (.-store ^DB (:db-before initial-report))))
                            (update-entity-time tx-time)
                            has-tuples?
                            (interleave (repeat ::flush-tuples)))
          rp
-         (loop [report initial-report'
-                es     initial-es']
+         (loop [report initial-report1
+                es     initial-es1]
            (cond+
              (empty? es)
              (-> report
                  check-value-tempids
                  (update :tempids assoc :db/current-tx (current-tx report))
                  (update :db-after update :max-tx u/long-inc)
-                 (update :db-after persistent!))
+                 (update :db-after #(when-not simulated? (refresh-cache %))))
 
              :let [[entity & entities] es]
 
@@ -1061,18 +1050,15 @@
 
                  (and (keyword? op)
                       (not (builtin-fn? op)))
-                 (if-some [ident (or (:e
-                                      (first
-                                        (set/slice
-                                          (:avet db)
-                                          (d/datom e0 op nil tx0)
-                                          (d/datom emax op nil txmax))))
+                 (if-some [ident (or (:e (sf (.subSet
+                                               ^TreeSet (:avet db)
+                                               (d/datom e0 op nil tx0)
+                                               (d/datom emax op nil txmax))))
                                      (entid db op))]
-                   (let [fun  (or (-> (set/slice
-                                        (:eavt db)
-                                        (d/datom ident :db/fn nil tx0)
-                                        (d/datom ident :db/fn nil txmax))
-                                      first :v)
+                   (let [fun  (or (:v (sf (.subSet
+                                            ^TreeSet (:eavt db)
+                                            (d/datom ident :db/fn nil tx0)
+                                            (d/datom ident :db/fn nil txmax))))
                                   (:v (-first db [ident :db/fn])))
                          args (next entity)]
                      (if (fn? fun)
@@ -1095,17 +1081,16 @@
                        nv            (if (ref? db a) (entid-strict db nv) nv)
                        _             (validate-val nv entity)
                        datoms        (clojure.set/union
-                                       (set/slice
-                                         (:eavt db)
-                                         (datom e a nil tx0)
-                                         (datom e a nil txmax))
-                                       (-search db [e a]))]
+                                       (-search db [e a])
+                                       (.subSet ^TreeSet (:eavt db)
+                                                (datom e a nil tx0)
+                                                (datom e a nil txmax)))]
                    (if (multival? db a)
                      (if (some (fn [^Datom d] (= (.-v d) ov)) datoms)
                        (recur (transact-add report [:db/add e a nv]) entities)
                        (raise ":db.fn/cas failed on datom [" e " " a " " (map :v datoms) "], expected " ov
                               {:error :transact/cas, :old datoms, :expected ov, :new nv}))
-                     (let [v (:v (nth datoms 0))]
+                     (let [v (:v (first datoms))]
                        (if (= v ov)
                          (recur (transact-add report [:db/add e a nv]) entities)
                          (raise ":db.fn/cas failed on datom [" e " " a " " v "], expected " ov
@@ -1130,12 +1115,10 @@
 
                  (tempid? e)
                  (let [upserted-eid  (when (is-attr? db a :db.unique/identity)
-                                       (or (:e
-                                            (first
-                                              (set/slice
-                                                (:avet db)
-                                                (d/datom e0 a v tx0)
-                                                (d/datom emax a v txmax))))
+                                       (or (:e (sf (.subSet
+                                                     ^TreeSet (:avet db)
+                                                     (d/datom e0 a v tx0)
+                                                     (d/datom emax a v txmax))))
                                            (:e (-first-datom db :avet [a v]))))
                        allocated-eid (get tempids e)]
                    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
@@ -1146,19 +1129,19 @@
                  (and (not (::internal (meta entity)))
                       (tuple? db a))
                  ;; allow transacting in tuples if they fully match already existing values
-                 (let [tuple-attrs (get-in (s/schema (.-store db)) [a :db/tupleAttrs])]
+                 (let [tuple-attrs (get-in (s/schema (.-store db))
+                                           [a :db/tupleAttrs])]
                    (if (and
                          (= (count tuple-attrs) (count v))
                          (every? some? v)
                          (every?
                            (fn [[tuple-attr tuple-value]]
                              (let [db-value
-                                   (or (:v
-                                        (first
-                                          (set/slice
-                                            (:eavt db)
-                                            (d/datom e tuple-attr nil tx0)
-                                            (d/datom e tuple-attr nil txmax))))
+                                   (or (:v (sf
+                                             (.subSet
+                                               ^TreeSet (:eavt db)
+                                               (d/datom e tuple-attr nil tx0)
+                                               (d/datom e tuple-attr nil txmax))))
                                        (:v (-first-datom db :eavt [e tuple-attr])))]
                                (= tuple-value db-value)))
                            (map vector tuple-attrs v)))
@@ -1174,12 +1157,11 @@
                    (let [v (if (ref? db a) (entid-strict db v) v)]
                      (validate-attr a entity)
                      (validate-val v entity)
-                     (if-some [old-datom (or
-                                           (first (set/slice
-                                                    (:eavt db)
-                                                    (datom e a v tx0)
-                                                    (datom e a v txmax)))
-                                           (-first db [e a v]))]
+                     (if-some [old-datom (or (sf (.subSet
+                                                   ^TreeSet (:eavt db)
+                                                   (datom e a v tx0)
+                                                   (datom e a v txmax)))
+                                             (-first db [e a v]))]
                        (recur (transact-retract-datom report old-datom) entities)
                        (recur report entities)))
                    (recur report entities))
@@ -1190,9 +1172,9 @@
                    (let [_      (validate-attr a entity)
                          datoms (vec
                                   (concat
-                                    (set/slice (:eavt db)
-                                               (datom e a nil tx0)
-                                               (datom e a nil txmax))
+                                    (.subSet ^TreeSet (:eavt db)
+                                             (datom e a nil tx0)
+                                             (datom e a nil txmax))
                                     (-search db [e a])))]
                      (recur (reduce transact-retract-datom report datoms)
                             (concat (retract-components db datoms) entities)))
@@ -1203,15 +1185,15 @@
                  (if-some [e (entid db e)]
                    (let [e-datoms (vec
                                     (concat
-                                      (set/slice (:eavt db)
-                                                 (datom e nil nil tx0)
-                                                 (datom e nil nil txmax))
+                                      (.subSet ^TreeSet (:eavt db)
+                                               (datom e nil nil tx0)
+                                               (datom e nil nil txmax))
                                       (-search db [e])))
                          v-datoms (vec
                                     (concat
-                                      (set/slice (:veat db)
-                                                 (datom e0 nil e tx0)
-                                                 (datom emax nil e txmax))
+                                      (.subSet ^TreeSet (:veat db)
+                                               (datom e0 nil e tx0)
+                                               (datom emax nil e txmax))
                                       (-search db [nil nil e])))]
                      (recur (reduce transact-retract-datom report
                                     (concat e-datoms v-datoms))
@@ -1229,12 +1211,9 @@
 
              :else
              (raise "Bad entity type at " entity ", expected map, vector, or datom"
-                    {:error :transact/syntax, :tx-data entity})
-             ))
+                    {:error :transact/syntax, :tx-data entity})))
          pstore (.-store ^DB (:db-after rp))]
-     (when-not simulated?
-       (s/load-datoms pstore (:tx-data rp))
-       (refresh-cache pstore))
+     (when-not simulated? (s/load-datoms pstore (:tx-data rp)))
      rp)))
 
 (defn- remote-tx-result

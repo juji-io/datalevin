@@ -31,8 +31,7 @@
    [org.graalvm.sdk/graal-sdk "21.3.0"]
    [org.graalvm.nativeimage/svm "21.3.0"]
    [org.lmdbjava/lmdbjava "0.8.2"]
-   [org.roaringbitmap/RoaringBitmap "0.9.37"]
-   [persistent-sorted-set "0.2.3"]]
+   [org.roaringbitmap/RoaringBitmap "0.9.37"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
@@ -45,8 +44,7 @@
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
    [me.lemire.integercompression/JavaFastPFOR]
-   [com.cognitect/transit-clj]
-   [persistent-sorted-set]]
+   [com.cognitect/transit-clj]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]
   :profiles

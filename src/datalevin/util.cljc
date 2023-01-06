@@ -299,8 +299,11 @@
       [init 0]
       xs)))
 
-(def long-inc #(inc ^long %))
+(defn long-inc ^long [^long x] (inc x))
 
 (defn index-of
   [pred xs]
   (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
+
+(defn array? [^Object x]
+  (some-> x .getClass .isArray))

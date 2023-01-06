@@ -7,7 +7,6 @@
    [datalevin.db :as db]
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise cond+]]
-   [me.tonsky.persistent-sorted-set.arrays :as da]
    [datalevin.lru :as lru]
    [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
                                                FindColl FindRel FindScalar FindTuple PlainSymbol
@@ -110,28 +109,20 @@
   #?(:cljs aget
      :clj  (fn [a i] (aget ^objects a ^Long i))))
 
-#?(:clj
-   (defn join-tuples [t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
-                      t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
-     (let [l1  (alength idxs1)
-           l2  (alength idxs2)
-           res (da/make-array (+ l1 l2))]
-       (if (.isArray (.getClass ^Object t1))
-         (dotimes [i l1] (aset res i (aget ^objects t1 (aget idxs1 i))))
-         (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
-       (if (.isArray (.getClass ^Object t2))
-         (dotimes [i l2] (aset res (+ l1 i) (get ^objects t2 (aget idxs2 i))))
-         (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
-       res))
-   :cljs
-   (defn join-tuples [t1 idxs1
-                      t2 idxs2]
-     (let [l1  (alength idxs1)
-           l2  (alength idxs2)
-           res (da/make-array (+ l1 l2))]
-       (dotimes [i l1] (aset res i (da/aget t1 (aget idxs1 i))))
-       (dotimes [i l2] (aset res (+ l1 i) (da/aget t2 (aget idxs2 i))))
-       res)))
+(defn join-tuples [t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
+                   t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
+  (let [l1 (alength idxs1)
+        l2 (alength idxs2)
+
+        ^{:tag "[[Ljava.lang.Object;"} res
+        (make-array Object (+ l1 l2))]
+    (if (.isArray (.getClass ^Object t1))
+      (dotimes [i l1] (aset res i (aget ^objects t1 (aget idxs1 i))))
+      (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
+    (if (.isArray (.getClass ^Object t2))
+      (dotimes [i l2] (aset res (+ l1 i) (get ^objects t2 (aget idxs2 i))))
+      (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
+    res))
 
 (defn sum-rel [a b]
   (let [{attrs-a :attrs, tuples-a :tuples} a
@@ -151,10 +142,11 @@
             tuples'    (persistent!
                          (reduce
                            (fn [acc tuple-b]
-                             (let [tuple' (da/make-array tlen)
-                                   tg     (if (da/array? tuple-b) typed-aget get)]
+                             (let [tuple' (make-array Object tlen)
+                                   tg     (if (u/array? tuple-b) typed-aget get)]
                                (doseq [[idx-b idx-a] idxb->idxa]
-                                 (aset tuple' idx-a (tg tuple-b idx-b)))
+                                 (aset ^objects tuple'
+                                       idx-a (tg tuple-b idx-b)))
                                (conj! acc tuple')))
                            (transient (vec tuples-a))
                            tuples-b))]
@@ -167,7 +159,7 @@
             (sum-rel b))))))
 
 (defn ^Relation prod-rel
-  ([] (relation! {} [(da/make-array 0)]))
+  ([] (relation! {} [(make-array Object 0)]))
   ([rel1 rel2]
    (let [attrs1 (keys (:attrs rel1))
          attrs2 (keys (:attrs rel2))
@@ -276,35 +268,30 @@
       (if (int? idx)
         (let [idx (int idx)]
           (fn contained-int-getter-fn [tuple]
-            (let [eid #?(:cljs (da/aget tuple idx)
-                         :clj (if (.isArray (.getClass ^Object tuple))
-                                (aget ^objects tuple idx)
-                                (nth tuple idx)))]
+            (let [eid (if (u/array? tuple)
+                        (aget ^objects tuple idx)
+                        (nth tuple idx))]
               (cond
                 (number? eid)     eid ;; quick path to avoid fn call
                 (sequential? eid) (db/entid *implicit-source* eid)
-                (da/array? eid)   (db/entid *implicit-source* eid)
+                (u/array? eid)    (db/entid *implicit-source* eid)
                 :else             eid))))
         ;; If the index is not an int?, the target can never be an array
         (fn contained-getter-fn [tuple]
-          (let [eid #?(:cljs (da/aget tuple idx)
-                       :clj (.valAt ^ILookup tuple idx))]
+          (let [eid (.valAt ^ILookup tuple idx)]
             (cond
               (number? eid)     eid ;; quick path to avoid fn call
               (sequential? eid) (db/entid *implicit-source* eid)
-              (da/array? eid)   (db/entid *implicit-source* eid)
+              (u/array? eid)    (db/entid *implicit-source* eid)
               :else             eid))))
       (if (int? idx)
         (let [idx (int idx)]
           (fn int-getter [tuple]
-            #?(:cljs (da/aget tuple idx)
-               :clj (if (.isArray (.getClass ^Object tuple))
-                      (aget ^objects tuple idx)
-                      (nth tuple idx)))))
+            (if (u/array? tuple)
+              (aget ^objects tuple idx)
+              (nth tuple idx))))
         ;; If the index is not an int?, the target can never be an array
-        (fn getter [tuple]
-          #?(:cljs (da/aget tuple idx)
-             :clj (.valAt ^ILookup tuple idx)))))))
+        (fn getter [tuple] (.valAt ^ILookup tuple idx))))))
 
 (defn tuple-key-fn
   [attrs common-attrs]
@@ -468,7 +455,7 @@
 (defn- context-resolve-val [context sym]
   (when-some [rel (rel-with-attr context sym)]
     (when-some [tuple (first (:tuples rel))]
-      (let [tg (if (da/array? tuple) typed-aget get)]
+      (let [tg (if (u/array? tuple) typed-aget get)]
         (tg tuple ((:attrs rel) sym))))))
 
 (defn- rel-contains-attrs? [rel attrs]
@@ -502,39 +489,39 @@
     (apply f args)))
 
 (defn -call-fn [context rel f args]
-  (let [sources     (:sources context)
-        attrs       (:attrs rel)
-        len         (count args)
-        static-args (da/make-array len)
-        tuples-args (da/make-array len)]
+  (let [sources              (:sources context)
+        attrs                (:attrs rel)
+        len                  (count args)
+        ^objects static-args (make-array Object len)
+        ^objects tuples-args (make-array Object len)]
     (dotimes [i len]
       (let [arg (nth args i)]
         (if (symbol? arg)
           (if-some [source (get sources arg)]
-            (da/aset static-args i source)
-            (da/aset tuples-args i (get attrs arg)))
-          (da/aset static-args i arg))))
+            (aset static-args i source)
+            (aset tuples-args i (get attrs arg)))
+          (aset static-args i arg))))
     ;; CLJS `apply` + `vector` will hold onto mutable array of arguments directly
     ;; https://github.com/tonsky/datascript/issues/262
     (if #?(:clj  false
            :cljs (identical? f vector))
       (fn [tuple]
         ;; TODO raise if not all args are bound
-        (let [args (da/aclone static-args)]
+        (let [args (aclone static-args)]
           (dotimes [i len]
             (when-some [tuple-idx (aget tuples-args i)
                         ]
-              (let [tg (if (da/array? tuple) typed-aget get)
+              (let [tg (if (u/array? tuple) typed-aget get)
                     v  (tg tuple tuple-idx)]
-                (da/aset args i v))))
+                (aset args i v))))
           (make-call f args)))
       (fn [tuple]
         ;; TODO raise if not all args are bound
         (dotimes [i len]
           (when-some [tuple-idx (aget tuples-args i)]
-            (let [tg (if (da/array? tuple) typed-aget get)
+            (let [tg (if (u/array? tuple) typed-aget get)
                   v  (tg tuple tuple-idx)]
-              (da/aset static-args i v))))
+              (aset static-args i v))))
         (make-call f static-args)))))
 
 (defn- resolve-sym [sym]
@@ -929,18 +916,13 @@
             (map
               (fn [t2]
                 (let [res (aclone t1)]
-                  #?(:clj
-                     (if (.isArray (.getClass ^Object t2))
-                       (dotimes [i len]
-                         (when-some [idx (aget ^objects copy-map i)]
-                           (aset res i (aget ^objects t2 idx))))
-                       (dotimes [i len]
-                         (when-some [idx (aget ^objects copy-map i)]
-                           (aset res i (get t2 idx)))))
-                     :cljs
-                     (dotimes [i len]
-                       (when-some [idx (aget ^objects copy-map i)]
-                         (aset res i (da/aget ^objects t2 idx)))))
+                  (if (.isArray (.getClass ^Object t2))
+                    (dotimes [i len]
+                      (when-some [idx (aget ^objects copy-map i)]
+                        (aset res i (aget ^objects t2 idx))))
+                    (dotimes [i len]
+                      (when-some [idx (aget ^objects copy-map i)]
+                        (aset res i (get t2 idx)))))
                   res)))
             (:tuples rel))))
       cat)
@@ -949,7 +931,7 @@
 (defn -collect
   ([context symbols]
    (let [rels (:rels context)]
-     (-collect [(da/make-array (count symbols))] rels symbols)))
+     (-collect [(make-array Object (count symbols))] rels symbols)))
   ([acc rels symbols]
    (cond+
      :let [rel (first rels)]

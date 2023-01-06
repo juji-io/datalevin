@@ -213,7 +213,7 @@
 
 ;; query
 
-(def +cache-limit+ 100)  ; per Datalog db
+(def +cache-limit+ 64)  ; per Datalog db
 
 ;; client/server
 
