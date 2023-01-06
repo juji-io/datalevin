@@ -154,8 +154,8 @@
                     :where [2 ?a ?v]] db)
              #{[:name "Petr"] [:age 37]})))
 
-    (is (= (d/datoms (d/db-with db [[:db.fn/retractEntity 1]]) :eavt)
-           (d/datoms (d/db-with db [[:db/retractEntity 1]]) :eavt)))
+    (is (= (d/db-with db [[:db.fn/retractEntity 1]])
+           (d/db-with db [[:db/retractEntity 1]])))
     (d/close-db db)
     (u/delete-files dir)))
 

@@ -102,13 +102,10 @@
 (defrecord-updatable DB [^IStore store
                          ^long max-eid
                          ^long max-tx
-                         ;; tx caches
                          ^TreeSet eavt
                          ^TreeSet avet
                          ^TreeSet veat
-                         ;; read cache
                          ^LRU reads
-                         ;; pull caches
                          ^ICache pull-patterns
                          ^ICache pull-attrs]
 
@@ -264,11 +261,6 @@
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
                    (resolve-datom db nil attr end nil emax txmax)))))
-
-  IPersistentCollection
-  (equiv
-    [db other]
-    (and ()))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
@@ -972,7 +964,9 @@
                  check-value-tempids
                  (update :tempids assoc :db/current-tx (current-tx report))
                  (update :db-after update :max-tx u/long-inc)
-                 (update :db-after #(when-not simulated? (refresh-cache %))))
+                 (update :db-after #(if-not simulated?
+                                      (refresh-cache %)
+                                      %)))
 
              :let [[entity & entities] es]
 
