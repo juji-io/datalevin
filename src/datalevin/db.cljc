@@ -1,4 +1,5 @@
-(ns ^:no-doc ^:lean-ns datalevin.db
+(ns ^:no-doc datalevin.db
+  (:refer-clojure :exclude [update])
   (:require
    [clojure.walk]
    [clojure.data]
@@ -25,7 +26,7 @@
               [java.net URI]
               [java.util SortedSet TreeSet Comparator]
               [java.util.concurrent ConcurrentHashMap])
-     (:refer-clojure :exclude [update])))
+     ))
 
 ;;;;;;;;;; Protocols
 
@@ -463,11 +464,8 @@
 
 (defn entid [db eid]
   (cond
-    (and (integer? eid) (not (neg? (long eid))))
-    (if (<= ^long eid ^long emax)
-      eid
-      (raise "Highest supported entity id is " emax
-             ", got " eid {:error :entity-id :value eid}))
+    (and (integer? eid) (not (neg? eid)))
+    eid
 
     (sequential? eid)
     (let [[attr value] eid]
@@ -541,9 +539,9 @@
   (-> report :db-before :max-tx long inc))
 
 (defn- next-eid
-  #?(:clj {:inline (fn [db] `(inc (long (:max-eid ~db))))})
+  #?(:clj {:inline (fn [db] `(inc (:max-eid ~db)))})
   ^long [db]
-  (inc (long (:max-eid db))))
+  (inc (:max-eid db)))
 
 #?(:clj
    (defn- ^Boolean tx-id?

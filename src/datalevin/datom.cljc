@@ -171,18 +171,17 @@
 ;; datom cmp macros/funcs
 ;;
 
-#?(:clj
-   (defmacro combine-cmp [& comps]
-     (loop [comps (reverse comps)
-            res   (num 0)]
-       (if (not-empty comps)
-         (recur
-           (next comps)
-           `(let [c# ~(first comps)]
-              (if (= 0 (long c#))
-                ~res
-                c#)))
-         res))))
+(defmacro combine-cmp [c1 c2 c3 c4]
+  `(let [c1# ~c1]
+     (if (= 0 c1#)
+       (let [c2# ~c2]
+         (if (= 0 c2#)
+           (let [c3# ~c3]
+             (if (= 0 c3#)
+               ~c4
+               c3#))
+           c2#))
+       c1#)))
 
 (defn nil-check-cmp-fn [cmp-fn]
   (fn nil-check-cmp [o1 o2]
@@ -206,9 +205,9 @@
 (def nil-cmp (nil-check-cmp-fn compare))
 (def nil-cmp-type (nil-check-cmp-fn compare-with-type))
 
-(defmacro compare-int
+(defmacro long-compare
   [x y]
-  `(long (Integer/compare ~x ~y)))
+  `(Long/compare ^long ~x ^long ~y))
 
 (defmacro defcomp
   [sym [arg1 arg2] & body]
@@ -227,29 +226,26 @@
          (invokePrim [this# ~a1 ~a2]
            (.compare this# ~a1 ~a2))))))
 
-;; Slower cmp-* fns allows for datom fields to be nil.
-;; Such datoms come from slice method where they are used as boundary markers.
-
 (defcomp cmp-datoms-eavt [^Datom d1, ^Datom d2]
   (combine-cmp
-    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj long-compare :cljs -) (.-e d1) (.-e d2))
     (nil-cmp (.-a d1) (.-a d2))
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj long-compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defcomp cmp-datoms-avet [^Datom d1, ^Datom d2]
   (combine-cmp
     (nil-cmp (.-a d1) (.-a d2))
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj long-compare :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj long-compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defcomp cmp-datoms-veat [^Datom d1, ^Datom d2]
   (combine-cmp
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj compare-int :cljs -) (.-e d1) (.-e d2))
+    (#?(:clj long-compare :cljs -) (.-e d1) (.-e d2))
     (nil-cmp (.-a d1) (.-a d2))
-    (#?(:clj compare-int :cljs -) (datom-tx d1) (datom-tx d2))))
+    (#?(:clj long-compare :cljs -) (datom-tx d1) (datom-tx d2))))
 
 (defn datom-e [^Datom d] (.-e d))
 

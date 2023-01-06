@@ -13,9 +13,9 @@
 ;; datom
 
 (def ^:const e0    0)
-(def ^:const emax  0x7FFFFFFF)
+(def ^:const emax  0x7FFFFFFFFFFFFFFF)
 (def ^:const tx0   1)
-(def ^:const txmax 0x7FFFFFFF)
+(def ^:const txmax 0x7FFFFFFFFFFFFFFF)
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)
 (def ^:const a0    0)
