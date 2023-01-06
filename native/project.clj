@@ -19,7 +19,6 @@
                  [org.eclipse.collections/eclipse-collections]
                  [me.lemire.integercompression/JavaFastPFOR]
                  [com.taoensso/timbre]
-                 [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.lmdbjava/lmdbjava]

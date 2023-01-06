@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Improved
+- [Datalog] moved entity and transaction ids from 32 bits to 64 bits integers, supporting much larger DB. #144
+
 ## 0.7.8 (2023-01-04)
 ### Fixed
 - [KV] `get-range` regression when results are used in `sequence`. #172
