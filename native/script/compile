@@ -26,7 +26,6 @@ lein with-profile native-uberjar uberjar
 "$GRAALVM_HOME/bin/native-image" \
   --verbose \
   --features=InitAtBuildTimeFeature \
-  --add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED \
   -jar "$MAIN_JAR" ${app_name}
 
 lein clean
@@ -35,5 +34,4 @@ lein with-profile test0-uberjar uberjar
 "$GRAALVM_HOME/bin/native-image" \
      --verbose \
      --features=InitAtBuildTimeFeature \
-     --add-opens=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED \
      -jar "$TEST0_JAR" ${test0_name}

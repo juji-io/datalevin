@@ -401,7 +401,7 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
-(declare reset-write-txn)
+(declare reset-write-txn ->LMDB)
 
 (deftype LMDB [^Env env
           ^String dir
