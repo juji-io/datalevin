@@ -1,9 +1,14 @@
 # Change Log
 
 ## WIP
+### Added
+- [KV] added `:tuple` data type that accepts 2-8 scalar values, useful as
+  path keys for indexing documents.
+- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples
+  `:db/tupleType` for values, same as the above. #167
 ### Improved
 - [Datalog] moved entity and transaction ids from 32 bits to 64 bits integers, supporting much larger DB. #144
-- [Native] updated to the latest graalvm 22.3
+- [Native] updated to the latest Graalvm 22.3.0. #174
 
 ## 0.7.8 (2023-01-04)
 ### Fixed

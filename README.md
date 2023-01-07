@@ -16,14 +16,24 @@ alt="datalevin apple silicon build status"></img></a>
 
 > I love Datalog, why hasn't everyone used this already?
 
-Datalevin is a simple durable Datalog database.
+Datalevin is a simple durable [Datalog](https://en.wikipedia.org/wiki/Datalog)
+database. Here's what a Datalog query looks like:
 
-The rationale is to have a simple, fast and free Datalog query engine running on
-durable storage.  It is our observation that many developers prefer the flavor
-of Datalog popularized by [Datomic®](https://www.datomic.com) over any flavor of
-SQL, once they get to use it. Perhaps it is because Datalog is more declarative
-and composable than SQL, e.g. the automatic implicit joins seem to be its killer
-feature.
+```Clojure
+(d/q '[:find  ?company ?total
+       :in    $ ?year
+       :where [?e :sales/year ?year]
+              [?e :sales/total ?total]
+              [?e :sales/company ?company]]
+      (d/db conn) 2023)
+```
+
+The rationale is to have a simple, fast and open source Datalog query engine
+running on durable storage.  It is our observation that many developers prefer
+the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over
+any flavor of SQL, once they get to use it. Perhaps it is because Datalog is
+more declarative and composable than SQL, e.g. the automatic implicit joins seem
+to be its killer feature.
 
 Datomic® is an enterprise grade software, and its feature set may be an overkill
 for some use cases. One thing that may confuse casual users is its [temporal
@@ -74,7 +84,7 @@ engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
 [competitive](https://github.com/juji-io/datalevin/tree/master/search-bench)
 search performance. It integrates nicely with other database features, and works in
 all modes of Datalevin operation: embedded library, client/server, native
-command line and as a [Babashka](https://github.com/babashka/babashka) Pod.
+command line, and as a [Babashka](https://github.com/babashka/babashka) Pod.
 
 Our goal is to simplify data storage and access by supporting diverse use cases
 and paradigms, because maximal flexibility is the core strength of a Datalog
@@ -435,10 +445,6 @@ than just the difference in data durability and running mode:
 
 * Has no features that are applicable only for in-memory DBs, such as DB as an
   immutable data structure, DB pretty print, etc.
-
-This project would not have started without the existence of Datascript, we will
-continue submitting pull requests to Datascript with our improvements where they
-are applicable to Datascript.
 
 ## :baby: Limitations
 

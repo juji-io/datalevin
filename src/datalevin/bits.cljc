@@ -806,7 +806,6 @@
      :veat           (get-vea bf)
      :raw            (get-bytes bf)
      (get-data bf))))
-;; => #'datalevin.bits/read-buffer
 
 (defn valid-data?
   "validate data type"
@@ -832,4 +831,5 @@
     (:db.type/boolean :boolean) (boolean? x)
     (:db.type/instant :instant) (inst? x)
     (:db.type/uuid :uuid)       (uuid? x)
+    (:db.type/tuple :tuple)     (and (sequential? x) (< 1 (count x) 8))
     true))
