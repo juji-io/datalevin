@@ -31,7 +31,7 @@
                  :extra-paths ["dev" "target/classes"]
                  :extra-deps  {
                                org.clojure/tools.namespace {:mvn/version "1.2.0"}
-                               org.graalvm.nativeimage/svm {:mvn/version "21.3.0"}
+                               org.graalvm.nativeimage/svm {:mvn/version "22.3.0"}
                                }
                  }
 

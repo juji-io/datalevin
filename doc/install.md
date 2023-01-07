@@ -60,10 +60,6 @@ This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
 [note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image).
 
-Note: only Graalvm version 21.3.0 works for now, see
-[issue](https://github.com/oracle/graal/issues/5615). We are going to switch to
-a different native binding to address the problem.
-
 ## Command Line Tool
 
 A command line tool [`dtlv`](https://github.com/juji-io/datalevin/blob/master/doc/dtlv.md) is built to work with Datalevin databases in shell

@@ -970,7 +970,6 @@
                 temp?   false}
          :as   opts}]
    (try
-
      (let [file     (u/file dir)
            ^Env env (Env/create
                       dir
