@@ -351,29 +351,23 @@
 
   (load-datoms [this datoms]
     (locking this
-      (let [ft-ds    (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
-            add-fn   (fn [holder datom]
-                       (let [conj-fn (fn [h d] (conj! h d))]
-                         (if (d/datom-added datom)
-                           (let [[data giant?] (insert-data this datom ft-ds)]
-                             (when giant? (advance-max-gt this))
-                             (reduce conj-fn holder data))
-                           (reduce conj-fn holder
-                                   (delete-data this datom ft-ds)))))
-            tx-time  (System/currentTimeMillis)
-            batch-fn (fn [batch]
-                       (lmdb/transact-kv
-                         lmdb
-                         (conj (persistent! (reduce add-fn (transient []) batch))
-                               [:put c/meta :last-modified tx-time :attr :long])))]
-        (doseq [batch (partition c/+tx-datom-batch-size+
-                                 c/+tx-datom-batch-size+
-                                 nil
-                                 datoms)]
-          (batch-fn batch))
+      (let [ft-ds  (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
+            add-fn (fn [holder datom]
+                     (let [conj-fn (fn [h d] (conj! h d))]
+                       (if (d/datom-added datom)
+                         (let [[data giant?] (insert-data this datom ft-ds)]
+                           (when giant? (advance-max-gt this))
+                           (reduce conj-fn holder data))
+                         (reduce conj-fn holder
+                                 (delete-data this datom ft-ds)))))]
         (lmdb/transact-kv
-          lmdb
-          [[:put c/meta :max-tx (advance-max-tx this) :attr :long]])
+          lmdb (persistent!
+                 (-> (reduce add-fn (transient []) datoms)
+                     (conj! [:put c/meta :max-tx (advance-max-tx this)
+                             :attr :long])
+                     (conj! [:put c/meta :last-modified
+                             (System/currentTimeMillis)
+                             :attr :long]))))
         (doseq [[op ^Datom d] @ft-ds
                 :let          [v (str (.-v d))]]
           (case op

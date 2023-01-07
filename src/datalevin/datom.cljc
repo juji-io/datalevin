@@ -171,17 +171,17 @@
 ;; datom cmp macros/funcs
 ;;
 
-(defmacro combine-cmp [c1 c2 c3 c4]
-  `(let [c1# ~c1]
-     (if (= 0 c1#)
-       (let [c2# ~c2]
-         (if (= 0 c2#)
-           (let [c3# ~c3]
-             (if (= 0 c3#)
-               ~c4
-               c3#))
-           c2#))
-       c1#)))
+(defmacro combine-cmp [& comps]
+  (loop [comps (reverse comps)
+         res   (num 0)]
+    (if (not-empty comps)
+      (recur
+        (next comps)
+        `(let [c# ~(first comps)]
+           (if (= 0 c#)
+             ~res
+             c#)))
+      res)))
 
 (defn nil-check-cmp-fn [cmp-fn]
   (fn nil-check-cmp [o1 o2]

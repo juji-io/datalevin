@@ -464,7 +464,7 @@
 
 (defn entid [db eid]
   (cond
-    (and (integer? eid) (not (neg? eid)))
+    (and (integer? eid) (not (neg? ^long eid)))
     eid
 
     (sequential? eid)
@@ -539,9 +539,9 @@
   (-> report :db-before :max-tx long inc))
 
 (defn- next-eid
-  #?(:clj {:inline (fn [db] `(inc (:max-eid ~db)))})
+  #?(:clj {:inline (fn [db] `(inc (long (:max-eid ~db))))})
   ^long [db]
-  (inc (:max-eid db)))
+  (inc (long (:max-eid db))))
 
 #?(:clj
    (defn- ^Boolean tx-id?
@@ -589,7 +589,7 @@
        (update :tempids assoc eid eid)
 
        (and (:auto-entity-time? (s/opts (.-store ^DB db))) new?)
-       (update :tx-data conj (d/datom eid :db/created-at tx-time))
+       (update :tx-data conj! (d/datom eid :db/created-at tx-time))
 
        true
        (update :db-after advance-max-eid eid)))))
@@ -642,7 +642,7 @@
         a       (:a datom)
         report' (-> report
                     (assoc :db-after (with-datom db datom))
-                    (update :tx-data conj datom))]
+                    (update :tx-data conj! datom))]
     (if (tuple-source? db a)
       (let [e      (:e datom)
             v      (if (datom-added datom) (:v datom) nil)
@@ -849,19 +849,24 @@
               (map (fn [^Datom d] [:db.fn/retractEntity (.-v d)]))) datoms))
 
 (defn check-value-tempids [report]
-  (if-let [tempids (::value-tempids report)]
-    (let [all-tempids (transient tempids)
-          reduce-fn   (fn [tempids datom]
-                        (if (datom-added datom)
-                          (dissoc! tempids (:e datom))
-                          tempids))
-          unused      (reduce reduce-fn all-tempids (:tx-data report))
-          unused      (reduce reduce-fn unused (::tx-redundant report))]
-      (if (zero? (count unused))
-        (dissoc report ::value-tempids ::tx-redundant)
-        (raise "Tempids used only as value in transaction: " (sort (vals (persistent! unused)))
-               {:error :transact/syntax, :tempids unused})))
-    (dissoc report ::value-tempids ::tx-redundant)))
+  (let [tx-data (persistent! (:tx-data report))]
+    (if-let [tempids (::value-tempids report)]
+      (let [all-tempids (transient tempids)
+            reduce-fn   (fn [tempids datom]
+                          (if (datom-added datom)
+                            (dissoc! tempids (:e datom))
+                            tempids))
+            unused      (reduce reduce-fn all-tempids tx-data)
+            unused      (reduce reduce-fn unused (::tx-redundant report))]
+        (if (zero? (count unused))
+          (-> report
+              (dissoc ::value-tempids ::tx-redundant)
+              (assoc :tx-data tx-data))
+          (raise "Tempids used only as value in transaction: " (sort (vals (persistent! unused)))
+                 {:error :transact/syntax, :tempids unused})))
+      (-> report
+          (dissoc ::value-tempids ::tx-redundant)
+          (assoc :tx-data tx-data)))))
 
 (declare local-transact-tx-data)
 
@@ -953,8 +958,11 @@
    (local-transact-tx-data initial-report initial-es false))
   ([initial-report initial-es simulated?]
    (let [tx-time         (System/currentTimeMillis)
-         initial-report' (update initial-report :db-after -clear-tx-cache)
-         has-tuples?     (not (empty? (-attrs-by (:db-after initial-report) :db.type/tuple)))
+         initial-report' (-> initial-report
+                             (update :db-after -clear-tx-cache)
+                             (update :tx-data transient))
+         has-tuples?     (not (empty? (-attrs-by (:db-after initial-report)
+                                                 :db.type/tuple)))
          initial-es'     (cond-> initial-es
                            (:auto-entity-time?
                             (s/opts (.-store ^DB (:db-before initial-report))))
