@@ -24,27 +24,28 @@ TEST0_JAR="target/test0.uberjar.jar"
 TEST1_JAR="target/test1.uberjar.jar"
 TEST2_JAR="target/test2.uberjar.jar"
 
-lein clean
-lein with-profile native-uberjar uberjar
+#lein clean
+#lein with-profile native-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image" \
-  --verbose \
-  --features=InitAtBuildTimeFeature \
-  --add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED \
-  -jar "$MAIN_JAR" ${app_name}
+#"$GRAALVM_HOME/bin/native-image" \
+  #--verbose \
+  #--features=InitAtBuildTimeFeature \
+  #--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED \
+  #-jar "$MAIN_JAR" ${app_name}
 
 lein clean
 lein with-profile test0-uberjar uberjar
 
 
-# "$GRAALVM_HOME/bin/native-image" \
-#     --verbose \
-#     --features=InitAtBuildTimeFeature \
-#     --add-opens "org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED" \
-#     --add-opens "org.graalvm.nativeimage.builder/com.oracle.svm.core.option=ALL-UNNAMED" \
-#     --add-opens "org.graalvm.nativeimage.builder/com.oracle.svm.core.c=ALL-UNNAMED" \
-#     -R:MaxHeapSize=5g \
-#     -jar "$TEST0_JAR" ${test0_name}
+"$GRAALVM_HOME/bin/native-image" \
+     --verbose \
+     --features=InitAtBuildTimeFeature \
+     --add-opens "org.graalvm.nativeimage.builder/com.oracle.svm.core=ALL-UNNAMED" \
+     -jar "$TEST0_JAR" ${test0_name}
+
+     #--add-opens "org.graalvm.nativeimage.builder/com.oracle.svm.core.option=ALL-UNNAMED" \
+     #--add-opens "org.graalvm.nativeimage.builder/com.oracle.svm.core.c=ALL-UNNAMED" \
+     #-R:MaxHeapSize=5g \
 
 # lein clean
 # lein with-profile test1-uberjar uberjar

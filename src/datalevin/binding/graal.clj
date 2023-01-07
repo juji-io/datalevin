@@ -15,22 +15,26 @@
    [java.lang AutoCloseable]
    [java.lang.annotation Retention RetentionPolicy]
    [clojure.lang IPersistentVector]
-   [org.graalvm.nativeimage.c CContext]
+   ;; [org.graalvm.nativeimage.c CContext]
    [org.graalvm.word WordFactory]
-   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info Directives
+   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info ;Directives
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
     Lib$MapFullException])
   (:gen-class
-   :name ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}} datalevin.binding.graal))
+   :name
+   ;; ^{Retention RetentionPolicy/RUNTIME
+   ;;   CContext  {:value Directives}}
+   datalevin.binding.graal))
 
 (defprotocol IFlag
-  (^{Retention RetentionPolicy/RUNTIME
-     CContext  {:value Directives}}
+  (
+   ;; ^{Retention RetentionPolicy/RUNTIME
+   ;;   CContext  {:value Directives}}
    value [this flag-key]))
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}}
+(deftype
+    ;; ^{Retention RetentionPolicy/RUNTIME
+    ;;   CContext  {:value Directives}}
     Flag []
   IFlag
   (value  [_ flag-key]
@@ -76,8 +80,9 @@
               (map #(value ^Flag flag %) flags)))
     (int 0)))
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}}
+(deftype
+    ;; ^{Retention RetentionPolicy/RUNTIME
+    ;;   CContext  {:value Directives}}
     Rtx [lmdb
          ^Txn txn
          ^BufVal kp
@@ -174,8 +179,9 @@
     (.renew txn)
     this))
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}}
+(deftype
+    ;; ^{Retention RetentionPolicy/RUNTIME
+    ;;   CContext  {:value Directives}}
     KV [^BufVal kp ^BufVal vp]
   IKV
   (k [this] (.outBuf kp))
@@ -189,8 +195,9 @@
 
 (declare ->CursorIterable)
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}}
+(deftype
+    ;; ^{Retention RetentionPolicy/RUNTIME
+    ;;   CContext  {:value Directives}}
     DBI [^Dbi db
          ^ConcurrentLinkedQueue curs
          ^BufVal kp
@@ -280,8 +287,9 @@
   (return-cursor [_ cur]
     (.add curs cur)))
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}}
+(deftype
+    ;; ^{Retention RetentionPolicy/RUNTIME
+    ;;   CContext  {:value Directives}}
     CursorIterable [^Cursor cursor
                     ^DBI db
                     ^Rtx rtx
@@ -417,8 +425,9 @@
 
 (declare reset-write-txn)
 
-(deftype ^{Retention RetentionPolicy/RUNTIME
-           CContext  {:value Directives}}
+(deftype
+    ;; ^{Retention RetentionPolicy/RUNTIME
+    ;;   CContext  {:value Directives}}
     LMDB [^Env env
           ^String dir
           opts
