@@ -2,24 +2,15 @@
   (:require
    [datalevin.lmdb :as l]
    [datalevin.spill :as sp]
-   [datalevin.interpret :as i]
    [datalevin.util :as u]
-   [datalevin.core :as dc]
    [datalevin.constants :as c]
-   [datalevin.datom :as d]
-   [clojure.test :refer [deftest testing is]]
-   [clojure.test.check.generators :as gen]
-   [clojure.test.check.clojure-test :as test]
-   [clojure.test.check.properties :as prop])
+   [clojure.test :refer [deftest testing is]])
   (:import
-   [clojure.lang ISeq IPersistentVector]
    [datalevin.spill SpillableVector]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
-
-(sp/uninstall-memory-updater)
 
 (deftest before-spill-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
@@ -203,4 +194,5 @@
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))
     (is (= @(.total vs)
-           (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))))
+           (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))
+    (vreset! sp/memory-pressure 0)))

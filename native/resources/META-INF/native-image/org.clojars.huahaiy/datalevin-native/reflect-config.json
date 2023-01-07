@@ -8,6 +8,10 @@
         "allPublicMethods":true
     },
     {
+        "name":"java.io.File",
+        "allPublicMethods":true
+    },
+    {
         "name":"java.lang.Byte",
         "allPublicConstructors":true,
         "allPublicMethods":true

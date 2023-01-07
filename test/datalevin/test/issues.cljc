@@ -1,17 +1,21 @@
 (ns datalevin.test.issues
   (:require
    [datalevin.core :as d]
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])))
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [datalevin.util :as u]))
 
+(use-fixtures :each db-fixture)
 
 (deftest ^{:doc "CLJS `apply` + `vector` will hold onto mutable array of arguments directly"}
   issue-262
-  (let [db (d/db-with (d/empty-db)
-                      [{:attr "A"} {:attr "B"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with (d/empty-db dir)
+                       [{:attr "A"} {:attr "B"}])]
     (is (= (d/q '[:find ?a ?b
                   :where [_ :attr ?a]
                   [(vector ?a) ?b]]
                 db)
            #{["A" ["A"]] ["B" ["B"]]}))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))

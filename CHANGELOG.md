@@ -1,8 +1,49 @@
 # Change Log
 
 ## WIP
+### Improved
+- [Datalog] moved entity and transaction ids from 32 bits to 64 bits integers, supporting much larger DB. #144
+
+## 0.7.8 (2023-01-04)
+### Fixed
+- [KV] `get-range` regression when results are used in `sequence`. #172
+### Improved
+- [Datalog] Ported all applicable Datascript improvements since 0.8.13 up to now
+  (1.4.0). Notably, added composite tuples feature, new pull implementation,
+  many bug fixes and performance improvements. #3, #57, #168
+- bump deps
+
+## 0.7.6 (2022-12-16)
+### Fixed
+- [Server] error when granting permission to a db created by `create-database`
+  instead of being created by opening a connection URI
+### Improved
+- [Datalog] avoid printing all datoms when print a db
+- [Doc] clarify that `db-name` is unique on the server. (thx @dvingo)
+
+## 0.7.5 (2022-12-16)
+### Improved
+- avoid `(random-uuid)`, since not every one is on Clojure 1.11 yet.
+
+## 0.7.4 (2022-12-15)
+### Fixed
+- typo prevent build on CI
+
+## 0.7.3 (2022-12-15)
+### Fixed
+- [KV] spill test that prevents tests on MacOS CI from succeeding.
+
+## 0.7.2 (2022-12-15)
+### Fixed
+- [KV] broken deleteOnExit for temporary files
+
+## 0.7.1 (2022-12-15)
+### Improved
+- [KV] clean up spill files
+
+## 0.7.0
 ### Added
-- [Platform] aarch64 build for Apple Silicon.
+- [Platform] embedded library support for Apple Silicon.
 - [KV] A new range function `range-seq` that has similar signature as
   `get-range`, but returns a `Seqable`, which lazily reads data items into
   memory in batches (controlled by `:batch-size` option). It should be used
@@ -12,12 +53,8 @@
   mutable, still implement `IPersistentVector`, so there is no API level
   change. The spill-to-disk behavior is controlled by `spill-opts` option map
   when opening the db, allowing `:spill-threshold` and `:spill-root` options.
-- [Datalog] Additional arity-1 version of `q` that takes `:query` and `:args`
-  in a map, which allows additional options for `:offset`, `:limit`, and
-  `:timeout`. These options are also supported in the vector form of `q`. #126
 ### Improved
 - [KV] write performance improvement
-- [Datalog] `q` and `pull` results are also lazy and spill to disk under memory pressure.
 ### Changed
 - [KV] Upgrade LMDB to 0.9.29
 

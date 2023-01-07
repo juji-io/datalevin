@@ -13,6 +13,7 @@
    [datalevin.pull-parser]
    [datalevin.pull-api :as dp]
    [datalevin.query :as dq]
+   [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.bits :as b])
   (:import
@@ -70,7 +71,7 @@
       (:ns/_ref (entity db 2)) ; => [{:db/id 1}]
 
   Reverse reference lookup returns sequence of entities unless
-  attribute is marked as `:db/component`:
+  attribute is marked as `:db/isComponent`:
 
       (:_component-ref (entity db 2)) ; => {:db/id 1}
 
@@ -82,7 +83,7 @@
     - Creating an entity by id is very cheap, almost no-op
     (attributes are looked up on demand).
     - Comparing entities just compares their ids. Be careful when
-    comparing entities taken from differenct dbs or from different versions of the
+    comparing entities taken from different dbs or from different versions of the
     same db.
     - Accessed entity attributes are cached on entity itself (except
     backward references).
@@ -133,11 +134,19 @@ Only usable for debug output.
 
 ;; Pull API
 
-(defn pull
-  "Fetches data from a Datalog database using recursive declarative
+(def ^{:arglists '([db pattern id] [db pattern id opts])
+       :doc      "Fetches data from a Datalog database using recursive declarative
   description. See [docs.datomic.com/on-prem/pull.html](https://docs.datomic.com/on-prem/pull.html).
 
   Unlike [[entity]], returns plain Clojure map (not lazy).
+
+  Supported opts:
+
+   `:visitor` a fn of 4 arguments, will be called for every entity/attribute pull touches
+
+   (:db.pull/attr     e   a   nil) - when pulling a normal attribute, no matter if it has value or not
+   (:db.pull/wildcard e   nil nil) - when pulling every attribute on an entity
+   (:db.pull/reverse  nil a   v  ) - when pulling reverse attribute
 
   Usage:
 
@@ -145,25 +154,20 @@ Only usable for debug output.
                 ; => {:db/id   1,
                 ;     :name    \"Ivan\"
                 ;     :likes   [:pizza]
-                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"
-  [db selector eid]
-  {:pre [(db/db? db)]}
-  (dp/pull db selector eid))
+                ;     :friends [{:db/id 2, :name \"Oleg\"}]}"}
+  pull dp/pull)
 
-
-(defn pull-many
-  "Same as [[pull]], but accepts sequence of ids and returns
+(def ^{:arglists '([db pattern ids] [db pattern ids opts])
+       :doc
+       "Same as [[pull]], but accepts sequence of ids and returns
   sequence of maps.
 
   Usage:
 
              (pull-many db [:db/id :name] [1 2])
              ; => [{:db/id 1, :name \"Ivan\"}
-             ;     {:db/id 2, :name \"Oleg\"}]"
-  [db selector eids]
-  {:pre [(db/db? db)]}
-  (dp/pull-many db selector eids))
-
+             ;     {:db/id 2, :name \"Oleg\"}]"}
+  pull-many dp/pull-many)
 
 ;; Query
 
@@ -284,12 +288,8 @@ Only usable for debug output.
   ([db tx-data tx-meta] (with db tx-data tx-meta false))
   ([db tx-data tx-meta simulated?]
    {:pre [(db/db? db)]}
-   (db/transact-tx-data (db/map->TxReport
-                          {:db-before db
-                           :db-after  db
-                           :tx-data   []
-                           :tempids   {}
-                           :tx-meta   tx-meta}) tx-data simulated?)))
+   (db/transact-tx-data (db/->TxReport db db [] {} tx-meta)
+                        tx-data simulated?)))
 
 (defn tx-data->simulated-report
   "Returns a transaction report without side-effects. Useful for obtaining
@@ -419,7 +419,7 @@ Only usable for debug output.
    (let [store (.-store db)]
      (if (instance? DatalogStore store)
        (r/fulltext-datoms store query opts)
-       (dq/fulltext db query opts)))))
+       (dbq/fulltext db query opts)))))
 
 (defn index-range
   "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
@@ -601,7 +601,7 @@ Only usable for debug output.
       (transact! conn [[:db/add -1 :friend 296]])
 
       ; create an entity and set multiple attributes (in a single transaction
-      ; equal tempids will be replaced with the same unused yet entid)
+      ; equal tempids will be replaced with the same yet unused yet entid)
       (transact! conn [[:db/add -1 :name \"Ivan\"]
                        [:db/add -1 :likes \"fries\"]
                        [:db/add -1 :likes \"pizza\"]
@@ -620,11 +620,11 @@ Only usable for debug output.
                         :name   \"Oleg\"
                         :likes  [\"fish\"]}])
 
-      ; ref attributes can be specified as nested map, that will create netsed entity as well
+      ; ref attributes can be specified as nested map, that will create nested entity as well
       (transact! conn [{:db/id  -1
                         :name   \"Oleg\"
                         :friend {:db/id -2
-                                 :name \"Sergey\"}])
+                                 :name \"Sergey\"}}])
 
       ; reverse attribute name can be used if you want created entity to become
       ; a value in another entity reference
@@ -636,7 +636,7 @@ Only usable for debug output.
                        {:db/id 296, :friend -1}])
       ; equivalent to
       (transact! conn [[:db/add  -1 :name   \"Oleg\"]
-                       {:db/add 296 :friend -1]])"
+                       [:db/add 296 :friend -1]])"
   ([conn tx-data] (transact! conn tx-data nil))
   ([conn tx-data tx-meta]
    ;; {:pre [(conn? conn)]}
@@ -941,9 +941,10 @@ Only usable for debug output.
   * `:mapsize` is the initial size of the database. This will be expanded as needed
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
      `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
+  * `:temp?` a boolean, indicating if this db is temporary, if so, the file will be deleted on JVM exit.
   * `:client-opts` is the option map passed to the client if `dir` is a remote server URI string.
   * `:spill-opts` is the option map that controls the spill-to-disk behavior for `get-range` and `range-filter` functions, which may have the following keys:
-      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx` (default 70), above which spill-to-disk will be triggered.
+      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx` (default 80), above which spill-to-disk will be triggered.
       - `:spill-root`, a file directory, in which the spilled data is written (default is the system temporary directory).
 
 

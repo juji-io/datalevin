@@ -57,6 +57,11 @@ instead of a local path name, a connection to the server is attempted.
 is `datalog`, the other option is `kv` for key-value store. A database will be
 created if it does not yet exist. `port` is optional, default is `8898`.
 
+If you are using both the `datalog` store and the `kv` store on the same server, these are two different databases
+and thus must have different names. The `db-name` cannot be the same for the `datalog` store and
+the `kv` store running within one datalevin server instance. In fact, `db-name`
+must be unique across the whole server.
+
 The same functions for local databases work on the remote databases, i.e. any
 function that takes a `dir` argument can also take a connection URI string,
 e.g. `(get-conn "dtlv://datalevin:datalevin@localhost/mydb")`. The remote access

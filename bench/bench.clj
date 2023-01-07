@@ -84,10 +84,9 @@
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}
                   com.taoensso/nippy    {:mvn/version \"3.2.0\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.324\"}
-                  persistent-sorted-set/persistent-sorted-set {:mvn/version \"0.1.4\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
-                  org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.26\"}
-                  org.eclipse.collections/eclipse-collections {:mvn/version \"11.0.0\"}
+                  org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.37\"}
+                  org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
                   }}"
                   )
 
@@ -105,7 +104,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src-datascript\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.0.0" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.4.0" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.datascript"
            benchmarks)
@@ -123,11 +122,11 @@
 
 (def default-benchmarks
   [
-   ;; "add-1"
-   ;; "add-5"
-   ;; "add-all"
-   ;; "init"
-   ;; "retract-5"
+    "add-1"
+    "add-5"
+    "add-all"
+    "init"
+    "retract-5"
    "q1"
    "q2"
    "q3"
@@ -140,8 +139,8 @@
 
 (def default-versions
   [;; ["latest" "datomic"]
-   ;; ["0.18.13" "datascript"]
    ["latest" "datascript"]
+   ["0.7.8" "datalevin"]
    ["latest" "datalevin"]])
 
 

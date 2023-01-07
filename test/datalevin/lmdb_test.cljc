@@ -7,7 +7,8 @@
    [datalevin.core :as dc]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
-   [clojure.test :refer [deftest testing is]]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop])
@@ -19,6 +20,8 @@
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
+
+(use-fixtures :each db-fixture)
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))

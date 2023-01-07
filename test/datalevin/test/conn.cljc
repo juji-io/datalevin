@@ -1,12 +1,14 @@
 (ns datalevin.test.conn
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest]]
-      :clj  [clojure.test :as t :refer        [is deftest]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.db :as db]
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import [java.util Date UUID]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-close
   (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
@@ -121,6 +123,10 @@
                  (d/datom 1 :name "Ivan")}
         dir    (u/tmp-dir (str "test-" (random-uuid)))
         conn   (d/conn-from-db (d/init-db datoms dir))]
+    (is (thrown-with-msg? Exception
+                          #"init-db expects list of Datoms, got "
+                          (d/init-db [[:add -1 :name "Ivan"]
+                                      {:add -1 :age 35}])))
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)
@@ -133,7 +139,8 @@
         conn   (d/conn-from-db (d/init-db datoms dir schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
-    (d/close conn)))
+    (d/close conn)
+    (u/delete-files dir)))
 
 (deftest test-recreate-conn
   (let [schema {:name          {:db/valueType :db.type/string}

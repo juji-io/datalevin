@@ -1,4 +1,4 @@
-(def version "0.6.29")
+(def version "0.7.8")
 
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
@@ -20,7 +20,6 @@
                  [org.eclipse.collections/eclipse-collections]
                  [me.lemire.integercompression/JavaFastPFOR]
                  [com.taoensso/timbre]
-                 [persistent-sorted-set]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
                  [org.graalvm.nativeimage/library-support]

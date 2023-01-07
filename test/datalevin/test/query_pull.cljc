@@ -1,13 +1,16 @@
 (ns datalevin.test.query-pull
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.util :as u])
   (:import [java.util UUID]))
 
+(use-fixtures :each db-fixture)
+
 (deftest test-basics
-  (let [test-db (d/db-with (d/empty-db)
+  (let [dir     (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        test-db (d/db-with (d/empty-db dir)
                            [{:db/id 1 :name "Petr" :age 44}
                             {:db/id 2 :name "Ivan" :age 25}
                             {:db/id 3 :name "Oleg" :age 11}])]
@@ -30,10 +33,12 @@
 
       '[?e (pull ?e [:name]) ?a]
       #{[2 {:name "Ivan"} 25] [1 {:name "Petr"} 44]})
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-var-pattern
-  (let [test-db (d/db-with (d/empty-db)
+  (let [dir     (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        test-db (d/db-with (d/empty-db dir)
                            [{:db/id 1 :name "Petr" :age 44}
                             {:db/id 2 :name "Ivan" :age 25}
                             {:db/id 3 :name "Oleg" :age 11}])]
@@ -48,7 +53,8 @@
 
       '[?e ?a ?pattern (pull ?e ?pattern)] [:name]
       #{[2 25 [:name] {:name "Ivan"}] [1 44 [:name] {:name "Petr"}]})
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 ;; not supported
 #_(deftest test-multi-pattern
@@ -63,8 +69,10 @@
              [1 [:age]  {:age 44}]})))
 
 (deftest test-multiple-sources
-  (let [db1 (d/db-with (d/empty-db) [{:db/id 1 :name "Ivan" :age 25}])
-        db2 (d/db-with (d/empty-db) [{:db/id 1 :name "Petr" :age 25}])]
+  (let [dir1 (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        dir2 (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        db1  (d/db-with (d/empty-db dir1) [{:db/id 1 :name "Ivan" :age 25}])
+        db2  (d/db-with (d/empty-db dir2) [{:db/id 1 :name "Petr" :age 25}])]
     (is (= (set (d/q '[:find ?e (pull $1 ?e [:name])
                        :in $1 $2
                        :where [$1 ?e :age 25]]
@@ -84,10 +92,13 @@
                        db1 db2))
              #{[1 {:name "Petr"}]})))
     (d/close-db db1)
-    (d/close-db db2)))
+    (d/close-db db2)
+    (u/delete-files dir1)
+    (u/delete-files dir2)))
 
 (deftest test-find-spec
-  (let [test-db (d/db-with (d/empty-db)
+  (let [dir     (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        test-db (d/db-with (d/empty-db dir)
                            [{:db/id 1 :name "Petr" :age 44}
                             {:db/id 2 :name "Ivan" :age 25}
                             {:db/id 3 :name "Oleg" :age 11}])]
@@ -110,10 +121,12 @@
                   :where [?e :age 25]]
                 test-db)
            [2 {:name "Ivan"}]))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-find-spec-input
-  (let [test-db (d/db-with (d/empty-db)
+  (let [dir     (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        test-db (d/db-with (d/empty-db dir)
                            [{:db/id 1 :name "Petr" :age 44}
                             {:db/id 2 :name "Ivan" :age 25}
                             {:db/id 3 :name "Oleg" :age 11}])]
@@ -127,26 +140,32 @@
                   :where [(ground 2) ?e]]
                 test-db [:name])
            {:name "Ivan"}))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-aggregates
-  (let [db (d/db-with (d/empty-db nil {:value {:db/cardinality :db.cardinality/many}})
-                      [{:db/id 1 :name "Petr" :value [10 20 30 40]}
-                       {:db/id 2 :name "Ivan" :value [14 16]}
-                       {:db/id 3 :name "Oleg" :value 1}])]
+  (let [dir (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        db  (d/db-with (d/empty-db
+                         dir
+                         {:value {:db/cardinality :db.cardinality/many}})
+                       [{:db/id 1 :name "Petr" :value [10 20 30 40]}
+                        {:db/id 2 :name "Ivan" :value [14 16]}
+                        {:db/id 3 :name "Oleg" :value 1}])]
     (is (= (set (d/q '[:find ?e (pull ?e [:name]) (min ?v) (max ?v)
                        :where [?e :value ?v]]
                      db))
            #{[1 {:name "Petr"} 10 40]
              [2 {:name "Ivan"} 14 16]
              [3 {:name "Oleg"} 1 1]}))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs
-  (let [db (d/db-with (d/empty-db nil {:name { :db/unique :db.unique/identity }})
-                      [{:db/id 1 :name "Petr" :age 44}
-                       {:db/id 2 :name "Ivan" :age 25}
-                       {:db/id 3 :name "Oleg" :age 11}])]
+  (let [dir (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
+        db  (d/db-with (d/empty-db dir {:name { :db/unique :db.unique/identity }})
+                       [{:db/id 1 :name "Petr" :age 44}
+                        {:db/id 2 :name "Ivan" :age 25}
+                        {:db/id 3 :name "Oleg" :age 11}])]
     (is (= (set (d/q '[:find ?ref ?a (pull ?ref [:db/id :name])
                        :in   $ [?ref ...]
                        :where [?ref :age ?a]
@@ -154,7 +173,8 @@
                      db [[:name "Ivan"] [:name "Oleg"] [:name "Petr"]]))
            #{[[:name "Petr"] 44 {:db/id 1 :name "Petr"}]
              [[:name "Ivan"] 25 {:db/id 2 :name "Ivan"}]}))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files)))
 
 (deftest test-cardinality-many
   (let [dir  (u/tmp-dir (str "datalevin-test-cardinality-" (UUID/randomUUID)))

@@ -1,18 +1,21 @@
 (ns datalevin.test.lookup-refs
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is are use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.db :as db]
-   [datalevin.test.core :as tdc])
+   [datalevin.util :as u])
   #?(:clj
      (:import [clojure.lang ExceptionInfo])))
 
+(use-fixtures :each db-fixture)
+
 (deftest test-lookup-refs
-  (let [db (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
-                                       :email { :db/unique :db.unique/value }})
-                      [{:db/id 1 :name "Ivan" :email "@1" :age 35}
-                       {:db/id 2 :name "Petr" :email "@2" :age 22}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name  { :db/unique :db.unique/identity }
+                               :email { :db/unique :db.unique/value }})
+              [{:db/id 1 :name "Ivan" :email "@1" :age 35}
+               {:db/id 2 :name "Petr" :email "@2" :age 22}])]
 
     (are [eid res] (= (tdc/entity-map db eid) res)
       [:name "Ivan"]   {:db/id 1 :name "Ivan" :email "@1" :age 35}
@@ -24,13 +27,16 @@
       [:name]     "Lookup ref should contain 2 elements: [:name]"
       [:name 1 2] "Lookup ref should contain 2 elements: [:name 1 2]"
       [:age 10]   "Lookup ref attribute should be marked as :db/unique: [:age 10]")
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-1
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
       ;; Additions
       [[:db/add [:name "Ivan"] :age 35]]
@@ -45,13 +51,16 @@
 
       [[:db/add [:name "Oleg"] :age 10]]
       "Nothing found for entity id [:name \"Oleg\"]")
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-2
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
       ;; Additions
       [[:db/add 1 :friend [:name "Petr"]]]
@@ -65,60 +74,75 @@
 
       [{:db/id 2 :_friend [:name "Ivan"]}]
       {:db/id 1 :name "Ivan" :friend {:db/id 2}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-3
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
       ;; lookup refs are resolved at intermediate DB value
       [[:db/add 3 :name "Oleg"]
        [:db/add 1 :friend [:name "Oleg"]]]
       {:db/id 1 :name "Ivan" :friend {:db/id 3}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-4
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
       ;; CAS
       [[:db.fn/cas [:name "Ivan"] :name "Ivan" "Oleg"]]
       {:db/id 1 :name "Oleg"})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-5
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
 
       [[:db/add 1 :friend 1]
        [:db.fn/cas 1 :friend [:name "Ivan"] 2]]
       {:db/id 1 :name "Ivan" :friend {:db/id 2}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-6
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
 
       [[:db/add 1 :friend 1]
        [:db.fn/cas 1 :friend 1 [:name "Petr"]]]
       {:db/id 1 :name "Ivan" :friend {:db/id 2}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-7
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
 
       ;; Retractions
@@ -129,13 +153,16 @@
       [[:db/add 1 :friend 2]
        [:db/retract 1 :friend [:name "Petr"]]]
       {:db/id 1 :name "Ivan"})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-8
-  (let [db (d/db-with (d/empty-db nil {:name   { :db/unique :db.unique/identity }
-                                       :friend { :db/valueType :db.type/ref }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name   { :db/unique :db.unique/identity }
+                               :friend { :db/valueType :db.type/ref }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}])]
     (are [tx res] (= res (tdc/entity-map (d/db-with db tx) 1))
 
       [[:db/add 1 :age 35]
@@ -144,16 +171,19 @@
 
       [[:db.fn/retractEntity [:name "Ivan"]]]
       {:db/id 1})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-multi-1
-  (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
-                                       :friends { :db/valueType  :db.type/ref
-                                                 :db/cardinality :db.cardinality/many }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}
-                       {:db/id 3 :name "Oleg"}
-                       {:db/id 4 :name "Sergey"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name    { :db/unique :db.unique/identity }
+                               :friends { :db/valueType  :db.type/ref
+                                         :db/cardinality :db.cardinality/many }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}
+               {:db/id 3 :name "Oleg"}
+               {:db/id 4 :name "Sergey"}])]
     (are [tx res] (= (tdc/entity-map (d/db-with db tx) 1) res)
       ;; Additions
       [[:db/add 1 :friends [:name "Petr"]]]
@@ -162,16 +192,19 @@
       [[:db/add 1 :friends [:name "Petr"]]
        [:db/add 1 :friends [:name "Oleg"]]]
       {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-multi-2
-  (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
-                                       :friends { :db/valueType  :db.type/ref
-                                                 :db/cardinality :db.cardinality/many }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}
-                       {:db/id 3 :name "Oleg"}
-                       {:db/id 4 :name "Sergey"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name    { :db/unique :db.unique/identity }
+                               :friends { :db/valueType  :db.type/ref
+                                         :db/cardinality :db.cardinality/many }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}
+               {:db/id 3 :name "Oleg"}
+               {:db/id 4 :name "Sergey"}])]
     (are [tx res] (= (tdc/entity-map (d/db-with db tx) 1) res)
       ;; Additions
 
@@ -189,16 +222,19 @@
 
       [{:db/id 1 :friends [[:name "Petr"] 3]}]
       {:db/id 1 :name "Ivan" :friends #{{:db/id 2} {:db/id 3}}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-multi-3
-  (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
-                                       :friends { :db/valueType  :db.type/ref
-                                                 :db/cardinality :db.cardinality/many }})
-                      [{:db/id 1 :name "Ivan"}
-                       {:db/id 2 :name "Petr"}
-                       {:db/id 3 :name "Oleg"}
-                       {:db/id 4 :name "Sergey"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name    { :db/unique :db.unique/identity }
+                               :friends { :db/valueType  :db.type/ref
+                                         :db/cardinality :db.cardinality/many }})
+              [{:db/id 1 :name "Ivan"}
+               {:db/id 2 :name "Petr"}
+               {:db/id 3 :name "Oleg"}
+               {:db/id 4 :name "Sergey"}])]
     (are [tx res] (= (tdc/entity-map (d/db-with db tx) 1) res)
 
       ;; reverse refs
@@ -210,15 +246,18 @@
 
       [{:db/id 2 :_friends [[:name "Ivan"] [:name "Oleg"]]}]
       {:db/id 1 :name "Ivan" :friends #{{:db/id 2}}})
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest lookup-refs-index-access
-  (let [db (d/db-with (d/empty-db nil {:name    { :db/unique :db.unique/identity }
-                                       :friends { :db/valueType  :db.type/ref
-                                                 :db/cardinality :db.cardinality/many}})
-                      [{:db/id 1 :name "Ivan" :friends [2 3]}
-                       {:db/id 2 :name "Petr" :friends 3}
-                       {:db/id 3 :name "Oleg"}])]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir {:name    { :db/unique :db.unique/identity }
+                               :friends { :db/valueType  :db.type/ref
+                                         :db/cardinality :db.cardinality/many}})
+              [{:db/id 1 :name "Ivan" :friends [2 3]}
+               {:db/id 2 :name "Petr" :friends 3}
+               {:db/id 3 :name "Oleg"}])]
     (are [index attrs datoms]
         (= (set (map (juxt :e :a :v) (apply d/datoms db index attrs)))
            (set datoms))
@@ -257,12 +296,14 @@
 
       :friends [:name "Petr"] [:name "Oleg"]
       [[1 :friends 2] [1 :friends 3] [2 :friends 3]])
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-lookup-refs-query
   (let [schema {:name   { :db/unique :db.unique/identity }
                 :friend { :db/valueType :db.type/ref }}
-        db     (d/db-with (d/empty-db nil schema)
+        dir    (u/tmp-dir (str "query-or-" (random-uuid)))
+        db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1 :id 1 :name "Ivan" :age 11 :friend 2}
                            {:db/id 2 :id 2 :name "Petr" :age 22 :friend 3}
                            {:db/id 3 :id 3 :name "Oleg" :age 33 }])]
@@ -341,4 +382,5 @@
                             db)))
 
       )
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))

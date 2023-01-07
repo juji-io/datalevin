@@ -4,12 +4,13 @@
             [datalevin.datom :as d]
             [datalevin.core :as dc]
             [datalevin.bits :as b]
-            [taoensso.nippy :as nippy]
-            [clojure.string :as s]
-            #?(:clj [clojure.test :refer [is deftest]]
-               :cljs [cljs.test :as t :include-macros true]))
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]]
+            [clojure.string :as s])
   (:import [java.util UUID]
            [datalevin.datom Datom]))
+
+(use-fixtures :each db-fixture)
 
 (deftest exec-test
   (let [dir  (u/tmp-dir (str "datalevin-exec-test-" (UUID/randomUUID)))

@@ -1,5 +1,5 @@
 (ns datalevin.test0
-  "tests for local embedded mode"
+  "tests for local operations"
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
@@ -42,6 +42,7 @@
    datalevin.test.query-pull
    datalevin.test.query-rules
    datalevin.test.transact
+   datalevin.test.tuples
    datalevin.test.validation
    datalevin.test.upsert
    datalevin.test.issues)
@@ -88,6 +89,7 @@
           'datalevin.test.query-pull
           'datalevin.test.query-rules
           'datalevin.test.transact
+          'datalevin.test.tuples
           'datalevin.test.validation
           'datalevin.test.upsert
           'datalevin.test.issues)]

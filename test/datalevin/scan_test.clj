@@ -3,15 +3,16 @@
             [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.util :as u]
-            [clojure.test :refer [deftest testing is]])
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID HashMap]
-           [java.lang Long AutoCloseable]
-           [clojure.lang ISeq]
-           ))
+           [java.lang Long AutoCloseable]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
+
+(use-fixtures :each db-fixture)
 
 (deftest get-first-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
@@ -454,5 +455,18 @@
                                   (.put hm k v)))]
         (l/visit lmdb "c" visitor [:closed 11 19] :long)
         (is (= (into {} res) hm))))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest get-range-transduce-test
+  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "a")
+    (l/transact-kv lmdb [[:put "a" 1 2]
+                         [:put "a" 3 4]
+                         [:put "a" 5 6]])
+    (is (= [[1 2] [3 4] [5 6]]
+           (sequence (map identity) (l/get-range lmdb "a" [:all]))
+           (eduction (map identity) (l/get-range lmdb "a" [:all]))))
     (l/close-kv lmdb)
     (u/delete-files dir)))

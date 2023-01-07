@@ -1,4 +1,4 @@
-(def version "0.6.29")
+(def version "0.7.8")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -6,7 +6,7 @@
   :license {:name "EPL-1.0"
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
-  [[babashka/babashka.pods "0.1.0"]
+  [[babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.329"]
    [com.fasterxml.jackson.core/jackson-core "2.14.1"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
@@ -17,7 +17,7 @@
    [joda-time/joda-time "2.12.2"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
-   [org.babashka/sci "0.5.36"]
+   [org.babashka/sci "0.6.37"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
    [org.clojure/clojure "1.11.1"]
    [org.clojure/tools.cli "1.0.214"]
@@ -32,8 +32,7 @@
    [org.graalvm.nativeimage/svm "22.3.0"]
    [org.graalvm.nativeimage/library-support "22.3.0"]
    [org.lmdbjava/lmdbjava "0.8.2"]
-   [org.roaringbitmap/RoaringBitmap "0.9.36"]
-   [persistent-sorted-set "0.2.3"]]
+   [org.roaringbitmap/RoaringBitmap "0.9.37"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
@@ -46,8 +45,7 @@
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
    [me.lemire.integercompression/JavaFastPFOR]
-   [com.cognitect/transit-clj]
-   [persistent-sorted-set]]
+   [com.cognitect/transit-clj]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]
   :profiles
@@ -66,10 +64,8 @@
                     :uberjar-name "test0.uberjar.jar"}
    :test1-uberjar  {:main         datalevin.test1
                     :uberjar-name "test1.uberjar.jar"}
-   :test2-uberjar  {:main         datalevin.test2
-                    :uberjar-name "test2.uberjar.jar"}
-   :dev            {:main         datalevin.test0
-                    :source-paths ["src" "test"]
+   :dev            {:main              datalevin.test0
+                    :source-paths      ["src" "test"]
                     :java-source-paths ["native/src/java"]
                     :jvm-opts
                     ["-XX:+IgnoreUnrecognizedVMOptions"

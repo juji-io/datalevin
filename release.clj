@@ -9,7 +9,7 @@
 
 (require '[clojure.string :as str])
 (require '[clojure.java.shell :as sh])
-(require '[clojure.java.io :as io])
+(import '[java.time LocalDate])
 
 (defn update-file [f fn]
   (print "Updating" (str f "...")) (flush)
@@ -38,7 +38,11 @@
   (println "\n\n[ Updating version number ]\n")
   (let [old-v    (current-version)
         old->new #(str/replace % old-v new-v)]
-    (update-file "CHANGELOG.md" #(str/replace % "# WIP" (str "# " new-v)))
+    (update-file "CHANGELOG.md"
+                 #(str/replace % "# WIP"
+                               (str "# " new-v " ("
+                                    (.toString (LocalDate/now))
+                                    ")")))
     (update-file "project.clj" old->new)
     (update-file "test-jar/deps.edn" old->new)
     (update-file "test-jar/test-uber.sh" old->new)
@@ -50,6 +54,26 @@
     (update-file "native/test-jar/deps.edn"  old->new)
     (update-file "native/README.md" old->new)
     (update-file "README.md" old->new)))
+
+(defn make-commit []
+  (println "\n\n[ Making a commit ]\n")
+  (sh "git" "add"
+      "CHANGELOG.md"
+      "project.clj"
+      "test-jar/deps.edn"
+      "test-jar/test-uber.sh"
+      "test-jar/project.clj"
+      "doc/install.md"
+      "doc/dtlv.md"
+      "src/datalevin/main.clj"
+      "native/project.clj"
+      "native/test-jar/deps.edn"
+      "native/README.md"
+      "README.md")
+
+  (sh "git" "commit" "-m" (str "Version " new-v))
+  (sh "git" "tag" new-v)
+  (sh "git" "push" "origin" "master"))
 
 (defn run-tests []
   (println "\n\n[ Running tests ]\n")
@@ -67,28 +91,11 @@
   (sh "script/jar" :dir "native")
   (sh "./test.sh" :dir "native/test-jar")
 
-  (println "\n\n[ Testing native jar ]\n")
-  (sh "script/compile" :dir "native")
-  (sh "./dtlv-test" :dir "native"))
-
-(defn make-commit []
-  (println "\n\n[ Making a commit ]\n")
-  (sh "git" "add"
-      "CHANGELOG.md"
-      "project.clj"
-      "test-jar/deps.edn"
-      "test-jar/test-uber.sh"
-      "test-jar/project.clj"
-      "doc/dtlv.md"
-      "src/datalevin/main.clj"
-      "native/project.clj"
-      "native/test-jar/deps.edn"
-      "native/README.md"
-      "README.md")
-
-  (sh "git" "commit" "-m" (str "Version " new-v))
-  (sh "git" "tag" new-v)
-  (sh "git" "push" "origin" "master"))
+  (println "\n\n[ Running native tests ]\n")
+  (sh "script/compile-local" :dir "native")
+  (sh "./dtlv-test0" :dir "native")
+  (sh "./dtlv-test1" :dir "native")
+  )
 
 (defn- str->json [s]
   (-> s

@@ -19,21 +19,39 @@
     (is (thrown? Exception (sut/open "dtlv://someone:wrong@localhost/nodb")))
 
     (let [client (cl/new-client "dtlv://datalevin:datalevin@localhost")]
-      (cl/create-user client "someone" "secret")
-      (cl/grant-permission client :datalevin.role/someone
+      (is (= 0 (count (cl/list-databases client))))
+
+      (cl/create-user client "dbadmin" "secret")
+      (cl/grant-permission client :datalevin.role/dbadmin
                            :datalevin.server/create
                            :datalevin.server/database
                            nil)
-      (is (= (count (cl/list-user-permissions client "someone")) 3))
+      (is (= 3 (count (cl/list-user-permissions client "dbadmin"))))
+
+      (let [client1 (cl/new-client "dtlv://dbadmin:secret@localhost")]
+        (cl/create-database client1 "ops-test" :datalog)
+        (is (= 1 (count (cl/list-databases client1)))))
+
+      (cl/create-user client "db-user" "secret")
+      (cl/grant-permission client :datalevin.role/db-user
+                           :datalevin.server/alter
+                           :datalevin.server/database
+                           "ops-test")
+      (is (= 3 (count (cl/list-user-permissions client "db-user"))))
+      (is (thrown? Exception
+                   (sut/open "dtlv://db-user:secret@localhost/nodb")))
 
       (cl/create-user client "viewer" "secret")
       (cl/grant-permission client :datalevin.role/viewer
                            :datalevin.server/view
                            :datalevin.server/database
-                           nil)))
+                           nil)
+      (is (thrown? Exception
+                   (sut/open "dtlv://viewer:secret@localhost/nodb")))
+      ))
 
   (testing "datalog store ops"
-    (let [dir   "dtlv://someone:secret@localhost/ops-test"
+    (let [dir   "dtlv://db-user:secret@localhost/ops-test"
           store (sut/open dir)]
       (is (instance? datalevin.remote.DatalogStore store))
       (is (= c/implicit-schema (st/schema store)))

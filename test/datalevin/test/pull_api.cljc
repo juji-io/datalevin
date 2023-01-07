@@ -1,11 +1,15 @@
 (ns datalevin.test.pull-api
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [datalevin.util :as u]
    [datalevin.core :as d]))
 
+(use-fixtures :each db-fixture)
+
 (def test-schema
-  {:aka    { :db/cardinality :db.cardinality/many }
+  {:name   { :db/unique :db.unique/identity }
+   :aka    { :db/cardinality :db.cardinality/many }
    :child  { :db/cardinality :db.cardinality/many
             :db/valueType    :db.type/ref }
    :friend { :db/cardinality :db.cardinality/many
@@ -59,7 +63,8 @@
     (map #(apply d/datom %))))
 
 (deftest test-pull-attr-spec
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
            (d/pull test-db '[:name :aka] 1)))
 
@@ -69,10 +74,12 @@
     (is (= [{:name "Petr"} {:name "Elizabeth"}
             {:name "Eunan"} {:name "Rebecca"}]
            (d/pull-many test-db '[:name] [1 5 7 9])))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-reverse-attr-spec
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "pull-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "David" :_child [{:db/id 1}]}
            (d/pull test-db '[:name :_child] 2)))
 
@@ -91,10 +98,17 @@
 
       (is (= {:name "Petr" :_father [{:name "David"} {:name "Thomas"}]}
              (d/pull test-db '[:name {:_father [:name]}] 1))))
-    (d/close-db test-db)))
+
+    (testing "Multiple reverse refs #412"
+      (is (= {:name "Petr" :_father [{:db/id 2} {:db/id 3}]}
+             (d/pull test-db '[:name :_father :_child] 1))))
+
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-component-attr
-  (let [test-db (d/init-db test-datoms nil test-schema)
+  (let [dir1    (u/tmp-dir (str "pull-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir1 test-schema)
         parts   {:name "Part A",
                  :part
                  [{:db/id 11
@@ -113,18 +127,22 @@
                      :part
                      [{:db/id 17 :name "Part A.B.A.A"}
                       {:db/id 18 :name "Part A.B.A.B"}]}]}]}
-        rpart   (update-in parts [:part 0 :part 0 :part]
-                           (partial into [{:db/id 10}]))
+        rpart   (update-in
+                  parts [:part 0 :part 0 :part]
+                  #(into [{:db/id 10
+                           :name  "Part A",
+                           :part
+                           [{:db/id 11}
+                            {:name  "Part A.B",
+                             :part  [{:name  "Part A.B.A",
+                                      :part  [{:name "Part A.B.A.A", :db/id 17}
+                                              {:name "Part A.B.A.B", :db/id 18}],
+                                      :db/id 16}],
+                             :db/id 15}]}] %))
+        dir2    (u/tmp-dir (str "pull-or-" (random-uuid)))
         recdb   (d/init-db
                   (concat test-datoms [(d/datom 12 :part 10)])
-                  nil
-                  test-schema)
-        _       (d/init-db
-                  (concat test-datoms [(d/datom 12 :part 10)
-                                       (d/datom 12 :spec 10)
-                                       (d/datom 10 :spec 13)
-                                       (d/datom 13 :spec 12)])
-                  nil
+                  dir2
                   test-schema)]
 
     (testing "Component entities are expanded recursively"
@@ -139,31 +157,72 @@
 
     (testing "Like explicit recursion, expansion will not allow loops"
       (is (= rpart (d/pull recdb '[:name :part] 10))))
+
+    (testing "Reverse recursive component #411"
+      (is (= {:name  "Part A.A.A.B"
+              :_part {:name  "Part A.A.A"
+                      :_part {:name "Part A.A" :_part {:name "Part A"}}}}
+             (d/pull test-db '[:name {:_part ...}] 14)))
+      (is (= {:name  "Part A.A.A.B"
+              :_part {:name "Part A.A.A" :_part {:name "Part A.A"}}}
+             (d/pull test-db '[:name {:_part 2}] 14))))
+
     (d/close-db test-db)
-    (d/close-db recdb)))
+    (d/close-db recdb)
+    (u/delete-files dir1)
+    (u/delete-files dir2)))
 
 (deftest test-pull-wildcard
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "pull-wild-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"]
             :child [{:db/id 2} {:db/id 3}]}
            (d/pull test-db '[*] 1)))
 
     (is (= {:db/id 2 :name "David" :_child [{:db/id 1}] :father {:db/id 1}}
            (d/pull test-db '[* :_child] 2)))
-    (d/close-db test-db)))
+    (is (= {:aka  ["Devil" "Tupen"], :child [{:db/id 2} {:db/id 3}],
+            :name "Petr",            :db/id 1}
+           (d/pull test-db '[:name *] 1)))
+
+    (is (= {:aka  ["Devil" "Tupen"], :child [{:db/id 2} {:db/id 3}],
+            :name "Petr",            :db/id 1}
+           (d/pull test-db '[:aka :name *] 1)))
+
+    (is (= {:aka  ["Devil" "Tupen"], :child [{:db/id 2} {:db/id 3}],
+            :name "Petr",            :db/id 1}
+           (d/pull test-db '[:aka :child :name *] 1)))
+
+    (is (= {:alias      ["Devil" "Tupen"], :child [{:db/id 2} {:db/id 3}],
+            :first-name "Petr",            :db/id 1}
+           (d/pull test-db '[[:aka :as :alias] [:name :as :first-name] *] 1)))
+
+    (is (= {:db/id 1
+            :name  "Petr"
+            :aka   ["Devil" "Tupen"]
+            :child [{:db/id  2
+                     :father {:db/id 1}
+                     :name   "David"}
+                    {:db/id  3
+                     :father {:db/id 1}
+                     :name   "Thomas"}]}
+           (d/pull test-db '[* {:child ...}] 1)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-limit
-  (let [db (d/init-db
-             (concat
-               test-datoms
-               [(d/datom 4 :friend 5)
-                (d/datom 4 :friend 6)
-                (d/datom 4 :friend 7)
-                (d/datom 4 :friend 8)]
-               (for [idx (range 2000)]
-                 (d/datom 8 :aka (str "aka-" idx))))
-             nil
-             test-schema)]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (d/init-db
+              (concat
+                test-datoms
+                [(d/datom 4 :friend 5)
+                 (d/datom 4 :friend 6)
+                 (d/datom 4 :friend 7)
+                 (d/datom 4 :friend 8)]
+                (for [idx (range 2000)]
+                  (d/datom 8 :aka (str "aka-" idx))))
+              dir
+              test-schema)]
 
     (testing "Without an explicit limit, the default is 1000"
       (is (= 1000 (->> (d/pull db '[:aka] 8) :aka count))))
@@ -182,10 +241,12 @@
       (is (= {:name   "Lucy"
               :friend [{:name "Elizabeth"} {:name "Matthew"}]}
              (d/pull db '[:name {(limit :friend 2) [:name]}] 4))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-pull-default
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (testing "Empty results return nil"
       (is (nil? (d/pull test-db '[:foo] 1))))
 
@@ -194,22 +255,50 @@
              (d/pull test-db '[(default :foo "bar")] 1)))
       (is (= {:foo "bar"}
              (d/pull test-db '[[:foo :default "bar"]] 1))))
-    (d/close-db test-db)))
+
+    (testing "default does not override results"
+      (is (= {:name  "Petr", :aka ["Devil" "Tupen"]
+              :child [{:name "David", :aka "[aka]", :child "[child]"}
+                      {:name "Thomas", :aka "[aka]", :child "[child]"}]}
+             (d/pull test-db
+                     '[[:name :default "[name]"]
+                       [:aka :default "[aka]"]
+                       {[:child :default "[child]"] ...}]
+                     1)))
+      (is (= {:name "David", :aka "[aka]", :child "[child]"}
+             (d/pull test-db
+                     '[[:name :default "[name]"]
+                       [:aka :default "[aka]"]
+                       {[:child :default "[child]"] ...}]
+                     2))))
+
+    (testing "Ref default"
+      (is (= {:child 1 :db/id 2}
+             (d/pull test-db '[:db/id [:child :default 1]] 2)))
+      (is (= {:_child 2 :db/id 1}
+             (d/pull test-db '[:db/id [:_child :default 2]] 1))))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-as
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {"Name" "Petr", :alias ["Devil" "Tupen"]}
            (d/pull test-db '[[:name :as "Name"] [:aka :as :alias]] 1)))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-attr-with-opts
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (is (= {"Name" "Nothing"}
            (d/pull test-db '[[:x :as "Name" :default "Nothing"]] 1)))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
 (deftest test-pull-map
-  (let [test-db (d/init-db test-datoms nil test-schema)]
+  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
     (testing "Single attrs yield a map"
       (is (= {:name "Matthew" :father {:name "Thomas"}}
              (d/pull test-db '[:name {:father [:name]}] 6))))
@@ -224,20 +313,23 @@
              (d/pull test-db '[:name {:father [:name]}] 1))))
 
     (testing "Non matching results are removed from collections"
-      (is (= {:name "Petr" :child []}
+      (is (= {:name "Petr"}
              (d/pull test-db '[:name {:child [:foo]}] 1))))
 
     (testing "Map specs can override component expansion"
-      (let [parts {:name "Part A" :part [{:name "Part A.A"} {:name "Part A.B"}]}]
+      (let [parts {:name "Part A"
+                   :part [{:name "Part A.A"} {:name "Part A.B"}]}]
         (is (= parts
                (d/pull test-db '[:name {:part [:name]}] 10)))
 
         (is (= parts
                (d/pull test-db '[:name {:part 1}] 10)))))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
-(deftest test-pull-recursion
-  (let [test-db (d/init-db test-datoms nil test-schema)
+(deftest test-pull-recursion-1
+  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)
         db      (-> test-db
                     (d/db-with [[:db/add 4 :friend 5]
                                 [:db/add 5 :friend 6]
@@ -261,29 +353,44 @@
                        :friend
                        [{:db/id 8
                          :name  "Kerri"}]}]}]}]}
-        enemies {:db/id 4 :name "Lucy"
+        enemies {:db/id 4
+                 :name  "Lucy"
                  :friend
-                 [{:db/id 5 :name "Elizabeth"
+                 [{:db/id 5
+                   :name  "Elizabeth"
                    :friend
-                   [{:db/id 6 :name "Matthew"
+                   [{:db/id 6
+                     :name  "Matthew"
                      :enemy [{:db/id 8 :name "Kerri"}]}]
                    :enemy
-                   [{:db/id 7 :name "Eunan"
+                   [{:db/id 7
+                     :name  "Eunan"
                      :friend
-                     [{:db/id 8 :name "Kerri"}]
+                     [{:db/id 8
+                       :name  "Kerri"}]
                      :enemy
-                     [{:db/id  4 :name "Lucy"
+                     [{:db/id  4
+                       :name   "Lucy"
                        :friend [{:db/id 5}]}]}]}]
                  :enemy
-                 [{:db/id 6 :name "Matthew"
+                 [{:db/id 6
+                   :name  "Matthew"
                    :friend
-                   [{:db/id 7 :name "Eunan"
+                   [{:db/id 7
+                     :name  "Eunan"
                      :friend
-                     [{:db/id 8 :name "Kerri"}]
-                     :enemy [{:db/id  4 :name "Lucy"
-                              :friend [{:db/id 5 :name "Elizabeth"}]}]}]
+                     [{:db/id 8
+                       :name  "Kerri"}]
+                     :enemy [{:db/id  4
+                              :name   "Lucy"
+                              :enemy  [{:db/id 6}]
+                              :friend [{:db/id  5
+                                        :name   "Elizabeth"
+                                        :enemy  [{:db/id 7}],
+                                        :friend [{:db/id 6}]}]}]}]
                    :enemy
-                   [{:db/id 8 :name "Kerri"}]}]}]
+                   [{:db/id 8
+                     :name  "Kerri"}]}]}]
 
     (testing "Infinite recursion"
       (is (= friends (d/pull db '[:db/id :name {:friend ...}] 4))))
@@ -291,15 +398,65 @@
     (testing "Multiple recursion specs in one pattern"
       (is (= enemies (d/pull db '[:db/id :name {:friend 2 :enemy 2}] 4))))
 
+    (testing "Reverse recursion"
+      (is (= {:db/id   8,
+              :_friend [{:db/id   7,
+                         :_friend [{:db/id   6,
+                                    :_friend [{:db/id   5,
+                                               :_friend [{:db/id 4}]}]}]}]}
+             (d/pull db '[:db/id {:_friend ...}] 8)))
+      (is (= {:db/id 8, :_friend [{:db/id 7, :_friend [{:db/id 6}]}]}
+             (d/pull db '[:db/id {:_friend 2}] 8))))
+
     (let [db (d/db-with db [[:db/add 8 :friend 4]])]
       (testing "Cycles are handled by returning only the :db/id of entities which have been seen before"
         (is (= (update-in friends (take 8 (cycle [:friend 0]))
-                          assoc :friend [{:db/id 4 :name "Lucy" :friend [{:db/id 5}]}])
+                          assoc :friend [{:db/id  4
+                                          :name   "Lucy"
+                                          :friend [{:db/id 5}]}])
                (d/pull db '[:db/id :name {:friend ...}] 4)))))
-    (d/close-db test-db)))
+    (d/close-db test-db)
+    (u/delete-files dir)))
 
-(deftest test-dual-recursion
-  (let [empty (d/empty-db nil {:part { :db/valueType :db.type/ref }
+(deftest test-dual-recursion-1
+  (testing "Seen ids are tracked independently for different branches"
+    (let [dir (u/tmp-dir (str "pull-" (random-uuid)))
+          db  (-> (d/empty-db dir {:friend {:db/valueType :db.type/ref}
+                                   :enemy  {:db/valueType :db.type/ref}})
+                  (d/db-with [{:db/id 1 :name "1" :friend 2 :enemy 2}
+                              {:db/id 2 :name "2"}]))]
+      (is (= {:name "1" :friend {:name "2"} :enemy {:name "2"}}
+             (d/pull db '[:name {:friend [:name], :enemy [:name]}] 1)))
+      (d/close-db db)
+      (u/delete-files dir))))
+
+(deftest test-dual-recursion-2
+  (let [dir (u/tmp-dir (str "pull-" (random-uuid)))
+        recursion-db
+        (-> (d/empty-db dir {:friend {:db/valueType :db.type/ref}
+                             :enemy  {:db/valueType :db.type/ref}})
+            (d/db-with [{:db/id 1 :friend 2}
+                        {:db/id 2 :enemy 3}
+                        {:db/id 3 :friend 4}
+                        {:db/id 4 :enemy 5}
+                        {:db/id 5 :friend 6}
+                        {:db/id 6 :enemy 7}]))]
+    (is (= {:db/id 1 :friend {:db/id 2}}
+           (d/pull recursion-db '[:db/id {:friend ...}] 1)))
+    (is (= {:db/id 1 :friend {:db/id 2 :enemy {:db/id 3}}}
+           (d/pull recursion-db '[:db/id {:friend 1 :enemy 1}] 1)))
+    (is (= {:db/id 1 :friend {:db/id 2 :enemy {:db/id 3 :friend {:db/id 4}}}}
+           (d/pull recursion-db '[:db/id {:friend 2 :enemy 1}] 1)))
+    (is (= {:db/id  1
+            :friend {:db/id 2
+                     :enemy {:db/id 3 :friend {:db/id 4 :enemy {:db/id 5}}}}}
+           (d/pull recursion-db '[:db/id {:friend 2 :enemy 2}] 1)))
+    (d/close-db recursion-db)
+    (u/delete-files dir)))
+
+(deftest test-dual-recursion-3
+  (let [dir   (u/tmp-dir (str "query-or-" (random-uuid)))
+        empty (d/empty-db dir {:part { :db/valueType :db.type/ref }
                                :spec { :db/valueType :db.type/ref }})
         db    (d/db-with empty [[:db/add 1 :part 2]
                                 [:db/add 2 :part 3]
@@ -321,7 +478,9 @@
                             :part  {:db/id 1,
                                     :spec  {:db/id 2},
                                     :part  {:db/id 2}}}}}))
-    (d/close-db db)))
+
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-deep-recursion
   (let [start  100
@@ -331,11 +490,12 @@
                    [(d/datom idx :name (str "Person-" idx))
                     (d/datom (dec idx) :friend idx)])
                  (range (inc start) depth))
+        dir    (u/tmp-dir (str "query-or-" (random-uuid)))
         db     (d/init-db (concat
                             test-datoms
                             [(d/datom start :name (str "Person-" start))]
                             txd)
-                          nil
+                          dir
                           test-schema)
         pulled (d/pull db '[:name {:friend ...}] start)
         path   (->> [:friend 0]
@@ -343,4 +503,136 @@
                     (into [] cat))]
     (is (= (str "Person-" (dec depth))
            (:name (get-in pulled path))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-component-reverse
+  (let [schema {:ref {:db/valueType   :db.type/ref
+                      :db/isComponent true}}
+        dir    (u/tmp-dir (str "pull-lookup-" (random-uuid)))
+        db     (d/db-with (d/empty-db dir schema)
+                          [{:name "1"
+                            :ref  {:name "2"
+                                   :ref  {:name "3"}}}])]
+    (is (= {:name "1", :ref {:name "2", :ref {:name "3", :_ref {:name "2"}}}}
+           (d/pull db
+                   [:name {:ref [:name {:ref [:name {:_ref [:name]}]}]}]
+                   1)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-lookup-ref-pull
+  (let [dir     (u/tmp-dir (str "pull-lookup-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
+    (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
+           (d/pull test-db '[:name :aka] [:name "Petr"])))
+    (is (= nil
+           (d/pull test-db '[:name :aka] [:name "NotInDatabase"])))
+    (is (= [nil {:aka ["Devil" "Tupen"]} nil nil]
+           (d/pull-many test-db
+                        '[:aka]
+                        [[:name "Elizabeth"]
+                         [:name "Petr"]
+                         [:name "Eunan"]
+                         [:name "Rebecca"]])))
+    (is (nil? (d/pull test-db '[*] [:name "No such name"])))
+    (d/close-db test-db)
+    (u/delete-files dir)))
+
+(deftest test-xform
+  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)]
+    (is (= {:db/id [1]
+            :name  ["Petr"]
+            :aka   [["Devil" "Tupen"]]
+            :child [[{:db/id [2], :name ["David"], :aka [nil], :child [nil]}
+                     {:db/id [3], :name ["Thomas"], :aka [nil], :child [nil]}]]}
+           (d/pull test-db
+                   '[[:db/id :xform vector]
+                     [:name :xform vector]
+                     [:aka :xform vector]
+                     {[:child :xform vector] ...}]
+                   1)))
+    (testing "missing attrs are processed by xform"
+      (is (= {:normal [nil]
+              :aka    [nil]
+              :child  [nil]}
+             (d/pull test-db
+                     '[[:normal :xform vector]
+                       [:aka :xform vector]
+                       {[:child :xform vector] ...}]
+                     2))))
+    (testing "default takes precedence"
+      (is (= {:unknown "[unknown]"}
+             (d/pull test-db
+                     '[[:unknown :default "[unknown]" :xform vector]] 1))))
+    (d/close-db test-db)
+    (u/delete-files dir)))
+
+(deftest test-visitor
+  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+        test-db (d/init-db test-datoms dir test-schema)
+        *trace  (volatile! nil)
+        opts    {:visitor (fn [k e a v] (vswap! *trace conj [k e a v]))}
+        test-fn (fn [pattern id]
+                  (vreset! *trace [])
+                  (d/pull test-db pattern id opts)
+                  @*trace)]
+    (is (= [[:db.pull/attr 1 :name nil]]
+           (test-fn [:name] 1)))
+
+    (testing "multival"
+      (is (= [[:db.pull/attr 1 :name nil]
+              [:db.pull/attr 1 :aka  nil]]
+
+             (test-fn [:name :aka] 1))))
+
+    (testing ":db/id is ignored"
+      (is (= [] (test-fn [:db/id] 1)))
+      (is (= [[:db.pull/attr 1 :name nil]]
+             (test-fn [:db/id :name] 1))))
+
+    (testing "wildcard"
+      (is (= [[:db.pull/wildcard 1 nil    nil]
+              [:db.pull/attr     1 :name  nil]
+              [:db.pull/attr     1 :aka   nil]
+              [:db.pull/attr     1 :child nil]]
+             (test-fn ['*] 1))))
+
+    (testing "missing"
+      (is (= [[:db.pull/attr 1 :missing nil]]
+             (test-fn [:missing] 1)))
+      (is (= [[:db.pull/wildcard 1 nil      nil]
+              [:db.pull/attr     1 :missing nil]
+              [:db.pull/attr     1 :name    nil]
+              [:db.pull/attr     1 :aka     nil]
+              [:db.pull/attr     1 :child   nil]]
+             (test-fn ['* :missing] 1))))
+
+    (testing "default"
+      (is (= [[:db.pull/attr 1 :missing nil]]
+             (test-fn [[:missing :default 10]] 1)))
+      (is (= [[:db.pull/attr 2 :child nil]]
+             (test-fn [[:child :default 10]] 2))))
+
+    (testing "recursion"
+      (is (= [[:db.pull/attr 1 :child nil]]
+             (test-fn [:child] 1)))
+      (is (= [[:db.pull/attr 1 :child nil]
+              [:db.pull/attr 2 :name  nil]
+              [:db.pull/attr 3 :name  nil]]
+             (test-fn [{:child [:name]}] 1)))
+      (is (= [[:db.pull/attr 1 :name  nil]
+              [:db.pull/attr 1 :child nil]
+              [:db.pull/attr 2 :name  nil]
+              [:db.pull/attr 2 :child nil]
+              [:db.pull/attr 3 :name  nil]
+              [:db.pull/attr 3 :child nil]]
+             (test-fn [:name {:child '...}] 1))))
+
+    (testing "reverse"
+      (is (= [[:db.pull/attr    2   :name  nil]
+              [:db.pull/reverse nil :child 2]]
+             (test-fn [:name :_child] 2))))
+    (d/close-db test-db)
+    (u/delete-files dir)))

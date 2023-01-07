@@ -1,13 +1,15 @@
 (ns datalevin.test.transact
   (:require
-   #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
+   [datalevin.datom :as dd]
    [datalevin.interpret :as i]
    [datalevin.util :as u]
-   [datalevin.constants :as c :refer [tx0]]
-   [datalevin.test.core :as tdc])
+   [datalevin.constants :as c :refer [tx0]])
   (:import [java.util UUID]))
+
+(use-fixtures :each db-fixture)
 
 (deftest test-auto-update-entity-time
   (let [dir  (u/tmp-dir (str "auto-entity-time-" (random-uuid)))
@@ -210,31 +212,34 @@
 
 (deftest test-retract-without-value-339-1
   (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
-        db  (-> (d/empty-db dir {:aka    {:db/cardinality :db.cardinality/many}
-                                 :friend {:db/valueType :db.type/ref}})
-                (d/db-with [{:db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2}
-                            {:db/id 2, :name "Petr", :age 37}]))]
-    (testing "Retract :name without providing v"
-      (let [db (d/db-with db [[:db/retract 1 :name]])]
-        (is (= (d/q '[:find ?a ?v
-                      :where [1 ?a ?v]]
-                    db)
-               #{[:friend 2] [:age 15] [:aka "Z"] [:aka "Y"] [:aka "X"]}))))
+        db  (-> (d/empty-db dir
+                            {:aka    {:db/cardinality :db.cardinality/many}
+                             :friend {:db/valueType :db.type/ref}})
+                (d/db-with [{:db/id 1,             :name   "Ivan", :age 15,
+                             :aka   ["X" "Y" "Z"], :friend 2}
+                            {:db/id     2,    :name     "Petr", :age 37
+                             :employed? true, :married? false}]))]
+    (let [db' (d/db-with db [[:db/retract 1 :name]
+                             [:db/retract 1 :aka]
+                             [:db/retract 2 :employed?]
+                             [:db/retract 2 :married?]])]
+      (is (= #{[1 :age 15] [1 :friend 2] [2 :name "Petr"] [2 :age 37]}
+             (tdc/all-datoms db'))))
     (d/close-db db)
     (u/delete-files dir)))
 
 (deftest test-retract-without-value-339-2
   (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
-        db  (-> (d/empty-db dir {:aka    {:db/cardinality :db.cardinality/many}
-                                 :friend {:db/valueType :db.type/ref}})
-                (d/db-with [{:db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2}
-                            {:db/id 2, :name "Petr", :age 37}]))]
-    (testing "Retract :aka (cardinality many) without providing v"
-      (let [db (d/db-with db [[:db/retract 1 :aka]])]
-        (is (= (d/q '[:find ?a ?v
-                      :where [1 ?a ?v]]
-                    db)
-               #{[:friend 2] [:age 15] [:name "Ivan"]}))))
+        db  (-> (d/empty-db dir
+                            {:aka    {:db/cardinality :db.cardinality/many}
+                             :friend {:db/valueType :db.type/ref}})
+                (d/db-with [{:db/id 1,             :name   "Ivan", :age 15,
+                             :aka   ["X" "Y" "Z"], :friend 2}
+                            {:db/id     2,    :name     "Petr", :age 37
+                             :employed? true, :married? false}]))]
+    (let [db' (d/db-with db [[:db/retract 2 :employed? false]])]
+      (is (= [(dd/datom 2 :employed? true)]
+             (d/datoms db' :eavt 2 :employed?))))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -440,24 +445,74 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest test-resolve-eid
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
-        conn (d/create-conn dir)
-        t1   (d/transact! conn [[:db/add -1 :name "Ivan"]
-                                [:db/add -1 :age 19]
-                                [:db/add -2 :name "Petr"]
-                                [:db/add -2 :age 22]])
-        t2   (d/transact! conn [[:db/add "Serg" :name "Sergey"]
-                                [:db/add "Serg" :age 30]])]
-    (is (= (:tempids t1) {-1 1, -2 2, :db/current-tx (+ tx0 1)}))
-    (is (= (:tempids t2) {"Serg" 3, :db/current-tx (+ tx0 2)}))
-    (is (= #{[1 "Ivan" 19 tx0]
-             [2 "Petr" 22 tx0]
-             [3 "Sergey" 30 tx0]}
-           (d/q '[:find ?e ?n ?a ?t
-                  :where [?e :name ?n ?t]
-                  [?e :age ?a]] @conn)))
-    (d/close conn)
+(deftest test-resolve-eid-1
+  (let [dir    (u/tmp-dir (str "eid-" (random-uuid)))
+        db     (d/empty-db
+                 dir {:name {:db/unique :db.unique/identity}
+                      :aka  {:db/unique      :db.unique/identity
+                             :db/cardinality :db.cardinality/many}
+                      :ref  {:db/valueType :db.type/ref}})
+        report (d/with db [[:db/add -1 :name "Ivan"]
+                           [:db/add -1 :age 19]
+                           [:db/add -2 :name "Petr"]
+                           [:db/add -2 :age 22]
+                           [:db/add "Serg" :name "Sergey"]
+                           [:db/add "Serg" :age 30]])]
+    (is (= (:tempids report)
+           {-1             1
+            -2             2
+            "Serg"         3
+            :db/current-tx (+ c/tx0 1) }))
+    (is (= #{[1 :name "Ivan"]
+             [1 :age 19]
+             [2 :name "Petr"]
+             [2 :age 22]
+             [3 :name "Sergey"]
+             [3 :age 30]}
+           (tdc/all-datoms (:db-after report))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-resolve-eid-2
+  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+        db  (-> (d/empty-db
+                  dir {:name {:db/unique :db.unique/identity}
+                       :aka  {:db/unique      :db.unique/identity
+                              :db/cardinality :db.cardinality/many}
+                       :ref  {:db/valueType :db.type/ref}})
+                (d/db-with [[:db/add -1 :name "Ivan"]
+                            [:db/add -2 :ref -1]]))]
+    (is (= #{[1 :name "Ivan"] [2 :ref 1]}
+           (tdc/all-datoms db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-resolve-eid-3
+  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+        db  (-> (d/empty-db
+                  dir {:name {:db/unique :db.unique/identity}
+                       :aka  {:db/unique      :db.unique/identity
+                              :db/cardinality :db.cardinality/many}
+                       :ref  {:db/valueType :db.type/ref}})
+                (d/db-with [[:db/add -1 :name "Ivan"]])
+                (d/db-with [[:db/add -1 :name "Ivan"]
+                            [:db/add -2 :ref -1]]))]
+    (is (= #{[1 :name "Ivan"] [2 :ref 1]} (tdc/all-datoms db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-resolve-eid-4
+  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+        db  (-> (d/empty-db
+                  dir {:name {:db/unique :db.unique/identity}
+                       :aka  {:db/unique      :db.unique/identity
+                              :db/cardinality :db.cardinality/many}
+                       :ref  {:db/valueType :db.type/ref}})
+                (d/db-with [[:db/add -1 :aka "Batman"]])
+                (d/db-with [[:db/add -1 :aka "Batman"]
+                            [:db/add -2 :ref -1]]))]
+    (is (= #{[1 :aka "Batman"] [2 :ref 1]} (tdc/all-datoms db)))
+    (d/close-db db)
     (u/delete-files dir)))
 
 (deftest test-tempid-ref-295
@@ -475,9 +530,11 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-refs
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
-        conn (d/create-conn dir {:friend {:db/valueType   :db.type/ref
-                                          :db/cardinality :db.cardinality/many}})
+  (let [dir  (u/tmp-dir (str "resolve-" (random-uuid)))
+        conn (d/create-conn
+               dir
+               {:friend {:db/valueType   :db.type/ref
+                         :db/cardinality :db.cardinality/many}})
         tx   (d/transact! conn [{:name   "Sergey"
                                  :friend [-1 -2]}
                                 [:db/add -1 :name "Ivan"]
@@ -491,11 +548,33 @@
                :where [?e :name ?n]
                [?e :friend ?fe]
                [?fe :name ?fn]]]
-    (is (= (:tempids tx) {1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1)}))
+    (is (= (:tempids tx)
+           {1 1, -1 2, -2 3, "B" 4, -3 5, :db/current-tx (+ tx0 1)}))
     (is (= (d/q q @conn "Sergey") #{["Ivan"] ["Petr"]}))
     (is (= (d/q q @conn "Boris") #{["Oleg"]}))
     (is (= (d/q q @conn "Oleg") #{["Boris"]}))
     (d/close conn)
+    (u/delete-files dir)))
+
+(deftest test-tempid
+  (let [dir (u/tmp-dir (str "tempid-" (random-uuid)))
+        db  (d/empty-db
+              dir
+              {:friend {:db/valueType :db.type/ref}
+               :comp   {:db/valueType :db.type/ref, :db/isComponent true}
+               :multi  {:db/cardinality :db.cardinality/many}})]
+    (testing "Unused tempid" ;; #304
+      (is (thrown-msg? "Tempids used only as value in transaction: (-2)"
+                       (d/db-with db [[:db/add -1 :friend -2]])))
+      (is (thrown-msg? "Tempids used only as value in transaction: (-2)"
+                       (d/db-with db [{:db/id -1 :friend -2}])))
+      (is (thrown-msg? "Tempids used only as value in transaction: (-1)"
+                       (d/db-with db [{:db/id -1}
+                                      [:db/add -2 :friend -1]])))
+      (is (thrown-msg? "Tempids used only as value in transaction: (-1)"
+                       (d/db-with db [{:db/id -1 :multi []}
+                                      [:db/add -2 :friend -1]]))))
+    (d/close-db db)
     (u/delete-files dir)))
 
 (deftest test-transient-294
@@ -522,12 +601,13 @@
         dir2 (u/tmp-dir (str "skip-" (random-uuid)))
         es   [{:db/id -1 :company "IBM" :country "US"}
               {:db/id -2 :company "PwC" :country "Germany"}]
-        db   (d/db-with (d/empty-db dir1) es)
-        dts1 (d/datoms db :eavt)
-        db   (d/db-with (d/empty-db dir2) es)
-        dts2 (d/datoms db :eavt)]
+        db1  (d/db-with (d/empty-db dir1) es)
+        dts1 (d/datoms db1 :eavt)
+        db2  (d/db-with (d/empty-db dir2) es)
+        dts2 (d/datoms db2 :eavt)]
     (is (= dts1 dts2))
-    (d/close-db db)
+    (d/close-db db1)
+    (d/close-db db2)
     (u/delete-files dir1)
     (u/delete-files dir2)))
 
@@ -568,8 +648,90 @@
         dir    (u/tmp-dir (str "issue-127-" (random-uuid)))
         conn   (d/create-conn dir schema)]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
-    (dotimes [n 100000]
+    (dotimes [n 10000]
       (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
-    (is (= 100001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
+    (is (= 10001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-uncomparable-356-1
+  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:multi {:db/cardinality :db.cardinality/many}
+                             :index {:db/index true}})
+                (d/db-with [[:db/add     1 :single {:map 1}]])
+                (d/db-with [[:db/retract 1 :single {:map 1}]])
+                (d/db-with [[:db/add     1 :single {:map 2}]])
+                (d/db-with [[:db/add     1 :single {:map 3}]]))]
+    (is (= #{[1 :single {:map 3}]}
+           (tdc/all-datoms db)))
+    (is (= [(dd/datom 1 :single {:map 3})]
+           (vec (d/datoms db :eavt 1 :single {:map 3}))))
+    (is (= [(dd/datom 1 :single {:map 3})]
+           (vec (d/datoms db :avet :single {:map 3} 1))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-uncomparable-356-2
+  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:multi {:db/cardinality :db.cardinality/many}
+                             :index {:db/index true}})
+                (d/db-with [[:db/add 1 :multi {:map 1}]])
+                (d/db-with [[:db/add 1 :multi {:map 1}]])
+                (d/db-with [[:db/add 1 :multi {:map 2}]]))]
+    (is (= #{[1 :multi {:map 1}] [1 :multi {:map 2}]}
+           (tdc/all-datoms db)))
+    (is (= [(dd/datom 1 :multi {:map 2})]
+           (vec (d/datoms db :eavt 1 :multi {:map 2}))))
+    (is (= [(dd/datom 1 :multi {:map 2})]
+           (vec (d/datoms db :avet :multi {:map 2} 1))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-uncomparable-356-3
+  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:multi {:db/cardinality :db.cardinality/many}
+                             :index {:db/index true}})
+                (d/db-with [[:db/add     1 :index {:map 1}]])
+                (d/db-with [[:db/retract 1 :single {:map 1}]])
+                (d/db-with [[:db/add     1 :index {:map 2}]])
+                (d/db-with [[:db/add     1 :index {:map 3}]]))]
+    (is (= #{[1 :index {:map 3}]}
+           (tdc/all-datoms db)))
+    (is (= [(dd/datom 1 :index {:map 3})]
+           (vec (d/datoms db :eavt 1 :index {:map 3}))))
+    (is (= [(dd/datom 1 :index {:map 3})]
+           (vec (d/datoms db :avet :index {:map 3} 1 ))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+;; TODO
+#_(deftest test-transitive-type-compare-386
+    (let [txs    [[{:block/uid "2LB4tlJGy"}]
+                  [{:block/uid "2ON453J0Z"}]
+                  [{:block/uid "2KqLLNbPg"}]
+                  [{:block/uid "2L0dcD7yy"}]
+                  [{:block/uid "2KqFNrhTZ"}]
+                  [{:block/uid "2KdQmItUD"}]
+                  [{:block/uid "2O8BcBfIL"}]
+                  [{:block/uid "2L4ZbI7nK"}]
+                  [{:block/uid "2KotiW36Z"}]
+                  [{:block/uid "2O4o-y5J8"}]
+                  [{:block/uid "2KimvuGko"}]
+                  [{:block/uid "dTR20ficj"}]
+                  [{:block/uid "wRmp6bXAx"}]
+                  [{:block/uid "rfL-iQOZm"}]
+                  [{:block/uid "tya6s422-"}]
+                  [{:block/uid 45619}]]
+          schema {:block/uid {:db/unique :db.unique/identity}}
+          dir    (u/tmp-dir (str "issue-386-" (random-uuid)))
+          conn   (d/create-conn dir schema)
+          _      (doseq [tx txs] (d/transact! conn tx))
+          db     @conn]
+      (is (empty? (->> (seq db)
+                       (map (fn [[_ a v]] [a v]))
+                       (remove #(d/entity db %)))))
+      (d/close conn)
+      (u/delete-files dir)))

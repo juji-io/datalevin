@@ -119,8 +119,8 @@
 
 (defn parse-var-required [form]
   (or (parse-variable form)
-    (raise "Cannot parse var, expected symbol starting with ?, got: " form
-      {:error :parser/rule-var, :form form})))
+      (raise "Cannot parse var, expected symbol starting with ?, got: " form
+             {:error :parser/rule-var, :form form})))
 
 (defn parse-src-var [form]
   (when (and (symbol? form)
@@ -132,7 +132,8 @@
     (RulesVar.)))
 
 (defn parse-constant [form]
-  (when (not (symbol? form))
+  (when-not (and (symbol? form)
+                 (= (first (name form)) \?))
     (Constant. form)))
 
 (defn parse-plain-symbol [form]
@@ -153,8 +154,8 @@
 
 (defn parse-fn-arg [form]
   (or (parse-variable form)
-      (parse-constant form)
-      (parse-src-var form)))
+      (parse-src-var form)
+      (parse-constant form)))
 
 
 ;; rule-vars = [ variable+ | ([ variable+ ] variable*) ]
@@ -181,8 +182,8 @@
 (defn flatten-rule-vars [rule-vars]
   (concat
     (when (:required rule-vars)
-      [(mapv :symbol (:required rule-vars))]
-      (mapv :symbol (:free rule-vars)))))
+      [(mapv :symbol (:required rule-vars))])
+    (mapv :symbol (:free rule-vars))))
 
 (defn rule-vars-arity [rule-vars]
   [(count (:required rule-vars)) (count (:free rule-vars))])

@@ -1,10 +1,12 @@
 (ns datalevin.test.upsert
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.constants :refer [tx0]]
-   [datalevin.test.core :as tdc]))
+   [datalevin.util :as u]
+   [datalevin.constants :refer [tx0]]))
+
+(use-fixtures :each db-fixture)
 
 #?(:cljs
    (def Throwable js/Error))
@@ -12,10 +14,12 @@
 ;; break up the tests due to mutable nature of db
 
 (deftest test-upsert-1
-  (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
-                                            :email { :db/unique :db.unique/identity }
-                                            :slugs { :db/unique     :db.unique/identity
-                                                    :db/cardinality :db.cardinality/many }})
+  (let [dir     (u/tmp-dir (str "upsert-test-" (random-uuid)))
+        db      (d/db-with (d/empty-db
+                             dir {:name  { :db/unique :db.unique/identity }
+                                  :email { :db/unique :db.unique/identity }
+                                  :slugs { :db/unique     :db.unique/identity
+                                          :db/cardinality :db.cardinality/many }})
                            [{:db/id 1 :name "Ivan" :email "@1"}
                             {:db/id 2 :name "Petr" :email "@2"}])
         touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
@@ -67,13 +71,16 @@
                {:name "Ivan" :email "@1" :age 36}))
         (is (= (tempids tx)
                {-1 1}))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-upsert-2
-  (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
-                                            :email { :db/unique :db.unique/identity }
-                                            :slugs { :db/unique     :db.unique/identity
-                                                    :db/cardinality :db.cardinality/many }})
+  (let [dir     (u/tmp-dir (str "upsert-2-" (random-uuid)))
+        db      (d/db-with (d/empty-db
+                             dir {:name  { :db/unique :db.unique/identity }
+                                  :email { :db/unique :db.unique/identity }
+                                  :slugs { :db/unique     :db.unique/identity
+                                          :db/cardinality :db.cardinality/many }})
                            [{:db/id 1 :name "Ivan" :email "@1"}
                             {:db/id 2 :name "Petr" :email "@2"}])
         touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
@@ -127,15 +134,19 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {3 3}))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-upsert-3
-  (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
-                                            :email { :db/unique :db.unique/identity }
-                                            :slugs { :db/unique     :db.unique/identity
-                                                    :db/cardinality :db.cardinality/many }})
-                           [{:db/id 1 :name "Ivan" :email "@1"}
-                            {:db/id 2 :name "Petr" :email "@2"}])
+  (let [dir     (u/tmp-dir (str "upsert-3-" (random-uuid)))
+        db      (d/db-with
+                  (d/empty-db
+                    dir {:name  { :db/unique :db.unique/identity }
+                         :email { :db/unique :db.unique/identity }
+                         :slugs { :db/unique     :db.unique/identity
+                                 :db/cardinality :db.cardinality/many }})
+                  [{:db/id 1 :name "Ivan" :email "@1"}
+                   {:db/id 2 :name "Petr" :email "@2"}])
         touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
         tempids (fn [tx] (dissoc (:tempids tx) :db/current-tx))]
 
@@ -146,15 +157,19 @@
                {:name "Igor" :age 36}))
         (is (= (tempids tx)
                {-1 3}))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-upsert-4
-  (let [db      (d/db-with (d/empty-db nil {:name  { :db/unique :db.unique/identity }
-                                            :email { :db/unique :db.unique/identity }
-                                            :slugs { :db/unique     :db.unique/identity
-                                                    :db/cardinality :db.cardinality/many }})
-                           [{:db/id 1 :name "Ivan" :email "@1"}
-                            {:db/id 2 :name "Petr" :email "@2"}])
+  (let [dir     (u/tmp-dir (str "upsert-4-" (random-uuid)))
+        db      (d/db-with
+                  (d/empty-db
+                    dir {:name  { :db/unique :db.unique/identity }
+                         :email { :db/unique :db.unique/identity }
+                         :slugs { :db/unique     :db.unique/identity
+                                 :db/cardinality :db.cardinality/many }})
+                  [{:db/id 1 :name "Ivan" :email "@1"}
+                   {:db/id 2 :name "Petr" :email "@2"}])
         touched (fn [tx e] (into {} (d/touch (d/entity (:db-after tx) e))))
         tempids (fn [tx] (dissoc (:tempids tx) :db/current-tx))]
 
@@ -181,51 +196,84 @@
                {:name "Ivan" :email "@1" :slugs #{"ivan1" "ivan2"}}))
         (is (thrown-with-msg? Throwable #"Conflicting upserts:"
                               (d/with (:db-after tx) [{:slugs ["ivan1" "petr1"]}])))))
-    (d/close-db db)))
-
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-redefining-ids
-  (let [db (-> (d/empty-db nil {:name { :db/unique :db.unique/identity }})
-               (d/db-with [{:db/id -1 :name "Ivan"}]))
-        tx (d/with db [{:db/id -1 :age 35}
-                       {:db/id -1 :name "Ivan" :age 36}])]
+  (let [dir (u/tmp-dir (str "redefinning-ids-" (random-uuid)))
+        db  (-> (d/empty-db dir {:name { :db/unique :db.unique/identity }})
+                (d/db-with [{:db/id -1 :name "Ivan"}]))
+        tx  (d/with db [{:db/id -1 :age 35}
+                        {:db/id -1 :name "Ivan" :age 36}])]
     (is (= #{[1 :age 36] [1 :name "Ivan"]}
            (tdc/all-datoms (:db-after tx))))
     (is (= {-1 1, :db/current-tx (+ tx0 2)}
            (:tempids tx)))
-    (d/close-db db))
+    (d/close-db db)
+    (u/delete-files dir))
 
-  (let [db (-> (d/empty-db nil {:name { :db/unique :db.unique/identity }})
-               (d/db-with [{:db/id -1 :name "Ivan"}
-                           {:db/id -2 :name "Oleg"}]))]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (-> (d/empty-db dir {:name { :db/unique :db.unique/identity }})
+                (d/db-with [{:db/id -1 :name "Ivan"}
+                            {:db/id -2 :name "Oleg"}]))]
     (is (thrown-with-msg? Throwable #"Conflicting upsert: -1 resolves both to 1 and 2"
                           (d/with db [{:db/id -1 :name "Ivan" :age 35}
                                       {:db/id -1 :name "Oleg" :age 36}])))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 ;; https://github.com/tonsky/datascript/issues/285
 (deftest test-retries-order
-  (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
-               (d/db-with [[:db/add -1 :age 42]
-                           [:db/add -2 :likes "Pizza"]
-                           [:db/add -1 :name "Bob"]
-                           [:db/add -2 :name "Bob"]]))]
+  (let [dir (u/tmp-dir (str "retries-order-" (random-uuid)))
+        db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
+                (d/db-with [[:db/add -1 :age 42]
+                            [:db/add -2 :likes "Pizza"]
+                            [:db/add -1 :name "Bob"]
+                            [:db/add -2 :name "Bob"]]))]
     (is (= {:db/id 1, :name "Bob", :likes "Pizza", :age 42}
            (tdc/entity-map db 1)))
-    (d/close-db db))
+    (d/close-db db)
+    (u/delete-files dir))
 
-  (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
-               (d/db-with [[:db/add -1 :age 42]
-                           [:db/add -2 :likes "Pizza"]
-                           [:db/add -2 :name "Bob"]
-                           [:db/add -1 :name "Bob"]]))]
+  (let [dir (u/tmp-dir (str "retry-or-" (random-uuid)))
+        db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
+                (d/db-with [[:db/add -1 :age 42]
+                            [:db/add -2 :likes "Pizza"]
+                            [:db/add -2 :name "Bob"]
+                            [:db/add -1 :name "Bob"]]))]
     (is (= {:db/id 2, :name "Bob", :likes "Pizza", :age 42}
            (tdc/entity-map db 2)))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+;; https://github.com/tonsky/datascript/issues/403
+(deftest test-upsert-string-tempid-ref
+  (let [dir      (u/tmp-dir (str "retry-or-" (random-uuid)))
+        db       (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}
+                                      :ref  {:db/valueType :db.type/ref}})
+                     (d/db-with [{:name "Alice"}]))
+        expected #{[1 :name "Alice"]
+                   [2 :age 36]
+                   [2 :ref 1]}]
+    (is (= expected (tdc/all-datoms
+                      (d/db-with db [{:db/id "user", :name "Alice"}
+                                     {:age 36, :ref "user"}]))))
+    (is (= expected (tdc/all-datoms
+                      (d/db-with db [[:db/add "user" :name "Alice"]
+                                     {:age 36, :ref "user"}]))))
+    (is (= expected (tdc/all-datoms
+                      (d/db-with db [{:db/id -1, :name "Alice"}
+                                     {:age 36, :ref -1}]))))
+    (is (= expected (tdc/all-datoms
+                      (d/db-with db [[:db/add -1, :name "Alice"]
+                                     {:age 36, :ref -1}]))))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-vector-upsert
-  (let [db (-> (d/empty-db nil {:name {:db/unique :db.unique/identity}})
-               (d/db-with [{:db/id -1, :name "Ivan"}]))]
+  (let [dir (u/tmp-dir (str "vector-or-" (random-uuid)))
+        db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
+                (d/db-with [{:db/id -1, :name "Ivan"}]))]
     (are [tx res] (= res (tdc/all-datoms (d/db-with db tx)))
       [[:db/add -1 :name "Ivan"]
        [:db/add -1 :age 12]]
@@ -234,14 +282,17 @@
       [[:db/add -1 :age 12]
        [:db/add -1 :name "Ivan"]]
       #{[1 :age 12] [1 :name "Ivan"]})
-    (d/close-db db))
+    (d/close-db db)
+    (u/delete-files dir))
 
-  (let [db (-> (d/empty-db nil {:name { :db/unique :db.unique/identity }})
-               (d/db-with [[:db/add -1 :name "Ivan"]
-                           [:db/add -2 :name "Oleg"]]))]
+  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+        db  (-> (d/empty-db dir {:name { :db/unique :db.unique/identity }})
+                (d/db-with [[:db/add -1 :name "Ivan"]
+                            [:db/add -2 :name "Oleg"]]))]
     (is (thrown-with-msg? Throwable #"Conflicting upsert: -1 resolves both to 1 and 2"
                           (d/with db [[:db/add -1 :name "Ivan"]
                                       [:db/add -1 :age 35]
                                       [:db/add -1 :name "Oleg"]
                                       [:db/add -1 :age 36]])))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))

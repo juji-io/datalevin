@@ -9,6 +9,7 @@
             [datalevin.protocol :as p]
             [datalevin.storage :as st]
             [datalevin.search :as sc]
+            [datalevin.built-ins :as dbq]
             [datalevin.constants :as c]
             [taoensso.timbre :as log]
             [clojure.stacktrace :as stt]
@@ -30,8 +31,6 @@
            [org.bouncycastle.crypto.generators Argon2BytesGenerator]
            [org.bouncycastle.crypto.params Argon2Parameters
             Argon2Parameters$Builder]))
-
-(log/refer-timbre)
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -137,6 +136,15 @@
     (catch Exception _
       nil)))
 
+(defn- query-user
+  [sys-conn username]
+  {:pre [(d/conn? sys-conn)]}
+  (d/q '[:find ?u .
+         :in $ ?uname
+         :where
+         [?u :user/name ?uname]]
+       @sys-conn username))
+
 (defn- pull-db
   [sys-conn db-name]
   {:pre [(d/conn? sys-conn)]}
@@ -145,19 +153,20 @@
     (catch Exception _
       nil)))
 
-(defn- pull-role
+(defn- query-role
   [sys-conn role-key]
   {:pre [(d/conn? sys-conn)]}
-  (try
-    (d/pull @sys-conn '[*] [:role/key role-key])
-    (catch Exception _
-      nil)))
+  (d/q '[:find ?r .
+         :in $ ?rk
+         :where
+         [?r :role/key ?rk]]
+       @sys-conn role-key))
 
-(defn- user-eid [sys-conn username] (:db/id (pull-user sys-conn username)))
+(defn- user-eid [sys-conn username] (query-user sys-conn username))
 
 (defn- db-eid [sys-conn db-name] (:db/id (pull-db sys-conn db-name)))
 
-(defn- role-eid [sys-conn role-key] (:db/id (pull-role sys-conn role-key)))
+(defn- role-eid [sys-conn role-key] (query-role sys-conn role-key))
 
 (defn- eid->username
   [sys-conn eid]
@@ -261,7 +270,7 @@
             [?p :permission/act ?act]
             [?p :permission/obj ?obj]
             [?p :permission/tgt ?tgt]]
-          @sys-conn perm-act perm-obj)
+          @sys-conn perm-act perm-obj perm-tgt)
      (d/q '[:find ?p .
             :in $ ?act ?obj
             :where
@@ -296,12 +305,12 @@
   ([sys-conn role-key username]
    (let [ns (namespace role-key)
          n  (name role-key)]
-     (and (= ns "datalevin.role")  (pull-user sys-conn n)
+     (and (= ns "datalevin.role")  (query-user sys-conn n)
           (if username (= n username) true)))))
 
 (defn- transact-new-user
   [sys-conn username password]
-  (if (pull-user sys-conn username)
+  (if (query-user sys-conn username)
     (u/raise "User already exits" {:username username})
     (let [s (salt)]
       (d/transact! sys-conn [{:db/id        -1
@@ -350,7 +359,7 @@
 
 (defn- transact-new-role
   [sys-conn role-key]
-  (if (pull-role sys-conn role-key)
+  (if (query-role sys-conn role-key)
     (u/raise "Role already exits" {:role-key role-key})
     (d/transact! sys-conn [{:db/id    -1
                             :role/key role-key}
@@ -917,6 +926,7 @@
           db-name             (u/lisp-case db-name)
           existing-db?        (db-exists? server db-name)
           sys-conn            (.-sys-conn server)]
+      (log/debug "open" db-name "that exist?" existing-db?)
       (wrap-permission
         (if existing-db? ::view ::create)
         ::database
@@ -1265,10 +1275,13 @@
         "Don't have permission to create database"
         (if (db-exists? server db-name)
           (u/raise "Database already exists." {:db db-name})
-          (do (transact-new-db sys-conn username db-type db-name)
-              (update-client server client-id
-                             #(assoc % :permissions
-                                     (user-permissions sys-conn username)))))
+          (do
+            (open-server-store server skey
+                               {:db-name db-name} db-type)
+            (transact-new-db sys-conn username db-type db-name)
+            (update-client server client-id
+                           #(assoc % :permissions
+                                   (user-permissions sys-conn username)))))
         (write-message skey {:type :command-complete})))))
 
 (defn- close-database
@@ -1313,7 +1326,7 @@
   [^Server server ^SelectionKey skey _]
   (wrap-error
     (wrap-permission
-      ::view ::server nil
+      ::create ::database nil
       "Don't have permission to list databases"
       (write-message skey {:type   :command-complete
                            :result (query-databases (.-sys-conn server))}))))
@@ -1322,7 +1335,7 @@
   [^Server server ^SelectionKey skey _]
   (wrap-error
     (wrap-permission
-      ::view ::server nil
+      ::create ::database nil
       "Don't have permission to list databases in use"
       (write-message skey {:type   :command-complete
                            :result (in-use-dbs server)}))))
@@ -1952,7 +1965,7 @@
   (wrap-error
     (let [[db-name query opts] args
           db                   (get-db server db-name writing?)
-          data                 (q/fulltext db query opts)]
+          data                 (dbq/fulltext db query opts)]
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
@@ -2040,7 +2053,7 @@
       (new-message runner skey message)
       (locking kv-store (.notify kv-store)))
     (catch Exception e
-      (stt/print-stack-trace e)
+      ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"
                                 (ex-message e))))))
 
@@ -2053,7 +2066,7 @@
         (handle-writing server skey message)
         (message-cases skey type)))
     (catch Exception e
-      (stt/print-stack-trace e)
+      ;; (stt/print-stack-trace e)
       (log/error "Error Handling message:" (ex-message e)))))
 
 (defn- handle-read
@@ -2083,7 +2096,7 @@
         (.close (.channel skey))
         (log/error "Read IOException:" (ex-message e))))
     (catch Exception e
-      (stt/print-stack-trace e)
+      ;; (stt/print-stack-trace e)
       (log/error "Read error:" (ex-message e)))))
 
 (defn- handle-registration
@@ -2122,7 +2135,7 @@
     :or   {port 8898 root "/var/lib/datalevin" verbose false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try
-    (log/set-level! (if verbose :debug :info))
+    (log/set-min-level! (if verbose :debug :info))
     (let [^ServerSocketChannel server-socket (open-port port)
           ^Selector selector                 (Selector/open)
           running                            (AtomicBoolean. false)

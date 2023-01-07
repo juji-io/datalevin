@@ -11,24 +11,44 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.6.29"]
+[datalevin "0.7.8"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.6.29"}
+{:deps {datalevin/datalevin {:mvn/version "0.7.8"}
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
-This JVM library supports Java 8 and above. For **JVM version newer than 11**, you may want to add the following JVM options:
+This library supports Java 8 and above.
+
+**Important:**  For JVM version newer than 11, you need to add the following JVM options:
 ```
 --add-opens=java.base/java.nio=ALL-UNNAMED
 --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
-Or you will get errors such as "Could not initialize class org.lmdbjava.ByteBufferProxy".
 
+Or you will get errors such as "Could not initialize class
+org.lmdbjava.ByteBufferProxy", and so on.
+
+For `lein`, add a top level `:jvm-opts` in your `project.clj` like so:
+
+```
+:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+           "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]
+
+```
+
+For `dep.edn`, this is known to work:
+
+```
+:aliases {:jvm-base
+           {:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}}
+```
+Then `clj -A:jvm-base`
 
 ### GraalVM Native Image
 
@@ -40,7 +60,9 @@ This is necessary because `datelevin-native` artifact contains GraalVM specific
 code that should not appear in a regular JVM library. See also this
 [note](https://github.com/juji-io/datalevin/tree/master/native#compiling-datalevin-dependency-to-native-image).
 
-Note: only Graalvm version 21.3.0 works for now, see [issue](https://github.com/oracle/graal/issues/4771)
+Note: only Graalvm version 21.3.0 works for now, see
+[issue](https://github.com/oracle/graal/issues/5615). We are going to switch to
+a different native binding to address the problem.
 
 ## Command Line Tool
 
@@ -96,16 +118,16 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.6.29/dtlv-0.6.29-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.7.8/dtlv-0.7.8-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.6.29/dtlv-0.6.29-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.7.8/dtlv-0.7.8-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.6.29/dtlv-0.6.29-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.7.8/dtlv-0.7.8-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.6.29)
+  Datalevin (version: 0.7.8)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -142,7 +164,7 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.6.29)
+  Datalevin (version: 0.7.8)
 
   Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
@@ -201,7 +223,7 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 ### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.6.29/datalevin-0.6.29-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.7.8/datalevin-0.7.8-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
 image is AOT and not as efficient as JVM for long running programs, or when a
@@ -209,12 +231,12 @@ pre-built native version is not available for your platform. For example,
 assuming your Java is newer than version 11:
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.29-standalone.jar
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.7.8-standalone.jar
 ```
 This will start the Datalevin REPL.
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.6.29-standalone.jar serv -r /tmp/test-server
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.7.8-standalone.jar serv -r /tmp/test-server
 ```
 Will run the Datalevin server on default port 8898, with root data path at
 `/tmp/test-server`.
@@ -241,7 +263,7 @@ that can be used in a query, e.g.:
 
 ```console
 $ rlwrap bb
-Babashka v0.7.6 REPL.
+Babashka v0.7.8 REPL.
 Use :repl/quit or :repl/exit to quit the REPL.
 Clojure rocks, Bash reaches.
 

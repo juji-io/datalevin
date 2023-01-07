@@ -1,12 +1,16 @@
 (ns datalevin.test.index
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [datalevin.util :as u]
    [datalevin.core :as d]))
 
+(use-fixtures :each db-fixture)
+
 (deftest test-datoms
-  (let [dvec #(vector (:e %) (:a %) (:v %))
-        db   (-> (d/empty-db nil {:name {:db/valueType :db.type/string}
+  (let [dir  (u/tmp-dir (str "reset-test-" (random-uuid)))
+        dvec #(vector (:e %) (:a %) (:v %))
+        db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
                  (d/db-with [ [:db/add 1 :name "Petr"]
                              [:db/add 1 :age 44]
@@ -44,13 +48,15 @@
               [2 :age 25]
               [1 :age 44] ]
              (map dvec (d/datoms db :avet :age)))))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 ;; should not expect attribute in lexicographic order
 ;; attributes are in order of creation
 (deftest test-seek-datoms
-  (let [dvec #(vector (:e %) (:a %) (:v %))
-        db   (-> (d/empty-db nil {:name {:db/valueType :db.type/string}
+  (let [dir  (u/tmp-dir (str "seek-test-" (random-uuid)))
+        dvec #(vector (:e %) (:a %) (:v %))
+        db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
                  (d/db-with [[:db/add 1 :name "Petr"]
                              [:db/add 1 :age 44]
@@ -81,12 +87,14 @@
               [3 :age 11]
               [2 :age 25]
               [1 :age 44]])))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 ;; should not expect attributes in lexicographic order
 (deftest test-rseek-datoms
-  (let [dvec #(vector (:e %) (:a %) (:v %))
-        db   (-> (d/empty-db nil {:name {:db/valueType :db.type/string}
+  (let [dir  (u/tmp-dir (str "rseek-test-" (random-uuid)))
+        dvec #(vector (:e %) (:a %) (:v %))
+        db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
                  (d/db-with [[:db/add 1 :name "Petr"]
                              [:db/add 1 :age 44]
@@ -115,12 +123,14 @@
               [3 :name "Sergey"]
               [1 :name "Petr"]
               [2 :name "Ivan"]])))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-index-range
-  (let [dvec #(vector (:e %) (:a %) (:v %))
+  (let [dir  (u/tmp-dir (str "range-test-" (random-uuid)))
+        dvec #(vector (:e %) (:a %) (:v %))
         db   (d/db-with
-               (d/empty-db nil {:name {:db/valueType :db.type/string}
+               (d/empty-db dir {:name {:db/valueType :db.type/string}
                                 :age  {:db/valueType :db.type/long}})
                [ { :db/id 1 :name "Ivan" :age 15 }
                 { :db/id 2 :name "Oleg" :age 20 }
@@ -163,4 +173,5 @@
             [2 :age 20]
             [5 :age 20]
             [4 :age 45] ]))
-    (d/close-db db)))
+    (d/close-db db)
+    (u/delete-files dir)))

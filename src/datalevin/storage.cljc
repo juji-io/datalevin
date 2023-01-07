@@ -6,8 +6,7 @@
             [datalevin.search :as s]
             [datalevin.constants :as c]
             [datalevin.datom :as d]
-            [clojure.string :as str]
-            )
+            [clojure.string :as str])
   (:import [java.util UUID]
            [datalevin.datom Datom]
            [datalevin.bits Retrieved]))
@@ -16,28 +15,53 @@
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(defn attr->properties [k v]
+(defn- attr->properties [k v]
   (case v
     :db.unique/identity  [:db/unique :db.unique/identity]
     :db.unique/value     [:db/unique :db.unique/value]
     :db.cardinality/many [:db.cardinality/many]
     :db.type/ref         [:db.type/ref]
-    (when (true? v)
-      (case k
-        :db/isComponent [:db/isComponent]
-        []))))
+    (cond
+      (and (= :db/isComponent k) (true? v)) [:db/isComponent]
+      (= :db/tupleAttrs k)                  [:db.type/tuple]
+      :else                                 [])))
 
-(defn schema->rschema [schema]
-  (reduce-kv
-    (fn [m attr keys->values]
-      (reduce-kv
-        (fn [m key value]
-          (reduce
-            (fn [m prop]
-              (assoc m prop (conj (get m prop #{}) attr)))
-            m (attr->properties key value)))
-        m keys->values))
-    {} schema))
+(def conjs (fnil conj #{}))
+
+(defn attr-tuples
+  "e.g. :reg/semester => #{:reg/semester+course+student ...}"
+  [schema rschema]
+  (reduce
+    (fn [m tuple-attr] ;; e.g. :reg/semester+course+student
+      (u/reduce-indexed
+        (fn [m src-attr idx] ;; e.g. :reg/semester
+          (update m src-attr assoc tuple-attr idx))
+        m
+        (-> schema tuple-attr :db/tupleAttrs)))
+    {}
+    (:db.type/tuple rschema)))
+
+(defn schema->rschema
+  ":db/unique           => #{attr ...}
+   :db.unique/identity  => #{attr ...}
+   :db.unique/value     => #{attr ...}
+   :db.cardinality/many => #{attr ...}
+   :db.type/ref         => #{attr ...}
+   :db/isComponent      => #{attr ...}
+   :db.type/tuple       => #{attr ...}
+   :db/attrTuples       => {attr => {tuple-attr => idx}}"
+  [schema]
+  (let [rschema (reduce-kv
+                  (fn [rschema attr attr-schema]
+                    (reduce-kv
+                      (fn [rschema key value]
+                        (reduce
+                          (fn [rschema prop]
+                            (update rschema prop conjs attr))
+                          rschema (attr->properties key value)))
+                      rschema attr-schema))
+                  {} schema)]
+    (assoc rschema :db/attrTuples (attr-tuples schema rschema))))
 
 (defn- transact-schema
   [lmdb schema]
@@ -63,7 +87,7 @@
                  (if-let [old-props (old attr)]
                    [attr (assoc props :db/aid (old-props :db/aid))]
                    (let [res [attr (assoc props :db/aid (+ init-aid ^long @i))]]
-                     (vswap! i #(inc ^long %))
+                     (vswap! i u/long-inc)
                      res))))
           schema)))
 

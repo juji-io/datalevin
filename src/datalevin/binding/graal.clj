@@ -13,29 +13,19 @@
    [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
    [java.nio ByteBuffer BufferOverflowException]
    [java.lang AutoCloseable]
+   [java.io File]
    [java.lang.annotation Retention RetentionPolicy]
    [clojure.lang IPersistentVector]
-   ;; [org.graalvm.nativeimage.c CContext]
    [org.graalvm.word WordFactory]
-   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info ;Directives
+   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
     Lib$MapFullException])
-  (:gen-class
-   :name
-   ;; ^{Retention RetentionPolicy/RUNTIME
-   ;;   CContext  {:value Directives}}
-   datalevin.binding.graal))
+  (:gen-class :name datalevin.binding.graal))
 
 (defprotocol IFlag
-  (
-   ;; ^{Retention RetentionPolicy/RUNTIME
-   ;;   CContext  {:value Directives}}
-   value [this flag-key]))
+  (value [this flag-key]))
 
-(deftype
-    ;; ^{Retention RetentionPolicy/RUNTIME
-    ;;   CContext  {:value Directives}}
-    Flag []
+(deftype Flag []
   IFlag
   (value  [_ flag-key]
     (case flag-key
@@ -80,10 +70,7 @@
               (map #(value ^Flag flag %) flags)))
     (int 0)))
 
-(deftype
-    ;; ^{Retention RetentionPolicy/RUNTIME
-    ;;   CContext  {:value Directives}}
-    Rtx [lmdb
+(deftype Rtx [lmdb
          ^Txn txn
          ^BufVal kp
          ^BufVal vp
@@ -179,10 +166,7 @@
     (.renew txn)
     this))
 
-(deftype
-    ;; ^{Retention RetentionPolicy/RUNTIME
-    ;;   CContext  {:value Directives}}
-    KV [^BufVal kp ^BufVal vp]
+(deftype KV [^BufVal kp ^BufVal vp]
   IKV
   (k [this] (.outBuf kp))
   (v [this] (.outBuf vp)))
@@ -195,14 +179,11 @@
 
 (declare ->CursorIterable)
 
-(deftype
-    ;; ^{Retention RetentionPolicy/RUNTIME
-    ;;   CContext  {:value Directives}}
-    DBI [^Dbi db
-         ^ConcurrentLinkedQueue curs
-         ^BufVal kp
-         ^:volatile-mutable ^BufVal vp
-         ^boolean validate-data?]
+(deftype DBI [^Dbi db
+              ^ConcurrentLinkedQueue curs
+              ^BufVal kp
+              ^:volatile-mutable ^BufVal vp
+              ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
     (or (not validate-data?)
@@ -236,7 +217,7 @@
               (b/put-buffer vb x t)
               (.flip ^BufVal vp))))
         (catch Exception e
-          (st/print-stack-trace e)
+          ;; (st/print-stack-trace e)
           (raise "Error putting r/w value buffer of "
                  dbi-name ": " (ex-message e)
                  {:value x :type t :dbi dbi-name})))))
@@ -287,10 +268,7 @@
   (return-cursor [_ cur]
     (.add curs cur)))
 
-(deftype
-    ;; ^{Retention RetentionPolicy/RUNTIME
-    ;;   CContext  {:value Directives}}
-    CursorIterable [^Cursor cursor
+(deftype CursorIterable [^Cursor cursor
                     ^DBI db
                     ^Rtx rtx
                     forward?
@@ -327,7 +305,7 @@
                             (.get cursor) (.getVal k) (.getVal v) op-get))]
       (reify
         Iterator
-        (hasNext [this]
+        (hasNext [_]
           (let [end       #(do (vreset! ended? true) false)
                 continue? #(if stop-key?
                              (let [_ (get-cur)
@@ -373,7 +351,7 @@
                     (if forward?
                       (check op-first)
                       (check op-last))))))))
-        (next [this]
+        (next [_]
           (get-cur)
           (->KV k v))))))
 
@@ -425,11 +403,9 @@
 
 (declare reset-write-txn)
 
-(deftype
-    ;; ^{Retention RetentionPolicy/RUNTIME
-    ;;   CContext  {:value Directives}}
-    LMDB [^Env env
+(deftype LMDB [^Env env
           ^String dir
+          temp?
           opts
           ^ConcurrentLinkedQueue pool
           ^ConcurrentHashMap dbis
@@ -445,8 +421,9 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (LMDB. env dir opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
-           write-txn true))
+    (->LMDB
+      env dir temp? opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
+      write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -466,6 +443,7 @@
       (when-not (.isClosed env) (.sync env))
       (.close env)
       (set! closed? true)
+      (when temp? (u/delete-files dir))
       nil))
 
   (closed-kv? [_] closed?)
@@ -986,30 +964,35 @@
 (defmethod open-kv :graal
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags]
+  ([dir {:keys [mapsize flags temp?]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}
+                flags   c/default-env-flags
+                temp?   false}
          :as   opts}]
    (try
-     (u/file dir)
-     (let [^Env env (Env/create
+
+     (let [file     (u/file dir)
+           ^Env env (Env/create
                       dir
                       (* ^long mapsize 1024 1024)
                       c/+max-readers+
                       c/+max-dbs+
-                      (kv-flags flags))]
-       (LMDB. env
-              dir
-              opts
-              (ConcurrentLinkedQueue.)
-              (ConcurrentHashMap.)
-              false
-              (BufVal/create c/+max-key-size+)
-              (BufVal/create 1)
-              (BufVal/create c/+max-key-size+)
-              (BufVal/create c/+max-key-size+)
-              (volatile! nil)
-              false))
+                      (kv-flags flags))
+           lmdb     (->LMDB env
+                            dir
+                            temp?
+                            opts
+                            (ConcurrentLinkedQueue.)
+                            (ConcurrentHashMap.)
+                            false
+                            (BufVal/create c/+max-key-size+)
+                            (BufVal/create 1)
+                            (BufVal/create c/+max-key-size+)
+                            (BufVal/create c/+max-key-size+)
+                            (volatile! nil)
+                            false)]
+       (when temp? (u/delete-on-exit file))
+       lmdb)
      (catch Exception e
        (raise
          "Fail to open database: " (ex-message e)

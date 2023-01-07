@@ -33,7 +33,9 @@
    (defmacro cond+ [& clauses]
      (when-some [[test expr & rest] clauses]
        (case test
-         :let `(let ~expr (cond+ ~@rest))
+         :do   `(do ~expr (cond+ ~@rest))
+         :let  `(let ~expr (cond+ ~@rest))
+         :some `(or ~expr (cond+ ~@rest))
          `(if ~test ~expr (cond+ ~@rest))))))
 
 #?(:clj
@@ -70,6 +72,16 @@
       (recur (concat cs fs))
       (do (io/delete-file f)
           (recur (rest fs))))))
+
+(defn delete-on-exit
+  "Recursively register file to be deleted. NB. new files in
+  a directory will prevent it from deletion."
+  [^File dir]
+  (.deleteOnExit dir)
+  (doseq [^File f (.listFiles dir)]
+    (if (.isDirectory f)
+      (delete-on-exit f)
+      (.deleteOnExit f))))
 
 (defn file-exists
   "check if a file exists"
@@ -273,3 +285,25 @@
   (lazy-seq
     (when-first [c colls]
       (lazy-cat c (lazy-concat (rest colls))))))
+
+(defn reduce-indexed
+  "Same as reduce, but `f` takes [acc el idx]"
+  [f init xs]
+  (first
+    (reduce
+      (fn [[acc ^long idx] x]
+        (let [res (f acc x idx)]
+          (if (reduced? res)
+            (reduced [res idx])
+            [res (inc idx)])))
+      [init 0]
+      xs)))
+
+(defn long-inc ^long [^long x] (inc x))
+
+(defn index-of
+  [pred xs]
+  (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
+
+(defn array? [^Object x]
+  (some-> x .getClass .isArray))

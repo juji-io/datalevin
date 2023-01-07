@@ -15,7 +15,7 @@
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
    [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator]
+   [java.util Iterator UUID]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption StandardOpenOption]
    [clojure.lang IPersistentVector]
@@ -275,6 +275,7 @@
 
 (deftype LMDB [^Env env
                ^String dir
+               temp?
                opts
                ^ConcurrentLinkedQueue pool
                ^UnifiedMap dbis
@@ -287,7 +288,8 @@
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->LMDB env dir opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
+    (->LMDB
+      env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -299,6 +301,7 @@
           (recur iter)))
       (.sync env true)
       (.close env))
+    (when temp? (u/delete-files dir))
     nil)
 
   (closed-kv? [_] (.isClosed env))
@@ -431,7 +434,7 @@
         (reset-write-txn this)
         (.mark-write this)
         (catch Exception e
-          (st/print-stack-trace e)
+          ;; (st/print-stack-trace e)
           (raise "Fail to open read/write transaction in LMDB: "
                  (ex-message e) {})))))
 
@@ -446,7 +449,7 @@
             (if aborted? :aborted :committed)))
         (raise "Calling `close-transact-kv` without opening" {}))
       (catch Exception e
-        (st/print-stack-trace e)
+        ;; (st/print-stack-trace e)
         (raise "Fail to commit read/write transaction in LMDB: "
                (ex-message e) {}))))
 
@@ -477,7 +480,7 @@
                 (raise "DB needs resize" {:resized true}))
             (.transact-kv this txs)))
         (catch Exception e
-          (st/print-stack-trace e)
+          ;; (st/print-stack-trace e)
           (raise "Fail to transact to LMDB: " (ex-message e) {})))))
 
   (get-value [this dbi-name k]
@@ -704,30 +707,33 @@
 (defmethod open-kv :java
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags]
+  ([dir {:keys [mapsize flags temp?]
          :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags}
+                flags   c/default-env-flags
+                temp?   false}
          :as   opts}]
    (try
-     (let [file     (u/file dir)
-           builder  (doto (Env/create)
-                      (.setMapSize (* ^long mapsize 1024 1024))
-                      (.setMaxReaders c/+max-readers+)
-                      (.setMaxDbs c/+max-dbs+))
-           ^Env env (.open builder file (kv-flags :env flags))
-           lmdb     (->LMDB env
-                            dir
-                            opts
-                            (ConcurrentLinkedQueue.)
-                            (UnifiedMap.)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (b/allocate-buffer c/+max-key-size+)
-                            (volatile! nil)
-                            false)]
+     (let [^File file (u/file dir)
+           builder    (doto (Env/create)
+                        (.setMapSize (* ^long mapsize 1024 1024))
+                        (.setMaxReaders c/+max-readers+)
+                        (.setMaxDbs c/+max-dbs+))
+           ^Env env   (.open builder file (kv-flags :env flags))
+           lmdb       (->LMDB env
+                              dir
+                              temp?
+                              opts
+                              (ConcurrentLinkedQueue.)
+                              (UnifiedMap.)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (volatile! nil)
+                              false)]
+       (when temp? (u/delete-on-exit file))
        lmdb)
      (catch Exception e
-       (st/print-stack-trace e)
+       ;; (st/print-stack-trace e)
        (raise "Fail to open database: " (ex-message e) {:dir dir})))))
 
 ;; TODO remove after LMDBJava supports apple silicon
@@ -735,7 +741,7 @@
   (when (u/apple-silicon?)
     (try
       (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
-                                            (random-uuid)) )
+                                            (UUID/randomUUID)) )
             ^File file      (File. ^String dir "liblmdb.dylib")
             path            (.toPath file)
             fpath           (.getAbsolutePath file)
@@ -753,7 +759,7 @@
         (println "Library extraction is successful:" fpath
                  "with size" (Files/size path)))
       (catch Exception e
-        (st/print-stack-trace e)
+        ;; (st/print-stack-trace e)
         (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
 
 (apple-silicon-lmdb)

@@ -17,7 +17,6 @@
          org.apache.lucene/lucene-queries            {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-highlighter        {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-codecs             {:mvn/version "8.10.1"}
-         persistent-sorted-set/persistent-sorted-set {:mvn/version "0.1.4"}
          }
 
  :aliases {

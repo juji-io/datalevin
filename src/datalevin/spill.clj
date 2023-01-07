@@ -8,7 +8,7 @@
    [datalevin.lmdb :as l]
    [taoensso.nippy :as nippy])
   (:import
-   [java.util List]
+   [java.util Iterator List UUID NoSuchElementException]
    [java.io DataInput DataOutput]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
@@ -23,9 +23,10 @@
 (defn- set-memory-pressure []
   (let [fm (.freeMemory runtime)
         tm (.totalMemory runtime)
-        mm (.maxMemory runtime)]
-    ;; (println "used" (int (/ (- tm fm) (* 1024 1024))))
-    (vreset! memory-pressure (int (/ (- tm fm) mm)))))
+        mm (.maxMemory runtime)
+        pr (int (/ (- tm fm) mm))]
+    ;; (println "used" pr "% of" (int (/ mm (* 1024 1024))))
+    (vreset! memory-pressure pr)))
 
 (defonce listeners (volatile! {}))
 
@@ -34,7 +35,7 @@
           (ManagementFactory/getGarbageCollectorMXBeans)]
     (let [^NotificationListener listener
           (reify NotificationListener
-            (^void handleNotification [this ^Notification notif _]
+            (^void handleNotification [_ ^Notification notif _]
              (when (= (.getType notif)
                       GarbageCollectionNotificationInfo/GARBAGE_COLLECTION_NOTIFICATION)
                (set-memory-pressure))))]
@@ -69,9 +70,9 @@
     (if @disk (l/entries @disk c/tmp-dbi) 0))
 
   (spill [this]
-    (let [dir (str spill-root "dtlv-spill-" (random-uuid))]
+    (let [dir (str spill-root "dtlv-spill-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
-      (vreset! disk (l/open-kv dir))
+      (vreset! disk (l/open-kv dir {:temp? true}))
       (l/open-dbi @disk c/tmp-dbi {:key-size (inc Long/BYTES)}))
     this)
 
@@ -90,10 +91,10 @@
       (.add memory v)
       (do (when (nil? @disk) (spill this))
           (l/transact-kv @disk [[:put c/tmp-dbi @total v :long]])))
-    (vswap! total #(inc ^long %))
+    (vswap! total u/long-inc)
     this)
 
-  (length [this] @total)
+  (length [_] @total)
 
   (assoc [this k v]
     (if (integer? k)
@@ -108,14 +109,14 @@
             false))
       false))
 
-  (entryAt [this k]
+  (entryAt [_ k]
     (when (integer? k)
       (if-let [v (.get memory k)]
         (MapEntry. k v)
         (when-let [v (l/get-value @disk c/tmp-dbi k :long)]
           (MapEntry. k v)))))
 
-  (valAt [this k nf]
+  (valAt [_ k nf]
     (if (integer? k)
       (or (when-not (.isEmpty memory) (.get memory k))
           (when @disk (l/get-value @disk c/tmp-dbi k :long))
@@ -143,7 +144,7 @@
     (vswap! total #(dec ^long %))
     this)
 
-  (count [this] @total)
+  (count [_] @total)
 
   (empty [this]
     (.clear memory)
@@ -179,6 +180,20 @@
     (if (and (<= 0 i) (< i ^long @total))
       (.nth this i)
       nf))
+
+  Iterable
+
+  (iterator [this]
+    (let [i (volatile! 0)]
+      (reify
+        Iterator
+        (hasNext [_] (< ^long @i ^long @total))
+        (next [_]
+          (if (< ^long @i ^long @total)
+            (let [res (.nth this @i)]
+              (vswap! i u/long-inc)
+              res)
+            (throw (NoSuchElementException.)))))))
 
   Object
 
@@ -222,9 +237,9 @@
 
   (seq ^ISeq [this] this)
 
-  (first ^Object [this] (nth v i))
+  (first ^Object [_] (nth v i))
 
-  (next ^ISeq [this] (when (< 0 i) (->RSeq v (dec i))))
+  (next ^ISeq [_] (when (< 0 i) (->RSeq v (dec i))))
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 

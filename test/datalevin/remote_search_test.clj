@@ -1,12 +1,9 @@
 (ns datalevin.remote-search-test
   (:require [datalevin.interpret :as i]
             [datalevin.core :as d]
-            [datalevin.constants :as c]
-            [datalevin.util :as u]
             [clojure.string :as s]
             [datalevin.test.core :refer [server-fixture]]
-            [clojure.test :refer [is testing deftest use-fixtures]])
-  (:import [java.util UUID ]))
+            [clojure.test :refer [is testing deftest use-fixtures]]))
 
 (use-fixtures :each server-fixture)
 

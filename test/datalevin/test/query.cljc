@@ -1,13 +1,14 @@
 (ns datalevin.test.query
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.util :as u]
-   )
+   [datalevin.util :as u])
   #?(:clj
      (:import [clojure.lang ExceptionInfo]
               [java.util UUID])))
+
+(use-fixtures :each db-fixture)
 
 ;; #94
 (deftest test-instant
@@ -294,3 +295,42 @@
                 @conn)))
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-built-in-get
+  (is (= (d/q '[:find ?m ?m-value
+                :in [[?k ?m] ...] ?m-key
+                :where [(get ?m ?m-key) ?m-value]]
+              {:a {:b 1}
+               :c {:d 2}}
+              :d)
+         #{[{:d 2} 2]})))
+
+(deftest test-join-unrelated
+  (let [dir (u/tmp-dir (str "test-query-" (UUID/randomUUID)))
+        db  (d/empty-db dir)]
+    (is (= #{}
+           (d/q '[:find ?name
+                  :in $ ?my-fn
+                  :where [?e :person/name ?name]
+                  [(?my-fn) ?result]
+                  [(< ?result 3)]]
+                (d/db-with db [{:person/name "Joe"}])
+                (fn [] 5))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-symbol-comparison
+  (is (= [2]
+         (d/q
+           '[:find [?e ...]
+             :where [?e :s b]]
+           '[[1 :s a]
+             [2 :s b]])))
+  (let [db (-> (d/empty-db)
+               (d/db-with '[{:db/id 1, :s a}
+                            {:db/id 2, :s b}]))]
+    (is (= [2]
+           (d/q
+             '[:find [?e ...]
+               :where [?e :s b]]
+             db)))))

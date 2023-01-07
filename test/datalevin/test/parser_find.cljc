@@ -1,11 +1,8 @@
 (ns datalevin.test.parser-find
   (:require
-    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-    [datalevin.core :as d]
-    [datalevin.db :as db]
-    [datalevin.parser :as dp]
-    [datalevin.test.core :as tdc]))
+   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
+      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [datalevin.parser :as dp]))
 
 #?(:cljs
    (def Throwable js/Error))

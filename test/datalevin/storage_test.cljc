@@ -6,11 +6,14 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
-            [clojure.test :refer [deftest is]]
+            [datalevin.test.core :as tdc :refer [db-fixture]]
+            [clojure.test :refer [deftest testing is use-fixtures]]
             [datalevin.lmdb :as lmdb])
   (:import [java.util UUID]
            [datalevin.storage Store]
            [datalevin.datom Datom]))
+
+(use-fixtures :each db-fixture)
 
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))

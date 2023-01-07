@@ -13,9 +13,9 @@
 ;; datom
 
 (def ^:const e0    0)
-(def ^:const emax  0x7FFFFFFF)
+(def ^:const emax  0x7FFFFFFFFFFFFFFF)
 (def ^:const tx0   1)
-(def ^:const txmax 0x7FFFFFFF)
+(def ^:const txmax 0x7FFFFFFFFFFFFFFF)
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)
 (def ^:const a0    0)
@@ -54,7 +54,7 @@
 
 ;; tmp lmdb
 
-(def ^:const +default-spill-threshold+ 70)   ; percentage of Xmx
+(def ^:const +default-spill-threshold+ 80)   ; percentage of Xmx
 
 (def ^:const +default-spill-root+ (u/tmp-dir))
 
@@ -70,12 +70,12 @@
 (def ^:const +id-bytes+ Long/BYTES)
 
 ;; value headers
-(def ^:const type-long-neg   (unchecked-byte 0xC0))
-(def ^:const type-long-pos   (unchecked-byte 0xC1))
-(def ^:const type-bigint     (unchecked-byte 0xF1))
-(def ^:const type-bigdec     (unchecked-byte 0xF2))
-;; (def ^:const type-tuple-hete (unchecked-byte 0xF3))
-;; (def ^:const type-tuple-homo (unchecked-byte 0xF4))
+(def ^:const type-long-neg (unchecked-byte 0xC0))
+(def ^:const type-long-pos (unchecked-byte 0xC1))
+(def ^:const type-bigint   (unchecked-byte 0xF1))
+(def ^:const type-bigdec   (unchecked-byte 0xF2))
+(def ^:const type-tuple    (unchecked-byte 0xF3))
+
 (def ^:const type-float    (unchecked-byte 0xF5))
 (def ^:const type-double   (unchecked-byte 0xF6))
 (def ^:const type-instant  (unchecked-byte 0xF7))
@@ -151,7 +151,7 @@
                                    :db.type/long :db.type/double
                                    :db.type/float :db.type/ref
                                    :db.type/instant :db.type/uuid
-                                   :db.type/bytes})
+                                   :db.type/bytes :db.type/tuple})
 
 ;; search engine
 
