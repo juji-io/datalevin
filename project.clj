@@ -68,8 +68,7 @@
                     :source-paths      ["src" "test"]
                     :java-source-paths ["native/src/java"]
                     :jvm-opts
-                    ["-XX:+IgnoreUnrecognizedVMOptions"
-                     "--add-opens=java.base/java.nio=ALL-UNNAMED"
+                    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
                      "--add-opens=java.base/java.lang=ALL-UNNAMED"
                      "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"]
@@ -87,7 +86,8 @@
                      *unchecked-math*       :warn-on-boxed
                      *warn-on-reflection*   true}}}
   :jar-exclusions [#"graal" #"datalevin.ni"]
-  :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
+  :jvm-opts ["-XX:+IgnoreUnrecognizedVMOptions"
+             "-Dclojure.compiler.direct-linking=true"]
   :uberjar-exclusions [#"pod.huahaiy.datalevin-test"]
   :deploy-repositories [["clojars" {:url           "https://repo.clojars.org"
                                     :username      :env/clojars_username

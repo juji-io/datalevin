@@ -76,15 +76,16 @@
   (sh "git" "push" "origin" "master"))
 
 (defn run-tests []
-  (println "\n\n[ Running tests ]\n")
-  (sh "./lein-test")
+  ;; TODO this will fail as graalvm dropped support for java 8
+  ;; (println "\n\n[ Running tests ]\n")
+  ;; (sh "script/lein-test")
 
   (println "\n\n[ Testing jar ]\n")
-  (sh "./jar")
+  (sh "./jar" :dir "script")
   (sh "test-jar/test.sh")
 
   (println "\n\n[ Testing uberjar ]\n")
-  (sh "./uberjar")
+  (sh "./uberjar" :dir "script")
   (sh "test-jar/test-uber.sh")
 
   (println "\n\n[ Testing native jar ]\n")
@@ -134,7 +135,7 @@
   (update-version)
   (make-commit)
   (github-release)
-  (sh "./deploy")
+  (sh "./deploy" :dir "script")
   (sh "script/deploy" :dir "native")
   (System/exit 0)
   )

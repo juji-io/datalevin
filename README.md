@@ -425,6 +425,12 @@ than just the difference in data durability and running mode:
 * Datoms in a transaction are committed together as a batch, rather than being
   saved by `with-datom` one at a time.
 
+* ACID transaction and rollback are supported.
+
+* Lazy results set and spill to disk are supported.
+
+* Entity and transaction integer ids are 64 bits long, instead of 32 bits.
+
 * Respects `:db/valueType`. Currently, most [Datomic® value
   types](https://docs.datomic.com/on-prem/schema.html#value-types) are
   supported, except uri. Values of the attributes that
