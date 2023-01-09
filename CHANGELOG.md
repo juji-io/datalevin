@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [CI] adjust CI workflow for the latest Graalvm
+
 ## 0.7.9 (2023-01-09)
 ### Improved
 - [Datalog] moved entity and transaction ids from 32 bits to 64 bits integers, supporting much larger DB. #144
