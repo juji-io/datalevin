@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.9 (2023-01-09)
 ### Improved
 - [Datalog] moved entity and transaction ids from 32 bits to 64 bits integers, supporting much larger DB. #144
 - [Datalog] wrapped `transact!` inside `with-transaction` to ensure ACID and improved performance
