@@ -1,4 +1,4 @@
-(def version "0.7.9")
+(def version "0.7.10")
 
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"

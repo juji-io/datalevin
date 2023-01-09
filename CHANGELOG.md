@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.10 (2023-01-09)
 ### Fixed
 - [CI] adjust CI workflow for the latest Graalvm
 
