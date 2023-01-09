@@ -158,19 +158,3 @@
 
 (defmulti open-kv
   (constantly (pick-binding)))
-
-(defmacro with-transaction-kv
-  [binding & body]
-  `(let [db# ~(second binding)]
-     (locking (write-txn db#)
-       (let [writing# (writing? db#)]
-         (try
-           (let [~(first binding) (if writing# db# (open-transact-kv db#))]
-             (try
-               ~@body
-               (catch Exception ~'e
-                 (if (and (:resized (ex-data ~'e)) (not writing#))
-                   (do ~@body)
-                   (throw ~'e)))))
-           (finally
-             (when-not writing# (close-transact-kv db#))))))))

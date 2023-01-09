@@ -407,7 +407,7 @@
     (l/open-dbi lmdb "a")
 
     (testing "new value is invisible to outside readers"
-      (l/with-transaction-kv [db lmdb]
+      (dc/with-transaction-kv [db lmdb]
         (is (nil? (l/get-value db "a" 1 :data :data false)))
         (l/transact-kv db [[:put "a" 1 2]
                            [:put "a" :counter 0]])
@@ -416,7 +416,7 @@
       (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false))))
 
     (testing "abort"
-      (l/with-transaction-kv [db lmdb]
+      (dc/with-transaction-kv [db lmdb]
         (l/transact-kv db [[:put "a" 1 3]])
         (is (= [1 3] (l/get-value db "a" 1 :data :data false)))
         (l/abort-transact-kv db))
@@ -424,7 +424,7 @@
 
     (testing "concurrent writes do not overwrite each other"
       (let [count-f
-            #(l/with-transaction-kv [db lmdb]
+            #(dc/with-transaction-kv [db lmdb]
                (let [^long now (l/get-value db "a" :counter)]
                  (l/transact-kv db [[:put "a" :counter (inc now)]])
                  (l/get-value db "a" :counter)))]
@@ -433,9 +433,9 @@
 
     (testing "nested concurrent writes"
       (let [count-f
-            #(l/with-transaction-kv [db lmdb]
+            #(dc/with-transaction-kv [db lmdb]
                (let [^long now (l/get-value db "a" :counter)]
-                 (l/with-transaction-kv [db' db]
+                 (dc/with-transaction-kv [db' db]
                    (l/transact-kv db' [[:put "a" :counter (inc now)]]))
                  (l/get-value db "a" :counter)))]
         (is (= (set [4 5 6])

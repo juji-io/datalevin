@@ -1275,39 +1275,6 @@
                           :tx-meta   nil})]
     (transact-tx-data initial-report tx-data true)))
 
-(defmacro with-transaction
-  [binding & body]
-  `(let [conn# ~(second binding)
-         s#    (.-store ^DB (deref conn#))]
-     (if (instance? DatalogStore s#)
-       (let [res# (if (l/writing? s#)
-                    (let [~(first binding) conn#]
-                      ~@body)
-                    (let [s1# (r/open-transact s#)
-                          w#  #(let [~(first binding)
-                                     (atom (new-db s1#) :meta (meta conn#))]
-                                 ~@body) ]
-                      (try
-                        (w#)
-                        (catch Exception ~'e
-                          (if (:resized (ex-data ~'e))
-                            (w#)
-                            (throw ~'e)))
-                        (finally (r/close-transact s#)))))]
-         (reset! conn# (new-db s#))
-         res#)
-       (let [kv#   (.-lmdb ^Store s#)
-             s1#   (volatile! nil)
-             res1# (l/with-transaction-kv [kv1# kv#]
-                     (let [conn1# (atom (new-db (s/transfer s# kv1#))
-                                        :meta (meta conn#))
-                           res#   (let [~(first binding) conn1#]
-                                    ~@body)]
-                       (vreset! s1# (.-store ^DB (deref conn1#)))
-                       res#))]
-         (reset! conn# (new-db (s/transfer (deref s1#) kv#)))
-         res1#))))
-
 (defn abort-transact
   [conn]
   (let [s (.-store ^DB (deref conn))]

@@ -286,46 +286,81 @@ Only usable for debug output.
        :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
 
-(def ^{:macro    true
-       :arglists '([binding & body])
-       :doc      "Evaluate body within the context of a single new read/write transaction,
+(defmacro with-transaction-kv
+  "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of key-value operations.
 
-  `binding` is a vector of a new identifier of the kv database with
-  a new read/write transaction attached, and the identifier of the original
-  kv database.
+  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
 
-  `body` should refer to the new identifier of the kv database.
+  `body` should refer to `db`.
 
   Example:
 
-          (with-transaction-kv [db lmdb]
-            (let [^long now (get-value db \"a\" :counter)]
-              (transact-kv db [[:put \"a\" :counter (inc now)]])
-              (get-value db \"a\" :counter)))"}
-  with-transaction-kv #'datalevin.lmdb/with-transaction-kv)
+          (with-transaction-kv [kv lmdb]
+            (let [^long now (get-value kv \"a\" :counter)]
+              (transact-kv kv [[:put \"a\" :counter (inc now)]])
+              (get-value kv \"a\" :counter)))"
+  [[db orig-db] & body]
+  `(locking (l/write-txn ~orig-db)
+     (let [writing# (l/writing? ~orig-db)]
+       (try
+         (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
+           (try
+             ~@body
+             (catch Exception ~'e
+               (if (and (:resized (ex-data ~'e)) (not writing#))
+                 (do ~@body)
+                 (throw ~'e)))))
+         (finally
+           (when-not writing# (l/close-transact-kv ~orig-db)))))))
 
-(def ^{:macro    true
-       :arglists '([binding & body])
-       :doc      "Evaluate body within the context of a single new read/write transaction,
+(defmacro with-transaction
+  "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
 
-  `binding` is a vector of a new identifier of the Datalog database
-  connection with a new read/write transaction attached, and the identifier
-  of the original database connection.
+  `conn` is a new identifier of the Datalog database connection with a new read/write transaction attached, and `orig-conn` is the original database connection.
 
-  `body` should refer to the new identifier of the database connection.
+  `body` should refer to `conn`.
 
   Example:
 
-          (with-transaction [conn orig-conn]
+          (with-transaction [cn conn]
             (let [query  '[:find ?c .
                            :in $ ?e
                            :where [?e :counter ?c]]
-                  ^long now (q query @conn 1)]
-              (transact! conn [{:db/id 1 :counter (inc now)}])
-              (q query @conn 1))) "}
-  with-transaction #'datalevin.db/with-transaction)
+                  ^long now (q query @cn 1)]
+              (transact! cn [{:db/id 1 :counter (inc now)}])
+              (q query @cn 1))) "
+  [[conn orig-conn] & body]
+  `(let [s# (.-store ^DB (deref ~orig-conn))]
+     (if (instance? DatalogStore s#)
+       (let [res# (if (l/writing? s#)
+                    (let [~conn ~orig-conn]
+                      ~@body)
+                    (let [s1# (r/open-transact s#)
+                          w#  #(let [~conn (atom (db/new-db s1#)
+                                                 :meta (meta ~orig-conn))]
+                                 ~@body) ]
+                      (try
+                        (w#)
+                        (catch Exception ~'e
+                          (if (:resized (ex-data ~'e))
+                            (w#)
+                            (throw ~'e)))
+                        (finally (r/close-transact s#)))))]
+         (reset! ~orig-conn (db/new-db s#))
+         res#)
+       (let [kv#   (.-lmdb ^Store s#)
+             s1#   (volatile! nil)
+             res1# (with-transaction-kv [kv1# kv#]
+                     (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
+                                        :meta (meta ~orig-conn))
+                           res#   (let [~conn conn1#]
+                                    ~@body)]
+                       (vreset! s1# (.-store ^DB (deref conn1#)))
+                       res#))]
+         (reset! ~orig-conn (db/new-db (s/transfer (deref s1#) kv#)))
+         res1#))))
 
 (def ^{:arglists '([conn])
        :doc      "Rollback writes of the transaction from inside [[with-transaction]]."}
