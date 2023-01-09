@@ -20,11 +20,12 @@ Datalevin is a simple durable [Datalog](https://en.wikipedia.org/wiki/Datalog)
 database. Here's what a Datalog query looks like:
 
 ```Clojure
-(d/q '[:find  ?company ?total
+(d/q '[:find  ?name ?total
        :in    $ ?year
-       :where [?e :sales/year ?year]
-              [?e :sales/total ?total]
-              [?e :sales/company ?company]]
+       :where [?s :sales/year ?year]
+              [?s :sales/total ?total]
+              [?s :sales/customer ?c]
+              [?c :customers/name ?name]]
       (d/db conn) 2023)
 ```
 
