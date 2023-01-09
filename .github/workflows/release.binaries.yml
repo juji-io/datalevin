@@ -19,6 +19,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Get Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
       - name: Install Lein
         uses: knicknic/os-specific-run@v1.0.3
         with:

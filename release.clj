@@ -76,9 +76,8 @@
   (sh "git" "push" "origin" "master"))
 
 (defn run-tests []
-  ;; TODO this will fail as graalvm dropped support for java 8
-  ;; (println "\n\n[ Running tests ]\n")
-  ;; (sh "script/lein-test")
+  (println "\n\n[ Running tests ]\n")
+  (sh "./lein-test" :dir "script")
 
   (println "\n\n[ Testing jar ]\n")
   (sh "./jar" :dir "script")
