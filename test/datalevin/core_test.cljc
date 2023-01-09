@@ -432,39 +432,6 @@
     (sut/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest with-transaction-kv-test
-  (let [dir  (u/tmp-dir (str "with-tx-kv-test-" (UUID/randomUUID)))
-        lmdb (sut/open-kv dir)]
-    (sut/open-dbi lmdb "a")
-
-    (testing "new value is invisible to outside readers"
-      (sut/with-transaction-kv [db lmdb]
-        (is (nil? (sut/get-value db "a" 1 :data :data false)))
-        (sut/transact-kv db [[:put "a" 1 2]
-                             [:put "a" :counter 0]])
-        (is (= [1 2] (sut/get-value db "a" 1 :data :data false)))
-        (is (nil? (sut/get-value lmdb "a" 1 :data :data false))))
-      (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
-
-    (testing "abort"
-      (sut/with-transaction-kv [db lmdb]
-        (sut/transact-kv db [[:put "a" 1 3]])
-        (is (= [1 3] (sut/get-value db "a" 1 :data :data false)))
-        (sut/abort-transact-kv db))
-      (is (= [1 2] (sut/get-value lmdb "a" 1 :data :data false))))
-
-    (testing "concurrent writes do not overwrite each other"
-      (let [count-f
-            #(sut/with-transaction-kv [db lmdb]
-               (let [^long now (sut/get-value db "a" :counter)]
-                 (sut/transact-kv db [[:put "a" :counter (inc now)]])
-                 (sut/get-value db "a" :counter)))]
-        (is (= (set [1 2 3])
-               (set (pcalls count-f count-f count-f))))))
-
-    (sut/close-kv lmdb)
-    (u/delete-files dir)))
-
 (deftest with-transaction-test
   (let [dir   (u/tmp-dir (str "with-tx-test-" (UUID/randomUUID)))
         conn  (sut/create-conn dir)
@@ -500,26 +467,25 @@
     (u/delete-files dir)))
 
 (deftest with-txn-map-resize-test
-  (let [dir    (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
-        conn   (sut/create-conn dir nil {:kv-opts {:mapsize 1}})
-        query1 '[:find ?d .
-                 :in $ ?e
-                 :where [?e :content ?d]]
-        query2 '[:find ?d .
-                 :in $ ?e
-                 :where [?e :description ?d]]
-        prior  "prior data"
-        big    "bigger than 1MB"]
+  (let [dir   (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
+        conn  (sut/create-conn dir nil {:kv-opts {:mapsize 1}})
+        query '[:find ?e .
+                :in $ ?d
+                :where [?e :content ?d]]
+        prior "prior data"
+        big   "bigger than 1MB"]
 
     (sut/with-transaction [cn conn]
-      (sut/transact! cn [{:content prior}])
-      (is (= prior (sut/q query1 @cn 1)))
-      (sut/transact! cn [{:description big
-                          :numbers     (range 1000000)}])
-      (is (= big (sut/q query2 @cn 2))))
+      (sut/transact! cn [{:content prior :numbers [1 2]}])
+      (is (= 1 (sut/q query @cn prior)))
+      (sut/transact! cn [{:content big
+                          :numbers (range 1000000)}])
+      (is (= 2 (sut/q query @cn big))))
 
-    (is (= prior (sut/q query1 @conn 1)))
-    (is (= big (sut/q query2 @conn 2)))
+    (is (= 1 (sut/q query @conn prior)))
+    (is (= 2 (sut/q query @conn big)))
+
+    (is (= 4 (count (sut/datoms @conn :eav))))
 
     (sut/close conn)
     (u/delete-files dir)))

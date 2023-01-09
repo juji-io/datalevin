@@ -4,6 +4,7 @@
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.datom :as dd]
+   [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
    [datalevin.util :as u]
    [datalevin.constants :as c :refer [tx0]])

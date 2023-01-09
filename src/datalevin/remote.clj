@@ -233,14 +233,18 @@
 (deftype KVStore [^String uri
                   ^String db-name
                   ^Client client
+                  write-txn
                   writing?]
   IWriting
   (writing? [_] writing?)
 
   (mark-write [_]
-    (->KVStore uri db-name client true))
+    (->KVStore uri db-name client (volatile! :mutex) true))
 
   ILMDB
+
+  (write-txn [_] write-txn)
+
   (close-kv [_]
     (when-not (cl/disconnected? client)
       (cl/normal-request client :close-kv [db-name])))
@@ -422,7 +426,7 @@
                       "store=" c/db-store-kv)]
      (if-let [db-name (cl/parse-db uri)]
        (do (cl/open-database client db-name c/db-store-kv opts)
-           (->KVStore uri-str db-name client false))
+           (->KVStore uri-str db-name client (volatile! :mutex) false))
        (u/raise "URI should contain a database name" {})))))
 
 ;; remote search

@@ -282,6 +282,55 @@ Only usable for debug output.
 
 ;; Changing DB
 
+(def ^{:arglists '([db])
+       :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
+  abort-transact-kv l/abort-transact-kv)
+
+(def ^{:macro    true
+       :arglists '([binding & body])
+       :doc      "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of key-value operations.
+
+  `binding` is a vector of a new identifier of the kv database with
+  a new read/write transaction attached, and the identifier of the original
+  kv database.
+
+  `body` should refer to the new identifier of the kv database.
+
+  Example:
+
+          (with-transaction-kv [db lmdb]
+            (let [^long now (get-value db \"a\" :counter)]
+              (transact-kv db [[:put \"a\" :counter (inc now)]])
+              (get-value db \"a\" :counter)))"}
+  with-transaction-kv #'datalevin.lmdb/with-transaction-kv)
+
+(def ^{:macro    true
+       :arglists '([binding & body])
+       :doc      "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of Datalog database operations.
+
+  `binding` is a vector of a new identifier of the Datalog database
+  connection with a new read/write transaction attached, and the identifier
+  of the original database connection.
+
+  `body` should refer to the new identifier of the database connection.
+
+  Example:
+
+          (with-transaction [conn orig-conn]
+            (let [query  '[:find ?c .
+                           :in $ ?e
+                           :where [?e :counter ?c]]
+                  ^long now (q query @conn 1)]
+              (transact! conn [{:db/id 1 :counter (inc now)}])
+              (q query @conn 1))) "}
+  with-transaction #'datalevin.db/with-transaction)
+
+(def ^{:arglists '([conn])
+       :doc      "Rollback writes of the transaction from inside [[with-transaction]]."}
+  abort-transact db/abort-transact)
+
 (defn ^:no-doc with
   "Same as [[transact!]]. Returns transaction report (see [[transact!]])."
   ([db tx-data] (with db tx-data {} false))
@@ -291,18 +340,16 @@ Only usable for debug output.
    (db/transact-tx-data (db/->TxReport db db [] {} tx-meta)
                         tx-data simulated?)))
 
-(defn tx-data->simulated-report
-  "Returns a transaction report without side-effects. Useful for obtaining
-  the would-be db state and the would-be set of datoms."
-  [db tx-data]
-  (db/tx-data->simulated-report db tx-data))
+(def ^{:arglists '([db tx-data])
+       :doc      "Returns a transaction report without side-effects. Useful for obtaining
+  the would-be db state and the would-be set of datoms."}
+  tx-data->simulated-report db/tx-data->simulated-report)
 
 (defn ^:no-doc db-with
   "Applies transaction. Return the Datalog db."
   [db tx-data]
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
-
 
 ;; Index lookups
 
@@ -544,13 +591,9 @@ Only usable for debug output.
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
   {:pre [(conn? conn)]}
-  (let [report (atom nil)]
-    (locking conn
-      (swap! conn (fn [db]
-                    (let [r (with db tx-data tx-meta)]
-                      (reset! report r)
-                      (:db-after r)))))
-    @report))
+  (let [report (with-transaction [c conn]
+                 (with @c tx-data tx-meta))]
+    (assoc report :db-after @conn)))
 
 (defn transact!
   "Applies transaction to the underlying Datalog database of a connection.
@@ -1035,91 +1078,6 @@ Only usable for debug output.
        :doc      "Get the number of data entries in a DBI (i.e. sub-db) of the key-value store"}
   entries l/entries)
 
-(def ^{:arglists '([db])
-       :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
-  abort-transact-kv l/abort-transact-kv)
-
-(defmacro with-transaction-kv
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of key-value operations.
-
-  `binding` is a vector of a new identifier of the kv database with
-  a new read/write transaction attached, and the identifier of the original
-  kv database.
-
-  `body` should refer to the new identifier of the kv database.
-
-  Example:
-
-          (with-transaction-kv [db lmdb]
-            (let [^long now (get-value db \"a\" :counter)]
-              (transact-kv db [[:put \"a\" :counter (inc now)]])
-              (get-value db \"a\" :counter)))
-  "
-  [binding & body]
-  `(let [db# ~(second binding)]
-     (locking db#
-       (try
-         (let [~(first binding) (l/open-transact-kv db#)]
-           (try
-             ~@body
-             (catch Exception ~'e
-               (if (:resized (ex-data ~'e))
-                 (do ~@body)
-                 (throw ~'e)))))
-         (finally (l/close-transact-kv db#))))))
-
-(defmacro with-transaction
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of Datalog database operations.
-
-  `binding` is a vector of a new identifier of the Datalog database
-  connection with a new read/write transaction attached, and the identifier
-  of the original database connection.
-
-  `body` should refer to the new identifier of the database connection.
-
-  Example:
-
-          (with-transaction [conn orig-conn]
-            (let [query  '[:find ?c .
-                           :in $ ?e
-                           :where [?e :counter ?c]]
-                  ^long now (q query @conn 1)]
-              (transact! conn [{:db/id 1 :counter (inc now)}])
-              (q query @conn 1)))
-  "
-  [binding & body]
-  `(let [conn# ~(second binding)
-         s#    (.-store ^DB (deref conn#))]
-     (if (instance? DatalogStore s#)
-       (let [s1# (r/open-transact s#)]
-         (try
-           (let [db#              (db/new-db s1#)
-                 ~(first binding) (atom db# :meta (meta conn#))]
-             ~@body)
-           (catch Exception ~'e
-             (if (:resized (ex-data ~'e))
-               (let [db#              (db/new-db s1#)
-                     ~(first binding) (atom db# :meta (meta conn#))]
-                 ~@body)
-               (throw ~'e)))
-           (finally (r/close-transact s#))))
-       (let [kv# (.-lmdb ^Store s#)]
-         (with-transaction-kv [kv1# kv#]
-           (let [db#  (db/new-db (s/transfer s# kv1#))
-                 res# (let [~(first binding) (atom db# :meta (meta conn#))]
-                        ~@body)]
-             (reset! conn# (db/new-db (s/transfer (.-store ^DB db#) kv#)))
-             res#))))))
-
-(defn abort-transact
-  "Rollback writes of the transaction from inside [[with-transaction]]."
-  [conn]
-  (let [s (.-store ^DB (deref conn))]
-    (if (instance? DatalogStore s)
-      (r/abort-transact s)
-      (abort-transact-kv (.-lmdb ^Store s)))))
 
 (def ^{:arglists '([db txs])
        :doc      "Update DB, insert or delete key value pairs in the key-value store.

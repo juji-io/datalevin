@@ -228,7 +228,8 @@
     return true for (pred x), where x is the datom")
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given range (inclusive)
-    that return true for (pred x), where x is the datom"))
+    that return true for (pred x), where x is the datom")
+  )
 
 (declare insert-data delete-data check)
 
@@ -243,44 +244,31 @@
                 ^:volatile-mutable max-tx]
   IStore
 
-  (opts [_]
-    opts)
+  (opts [_] opts)
 
-  (db-name [_]
-    (:db-name opts))
+  (db-name [_] (:db-name opts))
 
-  (dir [_]
-    (lmdb/dir lmdb))
+  (dir [_] (lmdb/dir lmdb))
 
-  (close [_]
-    (lmdb/close-kv lmdb))
+  (close [_] (lmdb/close-kv lmdb))
 
-  (closed? [_]
-    (lmdb/closed-kv? lmdb))
+  (closed? [_] (lmdb/closed-kv? lmdb))
 
-  (last-modified [_]
-    (lmdb/get-value lmdb c/meta :last-modified :attr :long))
+  (last-modified [_] (lmdb/get-value lmdb c/meta :last-modified :attr :long))
 
-  (max-gt [_]
-    max-gt)
+  (max-gt [_] max-gt)
 
-  (advance-max-gt [_]
-    (set! max-gt (inc ^long max-gt)))
+  (advance-max-gt [_] (set! max-gt (inc ^long max-gt)))
 
-  (max-tx [_]
-    max-tx)
+  (max-tx [_] max-tx)
 
-  (advance-max-tx [_]
-    (set! max-tx (inc ^long max-tx)))
+  (advance-max-tx [_] (set! max-tx (inc ^long max-tx)))
 
-  (max-aid [_]
-    max-aid)
+  (max-aid [_] max-aid)
 
-  (schema [_]
-    schema)
+  (schema [_] schema)
 
-  (rschema [_]
-    rschema)
+  (rschema [_] rschema)
 
   (set-schema [this new-schema]
     (doseq [[attr new] new-schema
@@ -293,8 +281,7 @@
     (set! max-aid (init-max-aid schema))
     schema)
 
-  (attrs [_]
-    attrs)
+  (attrs [_] attrs)
 
   (init-max-eid [_]
     (or (when-let [[k v] (lmdb/get-first lmdb c/eav [:all-back] :eav :id)]
@@ -350,7 +337,7 @@
     (lmdb/entries lmdb (if (string? index) index (index->dbi index))))
 
   (load-datoms [this datoms]
-    (locking this
+    (locking (lmdb/write-txn lmdb)
       (let [ft-ds  (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
             add-fn (fn [holder datom]
                      (let [conj-fn (fn [h d] (conj! h d))]
@@ -652,13 +639,12 @@
   "transfer state of an existing store to a new store that has a different
   LMDB instance"
   [^Store old lmdb]
-  (locking old
-    (->Store lmdb
-             (s/transfer (.-search-engine old) lmdb)
-             (.-opts old)
-             (schema old)
-             (rschema old)
-             (attrs old)
-             (max-aid old)
-             (max-gt old)
-             (max-tx old))))
+  (->Store lmdb
+           (s/transfer (.-search-engine old) lmdb)
+           (.-opts old)
+           (schema old)
+           (rschema old)
+           (attrs old)
+           (max-aid old)
+           (max-gt old)
+           (max-tx old)))

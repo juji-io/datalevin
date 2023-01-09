@@ -62,25 +62,26 @@
   (let [schema {:country/short {:db/valueType :db.type/string
                                 :db/unique    :db.unique/identity}
                 :country/long  {:db/valueType :db.type/string}}
-        conn   (d/create-conn "dtlv://datalevin:datalevin@localhost:8898/dl-test"
+        conn-r (d/create-conn "dtlv://datalevin:datalevin@localhost:8898/dl-test"
                               schema)
         dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        conn1  (d/create-conn dir schema)]
+        conn-l (d/create-conn dir schema)]
 
-    (is (= (:max-eid @conn) (:max-eid @conn1) c/e0))
-    (d/transact! conn [{:country/short "RU" :country/long "Russia"}
-                       {:country/short "FR" :country/long "France"}
-                       {:country/short "DE" :country/long "Germany"}])
-    (d/transact! conn1 [{:country/short "RU" :country/long "Russia"}
-                        {:country/short "FR" :country/long "France"}
-                        {:country/short "DE" :country/long "Germany"}])
-    (is (= (:max-eid @conn) (:max-eid @conn1) 3))
+    (is (= (:max-eid @conn-r) (:max-eid @conn-l) c/e0))
+    (d/transact! conn-r [{:country/short "RU" :country/long "Russia"}
+                         {:country/short "FR" :country/long "France"}
+                         {:country/short "DE" :country/long "Germany"}])
+    (d/transact! conn-l [{:country/short "RU" :country/long "Russia"}
+                         {:country/short "FR" :country/long "France"}
+                         {:country/short "DE" :country/long "Germany"}])
+    (is (= (:max-eid @conn-r) (:max-eid @conn-l) 3))
 
-    (d/transact! conn [{:country/short "AZ" :country/long "Azerbaijan"}])
-    (d/transact! conn1 [{:country/short "AZ" :country/long "Azerbaijan"}])
-    (is (= (:max-eid @conn) (:max-eid @conn1) 4))
-    (is (= 4 (d/q '[:find (count ?e) . :in $ :where [?e]] (d/db conn))))
+    (d/transact! conn-r [{:country/short "AZ" :country/long "Azerbaijan"}])
+    (d/transact! conn-l [{:country/short "AZ" :country/long "Azerbaijan"}])
+    (is (= (:max-eid @conn-r) (:max-eid @conn-l) 4))
+    (is (= 4 (d/q '[:find (count ?e) . :in $ :where [?e]] (d/db conn-r))))
+    (is (= 4 (d/q '[:find (count ?e) . :in $ :where [?e]] (d/db conn-l))))
 
-    (d/close conn)
-    (d/close conn1)
+    (d/close conn-r)
+    (d/close conn-l)
     (u/delete-files dir)))

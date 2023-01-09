@@ -429,14 +429,13 @@
 
   (open-transact-kv [this]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (locking env
-      (try
-        (reset-write-txn this)
-        (.mark-write this)
-        (catch Exception e
-          ;; (st/print-stack-trace e)
-          (raise "Fail to open read/write transaction in LMDB: "
-                 (ex-message e) {})))))
+    (try
+      (reset-write-txn this)
+      (.mark-write this)
+      (catch Exception e
+        ;; (st/print-stack-trace e)
+        (raise "Fail to open read/write transaction in LMDB: "
+               (ex-message e) {}))))
 
   (close-transact-kv [this]
     (try
@@ -477,7 +476,7 @@
           (up-db-size env)
           (if @write-txn
             (do (reset-write-txn this)
-                (raise "DB needs resize" {:resized true}))
+                (raise "DB resized" {:resized true}))
             (.transact-kv this txs)))
         (catch Exception e
           ;; (st/print-stack-trace e)
