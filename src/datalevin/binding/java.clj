@@ -287,6 +287,8 @@
   IWriting
   (writing? [_] writing?)
 
+  (write-txn [_] write-txn)
+
   (mark-write [_]
     (->LMDB
       env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
@@ -457,9 +459,6 @@
       (vreset! (.-aborted? wtxn) true)
       (vreset! write-txn wtxn)
       nil))
-
-  (write-txn [this]
-    write-txn)
 
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")

@@ -45,13 +45,44 @@
                      :unique      :db.unique/identity
                      :cardinality :db.cardinality/one}})]
     (dorun (pmap #(d/transact! conn [{:instance/id %}])
-                 (range 2)))
+                 (range 100)))
+    (is (= 100 (d/q '[:find (max ?e) . :where [?e :instance/id]] @conn)))
     (let [res (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)]
-      (is (or (= #{[2 :instance/id 0] [1 :instance/id 1]} res)
-              (= #{[1 :instance/id 0] [2 :instance/id 1]} res)))
       (is (thrown-with-msg? Exception #"unique constraint"
                             (d/transact! conn [(into [:db/add 3]
                                                      (next (first res)))]))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest test-multi-threads-reads-writes
+  (let [dir     (u/tmp-dir (str "multi-rw-" (random-uuid)))
+        conn    (d/create-conn dir {} {:validate-data?    true
+                                       :auto-entity-time? true})
+        q+      '[:find ?i+j .
+                  :in $ ?i ?j
+                  :where [?e :i+j ?i+j] [?e :i ?i] [?e :j ?j]]
+        q*      '[:find ?i*j .
+                  :in $ ?i ?j
+                  :where [?e :i*j ?i*j] [?e :i ?i] [?e :j ?j]]
+        trials  (atom 0)
+        res     (repeat 5 (atom nil))
+        futures (mapv (fn [^long i]
+                        (future
+                          (dotimes [j 100]
+                            (d/transact! conn [{:i+j (+ i j) :i i :j j}])
+                            (is (= (+ i j) (d/q q+ (d/db conn) i j)))
+                            (d/with-transaction [cn conn]
+                              (swap! trials u/long-inc)
+                              (d/transact! cn [{:i*j (* i j) :i i :j j}])
+                              (is (= (* i j) (d/q q* (d/db cn) i j)))))))
+                      (range 5))]
+    (doseq [f futures] @f)
+    (is (= 500 @trials))
+    (is (= 5000 (count (d/datoms @conn :eav))))
+    (dorun (for [i (range 5) j (range 100)]
+             (is (= (+ ^long i ^long j) (d/q q+ (d/db conn) i j)))))
+    (dorun (for [i (range 5) j (range 100)]
+             (is (= (* ^long i ^long j) (d/q q* (d/db conn) i j)))))
     (d/close conn)
     (u/delete-files dir)))
 

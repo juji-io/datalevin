@@ -404,21 +404,23 @@
 (declare reset-write-txn ->LMDB)
 
 (deftype LMDB [^Env env
-          ^String dir
-          temp?
-          opts
-          ^ConcurrentLinkedQueue pool
-          ^ConcurrentHashMap dbis
-          ^:volatile-mutable closed?
-          ^BufVal kp-w
-          ^BufVal vp-w
-          ^BufVal start-kp-w
-          ^BufVal stop-kp-w
-          write-txn
-          writing?]
+               ^String dir
+               temp?
+               opts
+               ^ConcurrentLinkedQueue pool
+               ^ConcurrentHashMap dbis
+               ^:volatile-mutable closed?
+               ^BufVal kp-w
+               ^BufVal vp-w
+               ^BufVal start-kp-w
+               ^BufVal stop-kp-w
+               write-txn
+               writing?]
 
   IWriting
   (writing? [_] writing?)
+
+  (write-txn [_] write-txn)
 
   (mark-write [_]
     (->LMDB
@@ -626,9 +628,6 @@
       (vreset! (.-aborted? wtxn) true)
       (vreset! write-txn wtxn)
       nil))
-
-  (write-txn [this]
-    write-txn)
 
   (transact-kv [this txs]
     (assert (not closed?) "LMDB env is closed.")

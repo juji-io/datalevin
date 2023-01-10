@@ -92,7 +92,6 @@
   (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
   (close-transact-kv [db] "close and commit the read/write rtx")
   (abort-transact-kv [db] "abort the explicit read/write rtx")
-  (write-txn [db] "return the write-txn")
   (transact-kv [db txs]
     "Update DB, insert or delete key value pairs.")
   (get-value
@@ -152,6 +151,8 @@
 (defprotocol IWriting
   "Used to mark the db so that it should use the write-txn"
   (writing? [db] "return true if this db should use write-txn")
+  (write-txn [db]
+    "return deref'able object that is the write-txn or a mutex for locking")
   (mark-write [db] "return a new db what uses write-txn"))
 
 (defn- pick-binding [] (if (u/graal?) :graal :java))

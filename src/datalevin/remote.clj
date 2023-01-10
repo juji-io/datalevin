@@ -73,12 +73,16 @@
                        ^String db-name
                        opts
                        ^Client client
+                       write-txn
                        writing?]
   IWriting
   (writing? [_] writing?)
 
+  (write-txn [_] write-txn)
+
   (mark-write [_]
-    (->DatalogStore uri db-name opts client true))
+    (->DatalogStore uri db-name opts client
+                    (volatile! :remote-dl-mutex) true))
 
   IStore
   (opts [_] opts)
@@ -223,7 +227,8 @@
        (let [store (or (get (cl/parse-query uri) "store")
                        c/db-store-datalog)]
          (cl/open-database client db-name store schema opts)
-         (->DatalogStore uri-str db-name opts client false))
+         (->DatalogStore uri-str db-name opts client
+                         (volatile! :remote-dl-mutex) false))
        (u/raise "URI should contain a database name" {})))))
 
 ;; remote kv store
@@ -238,12 +243,12 @@
   IWriting
   (writing? [_] writing?)
 
+  (write-txn [_] write-txn)
+
   (mark-write [_]
-    (->KVStore uri db-name client (volatile! :mutex) true))
+    (->KVStore uri db-name client (volatile! :remote-kv-mutex) true))
 
   ILMDB
-
-  (write-txn [_] write-txn)
 
   (close-kv [_]
     (when-not (cl/disconnected? client)
@@ -426,7 +431,8 @@
                       "store=" c/db-store-kv)]
      (if-let [db-name (cl/parse-db uri)]
        (do (cl/open-database client db-name c/db-store-kv opts)
-           (->KVStore uri-str db-name client (volatile! :mutex) false))
+           (->KVStore uri-str db-name client
+                      (volatile! :remote-kv-mutex) false))
        (u/raise "URI should contain a database name" {})))))
 
 ;; remote search

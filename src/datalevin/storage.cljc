@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.storage
   "Storage layer of Datalog store"
-  (:require [datalevin.lmdb :as lmdb]
+  (:require [datalevin.lmdb :as lmdb :refer [IWriting]]
             [datalevin.util :as u]
             [datalevin.bits :as b]
             [datalevin.search :as s]
@@ -241,7 +241,13 @@
                 ^:volatile-mutable attrs    ; aid -> attr
                 ^:volatile-mutable max-aid
                 ^:volatile-mutable max-gt
-                ^:volatile-mutable max-tx]
+                ^:volatile-mutable max-tx
+                write-txn]
+
+  IWriting
+
+  (write-txn [_] write-txn)
+
   IStore
 
   (opts [_] opts)
@@ -633,18 +639,21 @@
                 (init-attrs schema)
                 (init-max-aid schema)
                 (init-max-gt lmdb)
-                (init-max-tx lmdb))))))
+                (init-max-tx lmdb)
+                (volatile! :storage-mutex))))))
 
 (defn transfer
   "transfer state of an existing store to a new store that has a different
   LMDB instance"
   [^Store old lmdb]
-  (->Store lmdb
-           (s/transfer (.-search-engine old) lmdb)
-           (.-opts old)
-           (schema old)
-           (rschema old)
-           (attrs old)
-           (max-aid old)
-           (max-gt old)
-           (max-tx old)))
+  (locking old
+    (->Store lmdb
+             (s/transfer (.-search-engine old) lmdb)
+             (.-opts old)
+             (schema old)
+             (rschema old)
+             (attrs old)
+             (max-aid old)
+             (max-gt old)
+             (max-tx old)
+             (.-write-txn old))))

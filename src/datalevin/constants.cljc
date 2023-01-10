@@ -42,6 +42,7 @@
 
 ;; lmdb
 
+;; (def default-env-flags [:nordahead :mapasync :writemap])
 (def default-env-flags [:nordahead :mapasync :writemap :notls])
 
 (def default-dbi-flags [:create])

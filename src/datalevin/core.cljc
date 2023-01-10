@@ -332,35 +332,36 @@ Only usable for debug output.
               (transact! cn [{:db/id 1 :counter (inc now)}])
               (q query @cn 1))) "
   [[conn orig-conn] & body]
-  `(let [s# (.-store ^DB (deref ~orig-conn))]
-     (if (instance? DatalogStore s#)
-       (let [res# (if (l/writing? s#)
-                    (let [~conn ~orig-conn]
-                      ~@body)
-                    (let [s1# (r/open-transact s#)
-                          w#  #(let [~conn (atom (db/new-db s1#)
-                                                 :meta (meta ~orig-conn))]
-                                 ~@body) ]
-                      (try
-                        (w#)
-                        (catch Exception ~'e
-                          (if (:resized (ex-data ~'e))
-                            (w#)
-                            (throw ~'e)))
-                        (finally (r/close-transact s#)))))]
-         (reset! ~orig-conn (db/new-db s#))
-         res#)
-       (let [kv#   (.-lmdb ^Store s#)
-             s1#   (volatile! nil)
-             res1# (with-transaction-kv [kv1# kv#]
-                     (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
-                                        :meta (meta ~orig-conn))
-                           res#   (let [~conn conn1#]
-                                    ~@body)]
-                       (vreset! s1# (.-store ^DB (deref conn1#)))
-                       res#))]
-         (reset! ~orig-conn (db/new-db (s/transfer (deref s1#) kv#)))
-         res1#))))
+  `(locking (l/write-txn (.-store ^DB (deref ~orig-conn)))
+     (let [s# (.-store ^DB (deref ~orig-conn))]
+       (if (instance? DatalogStore s#)
+         (let [res# (if (l/writing? s#)
+                      (let [~conn ~orig-conn]
+                        ~@body)
+                      (let [s1# (r/open-transact s#)
+                            w#  #(let [~conn (atom (db/new-db s1#)
+                                                   :meta (meta ~orig-conn))]
+                                   ~@body) ]
+                        (try
+                          (w#)
+                          (catch Exception ~'e
+                            (if (:resized (ex-data ~'e))
+                              (w#)
+                              (throw ~'e)))
+                          (finally (r/close-transact s#)))))]
+           (reset! ~orig-conn (db/new-db s#))
+           res#)
+         (let [kv#   (.-lmdb ^Store s#)
+               s1#   (volatile! nil)
+               res1# (with-transaction-kv [kv1# kv#]
+                       (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
+                                          :meta (meta ~orig-conn))
+                             res#   (let [~conn conn1#]
+                                      ~@body)]
+                         (vreset! s1# (.-store ^DB (deref conn1#)))
+                         res#))]
+           (reset! ~orig-conn (db/new-db (s/transfer (deref s1#) kv#)))
+           res1#)))))
 
 (def ^{:arglists '([conn])
        :doc      "Rollback writes of the transaction from inside [[with-transaction]]."}
@@ -625,8 +626,8 @@ Only usable for debug output.
       (s/closed? ^Store (.-store ^DB @conn))))
 
 (defn ^:no-doc -transact! [conn tx-data tx-meta]
-  {:pre [(conn? conn)]}
   (let [report (with-transaction [c conn]
+                 (assert (conn? c))
                  (with @c tx-data tx-meta))]
     (assoc report :db-after @conn)))
 

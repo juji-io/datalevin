@@ -155,6 +155,7 @@
           vs  (map inc ks)
           txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
       (l/transact-kv lmdb txs)
+      (is (= 100000 (l/entries lmdb "a")))
       (is (= vs (pmap #(l/get-value lmdb "a" % :long :long) ks))))
     (l/close-kv lmdb)
     (u/delete-files dir)))
@@ -167,6 +168,7 @@
           vs  (map inc ks)
           txs (map (fn [k v] [:put "a" k v :long :long]) ks vs)]
       (dorun (pmap #(l/transact-kv lmdb [%]) txs))
+      (is (= 10000 (l/entries lmdb "a")))
       (is (= vs (map #(l/get-value lmdb "a" % :long :long) ks))))
     (l/close-kv lmdb)
     (u/delete-files dir)))
