@@ -274,12 +274,12 @@
 
 (defmethod print-method DB [^DB db, ^java.io.Writer w]
   (binding [*out* w]
-    (let [store (:dtore db)]
+    (let [{:keys [store eavt max-eid max-tx]} db]
       (pr {:db-name       (s/db-name store)
            :last-modified (s/last-modified store)
-           :datom-count   (count :eavt)
-           :max-eid       (:max-eid db)
-           :max-tx        (:max-tx db)}))))
+           :datom-count   (count eavt)
+           :max-eid       max-eid
+           :max-tx        max-tx}))))
 
 (defn db?
   "Check if x is an instance of DB, also refresh its cache if it's stale.
