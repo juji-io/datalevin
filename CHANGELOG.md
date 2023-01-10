@@ -1,9 +1,13 @@
 # Change Log
 
 ## WIP
+### Added
+- [Search] `term-position?` option, indicating whether to record positions of a
+  term in the documents, default is `false`.
 ### Fixed
-- [Search] Significant full text indexing speed increase. #151
-- [Search] Search utils fix. #164
+- [Search] significant full text indexing speed increase. #151
+- [Search] search utils fix. #164
+- [Datalog] db print-method. (thx @den1k)
 
 ## 0.7.11 (2023-01-09)
 ### Fixed
