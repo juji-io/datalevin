@@ -1,12 +1,9 @@
 # Change Log
 
 ## WIP
-
-### Added
-- [KV] added `:tuple` data type that accepts 2-8 scalar values, useful as
-  path keys for indexing documents.
-- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples
-  `:db/tupleType` for values, same as the above. #167
+### Fixed
+- [Search] Significant full text indexing speed increase. #151
+- [Search] Search utils fix. #164
 
 ## 0.7.11 (2023-01-09)
 ### Fixed
