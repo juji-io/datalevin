@@ -646,14 +646,13 @@
   "transfer state of an existing store to a new store that has a different
   LMDB instance"
   [^Store old lmdb]
-  (locking old
-    (->Store lmdb
-             (s/transfer (.-search-engine old) lmdb)
-             (.-opts old)
-             (schema old)
-             (rschema old)
-             (attrs old)
-             (max-aid old)
-             (max-gt old)
-             (max-tx old)
-             (.-write-txn old))))
+  (->Store lmdb
+           (s/transfer (.-search-engine old) lmdb)
+           (.-opts old)
+           (schema old)
+           (rschema old)
+           (attrs old)
+           (max-aid old)
+           (max-gt old)
+           (max-tx old)
+           (.-write-txn old)))
