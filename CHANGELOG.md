@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] intermittent concurrent transaction problems
+
 ## 0.7.10 (2023-01-09)
 ### Fixed
 - [CI] adjust CI workflow for the latest Graalvm
