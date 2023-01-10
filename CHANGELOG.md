@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.11 (2023-01-09)
 ### Fixed
 - [Datalog] intermittent concurrent transaction problems
 
