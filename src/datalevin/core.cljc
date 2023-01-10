@@ -1230,18 +1230,13 @@ Only usable for debug output.
 
 This function is eager and attempts to load all data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]]. See [[range-seq]] for a lazy version of this function.
 
-     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
-     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
-     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. `:all-back`;
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`.
 
-    `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[read-buffer]].
+`k-type` and `v-type` are data types of `k` and `v`, respectively. The allowed data types are described in [[read-buffer]].
 
-     Only the value will be returned if `ignore-key?` is `true`,
-     default is `false`;
+Only the value will be returned if `ignore-key?` is `true`, default is `false`.
 
-     If value is to be ignored, put `:ignore` as `v-type`
+If value is to be ignored, put `:ignore` as `v-type`.
 
 
      Examples:
@@ -1274,20 +1269,17 @@ The returned data structure implements `Seqable` and `IReduceInit`. It represent
 
 Be aware that the returned structure holds an open read transaction. It implements `AutoCloseable`, and `close` should be invoked on it after done with data access, otherwise an open read transaction may blow up the database size and return stale data. It is strongly recommended to use it in `with-open`.
 
-    `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
-    `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
-    `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
-    `-back` suffix to each of the above, e.g. `:all-back`;
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`;
 
-    `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[read-buffer]].
+`k-type` and `v-type` are data types of `k` and `v`, respectively.
 
-     Only the value will be returned if `ignore-key?` is `true`,
-     default is `false`;
+The allowed data types are described in [[read-buffer]].
 
-     If value is to be ignored, put `:ignore` as `v-type`
+Only the value will be returned if `ignore-key?` is `true`, default is `false`;
 
-     See [[get-range]] for usage of the augments.
+If value is to be ignored, put `:ignore` as `v-type`
+
+See [[get-range]] for usage of the augments.
 
      Examples:
 
@@ -1367,20 +1359,17 @@ Be aware that the returned structure holds an open read transaction. It implemen
 
 This function is eager and attempts to load all matching data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
 
-     `pred` can use [[read-buffer]] to read the buffer content.
+`pred` can use [[read-buffer]] to read the buffer content.
 
-      To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
-     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
-     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
-     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. `:all-back`;
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`;
 
-    `k-type` and `v-type` are data types of `k` and `v`, respectively.
-     The allowed data types are described in [[read-buffer]].
+`k-type` and `v-type` are data types of `k` and `v`, respectively. The allowed data types are described in [[read-buffer]].
 
-     Only the value will be returned if `ignore-key?` is `true`;
-     If value is to be ignored, put `:ignore` as `v-type`
+Only the value will be returned if `ignore-key?` is `true`;
+
+If value is to be ignored, put `:ignore` as `v-type`
 
      Examples:
 
@@ -1405,18 +1394,14 @@ key-value store, for only those return true value for `(pred x)`, where `pred` i
 function, and `x`is an `IKV`, with both key and value fields being a `ByteBuffer`.
 Does not process the kv pairs.
 
-     `pred` can use [[read-buffer]] to read the buffer content.
+`pred` can use [[read-buffer]] to read the buffer content.
 
-      To access store on a server, [[interpret.inter-fn]] should be used to define
-the `pred`.
+To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
-    `k-type` indicates data type of `k` and the allowed data types are described
-    in [[read-buffer]].
+`k-type` indicates data type of `k` and the allowed data types are described in [[read-buffer]].
 
-     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
-     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
-     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
-     `-back` suffix to each of the above, e.g. `:all-back`;
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+`:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`;
 
      Examples:
 
@@ -1539,18 +1524,18 @@ engine index. A slow operation."}
        :doc      "Issue a `query` to the search engine. `query` is a string of
 words.
 
-     `opts` map may have these keys:
+`opts` map may have these keys:
 
-      * `:display` can be one of `:refs` (default), `:offsets`.
-        - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
-        - `:offsets` return a lazy sequence of
-          `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
-          ordered by relevance. `term` and `offset` can be used to
-          highlight the matched terms and their locations in the documents.
-      * `:top` is an integer (default 10), the number of results desired.
-      * `:doc-filter` is a boolean function that takes a `doc-ref` and
-         determines whether or not to include the corresponding document in the
-         results (default is `(constantly true)`)"}
+  * `:display` can be one of `:refs` (default), `:offsets`.
+    - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
+    - `:offsets` return a lazy sequence of
+      `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
+      ordered by relevance. `term` and `offset` can be used to
+      highlight the matched terms and their locations in the documents.
+  * `:top` is an integer (default 10), the number of results desired.
+  * `:doc-filter` is a boolean function that takes a `doc-ref` and
+    determines whether or not to include the corresponding document in the
+    results (default is `(constantly true)`)"}
   search sc/search)
 
 (defn search-index-writer
