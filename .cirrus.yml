@@ -13,7 +13,7 @@ task:
   script: |
 
     brew install leiningen
-    lein run
+    # lein run
 
     cd native
     script/install-graalvm
@@ -22,11 +22,15 @@ task:
 
     script/compile
 
-    ./dtlv-test0
+    # ./dtlv-test0
 
     brew install p7zip
 
-    7z a -tzip dtlv-0.7.12-macos-latest-aarch64.zip dtlv
-    # 7z a -tzip dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip dtlv
+    # archive="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
+    archive="dtlv-0.7.12-macos-latest-aarch64.zip"
 
-    script/upload
+    7z a -tzip "$archive" dtlv
+
+    brew install borkdude/brew/babashka
+
+    bb --config ../.build/bb.edn release-artifact "$archive"
