@@ -39,8 +39,9 @@ public final class Directives implements CContext.Directives {
             extractEnv == null ? defaultCLibPath : extractEnv;
 
         final String arch = getProperty("os.arch");
-        final boolean arch64 = "x64".equals(arch) || "amd64".equals(arch)
+        final boolean amd64 = "x64".equals(arch) || "amd64".equals(arch)
             || "x86_64".equals(arch);
+        final boolean aarch64 = "aarch64".equals(arch);
 
         final String os = getProperty("os.name");
         final boolean linux = os.toLowerCase(ENGLISH).startsWith("linux");
@@ -49,19 +50,22 @@ public final class Directives implements CContext.Directives {
 
         final String dtlvLibName, lmdbLibName, myPlatform;
 
-        if (arch64 && linux) {
+        if (amd64 && linux) {
             dtlvLibName = "libdtlv.a";
             lmdbLibName = "liblmdb.a";
             myPlatform = "ubuntu-latest-amd64";
-        } else if (arch64 && osx) {
+        } else if (amd64 && osx) {
             dtlvLibName = "libdtlv.a";
             lmdbLibName = "liblmdb.a";
             myPlatform = "macos-latest-amd64";
-        }
-        else if (arch64 && windows) {
+        } else if (amd64 && windows) {
             dtlvLibName = "dtlv.lib";
             lmdbLibName = "lmdb.lib";
             myPlatform = "windows-amd64";
+        } else if (aarch64 && osx) {
+            dtlvLibName = "libdtlv.a";
+            lmdbLibName = "liblmdb.a";
+            myPlatform = "macos-latest-aarch64";
         } else {
             throw new IllegalStateException("Unsupported platform: "
                                             + os + " on " + arch);

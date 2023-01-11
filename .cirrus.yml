@@ -2,12 +2,12 @@ macos_instance:
   image: ghcr.io/cirruslabs/macos-monterey-base:latest
 
 task:
-  only_if: $CIRRUS_TAG != ''
-  # only_if: "changesInclude('.cirrus.yml', 'src/*')"
+  # only_if: $CIRRUS_TAG != ''
+  only_if: "changesInclude('.cirrus.yml', 'src/*')"
   env:
     LEIN_ROOT: "true"
-    GRAALVM_VERSION: "21.3.0"
-    GRAALVM_HOME: ${HOME}/graalvm-ce-java11-21.3.0/Contents/Home
+    GRAALVM_VERSION: "22.3.0"
+    GRAALVM_HOME: ${HOME}/graalvm-ce-java11-22.3.0/Contents/Home
     DTLV_PLATFORM: macos
     DTLV_ARCH: aarch64
     GITHUB_TOKEN: ENCRYPTED[!41f1e85b6e586455cca18744e840eb478625b1e76bdf38741704b504929b3115f541f73101393835ca625e2e9db295a2!]
@@ -16,24 +16,17 @@ task:
     brew install leiningen
     lein run
 
-    # cd native
-    # script/install-graalvm
+    cd native
+    script/install-graalvm
 
-    # export PATH=$GRAALVM_HOME/bin:$PATH
-    # export JAVA_HOME=$GRAALVM_HOME
-    # java -version
+    export PATH=$GRAALVM_HOME/bin:$PATH
+    export JAVA_HOME=$GRAALVM_HOME
+    java -version
 
-    # script/compile
+    script/compile
 
-    # dtlv-test0
-    # rm dtlv-test0
+    dtlv-test0
 
-    # dtlv-test1
-    # rm dtlv-test1
+    7z a -tzip dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip dtlv
 
-    # dtlv-test2
-    # rm dtlv-test2
-
-    # 7z a -tzip dtlv-${CIRRUS_TAG}-macos-aarch64.zip dtlv
-
-    # script/upload
+    script/upload

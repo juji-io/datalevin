@@ -2,8 +2,8 @@
 
 ## WIP
 ### Fixed
-- [Search] Significant full text indexing speed increase. #151
-- [Search] Search utils fix. #164
+- [Native] allow native compilation on apple silicon
+- [Datalog] db print-method. (thx @den1k)
 
 ## 0.7.11 (2023-01-09)
 ### Fixed

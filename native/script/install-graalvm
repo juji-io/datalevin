@@ -34,4 +34,6 @@ if ! [ -d "graalvm-ce-java11-$GRAALVM_VERSION" ]; then
 	tar xzf "$GRAALVM_FILENAME"
 fi
 
+graalvm-ce-java11-$GRAALM_VERSION/bin/gu install native-image
+
 popd >/dev/null

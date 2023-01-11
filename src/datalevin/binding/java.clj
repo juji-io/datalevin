@@ -736,7 +736,7 @@
 
 ;; TODO remove after LMDBJava supports apple silicon
 (defn apple-silicon-lmdb []
-  (when (u/apple-silicon?)
+  (when (and (u/apple-silicon?) (not (u/graal?)))
     (try
       (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
                                             (UUID/randomUUID)) )
