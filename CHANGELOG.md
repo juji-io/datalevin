@@ -8,8 +8,6 @@
   inside documents, default `false`.
 ### Improved
 - [Search] orders of magnitude indexing speed improvement. #151
-### Fixed
-- [Datalog] db print-method. (thx @den1k)
 
 ## 0.7.11 (2023-01-09)
 ### Fixed
