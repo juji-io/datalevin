@@ -1,8 +1,13 @@
 # Change Log
 
 ## WIP
+### Changed
+- [Search] **breaking** index storage format change. Re-indexing is necessary.
+### Added
+- [Search] `:index-position?` option to indicate whether to index term positions
+  inside documents, default `false`.
 ### Improved
-- [Search] indexing speed improvement.
+- [Search] orders of magnitude indexing speed improvement. #151
 ### Fixed
 - [Datalog] db print-method. (thx @den1k)
 

@@ -5,8 +5,8 @@
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.lmdb :as l :refer [open-kv open-inverted-list IBuffer IRange
-                                 IRtx IDB IKV IInvertedList ILMDB IWriting]]
+   [datalevin.lmdb :as l :refer [open-kv open-list-dbi IBuffer IRange
+                                 IRtx IDB IKV IList ILMDB IWriting]]
    [clojure.stacktrace :as st]
    [clojure.java.io :as io]
    [clojure.string :as s])
@@ -226,6 +226,8 @@
             (.renew cur txn)
             cur))
         (.openCursor db txn)))
+  (close-cursor [_ cur]
+    (.close ^Cursor cur))
   (return-cursor [_ cur]
     (.add curs cur)))
 
@@ -552,18 +554,18 @@
   (visit [this dbi-name visitor k-range k-type]
     (scan/visit this dbi-name visitor k-range k-type))
 
-  (open-inverted-list [this dbi-name {:keys [key-size val-size]
-                                      :or   {key-size c/+max-key-size+
-                                             val-size c/+max-key-size+}}]
+  (open-list-dbi [this dbi-name {:keys [key-size val-size]
+                                 :or   {key-size c/+max-key-size+
+                                        val-size c/+max-key-size+}}]
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
     (.open-dbi this dbi-name {:key-size key-size :val-size val-size
                               :flags    (conj c/default-dbi-flags :dupsort)}))
-  (open-inverted-list [lmdb dbi-name]
-    (.open-inverted-list lmdb dbi-name nil))
+  (open-list-dbi [lmdb dbi-name]
+    (.open-list-dbi lmdb dbi-name nil))
 
-  IInvertedList
+  IList
   (put-list-items [this dbi-name k vs kt vt]
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)]

@@ -29,13 +29,14 @@
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
   (iterate-kv [this rtx range-info] "Return an Iterable given the range")
   (get-cursor [this txn] "Get a reusable read-only cursor")
+  (close-cursor [this cur] "Close cursor")
   (return-cursor [this cur] "Return a read-only cursor after use"))
 
 (defprotocol IKV
   (k [this] "Key of a key value pair")
   (v [this] "Value of a key value pair"))
 
-(defprotocol IInvertedList
+(defprotocol IList
   (put-list-items [db list-name k vs k-type v-type]
     "put an inverted list by key")
   (del-list-items
@@ -63,7 +64,7 @@
     [db dbi-name opts]
     "Open a named DBI (i.e. sub-db) in the LMDB env")
 
-  (open-inverted-list
+  (open-list-dbi
     [db list-name]
     [db list-name opts]
     "Open a named inverted list, a special dbi, that permits a list of

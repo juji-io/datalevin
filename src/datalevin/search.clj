@@ -575,8 +575,8 @@
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
   (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
   (l/open-dbi lmdb docs-dbi {:key-size Integer/BYTES})
-  (l/open-inverted-list lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
-                                            :val-size c/+max-key-size+})
+  (l/open-list-dbi lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
+                                       :val-size c/+max-key-size+})
   (l/open-dbi lmdb term-ids-dbi {:key-size Integer/BYTES
                                  :val-size c/+max-term-length+})
   (l/open-dbi lmdb doc-refs-dbi {:key-size c/+max-key-size+
