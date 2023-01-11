@@ -15,8 +15,8 @@ the steps to build native Datalevin binary on your platform.
 3. Run `script/compile`.
 
 If the compilation is successful, two binaries will appear in this directory:
-`dtlv ` and `dtlv-test`. The former is the Datalevin command line shell, and the
-latter runs all the Datalevin tests in native mode. These are standalone
+`dtlv ` and `dtlv-test0`. The former is the Datalevin command line shell, and the
+latter runs core Datalevin tests in native mode. These are standalone
 executable that you can immediately run.
 
 ### Windows
@@ -51,10 +51,16 @@ libraries will then be put there instead. If so, you must also add
 line. The directory referred to by the environment variable must exist and is
 writable.
 
+For Apple Silicon, you need to add
+```
+export DTLV_COMPILE_NATIVE=true
+```
+to your shell environment, or the compilation will fail.
+
 Once built, Datalevin's native dependencies are linked into your image statically.
 
 For CI/CD, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)
-(for Linux/MacOS) and
+(for Linux/MacOS AMD64),
 [Appveoyor](https://github.com/juji-io/datalevin/blob/master/appveyor.yml) (for
-Windows) yaml files for examples.
+Windows), and [Cirrus CI](https://github.com/juji-io/datalevin/blob/master/.cirrus.yml)(for Apple Silicon) yaml files for examples.

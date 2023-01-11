@@ -736,7 +736,9 @@
 
 ;; TODO remove after LMDBJava supports apple silicon
 (defn apple-silicon-lmdb []
-  (when (and (u/apple-silicon?) (not (u/graal?)))
+  (when (and (u/apple-silicon?)
+             (not (System/getenv "DTLV_COMPILE_NATIVE"))
+             (not (u/graal?)))
     (try
       (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
                                             (UUID/randomUUID)) )
@@ -758,6 +760,6 @@
                  "with size" (Files/size path)))
       (catch Exception e
         ;; (st/print-stack-trace e)
-        (u/raise "Failed to extract LMDB library" (ex-message e) {})))))
+        (u/raise "Failed to extract LMDB library" {})))))
 
 (apple-silicon-lmdb)
