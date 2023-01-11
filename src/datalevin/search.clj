@@ -149,15 +149,13 @@
     (.advanceIfNeeded iter limit)
     this)
 
-  (has-next? [_]
-    (.hasNext iter))
+  (has-next? [_] (.hasNext iter))
 
   (advance [this]
     (set! did (.next iter))
     this)
 
-  (get-did [_]
-    did)
+  (get-did [_] did)
 
   (get-tf [_]
     (.get ^GrowingIntArray (.-items sl)
@@ -307,6 +305,8 @@
   (terms-dbi [this])
   (docs-dbi [this])
   (positions-dbi [this])
+  (term-ids-dbi [this])
+  (doc-refs-dbi [this])
   (max-doc [this])
   (max-term [this])
   (lmdb [this]))
@@ -319,6 +319,8 @@
                                 terms-dbi
                                 docs-dbi
                                 positions-dbi
+                                term-ids-dbi
+                                doc-refs-dbi
                                 ^IntShortHashMap norms ; doc-id -> norm
                                 ^AtomicInteger max-doc
                                 ^AtomicInteger max-term]
@@ -399,60 +401,86 @@
                   (transient [])
                   (range n 0 -1)))))))))
 
-  (analyzer [_]
-    analyzer)
+  (analyzer [_] analyzer)
 
-  (terms-dbi [_]
-    terms-dbi)
+  (terms-dbi [_] terms-dbi)
 
-  (docs-dbi [_]
-    docs-dbi)
+  (docs-dbi [_] docs-dbi)
 
-  (positions-dbi [_]
-    positions-dbi)
+  (positions-dbi [_] positions-dbi)
 
-  (max-doc [_]
-    max-doc)
+  (term-ids-dbi [_] term-ids-dbi)
 
-  (max-term [_]
-    max-term)
+  (doc-refs-dbi [_] doc-refs-dbi)
 
-  (lmdb [_]
-    lmdb))
+  (max-doc [_] max-doc)
+
+  (max-term [_] max-term)
+
+  (lmdb [_] lmdb))
 
 (defn- get-term-info
   [engine term]
   (l/get-value (lmdb engine) (terms-dbi engine) term :string :term-info))
 
-(defn- doc-ref->id
+(defn- doc-id->ref
+  [engine doc-id]
+  (nth (l/get-value (lmdb engine) (docs-dbi engine) doc-id :int :doc-info)
+       1))
+
+;; TODO remove after users have all migrated data
+(defn- old-doc-ref->id
   [engine doc-ref]
   (let [is-ref? (fn [kv]
                   (= doc-ref (nth (b/read-buffer (l/v kv) :doc-info) 1)))]
     (nth (l/get-some (lmdb engine) (docs-dbi engine) is-ref? [:all]
                      :int :doc-info) 0)))
 
-(defn- doc-id->term-ids
-  [engine doc-id]
-  (dedupe
-    (map ffirst
-         (l/range-filter (lmdb engine) (positions-dbi engine)
-                         (fn [kv]
-                           (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
-                             (= did doc-id)))
-                         [:all] :int-int :ignore false))))
+(defn- doc-ref->id
+  [engine doc-ref]
+  (or (l/get-value (lmdb engine) (doc-refs-dbi engine) doc-ref :data :int)
+      (old-doc-ref->id engine doc-ref)))
 
-(defn- term-id->info
+;; TODO remove after users have all migrated data
+(defn- old-term-id->info
   [engine term-id]
   (let [is-id? (fn [kv] (= term-id (b/read-buffer (l/v kv) :int)))]
     (l/get-some (lmdb engine) (terms-dbi engine) is-id? [:all]
                 :string :term-info false)))
 
+(defn- term-id->info
+  [engine term-id]
+  (or (when-let [term (l/get-value (lmdb engine) (term-ids-dbi engine)
+                                   term-id :int :string)]
+        (l/get-value (lmdb engine) (terms-dbi engine) term
+                     :string :term-info false))
+      (old-term-id->info engine term-id)))
+
+;; TODO remove after users have all migrated data
+(defn- doc-id->term-ids
+  [engine doc-id]
+  (eduction
+    (map ffirst)
+    (dedupe)
+    (l/range-filter (lmdb engine) (positions-dbi engine)
+                    (fn [kv]
+                      (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
+                        (= did doc-id)))
+                    [:all] :int-int :ignore false)))
+
+;; (defn- doc-id->term-ids
+;;   [engine doc-id]
+;;   )
+
 (defn- remove-doc*
   [engine ^IntShortHashMap norms doc-id]
-  (let [txs  (FastList.)
-        norm (.get norms doc-id)]
+  (let [txs     (FastList.)
+        norm    (.get norms doc-id)
+        doc-ref (doc-id->ref engine doc-id)]
     (.remove norms doc-id)
-    (.add txs [:del (docs-dbi engine) doc-id :int])
+    (doto txs
+      (.add [:del (docs-dbi engine) doc-id :int])
+      (.add [:del (doc-refs-dbi engine) doc-ref :data]))
     (doseq [term-id (doc-id->term-ids engine doc-id)]
       (let [[term [_ mw sl]] (term-id->info engine term-id)]
         (when-let [tf (sl/get sl doc-id)]
@@ -471,7 +499,9 @@
         new-terms ^HashMap (collect-terms result)
         unique    (.size new-terms)
         doc-id    (.incrementAndGet ^AtomicInteger (max-doc engine))]
-    (.add txs [:put (docs-dbi engine) doc-id [unique doc-ref] :int :doc-info])
+    (doto txs
+      (.add [:put (docs-dbi engine) doc-id [unique doc-ref] :int :doc-info])
+      (.add [:put (doc-refs-dbi engine) doc-ref doc-id :data :int]))
     (when norms (.put norms doc-id unique))
     (doseq [^Map$Entry kv (.entrySet new-terms)]
       (let [term    (.getKey kv)
@@ -485,8 +515,10 @@
                  (sl/sparse-arraylist)])]
         (.put hit-terms term [tid (add-max-weight mw tf unique)
                               (sl/set sl doc-id tf)])
-        (.add txs [:put-list (positions-dbi engine) [tid doc-id] new-lst
-                   :int-int :int-int])))))
+        (doto txs
+          (.add [:put-list (positions-dbi engine) [tid doc-id] new-lst
+                 :int-int :int-int])
+          (.add [:put (term-ids-dbi engine) tid term :int :string]))))))
 
 (defn- hydrate-query
   [engine ^AtomicInteger max-doc tokens]
@@ -556,28 +588,42 @@
   (or (first (l/get-first lmdb positions-dbi [:all-back] :int :ignore)) 0))
 
 (defn- open-dbis
-  [lmdb terms-dbi docs-dbi positions-dbi]
+  [lmdb terms-dbi docs-dbi positions-dbi term-ids-dbi doc-refs-dbi]
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
   (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
   (l/open-dbi lmdb docs-dbi {:key-size Integer/BYTES})
   (l/open-inverted-list lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
-                                            :val-size c/+max-key-size+}))
+                                            :val-size c/+max-key-size+})
+  (l/open-dbi lmdb term-ids-dbi {:key-size Integer/BYTES
+                                 :val-size c/+max-term-length+})
+  (l/open-dbi lmdb doc-refs-dbi {:key-size c/+max-key-size+
+                                 :val-size Integer/BYTES}))
 
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
   ([lmdb {:keys [domain analyzer query-analyzer]
           :or   {analyzer en-analyzer domain "datalevin"}}]
-   (let [terms-dbi     (str domain "/" c/terms)
+   (let [;; term -> term-id,max-weight,doc-freq
+         terms-dbi     (str domain "/" c/terms)
+         ;; doc-id -> norm,doc-ref
          docs-dbi      (str domain "/" c/docs)
-         positions-dbi (str domain "/" c/positions)]
-     (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
+         ;; term-id,doc-id -> position,offset (list)
+         positions-dbi (str domain "/" c/positions)
+         ;; term-id -> term
+         term-ids-dbi  (str domain "/" c/term-ids)
+         ;; doc-ref -> doc-id
+         doc-refs-dbi  (str domain "/" c/doc-refs)]
+     (open-dbis lmdb terms-dbi docs-dbi positions-dbi
+                term-ids-dbi doc-refs-dbi)
      (->SearchEngine lmdb
                      analyzer
                      (or query-analyzer analyzer)
                      terms-dbi
                      docs-dbi
                      positions-dbi
+                     term-ids-dbi
+                     doc-refs-dbi
                      (init-norms lmdb docs-dbi)
                      (AtomicInteger. (init-max-doc lmdb docs-dbi))
                      (AtomicInteger. (init-max-term lmdb positions-dbi))))))
@@ -592,6 +638,8 @@
                   (.-terms-dbi old)
                   (.-docs-dbi old)
                   (.-positions-dbi old)
+                  (.-term-ids-dbi old)
+                  (.-doc-refs-dbi old)
                   (.-norms old)
                   (.-max-doc old)
                   (.-max-term old)))
@@ -605,6 +653,8 @@
                                terms-dbi
                                docs-dbi
                                positions-dbi
+                               term-ids-dbi
+                               doc-refs-dbi
                                ^AtomicInteger max-doc
                                ^AtomicInteger max-term
                                ^FastList txs
@@ -630,26 +680,23 @@
     (.clear txs))
 
   ISearchEngine
-  (analyzer [_]
-    analyzer)
+  (analyzer [_] analyzer)
 
-  (terms-dbi [_]
-    terms-dbi)
+  (terms-dbi [_] terms-dbi)
 
-  (docs-dbi [_]
-    docs-dbi)
+  (docs-dbi [_] docs-dbi)
 
-  (positions-dbi [_]
-    positions-dbi)
+  (positions-dbi [_] positions-dbi)
 
-  (max-doc [_]
-    max-doc)
+  (term-ids-dbi [_] term-ids-dbi)
 
-  (max-term [_]
-    max-term)
+  (doc-refs-dbi [_] doc-refs-dbi)
 
-  (lmdb [_]
-    lmdb))
+  (max-doc [_] max-doc)
+
+  (max-term [_] max-term)
+
+  (lmdb [_] lmdb))
 
 (defn search-index-writer
   ([lmdb]
@@ -658,45 +705,19 @@
           :or   {domain "datalevin" analyzer en-analyzer}}]
    (let [terms-dbi     (str domain "/" c/terms)
          docs-dbi      (str domain "/" c/docs)
-         positions-dbi (str domain "/" c/positions)]
-     (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
+         positions-dbi (str domain "/" c/positions)
+         term-ids-dbi  (str domain "/" c/term-ids)
+         doc-refs-dbi  (str domain "/" c/doc-refs)]
+     (open-dbis lmdb terms-dbi docs-dbi positions-dbi term-ids-dbi
+                doc-refs-dbi)
      (->IndexWriter lmdb
                     analyzer
                     terms-dbi
                     docs-dbi
                     positions-dbi
+                    term-ids-dbi
+                    doc-refs-dbi
                     (AtomicInteger. (init-max-doc lmdb docs-dbi))
                     (AtomicInteger. (init-max-term lmdb positions-dbi))
                     (FastList.)
                     (UnifiedMap.)))))
-
-(comment
-
-  (def lmdb  (l/open-kv "search-bench/data/wiki-datalevin-all"))
-
-  (time (search-index-writer lmdb))
-  (def engine (time (new-search-engine lmdb)))
-  (.size (peek (l/get-value lmdb "datalevin/terms"
-                            "s" :string :term-info))) ; over 3 mil.
-
-  (time (search engine "s"))
-  (time (search engine "french lick resort and casino"))
-  (time (search engine "rv solar panels"))
-  (time (search engine "f1"))
-  (time (search engine "solar system"))
-  (time (search engine "community service projects for children"))
-  (time (search engine "libraries michigan"))
-  (time (search engine "roadrunner email"))
-  (time (search engine "josephine baker"))
-  (time (search engine "tel"))
-  (time (search engine "novi expo center"))
-  (time (search engine "ocean logos"))
-  (time (search engine "can i deduct credit card interest on my taxes"))
-  (time (search engine "what california district am i in"))
-  (time (search engine "jokes about women turning 40"))
-  (time (search engine "free inmigration forms"))
-  (time (search engine "bartender license indiana"))
-
-
-
-  )

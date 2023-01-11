@@ -1162,7 +1162,7 @@ Only usable for debug output.
   `k-type` and `v-type` are data types of `k` and `v`, respectively.
   The allowed data types are described in [[read-buffer]].
 
-  If `ignore-key?` is true (default `true`), only return the value,
+  If `ignore-key?` is `true` (default), only return the value,
   otherwise return `[k v]`, where `v` is the value
 
   Examples:

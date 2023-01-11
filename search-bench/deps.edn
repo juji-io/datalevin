@@ -7,10 +7,10 @@
          com.taoensso/nippy                          {:mvn/version "3.2.0"}
          datalevin/datalevin                         {:local/root ".."}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
-         org.clojure/clojure                         {:mvn/version "1.11.0"}
+         org.clojure/clojure                         {:mvn/version "1.11.1"}
          org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
-         org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.22"}
-         org.eclipse.collections/eclipse-collections {:mvn/version "10.4.0"}
+         org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.38"}
+         org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          org.apache.lucene/lucene-core               {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-analyzers-common   {:mvn/version "8.10.1"}
          org.apache.lucene/lucene-queryparser        {:mvn/version "8.10.1"}
