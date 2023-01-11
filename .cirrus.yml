@@ -19,6 +19,8 @@ task:
     script/install-graalvm
 
     export GRAALVM_HOME=$(pwd)/graalvm-ce-java11-${GRAALVM_VERSION}/Contents/Home
+    export JAVA_HOME=$GRAALVM_HOME
+    export PATH=$GRAALVM_HOME/bin:$PATH
 
     script/compile
 
@@ -27,10 +29,10 @@ task:
     brew install p7zip
 
     # archive="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
-    archive="dtlv-0.7.12-macos-latest-aarch64.zip"
+    export DTLV_ARCHIVE="dtlv-0.7.12-macos-latest-aarch64.zip"
 
-    7z a -tzip "$archive" dtlv
+    7z a -tzip "$DTLV_ARCHIVE" dtlv
 
     brew install borkdude/brew/babashka
 
-    bb --config ../.build/bb.edn release-artifact "$archive"
+    bb --config ../.build/bb.edn --deps-root . release-artifact

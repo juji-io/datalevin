@@ -1,4 +1,12 @@
 {:deps  {borkdude/gh-release-artifact
          {:git/url "https://github.com/borkdude/gh-release-artifact"
           :git/sha "ce060c12a25b552b864dc90f8fb344a2eb91ea9d"}}
- :tasks {release-artifact babashka.release-artifact/release}}
+ :tasks {:requires ([borkdude.gh-release-artifact :as ghr])
+         release-artifact
+         (ghr/release-artifact
+           {:org       "juji-io"
+            :repo      "datalevin"
+            :tag       "0.7.12"
+            :file      (System/getenv "DTLV_ARCHIVE")
+            :overwrite true})
+         }}
