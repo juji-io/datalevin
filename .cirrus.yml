@@ -19,11 +19,6 @@ task:
     cd native
     script/install-graalvm
 
-    export PATH=$GRAALVM_HOME/bin:$PATH
-    export JAVA_HOME=$GRAALVM_HOME
-    echo $JAVA_HOME
-    java -version
-
     script/compile
 
     dtlv-test0
