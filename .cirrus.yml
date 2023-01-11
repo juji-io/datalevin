@@ -3,7 +3,7 @@ macos_instance:
 
 task:
   # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*')"
+  only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
   env:
     LEIN_ROOT: "true"
     GRAALVM_VERSION: "22.3.0"
