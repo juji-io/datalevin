@@ -1,6 +1,5 @@
-{:deps  {borkdude/gh-release-artifact
-         {:git/url "https://github.com/borkdude/gh-release-artifact"
-          :git/sha "ce060c12a25b552b864dc90f8fb344a2eb91ea9d"}}
+{:deps  {io.github.borkdude/gh-release-artifact
+         {:git/sha "05f8d8659e6805d513c59447ff41dc8497878462"}}
  :tasks {:requires ([borkdude.gh-release-artifact :as ghr])
          release-artifact
          (ghr/release-artifact

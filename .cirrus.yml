@@ -35,4 +35,4 @@ task:
 
     brew install borkdude/brew/babashka
 
-    bb --config ../.build/bb.edn --deps-root . release-artifact
+    bb --config ../.build/bb.edn release-artifact
