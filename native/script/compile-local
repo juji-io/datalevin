@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -eou pipefail
+
+app_name=dtlv
+
+test0_name=dtlv-test0
+test1_name=dtlv-test1
+
+if [ -z "$GRAALVM_HOME" ]; then
+    echo "Please set GRAALVM_HOME"
+    exit 1
+fi
+
+export JAVA_HOME=$GRAALVM_HOME
+export PATH=$GRAALVM_HOME/bin:$PATH
+
+export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
+MAIN_JAR="target/main.uberjar.jar"
+
+TEST0_JAR="target/test0.uberjar.jar"
+TEST1_JAR="target/test1.uberjar.jar"
+
+lein clean
+lein with-profile native-uberjar uberjar
+
+"$GRAALVM_HOME/bin/native-image" \
+  --verbose \
+  --features=InitAtBuildTimeFeature \
+  -jar "$MAIN_JAR" ${app_name}
+
+lein clean
+lein with-profile test0-uberjar uberjar
+
+"$GRAALVM_HOME/bin/native-image" \
+     --verbose \
+     --features=InitAtBuildTimeFeature \
+  -jar "$TEST0_JAR" ${test0_name}
+
+lein clean
+lein with-profile test1-uberjar uberjar
+
+"$GRAALVM_HOME/bin/native-image" \
+     --verbose \
+     --features=InitAtBuildTimeFeature \
+  -jar "$TEST1_JAR" ${test1_name}
