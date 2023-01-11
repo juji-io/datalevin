@@ -22,7 +22,7 @@ task:
 
     script/compile
 
-    dtlv-test0
+    ./dtlv-test0
 
     7z a -tzip dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip dtlv
 
