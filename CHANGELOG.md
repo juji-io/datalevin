@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.7.12 (2023-01-11)
 ### Fixed
 - [Native] allow native compilation on apple silicon
 - [Datalog] db print-method. (thx @den1k)
