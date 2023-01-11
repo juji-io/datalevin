@@ -26,6 +26,7 @@ task:
 
     brew install p7zip
 
-    7z a -tzip dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip dtlv
+    7z a -tzip dtlv-0.7.12-macos-latest-aarch64.zip dtlv
+    # 7z a -tzip dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip dtlv
 
     script/upload
