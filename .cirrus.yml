@@ -24,6 +24,8 @@ task:
 
     ./dtlv-test0
 
+    brew install p7zip
+
     7z a -tzip dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip dtlv
 
     script/upload
