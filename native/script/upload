@@ -20,11 +20,11 @@ files_to_upload=(
 for fpath in $files_to_upload
 do
   echo "Uploading $fpath..."
-  name=$(basename "$fpath")
-  #url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/$CIRRUS_TAG/assets?name=$name"
-  url_to_upload="https://uploads.github.com/repos/juji-io/datalevin/releases/0.7.12/assets?name=$name"
+  #url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/$CIRRUS_TAG/assets?name=$fpath"
+  url_to_upload="https://uploads.github.com/repos/juji-io/datalevin/releases/0.7.12/assets?name=$fpath"
   curl --http1.1 -X POST \
     --data-binary @$fpath \
+    --header "Accept: application/vnd.github+json" \
     --header "Authorization: token $GITHUB_TOKEN" \
     --header "Content-Type: $file_content_type" \
     $url_to_upload
