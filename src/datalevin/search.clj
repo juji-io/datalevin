@@ -358,7 +358,7 @@
   (doc-count [_] (l/entries lmdb docs-dbi))
 
   (doc-refs [_]
-    (map second (l/get-range lmdb docs-dbi [:all] :int :doc-info true)))
+    (map first (l/get-range lmdb doc-refs-dbi [:all] :data :ignore false)))
 
   (search [this query]
     (.search this query {}))
@@ -428,33 +428,16 @@
   (nth (l/get-value (lmdb engine) (docs-dbi engine) doc-id :int :doc-info)
        1))
 
-;; TODO remove after users have all migrated data
-(defn- old-doc-ref->id
-  [engine doc-ref]
-  (let [is-ref? (fn [kv]
-                  (= doc-ref (nth (b/read-buffer (l/v kv) :doc-info) 1)))]
-    (nth (l/get-some (lmdb engine) (docs-dbi engine) is-ref? [:all]
-                     :int :doc-info) 0)))
-
 (defn- doc-ref->id
   [engine doc-ref]
-  (or (l/get-value (lmdb engine) (doc-refs-dbi engine) doc-ref :data :int)
-      (old-doc-ref->id engine doc-ref)))
-
-;; TODO remove after users have all migrated data
-(defn- old-term-id->info
-  [engine term-id]
-  (let [is-id? (fn [kv] (= term-id (b/read-buffer (l/v kv) :int)))]
-    (l/get-some (lmdb engine) (terms-dbi engine) is-id? [:all]
-                :string :term-info false)))
+  (l/get-value (lmdb engine) (doc-refs-dbi engine) doc-ref :data :int))
 
 (defn- term-id->info
   [engine term-id]
-  (or (when-let [term (l/get-value (lmdb engine) (term-ids-dbi engine)
-                                   term-id :int :string)]
-        (l/get-value (lmdb engine) (terms-dbi engine) term
-                     :string :term-info false))
-      (old-term-id->info engine term-id)))
+  (when-let [term (l/get-value (lmdb engine) (term-ids-dbi engine)
+                               term-id :int :string)]
+    (l/get-value (lmdb engine) (terms-dbi engine) term
+                 :string :term-info false)))
 
 ;; TODO remove after users have all migrated data
 (defn- doc-id->term-ids
@@ -464,7 +447,7 @@
     (dedupe)
     (l/range-filter (lmdb engine) (positions-dbi engine)
                     (fn [kv]
-                      (let [[_ did] (b/read-buffer (l/k kv) :int-int)]
+                      (let [did (b/read-buffer (l/k kv) :int)]
                         (= did doc-id)))
                     [:all] :int-int :ignore false)))
 
@@ -489,7 +472,7 @@
                       (del-max-weight sl doc-id mw tf norm)
                       (sl/remove sl doc-id)]
                      :string :term-info])))
-      (.add txs [:del (positions-dbi engine) [term-id doc-id] :int-int]))
+      (.add txs [:del (positions-dbi engine) [doc-id term-id] :int-int]))
     (l/transact-kv (lmdb engine) txs)))
 
 (defn- add-doc-txs
@@ -516,7 +499,7 @@
         (.put hit-terms term [tid (add-max-weight mw tf unique)
                               (sl/set sl doc-id tf)])
         (doto txs
-          (.add [:put-list (positions-dbi engine) [tid doc-id] new-lst
+          (.add [:put-list (positions-dbi engine) [doc-id tid] new-lst
                  :int-int :int-int])
           (.add [:put (term-ids-dbi engine) tid term :int :string]))))))
 
@@ -555,7 +538,7 @@
      (sequence
        (comp (map (fn [tid]
                  (let [lst (l/get-list (lmdb engine) (positions-dbi engine)
-                                       [tid doc-id] :int-int :int-int)]
+                                       [doc-id tid] :int-int :int-int)]
                    (when (seq lst)
                      [(terms tid) (mapv #(nth % 1) lst)]))))
           (remove nil? ))
@@ -584,8 +567,8 @@
   (or (first (l/get-first lmdb docs-dbi [:all-back] :int :ignore)) 0))
 
 (defn- init-max-term
-  [lmdb positions-dbi]
-  (or (first (l/get-first lmdb positions-dbi [:all-back] :int :ignore)) 0))
+  [lmdb term-ids-dbi]
+  (or (first (l/get-first lmdb term-ids-dbi [:all-back] :int :ignore)) 0))
 
 (defn- open-dbis
   [lmdb terms-dbi docs-dbi positions-dbi term-ids-dbi doc-refs-dbi]
@@ -608,7 +591,7 @@
          terms-dbi     (str domain "/" c/terms)
          ;; doc-id -> norm,doc-ref
          docs-dbi      (str domain "/" c/docs)
-         ;; term-id,doc-id -> position,offset (list)
+         ;; doc-id,term-id -> position,offset (list)
          positions-dbi (str domain "/" c/positions)
          ;; term-id -> term
          term-ids-dbi  (str domain "/" c/term-ids)
@@ -626,7 +609,7 @@
                      doc-refs-dbi
                      (init-norms lmdb docs-dbi)
                      (AtomicInteger. (init-max-doc lmdb docs-dbi))
-                     (AtomicInteger. (init-max-term lmdb positions-dbi))))))
+                     (AtomicInteger. (init-max-term lmdb term-ids-dbi))))))
 
 (defn transfer
   "transfer state of an existing engine to an new engine that has a
@@ -718,6 +701,6 @@
                     term-ids-dbi
                     doc-refs-dbi
                     (AtomicInteger. (init-max-doc lmdb docs-dbi))
-                    (AtomicInteger. (init-max-term lmdb positions-dbi))
+                    (AtomicInteger. (init-max-term lmdb term-ids-dbi))
                     (FastList.)
                     (UnifiedMap.)))))
