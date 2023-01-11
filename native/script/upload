@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-if [[ "$CIRRUS_TAG" == "" ]]; then
-  echo "Not a release. No need to deploy!"
-  exit 0
-fi
+#if [[ "$CIRRUS_TAG" == "" ]]; then
+  #echo "Not a release. No need to deploy!"
+  #exit 0
+#fi
 
 if [[ "$GITHUB_TOKEN" == "" ]]; then
   echo "Please provide GitHub access token via GITHUB_TOKEN environment variable!"
@@ -13,14 +13,16 @@ fi
 file_content_type="application/octet-stream"
 files_to_upload=(
   # relative paths of assets to upload
-  dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip
+  #dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip
+  dtlv-0.7.12-macos-latest-aarch64.zip
 )
 
 for fpath in $files_to_upload
 do
   echo "Uploading $fpath..."
   name=$(basename "$fpath")
-  url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/$CIRRUS_TAG/assets?name=$name"
+  #url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/$CIRRUS_TAG/assets?name=$name"
+  url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/0.7.12/assets?name=$name"
   curl -X POST \
     --data-binary @$fpath \
     --header "Authorization: token $GITHUB_TOKEN" \
