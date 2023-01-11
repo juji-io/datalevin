@@ -23,9 +23,11 @@ do
   name=$(basename "$fpath")
   #url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/$CIRRUS_TAG/assets?name=$name"
   url_to_upload="https://uploads.github.com/repos/$CIRRUS_REPO_FULL_NAME/releases/0.7.12/assets?name=$name"
-  curl -X POST \
+  curl --http1.1 -X POST \
     --data-binary @$fpath \
     --header "Authorization: token $GITHUB_TOKEN" \
     --header "Content-Type: $file_content_type" \
     $url_to_upload
 done
+
+exit 0
