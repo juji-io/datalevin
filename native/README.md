@@ -23,44 +23,53 @@ executable that you can immediately run.
 
 Same as the above, except to run `script/compile.bat` instead in step 3.
 
-If the build is successful, you will get `dtlv.exe` and `dtlv-test.exe`.
+If the build is successful, you will get `dtlv.exe` and `dtlv-test.exe**.
 
 
 ## Compiling Datalevin Dependency to Native Image
 
 If your application depends on Datalevin library, and you want to compile your
-application into a GraalVM native image, you need to use `org.clojars.huahaiy/datalevin-native` as the dependency, instead of `datalevin/datalevin`.
-
-`datalevin-native` includes [GraalVM specific native
+application into a GraalVM native image, you need to use
+**`org.clojars.huahaiy/datalevin-native`** as the dependency, instead of
+`datalevin/datalevin`, because `org.clojars.huahaiy/datalevin-native` includes
+some [GraalVM specific native
 code](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/)
-that are pre-compiled for various platforms.
+that will fail to compile in regular JVM. It also includes pre-compiled native
+dependencies for various platforms.
+
+First build an uberjar of your application, then compile it with `native-image` command.
 
 Like all Clojure applications, class initialization needs to be done at [native image
-build time](https://github.com/clj-easy/graal-docs#class-initialization),
-otherwise, native image build will fail due to link errors. During the native
+build time](https://github.com/clj-easy/graal-docs#class-initialization), i.e.
+add `--features=InitAtBuildTimeFeature` to `native-image` command.
+
+During the native
 image build time, our class initialization code extracts native libraries from
-the `datalevin-native` jar and put them in the GraalVM's default `CLibraryPath`
+the `org.clojars.huahaiy/datalevin-native` jar and put them in the GraalVM's default `CLibraryPath`
 for the platform (e.g. `${GRAALVM_HOME}/lib/svm/clibraries/linux-amd64/`). The
 files will be deleted on JVM exit.
 
-If you are uncomfortable with writing the default location or lack the write
+If you are uncomfortable with writing to the default location or lack the write
 permission for that directory, you can set an environment variable
-`DTLV_LIB_EXTRACT_DIR` in the shell doing the native image build, and the native
+`DTLV_LIB_EXTRACT_DIR` in the shell before the native image build, and the native
 libraries will then be put there instead. If so, you must also add
-`-H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR}` option in your native image build command
-line. The directory referred to by the environment variable must exist and is
+`-H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR}` option to `native-image` command. The directory referred to by the environment variable must exist and is
 writable.
 
-For Apple Silicon, you need to add
+You also need to have these environment variables set before native image compilation:
 ```
 export DTLV_COMPILE_NATIVE=true
+export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 ```
-to your shell environment, or the compilation will fail.
 
-Once built, Datalevin's native dependencies are linked into your image statically.
+Finally, look at our ``script/compile` file as an example.
 
-For CI/CD, you may want to consult our [Github
+
+For CI/CD on various platforms, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)
 (for Linux/MacOS AMD64),
 [Appveoyor](https://github.com/juji-io/datalevin/blob/master/appveyor.yml) (for
 Windows), and [Cirrus CI](https://github.com/juji-io/datalevin/blob/master/.cirrus.yml)(for Apple Silicon) yaml files for examples.
+
+Once built, Datalevin's native dependencies are linked into your application
+statically, so your application is standalone and requires only `libc` dependency to run.
