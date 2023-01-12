@@ -591,10 +591,10 @@ Only usable for debug output.
   Application should hold on to the same connection rather than opening
   multiple connections to the same database in the same process.
 
-  Connections are lightweight in-memory structures (~atoms).  See also
-  [[transact!]], [[db]], [[close]], [[get-conn]], and [[open-kv]].
+  Connections are lightweight in-memory structures (atoms). To access underlying DB, call [[db]] on it.
 
-  To access underlying DB, deref: `@conn`.
+  See also [[transact!]], [[db]], [[close]], [[get-conn]], and [[open-kv]].
+
 
   Usage:
 

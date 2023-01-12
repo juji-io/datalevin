@@ -116,6 +116,8 @@ Or download the executable binary from github:
 
 * [Linux](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-macos-latest-aarch64.zip)
+  on arm64 (AARCH64)
 * [MacOS](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-macos-latest-amd64.zip)
   on x86-64 (AMD64)
 * [Windows](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-windows-amd64.zip) on x86-64 (AMD64)
