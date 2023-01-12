@@ -35,7 +35,12 @@ application into a GraalVM native image, you need to use
 some [GraalVM specific native
 code](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specific-programming/)
 that will fail to compile in regular JVM. It also includes pre-compiled native
-dependencies for various platforms.
+dependencies for these platforms:
+
+* Linux x86-64 (Ubuntu 20.04 and 22.04)
+* MacOS arm64 (i.e. Apple Silicon M series)
+* MacOS x86-64
+* Windows x86-64
 
 First build an uberjar of your application, then compile it with `native-image` command.
 
