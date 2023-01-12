@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+### Changed
+- [Search] **breaking** index storage format change. Re-indexing is necessary.
+### Added
+- [Search] `:index-position?` option to indicate whether to index term positions
+  inside documents, default `false`.
+### Improved
+- [Search] orders of magnitude indexing speed improvement. #151
+
 ## 0.7.12 (2023-01-11)
 ### Fixed
 - [Native] allow native compilation on apple silicon

@@ -142,9 +142,11 @@
 (def ^:const meta "datalevin/meta")
 (def ^:const opts "datalevin/opts")
 
-(def ^:const terms "terms")         ; term -> term-id,max-weight,doc-freq
-(def ^:const docs "docs")           ; doc-id -> norm,doc-ref
-(def ^:const positions "positions") ; term-id,doc-id -> position,offset (list)
+(def ^:const terms "terms")
+(def ^:const docs "docs")
+(def ^:const positions "positions")
+(def ^:const term-ids "term-ids")
+(def ^:const doc-refs "doc-refs")
 
 (def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
                                    :db.type/string :db.type/boolean

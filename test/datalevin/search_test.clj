@@ -78,25 +78,25 @@
       (is (= (sl/size sl) 4))
       (is (= (seq (.-indices sl)) [1 2 4 5]))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 1] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [1 tid] :int-int)
              (sl/get sl 1)
              2))
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 2] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [2 tid] :int-int)
              (sl/get sl 2)
              1))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 3] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [3 tid] :int-int)
              0))
       (is (nil? (sl/get sl 3)))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 4] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [4 tid] :int-int)
              (sl/get sl 4)
              1))
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 5] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [5 tid] :int-int)
              (sl/get sl 5)
              1))
 
-      (is (= (l/get-list lmdb (.-positions-dbi engine) [tid 5] :int-int :int-int)
+      (is (= (l/get-list lmdb (.-positions-dbi engine) [5 tid] :int-int :int-int)
              [[9 48]]))
 
       (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :int :doc-info true) [7 :doc1]))
@@ -117,8 +117,8 @@
         (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 4))
         (is (not (sl/contains-index? sl 1)))
         (is (= (sl/size sl) 3))
-        (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 1] :int-id) 0))
-        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-id :int-int))))
+        (is (= (l/list-count lmdb (.-positions-dbi engine) [1 tid] :int-id) 0))
+        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [1 tid] :int-id :int-int))))
 
       (sut/clear-docs engine)
       (is (= (sut/doc-count engine) 0)))
@@ -179,18 +179,18 @@
       (is (= (sl/size sl) 2))
       (is (= (seq (.-indices sl)) [1 2]))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 1] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [1 tid] :int-int)
              (sl/get sl 1)
              1))
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 2] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [2 tid] :int-int)
              (sl/get sl 2)
              1))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [tid 3] :int-int)
+      (is (= (l/list-count lmdb (.-positions-dbi engine) [3 tid] :int-int)
              0))
       (is (nil? (sl/get sl 3)))
 
-      (is (= (l/get-list lmdb (.-positions-dbi engine) [tid 1] :int-int :int-int)
+      (is (= (l/get-list lmdb (.-positions-dbi engine) [1 tid] :int-int :int-int)
              [[1 2]]))
 
       (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :int :doc-info true) [1 1]))
