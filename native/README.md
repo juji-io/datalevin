@@ -52,7 +52,7 @@ During the native
 image build time, our class initialization code extracts native libraries from
 the `org.clojars.huahaiy/datalevin-native` jar and put them in the GraalVM's default `CLibraryPath`
 for the platform (e.g. `${GRAALVM_HOME}/lib/svm/clibraries/linux-amd64/`). The
-files will be deleted on JVM exit.
+files will be deleted upon build completion.
 
 If you are uncomfortable with writing to the default location or lack the write
 permission for that directory, you can set an environment variable
@@ -67,7 +67,7 @@ export DTLV_COMPILE_NATIVE=true
 export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 ```
 
-Finally, look at our ``script/compile` file as an example.
+Finally, look at our `script/compile` file as an example.
 
 
 For CI/CD on various platforms, you may want to consult our [Github
@@ -76,5 +76,5 @@ Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/relea
 [Appveoyor](https://github.com/juji-io/datalevin/blob/master/appveyor.yml) (for
 Windows), and [Cirrus CI](https://github.com/juji-io/datalevin/blob/master/.cirrus.yml)(for Apple Silicon) yaml files for examples.
 
-Once built, Datalevin's native dependencies are linked into your application
-statically, so your application is standalone and requires only `libc` dependency to run.
+Datalevin's native dependencies are statically built into your application, so your application is standalone and requires only `libc`
+dependency on the OS to run.
