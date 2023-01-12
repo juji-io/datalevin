@@ -14,7 +14,9 @@
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [clojure.lang ISeq IPersistentVector MapEntry Util Sequential]))
+   [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
+   [clojure.lang ISeq IPersistentVector MapEntry Util Sequential
+    IPersistentMap]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -58,7 +60,7 @@
 
 (deftype SpillableVector [^long spill-threshold
                           ^String spill-root
-                          ^String spill-dir
+                          spill-dir
                           ^FastList memory
                           disk
                           total]
@@ -70,10 +72,10 @@
     (if @disk (l/entries @disk c/tmp-dbi) 0))
 
   (spill [this]
-    (let [dir (str spill-root "dtlv-spill-" (UUID/randomUUID))]
+    (let [dir (str spill-root "dtlv-spill-vec-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
       (vreset! disk (l/open-kv dir {:temp? true}))
-      (l/open-dbi @disk c/tmp-dbi {:key-size (inc Long/BYTES)}))
+      (l/open-dbi @disk c/tmp-dbi {:key-size Long/BYTES}))
     this)
 
   IPersistentVector
@@ -87,10 +89,11 @@
     this)
 
   (cons [this v]
-    (if (and (nil? @disk) (< ^long @memory-pressure spill-threshold))
-      (.add memory v)
-      (do (when (nil? @disk) (spill this))
-          (l/transact-kv @disk [[:put c/tmp-dbi @total v :long]])))
+    (let [mem? (nil? @disk)]
+      (if (and (< ^long @memory-pressure spill-threshold) mem?)
+        (.add memory v)
+        (do (when mem? (.spill this))
+            (l/transact-kv @disk [[:put c/tmp-dbi @total v :id]]))))
     (vswap! total u/long-inc)
     this)
 
@@ -105,7 +108,7 @@
     (if (integer? k)
       (or (if (get this k) true false)
           (if @disk
-            (if (l/get-value @disk c/tmp-dbi k :long) true false)
+            (if (l/get-value @disk c/tmp-dbi k :id) true false)
             false))
       false))
 
@@ -113,13 +116,13 @@
     (when (integer? k)
       (if-let [v (.get memory k)]
         (MapEntry. k v)
-        (when-let [v (l/get-value @disk c/tmp-dbi k :long)]
+        (when-let [v (l/get-value @disk c/tmp-dbi k :id)]
           (MapEntry. k v)))))
 
   (valAt [_ k nf]
     (if (integer? k)
       (or (when-not (.isEmpty memory) (.get memory k))
-          (when @disk (l/get-value @disk c/tmp-dbi k :long))
+          (when @disk (l/get-value @disk c/tmp-dbi k :id))
           nf)
       nf))
   (valAt [this k]
@@ -128,7 +131,7 @@
   (peek [this]
     (if (zero? ^long (disk-count this))
       (.getLast memory)
-      (l/get-first @disk c/tmp-dbi [:all-back] :long :data true)))
+      (l/get-first @disk c/tmp-dbi [:all-back] :id :data true)))
 
   (pop [this]
     (cond
@@ -137,8 +140,8 @@
 
       (< 0 ^long (disk-count this))
       (let [[lk _] (l/get-first @disk c/tmp-dbi [:all-back]
-                                :long :ignore)]
-        (l/transact-kv @disk [[:del c/tmp-dbi lk :long]]))
+                                :id :ignore)]
+        (l/transact-kv @disk [[:del c/tmp-dbi lk :id]]))
 
       :else (.remove memory (dec ^long (memory-count this))))
     (vswap! total #(dec ^long %))
@@ -274,16 +277,127 @@
      svec)))
 
 (nippy/extend-freeze
-  SpillableVector :spillable
+  SpillableVector :spillable-vec
   [^SpillableVector x ^DataOutput out]
   (let [n (count x)]
     (.writeLong out n)
     (dotimes [i n] (nippy/freeze-to-out! out (nth x i)))))
 
 (nippy/extend-thaw
-  :spillable
+  :spillable-vec
   [^DataInput in]
   (let [n  (.readLong in)
         vs (new-spillable-vector)]
     (dotimes [_ n] (conj vs (nippy/thaw-from-in! in)))
     vs))
+
+(deftype SpillableIntObjMap [^long spill-threshold
+                             ^String spill-root
+                             spill-dir
+                             ^IntObjectHashMap memory
+                             disk]
+  ISpillable
+
+  (memory-count ^long [_] (.size memory))
+
+  (disk-count ^long [_]
+    (if @disk (l/entries @disk c/tmp-dbi) 0))
+
+  (spill [this]
+    (let [dir (str spill-root "dtlv-spill-intobj-map-" (UUID/randomUUID))]
+      (vreset! spill-dir dir)
+      (vreset! disk (l/open-kv dir {:temp? true}))
+      (l/open-dbi @disk c/tmp-dbi {:key-size Integer/BYTES}))
+    this)
+
+  IPersistentMap
+
+  (assocEx [this k v]
+    (if (.containsKey this (int k))
+      (throw (RuntimeException. "Key already present"))
+      (.assoc this k v))
+    this)
+
+  (assoc [this k v]
+    (if (< ^long @memory-pressure spill-threshold)
+      (.put memory k v)
+      (do (when (nil? @disk) (.spill this))
+          (l/transact-kv @disk [[:put c/tmp-dbi k v :int]])))
+    this)
+
+  (without [this k]
+    (if (.containsKey memory (int k))
+      (.remove memory k)
+      (when (and @disk (l/get-value @disk c/tmp-dbi k :int))
+        (l/transact-kv @disk [[:del c/tmp-dbi k :int]])))
+    this)
+
+  (count [_] (cond-> (.size memory)
+               @disk (+ ^long (l/entries @disk c/tmp-dbi))))
+
+  (containsKey [this k]
+    (if (or (.containsKey memory (int k))
+            (and @disk (l/get-value @disk c/tmp-dbi k :int)))
+      true false))
+
+  (entryAt [_ k]
+    (when (integer? k)
+      (if-let [v (.get memory k)]
+        (MapEntry. k v)
+        (when-let [v (l/get-value @disk c/tmp-dbi k :int)]
+          (MapEntry. k v)))))
+
+  (valAt [_ k nf]
+    (if (integer? k)
+      (or (when-not (.isEmpty memory) (.get memory k))
+          (when @disk (l/get-value @disk c/tmp-dbi k :int))
+          nf)
+      nf))
+  (valAt [this k]
+    (.valAt this k nil))
+
+  (empty [this]
+    (.clear memory)
+    (when @disk
+      (l/close-kv @disk)
+      (u/delete-files @spill-dir)
+      (vreset! disk nil))
+    this)
+
+  (equiv [this other]
+    (cond
+      (identical? this other) true
+
+      (or (instance? Sequential other) (instance? List other))
+      (if (not= (count this) (count other))
+        false
+        (if (every? true? (map #(Util/equiv %1 %2) this other))
+          true
+          false))
+
+      :else false))
+
+  (seq ^ISeq [this] #_(when (< 0 ^long @total) (->Seq this 0)))
+
+  Iterable
+
+  (iterator [this]
+    #_(let [i (volatile! 0)]
+        (reify
+          Iterator
+          (hasNext [_] (< ^long @i ^long @total))
+          (next [_]
+            (if (< ^long @i ^long @total)
+              (let [res (.nth this @i)]
+                (vswap! i u/long-inc)
+                res)
+              (throw (NoSuchElementException.)))))))
+
+  Object
+
+  (toString [this] (str (into [] this)))
+
+  (finalize ^void [_]
+    (when @disk
+      (l/close-kv @disk)
+      (u/delete-files @spill-dir))))
