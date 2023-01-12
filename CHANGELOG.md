@@ -8,6 +8,8 @@
   inside documents, default `false`.
 ### Improved
 - [Search] orders of magnitude indexing speed improvement. #151
+### Fixed
+- [KV] spillable results exception in certain cases
 
 ## 0.7.12 (2023-01-11)
 ### Fixed

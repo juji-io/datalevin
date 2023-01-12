@@ -8,15 +8,16 @@
    [datalevin.lmdb :as l]
    [taoensso.nippy :as nippy])
   (:import
-   [java.util Iterator List UUID NoSuchElementException]
+   [java.util Iterator List UUID NoSuchElementException Map]
    [java.io DataInput DataOutput]
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
+   [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap
+    SynchronizedIntObjectMap]
    [clojure.lang ISeq IPersistentVector MapEntry Util Sequential
-    IPersistentMap]))
+    IPersistentMap MapEquivalence]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -56,7 +57,7 @@
   (disk-count [this] "The number of items reside on disk")
   (spill [this] "Spill to disk"))
 
-(declare ->Seq ->RSeq)
+(declare ->SVecSeq ->RSVecSeq)
 
 (deftype SpillableVector [^long spill-threshold
                           ^String spill-root
@@ -121,7 +122,7 @@
 
   (valAt [_ k nf]
     (if (integer? k)
-      (or (when-not (.isEmpty memory) (.get memory k))
+      (or (when (< ^long k (.size memory)) (.get memory k))
           (when @disk (l/get-value @disk c/tmp-dbi k :id))
           nf)
       nf))
@@ -170,10 +171,10 @@
 
       :else false))
 
-  (seq ^ISeq [this] (when (< 0 ^long @total) (->Seq this 0)))
+  (seq ^ISeq [this] (when (< 0 ^long @total) (->SVecSeq this 0)))
 
   (rseq ^ISeq [this]
-    (when (< 0 ^long @total) (->RSeq this (dec ^long @total))))
+    (when (< 0 ^long @total) (->RSVecSeq this (dec ^long @total))))
 
   (nth [this i]
     (if (and (<= 0 i) (< i ^long @total))
@@ -207,8 +208,8 @@
       (l/close-kv @disk)
       (u/delete-files @spill-dir))))
 
-(deftype Seq [^SpillableVector v
-              ^long i]
+(deftype SVecSeq [^SpillableVector v
+                  ^long i]
   ISeq
 
   (seq ^ISeq [this] this)
@@ -217,11 +218,11 @@
 
   (next ^ISeq [_]
     (let [i+1 (inc i)]
-      (when (< i+1 (count v)) (->Seq v i+1))))
+      (when (< i+1 (count v)) (->SVecSeq v i+1))))
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons [_ _] (throw "Changing SpillableVector.Seq is not supported"))
+  (cons [_ _] (throw "Changing SpillableVector.SVecSeq is not supported"))
 
   (count [_] (- (count v) i))
 
@@ -234,19 +235,19 @@
           false))
       false)))
 
-(deftype RSeq [^SpillableVector v
-               ^long i]
+(deftype RSVecSeq [^SpillableVector v
+                   ^long i]
   ISeq
 
   (seq ^ISeq [this] this)
 
   (first ^Object [_] (nth v i))
 
-  (next ^ISeq [_] (when (< 0 i) (->RSeq v (dec i))))
+  (next ^ISeq [_] (when (< 0 i) (->RSVecSeq v (dec i))))
 
   (more ^ISeq [this] (let [s (.next this)] (if s s '())))
 
-  (cons [_ _] (throw "Changing SpillableVector.RSeq is not supported"))
+  (cons [_ _] (throw "Changing SpillableVector.RSVecSeq is not supported"))
 
   (count [_] (inc i))
 
@@ -291,6 +292,8 @@
     (dotimes [_ n] (conj vs (nippy/thaw-from-in! in)))
     vs))
 
+;; (declare ->IntObjMapSeq)
+
 (deftype SpillableIntObjMap [^long spill-threshold
                              ^String spill-root
                              spill-dir
@@ -313,7 +316,7 @@
   IPersistentMap
 
   (assocEx [this k v]
-    (if (.containsKey this (int k))
+    (if (.containsKey ^Map this (int k))
       (throw (RuntimeException. "Key already present"))
       (.assoc this k v))
     this)
@@ -341,11 +344,10 @@
       true false))
 
   (entryAt [_ k]
-    (when (integer? k)
-      (if-let [v (.get memory k)]
-        (MapEntry. k v)
-        (when-let [v (l/get-value @disk c/tmp-dbi k :int)]
-          (MapEntry. k v)))))
+    (if-let [v (.get memory k)]
+      (MapEntry. k v)
+      (when-let [v (l/get-value @disk c/tmp-dbi k :int)]
+        (MapEntry. k v))))
 
   (valAt [_ k nf]
     (if (integer? k)
@@ -364,40 +366,86 @@
       (vreset! disk nil))
     this)
 
+  MapEquivalence
+
   (equiv [this other]
     (cond
       (identical? this other) true
 
-      (or (instance? Sequential other) (instance? List other))
+      (map? other)
       (if (not= (count this) (count other))
         false
-        (if (every? true? (map #(Util/equiv %1 %2) this other))
+        (if (every? true?
+                    (map #(Util/equiv
+                            %
+                            (.entryAt ^SpillableIntObjMap other
+                                      (.key ^MapEntry %)))
+                         this))
           true
           false))
 
       :else false))
 
-  (seq ^ISeq [this] #_(when (< 0 ^long @total) (->Seq this 0)))
+  (seq ^ISeq [this]
+    (when (< 0 (count this))
+      (iterator-seq (.iterator this))))
+
+  Map
+
+  (size [this] (count this))
+
+  (put [this k v] (assoc this k v))
+
+  (get [this k] (.valAt this k))
 
   Iterable
 
   (iterator [this]
-    #_(let [i (volatile! 0)]
+    (locking this
+      (let [i        (volatile! 0)
+            ml       (.toList memory)
+            mn       (.size ml)
+            db       @disk
+            ^long dn (if db (l/entries db c/tmp-dbi) 0)
+            dl       (when-not (zero? dn)
+                       (l/get-range db c/tmp-dbi [:all]))]
         (reify
           Iterator
-          (hasNext [_] (< ^long @i ^long @total))
-          (next [_]
-            (if (< ^long @i ^long @total)
-              (let [res (.nth this @i)]
+          (hasNext [_]
+            (let [^long di @i]
+              (or (< di mn)
+                  (if db (< di (+ mn dn)) false))))
+          (next [iter]
+            (if (.hasNext iter)
+              (let [^long di @i
+                    res      (if (< di mn)
+                               (.get ml di)
+                               (let [[k v] (nth dl di)]
+                                 (MapEntry. k v)))]
                 (vswap! i u/long-inc)
                 res)
-              (throw (NoSuchElementException.)))))))
+              (throw (NoSuchElementException.))))))))
 
   Object
 
-  (toString [this] (str (into [] this)))
+  (toString [this] (str (into {} this)))
 
   (finalize ^void [_]
     (when @disk
       (l/close-kv @disk)
       (u/delete-files @spill-dir))))
+
+(defn new-spillable-intobj-map
+  ([] (new-spillable-intobj-map nil nil))
+  ([m] (new-spillable-intobj-map m nil))
+  ([m {:keys [spill-threshold spill-root]
+       :or   {spill-threshold c/+default-spill-threshold+
+              spill-root      c/+default-spill-root+}}]
+   (when (empty? @listeners) (memory-updater))
+   (let [smap (->SpillableIntObjMap spill-threshold
+                                    spill-root
+                                    (volatile! nil)
+                                    (IntObjectHashMap.)
+                                    (volatile! nil))]
+     (doseq [[k v] m] (assoc smap k v))
+     smap)))

@@ -3,16 +3,15 @@
    [datalevin.lmdb :as l]
    [datalevin.spill :as sp]
    [datalevin.util :as u]
-   [datalevin.constants :as c]
    [clojure.test :refer [deftest testing is]])
   (:import
-   [datalevin.spill SpillableVector]))
+   [datalevin.spill SpillableVector SpillableIntObjMap]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(deftest before-spill-test
+(deftest vec-before-spill-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
     (vreset! sp/memory-pressure 0)
 
@@ -87,7 +86,7 @@
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))))
 
-(deftest spill=in-middle-test
+(deftest vec-spill=in-middle-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
     (vreset! sp/memory-pressure 0)
 
@@ -114,10 +113,13 @@
     (is (= [0] vs))
     (is (= [] (pop vs)))
 
-    (vreset! sp/memory-pressure 99)
-
     (conj vs 0)
     (conj vs 1)
+
+    (vreset! sp/memory-pressure 99)
+
+    (is (= [0 1] vs))
+
     (conj vs 2)
     (is (= [0 1 2] vs))
     (is (= 1 (get vs 1)))
@@ -141,7 +143,7 @@
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))))
 
-(deftest spill=at-start-test
+(deftest vec-spill=at-start-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
     (vreset! sp/memory-pressure 99)
 
@@ -196,3 +198,73 @@
     (is (= @(.total vs)
            (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))
     (vreset! sp/memory-pressure 0)))
+
+(deftest intobj-map-before-spill-test
+  (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
+    (vreset! sp/memory-pressure 0)
+
+    (is (map? m))
+    (is (zero? (.size m)))
+    (is (nil? (seq m)))
+    (is (= "{}" (.toString m)))
+    (is (= {} m ))
+    (is (not= {:a 1} m ))
+    (is (nil? (get m 0)))
+    (is (nil? (first m)))
+    (is (nil? (second m)))
+    (is (nil? (last m)))
+    (is (= 0 (count m)))
+    (is (not (contains? m 0)))
+    (is (thrown? Exception (nth m 0)))
+    (is (not= m []))
+    (is (not= m 1))
+    (is (= {} (into {} m)))
+
+    (assoc m 0 0)
+
+    (is (= {0 0} m))
+    (is (= 0 (get m 0)))
+    ;; (is (= 0 (peek vs)))
+    ;; (is (= 0 (first vs)))
+    ;; (is (nil? (second vs)))
+    ;; (is (= 0 (last vs)))
+    ;; (is (= 1 (.length vs)))
+    ;; (is (= 1 (count vs)))
+    ;; (is (contains? vs 0))
+    ;; (is (= 0 (nth vs 0)))
+    ;; (is (thrown? Exception (nth vs 1)))
+    ;; (is (= vs [0]))
+    ;; (is (= vs '(0)))
+    ;; (is (not= vs [0 :end]))
+    ;; (is (not= vs 1))
+    ;; (is (= [1] (map inc vs)))
+    ;; (is (= 0 (reduce + vs)))
+    ;; (is (= [0] (subvec vs 0)))
+    ;; (is (= [0] (into [] vs)))
+    ;; (is (= [] (pop vs)))
+
+    ;; (conj vs 0)
+    ;; (conj vs 1)
+    ;; (conj vs 2)
+    ;; (is (= [0 1 2] vs))
+    ;; (is (= 1 (get vs 1)))
+    ;; (is (= 2 (peek vs)))
+    ;; (is (= 0 (first vs)))
+    ;; (is (= 1 (second vs)))
+    ;; (is (= 2 (last vs)))
+    ;; (is (= 3 (.length vs)))
+    ;; (is (= 3 (count vs)))
+    ;; (is (contains? vs 2))
+    ;; (is (= 0 (nth vs 0)))
+    ;; (is (= 1 (nth vs 1)))
+    ;; (is (= vs [0 1 2]))
+    ;; (is (= vs '(0 1 2)))
+    ;; (is (thrown? Exception (nth vs 5)))
+    ;; (is (not= vs [0 1 :end]))
+    ;; (is (not= vs 1))
+    ;; (is (= [1 2 3] (map inc vs)))
+    ;; (is (= 3 (reduce + vs)))
+    ;; (is (= [1] (subvec vs 1 2)))
+    ;; (is (= [0 1 2] (into [] vs)))
+    ;; (is (= [0 1] (pop vs)))
+    ))
