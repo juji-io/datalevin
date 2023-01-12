@@ -5,7 +5,7 @@
          (ghr/release-artifact
            {:org       "juji-io"
             :repo      "datalevin"
-            :tag       "0.7.12"
+            :tag       (System/getenv "CIRRUS_TAG")
             :file      (System/getenv "DTLV_ARCHIVE")
             :overwrite true})
          }}
