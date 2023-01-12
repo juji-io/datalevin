@@ -76,5 +76,5 @@ Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/relea
 [Appveoyor](https://github.com/juji-io/datalevin/blob/master/appveyor.yml) (for
 Windows), and [Cirrus CI](https://github.com/juji-io/datalevin/blob/master/.cirrus.yml)(for Apple Silicon) yaml files for examples.
 
-Datalevin's native dependencies are statically built into your application, so your application is standalone and requires only `libc`
+Native Datalevin libraries are static, so your final application is standalone and requires only `libc`
 dependency on the OS to run.
