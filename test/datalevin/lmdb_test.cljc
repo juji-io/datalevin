@@ -92,7 +92,8 @@
 
     (testing "delete"
       (l/transact-kv lmdb [[:del "a" 1]
-                           [:del "a" :non-exist]])
+                           [:del "a" :non-exist]
+                           [:del "a" "random things that do not exist"]])
       (is (nil? (l/get-value lmdb "a" 1))))
 
     (testing "entries-again"

@@ -1538,7 +1538,9 @@ words.
   search sc/search)
 
 (defn search-index-writer
-  "Create a writer for writing documents to the search index in bulk.
+  "Create a writer for writing documents to the search index in bulk, and
+  assume all the documents are new to the search index.
+
   The search index is stored in the passed-in key value database opened
   by [[open-kv]]. See also [[write]] and [[commit]].
 
@@ -1560,12 +1562,12 @@ words.
      (sc/search-index-writer lmdb opts))))
 
 (def ^{:arglists '([writer doc-ref doc-text])
-       :doc      "Write a document to search index."}
+       :doc      "Write a document to search index with a [[search-index-writer]]"}
   write sc/write)
 
 (def ^{:arglists '([writer])
        :doc      "Commit writes to search index, must be called after writing
-all documents."}
+all documents with a [[search-index-writer]]."}
   commit sc/commit)
 
 ;; -------------------------------------

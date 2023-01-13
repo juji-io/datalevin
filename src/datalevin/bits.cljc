@@ -702,9 +702,7 @@
     :long    (long-header v)
     nil))
 
-(defn- put-sparse-list
-  [bf x]
-  (sl/serialize x bf))
+(defn- put-sparse-list [bf x] (sl/serialize x bf))
 
 (defn put-buffer
   ([bf x]
@@ -729,9 +727,10 @@
                        (put-int bf i1)
                        (.putFloat bf (float i2))
                        (put-sparse-list bf i3))
-     :doc-info       (let [[i1 i2] x]
-                       (put-short bf i1)
-                       (put-data bf i2))
+     :doc-info       (let [[i1 i2 i3] x]
+                       (put-int bf i1)
+                       (put-short bf i2)
+                       (put-bitmap bf i3))
      :long           (do (put-byte bf (raw-header x :long))
                          (put-long bf x))
      :id             (put-long bf x)
@@ -784,7 +783,7 @@
      :bitmap         (get-bitmap bf)
      :sial           (get-sparse-list bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info       [(get-short bf) (get-data bf)]
+     :doc-info       [(get-int bf) (get-short bf) (get-bitmap bf)]
      :long           (do (get-byte bf) (get-long bf))
      :id             (get-long bf)
      :float          (do (get-byte bf) (get-float bf))

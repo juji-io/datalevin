@@ -296,8 +296,6 @@
     (dotimes [_ n] (conj vs (nippy/thaw-from-in! in)))
     vs))
 
-;; (declare ->IntObjMapSeq)
-
 (deftype SpillableIntObjMap [^long spill-threshold
                              ^String spill-root
                              spill-dir
@@ -322,22 +320,12 @@
   (assocEx [this k v]
     (if (.containsKey ^Map this (int k))
       (throw (RuntimeException. "Key already present"))
-      (.assoc this k v))
+      (.put this k v))
     this)
 
-  (assoc [this k v]
-    (if (< ^long @memory-pressure spill-threshold)
-      (.put memory k v)
-      (do (when (nil? @disk) (.spill this))
-          (l/transact-kv @disk [[:put c/tmp-dbi k v :int]])))
-    this)
+  (assoc [this k v] (.put this k v) this)
 
-  (without [this k]
-    (if (.containsKey memory (int k))
-      (.remove memory k)
-      (when (and @disk (l/get-value @disk c/tmp-dbi k :int))
-        (l/transact-kv @disk [[:del c/tmp-dbi k :int]])))
-    this)
+  (without [this k] (.remove this k) this)
 
   (count [_] (cond-> (.size memory)
                @disk (+ ^long (l/entries @disk c/tmp-dbi))))
@@ -398,9 +386,21 @@
 
   (size [this] (count this))
 
-  (put [this k v] (assoc this k v))
+  (put [this k v]
+    (if (< ^long @memory-pressure spill-threshold)
+      (.put memory k v)
+      (do (when (nil? @disk) (.spill this))
+          (l/transact-kv @disk [[:put c/tmp-dbi k v :int]]))))
 
   (get [this k] (.valAt this k))
+
+  (remove [_ k]
+    (if (.containsKey memory (int k))
+      (.remove memory k)
+      (when (and @disk (l/get-value @disk c/tmp-dbi k :int))
+        (l/transact-kv @disk [[:del c/tmp-dbi k :int]]))))
+
+  (isEmpty [this] (= 0 (count this)))
 
   IFn
   (invoke [this arg1] (.valAt this arg1))

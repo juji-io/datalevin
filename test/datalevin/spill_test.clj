@@ -208,6 +208,7 @@
 
     (is (map? m))
     (is (zero? (.size m)))
+    (is (empty? m))
     (is (nil? (seq m)))
     (is (= "{}" (.toString m)))
     (is (= {} m ))
@@ -225,6 +226,7 @@
 
     (assoc m 0 0)
 
+    (is (not (empty? m)))
     (is (= {0 0} m))
     (is (= 0 (get m 0)))
     (is (= 0 (m 0)))
@@ -236,7 +238,7 @@
     (is (not= m {0 :end}))
     (is (= {0 0 1 1} (into {1 1} m)))
 
-    (assoc m 1 1)
+    (.put m 1 1)
 
     (is (= {1 1 0 0} m))
     (is (= 1 (get m 1)))
@@ -247,7 +249,12 @@
     (is (= 2 (count m)))
     (is (contains? m 1))
     (is (not= m {1 :end}))
-    (is (= {0 0 1 1} (into {1 1} m)))))
+    (is (= {0 0 1 1} (into {1 1} m)))
+
+    (.remove m 1)
+
+    (is (not (contains? m 1)))
+    (is (= {0 0} m))))
 
 (deftest intobj-map-in-middle-spill-test
   (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
@@ -267,7 +274,15 @@
     (is (= 2 (count m)))
     (is (contains? m 1))
     (is (not= m {1 :end}))
-    (is (= {0 0 1 1} (into {1 1} m)))))
+    (is (= {0 0 1 1} (into {1 1} m)))
+
+    (assoc m 2 2)
+    (is (= 3 (count m)))
+    (is (contains? m 2))
+
+    (dissoc m 1)
+    (is (= 2 (count m)))
+    (is (not (contains? m 1)))))
 
 (deftest intobj-map-after-spill-test
   (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
@@ -290,7 +305,7 @@
     (is (not= m 1))
     (is (= {} (into {} m)))
 
-    (assoc m 0 0)
+    (.put m 0 0)
 
     (is (= {0 0} m))
     (is (= 0 (get m 0)))
@@ -303,7 +318,7 @@
     (is (not= m {0 :end}))
     (is (= {0 0 1 1} (into {1 1} m)))
 
-    (assoc m 1 1)
+    (.put m 1 1)
 
     (is (= {1 1 0 0} m))
     (is (= 1 (get m 1)))
@@ -315,5 +330,9 @@
     (is (contains? m 1))
     (is (not= m {1 :end}))
     (is (= {0 0 1 1} (into {1 1} m)))
+
+    (.remove m 0)
+    (is (= 1 (count m)))
+    (is (not (contains? m 0)))
 
     (vreset! sp/memory-pressure 0)))
