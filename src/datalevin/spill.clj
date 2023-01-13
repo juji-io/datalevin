@@ -13,11 +13,12 @@
    [java.lang.management ManagementFactory]
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
+   [org.eclipse.collections.api.set.primitive MutableIntSet]
+   [org.eclipse.collections.api.list.primitive MutableIntList]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap
-    SynchronizedIntObjectMap]
+   [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
    [clojure.lang ISeq IPersistentVector MapEntry Util Sequential
-    IPersistentMap MapEquivalence]))
+    IPersistentMap MapEquivalence IFn]))
 
 (defonce memory-pressure (volatile! 0))
 
@@ -199,6 +200,9 @@
               res)
             (throw (NoSuchElementException.)))))))
 
+  IFn
+  (invoke [this arg1] (.valAt this arg1))
+
   Object
 
   (toString [this] (str (into [] this)))
@@ -338,7 +342,7 @@
   (count [_] (cond-> (.size memory)
                @disk (+ ^long (l/entries @disk c/tmp-dbi))))
 
-  (containsKey [this k]
+  (containsKey [_ k]
     (if (or (.containsKey memory (int k))
             (and @disk (l/get-value @disk c/tmp-dbi k :int)))
       true false))
@@ -398,17 +402,20 @@
 
   (get [this k] (.valAt this k))
 
+  IFn
+  (invoke [this arg1] (.valAt this arg1))
+
   Iterable
 
   (iterator [this]
     (locking this
       (let [i        (volatile! 0)
-            ml       (.toList memory)
-            mn       (.size ml)
+            kl       (.toList ^MutableIntSet (.keySet memory))
+            mn       (.size kl)
             db       @disk
             ^long dn (if db (l/entries db c/tmp-dbi) 0)
             dl       (when-not (zero? dn)
-                       (l/get-range db c/tmp-dbi [:all]))]
+                       (l/get-range db c/tmp-dbi [:all] :int))]
         (reify
           Iterator
           (hasNext [_]
@@ -419,8 +426,9 @@
             (if (.hasNext iter)
               (let [^long di @i
                     res      (if (< di mn)
-                               (.get ml di)
-                               (let [[k v] (nth dl di)]
+                               (let [k (.get kl di)]
+                                 (MapEntry. k (.get memory k)))
+                               (let [[k v] (nth dl (- di mn))]
                                  (MapEntry. k v)))]
                 (vswap! i u/long-inc)
                 res)
