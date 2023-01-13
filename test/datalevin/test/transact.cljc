@@ -100,6 +100,7 @@
     (is (= (d/q '[:find ?v
                   :where [1 :aka ?v]] db)
            #{["Devil"] ["Tupen"]}))
+    (is (= 3 (count (d/datoms db :eav))))
 
     (testing "Retract"
       (let [db (-> db

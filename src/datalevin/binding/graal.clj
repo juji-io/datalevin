@@ -652,10 +652,10 @@
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
               (.close info))
-            (if @write-txn
+            (if one-shot?
+              (.transact-kv this txs)
               (do (reset-write-txn this)
-                  (raise "DB needs resize" {:resized true}))
-              (.transact-kv this txs)))
+                  (raise "DB needs resize" {:resized true}))))
           (catch Exception e
             (when one-shot? (.close txn))
             (raise "Fail to transact to LMDB: " (ex-message e) {}))))))

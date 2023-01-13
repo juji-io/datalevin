@@ -328,7 +328,7 @@
         (set! attrs (dissoc attrs aid))
         attrs)))
 
-  (rename-attr [this attr new-attr]
+  (rename-attr [_ attr new-attr]
     (let [props (schema attr)]
       (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
                               [:put c/schema new-attr props :attr]
@@ -344,15 +344,14 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      (let [ft-ds  (volatile! []) ;; fulltext datoms, [:a d] or [:d d]
+      (let [;; fulltext datoms, [:a d] or [:d d]
+            ft-ds  (volatile! (transient []))
             add-fn (fn [holder datom]
-                     (let [conj-fn (fn [h d] (conj! h d))]
-                       (if (d/datom-added datom)
-                         (let [[data giant?] (insert-data this datom ft-ds)]
-                           (when giant? (advance-max-gt this))
-                           (reduce conj-fn holder data))
-                         (reduce conj-fn holder
-                                 (delete-data this datom ft-ds)))))]
+                     (if (d/datom-added datom)
+                       (let [[data giant?] (insert-data this datom ft-ds)]
+                         (when giant? (advance-max-gt this))
+                         (reduce conj! holder data))
+                       (reduce conj! holder (delete-data this datom ft-ds))))]
         (lmdb/transact-kv
           lmdb (persistent!
                  (-> (reduce add-fn (transient []) datoms)
@@ -361,13 +360,13 @@
                      (conj! [:put c/meta :last-modified
                              (System/currentTimeMillis)
                              :attr :long]))))
-        (doseq [[op ^Datom d] @ft-ds
+        (doseq [[op ^Datom d] (persistent! @ft-ds)
                 :let          [v (str (.-v d))]]
           (case op
             :a (s/add-doc search-engine d v)
             :d (s/remove-doc search-engine d))))))
 
-  (fetch [this datom]
+  (fetch [_ datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (when-some [kv (lmdb/get-value lmdb
                                          c/eav
@@ -564,7 +563,7 @@
         (b/valid-data? v vt)
         (u/raise "Invalid data, expecting " vt {:input v}))
     (when (and (:db/fulltext props) (not (str/blank? (str v))))
-      (vswap! ft-ds conj [:a d]))
+      (vswap! ft-ds conj! [:a d]))
     (if (b/giant? i)
       [(cond-> [[:put c/eav i max-gt :eav :id]
                 [:put c/ave i max-gt :ave :id]
@@ -587,7 +586,7 @@
         gt     (when giant?
                  (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
     (when (and (:db/fulltext props) (not (str/blank? (str v))))
-      (vswap! ft-ds conj [:d d]))
+      (vswap! ft-ds conj! [:d d]))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])

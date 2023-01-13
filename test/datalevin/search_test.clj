@@ -57,7 +57,7 @@
 
     (is (= (sut/doc-count engine) 0))
     (is (not (sut/doc-indexed? engine :doc4)))
-    (is (= (sut/doc-refs engine) []))
+    ;; (is (= (sut/doc-refs engine) []))
 
     (add-docs sut/add-doc engine)
 
@@ -66,7 +66,7 @@
     (is (not (sut/doc-indexed? engine "non-existent")))
 
     (is (= (sut/doc-count engine) 5))
-    (is (= (sut/doc-refs engine) [:doc1 :doc2 :doc3 :doc4 :doc5]))
+    ;; (is (= (sut/doc-refs engine) [:doc1 :doc2 :doc3 :doc4 :doc5]))
 
     (let [[tid mw ^SparseIntArrayList sl]
           (l/get-value lmdb (.-terms-dbi engine) "red" :string :term-info true)]
@@ -109,7 +109,7 @@
       (sut/remove-doc engine :doc1)
 
       (is (= (sut/doc-count engine) 4))
-      (is (= (sut/doc-refs engine) [:doc2 :doc3 :doc4 :doc5]))
+      ;; (is (= (sut/doc-refs engine) [:doc2 :doc3 :doc4 :doc5]))
 
       (let [[tid mw ^SparseIntArrayList sl]
             (l/get-value lmdb (.-terms-dbi engine) "red" :string :term-info true)]
@@ -167,7 +167,7 @@
     (sut/add-doc engine 2 "tent")
 
     (is (= (sut/doc-count engine) 2))
-    (is (= (sut/doc-refs engine) [1 2]))
+    ;; (is (= (sut/doc-refs engine) [1 2]))
 
     (let [[tid mw ^SparseIntArrayList sl]
           (l/get-value lmdb (.-terms-dbi engine) "tent" :string :term-info true)]
@@ -219,18 +219,18 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest index-writer-test
-  (let [dir    (u/tmp-dir (str "writer-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
-        writer ^IndexWriter (sut/search-index-writer lmdb)]
-    (add-docs sut/write writer)
-    (sut/commit writer)
+;; (deftest index-writer-test
+;;   (let [dir    (u/tmp-dir (str "writer-" (UUID/randomUUID)))
+;;         lmdb   (l/open-kv dir)
+;;         writer ^IndexWriter (sut/search-index-writer lmdb)]
+;;     (add-docs sut/write writer)
+;;     (sut/commit writer)
 
-    (let [engine (sut/new-search-engine lmdb)]
-      (is (= (sut/search engine "cap" {:display :offsets})
-             [[:doc4 [["cap" [51]]]]])))
-    (l/close-kv lmdb)
-    (u/delete-files dir)))
+;;     (let [engine (sut/new-search-engine lmdb)]
+;;       (is (= (sut/search engine "cap" {:display :offsets})
+;;              [[:doc4 [["cap" [51]]]]])))
+;;     (l/close-kv lmdb)
+;;     (u/delete-files dir)))
 
 (deftest search-kv-test
   (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
@@ -249,7 +249,7 @@
     (is (sut/doc-indexed? engine 1))
 
     (is (= 3 (sut/doc-count engine)))
-    (is (= [1 2 3] (sut/doc-refs engine)))
+    ;; (is (= [1 2 3] (sut/doc-refs engine)))
 
     (is (= (sut/search engine "lazy") [1]))
     (is (= (sut/search engine "red" ) [1 2]))

@@ -1,6 +1,7 @@
 (ns datalevin.core-test
   (:require
    [datalevin.core :as sut]
+   [datalevin.datom :as dd]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
@@ -486,6 +487,45 @@
     (is (= 2 (sut/q query @conn big)))
 
     (is (= 4 (count (sut/datoms @conn :eav))))
+
+    (sut/close conn)
+    (u/delete-files dir)))
+
+(deftest simulated-tx-test
+  (let [dir  (u/tmp-dir (str "sim-tx-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir
+                              {:id {:db/unique    :db.unique/identity
+                                    :db/valueType :db.type/long}})]
+    (let [rp (sut/transact! conn [{:id 1}])]
+      (is (= (:tx-data rp) [(sut/datom 1 :id 1)]))
+      (is (= (dd/datom-tx (first (:tx-data rp))) 2)))
+    (is (= (sut/datoms @conn :eav) [(sut/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
+
+    (let [rp (sut/tx-data->simulated-report @conn [{:id 2}])]
+      (is (= (:tx-data rp) [(sut/datom 2 :id 2)]))
+      (is (= (dd/datom-tx (first (:tx-data rp))) 3))
+      (is (= (:max-eid (:db-after rp)) 2))
+      (is (= (:max-tx (:db-after rp)) 3)))
+
+    (is (= (sut/datoms @conn :eav) [(sut/datom 1 :id 1)]))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 2))
+
+    (sut/transact! conn [{:id 1 :a 1}])
+    (is (= 2 (count (sut/datoms @conn :eav))))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 3))
+
+    (let [rp (sut/tx-data->simulated-report @conn [{:id 1 :a 2}])]
+      (is (= (:tx-data rp) [(sut/datom 1 :a 1 -4) (sut/datom 1 :a 2 4)]))
+      (is (= (:max-eid (:db-after rp)) 1))
+      (is (= (:max-tx (:db-after rp)) 4)))
+
+    (is (= 2 (count (sut/datoms @conn :eav))))
+    (is (= (:max-eid @conn) 1))
+    (is (= (:max-tx @conn) 3))
 
     (sut/close conn)
     (u/delete-files dir)))

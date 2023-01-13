@@ -465,23 +465,25 @@
   (transact-kv [this txs]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (locking  write-txn
-      (try
-        (if @write-txn
-          (transact* txs dbis (.-txn ^Rtx @write-txn))
-          (with-open [txn (.txnWrite env)]
-            (transact* txs dbis txn)
-            (.commit txn)))
-        :transacted
-        (catch Env$MapFullException _
-          (when @write-txn (.close ^Txn (.-txn ^Rtx @write-txn)))
-          (up-db-size env)
-          (if @write-txn
-            (do (reset-write-txn this)
-                (raise "DB resized" {:resized true}))
-            (.transact-kv this txs)))
-        (catch Exception e
-          ;; (st/print-stack-trace e)
-          (raise "Fail to transact to LMDB: " (ex-message e) {})))))
+      (let [^Rtx rtx  @write-txn
+            one-shot? (nil? rtx)]
+        (try
+          (if one-shot?
+            (with-open [txn (.txnWrite env)]
+              (transact* txs dbis txn)
+              (.commit txn))
+            (transact* txs dbis (.-txn rtx)))
+          :transacted
+          (catch Env$MapFullException _
+            (when-not one-shot? (.close ^Txn (.-txn rtx)))
+            (up-db-size env)
+            (if one-shot?
+              (.transact-kv this txs)
+              (do (reset-write-txn this)
+                  (raise "DB resized" {:resized true}))))
+          (catch Exception e
+            ;; (st/print-stack-trace e)
+            (raise "Fail to transact to LMDB: " (ex-message e) {}))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))

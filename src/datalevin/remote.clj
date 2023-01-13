@@ -458,8 +458,8 @@
   (doc-count [this]
     (cl/normal-request (.-client store) :doc-count [(.-db-name store)]))
 
-  (doc-refs [this]
-    (cl/normal-request (.-client store) :doc-refs [(.-db-name store)]))
+  ;; (doc-refs [this]
+  ;;   (cl/normal-request (.-client store) :doc-refs [(.-db-name store)]))
 
   (search [this query]
     (sc/search this query {}))
@@ -475,19 +475,19 @@
                       [(.-db-name store) opts])
    (->SearchEngine store)))
 
-(deftype IndexWriter [^KVStore store]
-  IIndexWriter
-  (write [this doc-ref doc-text]
-    (cl/normal-request (.-client store) :write
-                       [(.-db-name store) doc-ref doc-text]))
+;; (deftype IndexWriter [^KVStore store]
+;;   IIndexWriter
+;;   (write [this doc-ref doc-text]
+;;     (cl/normal-request (.-client store) :write
+;;                        [(.-db-name store) doc-ref doc-text]))
 
-  (commit [this]
-    (cl/normal-request (.-client store) :commit [(.-db-name store)])))
+;;   (commit [this]
+;;     (cl/normal-request (.-client store) :commit [(.-db-name store)])))
 
-(defn search-index-writer
-  ([store]
-   (search-index-writer store nil))
-  ([^KVStore store opts]
-   (cl/normal-request (.-client store) :search-index-writer
-                      [(.-db-name store) opts])
-   (->IndexWriter store)))
+;; (defn search-index-writer
+;;   ([store]
+;;    (search-index-writer store nil))
+;;   ([^KVStore store opts]
+;;    (cl/normal-request (.-client store) :search-index-writer
+;;                       [(.-db-name store) opts])
+;;    (->IndexWriter store)))

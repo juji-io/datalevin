@@ -1493,18 +1493,16 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      `doc-text` is the content of the document as a string.  The search engine
      does not store the original text, and assumes that caller can retrieve them
      by `doc-ref`. This function is for online update of search engine index.
-     Search index is updated with the new text if the `doc-ref` already exists.
-     For index creation of bulk data, use `search-index-writer`."}
+     Search index is updated with the new text if the `doc-ref` already exists. "}
   add-doc sc/add-doc)
 
 (def ^{:arglists '([engine doc-ref])
        :doc      "Remove a document referred to by `doc-ref` from the search
-engine index. A slow operation."}
+engine index."}
   remove-doc sc/remove-doc)
 
 (def ^{:arglists '([engine])
-       :doc      "Remove all documents from the search engine index. It is useful
-  because rebuilding search index may be faster than updating some documents."}
+       :doc      "Remove all documents from the search engine index."}
   clear-docs sc/clear-docs)
 
 (def ^{:arglists '([engine doc-ref])
@@ -1515,9 +1513,9 @@ engine index. A slow operation."}
        :doc      "Return the number of documents in the search index"}
   doc-count sc/doc-count)
 
-(def ^{:arglists '([engine])
-       :doc      "Return a seq of `doc-ref` in the search index"}
-  doc-refs sc/doc-refs)
+;; (def ^{:arglists '([engine])
+;;        :doc      "Return a seq of `doc-ref` in the search index"}
+;;   doc-refs sc/doc-refs)
 
 (def ^{:arglists '([engine query] [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` is a string of
@@ -1537,38 +1535,38 @@ words.
     results (default is `(constantly true)`)"}
   search sc/search)
 
-(defn search-index-writer
-  "Create a writer for writing documents to the search index in bulk, and
-  assume all the documents are new to the search index.
+;; (defn search-index-writer
+;;   "Create a writer for writing documents to the search index in bulk, and
+;;   assume all the documents are new to the search index.
 
-  The search index is stored in the passed-in key value database opened
-  by [[open-kv]]. See also [[write]] and [[commit]].
+;;   The search index is stored in the passed-in key value database opened
+;;   by [[open-kv]]. See also [[write]] and [[commit]].
 
-  `opts` is an option map that may contain these keys:
+;;   `opts` is an option map that may contain these keys:
 
-   * `:domain` is an identifier string, indicates the domain of this search engine.
-      This way, multiple independent search engines can reside in the same
-      key-value database, each with its own domain identifier.
+;;    * `:domain` is an identifier string, indicates the domain of this search engine.
+;;       This way, multiple independent search engines can reside in the same
+;;       key-value database, each with its own domain identifier.
 
-  * `:analyzer` is a function that takes a text string and return a seq of
-    [term, position, offset], where term is a word, position is the sequence
-     number of the term, and offset is the character offset of this term.
-  "
-  ([lmdb]
-   (search-index-writer lmdb nil))
-  ([lmdb opts]
-   (if (instance? KVStore lmdb)
-     (r/search-index-writer lmdb opts)
-     (sc/search-index-writer lmdb opts))))
+;;   * `:analyzer` is a function that takes a text string and return a seq of
+;;     [term, position, offset], where term is a word, position is the sequence
+;;      number of the term, and offset is the character offset of this term.
+;;   "
+;;   ([lmdb]
+;;    (search-index-writer lmdb nil))
+;;   ([lmdb opts]
+;;    (if (instance? KVStore lmdb)
+;;      (r/search-index-writer lmdb opts)
+;;      (sc/search-index-writer lmdb opts))))
 
-(def ^{:arglists '([writer doc-ref doc-text])
-       :doc      "Write a document to search index with a [[search-index-writer]]"}
-  write sc/write)
+;; (def ^{:arglists '([writer doc-ref doc-text])
+;;        :doc      "Write a document to search index with a [[search-index-writer]]"}
+;;   write sc/write)
 
-(def ^{:arglists '([writer])
-       :doc      "Commit writes to search index, must be called after writing
-all documents with a [[search-index-writer]]."}
-  commit sc/commit)
+;; (def ^{:arglists '([writer])
+;;        :doc      "Commit writes to search index, must be called after writing
+;; all documents with a [[search-index-writer]]."}
+;;   commit sc/commit)
 
 ;; -------------------------------------
 ;; byte buffer

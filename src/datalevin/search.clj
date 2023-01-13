@@ -303,14 +303,14 @@
   (clear-docs [this])
   (doc-indexed? [this doc-ref])
   (doc-count [this])
-  (doc-refs [this])
+  ;; (doc-refs [this])
   (search [this query] [this query opts])
   (analyzer [this])
   (terms-dbi [this])
   (docs-dbi [this])
   (positions-dbi [this])
   (term-ids-dbi [this])
-  (doc-refs-dbi [this])
+  ;; (doc-refs-dbi [this])
   (max-doc [this])
   (max-term [this])
   (lmdb [this]))
@@ -364,8 +364,8 @@
 
   (doc-count [_] (count docs))
 
-  (doc-refs [_]
-    (map first (l/get-range lmdb doc-refs-dbi [:all] :data :ignore false)))
+  ;; (doc-refs [_]
+  ;;   (map first (l/get-range lmdb doc-refs-dbi [:all] :data :ignore false)))
 
   (search [this query]
     (.search this query {}))
@@ -418,7 +418,7 @@
 
   (term-ids-dbi [_] term-ids-dbi)
 
-  (doc-refs-dbi [_] doc-refs-dbi)
+  ;; (doc-refs-dbi [_] doc-refs-dbi)
 
   (max-doc [_] max-doc)
 
@@ -635,83 +635,83 @@
                   (.-max-term old)
                   (.-index-position? old)))
 
-(defprotocol IIndexWriter
-  (write [this doc-ref doc-text])
-  (commit [this]))
+;; (defprotocol IIndexWriter
+;;   (write [this doc-ref doc-text])
+;;   (commit [this]))
 
-(deftype ^:no=doc IndexWriter [lmdb
-                               analyzer
-                               terms-dbi
-                               docs-dbi
-                               positions-dbi
-                               ^SpillableIntObjMap terms
-                               ^SpillableIntObjMap docs
-                               ^AtomicInteger max-doc
-                               ^AtomicInteger max-term
-                               index-position?
-                               ^FastList txs
-                               ^UnifiedMap hit-terms]
-  IIndexWriter
-  (write [this doc-ref doc-text]
-    (when-not (s/blank? doc-text)
-      (add-doc-txs this nil docs doc-text txs doc-ref hit-terms)
-      (when (< 10000000 (.size txs))
-        (.commit this))))
+;; (deftype ^:no=doc IndexWriter [lmdb
+;;                                analyzer
+;;                                terms-dbi
+;;                                docs-dbi
+;;                                positions-dbi
+;;                                ^SpillableIntObjMap terms
+;;                                ^SpillableIntObjMap docs
+;;                                ^AtomicInteger max-doc
+;;                                ^AtomicInteger max-term
+;;                                index-position?
+;;                                ^FastList txs
+;;                                ^UnifiedMap hit-terms]
+;;   IIndexWriter
+;;   (write [this doc-ref doc-text]
+;;     (when-not (s/blank? doc-text)
+;;       (add-doc-txs this nil docs doc-text txs doc-ref hit-terms)
+;;       (when (< 10000000 (.size txs))
+;;         (.commit this))))
 
-  (commit [_]
-    (l/transact-kv lmdb txs)
-    (.clear txs)
-    (loop [iter (.iterator (.entrySet hit-terms))]
-      (when (.hasNext iter)
-        (let [^Map$Entry kv (.next iter)]
-          (.add txs [:put terms-dbi (.getKey kv) (.getValue kv)
-                     :string :term-info])
-          (.remove iter)
-          (recur iter))))
-    (l/transact-kv lmdb txs)
-    (.clear txs))
+;;   (commit [_]
+;;     (l/transact-kv lmdb txs)
+;;     (.clear txs)
+;;     (loop [iter (.iterator (.entrySet hit-terms))]
+;;       (when (.hasNext iter)
+;;         (let [^Map$Entry kv (.next iter)]
+;;           (.add txs [:put terms-dbi (.getKey kv) (.getValue kv)
+;;                      :string :term-info])
+;;           (.remove iter)
+;;           (recur iter))))
+;;     (l/transact-kv lmdb txs)
+;;     (.clear txs))
 
-  ISearchEngine
-  (analyzer [_] analyzer)
+;;   ISearchEngine
+;;   (analyzer [_] analyzer)
 
-  (terms-dbi [_] terms-dbi)
+;;   (terms-dbi [_] terms-dbi)
 
-  (docs-dbi [_] docs-dbi)
+;;   (docs-dbi [_] docs-dbi)
 
-  (positions-dbi [_] positions-dbi)
+;;   (positions-dbi [_] positions-dbi)
 
-  (term-ids-dbi [_] term-ids-dbi)
+;;   (term-ids-dbi [_] term-ids-dbi)
 
-  (doc-refs-dbi [_] doc-refs-dbi)
+;;   (doc-refs-dbi [_] doc-refs-dbi)
 
-  (max-doc [_] max-doc)
+;;   (max-doc [_] max-doc)
 
-  (max-term [_] max-term)
+;;   (max-term [_] max-term)
 
-  (lmdb [_] lmdb))
+;;   (lmdb [_] lmdb))
 
-(defn search-index-writer
-  ([lmdb]
-   (search-index-writer lmdb nil))
-  ([lmdb {:keys [domain analyzer index-position?]
-          :or   {domain          "datalevin"
-                 analyzer        en-analyzer
-                 index-position? false}}]
-   (let [terms-dbi     (str domain "/" c/terms)
-         docs-dbi      (str domain "/" c/docs)
-         positions-dbi (str domain "/" c/positions)]
-     (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
-     (let [[_ max-doc docs] (init-docs lmdb docs-dbi)
-           [max-term terms] (init-terms lmdb terms-dbi)]
-       (->IndexWriter lmdb
-                      analyzer
-                      terms-dbi
-                      docs-dbi
-                      positions-dbi
-                      terms
-                      docs
-                      (AtomicInteger. max-doc)
-                      (AtomicInteger. max-term)
-                      index-position?
-                      (FastList.)
-                      (UnifiedMap.))))))
+;; (defn search-index-writer
+;;   ([lmdb]
+;;    (search-index-writer lmdb nil))
+;;   ([lmdb {:keys [domain analyzer index-position?]
+;;           :or   {domain          "datalevin"
+;;                  analyzer        en-analyzer
+;;                  index-position? false}}]
+;;    (let [terms-dbi     (str domain "/" c/terms)
+;;          docs-dbi      (str domain "/" c/docs)
+;;          positions-dbi (str domain "/" c/positions)]
+;;      (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
+;;      (let [[_ max-doc docs] (init-docs lmdb docs-dbi)
+;;            [max-term terms] (init-terms lmdb terms-dbi)]
+;;        (->IndexWriter lmdb
+;;                       analyzer
+;;                       terms-dbi
+;;                       docs-dbi
+;;                       positions-dbi
+;;                       terms
+;;                       docs
+;;                       (AtomicInteger. max-doc)
+;;                       (AtomicInteger. max-term)
+;;                       index-position?
+;;                       (FastList.)
+;;                       (UnifiedMap.))))))

@@ -879,34 +879,34 @@
                 (search-engine ~'server ~'skey (nth ~'args 0))
                 (rest ~'args))}))
 
-(defn- index-writer
-  [^Server server ^SelectionKey skey db-name]
-  (when (((get-client server (@(.attachment skey) :client-id)) :writers)
-         db-name)
-    (get-in (.-dbs server) [db-name :writer])))
+;; (defn- index-writer
+;;   [^Server server ^SelectionKey skey db-name]
+;;   (when (((get-client server (@(.attachment skey) :client-id)) :writers)
+;;          db-name)
+;;     (get-in (.-dbs server) [db-name :writer])))
 
-(defn- search-index-writer
-  [^Server server ^SelectionKey skey {:keys [args]}]
-  (wrap-error
-    (let [[db-name opts]      args
-          store               (get-store server db-name)
-          {:keys [client-id]} @(.attachment skey)
-          writer              (or (index-writer server skey db-name)
-                                  (sc/search-index-writer store opts))]
-      (update-client server client-id #(update % :writers conj db-name))
-      (update-db server db-name #(assoc % :writer writer))
-      (write-message skey {:type :command-complete}))))
+;; (defn- search-index-writer
+;;   [^Server server ^SelectionKey skey {:keys [args]}]
+;;   (wrap-error
+;;     (let [[db-name opts]      args
+;;           store               (get-store server db-name)
+;;           {:keys [client-id]} @(.attachment skey)
+;;           writer              (or (index-writer server skey db-name)
+;;                                   (sc/search-index-writer store opts))]
+;;       (update-client server client-id #(update % :writers conj db-name))
+;;       (update-db server db-name #(assoc % :writer writer))
+;;       (write-message skey {:type :command-complete}))))
 
-(defmacro index-writer-handler
-  "Handle request to index writer"
-  [f]
-  `(write-message
-     ~'skey
-     {:type   :command-complete
-      :result (apply
-                ~(symbol "datalevin.search" (str f))
-                (index-writer ~'server ~'skey (nth ~'args 0))
-                (rest ~'args))}))
+;; (defmacro index-writer-handler
+;;   "Handle request to index writer"
+;;   [f]
+;;   `(write-message
+;;      ~'skey
+;;      {:type   :command-complete
+;;       :result (apply
+;;                 ~(symbol "datalevin.search" (str f))
+;;                 (index-writer ~'server ~'skey (nth ~'args 0))
+;;                 (rest ~'args))}))
 
 (defn- open-store
   [root db-name dbis datalog?]
@@ -1008,12 +1008,12 @@
       (.put dbs db-name
             (assoc m :engine
                    (d/new-search-engine (get-in dbs [db-name :store])))))
-    (doseq [db-name writers
-            :when   (not (get-in dbs [db-name :writer]))
-            :let    [m (get dbs db-name {})]]
-      (.put dbs db-name
-            (assoc m :writer
-                   (d/search-index-writer (get-in dbs [db-name :store])))))
+    ;; (doseq [db-name writers
+    ;;         :when   (not (get-in dbs [db-name :writer]))
+    ;;         :let    [m (get dbs db-name {})]]
+    ;;   (.put dbs db-name
+    ;;         (assoc m :writer
+    ;;                (d/search-index-writer (get-in dbs [db-name :store])))))
     (doseq [db-name dt-dbs
             :when   (not (get-in dbs [db-name :dt-db]))
             :let    [m (get dbs db-name {})]]
@@ -1135,11 +1135,12 @@
    'clear-docs
    'doc-indexed?
    'doc-count
-   'doc-refs
+   ;; 'doc-refs
    'search
-   'search-index-writer
-   'write
-   'commit])
+   ;; 'search-index-writer
+   ;; 'write
+   ;; 'commit
+   ])
 
 (defmacro message-cases
   "Message handler function should have the same name as the incoming message
@@ -1990,9 +1991,9 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler doc-count)))
 
-(defn- doc-refs
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (search-handler doc-refs)))
+;; (defn- doc-refs
+;;   [^Server server ^SelectionKey skey {:keys [args writing?]}]
+;;   (wrap-error (search-handler doc-refs)))
 
 (defn- search
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

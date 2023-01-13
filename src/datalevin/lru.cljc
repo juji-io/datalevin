@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.lru
-  (:import [clojure.lang IPersistentCollection]))
+  (:import [clojure.lang IPersistentCollection Associative]))
 
 (declare assoc-lru cleanup-lru)
 
@@ -15,8 +15,7 @@
      (-pr-writer [_ writer opts]
        (-pr-writer key-value writer opts)))
    :clj
-   (deftype LRU [^clojure.lang.Associative key-value gen-key key-gen gen limit
-                 target]
+   (deftype LRU [^Associative key-value gen-key key-gen gen limit target]
      clojure.lang.ILookup
      (valAt [_ k]           (.valAt key-value k))
      (valAt [_ k not-found] (.valAt key-value k not-found))
