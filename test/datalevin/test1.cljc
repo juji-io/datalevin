@@ -31,7 +31,7 @@
           'datalevin.remote-withtxn-test
           'datalevin.remote-entity-test
           'datalevin.remote-transact-test)]
-    (System/exit (if (zero? (+ fail error)) 0 1))))
+    (System/exit (if (zero? (+ ^long fail ^long error)) 0 1))))
 
 (defn ^:export test-cljs []
   (datalevin.test.core/wrap-res #(t/run-all-tests #"datalevin\..*")))

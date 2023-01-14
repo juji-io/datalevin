@@ -10,7 +10,7 @@
 (deftest remote-search-kv-test
   (let [dir    "dtlv://datalevin:datalevin@localhost/remote-search-kv-test"
         lmdb   (d/open-kv dir)
-        engine (d/new-search-engine lmdb)]
+        engine (d/new-search-engine lmdb {:index-position? true})]
     (d/open-dbi lmdb "raw")
     (d/transact-kv
       lmdb
@@ -50,7 +50,9 @@
                          (map-indexed (fn [i ^String t]
                                         [t i (.indexOf text t)])
                                       (s/split text #"\s")))
-        engine         (d/new-search-engine lmdb {:analyzer blank-analyzer})]
+        engine         (d/new-search-engine
+                         lmdb {:analyzer        blank-analyzer
+                               :index-position? true})]
     (d/open-dbi lmdb "raw")
     (d/transact-kv
       lmdb

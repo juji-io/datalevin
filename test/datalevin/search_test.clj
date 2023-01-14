@@ -1,6 +1,7 @@
 (ns datalevin.search-test
   (:require [datalevin.search :as sut]
             [datalevin.lmdb :as l]
+            [datalevin.bits :as b]
             [datalevin.interpret :as i]
             [datalevin.core :as d]
             [datalevin.sparselist :as sl]
@@ -9,8 +10,9 @@
             [datalevin.test.core :as tdc :refer [db-fixture]]
             [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID ]
+           [org.roaringbitmap RoaringBitmap]
            [datalevin.sparselist SparseIntArrayList]
-           [datalevin.search SearchEngine IndexWriter]))
+           [datalevin.search SearchEngine]))
 
 (use-fixtures :each db-fixture)
 
@@ -41,8 +43,9 @@
                                       (s/split text #"\s")))
         dir            (u/tmp-dir (str "analyzer-" (UUID/randomUUID)))
         lmdb           (l/open-kv dir)
-        engine         ^SearchEngine (sut/new-search-engine
-                                       lmdb {:analyzer blank-analyzer})]
+        engine         (sut/new-search-engine
+                         lmdb {:analyzer        blank-analyzer
+                               :index-position? true})]
     (add-docs sut/add-doc engine)
     (is (= [[:doc1 [["dogs." [43]]]]]
            (sut/search engine "dogs." {:display :offsets})))
@@ -53,7 +56,8 @@
 (deftest index-test
   (let [dir    (u/tmp-dir (str "index-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
-        engine ^SearchEngine (sut/new-search-engine lmdb)]
+        engine ^SearchEngine (sut/new-search-engine
+                               lmdb {:index-position? true})]
 
     (is (= (sut/doc-count engine) 0))
     (is (not (sut/doc-indexed? engine :doc4)))
@@ -99,17 +103,21 @@
       (is (= (l/get-list lmdb (.-positions-dbi engine) [5 tid] :int-int :int-int)
              [[9 48]]))
 
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :int :doc-info true) [7 :doc1]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 2 :int :doc-info true) [8 :doc2]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 3 :int :doc-info true) [6 :doc3]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 4 :int :doc-info true) [7 :doc4]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 5 :int :doc-info true) [9 :doc5]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc1 :data :doc-info true)
+             [1 7 (b/bitmap [1,2,3,4,5,6,7])]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc2 :data :doc-info true)
+             [2 8 (b/bitmap [1,8,9,10,11,12,13,14])]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc3 :data :doc-info true)
+             [3 6 (b/bitmap [15,16,17,18,19,20])]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc4 :data :doc-info true)
+             [4 7 (b/bitmap [1,8,21,22,23,24,25])]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc5 :data :doc-info true)
+             [5 9 (b/bitmap [1,6,26,27,28,29,30,31,32])]))
       (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 5))
 
       (sut/remove-doc engine :doc1)
 
       (is (= (sut/doc-count engine) 4))
-      ;; (is (= (sut/doc-refs engine) [:doc2 :doc3 :doc4 :doc5]))
 
       (let [[tid mw ^SparseIntArrayList sl]
             (l/get-value lmdb (.-terms-dbi engine) "red" :string :term-info true)]
@@ -128,7 +136,8 @@
 (deftest search-test
   (let [dir    (u/tmp-dir (str "search-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
-        engine ^SearchEngine (sut/new-search-engine lmdb)]
+        engine ^SearchEngine (sut/new-search-engine
+                               lmdb {:index-position? true})]
     (add-docs sut/add-doc engine)
 
     (is (= [:doc1 :doc4 :doc2 :doc5] (sut/search engine "red cat")))
@@ -161,7 +170,8 @@
 (deftest search-143-test
   (let [dir    (u/tmp-dir (str "search-143-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
-        engine ^SearchEngine (sut/new-search-engine lmdb)]
+        engine ^SearchEngine (sut/new-search-engine
+                               lmdb {:index-position? true})]
 
     (sut/add-doc engine 1 "a tent")
     (sut/add-doc engine 2 "tent")
@@ -193,8 +203,10 @@
       (is (= (l/get-list lmdb (.-positions-dbi engine) [1 tid] :int-int :int-int)
              [[1 2]]))
 
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :int :doc-info true) [1 1]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 2 :int :doc-info true) [1 2]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :data :doc-info true)
+             [1 1 (b/bitmap [1])]))
+      (is (= (l/get-value lmdb (.-docs-dbi engine) 2 :data :doc-info true)
+             [2 1 (b/bitmap [1])]))
       (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 2))
       )
 
@@ -206,7 +218,8 @@
   (let [dir     (u/tmp-dir (str "search-multi" (UUID/randomUUID)))
         lmdb    (l/open-kv dir)
         engine1 ^SearchEngine (sut/new-search-engine lmdb)
-        engine2 ^SearchEngine (sut/new-search-engine lmdb {:domain "another"})]
+        engine2 ^SearchEngine (sut/new-search-engine
+                                lmdb {:domain "another"})]
     (sut/add-doc engine1 1 "hello world")
     (sut/add-doc engine1 2 "Mars is a red planet")
     (sut/add-doc engine1 3 "Earth is a blue planet")
@@ -235,7 +248,7 @@
 (deftest search-kv-test
   (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
-        engine (sut/new-search-engine lmdb)]
+        engine (sut/new-search-engine lmdb {:index-position? true})]
     (l/open-dbi lmdb "raw")
     (l/transact-kv
       lmdb

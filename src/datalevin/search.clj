@@ -8,6 +8,7 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.lru :as lru]
+   [clojure.stacktrace :as st]
    [clojure.string :as s])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
@@ -19,7 +20,6 @@
    [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
     IntDoubleHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.roaringbitmap RoaringBitmap FastAggregation FastRankRoaringBitmap
     PeekableIntIterator]))
 
@@ -331,6 +331,7 @@
               (remove-doc* this doc-id doc-ref)))
           (add-doc* this doc-ref doc-text))
         (catch Exception e
+          (st/print-stack-trace e)
           (u/raise "Error indexing document:" (ex-message e)
                    {:doc-ref doc-ref :doc-text doc-text})))))
   (add-doc [this doc-ref doc-text]
@@ -338,10 +339,12 @@
 
   (remove-doc [this doc-ref]
     (if-let [doc-id (doc-ref->id this doc-ref)]
-      (remove-doc* this norms docs doc-id doc-ref)
+      (remove-doc* this doc-id doc-ref)
       (u/raise "Document does not exist." {:doc-ref doc-ref})))
 
   (clear-docs [_]
+    (.empty docs)
+    (.empty terms)
     (l/clear-dbi lmdb terms-dbi)
     (l/clear-dbi lmdb docs-dbi)
     (l/clear-dbi lmdb positions-dbi))
@@ -395,13 +398,13 @@
   [^SearchEngine engine term]
   (lru/-get (.-cache engine)
             [:get-term-info term]
-            (l/get-value (.-lmdb engine) (.-terms-dbi engine) term
-                         :string :term-info false)))
+            #(l/get-value (.-lmdb engine) (.-terms-dbi engine) term
+                          :string :term-info)))
 
-(defn- term-id->info
+(defn- term-id->term-info
   [^SearchEngine engine term-id]
   (when-let [term (get (.-terms engine) term-id)]
-    (get-term-info engine term)))
+    [term (get-term-info engine term)]))
 
 (defn- doc-ref->id
   [^SearchEngine engine doc-ref]
@@ -414,10 +417,10 @@
   [^SearchEngine engine doc-ref]
   (let [bm (lru/-get (.-cache engine)
                      [:doc-ref->term-ids doc-ref]
-                     (peek (l/get-value (.-lmdb engine)
-                                        (.-docs-dbi engine)
-                                        doc-ref :data :doc-info true)))]
-    (.iterator ^RoaringBitmap bm)))
+                     #(peek (l/get-value (.-lmdb engine)
+                                         (.-docs-dbi engine)
+                                         doc-ref :data :doc-info true)))]
+    (iterator-seq (.iterator ^RoaringBitmap bm))))
 
 (defn- remove-doc*
   [^SearchEngine engine doc-id doc-ref]
@@ -427,37 +430,40 @@
         terms-dbi     (.-terms-dbi engine)
         positions-dbi (.-positions-dbi engine)
         cache         (.-cache engine)]
-    (dissoc (.-docs engine) doc-id)
+    (.remove ^SpillableIntObjMap (.-docs engine) doc-id)
     (.remove norms doc-id)
     (.add txs [:del (.-docs-dbi engine) doc-ref :data])
     (doseq [term-id (doc-ref->term-ids engine doc-ref)]
-      (let [[term [_ mw sl]] (term-id->info engine term-id)]
-        (lru/-del cache [:get-term-info term])
+      (let [[term [_ mw sl]] (term-id->term-info engine term-id)]
         (when-let [tf (sl/get sl doc-id)]
           (let [new-info [term-id
                           (del-max-weight sl doc-id mw tf norm)
                           (sl/remove sl doc-id)]]
-            (.add txs [:put terms-dbi term new-info :string :term-info]))))
+            ;; (println "new-info ==> " new-info)
+            (.add txs [:put terms-dbi term new-info :string :term-info])
+            (lru/-del cache [:get-term-info term]))))
       (.add txs [:del positions-dbi [doc-id term-id] :int-int]))
     (l/transact-kv (.-lmdb engine) txs)
     (-> cache
         (lru/-del [:doc-ref->id doc-ref])
-        (lru/-del [:doc-ref->term-ids doc-ref]))))
+        (lru/-del [:doc-ref->term-ids doc-ref])))
+  :doc-removed)
 
 (defn- add-doc*
   [^SearchEngine engine doc-ref doc-text]
-  (let [result        ((.-analyzer engine) doc-text)
-        new-terms     ^HashMap (collect-terms result)
-        unique        (.size new-terms)
-        doc-id        (.incrementAndGet ^AtomicInteger (.-max-doc engine))
-        term-bm       (RoaringBitmap.)
-        txs           (FastList.)
-        terms-dbi     (.-terms-dbi engine)
-        positions-dbi (.-positions-dbi engine)
-        terms         (.-terms engine)
-        max-term      (.-max-term engine)
-        cache         (.-cache engine)]
-    (assoc (.-docs engine) doc-id doc-ref)
+  (let [result          ((.-analyzer engine) doc-text)
+        new-terms       ^HashMap (collect-terms result)
+        unique          (.size new-terms)
+        doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
+        term-bm         (RoaringBitmap.)
+        txs             (FastList.)
+        terms-dbi       (.-terms-dbi engine)
+        positions-dbi   (.-positions-dbi engine)
+        terms           ^SpillableIntObjMap (.-terms engine)
+        max-term        (.-max-term engine)
+        index-position? (.-index-position? engine)
+        cache           (.-cache engine)]
+    (.put ^SpillableIntObjMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
     (doseq [^Map$Entry kv (.entrySet new-terms)]
       (let [term    (.getKey kv)
@@ -467,7 +473,7 @@
             [tid mw sl]
             (or (get-term-info engine term)
                 [(let [new-tid (.incrementAndGet ^AtomicInteger max-term)]
-                   (assoc terms new-tid term)
+                   (.put terms new-tid term)
                    new-tid)
                  0.0
                  (sl/sparse-arraylist)])
@@ -476,14 +482,18 @@
             [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)]]
         (lru/-put cache [:get-term-info term] term-info)
         (.add txs [:put terms-dbi term term-info :string :term-info])
-
         (.add ^RoaringBitmap term-bm ^int tid)
-        (when (.-index-position? engine)
+        (when index-position?
           (.add txs [:put-list positions-dbi [doc-id tid]
                      new-lst :int-int :int-int]))))
-    (.add txs [:put (.-docs-dbi engine) doc-ref [doc-id unique term-bm]
-               :data :doc-info])
-    (l/transact-kv (.-lmdb engine) txs)))
+    (let [doc-info [doc-id unique term-bm]]
+      (.add txs [:put (.-docs-dbi engine) doc-ref doc-info
+                 :data :doc-info])
+      (l/transact-kv (.-lmdb engine) txs)
+      (-> cache
+          (lru/-put [:doc-ref->id doc-ref] doc-id)
+          (lru/-put [:doc-ref->term-ids doc-ref] term-bm))))
+  :doc-added)
 
 (defn- hydrate-query
   [^SearchEngine engine ^AtomicInteger max-doc tokens]
@@ -509,9 +519,11 @@
 
 (defn- get-doc-ref
   [^SearchEngine engine doc-filter [_ doc-id]]
-  (when-let [doc-ref (nth (l/get-value (.-lmdb engine) (.-docs-dbi engine)
-                                       doc-id :int :doc-info) 1)]
-    (when (doc-filter doc-ref) doc-ref)))
+  (when-let [doc-ref ((.-docs engine) doc-id)]
+    (when (doc-filter doc-ref) doc-ref))
+  #_(when-let [doc-ref (nth (l/get-value (.-lmdb engine) (.-docs-dbi engine)
+                                         doc-id :int :doc-info) 1)]
+      (when (doc-filter doc-ref) doc-ref)))
 
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]

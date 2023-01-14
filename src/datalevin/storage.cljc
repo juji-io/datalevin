@@ -363,7 +363,7 @@
         (doseq [[op ^Datom d] (persistent! @ft-ds)
                 :let          [v (str (.-v d))]]
           (case op
-            :a (s/add-doc search-engine d v)
+            :a (s/add-doc search-engine d v false)
             :d (s/remove-doc search-engine d))))))
 
   (fetch [_ datom]
@@ -631,7 +631,8 @@
      (transact-opts lmdb opts)
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
-                (s/new-search-engine lmdb search-opts)
+                (s/new-search-engine lmdb (assoc search-opts
+                                                 :index-position? false))
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)

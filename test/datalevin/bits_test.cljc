@@ -8,7 +8,8 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [datalevin.util :as u])
+   [datalevin.util :as u]
+   [datalevin.bits :as b])
   (:import
    [java.util Arrays Date]
    [java.util.concurrent Semaphore]
@@ -92,12 +93,14 @@
 (test/defspec doc-info-generative-test
   100
   (prop/for-all [k1 gen/small-integer
-                 k2 gen/any-equatable]
-                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                 k2 gen/small-integer
+                 k3 (gen/list-distinct gen/small-integer)]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)
+                      bm             (sut/bitmap (sort k3))]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 k2] :doc-info)
+                  (sut/put-buffer bf [k1 k2 bm] :doc-info)
                   (.flip bf)
-                  (= [k1 k2] (sut/read-buffer bf :doc-info)))))
+                  (= [k1 k2 bm] (sut/read-buffer bf :doc-info)))))
 
 (test/defspec term-info-generative-test
   100

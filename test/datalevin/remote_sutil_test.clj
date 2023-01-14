@@ -19,7 +19,8 @@
                        #"[\s:/\.;,!=?\"'()\[\]{}|<>&@#^*\\~`]+")
                      :token-filters [sut/lower-case-token-filter
                                      sut/unaccent-token-filter
-                                     sut/en-stop-words-token-filter]})})]
+                                     sut/en-stop-words-token-filter]})
+                  :index-position? true})]
     (d/open-dbi lmdb "raw")
     (d/transact-kv
       lmdb
