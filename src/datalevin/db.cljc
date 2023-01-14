@@ -379,7 +379,7 @@
      :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
      :veat          (TreeSortedSet. ^Comparator d/cmp-datoms-veat)
      :pull-patterns (lru/cache 32 :constant)
-     :pull-attrs    (lru/cache 16 :constant)}))
+     :pull-attrs    (lru/cache 32 :constant)}))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))

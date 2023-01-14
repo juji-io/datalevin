@@ -1999,14 +1999,6 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler search)))
 
-(defn- write
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (index-writer-handler write)))
-
-(defn- commit
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (index-writer-handler commit)))
-
 ;; END message handlers
 
 (defprotocol IRunner

@@ -54,46 +54,46 @@
 
 
 (defn ^:export add-1 []
-  (core/bench-once
+  (core/bench-10
     (reduce
       (fn [db p]
         (-> db
-          (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
-          (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
-          (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
-          (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
-          (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
+            (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
+            (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
+            (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
+            (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
+            (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
       (d/empty-db (u/tmp-dir (str "datalevin-bench-add-1" (rand-int 10000)))
                   schema)
       core/people20k)))
 
 
 (defn ^:export add-5 []
-  (core/bench-once
-   (reduce (fn [db p] (d/db-with db [p]))
-           (d/empty-db (u/tmp-dir (str "datalevin-bench-add-5" (rand-int 10000)))
-                       schema)
-           core/people20k)))
+  (core/bench-10
+    (reduce (fn [db p] (d/db-with db [p]))
+            (d/empty-db (u/tmp-dir (str "datalevin-bench-add-5" (rand-int 10000)))
+                        schema)
+            core/people20k)))
 
 
 (defn ^:export add-all []
-  (core/bench-once
-   (d/db-with
-    (d/empty-db (u/tmp-dir (str "datalevin-bench-add-all" (rand-int 10000)))
-                schema)
-    core/people20k)))
+  (core/bench-10
+    (d/db-with
+      (d/empty-db (u/tmp-dir (str "datalevin-bench-add-all" (rand-int 10000)))
+                  schema)
+      core/people20k)))
 
 
 (defn ^:export init []
   (let [datoms (into []
-                 (for [p core/people20k
-                       :let [id (#?(:clj Integer/parseInt :cljs js/parseInt)
-                                 (:db/id p))]
-                       [k v] p
-                       :when (not= k :db/id)]
-                   (d/datom id k v)))]
-    (core/bench-once
-     (d/init-db datoms (u/tmp-dir (str "datalevin-bench-init" (rand-int 10000)))))))
+                     (for [p     core/people20k
+                           :let  [id (#?(:clj Integer/parseInt :cljs js/parseInt)
+                                       (:db/id p))]
+                           [k v] p
+                           :when (not= k :db/id)]
+                       (d/datom id k v)))]
+    (core/bench-10
+      (d/init-db datoms (u/tmp-dir (str "datalevin-bench-init" (rand-int 10000)))))))
 
 
 (defn ^:export retract-5 []
@@ -102,7 +102,7 @@
                            schema)
                core/people20k)
         eids (->> (d/datoms db :ave :name) (map :e) (shuffle))]
-    (core/bench-once
+    (core/bench-10
       (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
 
 

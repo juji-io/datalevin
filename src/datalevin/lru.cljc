@@ -1,7 +1,8 @@
 (ns ^:no-doc datalevin.lru
-  (:import [clojure.lang IPersistentCollection Associative]))
+  (:import [clojure.lang IPersistentCollection Associative
+            IPersistentMap]))
 
-(declare assoc-lru cleanup-lru)
+(declare assoc-lru dissoc-lru cleanup-lru)
 
 #?(:cljs
    (deftype LRU [key-value gen-key key-gen gen limit target]
@@ -23,9 +24,12 @@
      clojure.lang.Associative
      (containsKey [_ k] (.containsKey key-value k))
      (entryAt [_ k]     (.entryAt key-value k))
-     (assoc [this k v]  (assoc-lru this k v))))
+     (assoc [this k v]  (assoc-lru this k v))
 
-(defn assoc-lru [^LRU lru k v]
+     clojure.lang.IPersistentMap
+     (without [this k] (dissoc-lru this k))))
+
+(defn- assoc-lru [^LRU lru k v]
   (let [key-value (.-key-value lru)
         gen-key   (.-gen-key lru)
         key-gen   (.-key-gen lru)
@@ -49,35 +53,53 @@
               limit
               target)))))
 
-(defn cleanup-lru [^LRU lru]
+(defn- cleanup-lru [^LRU lru]
   (if (> (count (.-key-value lru)) ^long (.-limit lru))
     (let [key-value (.-key-value lru)
           gen-key   (.-gen-key lru)
           key-gen   (.-key-gen lru)
-          gen       (.-gen lru)
-          limit     (.-limit lru)
-          target    (.-target lru)
           [g k]     (first gen-key)]
       (LRU. (dissoc key-value k)
             (dissoc gen-key g)
             (dissoc key-gen k)
-            gen
-            limit
-            target))
+            (.-gen lru)
+            (.-limit lru)
+            (.-target lru)))
     lru))
+
+(defn- dissoc-lru [^LRU lru k]
+  (let [key-value (.-key-value lru)
+        gen-key   (.-gen-key lru)
+        key-gen   (.-key-gen lru)
+        g         (key-gen k)]
+    (LRU. (dissoc key-value k)
+          (dissoc gen-key g)
+          (dissoc key-gen k)
+          (.-gen lru)
+          (.-limit lru)
+          (.-target lru))))
 
 (defn lru [limit target]
   (LRU. {} (sorted-map) {} 0 limit target))
 
 (defprotocol ICache
-  (-get [this key compute-fn]))
+  (-get [this key compute-fn])
+  (-put [this key value])
+  (-del [this key]))
 
 (defn cache [limit target]
   (let [*impl (volatile! (lru limit target))]
     (reify ICache
       (-get [_ key compute-fn]
         (if-some [cached (get @*impl key nil)]
-          cached
+          (do (vswap! *impl assoc key cached)
+              cached)
           (let [computed (compute-fn)]
             (vswap! *impl assoc key computed)
-            computed))))))
+            computed)))
+      (-put [this key value]
+        (vswap! *impl assoc key value)
+        this)
+      (-del [this key]
+        (vswap! *impl dissoc key)
+        this))))

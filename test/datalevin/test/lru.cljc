@@ -5,7 +5,7 @@
    [datalevin.lru :as lru])
   (:import [datalevin.lru LRU]))
 
-(deftest test-lru
+(deftest test-assoc
   (let [^LRU l0 (lru/lru 2 (System/currentTimeMillis))
         ^LRU l1 (assoc l0 :a 1)
         ^LRU l2 (assoc l1 :b 2)
@@ -26,4 +26,23 @@
       l4 :c 3
       l5 :b 2   ;; :b remains
       l5 :c nil ;; :c gets evicted as the oldest one
+      l5 :d 5)))
+
+(deftest test-lru
+  (let [^LRU l0 (lru/lru 2 :constant)
+        ^LRU l1 (assoc l0 :a 1)
+        ^LRU l2 (assoc l1 :b 2)
+        ^LRU l3 (dissoc l2 :b)
+        ^LRU l4 (assoc l3 :b 4)
+        ^LRU l5 (assoc l4 :d 5)]
+    (are [l k v] (= (get l k) v)
+      l0 :a nil
+      l1 :a 1
+      l2 :a 1
+      l2 :b 2
+      l3 :b nil ;; :b is deleted
+      l3 :a 1
+      l4 :b 4
+      l4 :a 1
+      l5 :a nil ;; :a gets evicted as the oldest one
       l5 :d 5)))

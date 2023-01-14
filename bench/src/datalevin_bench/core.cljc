@@ -117,3 +117,15 @@
      `(let [start-t# (now)]
         ~@body
         (- (now) start-t#))))
+
+#?(:clj
+   (defmacro bench-10 [& body]
+     `(let [_#       (dotime 5 ~@body)
+            results# (into []
+                           (for [_# (range *repeats*)]
+                             (dotime 10 ~@body)))
+                                        ; min#     (reduce min results#)
+            med#     (percentile results# 0.5)
+                                        ; max#     (reduce max results#)
+            ]
+        med#)))

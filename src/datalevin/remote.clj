@@ -11,7 +11,7 @@
   (:import [datalevin.client Client]
            [datalevin.storage IStore]
            [datalevin.lmdb ILMDB]
-           [datalevin.search ISearchEngine IIndexWriter]
+           [datalevin.search ISearchEngine]
            [java.nio.file Files Paths StandardOpenOption LinkOption]
            [java.net URI]))
 
