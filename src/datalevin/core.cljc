@@ -1488,13 +1488,20 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
 (def ^{:arglists '([engine doc-ref doc-text]
                    [engine doc-ref doc-text check-exist?])
-       :doc      "Add a document to the search engine, `doc-ref` can be
-     arbitrary Clojure data that uniquely refers to the document in the system.
-     `doc-text` is the content of the document as a string.  The search engine
-     does not store the original text, and assumes that caller can retrieve them
-     by `doc-ref`.
+       :doc      "Add a document to the full-text search engine.
 
-    `check-exist?` indicating whether to check the existence of this document in the search index. Default is `true`, and search index will be updated with the new text. Set it to `false` when importing data or it is known that the document added is new, in order to improve ingestion speed."}
+  `doc-ref` can be arbitrary Clojure data that uniquely refers to the document
+in the system.
+
+  `doc-text` is the content of the document as a string.  The search engine
+does not store the original text, and assumes that caller can retrieve them
+by `doc-ref`.
+
+  `check-exist?` indicating whether to check the existence of this document in
+the search index. Default is `true` and search index will be updated with
+the new text. For better ingestion speed, set it to `false` when importing
+data, i.e. when it is known that `doc-ref` does not already exist in the
+search index."}
   add-doc sc/add-doc)
 
 (def ^{:arglists '([engine doc-ref])

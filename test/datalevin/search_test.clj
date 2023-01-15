@@ -55,10 +55,13 @@
     (u/delete-files dir)))
 
 (deftest index-test
-  (let [dir    (u/tmp-dir (str "index-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
-        engine ^SearchEngine (sut/new-search-engine
-                               lmdb {:index-position? true})]
+  (let [dir           (u/tmp-dir (str "index-" (UUID/randomUUID)))
+        lmdb          (l/open-kv dir)
+        engine        ^SearchEngine (sut/new-search-engine
+                                      lmdb {:index-position? true})
+        terms-dbi     (.-terms-dbi engine)
+        docs-dbi      (.-docs-dbi engine)
+        positions-dbi (.-positions-dbi engine)]
 
     (is (= (sut/doc-count engine) 0))
     (is (not (sut/doc-indexed? engine :doc4)))
@@ -71,61 +74,61 @@
 
     (is (= (sut/doc-count engine) 5))
 
-    (let [[tid mw ^SparseIntArrayList sl]
-          (l/get-value lmdb (.-terms-dbi engine) "red" :string :term-info true)]
-      (is (= (l/range-count lmdb (.-terms-dbi engine) [:all] :string) 32))
-      (is (= (l/get-value lmdb (.-terms-dbi engine) "red" :string :int) tid))
+    (let [[tid _ ^SparseIntArrayList sl]
+          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+      (is (= (l/range-count lmdb terms-dbi [:all] :string) 32))
+      (is (= (l/get-value lmdb terms-dbi "red" :string :int) tid))
 
       (is (sl/contains-index? sl 1))
       (is (sl/contains-index? sl 5))
       (is (= (sl/size sl) 4))
       (is (= (seq (.-indices sl)) [1 2 4 5]))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [1 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [1 tid] :int-int)
              (sl/get sl 1)
              2))
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [2 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [2 tid] :int-int)
              (sl/get sl 2)
              1))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [3 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [3 tid] :int-int)
              0))
       (is (nil? (sl/get sl 3)))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [4 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [4 tid] :int-int)
              (sl/get sl 4)
              1))
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [5 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [5 tid] :int-int)
              (sl/get sl 5)
              1))
 
-      (is (= (l/get-list lmdb (.-positions-dbi engine) [5 tid] :int-int :int-int)
+      (is (= (l/get-list lmdb positions-dbi [5 tid] :int-int :int-int)
              [[9 48]]))
 
-      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc1 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
              [1 7 (b/bitmap [1,2,3,4,5,6,7])]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc2 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi :doc2 :data :doc-info true)
              [2 8 (b/bitmap [1,8,9,10,11,12,13,14])]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc3 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi :doc3 :data :doc-info true)
              [3 6 (b/bitmap [15,16,17,18,19,20])]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc4 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi :doc4 :data :doc-info true)
              [4 7 (b/bitmap [1,8,21,22,23,24,25])]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) :doc5 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi :doc5 :data :doc-info true)
              [5 9 (b/bitmap [1,6,26,27,28,29,30,31,32])]))
-      (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 5))
+      (is (= (l/range-count lmdb docs-dbi [:all]) 5))
 
       (sut/remove-doc engine :doc1)
 
       (is (= (sut/doc-count engine) 4))
 
-      (let [[tid mw ^SparseIntArrayList sl]
-            (l/get-value lmdb (.-terms-dbi engine) "red" :string :term-info true)]
+      (let [[tid _ ^SparseIntArrayList sl]
+            (l/get-value lmdb terms-dbi "red" :string :term-info true)]
         (is (not (sut/doc-indexed? engine :doc1)))
-        (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 4))
+        (is (= (l/range-count lmdb docs-dbi [:all]) 4))
         (is (not (sl/contains-index? sl 1)))
         (is (= (sl/size sl) 3))
-        (is (= (l/list-count lmdb (.-positions-dbi engine) [1 tid] :int-id) 0))
-        (is (nil? (l/get-list lmdb (.-positions-dbi engine) [1 tid] :int-id :int-int))))
+        (is (= (l/list-count lmdb positions-dbi [1 tid] :int-id) 0))
+        (is (nil? (l/get-list lmdb positions-dbi [1 tid] :int-id :int-int))))
 
       (sut/clear-docs engine)
       (is (= (sut/doc-count engine) 0)))
@@ -139,8 +142,8 @@
                                lmdb {:index-position? true})]
     (add-docs sut/add-doc engine)
 
+    (is (= [:doc3 :doc2] (sut/search engine "mary moby")))
     (is (= [:doc1 :doc4 :doc2 :doc5] (sut/search engine "red cat")))
-    (is (empty? (sut/search engine "")))
     (is (= (sut/search engine "cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
     (is (= (sut/search engine "notaword cap" {:display :offsets})
@@ -159,18 +162,22 @@
             [:doc5 [["dogs" [52]] ["red" [48]]]]
             [:doc4 [["red" [18]]]]
             [:doc2 [["red" [40]]]]]))
-    (is (empty? (sut/search engine "solar")))
-    (is (empty? (sut/search engine "solar wind")))
     (is (= (sut/search engine "solar cap" {:display :offsets})
            [[:doc4 [["cap" [51]]]]]))
+    (is (empty? (sut/search engine "")))
+    (is (empty? (sut/search engine "solar")))
+    (is (empty? (sut/search engine "solar wind")))
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
 (deftest search-143-test
-  (let [dir    (u/tmp-dir (str "search-143-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
-        engine ^SearchEngine (sut/new-search-engine
-                               lmdb {:index-position? true})]
+  (let [dir           (u/tmp-dir (str "search-143-" (UUID/randomUUID)))
+        lmdb          (l/open-kv dir)
+        engine        ^SearchEngine (sut/new-search-engine
+                                      lmdb {:index-position? true})
+        terms-dbi     (.-terms-dbi engine)
+        positions-dbi (.-positions-dbi engine)
+        docs-dbi      (.-docs-dbi engine)]
 
     (sut/add-doc engine 1 "a tent")
     (sut/add-doc engine 2 "tent")
@@ -178,34 +185,34 @@
     (is (= (sut/doc-count engine) 2))
 
     (let [[tid mw ^SparseIntArrayList sl]
-          (l/get-value lmdb (.-terms-dbi engine) "tent" :string :term-info true)]
-      (is (= (l/range-count lmdb (.-terms-dbi engine) [:all] :string) 1))
-      (is (= (l/get-value lmdb (.-terms-dbi engine) "tent" :string :int) tid))
+          (l/get-value lmdb terms-dbi "tent" :string :term-info true)]
+      (is (= (l/range-count lmdb terms-dbi [:all] :string) 1))
+      (is (= (l/get-value lmdb terms-dbi "tent" :string :int) tid))
       (is (= mw 1.0))
 
       (is (sl/contains-index? sl 1))
       (is (= (sl/size sl) 2))
       (is (= (seq (.-indices sl)) [1 2]))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [1 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [1 tid] :int-int)
              (sl/get sl 1)
              1))
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [2 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [2 tid] :int-int)
              (sl/get sl 2)
              1))
 
-      (is (= (l/list-count lmdb (.-positions-dbi engine) [3 tid] :int-int)
+      (is (= (l/list-count lmdb positions-dbi [3 tid] :int-int)
              0))
       (is (nil? (sl/get sl 3)))
 
-      (is (= (l/get-list lmdb (.-positions-dbi engine) [1 tid] :int-int :int-int)
+      (is (= (l/get-list lmdb positions-dbi [1 tid] :int-int :int-int)
              [[1 2]]))
 
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 1 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi 1 :data :doc-info true)
              [1 1 (b/bitmap [1])]))
-      (is (= (l/get-value lmdb (.-docs-dbi engine) 2 :data :doc-info true)
+      (is (= (l/get-value lmdb docs-dbi 2 :data :doc-info true)
              [2 1 (b/bitmap [1])]))
-      (is (= (l/range-count lmdb (.-docs-dbi engine) [:all]) 2))
+      (is (= (l/range-count lmdb docs-dbi [:all]) 2))
       )
 
     (is (= (sut/search engine "tent") [2 1]))
@@ -334,4 +341,54 @@
                 (d/db conn) "Memorex")
            36))
     (d/close conn)
+    (u/delete-files dir)))
+
+(deftest update-doc-test
+  (let [dir       (u/tmp-dir (str "update-doc-test-" (UUID/randomUUID)))
+        lmdb      (d/open-kv dir)
+        engine    ^SearchEngine (d/new-search-engine lmdb)
+        terms-dbi (.-terms-dbi engine)
+        docs-dbi  (.-docs-dbi engine)]
+    (add-docs d/add-doc engine)
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
+      (is (= tid 7))
+      (is (= sl (sl/sparse-arraylist {1 1}))))
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+      (is (= tid 1))
+      (is (= sl (sl/sparse-arraylist {1 2 2 1 4 1 5 1}))))
+    (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
+           [1 7 (b/bitmap [1,2,3,4,5,6,7])]))
+    (is (= {1 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
+    (is (= 5 (d/doc-count engine)))
+
+    (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
+
+    (d/add-doc engine :doc1
+               "The quick brown fox jumped over the lazy black dogs.")
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
+      (is (= tid 7))
+      (is (= sl (sl/sparse-arraylist {6 1}))))
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+      (is (= tid 1))
+      (is (= sl (sl/sparse-arraylist {2 1 4 1 5 1}))))
+    (is (= {6 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
+    (is (= 5 (d/doc-count engine)))
+    (is (d/doc-indexed? engine :doc1))
+    (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
+           [6 8 (b/bitmap [2,3,4,5,6,7,33,34])]))
+
+    (is (= [:doc1] (d/search engine "black")))
+    (is (= [:doc1] (d/search engine "fox")))
+    (is (= [:doc1] (d/search engine "black fox")))
+    (is (= [:doc4 :doc2 :doc5] (d/search engine "red")))
+    (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
+    (is (= [:doc1] (d/search engine "brown fox")))
+    (is (= [:doc1 :doc5] (d/search engine "brown dogs")))
+    (is (= [:doc1 :doc2] (d/search engine "brown lamb")))
+
+    (d/close-kv lmdb)
     (u/delete-files dir)))

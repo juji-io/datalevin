@@ -143,39 +143,38 @@
   (advance [this] "move the iterator to the next position")
   (has-next? [this] "return true if there's next in iterator")
   (get-did [this] "return the current did the iterator points to")
-  (get-tf [this] "return tf of the current did"))
+  (get-tf [this did] "return tf of the given did"))
 
-(deftype ^:no-doc Candidate [tid
-                             ^:volatile-mutable did
+(deftype ^:no-doc Candidate [^int tid
                              ^SparseIntArrayList sl
                              ^PeekableIntIterator iter]
   ICandidate
-  (skip-before [this limit]
-    (.advanceIfNeeded iter limit)
-    this)
+  (skip-before [this limit] (.advanceIfNeeded iter limit) this)
+
+  (advance [this] (.next iter) this)
 
   (has-next? [_] (.hasNext iter))
 
-  (advance [this]
-    (set! did (.next iter))
-    this)
+  (get-did [_] (.peekNext iter))
 
-  (get-did [_] did)
-
-  (get-tf [_]
+  (get-tf [_ did]
     (.get ^GrowingIntArray (.-items sl)
           (dec (.rank ^FastRankRoaringBitmap (.-indices sl) did)))))
 
-(def ^:no-doc candidate-comp
-  (comparator (fn [^Candidate a ^Candidate b]
-                (- ^int (get-did a) ^int (get-did b)))))
+(defn- candidate-comp
+  [^Candidate a ^Candidate b]
+  (- ^int (get-did a) ^int (get-did b)))
 
 (defmethod print-method Candidate [^Candidate c, ^Writer w]
-  (.write w (pr-str {:tid       (.-tid c)
-                     :did       (get-did c)
-                     :tf        (get-tf c)
-                     :sl        (.-sl c)
-                     :has-next? (has-next? c)})))
+  (.write w (pr-str
+              (let [hn? (has-next? c)]
+                (cond-> {:tid (.-tid c)
+                         :sl  (.-sl c)}
+                  hn?  ((fn [m]
+                          (let [did (get-did c)]
+                            (merge m {:did did
+                                      :tf  (get-tf c did)}))))
+                  true (merge {:has-next? hn?}))))))
 
 (defn- find-pivot
   [^IntDoubleHashMap mxs tao-1 minimal-score
@@ -205,13 +204,21 @@
                 :prune
                 (let [tid (.-tid candidate)
                       s   (+ (- ^double score ^double (.get mxs tid))
-                             ^double (real-score tid did (get-tf candidate)
+                             ^double (real-score tid did
+                                                 (get-tf candidate did)
                                                  wqs norms))]
                   (if (< s ^double minimal-score)
                     :prune
                     (recur s h (inc k))))))
             score))
         score))))
+
+(defmacro candidate-array
+  [& body]
+  `(let [~'lst (FastList.)]
+     ~@body
+     (.toArray ~'lst ^"[Ldatalevin.search.Candidate;"
+               (make-array Candidate (.size ~'lst)))))
 
 (defn- first-candidates
   [sls bms tids ^RoaringBitmap result tao n]
@@ -221,43 +228,38 @@
                         vals
                         (into-array RoaringBitmap))
         union-bm   (FastAggregation/or
-                     ^"[Lorg.roaringbitmap.RoaringBitmap;" union-bms)
-        lst        (ArrayList.)]
-    (doseq [tid tids]
-      (let [sl   (sls tid)
-            bm   ^RoaringBitmap (bms tid)
-            bm'  (let [iter-bm (.clone bm)]
-                   (if (or (union-tids tid) (= tao 1))
-                     iter-bm
-                     (doto ^RoaringBitmap iter-bm
-                       (.and ^RoaringBitmap union-bm))))
-            bm'  (doto ^RoaringBitmap bm' (.andNot result))
-            iter (.getIntIterator ^RoaringBitmap bm')]
-        (when (.hasNext ^PeekableIntIterator iter)
-          (let [did       (.peekNext iter)
-                candidate (->Candidate tid did sl iter)]
-            (.add lst (advance candidate))))))
-    (.toArray lst ^"[Ldatalevin.search.Candidate;" (make-array Candidate 0))))
+                     ^"[Lorg.roaringbitmap.RoaringBitmap;" union-bms)]
+    (candidate-array
+      (doseq [tid tids]
+        (let [bm   ^RoaringBitmap (bms tid)
+              bm'  (let [iter-bm (.clone bm)]
+                     (if (or (union-tids tid) (= tao 1))
+                       iter-bm
+                       (doto ^RoaringBitmap iter-bm
+                         (.and ^RoaringBitmap union-bm))))
+              bm'  (doto ^RoaringBitmap bm' (.andNot result))
+              iter (.getIntIterator ^RoaringBitmap bm')]
+          (when (.hasNext ^PeekableIntIterator iter)
+            (.add lst (Candidate. tid (sls tid) iter))))))))
 
 (defn- next-candidates
   [did ^"[Ldatalevin.search.Candidate;" candidates]
-  (let [lst (FastList.)]
-    (dotimes [i (alength candidates)]
-      (let [candidate (aget candidates i)]
-        (skip-before candidate (inc ^int did))
-        (when (has-next? candidate) (.add lst (advance candidate)))))
-    (.toArray lst ^"[Ldatalevin.search.Candidate;" (make-array Candidate 0))))
+  (let [did+1 (inc ^int did)]
+    (candidate-array
+      (dotimes [i (alength candidates)]
+        (let [candidate (aget candidates i)]
+          (skip-before candidate did+1)
+          (when (has-next? candidate) (.add lst candidate)))))))
 
 (defn- skip-candidates
   [pivot pivot-did ^"[Ldatalevin.search.Candidate;" candidates]
-  (let [lst (FastList.)]
+  (candidate-array
     (dotimes [i (alength candidates)]
       (let [candidate (aget candidates i)]
         (if (< i ^long pivot)
           (do (skip-before candidate pivot-did)
-              (when (has-next? candidate) (.add lst (advance candidate))))
-          (.add lst candidate))))
-    (.toArray lst ^"[Ldatalevin.search.Candidate;" (make-array Candidate 0))))
+              (when (has-next? candidate) (.add lst candidate)))
+          (.add lst candidate))))))
 
 (defn- current-threshold
   [^PriorityQueue pq]
@@ -270,11 +272,11 @@
   (let [tid (.-tid candidate)]
     (when (< ^double minimal-score (.get mxs tid))
       (loop [did (get-did candidate) minscore minimal-score]
-        (let [score (real-score tid did (get-tf candidate) wqs norms)]
+        (let [score (real-score tid did (get-tf candidate did) wqs norms)]
           (when (< ^double minscore ^double score)
             (.insertWithOverflow ^PriorityQueue pq [score did])))
-        (when (has-next? candidate)
-          (recur (get-did (advance candidate)) (current-threshold pq)))))))
+        (when (has-next? (advance candidate))
+          (recur (get-did candidate) (current-threshold pq)))))))
 
 (defn- score-docs
   [n tids sls bms mxs wqs ^IntShortHashMap norms ^RoaringBitmap result]
@@ -289,12 +291,14 @@
           (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
           :else
           (let [_                   (Arrays/sort candidates candidate-comp)
-                [mxscore pivot did] (find-pivot mxs (dec tao) minimal-score
+                [mxscore pivot did] (find-pivot mxs (dec tao)
+                                                minimal-score
                                                 candidates)]
             (if (= ^int did ^int (get-did (aget candidates 0)))
               (let [score (score-pivot wqs mxs norms did minimal-score
                                        mxscore tao n candidates)]
-                (when-not (= score :prune) (.insertWithOverflow pq [score did]))
+                (when-not (= score :prune)
+                  (.insertWithOverflow pq [score did]))
                 (recur (next-candidates did candidates)))
               (recur (skip-candidates pivot did candidates)))))))))
 
@@ -403,7 +407,7 @@
 
 (defn- term-id->term-info
   [^SearchEngine engine term-id]
-  (when-let [term (get (.-terms engine) term-id)]
+  (when-let [term ((.-terms engine) term-id)]
     [term (get-term-info engine term)]))
 
 (defn- doc-ref->id
@@ -524,15 +528,17 @@
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
   (when-let [doc-ref (get-doc-ref engine doc-filter result)]
-    [doc-ref
-     (sequence
-       (comp (map (fn [tid]
-                 (let [lst (l/get-list (.-lmdb engine) (.-positions-dbi engine)
-                                       [doc-id tid] :int-int :int-int)]
-                   (when (seq lst)
-                     [(terms tid) (mapv #(nth % 1) lst)]))))
-          (remove nil? ))
-       (keys terms))]))
+    (let [lmdb          (.-lmdb engine)
+          positions-dbi (.-positions-dbi engine)]
+      [doc-ref
+       (sequence
+         (comp (map (fn [tid]
+                   (let [lst (l/get-list lmdb positions-dbi
+                                         [doc-id tid] :int-int :int-int)]
+                     (when (seq lst)
+                       [(terms tid) (mapv #(nth % 1) lst)]))))
+            (remove nil? ))
+         (keys terms))])))
 
 (defn- display-xf
   [^SearchEngine engine doc-filter display tms]
