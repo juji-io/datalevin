@@ -6,24 +6,23 @@ Apache Lucene.
 
 ## Test Data
 
-The data source is [Wikipedia database backup dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2), over 18GB XML compressed.
+The data source is [Wikipedia database backup dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2), over 20GB XML compressed.
 
 For our purpose, we use
 [WikiExtractor](https://github.com/attardi/wikiextractor), a python script, to
 extract all articles into a JSON file. Furthermore, we use
-[jq](https://stedolan.github.io/jq/) to remove articles containing less than 500
-characters (e.g. those only refer to other articles) and strip away unneeded
-meta data, just leaving article content as the text and url as the identifier.
+[jq](https://stedolan.github.io/jq/) to strip away unneeded
+meta data, just leave the article text and the url as the identifier.
 
 ```console
 wget https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2
 
 wikiextractor -o - --json --no-templates enwiki-latest-pages-articles.xml.bz2 |
-jq -s '.[] | select((.text | length) > 500) | {url, text}' > wiki.json
+jq -s '.[] | select((.text | {url, text}' > wiki.json
 
 ```
 This may take a few of hours to run, depending on your hardware. It produces a JSON
-file containing over 6.3 million articles, totaling 15GB of text.
+file containing over 16.8 million articles, totaling 15 GB.
 
 ## Test Queries
 

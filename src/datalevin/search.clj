@@ -614,7 +614,7 @@
 
 (defn transfer
   "transfer state of an existing engine to an new engine that has a
-  different LMDB instance"
+  different LMDB instance, e.g. result of `mark-write`"
   [^SearchEngine old lmdb]
   (->SearchEngine lmdb
                   (.-analyzer old)
