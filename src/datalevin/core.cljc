@@ -718,7 +718,6 @@ Only usable for debug output.
                        [:db/add 296 :friend -1]])"
   ([conn tx-data] (transact! conn tx-data nil))
   ([conn tx-data tx-meta]
-   ;; {:pre [(conn? conn)]}
    (let [report (-transact! conn tx-data tx-meta)]
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
        (callback report))
@@ -1515,10 +1514,6 @@ engine index."}
        :doc      "Return the number of documents in the search index"}
   doc-count sc/doc-count)
 
-;; (def ^{:arglists '([engine])
-;;        :doc      "Return a seq of `doc-ref` in the search index"}
-;;   doc-refs sc/doc-refs)
-
 (def ^{:arglists '([engine query] [engine query opts])
        :doc      "Issue a `query` to the search engine. `query` is a string of
 words.
@@ -1536,39 +1531,6 @@ words.
     determines whether or not to include the corresponding document in the
     results (default is `(constantly true)`)"}
   search sc/search)
-
-;; (defn search-index-writer
-;;   "Create a writer for writing documents to the search index in bulk, and
-;;   assume all the documents are new to the search index.
-
-;;   The search index is stored in the passed-in key value database opened
-;;   by [[open-kv]]. See also [[write]] and [[commit]].
-
-;;   `opts` is an option map that may contain these keys:
-
-;;    * `:domain` is an identifier string, indicates the domain of this search engine.
-;;       This way, multiple independent search engines can reside in the same
-;;       key-value database, each with its own domain identifier.
-
-;;   * `:analyzer` is a function that takes a text string and return a seq of
-;;     [term, position, offset], where term is a word, position is the sequence
-;;      number of the term, and offset is the character offset of this term.
-;;   "
-;;   ([lmdb]
-;;    (search-index-writer lmdb nil))
-;;   ([lmdb opts]
-;;    (if (instance? KVStore lmdb)
-;;      (r/search-index-writer lmdb opts)
-;;      (sc/search-index-writer lmdb opts))))
-
-;; (def ^{:arglists '([writer doc-ref doc-text])
-;;        :doc      "Write a document to search index with a [[search-index-writer]]"}
-;;   write sc/write)
-
-;; (def ^{:arglists '([writer])
-;;        :doc      "Commit writes to search index, must be called after writing
-;; all documents with a [[search-index-writer]]."}
-;;   commit sc/commit)
 
 ;; -------------------------------------
 ;; byte buffer

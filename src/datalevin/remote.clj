@@ -1,19 +1,21 @@
 (ns ^:no-doc datalevin.remote
   "Proxy for remote stores"
-  (:require [datalevin.util :as u]
-            [datalevin.constants :as c]
-            [datalevin.client :as cl]
-            [datalevin.storage :as s]
-            [datalevin.bits :as b]
-            [datalevin.search :as sc]
-            [datalevin.lmdb :as l :refer [IWriting]]
-            [clojure.string :as str])
-  (:import [datalevin.client Client]
-           [datalevin.storage IStore]
-           [datalevin.lmdb ILMDB]
-           [datalevin.search ISearchEngine]
-           [java.nio.file Files Paths StandardOpenOption LinkOption]
-           [java.net URI]))
+  (:require
+   [datalevin.util :as u]
+   [datalevin.constants :as c]
+   [datalevin.client :as cl]
+   [datalevin.storage :as s]
+   [datalevin.bits :as b]
+   [datalevin.search :as sc]
+   [datalevin.lmdb :as l :refer [IWriting]]
+   [clojure.string :as str])
+  (:import
+   [datalevin.client Client]
+   [datalevin.storage IStore]
+   [datalevin.lmdb ILMDB]
+   [datalevin.search ISearchEngine]
+   [java.nio.file Files Paths StandardOpenOption LinkOption]
+   [java.net URI]))
 
 (defn dtlv-uri?
   "return true if the given string is a Datalevin connection string"
@@ -458,9 +460,6 @@
   (doc-count [this]
     (cl/normal-request (.-client store) :doc-count [(.-db-name store)]))
 
-  ;; (doc-refs [this]
-  ;;   (cl/normal-request (.-client store) :doc-refs [(.-db-name store)]))
-
   (search [this query]
     (sc/search this query {}))
   (search [this query opts]
@@ -474,20 +473,3 @@
    (cl/normal-request (.-client store) :new-search-engine
                       [(.-db-name store) opts])
    (->SearchEngine store)))
-
-;; (deftype IndexWriter [^KVStore store]
-;;   IIndexWriter
-;;   (write [this doc-ref doc-text]
-;;     (cl/normal-request (.-client store) :write
-;;                        [(.-db-name store) doc-ref doc-text]))
-
-;;   (commit [this]
-;;     (cl/normal-request (.-client store) :commit [(.-db-name store)])))
-
-;; (defn search-index-writer
-;;   ([store]
-;;    (search-index-writer store nil))
-;;   ([^KVStore store opts]
-;;    (cl/normal-request (.-client store) :search-index-writer
-;;                       [(.-db-name store) opts])
-;;    (->IndexWriter store)))

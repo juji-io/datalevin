@@ -439,7 +439,6 @@
           (let [new-info [term-id
                           (del-max-weight sl doc-id mw tf norm)
                           (sl/remove sl doc-id)]]
-            ;; (println "new-info ==> " new-info)
             (.add txs [:put terms-dbi term new-info :string :term-info])
             (lru/-del cache [:get-term-info term]))))
       (.add txs [:del positions-dbi [doc-id term-id] :int-int]))
@@ -520,10 +519,7 @@
 (defn- get-doc-ref
   [^SearchEngine engine doc-filter [_ doc-id]]
   (when-let [doc-ref ((.-docs engine) doc-id)]
-    (when (doc-filter doc-ref) doc-ref))
-  #_(when-let [doc-ref (nth (l/get-value (.-lmdb engine) (.-docs-dbi engine)
-                                         doc-id :int :doc-info) 1)]
-      (when (doc-filter doc-ref) doc-ref)))
+    (when (doc-filter doc-ref) doc-ref)))
 
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
@@ -562,7 +558,7 @@
 
 (defn- init-terms
   [lmdb terms-dbi]
-  (let [terms  (sp/new-spillable-intobj-map)
+  (let [terms  (sp/new-spillable-intobj-map {} {:spill-threshold 60})
         max-id (volatile! 0)]
     (doseq [[term id] (l/get-range lmdb terms-dbi [:all] :string :int)]
       (when (< ^int @max-id ^int id) (vreset! max-id id))
@@ -572,7 +568,7 @@
 (defn- init-docs
   [lmdb docs-dbi]
   (let [norms  (IntShortHashMap.)
-        docs   (sp/new-spillable-intobj-map)
+        docs   (sp/new-spillable-intobj-map {} {:spill-threshold 60})
         max-id (volatile! 0)
         load   (fn [kv]
                  (let [vb   (l/v kv)

@@ -6,11 +6,12 @@
             [datalevin.core :as d]
             [datalevin.sparselist :as sl]
             [datalevin.util :as u]
+            [clojure.data.csv :as csv]
+            [clojure.java.io :as io]
             [clojure.string :as s]
             [datalevin.test.core :as tdc :refer [db-fixture]]
             [clojure.test :refer [deftest testing is use-fixtures]])
   (:import [java.util UUID ]
-           [org.roaringbitmap RoaringBitmap]
            [datalevin.sparselist SparseIntArrayList]
            [datalevin.search SearchEngine]))
 
@@ -61,7 +62,6 @@
 
     (is (= (sut/doc-count engine) 0))
     (is (not (sut/doc-indexed? engine :doc4)))
-    ;; (is (= (sut/doc-refs engine) []))
 
     (add-docs sut/add-doc engine)
 
@@ -70,7 +70,6 @@
     (is (not (sut/doc-indexed? engine "non-existent")))
 
     (is (= (sut/doc-count engine) 5))
-    ;; (is (= (sut/doc-refs engine) [:doc1 :doc2 :doc3 :doc4 :doc5]))
 
     (let [[tid mw ^SparseIntArrayList sl]
           (l/get-value lmdb (.-terms-dbi engine) "red" :string :term-info true)]
@@ -177,7 +176,6 @@
     (sut/add-doc engine 2 "tent")
 
     (is (= (sut/doc-count engine) 2))
-    ;; (is (= (sut/doc-refs engine) [1 2]))
 
     (let [[tid mw ^SparseIntArrayList sl]
           (l/get-value lmdb (.-terms-dbi engine) "tent" :string :term-info true)]
@@ -232,19 +230,6 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-;; (deftest index-writer-test
-;;   (let [dir    (u/tmp-dir (str "writer-" (UUID/randomUUID)))
-;;         lmdb   (l/open-kv dir)
-;;         writer ^IndexWriter (sut/search-index-writer lmdb)]
-;;     (add-docs sut/write writer)
-;;     (sut/commit writer)
-
-;;     (let [engine (sut/new-search-engine lmdb)]
-;;       (is (= (sut/search engine "cap" {:display :offsets})
-;;              [[:doc4 [["cap" [51]]]]])))
-;;     (l/close-kv lmdb)
-;;     (u/delete-files dir)))
-
 (deftest search-kv-test
   (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
@@ -262,7 +247,6 @@
     (is (sut/doc-indexed? engine 1))
 
     (is (= 3 (sut/doc-count engine)))
-    ;; (is (= [1 2 3] (sut/doc-refs engine)))
 
     (is (= (sut/search engine "lazy") [1]))
     (is (= (sut/search engine "red" ) [1 2]))
@@ -322,5 +306,32 @@
     (is (= (d/datom-v
              (first (d/fulltext-datoms (d/db conn) "brown fox")))
            s))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(defn- rows->maps [csv]
+  (let [headers (map keyword (first csv))
+        rows    (rest csv)]
+    (map #(zipmap headers %) rows)))
+
+(deftest load-csv-test
+  (let [dir   (u/tmp-dir (str "load-csv-test-" (UUID/randomUUID)))
+        conn  (d/create-conn
+                dir {:id          {:db/valueType :db.type/string
+                                   :db/unique    :db.unique/identity}
+                     :description {:db/valueType :db.type/string
+                                   :db/fulltext  true}})
+        data  (rows->maps
+                (with-open [reader (io/reader "test/data/data.csv")]
+                  (doall (csv/read-csv reader))))
+        start (System/currentTimeMillis)]
+    (d/transact! conn data)
+    (is (< (- (System/currentTimeMillis) start) 5000))
+    (is (= 36 (count (d/fulltext-datoms (d/db conn) "Memorex" {:top 100}))))
+    (is (= (d/q '[:find (count ?e) .
+                  :in $ ?q
+                  :where [(fulltext $ ?q {:top 100}) [[?e _ _]]]]
+                (d/db conn) "Memorex")
+           36))
     (d/close conn)
     (u/delete-files dir)))
