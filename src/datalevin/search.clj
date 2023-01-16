@@ -75,12 +75,12 @@
                            (doto (FastList.) (.add [position offset]))))))
     terms))
 
-(defn- idf
+(defn idf
   "inverse document frequency of a term"
   [^long freq N]
   (if (zero? freq) 0 (Math/log10 (/ ^long N freq))))
 
-(defn- tf*
+(defn tf*
   "log-weighted term frequency"
   [freq]
   (if (zero? ^short freq) 0 (+ (Math/log10 ^short freq) 1)))
@@ -328,16 +328,17 @@
   ISearchEngine
   (add-doc [this doc-ref doc-text check-exist?]
     (locking docs
-      (try
-        (when-not (s/blank? doc-text)
-          (when check-exist?
-            (when-let [doc-id (doc-ref->id this doc-ref)]
-              (remove-doc* this doc-id doc-ref)))
-          (add-doc* this doc-ref doc-text))
-        (catch Exception e
-          (st/print-stack-trace e)
-          (u/raise "Error indexing document:" (ex-message e)
-                   {:doc-ref doc-ref :doc-text doc-text})))))
+      (when-not (s/blank? doc-text)
+        (when check-exist?
+          (when-let [doc-id (doc-ref->id this doc-ref)]
+            (remove-doc* this doc-id doc-ref)))
+        (add-doc* this doc-ref doc-text))
+      #_(try
+
+          (catch Exception e
+            (st/print-stack-trace e)
+            (u/raise "Error indexing document:" (ex-message e)
+                     {:doc-ref doc-ref :doc-text doc-text})))))
   (add-doc [this doc-ref doc-text]
     (.add-doc this doc-ref doc-text true))
 
@@ -553,7 +554,7 @@
   (assert (not (l/closed-kv? lmdb)) "LMDB env is closed.")
 
   ;; term -> term-id,max-weight,doc-freq
-  (l/open-dbi lmdb terms-dbi {:key-size c/+max-term-length+})
+  (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
 
   ;; doc-ref -> doc-id,norm,term-bm
   (l/open-dbi lmdb docs-dbi {:key-size c/+max-key-size+})

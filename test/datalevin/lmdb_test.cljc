@@ -178,21 +178,22 @@
 
 (test/defspec datom-ops-generative-test
   100
-  (prop/for-all [k gen/large-integer
-                 e gen/large-integer
-                 a gen/keyword-ns
-                 v gen/any-equatable]
-                (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-kv dir)
-                      _      (l/open-dbi lmdb "a")
-                      d      (d/datom e a v e)
-                      _      (l/transact-kv lmdb [[:put "a" k d :long :datom]])
-                      put-ok (= d (l/get-value lmdb "a" k :long :datom))
-                      _      (l/transact-kv lmdb [[:del "a" k :long]])
-                      del-ok (nil? (l/get-value lmdb "a" k :long))]
-                  (l/close-kv lmdb)
-                  (u/delete-files dir)
-                  (is (and put-ok del-ok)))))
+  (prop/for-all
+    [k gen/large-integer
+     e gen/large-integer
+     a gen/keyword-ns
+     v gen/any-equatable]
+    (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+          lmdb   (l/open-kv dir)
+          _      (l/open-dbi lmdb "a")
+          d      (d/datom e a v e)
+          _      (l/transact-kv lmdb [[:put "a" k d :long :datom]])
+          put-ok (= d (l/get-value lmdb "a" k :long :datom))
+          _      (l/transact-kv lmdb [[:del "a" k :long]])
+          del-ok (nil? (l/get-value lmdb "a" k :long))]
+      (l/close-kv lmdb)
+      (u/delete-files dir)
+      (is (and put-ok del-ok)))))
 
 (defn- data-size-less-than?
   [^long limit data]
@@ -200,38 +201,40 @@
 
 (test/defspec data-ops-generative-test
   100
-  (prop/for-all [k (gen/such-that (partial data-size-less-than? c/+max-key-size+)
-                                  gen/any-equatable)
-                 v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
-                                  gen/any-equatable)]
-                (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-kv dir)
-                      _      (l/open-dbi lmdb "a")
-                      _      (l/transact-kv lmdb [[:put "a" k v]])
-                      put-ok (= v (l/get-value lmdb "a" k))
-                      _      (l/transact-kv lmdb [[:del "a" k]])
-                      del-ok (nil? (l/get-value lmdb "a" k))]
-                  (l/close-kv lmdb)
-                  (u/delete-files dir)
-                  (is (and put-ok del-ok)))))
+  (prop/for-all
+    [k (gen/such-that (partial data-size-less-than? c/+max-key-size+)
+                      gen/any-equatable)
+     v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
+                      gen/any-equatable)]
+    (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+          lmdb   (l/open-kv dir)
+          _      (l/open-dbi lmdb "a")
+          _      (l/transact-kv lmdb [[:put "a" k v]])
+          put-ok (= v (l/get-value lmdb "a" k))
+          _      (l/transact-kv lmdb [[:del "a" k]])
+          del-ok (nil? (l/get-value lmdb "a" k))]
+      (l/close-kv lmdb)
+      (u/delete-files dir)
+      (is (and put-ok del-ok)))))
 
 (test/defspec bytes-ops-generative-test
   100
-  (prop/for-all [^bytes k (gen/not-empty gen/bytes)
-                 ^bytes v (gen/not-empty gen/bytes)]
-                (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-kv dir)
-                      _      (l/open-dbi lmdb "a")
-                      _      (l/transact-kv lmdb [[:put "a" k v :bytes :bytes]])
-                      put-ok (Arrays/equals v
-                                            ^bytes
-                                            (l/get-value
-                                              lmdb "a" k :bytes :bytes))
-                      _      (l/transact-kv lmdb [[:del "a" k :bytes]])
-                      del-ok (nil? (l/get-value lmdb "a" k :bytes))]
-                  (l/close-kv lmdb)
-                  (u/delete-files dir)
-                  (is (and put-ok del-ok)))))
+  (prop/for-all
+    [^bytes k (gen/not-empty gen/bytes)
+     ^bytes v (gen/not-empty gen/bytes)]
+    (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+          lmdb   (l/open-kv dir)
+          _      (l/open-dbi lmdb "a")
+          _      (l/transact-kv lmdb [[:put "a" k v :bytes :bytes]])
+          put-ok (Arrays/equals v
+                                ^bytes
+                                (l/get-value
+                                  lmdb "a" k :bytes :bytes))
+          _      (l/transact-kv lmdb [[:del "a" k :bytes]])
+          del-ok (nil? (l/get-value lmdb "a" k :bytes))]
+      (l/close-kv lmdb)
+      (u/delete-files dir)
+      (is (and put-ok del-ok)))))
 
 (test/defspec long-ops-generative-test
   100

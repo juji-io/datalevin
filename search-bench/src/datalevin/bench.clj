@@ -80,16 +80,20 @@
   (let [pool (Executors/newWorkStealingPool)]
     (search 0 pool dir filename n)))
 
-(defn run [opts]
+(defn -main []
   (println)
   (println "Datalevin:")
-  (index-wiki-json "data/wiki-datalevin-100" "data/test.json")
+
+  ;; (index-wiki-json "data/wiki-datalevin-100" "data/wiki100.json")
+  ;; (println "Done indexing.")
+  ;; (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-100"))
+  ;;        "data/queries100.txt" 100)
+  ;; (println "Done query.")
+
+  (index-wiki-json "data/wiki-datalevin-all" "data/wiki.json")
   (println "Done indexing.")
-  (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-100"))
-         "data/queries100.txt" 100)
+  (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-all"))
+         "queries40k.txt" 40000)
   (println "Done query.")
-  ;; (index-wiki-json "data/wiki-datalevin-all" "data/wiki.json")
-  ;; (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-all"))
-  ;;        "queries40k.txt" 40000)
 
   )

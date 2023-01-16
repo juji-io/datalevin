@@ -1,19 +1,24 @@
 (ns datalevin.search-test
-  (:require [datalevin.search :as sut]
-            [datalevin.lmdb :as l]
-            [datalevin.bits :as b]
-            [datalevin.interpret :as i]
-            [datalevin.core :as d]
-            [datalevin.sparselist :as sl]
-            [datalevin.util :as u]
-            [clojure.data.csv :as csv]
-            [clojure.java.io :as io]
-            [clojure.string :as s]
-            [datalevin.test.core :as tdc :refer [db-fixture]]
-            [clojure.test :refer [deftest testing is use-fixtures]])
-  (:import [java.util UUID ]
-           [datalevin.sparselist SparseIntArrayList]
-           [datalevin.search SearchEngine]))
+  (:require
+   [datalevin.search :as sut]
+   [datalevin.lmdb :as l]
+   [datalevin.bits :as b]
+   [datalevin.interpret :as i]
+   [datalevin.core :as d]
+   [datalevin.sparselist :as sl]
+   [datalevin.util :as u]
+   [clojure.data.csv :as csv]
+   [clojure.java.io :as io]
+   [clojure.string :as s]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop]
+   [clojure.test :refer [deftest testing is use-fixtures]])
+  (:import
+   [java.util UUID ]
+   [datalevin.sparselist SparseIntArrayList]
+   [datalevin.search SearchEngine]))
 
 (use-fixtures :each db-fixture)
 
@@ -390,5 +395,152 @@
     (is (= [:doc1 :doc5] (d/search engine "brown dogs")))
     (is (= [:doc1 :doc2] (d/search engine "brown lamb")))
 
+    (d/add-doc engine :doc2
+               "Mary had a little lamb whose fleece was black as coal.")
+    (is (= [:doc2 :doc1] (d/search engine "black")))
+    (is (= [:doc1 :doc2] (d/search engine "black fox")))
+    (is (= [:doc4 :doc5] (d/search engine "red")))
+    (is (= [:doc1 :doc4 :doc5] (d/search engine "red fox")))
+    (is (= [:doc2 :doc1] (d/search engine "brown lamb")))
+
     (d/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest huge-doc-test
+  (let [dir       (u/tmp-dir (str "huge-doc-test-" (UUID/randomUUID)))
+        lmdb      (d/open-kv dir)
+        engine    ^SearchEngine (d/new-search-engine lmdb)
+        terms-dbi (.-terms-dbi engine)
+        docs-dbi  (.-docs-dbi engine)]
+    (add-docs d/add-doc engine)
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
+      (is (= tid 7))
+      (is (= sl (sl/sparse-arraylist {1 1}))))
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+      (is (= tid 1))
+      (is (= sl (sl/sparse-arraylist {1 2 2 1 4 1 5 1}))))
+    (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
+           [1 7 (b/bitmap [1,2,3,4,5,6,7])]))
+    (is (= {1 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
+    (is (= 5 (d/doc-count engine)))
+
+    (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
+
+    (d/add-doc engine :doc1
+               "The quick brown fox jumped over the lazy black dogs.")
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
+      (is (= tid 7))
+      (is (= sl (sl/sparse-arraylist {6 1}))))
+    (let [[tid _ sl]
+          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
+      (is (= tid 1))
+      (is (= sl (sl/sparse-arraylist {2 1 4 1 5 1}))))
+    (is (= {6 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
+    (is (= 5 (d/doc-count engine)))
+    (is (d/doc-indexed? engine :doc1))
+    (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
+           [6 8 (b/bitmap [2,3,4,5,6,7,33,34])]))
+
+    (is (= [:doc1] (d/search engine "black")))
+    (is (= [:doc1] (d/search engine "fox")))
+    (is (= [:doc1] (d/search engine "black fox")))
+    (is (= [:doc4 :doc2 :doc5] (d/search engine "red")))
+    (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
+    (is (= [:doc1] (d/search engine "brown fox")))
+    (is (= [:doc1 :doc5] (d/search engine "brown dogs")))
+    (is (= [:doc1 :doc2] (d/search engine "brown lamb")))
+
+    (d/add-doc engine :doc2
+               "Mary had a little lamb whose fleece was black as coal.")
+    (is (= [:doc2 :doc1] (d/search engine "black")))
+    (is (= [:doc1 :doc2] (d/search engine "black fox")))
+    (is (= [:doc4 :doc5] (d/search engine "red")))
+    (is (= [:doc1 :doc4 :doc5] (d/search engine "red fox")))
+    (is (= [:doc2 :doc1] (d/search engine "brown lamb")))
+
+    (d/close-kv lmdb)
+    (u/delete-files dir)))
+
+;; TODO numerical stability of doubles is not great
+;; (def tokens ["b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n"
+;;              "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"])
+
+;; (def doc-num 10)
+
+;; (defn- search-correct
+;;   [data query results]
+;;   (let [refs (keys data)
+;;         docs (vals data)
+
+;;         dfreqs (zipmap refs (map frequencies docs))
+
+;;         norms (zipmap refs (map count (vals dfreqs)))
+
+;;         terms  (s/split query #" ")
+;;         qfreqs (frequencies terms)
+
+;;         dfs (reduce (fn [tm term]
+;;                       (assoc tm term
+;;                              (reduce (fn [dm [ref freqs]]
+;;                                        (if-let [c (freqs term)]
+;;                                          (assoc dm ref c)
+;;                                          dm))
+;;                                      {}
+;;                                      dfreqs)))
+;;                     {}
+;;                     terms)
+;;         wqs (reduce (fn [m [term freq]]
+;;                       (assoc m term
+;;                              (* ^double (sut/tf* freq)
+;;                                 ^double (sut/idf (count (dfs term))
+;;                                                  doc-num))))
+;;                     {}
+;;                     qfreqs)
+;;         rc  (count results)]
+;;     (println "results =>" results)
+;;     (= results
+;;        (->> data
+;;             (sort-by
+;;               (fn [[ref _]]
+;;                 (reduce
+;;                   +
+;;                   (map (fn [term]
+;;                          (/ ^double
+;;                             (* (double (or (wqs term) 0.0))
+;;                                ^double (sut/tf*
+;;                                          (or (get-in dfreqs [ref term])
+;;                                              0.0)))
+;;                             (double (norms ref))))
+;;                        terms)))
+;;               >)
+;;             (#(do (println "data sorted by query =>" %) %))
+;;             (take rc)
+;;             (map first)))))
+
+;; (test/defspec search-generative-test
+;;   1
+;;   (prop/for-all
+;;     [refs (gen/vector-distinct gen/nat {:num-elements doc-num})
+;;      docs (gen/vector-distinct
+;;             (gen/vector (gen/elements tokens) 3 10) ;; doc length
+;;             {:num-elements doc-num}) ;; num of docs
+;;      qs (gen/vector (gen/vector (gen/elements tokens) 1 3) 1)]
+;;     (let [dir     (u/tmp-dir (str "search-test-" (UUID/randomUUID)))
+;;           lmdb    (d/open-kv dir)
+;;           engine  (d/new-search-engine lmdb)
+;;           data    (zipmap refs docs)
+;;           _       (println "data =>" data)
+;;           jf      #(s/join " " %)
+;;           txs     (zipmap refs (map jf docs))
+;;           queries (map jf qs)
+;;           _       (doseq [[k v] txs] (d/add-doc engine k v))
+;;           _       (println "queries =>" queries)
+;;           ok      (every? #(search-correct data % (d/search engine %))
+;;                           queries)
+;;           ]
+;;       (l/close-kv lmdb)
+;;       (u/delete-files dir)
+;;       ok)))

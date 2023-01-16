@@ -1,11 +1,15 @@
 (ns ^:no-doc datalevin.sparselist
   "Sparse array list of integers"
   (:refer-clojure :exclude [get set remove])
-  (:import [java.nio ByteBuffer]
-           [java.io Writer]
-           [datalevin.utl GrowingIntArray]
-           [me.lemire.integercompression IntCompressor]
-           [org.roaringbitmap RoaringBitmap]))
+  (:require
+   [taoensso.nippy :as nippy])
+  (:import
+   [java.io Writer DataInput DataOutput]
+   [java.nio ByteBuffer]
+   [java.io Writer]
+   [datalevin.utl GrowingIntArray]
+   [me.lemire.integercompression IntCompressor]
+   [org.roaringbitmap RoaringBitmap]))
 
 (defonce compressor (IntCompressor.))
 
@@ -30,7 +34,6 @@
       (.get items (dec (.rank indices index)))))
 
   (set [this index item]
-
     (let [index (int index)]
       (if (.contains indices index)
         (.set items (dec (.rank indices index)) item)
@@ -46,10 +49,10 @@
   (size [_]
     (.getCardinality indices))
 
-  (select [this nth]
+  (select [_ nth]
     (.get items nth))
 
-  (serialize [this bf]
+  (serialize [_ bf]
     (let [ar   (.toArray items)
           car  (.compress ^IntCompressor compressor ar)
           size (alength car)]
@@ -57,7 +60,7 @@
       (dotimes [i size] (.putInt ^ByteBuffer bf (aget car i))))
     (.serialize indices ^ByteBuffer bf))
 
-  (deserialize [this bf]
+  (deserialize [_ bf]
     (let [size (.getInt ^ByteBuffer bf)
           car  (int-array size)]
       (dotimes [i size] (aset car i (.getInt ^ByteBuffer bf)))
@@ -65,10 +68,33 @@
     (.deserialize indices ^ByteBuffer bf))
 
   Object
-  (equals [this other]
+  (equals [_ other]
     (and (instance? SparseIntArrayList other)
          (.equals indices (.-indices ^SparseIntArrayList other))
          (.equals items (.-items ^SparseIntArrayList other)))))
+
+(nippy/extend-freeze
+  SparseIntArrayList :dtlv/sial
+  [^SparseIntArrayList x ^DataOutput out]
+  (let [ar   (.toArray ^GrowingIntArray (.-items x))
+        car  (.compress ^IntCompressor compressor ar)
+        size (alength car)]
+    (.writeInt out size)
+    (dotimes [i size] (.writeInt out (aget car i))))
+  (let [^RoaringBitmap bm (.-indices x)]
+    (.runOptimize bm)
+    (nippy/freeze-to-out! out bm)))
+
+(nippy/extend-thaw
+  :dtlv/sial
+  [^DataInput in]
+  (let [size (.readInt in)
+        car  (int-array size)]
+    (dotimes [i size] (aset car i (.readInt in)))
+    (let [items (GrowingIntArray.)]
+      (->SparseIntArrayList
+        (nippy/thaw-from-in! in)
+        (.addAll items (.uncompress ^IntCompressor compressor car))))))
 
 (defn sparse-arraylist
   ([]
@@ -87,32 +113,3 @@
   (.write w (str "#datalevin/SparseList "))
   (binding [*out* w]
     (pr (for [i (.-indices s)] [i (get s i)]))))
-
-(comment
-
-
-  (-> (sparse-arraylist)
-      (set 2 2)
-      (set 1 1)
-      (set 3 3)
-      (set 1 5)
-      )
-
-  (= (-> (sparse-arraylist)
-         (set 2 2)
-         (set 1 1)
-         (set 3 3))
-     (-> (sparse-arraylist)
-         (set 1 1)
-         (set 2 2)
-         (set 3 3)))
-
-
-  (.size (.-items (-> (sparse-arraylist)
-                      (set 2 2)
-                      (set 1 1)
-                      (set 3 3)
-                      (set 1 5))))
-
-
-  )

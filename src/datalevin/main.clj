@@ -573,7 +573,7 @@
                           (prn res))))
                     (recur))))))))
 
-(defn ^:no-doc -main [& args]
+(defn -main [& args]
   (let [{:keys [command options arguments summary exit-message ok?]}
         (validate-args args)]
     (if exit-message

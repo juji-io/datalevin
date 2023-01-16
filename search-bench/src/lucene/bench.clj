@@ -1,19 +1,20 @@
 (ns lucene.bench
   (:require [clojure.java.io :as io])
-  (:import [org.apache.lucene.analysis.standard ClassicAnalyzer]
-           [org.apache.lucene.document Document Field Field$Store StringField
-            TextField]
-           [org.apache.lucene.index IndexWriter IndexWriterConfig IndexReader
-            DirectoryReader]
-           [org.apache.lucene.queryparser.classic QueryParser]
-           [org.apache.lucene.search IndexSearcher TopScoreDocCollector Query ScoreDoc TopDocs]
-           [org.apache.lucene.store FSDirectory]
-           [java.nio.file Paths]
-           [java.util HashMap Arrays]
-           [java.util.concurrent Executors TimeUnit ConcurrentLinkedQueue]
-           [java.io FileInputStream]
-           [com.fasterxml.jackson.databind ObjectMapper]
-           [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
+  (:import
+   [org.apache.lucene.analysis.standard ClassicAnalyzer]
+   [org.apache.lucene.document Document Field Field$Store StringField
+    TextField]
+   [org.apache.lucene.index IndexWriter IndexWriterConfig IndexReader
+    DirectoryReader]
+   [org.apache.lucene.queryparser.classic QueryParser]
+   [org.apache.lucene.search IndexSearcher TopScoreDocCollector Query ScoreDoc TopDocs]
+   [org.apache.lucene.store FSDirectory]
+   [java.nio.file Paths]
+   [java.util HashMap Arrays]
+   [java.util.concurrent Executors TimeUnit ConcurrentLinkedQueue]
+   [java.io FileInputStream]
+   [com.fasterxml.jackson.databind ObjectMapper]
+   [com.fasterxml.jackson.core JsonFactory JsonParser JsonToken]))
 
 (defn index-wiki-json
   [dir ^String filename]
@@ -96,8 +97,11 @@
   (let [pool (Executors/newWorkStealingPool)]
     (search 0 pool dir filename n)))
 
-(defn run [opts]
+(defn -main []
   (println)
   (println "Lucene:")
   (index-wiki-json "data/wiki-lucene-all" "wiki.json")
-  (query "data/wiki-lucene-all" "queries40k.txt" 40000))
+  (println "Done indexing.")
+  (query "data/wiki-lucene-all" "queries40k.txt" 40000)
+  (println "Done query.")
+  )

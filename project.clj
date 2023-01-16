@@ -9,6 +9,7 @@
   [[babashka/babashka.pods "0.2.0"]
    [com.cognitect/transit-clj "1.0.329"]
    [com.fasterxml.jackson.core/jackson-core "2.14.1"]
+   [com.fasterxml.jackson.core/jackson-databind "2.14.1"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.13"]
    [com.taoensso/encore "3.46.0"]

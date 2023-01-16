@@ -3,21 +3,23 @@
 ## WIP
 ### Changed
 - [Search] **breaking** search index storage format change. Data re-indexing is necessary.
+### Improved
+- [Search] orders of magnitude indexing speed improvement. #151
+- [Search] removing and updating documents are no longer slow.
+- [Search] added caching for term and document indices.
 ### Added
 - [Search] `:index-position?` option to indicate whether to record term
   positions inside documents, default `false`.
 - [Search] `:check-exist?` argument to `add-doc`indicate whether to check the
   existence of the document in the index, default `true`. Set it to `false` when
   importing data to improve ingestion speed.
+### Fixed
+- [Search] error when indexing huge documents.
+- [KV] spillable results exception in certain cases.
 ### Removed
 - [Search] `doc-refs` function.
-- [Search] `search-index-writer` as well as related `write` and `commit`functions.
-### Improved
-- [Search] orders of magnitude indexing speed improvement. #151
-- [Search] removing and updating documents are no longer slow
-- [Search] caching term and document indices
-### Fixed
-- [KV] spillable results exception in certain cases
+- [Search] `search-index-writer` as well as related `write` and
+  `commit`functions, as they are no longer needed.
 
 ## 0.7.12 (2023-01-11)
 ### Fixed

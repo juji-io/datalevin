@@ -482,8 +482,8 @@
               (do (reset-write-txn this)
                   (raise "DB resized" {:resized true}))))
           (catch Exception e
-            ;; (st/print-stack-trace e)
-            (raise "Fail to transact to LMDB: " (ex-message e) {}))))))
+            (st/print-stack-trace e)
+            (raise "Fail to transact to LMDB: " e {}))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
