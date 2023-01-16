@@ -1539,6 +1539,34 @@ words.
     results (default is `(constantly true)`)"}
   search sc/search)
 
+(def ^{:arglists '([writer doc-ref doc-text] [writer doc-ref doc-text opts])
+       :doc      "Create a writer for writing documents to the search index
+  in bulk.
+
+  The search index is stored in the passed-in key value database opened
+  by [[open-kv]]. See also [[write]] and [[commit]].
+
+  `opts` is an option map that may contain these keys:
+  * `:domain` is an identifier string, indicates the domain of this search
+  engine.
+      This way, multiple independent search engines can reside in the same
+      key-value database, each with its own domain identifier.
+  * `:analyzer` is a function that takes a text string and return a seq of
+    [term, position, offset], where term is a word, position is the sequence
+     number of the term, and offset is the character offset of this term.
+  * `:index-position?` indicating whether to index positions of terms in the
+  documents. Default is `false`."}
+  search-index-writer sc/search-index-writer)
+
+(def ^{:arglists '([writer doc-ref doc-text])
+       :doc      "Write a document to search index. Used only with [[search-index-writer]]"}
+  write sc/write)
+
+(def ^{:arglists '([writer])
+       :doc      "Commit writes to search index, must be called after writing
+all documents. Used only with [[search-index-writer]]"}
+  commit sc/commit)
+
 ;; -------------------------------------
 ;; byte buffer
 

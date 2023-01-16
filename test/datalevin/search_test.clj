@@ -14,7 +14,8 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [clojure.test :refer [deftest testing is use-fixtures]])
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [datalevin.constants :as c])
   (:import
    [java.util UUID ]
    [datalevin.sparselist SparseIntArrayList]
@@ -407,60 +408,18 @@
     (u/delete-files dir)))
 
 (deftest huge-doc-test
-  (let [dir       (u/tmp-dir (str "huge-doc-test-" (UUID/randomUUID)))
-        lmdb      (d/open-kv dir)
-        engine    ^SearchEngine (d/new-search-engine lmdb)
-        terms-dbi (.-terms-dbi engine)
-        docs-dbi  (.-docs-dbi engine)]
-    (add-docs d/add-doc engine)
-    (let [[tid _ sl]
-          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
-      (is (= tid 7))
-      (is (= sl (sl/sparse-arraylist {1 1}))))
-    (let [[tid _ sl]
-          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
-      (is (= tid 1))
-      (is (= sl (sl/sparse-arraylist {1 2 2 1 4 1 5 1}))))
-    (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
-           [1 7 (b/bitmap [1,2,3,4,5,6,7])]))
-    (is (= {1 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
-    (is (= 5 (d/doc-count engine)))
-
-    (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
-
-    (d/add-doc engine :doc1
-               "The quick brown fox jumped over the lazy black dogs.")
-    (let [[tid _ sl]
-          (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
-      (is (= tid 7))
-      (is (= sl (sl/sparse-arraylist {6 1}))))
-    (let [[tid _ sl]
-          (l/get-value lmdb terms-dbi "red" :string :term-info true)]
-      (is (= tid 1))
-      (is (= sl (sl/sparse-arraylist {2 1 4 1 5 1}))))
-    (is (= {6 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
-    (is (= 5 (d/doc-count engine)))
-    (is (d/doc-indexed? engine :doc1))
-    (is (= (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
-           [6 8 (b/bitmap [2,3,4,5,6,7,33,34])]))
-
-    (is (= [:doc1] (d/search engine "black")))
-    (is (= [:doc1] (d/search engine "fox")))
-    (is (= [:doc1] (d/search engine "black fox")))
-    (is (= [:doc4 :doc2 :doc5] (d/search engine "red")))
-    (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
-    (is (= [:doc1] (d/search engine "brown fox")))
-    (is (= [:doc1 :doc5] (d/search engine "brown dogs")))
-    (is (= [:doc1 :doc2] (d/search engine "brown lamb")))
-
-    (d/add-doc engine :doc2
-               "Mary had a little lamb whose fleece was black as coal.")
-    (is (= [:doc2 :doc1] (d/search engine "black")))
-    (is (= [:doc1 :doc2] (d/search engine "black fox")))
-    (is (= [:doc4 :doc5] (d/search engine "red")))
-    (is (= [:doc1 :doc4 :doc5] (d/search engine "red fox")))
-    (is (= [:doc2 :doc1] (d/search engine "brown lamb")))
-
+  (let [dir    (u/tmp-dir (str "huge-doc-test-" (UUID/randomUUID)))
+        lmdb   (d/open-kv dir)
+        engine ^SearchEngine (d/new-search-engine
+                               lmdb {:index-position? true})]
+    (d/add-doc engine "Romeo and Juliet" (slurp "test/data/romeo.txt"))
+    (is (= ["Romeo and Juliet"] (d/search engine "romeo")))
+    (is (= 4283 (count (.-terms engine))))
+    (is (= 299 (l/list-count
+                 lmdb (.-positions-dbi engine)
+                 [1 (l/get-value lmdb (.-terms-dbi engine)
+                                 "romeo" :string :int true)]
+                 :int-int)))
     (d/close-kv lmdb)
     (u/delete-files dir)))
 

@@ -2,11 +2,13 @@
 
 ## WIP
 ### Changed
-- [Search] **breaking** search index storage format change. Data re-indexing is necessary.
+- [Search] **breaking** search index storage format change. Data re-indexing is
+  necessary.
 ### Improved
-- [Search] orders of magnitude indexing speed improvement. #151
+- [Datalog] orders of magnitude indexing speed improvement for `:db/fulltext`
+  values. #151
 - [Search] removing and updating documents are no longer slow.
-- [Search] added caching for term and document indices.
+- [Search] added caching for term and document index access.
 ### Added
 - [Search] `:index-position?` option to indicate whether to record term
   positions inside documents, default `false`.
@@ -19,7 +21,8 @@
 ### Removed
 - [Search] `doc-refs` function.
 - [Search] `search-index-writer` as well as related `write` and
-  `commit`functions, as they are no longer needed.
+  `commit`functions for client/server, as it makes little sense to bulk load
+  documents across network.
 
 ## 0.7.12 (2023-01-11)
 ### Fixed

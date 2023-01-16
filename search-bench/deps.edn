@@ -21,13 +21,13 @@
 
  :aliases {
            :datalevin {
-                       :exec-fn  datalevin.bench/run
+                       :exec-fn  datalevin.bench/-main
                        :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
                                   "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
                                   "-Dclojure.compiler.direct-linking=true"]
                        }
            :lucene    {
-                       :exec-fn  lucene.bench/run
+                       :exec-fn  lucene.bench/-main
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]
                        }
            :dev       {

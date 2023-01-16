@@ -8,7 +8,6 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.lru :as lru]
-   [clojure.stacktrace :as st]
    [clojure.string :as s])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
@@ -20,6 +19,7 @@
    [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
     IntDoubleHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.roaringbitmap RoaringBitmap FastAggregation FastRankRoaringBitmap
     PeekableIntIterator]))
 
@@ -332,13 +332,7 @@
         (when check-exist?
           (when-let [doc-id (doc-ref->id this doc-ref)]
             (remove-doc* this doc-id doc-ref)))
-        (add-doc* this doc-ref doc-text))
-      #_(try
-
-          (catch Exception e
-            (st/print-stack-trace e)
-            (u/raise "Error indexing document:" (ex-message e)
-                     {:doc-ref doc-ref :doc-text doc-text})))))
+        (add-doc* this doc-ref doc-text))))
   (add-doc [this doc-ref doc-text]
     (.add-doc this doc-ref doc-text true))
 
@@ -566,10 +560,13 @@
 (defn- init-terms
   [lmdb terms-dbi]
   (let [terms  (sp/new-spillable-intobj-map {} {:spill-threshold 60})
-        max-id (volatile! 0)]
-    (doseq [[term id] (l/get-range lmdb terms-dbi [:all] :string :int)]
-      (when (< ^int @max-id ^int id) (vreset! max-id id))
-      (.put ^SpillableIntObjMap terms id term))
+        max-id (volatile! 0)
+        load   (fn [kv]
+                 (let [term (b/read-buffer (l/k kv) :string)
+                       id   (b/read-buffer (l/v kv) :int)]
+                   (when (< ^int @max-id ^int id) (vreset! max-id id))
+                   (.put ^SpillableIntObjMap terms id term)))]
+    (l/visit lmdb terms-dbi load [:all])
     [@max-id terms]))
 
 (defn- init-docs
@@ -578,14 +575,14 @@
         docs   (sp/new-spillable-intobj-map {} {:spill-threshold 60})
         max-id (volatile! 0)
         load   (fn [kv]
-                 (let [vb   (l/v kv)
-                       ref  (b/read-buffer (l/k kv) :data)
+                 (let [ref  (b/read-buffer (l/k kv) :data)
+                       vb   (l/v kv)
                        id   (b/read-buffer vb :int)
                        norm (b/read-buffer vb :short)]
                    (when (< ^int @max-id ^int id) (vreset! max-id id))
                    (.put ^SpillableIntObjMap docs id ref)
                    (.put norms id norm)))]
-    (l/visit lmdb docs-dbi load [:all] :data)
+    (l/visit lmdb docs-dbi load [:all])
     [@max-id norms docs]))
 
 (defn new-search-engine
@@ -632,3 +629,101 @@
                   (.-max-doc old)
                   (.-max-term old)
                   (.-index-position? old)))
+
+(defprotocol IIndexWriter
+  (write [this doc-ref doc-text])
+  (commit [this]))
+
+(declare add-doc-txs)
+
+(deftype IndexWriter [lmdb
+                      analyzer
+                      terms-dbi
+                      docs-dbi
+                      positions-dbi
+                      ^AtomicInteger max-doc
+                      ^AtomicInteger max-term
+                      index-position?
+                      ^FastList txs
+                      ^UnifiedMap hit-terms]
+  IIndexWriter
+  (write [this doc-ref doc-text]
+    (when-not (s/blank? doc-text)
+      (add-doc-txs this doc-ref doc-text txs hit-terms)
+      (when (< 10000000 (.size txs))
+        (.commit this))))
+
+  (commit [_]
+    (l/transact-kv lmdb txs)
+    (.clear txs)
+    (loop [iter (.iterator (.entrySet hit-terms))]
+      (when (.hasNext iter)
+        (let [^Map$Entry kv (.next iter)]
+          (.add txs [:put terms-dbi (.getKey kv) (.getValue kv)
+                     :string :term-info])
+          (.remove iter)
+          (recur iter))))
+    (l/transact-kv lmdb txs)
+    (.clear txs)))
+
+(defn- add-doc-txs [^IndexWriter engine doc-ref doc-text ^FastList txs
+                    ^UnifiedMap hit-terms]
+  (let [result          ((.-analyzer engine) doc-text)
+        new-terms       ^HashMap (collect-terms result)
+        unique          (.size new-terms)
+        doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
+        term-bm         (RoaringBitmap.)
+        terms-dbi       (.-terms-dbi engine)
+        positions-dbi   (.-positions-dbi engine)
+        max-term        (.-max-term engine)
+        index-position? (.-index-position? engine)
+        lmdb            (.-lmdb engine)]
+    (doseq [^Map$Entry kv (.entrySet new-terms)]
+      (let [term    (.getKey kv)
+            new-lst ^FastList (.getValue kv)
+            tf      (.size new-lst)
+
+            [tid mw sl]
+            (or (.get hit-terms term)
+                (l/get-value lmdb terms-dbi term :string :term-info true)
+                [(.incrementAndGet ^AtomicInteger max-term)
+                 0.0
+                 (sl/sparse-arraylist)])]
+        (.put hit-terms term
+              [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)])
+        (.add ^RoaringBitmap term-bm ^int tid)
+        (when index-position?
+          (.add txs [:put-list positions-dbi [doc-id tid]
+                     new-lst :int-int :int-int]))))
+    (.add txs [:put (.-docs-dbi engine) doc-ref [doc-id unique term-bm]
+               :data :doc-info])))
+
+(defn- init-max-id [lmdb dbi]
+  (let [max-id (volatile! 0)
+        load   (fn [kv]
+                 (let [id (b/read-buffer (l/v kv) :int)]
+                   (when (< ^int @max-id ^int id) (vreset! max-id id))))]
+    (l/visit lmdb dbi load [:all])
+    @max-id))
+
+(defn search-index-writer
+  ([lmdb]
+   (search-index-writer lmdb nil))
+  ([lmdb {:keys [domain analyzer index-position?]
+          :or   {domain          "datalevin"
+                 analyzer        en-analyzer
+                 index-position? false}}]
+   (let [terms-dbi     (str domain "/" c/terms)
+         docs-dbi      (str domain "/" c/docs)
+         positions-dbi (str domain "/" c/positions)]
+     (open-dbis lmdb terms-dbi docs-dbi positions-dbi)
+     (->IndexWriter lmdb
+                    analyzer
+                    terms-dbi
+                    docs-dbi
+                    positions-dbi
+                    (AtomicInteger. (init-max-id lmdb docs-dbi))
+                    (AtomicInteger. (init-max-id lmdb terms-dbi))
+                    index-position?
+                    (FastList.)
+                    (UnifiedMap.)))))

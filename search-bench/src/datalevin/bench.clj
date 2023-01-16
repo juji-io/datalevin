@@ -1,7 +1,6 @@
 (ns datalevin.bench
   (:require
    [datalevin.core :as d]
-   [datalevin.search :as s]
    [clojure.java.io :as io])
   (:import
    [java.util HashMap Arrays]
@@ -15,24 +14,20 @@
   [dir ^String filename]
   (let [start  (System/nanoTime)
         lmdb   (d/open-kv dir {:mapsize 100000})
-        engine (d/new-search-engine lmdb)]
+        writer (d/search-index-writer lmdb)]
     (with-open [f (FileInputStream. filename)]
       (let [jf  (JsonFactory.)
             jp  (.createParser jf f)
             cls (Class/forName "java.util.HashMap")]
         (.setCodec jp (ObjectMapper.))
         (.nextToken jp)
-        (d/with-transaction-kv [db lmdb]
-          (let [eng (s/transfer engine db)]
-            (loop []
-              (when (.hasCurrentToken jp)
-                (let [^HashMap m (.readValueAs jp cls)
-                      url        (.get m "url")
-                      text       (.get m "text")]
-                  (d/add-doc eng url text false)
-                  (.nextToken jp)
-                  (recur))))))))
-
+        (loop []
+          (when (.hasCurrentToken jp)
+            (let [^HashMap m (.readValueAs jp cls)]
+              (d/write writer (.get m "url") (.get m "text"))
+              (.nextToken jp)
+              (recur))))))
+    (d/commit writer)
     (d/close-kv lmdb)
     (printf "Indexing took %.5f seconds"
             (/ (/ (- (System/nanoTime) start) 1000.0) 1000000.0))
@@ -48,7 +43,7 @@
         (.execute pool
                   #(let [start (System/nanoTime)]
                      (d/search engine query)
-                     (.add times (- (System/nanoTime) start)))))
+                     (.add times (/ (- (System/nanoTime) start) 1000000.0)))))
       (.shutdown pool)
       (.awaitTermination pool 1 TimeUnit/HOURS))
     (println)
@@ -80,14 +75,14 @@
   (let [pool (Executors/newWorkStealingPool)]
     (search 0 pool dir filename n)))
 
-(defn -main []
+(defn -main [&opts]
   (println)
   (println "Datalevin:")
 
-  ;; (index-wiki-json "data/wiki-datalevin-100" "data/wiki100.json")
+  ;; (index-wiki-json "data/wiki-datalevin-10k" "data/wiki10k.json")
   ;; (println "Done indexing.")
-  ;; (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-100"))
-  ;;        "data/queries100.txt" 100)
+  ;; (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-10k"))
+  ;;        "data/queries10k.txt" 10000)
   ;; (println "Done query.")
 
   (index-wiki-json "data/wiki-datalevin-all" "data/wiki.json")

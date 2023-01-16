@@ -65,7 +65,7 @@
                        (let [did (.-doc hit)
                              d   (.doc searcher did)]
                          (.get d "url")))
-                     (.add times (- (System/nanoTime) start)))))
+                     (.add times (/ (- (System/nanoTime) start) 1000000.0)))))
       (.shutdown pool)
       (.awaitTermination pool 1 TimeUnit/HOURS))
     (println)
