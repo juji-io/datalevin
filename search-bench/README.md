@@ -85,7 +85,7 @@ Indexing performance is in the following table.
 Lucene is close to twice as fast as Datalevin at bulk indexing. This is
 expected, as Datalevin transacts the indices to the database. One benefit of
 storing search index in a transactional database, is that the documents become
-immediately searchable, while Lucene commits documents in very large batches, so
+immediately searchable, while Lucene indexes documents in very large batches, so
 they are not immediately searchable.
 
 Datalevin's index is a single database file of 9.8 GB, while Lucene includes 168
@@ -103,30 +103,26 @@ search thread:
 
 |Percentile | Datalevin | Lucene |
 |----|--------|--------|
-|median | 1 | 3 |
-|75 |3 |    4           |
-|90 |6 |  6            |
-|95 |11 |  11      |
-|99 |37 |   16           |
-|99.9 |170 |  31            |
-|max |659 | 138 |
-|mean | 3 |    4  |
+|median | 0.8 | 2.7 |
+|75 |2.5 |    5.8           |
+|90 |6.8 |  10.6            |
+|95 |13.1 |  15.1      |
+|99 |52.1 |   29.0           |
+|99.9 |184.1 |  60.6            |
+|max |619.9 | 148.5 |
+|mean | 3.6 |    4.7  |
 
 Search latency are similar across the number of threads, with slightly longer
-time when more threads are used (with about 1 ms mean difference between 1 and
+time when more threads are used (with about 3 ms mean difference between 1 and
 12 threads).
 
-Datalevin is 75% faster on average, while 3 times faster at median. Datalevin
-has much longer query time for outliers than Lucene, bringing down the mean
-considerably.
+Datalevin is 75% faster on average, while more than 3 times faster at median
+than Lucene.
 
-This should be attributed to the fact that we use idiomatic Clojure for the most
-part of the code at the moment. It is known that idiomatic Clojure are slower
-than Java due to pervasive use of immutable data structures.
-
-For queries with huge candidate set, the fixed cost of slower code adds up to
-overcome the superiority in algorithm. For example, the slowest query is
-"s", there's not much room for algorithmic cleverness here, the only
+Datalevin has much longer query time at long tails though, bringing down the
+mean considerably. For queries with huge candidate set, the fixed cost of less optimized
+code adds up to overcome the superiority in algorithm. For example, the slowest
+query is "s", there's not much room for algorithmic cleverness here, the only
 solution is brutal-force iterating the whole 3 million matching documents. So
 basically, the contest here is raw iteration speed, it should not be a surprise
 that idiomatic Clojure loses to optimized Java code here.
@@ -135,19 +131,19 @@ that idiomatic Clojure loses to optimized Java code here.
 
 |Number of threads | Datalevin | Lucene |
 |----|--------|--------|
-|1 |310 | 206 |
-|2 |597 |    404           |
-|3 |870 |  588            |
-|4 |1143 |  784      |
-|5 |1379 |   975           |
-|6 |1600 |  1143            |
-|7 |1667 | 1176 |
-|8 |1739 |    1212           |
-|9 |1818 |  1250            |
-|10 |1818 |  1290      |
-|11 |1904 |   1333           |
-|12 |1904 | 1333       |
-|forkjoin |2000 | 1379       |
+|1 |276.5 | 212.9 |
+|2 |554.7 |    414.9           |
+|3 |804.4 |  608.8            |
+|4 |1057.3 |  805.3      |
+|5 |1277.8 |   995.9           |
+|6 |1437.6 |  1126.5            |
+|7 |1507.6 | 1180.9 |
+|8 |1577.9 |    1213.6           |
+|9 |1644.3 |  1233.7            |
+|10 |1708.5 |  1301.9      |
+|11 |1756.0 |   1345.1           |
+|12 |1806.7 | 1372.3       |
+|forkjoin |1815.6 | 1349.9       |
 
 Datalevin has about 75% higher search throughput, as expected from the means.
 

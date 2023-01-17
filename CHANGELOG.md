@@ -5,10 +5,10 @@
 - [Search] **breaking** search index storage format change. Data re-indexing is
   necessary.
 ### Improved
-- [Datalog] orders of magnitude indexing speed improvement for `:db/fulltext`
-  values. #151
-- [Search] removing and updating documents are no longer slow.
-- [Search] added caching for term and document index access.
+- [Search] Indexing speed: 3X `add-doc` speed improvement; orders of magnitude
+  `remove-doc` speed improvement; and 10X disk space reduction for default settings.
+- [Search] added caching for term and document index access, 5 percent query
+  speed improvement on average, 35 percent improvement at median.
 ### Added
 - [Search] `:index-position?` option to indicate whether to record term
   positions inside documents, default `false`.
@@ -16,6 +16,7 @@
   existence of the document in the index, default `true`. Set it to `false` when
   importing data to improve ingestion speed.
 ### Fixed
+- [Datalog] increasing indexing time problem for `:db/fulltext` values. #151
 - [Search] error when indexing huge documents.
 - [KV] spillable results exception in certain cases.
 ### Removed

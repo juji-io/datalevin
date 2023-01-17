@@ -76,7 +76,7 @@
     (println "Latency (ms):")
     (let [result (.toArray times)]
       (Arrays/sort result)
-      (println "mean:" (long (/ ^long (reduce + result) n)))
+      (println "mean:" (double (/ ^long (reduce + result) n)))
       (println "median:" (aget result (long (* 0.5 n))))
       (println "75 percentile:" (aget result (long (* 0.75 n))))
       (println "90 percentile:" (aget result (long (* 0.9 n))))
@@ -100,8 +100,8 @@
 (defn -main [&opts]
   (println)
   (println "Lucene:")
-  (index-wiki-json "data/wiki-lucene-all" "data/wiki.json")
-  (println "Done indexing.")
+  ;; (index-wiki-json "data/wiki-lucene-all" "data/wiki.json")
+  ;; (println "Done indexing.")
   (query "data/wiki-lucene-all" "data/queries40k.txt" 40000)
   (println "Done query.")
   )
