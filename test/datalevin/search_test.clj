@@ -431,7 +431,7 @@
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
-;; TODO numerical stability of doubles is not great
+;; TODO double compares are not really reliable
 ;; (def tokens ["b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n"
 ;;              "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"])
 
@@ -451,19 +451,18 @@
 
 ;;         dfs (reduce (fn [tm term]
 ;;                       (assoc tm term
-;;                              (reduce (fn [dm [ref freqs]]
-;;                                        (if-let [c (freqs term)]
-;;                                          (assoc dm ref c)
-;;                                          dm))
-;;                                      {}
+;;                              (reduce (fn [dc [_ freqs]]
+;;                                        (if (freqs term)
+;;                                          (inc ^long dc)
+;;                                          dc))
+;;                                      0
 ;;                                      dfreqs)))
 ;;                     {}
 ;;                     terms)
 ;;         wqs (reduce (fn [m [term freq]]
 ;;                       (assoc m term
 ;;                              (* ^double (sut/tf* freq)
-;;                                 ^double (sut/idf (count (dfs term))
-;;                                                  doc-num))))
+;;                                 ^double (sut/idf (dfs term) doc-num))))
 ;;                     {}
 ;;                     qfreqs)
 ;;         rc  (count results)]
