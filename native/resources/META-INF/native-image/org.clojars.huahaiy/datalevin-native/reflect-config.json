@@ -41,11 +41,31 @@
         "allPublicMethods":true
     },
     {
-      "name": "org.eclipse.collections.impl.list.mutable.AbstractMutableList",
+      "name": "org.eclipse.collections.impl.map.mutable.primitive.IntShortHashMap",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.map.mutable.primitive.IntObjectHashMap",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.map.mutable.primitive.IntDoubleHashMap",
       "allPublicMethods":true
     },
     {
       "name": "org.eclipse.collections.impl.list.mutable.FastList",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.map.mutable.UnifiedMap",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.impl.set.mutable.primitive.IntHashSet",
+      "allPublicMethods":true
+    },
+    {
+      "name": "org.eclipse.collections.api.set.primitive.MutableIntSet",
       "allPublicMethods":true
     },
     {
@@ -173,6 +193,13 @@
     },
     {
         "name":"[Ljava.util.Date;",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ldatalevin.search.Candidate;",
         "allPublicConstructors" : true,
         "allPublicMethods" : true,
         "allPublicFields" : true,

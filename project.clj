@@ -57,6 +57,7 @@
                     :dependencies
                     [[nrepl/bencode]
                      [org.clojure/tools.cli]
+                     [org.clojure/data.csv]
                      [org.bouncycastle/bcprov-jdk15on]
                      [com.taoensso/timbre]]}
    :native-uberjar {:aot            [pod.huahaiy.datalevin],

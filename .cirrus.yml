@@ -24,12 +24,14 @@ task:
 
     script/compile
 
-    ./dtlv-test0
+    cd ..
+    native/dtlv-test0
 
     brew install p7zip
 
     export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
 
+    cd native
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
     brew install borkdude/brew/babashka

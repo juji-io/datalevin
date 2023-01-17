@@ -93,8 +93,8 @@
 
   (println "\n\n[ Running native tests ]\n")
   (sh "script/compile-local" :dir "native")
-  (sh "./dtlv-test0" :dir "native")
-  (sh "./dtlv-test1" :dir "native")
+  (sh "native/dtlv-test0")
+  (sh "native/dtlv-test1")
   )
 
 (defn- str->json [s]

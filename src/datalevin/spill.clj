@@ -14,7 +14,6 @@
    [javax.management NotificationEmitter NotificationListener Notification]
    [com.sun.management GarbageCollectionNotificationInfo]
    [org.eclipse.collections.api.set.primitive MutableIntSet]
-   [org.eclipse.collections.api.list.primitive MutableIntList]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.map.mutable.primitive IntObjectHashMap]
    [clojure.lang ISeq IPersistentVector MapEntry Util Sequential
@@ -155,7 +154,6 @@
     (.clear memory)
     (when @disk
       (l/close-kv @disk)
-      (u/delete-files @spill-dir)
       (vreset! disk nil))
     this)
 
@@ -354,7 +352,6 @@
     (.clear memory)
     (when @disk
       (l/close-kv @disk)
-      (u/delete-files @spill-dir)
       (vreset! disk nil))
     this)
 
