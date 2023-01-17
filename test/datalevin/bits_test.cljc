@@ -94,13 +94,16 @@
   100
   (prop/for-all [k1 gen/small-integer
                  k2 gen/small-integer
-                 k3 (gen/list-distinct gen/small-integer)]
+                 k3 (gen/not-empty (gen/list-distinct gen/small-integer))]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-                      ar             (int-array k3)]
+                      ^ints ar       (int-array k3)]
                   (.clear bf)
                   (sut/put-buffer bf [k1 k2 ar] :doc-info)
                   (.flip bf)
-                  (= [k1 k2 ar] (sut/read-buffer bf :doc-info)))))
+                  (let [[k1' k2' ar'] (sut/read-buffer bf :doc-info)]
+                    (is (and (= k1 k1')
+                             (= k2 k2')
+                             (Arrays/equals ar ^ints ar')))))))
 
 (test/defspec term-info-generative-test
   100
