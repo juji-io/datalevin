@@ -85,10 +85,10 @@
   ;;        "data/queries10k.txt" 10000)
   ;; (println "Done query.")
 
-  (index-wiki-json "data/wiki-datalevin-all" "data/wiki.json")
-  (println "Done indexing.")
+  ;; (index-wiki-json "data/wiki-datalevin-all" "data/wiki.json")
+  ;; (println "Done indexing.")
   (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-all"))
-         "queries40k.txt" 40000)
+         "data/queries40k.txt" 40000)
   (println "Done query.")
 
   )

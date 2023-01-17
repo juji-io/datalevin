@@ -97,11 +97,11 @@
   (let [pool (Executors/newWorkStealingPool)]
     (search 0 pool dir filename n)))
 
-(defn -main []
+(defn -main [&opts]
   (println)
   (println "Lucene:")
-  (index-wiki-json "data/wiki-lucene-all" "wiki.json")
+  (index-wiki-json "data/wiki-lucene-all" "data/wiki.json")
   (println "Done indexing.")
-  (query "data/wiki-lucene-all" "queries40k.txt" 40000)
+  (query "data/wiki-lucene-all" "data/queries40k.txt" 40000)
   (println "Done query.")
   )

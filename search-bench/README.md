@@ -62,14 +62,13 @@ The same conditions were applied to both Datalevin and Lucene:
   virtual cores), 64GB RAM, 1TB SSD, running Ubuntu 20.04 and OpenJDK 17
   (2021-09-14), with Clojure 1.10.3.
 
-Run benchmarks:
+Once the data are prepared, to run the benchmarks, first install
+[clojure](https://clojure.org/guides/install_clojure), then run these commands:
 
 ```
 clj -X:datalevin
 clj -X:lucene
 ```
-
-The benchmarks took a couple of hours to run, mainly spending time indexing.
 
 ## Result
 
@@ -79,20 +78,18 @@ Indexing performance is in the following table.
 
 |Measure   | Datalevin | Lucene |
 |----|--------|--------|
-| Index time (Hours)  | 1.6  | 0.3  |
-| Index size (GB)  | 79  |  13      |
-| Index Speed (GB/Hour)  | 9.4  |  40.6      |
+| Index time (Minutes)  | 35  | 20  |
+| Index size (GB)  | 9.8  |  14      |
+| Index Speed (GB/Hour)  | 26  |  45      |
 
-Lucene is more than 5 times faster than Datalevin at bulk indexing, and the resulting
-index size is also similarly smaller.
+Lucene is close to twice as fast as Datalevin at bulk indexing. This is
+expected, as Datalevin transacts the indices to the database. One benefit of
+storing search index in a transactional database, is that the documents become
+immediately searchable, while Lucene commits documents in very large batches, so
+they are not immediately searchable.
 
-This is expected, as Datalevin transact the indices to the database,
-with all its integrity checks and so on. Datalevin data is also not presently
-compressed (this is on the roadmap), so the data size is larger.
-
-One benefit of storing search index in a transactional database, is that the
-documents become immediately searchable, while Lucene commits documents in very
-large batches, so they are not immediately searchable.
+Datalevin's index is a single database file of 9.8 GB, while Lucene includes 168
+files totaling 14 GB.
 
 ### Searching
 
@@ -178,7 +175,7 @@ immediately searchable. Since LMDB has a single writer, having
 multiple indexing threads does little to improve the data ingestion speed. On
 the other hand, Lucene writes to multiple independent index segments and support great
 concurrency while indexing. Therefore, some use cases that Lucene family of
-search engines excel in, such as log ingestion, are not suitable for Datalevin.
+search engines excels in, such as log ingestion, are not suitable for Datalevin.
 
 Lucene has perhaps hundreds of man-years behind its development and is extremely
 configurable, while Datalevin search engine is embedded in a newly developed

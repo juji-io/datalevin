@@ -16,10 +16,11 @@
    [java.util HashMap ArrayList Map$Entry Arrays]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive IntShortHashMap
     IntDoubleHashMap]
+   [org.eclipse.collections.impl.set.mutable.primitive IntHashSet]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.roaringbitmap RoaringBitmap FastAggregation FastRankRoaringBitmap
     PeekableIntIterator]))
 
@@ -414,12 +415,11 @@
 
 (defn- doc-ref->term-ids
   [^SearchEngine engine doc-ref]
-  (let [bm (lru/-get (.-cache engine)
-                     [:doc-ref->term-ids doc-ref]
-                     #(peek (l/get-value (.-lmdb engine)
-                                         (.-docs-dbi engine)
-                                         doc-ref :data :doc-info true)))]
-    (iterator-seq (.iterator ^RoaringBitmap bm))))
+  (lru/-get (.-cache engine)
+            [:doc-ref->term-ids doc-ref]
+            #(peek (l/get-value (.-lmdb engine)
+                                (.-docs-dbi engine)
+                                doc-ref :data :doc-info true))))
 
 (defn- remove-doc*
   [^SearchEngine engine doc-id doc-ref]
@@ -453,7 +453,7 @@
         new-terms       ^HashMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
-        term-bm         (RoaringBitmap.)
+        term-set        (IntHashSet.)
         txs             (FastList.)
         terms-dbi       (.-terms-dbi engine)
         positions-dbi   (.-positions-dbi engine)
@@ -480,17 +480,18 @@
             [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)]]
         (lru/-put cache [:get-term-info term] term-info)
         (.add txs [:put terms-dbi term term-info :string :term-info])
-        (.add ^RoaringBitmap term-bm ^int tid)
+        (.add ^IntHashSet term-set (int tid))
         (when index-position?
           (.add txs [:put-list positions-dbi [doc-id tid]
                      new-lst :int-int :int-int]))))
-    (let [doc-info [doc-id unique term-bm]]
+    (let [term-ar  (.toArray ^IntHashSet term-set)
+          doc-info [doc-id unique term-ar]]
       (.add txs [:put (.-docs-dbi engine) doc-ref doc-info
                  :data :doc-info])
       (l/transact-kv (.-lmdb engine) txs)
       (-> cache
           (lru/-put [:doc-ref->id doc-ref] doc-id)
-          (lru/-put [:doc-ref->term-ids doc-ref] term-bm))))
+          (lru/-put [:doc-ref->term-ids doc-ref] term-ar))))
   :doc-added)
 
 (defn- hydrate-query
@@ -550,7 +551,7 @@
   ;; term -> term-id,max-weight,doc-freq
   (l/open-dbi lmdb terms-dbi {:key-size c/+max-key-size+})
 
-  ;; doc-ref -> doc-id,norm,term-bm
+  ;; doc-ref -> doc-id,norm,term-set
   (l/open-dbi lmdb docs-dbi {:key-size c/+max-key-size+})
 
   ;; doc-id,term-id -> position,offset (list)
@@ -650,7 +651,7 @@
   (write [this doc-ref doc-text]
     (when-not (s/blank? doc-text)
       (add-doc-txs this doc-ref doc-text txs hit-terms)
-      (when (< 10000000 (.size txs))
+      (when (< 1000000 (.size txs))
         (.commit this))))
 
   (commit [_]
@@ -672,7 +673,7 @@
         new-terms       ^HashMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
-        term-bm         (RoaringBitmap.)
+        term-set        (IntHashSet.)
         terms-dbi       (.-terms-dbi engine)
         positions-dbi   (.-positions-dbi engine)
         max-term        (.-max-term engine)
@@ -691,11 +692,12 @@
                  (sl/sparse-arraylist)])]
         (.put hit-terms term
               [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)])
-        (.add ^RoaringBitmap term-bm ^int tid)
+        (.add ^IntHashSet term-set (int tid))
         (when index-position?
           (.add txs [:put-list positions-dbi [doc-id tid]
                      new-lst :int-int :int-int]))))
-    (.add txs [:put (.-docs-dbi engine) doc-ref [doc-id unique term-bm]
+    (.add txs [:put (.-docs-dbi engine) doc-ref
+               [doc-id unique (.toArray ^IntHashSet term-set)]
                :data :doc-info])))
 
 (defn- init-max-id [lmdb dbi]

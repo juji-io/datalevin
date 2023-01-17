@@ -15,12 +15,12 @@
    [java.nio.charset StandardCharsets]
    [java.lang String Character]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
+   [me.lemire.integercompression IntCompressor]
    [datalevin.utl BitOps]))
 
+(defonce base64-encoder (.withoutPadding (Base64/getEncoder)))
 
-(def base64-encoder (.withoutPadding (Base64/getEncoder)))
-
-(def base64-decoder (Base64/getDecoder))
+(defonce base64-decoder (Base64/getDecoder))
 
 (defn encode-base64
   "encode bytes into a base64 string"
@@ -160,15 +160,6 @@
   "Get a short from a ByteBuffer"
   [^ByteBuffer bb]
   (.getShort bb))
-
-(defn get-short-array
-  "Get a short array from a ByteBuffer"
-  [^ByteBuffer bb]
-  (let [len (.getInt bb)
-        sa  (short-array len)]
-    (dotimes [i len]
-      (aset sa i (.getShort bb)))
-    sa))
 
 (defn- get-byte
   "Get a byte from a ByteBuffer"
@@ -721,7 +712,7 @@
      :int-int        (let [[i1 i2] x]
                        (put-int bf i1)
                        (put-int bf i2))
-     :sial           (put-sparse-list bf x)
+     :ints           (sl/put-ints bf x)
      :bitmap         (put-bitmap bf x)
      :term-info      (let [[i1 i2 i3] x]
                        (put-int bf i1)
@@ -730,7 +721,7 @@
      :doc-info       (let [[i1 i2 i3] x]
                        (put-int bf i1)
                        (put-short bf i2)
-                       (put-bitmap bf i3))
+                       (sl/put-ints bf i3))
      :long           (do (put-byte bf (raw-header x :long))
                          (put-long bf x))
      :id             (put-long bf x)
@@ -780,10 +771,10 @@
      :int-int        [(get-int bf) (get-int bf)]
      :bigint         (do (get-byte bf) (get-bigint bf))
      :bigdec         (do (get-byte bf) (get-bigdec bf))
+     :ints           (sl/get-ints bf)
      :bitmap         (get-bitmap bf)
-     :sial           (get-sparse-list bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info       [(get-int bf) (get-short bf) (get-bitmap bf)]
+     :doc-info       [(get-int bf) (get-short bf) (sl/get-ints bf)]
      :long           (do (get-byte bf) (get-long bf))
      :id             (get-long bf)
      :float          (do (get-byte bf) (get-float bf))

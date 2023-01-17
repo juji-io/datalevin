@@ -96,11 +96,11 @@
                  k2 gen/small-integer
                  k3 (gen/list-distinct gen/small-integer)]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-                      bm             (sut/bitmap (sort k3))]
+                      ar             (int-array k3)]
                   (.clear bf)
-                  (sut/put-buffer bf [k1 k2 bm] :doc-info)
+                  (sut/put-buffer bf [k1 k2 ar] :doc-info)
                   (.flip bf)
-                  (= [k1 k2 bm] (sut/read-buffer bf :doc-info)))))
+                  (= [k1 k2 ar] (sut/read-buffer bf :doc-info)))))
 
 (test/defspec term-info-generative-test
   100
