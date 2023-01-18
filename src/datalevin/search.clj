@@ -668,29 +668,32 @@
                       ^AtomicInteger max-term
                       index-position?
                       ^FastList txs
-                      ^UnifiedMap hit-terms]
+                      ^UnifiedMap hit-terms
+                      ^UnifiedMap new-hits]
   IIndexWriter
   (write [this doc-ref doc-text]
     (when-not (s/blank? doc-text)
-      (add-doc-txs this doc-ref doc-text txs hit-terms)
+      (add-doc-txs this doc-ref doc-text txs hit-terms new-hits)
       (when (< 1000000 (.size txs))
         (.commit this))))
 
   (commit [_]
     (l/transact-kv lmdb txs)
     (.clear txs)
-    (loop [iter (.iterator (.entrySet hit-terms))]
+    (loop [iter (.iterator (.entrySet new-hits))]
       (when (.hasNext iter)
-        (let [^Map$Entry kv (.next iter)]
-          (.add txs [:put terms-dbi (.getKey kv) (.getValue kv)
-                     :string :term-info])
+        (let [^Map$Entry kv (.next iter)
+              k             (.getKey kv)
+              v             (.getValue kv)]
+          (.add txs [:put terms-dbi k v :string :term-info])
+          (.put hit-terms k v)
           (.remove iter)
           (recur iter))))
     (l/transact-kv lmdb txs)
     (.clear txs)))
 
 (defn- add-doc-txs [^IndexWriter engine doc-ref doc-text ^FastList txs
-                    ^UnifiedMap hit-terms]
+                    ^UnifiedMap hit-terms ^UnifiedMap new-hits]
   (let [result          ((.-analyzer engine) doc-text)
         new-terms       ^UnifiedMap (collect-terms result)
         unique          (.size new-terms)
@@ -707,12 +710,13 @@
             tf                                              (.size positions)
 
             [tid mw sl]
-            (or (.get hit-terms term)
+            (or (.get new-hits term)
+                (.get hit-terms term)
                 (l/get-value lmdb terms-dbi term :string :term-info true)
                 [(.incrementAndGet ^AtomicInteger max-term)
                  0.0
                  (sl/sparse-arraylist)])]
-        (.put hit-terms term
+        (.put new-hits term
               [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)])
         (if index-position?
           (.add txs [:put positions-dbi [doc-id tid]
@@ -751,4 +755,5 @@
                     (AtomicInteger. (init-max-id lmdb terms-dbi))
                     index-position?
                     (FastList.)
+                    (UnifiedMap.)
                     (UnifiedMap.)))))
