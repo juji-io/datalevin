@@ -94,7 +94,7 @@
   100
   (prop/for-all [k1 gen/small-integer
                  k2 gen/small-integer
-                 k3 (gen/not-empty (gen/list-distinct gen/small-integer))]
+                 k3 (gen/list-distinct gen/small-integer)]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
                       ^ints ar       (int-array k3)]
                   (.clear bf)

@@ -84,8 +84,7 @@
 
 (defprotocol ICache
   (-get [this key compute-fn])
-  (-put [this key value])
-  (-del [this key]))
+  (-del [this key] "invalidate a key"))
 
 (defn cache [limit target]
   (let [*impl (volatile! (lru limit target))]
@@ -97,9 +96,6 @@
           (let [computed (compute-fn)]
             (vswap! *impl assoc key computed)
             computed)))
-      (-put [this key value]
-        (vswap! *impl assoc key value)
-        this)
       (-del [this key]
         (vswap! *impl dissoc key)
         this))))

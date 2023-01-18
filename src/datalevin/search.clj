@@ -418,13 +418,29 @@
             #(l/get-value (.-lmdb engine) (.-docs-dbi engine)
                           doc-ref :data :int)))
 
+(defn- term-ids-via-positions-dbi
+  [^SearchEngine engine doc-ref]
+  (let [doc-id (doc-ref->id engine doc-ref)
+        lst    (IntArrayList.)
+        load   (fn [kv]
+                 (let [[_ tid] (b/read-buffer (l/k kv) :int-int)]
+                   (.add lst tid)))]
+    (l/visit (.-lmdb engine) (.-positions-dbi engine) load
+             [:closed [doc-id 1]
+              [doc-id (.get ^AtomicInteger (.-max-term engine))]]
+             :int-int)
+    (.toArray lst)))
+
 (defn- doc-ref->term-ids
   [^SearchEngine engine doc-ref]
   (lru/-get (.-cache engine)
             [:doc-ref->term-ids doc-ref]
-            #(peek (l/get-value (.-lmdb engine)
-                                (.-docs-dbi engine)
-                                doc-ref :data :doc-info true))))
+            #(let [ar (peek (l/get-value (.-lmdb engine)
+                                         (.-docs-dbi engine)
+                                         doc-ref :data :doc-info true))]
+               (if (< 0 (alength ^ints ar))
+                 ar
+                 (term-ids-via-positions-dbi engine doc-ref)))))
 
 (defn- remove-doc*
   [^SearchEngine engine doc-id doc-ref]
@@ -434,9 +450,6 @@
         terms-dbi     (.-terms-dbi engine)
         positions-dbi (.-positions-dbi engine)
         cache         (.-cache engine)]
-    (.remove ^SpillableIntObjMap (.-docs engine) doc-id)
-    (.remove norms doc-id)
-    (.add txs [:del (.-docs-dbi engine) doc-ref :data])
     (doseq [term-id (doc-ref->term-ids engine doc-ref)]
       (let [[term [_ mw sl]] (term-id->term-info engine term-id)]
         (when-let [tf (sl/get sl doc-id)]
@@ -449,6 +462,9 @@
               (lru/-del [:get-term-info term])
               (lru/-del [:get-pos-info doc-id term-id]))))
       (.add txs [:del positions-dbi [doc-id term-id] :int-int]))
+    (.add txs [:del (.-docs-dbi engine) doc-ref :data])
+    (.remove ^SpillableIntObjMap (.-docs engine) doc-id)
+    (.remove norms doc-id)
     (l/transact-kv (.-lmdb engine) txs)
     (-> cache
         (lru/-del [:doc-ref->id doc-ref])
@@ -467,8 +483,7 @@
         positions-dbi   (.-positions-dbi engine)
         terms           ^SpillableIntObjMap (.-terms engine)
         max-term        (.-max-term engine)
-        index-position? (.-index-position? engine)
-        cache           (.-cache engine)]
+        index-position? (.-index-position? engine)]
     (.put ^SpillableIntObjMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
     (doseq [^Map$Entry kv (.entrySet new-terms)]
@@ -486,22 +501,17 @@
 
             term-info
             [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)]]
-        (lru/-put cache [:get-term-info term] term-info)
         (.add txs [:put terms-dbi term term-info :string :term-info])
-        (.add ^IntHashSet term-set (int tid))
-        (when index-position?
+        (if index-position?
           (let [pos-info [(.toArray positions) (.toArray offsets)]]
-            (lru/-put cache [:get-pos-info doc-id tid] pos-info)
             (.add txs [:put positions-dbi [doc-id tid]
-                       pos-info :int-int :pos-info])))))
+                       pos-info :int-int :pos-info]))
+          (.add ^IntHashSet term-set (int tid)))))
     (let [term-ar  (.toArray ^IntHashSet term-set)
           doc-info [doc-id unique term-ar]]
       (.add txs [:put (.-docs-dbi engine) doc-ref doc-info
                  :data :doc-info])
-      (l/transact-kv (.-lmdb engine) txs)
-      (-> cache
-          (lru/-put [:doc-ref->id doc-ref] doc-id)
-          (lru/-put [:doc-ref->term-ids doc-ref] term-ar))))
+      (l/transact-kv (.-lmdb engine) txs)))
   :doc-added)
 
 (defn- hydrate-query
@@ -579,7 +589,7 @@
                        id   (b/read-buffer (l/v kv) :int)]
                    (when (< ^int @max-id ^int id) (vreset! max-id id))
                    (.put ^SpillableIntObjMap terms id term)))]
-    (l/visit lmdb terms-dbi load [:all])
+    (l/visit lmdb terms-dbi load [:all-back])
     [@max-id terms]))
 
 (defn- init-docs
@@ -595,7 +605,7 @@
                    (when (< ^int @max-id ^int id) (vreset! max-id id))
                    (.put ^SpillableIntObjMap docs id ref)
                    (.put norms id norm)))]
-    (l/visit lmdb docs-dbi load [:all])
+    (l/visit lmdb docs-dbi load [:all-back])
     [@max-id norms docs]))
 
 (defn new-search-engine
@@ -704,11 +714,11 @@
                  (sl/sparse-arraylist)])]
         (.put hit-terms term
               [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)])
-        (.add ^IntHashSet term-set (int tid))
-        (when index-position?
+        (if index-position?
           (.add txs [:put positions-dbi [doc-id tid]
                      [(.toArray positions) (.toArray offsets)]
-                     :int-int :pos-info]))))
+                     :int-int :pos-info])
+          (.add ^IntHashSet term-set (int tid)))))
     (.add txs [:put (.-docs-dbi engine) doc-ref
                [doc-id unique (.toArray ^IntHashSet term-set)]
                :data :doc-info])))
@@ -718,7 +728,7 @@
         load   (fn [kv]
                  (let [id (b/read-buffer (l/v kv) :int)]
                    (when (< ^int @max-id ^int id) (vreset! max-id id))))]
-    (l/visit lmdb dbi load [:all])
+    (l/visit lmdb dbi load [:all-back])
     @max-id))
 
 (defn search-index-writer

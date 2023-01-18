@@ -107,19 +107,19 @@
              [[9] [48]]))
       (is (= (update (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
                      2 count)
-             [1 7 7]))
+             [1 7 0]))
       (is (= (update (l/get-value lmdb docs-dbi :doc2 :data :doc-info true)
                      2 count)
-             [2 8 8]))
+             [2 8 0]))
       (is (= (update (l/get-value lmdb docs-dbi :doc3 :data :doc-info true)
                      2 count)
-             [3 6 6]))
+             [3 6 0]))
       (is (= (update (l/get-value lmdb docs-dbi :doc4 :data :doc-info true)
                      2 count)
-             [4 7 7]))
+             [4 7 0]))
       (is (= (update (l/get-value lmdb docs-dbi :doc5 :data :doc-info true)
                      2 count)
-             [5 9 9]))
+             [5 9 0]))
       (is (= (l/range-count lmdb docs-dbi [:all]) 5))
 
       (sut/remove-doc engine :doc1)
@@ -213,10 +213,7 @@
 
       (is (= (update (l/get-value lmdb docs-dbi 1 :data :doc-info true)
                      2 set)
-             [1 1 #{1}]))
-      (is (= (update (l/get-value lmdb docs-dbi 2 :data :doc-info true)
-                     2 set)
-             [2 1 #{1}]))
+             [1 1 #{}]))
       (is (= (l/range-count lmdb docs-dbi [:all]) 2))
       )
 
@@ -352,8 +349,7 @@
   (let [dir       (u/tmp-dir (str "update-doc-test-" (UUID/randomUUID)))
         lmdb      (d/open-kv dir)
         engine    ^SearchEngine (d/new-search-engine lmdb)
-        terms-dbi (.-terms-dbi engine)
-        docs-dbi  (.-docs-dbi engine)]
+        terms-dbi (.-terms-dbi engine)]
     (add-docs d/add-doc engine)
     (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "fox" :string :term-info true)]

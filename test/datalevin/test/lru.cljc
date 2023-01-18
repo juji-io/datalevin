@@ -2,7 +2,8 @@
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
-   [datalevin.lru :as lru])
+   [datalevin.lru :as lru]
+   [datalevin.util :as u])
   (:import [datalevin.lru LRU]))
 
 (deftest test-assoc
@@ -46,3 +47,21 @@
       l4 :a 1
       l5 :a nil ;; :a gets evicted as the oldest one
       l5 :d 5)))
+
+(deftest test-cache
+  (let [cache  (lru/cache 2 :constant)
+        a-time (volatile! 0)
+        b-time (volatile! 0)
+        c-time (volatile! 0)
+        a-fn   #(do (vswap! a-time u/long-inc) 1)
+        b-fn   #(do (vswap! b-time u/long-inc) 2)
+        c-fn   #(do (vswap! c-time u/long-inc) 3)]
+    (is (= 1 (lru/-get cache :a a-fn)))
+    (is (= 2 (lru/-get cache :b b-fn)))
+    (is (= 1 (lru/-get cache :a a-fn))) ;; :a is now newer
+    (is (= 3 (lru/-get cache :c c-fn))) ;; :b is evicted instead
+    (is (= 2 (lru/-get cache :b b-fn)))
+
+    (is (= 1 @a-time))
+    (is (= 2 @b-time))  ;; b-fn runs twice
+    (is (= 1 @c-time))))
