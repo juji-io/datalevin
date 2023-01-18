@@ -57,6 +57,10 @@
       "allPublicMethods":true
     },
     {
+      "name": "org.eclipse.collections.impl.list.mutable.primitive.IntArrayList",
+      "allPublicMethods":true
+    },
+    {
       "name": "org.eclipse.collections.impl.map.mutable.UnifiedMap",
       "allPublicMethods":true
     },

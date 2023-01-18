@@ -8,9 +8,11 @@
    [java.nio ByteBuffer]
    [datalevin.utl GrowingIntArray]
    [me.lemire.integercompression IntCompressor]
+   [me.lemire.integercompression.differential IntegratedIntCompressor]
    [org.roaringbitmap RoaringBitmap]))
 
 (defonce compressor (IntCompressor.))
+(defonce sorted-compressor (IntegratedIntCompressor.))
 
 (defn get-ints
   "get compressed int array from a ByteBuffer"
@@ -24,6 +26,22 @@
   "put an int array in compressed form in a ByteBuffer"
   [^ByteBuffer bf ar]
   (let [car  (.compress ^IntCompressor compressor ar)
+        size (alength car)]
+    (.putInt bf size)
+    (dotimes [i size] (.putInt bf (aget car i)))))
+
+(defn get-sorted-ints
+  "get compressed int array from a ByteBuffer"
+  [^ByteBuffer bf]
+  (let [size (.getInt bf)
+        car  (int-array size)]
+    (dotimes [i size] (aset car i (.getInt bf)))
+    (.uncompress ^IntegratedIntCompressor sorted-compressor car)))
+
+(defn put-sorted-ints
+  "put an int array in compressed form in a ByteBuffer"
+  [^ByteBuffer bf ar]
+  (let [car  (.compress ^IntegratedIntCompressor sorted-compressor ar)
         size (alength car)]
     (.putInt bf size)
     (dotimes [i size] (.putInt bf (aget car i)))))

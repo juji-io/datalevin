@@ -722,6 +722,9 @@
                        (put-int bf i1)
                        (put-short bf i2)
                        (sl/put-ints bf i3))
+     :pos-info       (let [[i1 i2] x]
+                       (sl/put-sorted-ints bf i1)
+                       (sl/put-sorted-ints bf i2))
      :long           (do (put-byte bf (raw-header x :long))
                          (put-long bf x))
      :id             (put-long bf x)
@@ -775,6 +778,7 @@
      :bitmap         (get-bitmap bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
      :doc-info       [(get-int bf) (get-short bf) (sl/get-ints bf)]
+     :pos-info       [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
      :long           (do (get-byte bf) (get-long bf))
      :id             (get-long bf)
      :float          (do (get-byte bf) (get-float bf))

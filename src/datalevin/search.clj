@@ -21,6 +21,7 @@
     IntDoubleHashMap]
    [org.eclipse.collections.impl.set.mutable.primitive IntHashSet]
    [org.eclipse.collections.impl.list.mutable FastList]
+   [org.eclipse.collections.impl.list.mutable.primitive IntArrayList]
    [org.roaringbitmap RoaringBitmap FastAggregation FastRankRoaringBitmap
     PeekableIntIterator]))
 
@@ -68,12 +69,16 @@
 
 (defn- collect-terms
   [result]
-  (let [terms (HashMap.)]
+  (let [terms (UnifiedMap.)]
     (doseq [[term position offset] result]
       (when (< (count term) c/+max-term-length+)
-        (.put terms term (if-let [^FastList lst (.get terms term)]
-                           (do (.add lst [position offset]) lst)
-                           (doto (FastList.) (.add [position offset]))))))
+        (.put terms term
+              (if-let [[positions offsets] (.get terms term)]
+                (do (.add ^IntArrayList positions position)
+                    (.add ^IntArrayList offsets offset)
+                    [positions offsets])
+                [(doto (IntArrayList.) (.add (int position)))
+                 (doto (IntArrayList.) (.add (int offset)))]))))
     terms))
 
 (defn idf
@@ -435,11 +440,14 @@
     (doseq [term-id (doc-ref->term-ids engine doc-ref)]
       (let [[term [_ mw sl]] (term-id->term-info engine term-id)]
         (when-let [tf (sl/get sl doc-id)]
-          (let [new-info [term-id
-                          (del-max-weight sl doc-id mw tf norm)
-                          (sl/remove sl doc-id)]]
-            (.add txs [:put terms-dbi term new-info :string :term-info])
-            (lru/-del cache [:get-term-info term]))))
+          (.add txs [:put terms-dbi term
+                     [term-id
+                      (del-max-weight sl doc-id mw tf norm)
+                      (sl/remove sl doc-id)]
+                     :string :term-info])
+          (-> cache
+              (lru/-del [:get-term-info term])
+              (lru/-del [:get-pos-info doc-id term-id]))))
       (.add txs [:del positions-dbi [doc-id term-id] :int-int]))
     (l/transact-kv (.-lmdb engine) txs)
     (-> cache
@@ -450,7 +458,7 @@
 (defn- add-doc*
   [^SearchEngine engine doc-ref doc-text]
   (let [result          ((.-analyzer engine) doc-text)
-        new-terms       ^HashMap (collect-terms result)
+        new-terms       ^UnifiedMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
@@ -464,9 +472,9 @@
     (.put ^SpillableIntObjMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
     (doseq [^Map$Entry kv (.entrySet new-terms)]
-      (let [term    (.getKey kv)
-            new-lst ^FastList (.getValue kv)
-            tf      (.size new-lst)
+      (let [term                                            (.getKey kv)
+            [^IntArrayList positions ^IntArrayList offsets] (.getValue kv)
+            tf                                              (.size positions)
 
             [tid mw sl]
             (or (get-term-info engine term)
@@ -482,8 +490,10 @@
         (.add txs [:put terms-dbi term term-info :string :term-info])
         (.add ^IntHashSet term-set (int tid))
         (when index-position?
-          (.add txs [:put-list positions-dbi [doc-id tid]
-                     new-lst :int-int :int-int]))))
+          (let [pos-info [(.toArray positions) (.toArray offsets)]]
+            (lru/-put cache [:get-pos-info doc-id tid] pos-info)
+            (.add txs [:put positions-dbi [doc-id tid]
+                       pos-info :int-int :pos-info])))))
     (let [term-ar  (.toArray ^IntHashSet term-set)
           doc-info [doc-id unique term-ar]]
       (.add txs [:put (.-docs-dbi engine) doc-ref doc-info
@@ -521,20 +531,23 @@
   (when-let [doc-ref ((.-docs engine) doc-id)]
     (when (doc-filter doc-ref) doc-ref)))
 
+(defn- get-offsets
+  [^SearchEngine engine doc-id term-id]
+  (peek (lru/-get
+          (.-cache engine) [:get-pos-info doc-id term-id]
+          #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
+                        [doc-id term-id] :int-int :pos-info true))))
+
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
   (when-let [doc-ref (get-doc-ref engine doc-filter result)]
-    (let [lmdb          (.-lmdb engine)
-          positions-dbi (.-positions-dbi engine)]
-      [doc-ref
-       (sequence
-         (comp (map (fn [tid]
-                   (let [lst (l/get-list lmdb positions-dbi
-                                         [doc-id tid] :int-int :int-int)]
-                     (when (seq lst)
-                       [(terms tid) (mapv #(nth % 1) lst)]))))
-            (remove nil? ))
-         (keys terms))])))
+    [doc-ref
+     (sequence
+       (comp (map (fn [tid]
+                 (when-let [offsets (get-offsets engine doc-id tid)]
+                   [(terms tid) (apply vector offsets)])))
+          (remove nil? ))
+       (keys terms))]))
 
 (defn- display-xf
   [^SearchEngine engine doc-filter display tms]
@@ -554,9 +567,8 @@
   ;; doc-ref -> doc-id,norm,term-set
   (l/open-dbi lmdb docs-dbi {:key-size c/+max-key-size+})
 
-  ;; doc-id,term-id -> position,offset (list)
-  (l/open-list-dbi lmdb positions-dbi {:key-size (* 2 Integer/BYTES)
-                                       :val-size (* 2 Integer/BYTES)}))
+  ;; doc-id,term-id -> positions,offsets
+  (l/open-dbi lmdb positions-dbi {:key-size (* 2 Integer/BYTES)}))
 
 (defn- init-terms
   [lmdb terms-dbi]
@@ -670,7 +682,7 @@
 (defn- add-doc-txs [^IndexWriter engine doc-ref doc-text ^FastList txs
                     ^UnifiedMap hit-terms]
   (let [result          ((.-analyzer engine) doc-text)
-        new-terms       ^HashMap (collect-terms result)
+        new-terms       ^UnifiedMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
@@ -680,9 +692,9 @@
         index-position? (.-index-position? engine)
         lmdb            (.-lmdb engine)]
     (doseq [^Map$Entry kv (.entrySet new-terms)]
-      (let [term    (.getKey kv)
-            new-lst ^FastList (.getValue kv)
-            tf      (.size new-lst)
+      (let [term                                            (.getKey kv)
+            [^IntArrayList positions ^IntArrayList offsets] (.getValue kv)
+            tf                                              (.size positions)
 
             [tid mw sl]
             (or (.get hit-terms term)
@@ -694,8 +706,9 @@
               [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)])
         (.add ^IntHashSet term-set (int tid))
         (when index-position?
-          (.add txs [:put-list positions-dbi [doc-id tid]
-                     new-lst :int-int :int-int]))))
+          (.add txs [:put positions-dbi [doc-id tid]
+                     [(.toArray positions) (.toArray offsets)]
+                     :int-int :pos-info]))))
     (.add txs [:put (.-docs-dbi engine) doc-ref
                [doc-id unique (.toArray ^IntHashSet term-set)]
                :data :doc-info])))

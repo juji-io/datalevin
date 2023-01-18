@@ -105,6 +105,20 @@
                              (= k2 k2')
                              (Arrays/equals ar ^ints ar')))))))
 
+(test/defspec pos-info-generative-test
+  100
+  (prop/for-all [k1 (gen/not-empty (gen/list-distinct gen/small-integer))
+                 k2 (gen/not-empty (gen/list-distinct gen/small-integer))]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)
+                      ^ints ar1      (int-array (sort k1))
+                      ^ints ar2      (int-array (sort k2))]
+                  (.clear bf)
+                  (sut/put-buffer bf [ar1 ar2] :pos-info)
+                  (.flip bf)
+                  (let [[ar1' ar2'] (sut/read-buffer bf :pos-info)]
+                    (is (and  (Arrays/equals ar1 ^ints ar1')
+                              (Arrays/equals ar2 ^ints ar2')))))))
+
 (test/defspec term-info-generative-test
   100
   (prop/for-all [k1 gen/int

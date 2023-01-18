@@ -14,7 +14,7 @@
   [dir ^String filename]
   (let [start  (System/nanoTime)
         lmdb   (d/open-kv dir {:mapsize 100000})
-        writer (d/search-index-writer lmdb)]
+        writer (d/search-index-writer lmdb {:index-position? true})]
     (with-open [f (FileInputStream. filename)]
       (let [jf  (JsonFactory.)
             jp  (.createParser jf f)
@@ -85,10 +85,10 @@
   ;;        "data/queries10k.txt" 10000)
   ;; (println "Done query.")
 
-  ;; (index-wiki-json "data/wiki-datalevin-all" "data/wiki.json")
-  ;; (println "Done indexing.")
-  (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-all"))
-         "data/queries40k.txt" 40000)
-  (println "Done query.")
+  (index-wiki-json "data/wiki-datalevin-all-pos" "data/wiki.json")
+  (println "Done indexing.")
+  ;; (query (d/new-search-engine (d/open-kv "data/wiki-datalevin-all"))
+  ;;        "data/queries40k.txt" 40000)
+  ;; (println "Done query.")
 
   )

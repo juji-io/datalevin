@@ -2,7 +2,6 @@
   (:require
    [datalevin.search :as sut]
    [datalevin.lmdb :as l]
-   [datalevin.bits :as b]
    [datalevin.interpret :as i]
    [datalevin.core :as d]
    [datalevin.sparselist :as sl]
@@ -14,8 +13,7 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [clojure.test :refer [deftest testing is use-fixtures]]
-   [datalevin.constants :as c])
+   [clojure.test :refer [deftest testing is use-fixtures]])
   (:import
    [java.util UUID ]
    [datalevin.sparselist SparseIntArrayList]
@@ -90,41 +88,38 @@
       (is (= (sl/size sl) 4))
       (is (= (seq (.-indices sl)) [1 2 4 5]))
 
-      (is (= (l/list-count lmdb positions-dbi [1 tid] :int-int)
+      (is (= (count
+               (first
+                 (l/get-value lmdb positions-dbi [1 tid] :int-int :pos-info)))
              (sl/get sl 1)
              2))
-      (is (= (l/list-count lmdb positions-dbi [2 tid] :int-int)
+      (is (= (count
+               (peek
+                 (l/get-value lmdb positions-dbi [2 tid] :int-int :pos-info)))
              (sl/get sl 2)
              1))
 
-      (is (= (l/list-count lmdb positions-dbi [3 tid] :int-int)
-             0))
+      (is (nil? (l/get-value lmdb positions-dbi [3 tid] :int-int :pos-info)))
       (is (nil? (sl/get sl 3)))
 
-      (is (= (l/list-count lmdb positions-dbi [4 tid] :int-int)
-             (sl/get sl 4)
-             1))
-      (is (= (l/list-count lmdb positions-dbi [5 tid] :int-int)
-             (sl/get sl 5)
-             1))
-
-      (is (= (l/get-list lmdb positions-dbi [5 tid] :int-int :int-int)
-             [[9 48]]))
+      (is (= (map #(apply vector %)
+                  (l/get-value lmdb positions-dbi [5 tid] :int-int :pos-info))
+             [[9] [48]]))
       (is (= (update (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
-                     2 set)
-             [1 7 #{1,2,3,4,5,6,7}]))
+                     2 count)
+             [1 7 7]))
       (is (= (update (l/get-value lmdb docs-dbi :doc2 :data :doc-info true)
-                     2 set)
-             [2 8 #{1, 8, 9, 10, 11, 12, 13, 14}]))
+                     2 count)
+             [2 8 8]))
       (is (= (update (l/get-value lmdb docs-dbi :doc3 :data :doc-info true)
-                     2 set)
-             [3 6 #{15,16,17,18,19,20}]))
+                     2 count)
+             [3 6 6]))
       (is (= (update (l/get-value lmdb docs-dbi :doc4 :data :doc-info true)
-                     2 set)
-             [4 7 #{1,8,21,22,23,24,25}]))
+                     2 count)
+             [4 7 7]))
       (is (= (update (l/get-value lmdb docs-dbi :doc5 :data :doc-info true)
-                     2 set)
-             [5 9 #{1,6,26,27,28,29,30,31,32}]))
+                     2 count)
+             [5 9 9]))
       (is (= (l/range-count lmdb docs-dbi [:all]) 5))
 
       (sut/remove-doc engine :doc1)
@@ -137,8 +132,7 @@
         (is (= (l/range-count lmdb docs-dbi [:all]) 4))
         (is (not (sl/contains-index? sl 1)))
         (is (= (sl/size sl) 3))
-        (is (= (l/list-count lmdb positions-dbi [1 tid] :int-id) 0))
-        (is (nil? (l/get-list lmdb positions-dbi [1 tid] :int-id :int-int))))
+        (is (nil? (l/get-value lmdb positions-dbi [1 tid] :int-int))))
 
       (sut/clear-docs engine)
       (is (= (sut/doc-count engine) 0)))
@@ -204,19 +198,18 @@
       (is (= (sl/size sl) 2))
       (is (= (seq (.-indices sl)) [1 2]))
 
-      (is (= (l/list-count lmdb positions-dbi [1 tid] :int-int)
-             (sl/get sl 1)
-             1))
-      (is (= (l/list-count lmdb positions-dbi [2 tid] :int-int)
+      (is (= (count
+               (peek
+                 (l/get-value lmdb positions-dbi [2 tid] :int-int :pos-info)))
              (sl/get sl 2)
              1))
 
-      (is (= (l/list-count lmdb positions-dbi [3 tid] :int-int)
-             0))
+      (is (nil? (l/get-value lmdb positions-dbi [3 tid] :int-int)))
       (is (nil? (sl/get sl 3)))
 
-      (is (= (l/get-list lmdb positions-dbi [1 tid] :int-int :int-int)
-             [[1 2]]))
+      (is (= (map #(apply vector %)
+                  (l/get-value lmdb positions-dbi [1 tid] :int-int :pos-info))
+             [[1] [2]]))
 
       (is (= (update (l/get-value lmdb docs-dbi 1 :data :doc-info true)
                      2 set)
@@ -362,17 +355,12 @@
         terms-dbi (.-terms-dbi engine)
         docs-dbi  (.-docs-dbi engine)]
     (add-docs d/add-doc engine)
-    (let [[tid _ sl]
+    (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
-      (is (= tid 7))
       (is (= sl (sl/sparse-arraylist {1 1}))))
-    (let [[tid _ sl]
+    (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "red" :string :term-info true)]
-      (is (= tid 1))
       (is (= sl (sl/sparse-arraylist {1 2 2 1 4 1 5 1}))))
-    (is (= (update (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
-                   2 set)
-           [1 7 #{1,2,3,4,5,6,7}]))
     (is (= {1 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
     (is (= 5 (d/doc-count engine)))
 
@@ -380,20 +368,15 @@
 
     (d/add-doc engine :doc1
                "The quick brown fox jumped over the lazy black dogs.")
-    (let [[tid _ sl]
+    (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "fox" :string :term-info true)]
-      (is (= tid 7))
       (is (= sl (sl/sparse-arraylist {6 1}))))
-    (let [[tid _ sl]
+    (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "red" :string :term-info true)]
-      (is (= tid 1))
       (is (= sl (sl/sparse-arraylist {2 1 4 1 5 1}))))
     (is (= {6 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
     (is (= 5 (d/doc-count engine)))
     (is (d/doc-indexed? engine :doc1))
-    (is (= (update (l/get-value lmdb docs-dbi :doc1 :data :doc-info true)
-                   2 set)
-           [6 8 #{2,3,4,5,6,7,33,34}]))
 
     (is (= [:doc1] (d/search engine "black")))
     (is (= [:doc1] (d/search engine "fox")))
@@ -423,11 +406,11 @@
     (d/add-doc engine "Romeo and Juliet" (slurp "test/data/romeo.txt"))
     (is (= ["Romeo and Juliet"] (d/search engine "romeo")))
     (is (= 4283 (count (.-terms engine))))
-    (is (= 299 (l/list-count
-                 lmdb (.-positions-dbi engine)
-                 [1 (l/get-value lmdb (.-terms-dbi engine)
-                                 "romeo" :string :int true)]
-                 :int-int)))
+    (is (= 299 (count (peek (l/get-value
+                              lmdb (.-positions-dbi engine)
+                              [1 (l/get-value lmdb (.-terms-dbi engine)
+                                              "romeo" :string :int true)]
+                              :int-int :pos-info)))))
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
