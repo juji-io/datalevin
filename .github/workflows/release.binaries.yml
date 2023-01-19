@@ -41,6 +41,7 @@ jobs:
 
       - name: Upload Uberjar
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DTLV_TAG: '0.8.1'
           DTLV_ARCHIVE: 'dtlv-0.8.1-standalone.jar'
         run: |
@@ -77,6 +78,7 @@ jobs:
 
       - name: Zip Binary
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DTLV_TAG: '0.8.1'
           DTLV_ARCHIVE: 'dtlv-0.8.1-${{ matrix.os}}-amd64.zip'
         run: |
