@@ -17,7 +17,7 @@
   (:import
    [java.util UUID ]
    [datalevin.sparselist SparseIntArrayList]
-   [datalevin.search SearchEngine]))
+   [datalevin.search SearchEngine IndexWriter]))
 
 (use-fixtures :each db-fixture)
 
@@ -409,6 +409,21 @@
                               :int-int :pos-info)))))
     (d/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest index-writer-test
+  (let [dir    (u/tmp-dir (str "writer-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
+        writer ^IndexWriter (sut/search-index-writer
+                              lmdb {:index-position? true})]
+    (add-docs sut/write writer)
+    (sut/commit writer)
+
+    (let [engine (sut/new-search-engine lmdb)]
+      (is (= (sut/search engine "cap" {:display :offsets})
+             [[:doc4 [["cap" [51]]]]])))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
 
 ;; TODO double compares are not really reliable
 ;; (def tokens ["b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n"

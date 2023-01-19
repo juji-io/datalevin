@@ -43,6 +43,8 @@ This produces a text file containing 40000 queries, totaling 685KB.
 
 The same conditions were applied to both Datalevin and Lucene:
 
+* Both run in the default settings.
+
 * A single thread was used to add all documents during indexing.
 
 * Indices were stored on the same disk as input data.
@@ -78,9 +80,9 @@ Indexing performance is in the following table.
 
 |Measure   | Datalevin | Lucene |
 |----|--------|--------|
-| Index time (Minutes)  | 35  | 20  |
-| Index size (GB)  | 9.8  |  14      |
-| Index Speed (GB/Hour)  | 26  |  45      |
+| Index time (Minutes)  | 36  | 20  |
+| Index size (GB)  | 6.8  |  14      |
+| Index Speed (GB/Hour)  | 25  |  45      |
 
 Lucene is close to twice as fast as Datalevin at bulk indexing. This is
 expected, as Datalevin transacts the indices to the database. One benefit of
@@ -88,8 +90,11 @@ storing search index in a transactional database, is that the documents become
 immediately searchable, while Lucene indexes documents in very large batches, so
 they are not immediately searchable.
 
-Datalevin's index is a single database file of 9.8 GB, while Lucene includes 168
+Datalevin's index is a single database file of 6.8 GB, while Lucene includes 168
 files totaling 14 GB.
+
+If `index-position?` option is turned on, Datalevin took 80 minutes to run, and
+produced an index file of 78 GB.
 
 ### Searching
 
@@ -123,9 +128,8 @@ Datalevin has much longer query time at long tails though, bringing down the
 mean considerably. For queries with huge candidate set, the fixed cost of less optimized
 code adds up to overcome the superiority in algorithm. For example, the slowest
 query is "s", there's not much room for algorithmic cleverness here, the only
-solution is brutal-force iterating the whole 3 million matching documents. So
-basically, the contest here is raw iteration speed, it should not be a surprise
-that idiomatic Clojure loses to optimized Java code here.
+solution is brutal-force iterating the whole 3 million matching documents.
+
 
 #### Search Throughput (Query per Second)
 
