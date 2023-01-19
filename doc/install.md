@@ -11,14 +11,14 @@ If you use [Leiningen](https://leiningen.org/) build tool, add this to the
 `:dependencies` section of your `project.clj` file:
 
 ```Clojure
-[datalevin "0.7.12"]
+[datalevin "0.8.0"]
 ```
 
 If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 `deps.edn`, declare the dependency like so:
 
 ```Clojure
-{:deps {datalevin/datalevin {:mvn/version "0.7.12"}
+{:deps {datalevin/datalevin {:mvn/version "0.8.0"}
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
 ```
 
@@ -114,18 +114,18 @@ See [README on Docker hub](https://hub.docker.com/r/huahaiy/datalevin) for usage
 
 Or download the executable binary from github:
 
-* [Linux](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-ubuntu-latest-amd64.zip)
+* [Linux](https://github.com/juji-io/datalevin/releases/download/0.8.0/dtlv-0.8.0-ubuntu-latest-amd64.zip)
   on x86-64 (AMD64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-macos-latest-aarch64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.8.0/dtlv-0.8.0-macos-latest-aarch64.zip)
   on arm64 (AARCH64)
-* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-macos-latest-amd64.zip)
+* [MacOS](https://github.com/juji-io/datalevin/releases/download/0.8.0/dtlv-0.8.0-macos-latest-amd64.zip)
   on x86-64 (AMD64)
-* [Windows](https://github.com/juji-io/datalevin/releases/download/0.7.12/dtlv-0.7.12-windows-amd64.zip) on x86-64 (AMD64)
+* [Windows](https://github.com/juji-io/datalevin/releases/download/0.8.0/dtlv-0.8.0-windows-amd64.zip) on x86-64 (AMD64)
 
 Unzip, put it on your path, and execute `dtlv help`:
 
 ```console
-  Datalevin (version: 0.7.12)
+  Datalevin (version: 0.8.0)
 
 Usage: dtlv [options] [command] [arguments]
 
@@ -162,7 +162,7 @@ Type 'dtlv help <command>' to read about a specific command.
 Starting `dtlv` without any arguments goes into the console:
 
 ```console
-  Datalevin (version: 0.7.12)
+  Datalevin (version: 0.8.0)
 
   Type (help) to see available functions. Some Clojure core functions are also available.
   Type (exit) to exit.
@@ -221,7 +221,7 @@ You may want to launch `dtlv` in `rlwrap` to get a better REPL experience.
 ### Uberjar
 
 A JVM
-[uberjar](https://github.com/juji-io/datalevin/releases/download/0.7.12/datalevin-0.7.12-standalone.jar)
+[uberjar](https://github.com/juji-io/datalevin/releases/download/0.8.0/datalevin-0.8.0-standalone.jar)
 is downloadable to use as the command line tool. It is useful when one wants to
 run a Datalevin server and needs the efficiency of JVM's JIT, as GraalVM native
 image is AOT and not as efficient as JVM for long running programs, or when a
@@ -229,12 +229,12 @@ pre-built native version is not available for your platform. For example,
 assuming your Java is newer than version 11:
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.7.12-standalone.jar
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.8.0-standalone.jar
 ```
 This will start the Datalevin REPL.
 
 ```console
-java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.7.12-standalone.jar serv -r /tmp/test-server
+java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar datalevin-0.8.0-standalone.jar serv -r /tmp/test-server
 ```
 Will run the Datalevin server on default port 8898, with root data path at
 `/tmp/test-server`.
@@ -261,7 +261,7 @@ that can be used in a query, e.g.:
 
 ```console
 $ rlwrap bb
-Babashka v0.7.12 REPL.
+Babashka v0.8.0 REPL.
 Use :repl/quit or :repl/exit to quit the REPL.
 Clojure rocks, Bash reaches.
 

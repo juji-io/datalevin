@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.0 (2023-01-19)
 ### Changed
 - [Search] **Breaking** search index storage format change. Data re-indexing is
   necessary.
