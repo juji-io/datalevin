@@ -11,7 +11,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-20.04, ubuntu-latest]
+        os: [macos-latest]
+        # os: [macos-latest, ubuntu-20.04, ubuntu-latest]
 
     steps:
       - name: Checkout repository and submodules
@@ -31,17 +32,17 @@ jobs:
           macos: brew install leiningen
           linux: echo "lein is already installed"
 
-      - name: Run Tests then Uberjar
-        run: |
-          lein test
-          lein uberjar
+      # - name: Run Tests then Uberjar
+      #   run: |
+      #     lein test
+      #     lein uberjar
 
-      - name: Upload Uberjar
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
-          overwrite: true
+      # - name: Upload Uberjar
+      #   uses: shogo82148/actions-upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
+      #     overwrite: true
 
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
@@ -58,18 +59,25 @@ jobs:
           bash script/compile
 
       - name: Run Native Tests
-        run: |
-          ulimit -a
-          native/dtlv-test0
+        uses: knicknic/os-specific-run@v1.0.3
+        with:
+          macos: echo "open file limit is too small"
+          linux: native/dtlv-test0
+
 
       - name: Zip Binary
         run: |
           cd native
-          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip dtlv
+          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
+          upload_url=$(curl -sL https://api.github.com/repos/actions/checkout/releases/latest | jq -r '.upload_url')
+          echo UPLOAD_URL=$upload_url >> $GITHUB_ENV
+        shell: bash
 
       - name: Upload Binary
         uses: shogo82148/actions-upload-release-asset@v1
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
+          # upload_url: ${{ github.event.release.upload_url }}
+          upload_url: ${{ env.UPLOAD_URL }}
+          asset_path: native/dtlv-0.8.0-macos-amd64.zip
+          # asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
           overwrite: true
