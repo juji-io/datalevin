@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] intermittent `:db/fulltext` values transaction error. #177
+
 ## 0.8.0 (2023-01-19)
 ### Changed
 - [Search] **Breaking** search index storage format change. Data re-indexing is
