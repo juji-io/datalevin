@@ -31,18 +31,19 @@ jobs:
           macos: brew install leiningen
           linux: echo "lein is already installed"
 
-      - name: Run Tests then Uberjar
-        run: |
-          lein test
-          lein uberjar
+      # - name: Run Tests then Uberjar
+      #   run: |
+      #     lein test
+      #     lein uberjar
 
-      - name: Upload Uberjar
-        env:
-          DTLV_TAG: '0.8.1'
-          DTLV_ARCHIVE: 'dtlv-0.8.1-standalone.jar'
-        run: |
-          brew install borkdude/brew/babashka
-          bb --config ../.build/bb.edn release-artifact
+      # - name: Upload Uberjar
+      #   env:
+      #     DTLV_TAG: '0.8.1'
+      #     DTLV_ARCHIVE: 'dtlv-0.8.1-standalone.jar'
+      #   run: |
+      #     brew install borkdude/brew/babashka
+      #     bb --config ../.build/bb.edn release-artifact
+
       # - name: Upload Uberjar
       #   uses: shogo82148/actions-upload-release-asset@v1
       #   with:
