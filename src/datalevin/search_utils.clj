@@ -62,7 +62,7 @@
      (let [length (.length word)]
        (loop [idx       0
               gram-size min-gram-size
-              ngrams    (transient [word])]
+              ngrams    (transient [])]
          (if (or (= idx length) (< length (+ idx gram-size)))
            (persistent! ngrams)
            (if-not (< gram-size max-gram-size)

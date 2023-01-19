@@ -13,7 +13,7 @@
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.spill SpillableIntObjMap]
-   [java.util HashMap ArrayList Map$Entry Arrays]
+   [java.util ArrayList Map$Entry Arrays]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]

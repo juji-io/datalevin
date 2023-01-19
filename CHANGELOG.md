@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Search] `search-utils/create-ngram-token-filter` #164
+
 ## 0.8.1 (2023-01-19)
 ### Fixed
 - [Datalog] intermittent `:db/fulltext` values transaction error. #177
