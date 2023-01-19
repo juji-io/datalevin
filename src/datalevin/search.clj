@@ -742,3 +742,11 @@
                     index-position?
                     (FastList.)
                     (UnifiedMap.)))))
+
+(comment
+  (def lmdb (time (l/open-kv "search-bench/data/wiki-datalevin-all")))
+  (def engine (time (new-search-engine lmdb)))
+  (doc-count engine)
+  (search engine "linux debian")
+
+  )

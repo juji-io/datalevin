@@ -286,23 +286,6 @@ Only usable for debug output.
        :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
 
-#_(def ^{:macro    true
-         :arglists '([[db orig-db] & body])
-         :doc      "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of key-value operations.
-
-  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
-
-  `body` should refer to `db`.
-
-  Example:
-
-          (with-transaction-kv [kv lmdb]
-            (let [^long now (get-value kv \"a\" :counter)]
-              (transact-kv kv [[:put \"a\" :counter (inc now)]])
-              (get-value kv \"a\" :counter)))"}
-    with-transaction-kv #'datalevin.lmdb/with-transaction-kv)
-
 (defmacro with-transaction-kv
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of key-value operations.
