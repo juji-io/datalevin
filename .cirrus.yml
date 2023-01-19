@@ -27,6 +27,7 @@ task:
     brew install p7zip
 
     export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
+    export DTLV_TAG="${CIRRUS_TAG}"
 
     7z a -tzip "$DTLV_ARCHIVE" dtlv
 
