@@ -61,8 +61,8 @@ The same conditions were applied to both Datalevin and Lucene:
 * Concurrent searches were performed by submitting each search query to a thread pool.
 
 * Tests were conducted on an Intel Core i7-6850K CPU @ 3.60GHz with 6 cores (12
-  virtual cores), 64GB RAM, 1TB SSD, running Ubuntu 20.04 and OpenJDK 17
-  (2021-09-14), with Clojure 1.10.3.
+  virtual cores), 64GB RAM, 1TB SSD, running Ubuntu 22.04 and OpenJDK 17
+  (2022-10-18), with Clojure 1.11.1, with JVM flag `-Xmx24G -Xms24G`.
 
 Once the data are prepared, to run the benchmarks, first install
 [clojure](https://clojure.org/guides/install_clojure), then run these commands:
@@ -81,20 +81,17 @@ Indexing performance is in the following table.
 |Measure   | Datalevin | Lucene |
 |----|--------|--------|
 | Index time (Minutes)  | 36  | 20  |
-| Index size (GB)  | 6.8  |  14      |
+| Index size (GB)  | 6.7  |  14      |
 | Index Speed (GB/Hour)  | 25  |  45      |
 
 Lucene is close to twice as fast as Datalevin at bulk indexing. This is
-expected, as Datalevin transacts the indices to the database. One benefit of
-storing search index in a transactional database, is that the documents become
-immediately searchable, while Lucene indexes documents in very large batches, so
-they are not immediately searchable.
+expected, as Datalevin transacts the indices to the database.
 
-Datalevin's index is a single database file of 6.8 GB, while Lucene includes 168
+Datalevin's index is a single database file of 6.7 GB, while Lucene produced 168
 files totaling 14 GB.
 
-If `index-position?` option is turned on, Datalevin took 80 minutes to run, and
-produced an index file of 78 GB.
+If `index-position?` option is turned on, Datalevin took 80 minutes to index, and
+produced an file of 78 GB.
 
 ### Searching
 
@@ -109,13 +106,13 @@ search thread:
 |Percentile | Datalevin | Lucene |
 |----|--------|--------|
 |median | 0.8 | 2.7 |
-|75 |2.5 |    5.8           |
-|90 |6.8 |  10.6            |
-|95 |13.1 |  15.1      |
-|99 |52.1 |   29.0           |
-|99.9 |184.1 |  60.6            |
-|max |619.9 | 148.5 |
-|mean | 3.6 |    4.7  |
+|75 |2.4 |    5.8           |
+|90 |6.7 |  10.6            |
+|95 |12.8 |  15.1      |
+|99 |49.2 |   29.0           |
+|99.9 |172.7 |  60.6            |
+|max |596.0 | 148.5 |
+|mean | 3.5 |    4.7  |
 
 Search latency are similar across the number of threads, with slightly longer
 time when more threads are used (with about 3 ms mean difference between 1 and
@@ -135,21 +132,21 @@ solution is brutal-force iterating the whole 3 million matching documents.
 
 |Number of threads | Datalevin | Lucene |
 |----|--------|--------|
-|1 |276.5 | 212.9 |
-|2 |554.7 |    414.9           |
-|3 |804.4 |  608.8            |
-|4 |1057.3 |  805.3      |
-|5 |1277.8 |   995.9           |
-|6 |1437.6 |  1126.5            |
-|7 |1507.6 | 1180.9 |
-|8 |1577.9 |    1213.6           |
-|9 |1644.3 |  1233.7            |
-|10 |1708.5 |  1301.9      |
-|11 |1756.0 |   1345.1           |
+|1 |287.8 | 212.9 |
+|2 |563.4 |    414.9           |
+|3 |816.3 |  608.8            |
+|4 |1081.1 |  805.3      |
+|5 |1333.3 |   995.9           |
+|6 |1509.4 |  1126.5            |
+|7 |1562.5 | 1180.9 |
+|8 |1612.9 |    1213.6           |
+|9 |1673.6 |  1233.7            |
+|10 |1731.6 |  1301.9      |
+|11 |1834.9 |   1345.1           |
 |12 |1806.7 | 1372.3       |
-|forkjoin |1815.6 | 1349.9       |
+|forkjoin |1839.1 | 1349.9       |
 
-Datalevin has about 75% higher search throughput, as expected from the means.
+Datalevin has about 75% higher search throughput.
 
 For both search engines, search throughput grows linearly with the
 number of real CPU cores, so search is a CPU bound task. Past the number of real
@@ -182,7 +179,6 @@ configurable, while Datalevin search engine is embedded in a newly developed
 database with *simplicity* as its motto, so it does not offer any bells and
 whistles other than the core search features.
 
-On the other hand, Datalevin search engine already performs very well, and still
-has some low-hanging fruits for performance improvement. It will be nicely
+Datalevin search engine already performs very well, and it will be nicely
 integrated with other Datalevin database features to supports our goal of
 simplifying data access.

@@ -11,40 +11,58 @@
    [me.lemire.integercompression.differential IntegratedIntCompressor]
    [org.roaringbitmap RoaringBitmap]))
 
-(defonce compressor (IntCompressor.))
-(defonce sorted-compressor (IntegratedIntCompressor.))
+(defprotocol ICompressor
+  (compress [this obj])
+  (uncompress [this obj]))
 
-(defn get-ints
-  "get compressed int array from a ByteBuffer"
-  [^ByteBuffer bf]
-  (let [size (.getInt bf)
-        car  (int-array size)]
+(defonce compressor
+  (let [^IntCompressor int-compressor (IntCompressor.)]
+    (reify
+      ICompressor
+      (compress [_ ar]
+        (.compress int-compressor ar))
+      (uncompress [_ ar]
+        (.uncompress int-compressor ar)))) )
+
+(defonce sorted-compressor
+  (let [^IntegratedIntCompressor sorted-int-compressor
+        (IntegratedIntCompressor.)]
+    (reify
+      ICompressor
+      (compress [_ ar]
+        (.compress sorted-int-compressor ar))
+      (uncompress [_ ar]
+        (.uncompress sorted-int-compressor ar)))) )
+
+(defn- get-ints*
+  [compressor ^ByteBuffer bf]
+  (let [csize (.getInt bf)
+        comp? (neg? csize)
+        size  (if comp? (- csize) csize)
+        car   (int-array size)]
     (dotimes [i size] (aset car i (.getInt bf)))
-    (.uncompress ^IntCompressor compressor car)))
+    (if comp?
+      (uncompress ^ICompressor compressor car)
+      car)))
 
-(defn put-ints
-  "put an int array in compressed form in a ByteBuffer"
-  [^ByteBuffer bf ar]
-  (let [car  (.compress ^IntCompressor compressor ar)
-        size (alength car)]
-    (.putInt bf size)
+(defn- put-ints*
+  [compressor ^ByteBuffer bf ^ints ar]
+  (let [osize     (alength ar)
+        comp?     (< 3 osize) ;; don't compress small array
+        ^ints car (if comp?
+                    (compress ^ICompressor compressor ar)
+                    ar)
+        size      (alength car)]
+    (.putInt bf (if comp? (- size) size))
     (dotimes [i size] (.putInt bf (aget car i)))))
 
-(defn get-sorted-ints
-  "get compressed int array from a ByteBuffer"
-  [^ByteBuffer bf]
-  (let [size (.getInt bf)
-        car  (int-array size)]
-    (dotimes [i size] (aset car i (.getInt bf)))
-    (.uncompress ^IntegratedIntCompressor sorted-compressor car)))
+(defn get-ints [bf] (get-ints* compressor bf))
 
-(defn put-sorted-ints
-  "put an int array in compressed form in a ByteBuffer"
-  [^ByteBuffer bf ar]
-  (let [car  (.compress ^IntegratedIntCompressor sorted-compressor ar)
-        size (alength car)]
-    (.putInt bf size)
-    (dotimes [i size] (.putInt bf (aget car i)))))
+(defn put-ints [bf ar] (put-ints* compressor bf ar))
+
+(defn get-sorted-ints [bf] (get-ints* sorted-compressor bf))
+
+(defn put-sorted-ints [bf ar] (put-ints* sorted-compressor bf ar))
 
 (defprotocol ISparseIntArrayList
   (contains-index? [this index] "return true if containing index")
@@ -106,10 +124,14 @@
 (nippy/extend-freeze
   GrowingIntArray :dtlv/gia
   [^GrowingIntArray x ^DataOutput out]
-  (let [ar   (.toArray  x)
-        car  (.compress ^IntCompressor compressor ar)
-        size (alength car)]
-    (.writeInt out size)
+  (let [ar        (.toArray  x)
+        osize     (alength ar)
+        comp?     (< 3 osize)
+        ^ints car (if comp?
+                    (compress ^ICompressor compressor ar)
+                    ar)
+        size      (alength car)]
+    (.writeInt out (if comp? (- size) size))
     (dotimes [i size] (.writeInt out (aget car i)))))
 
 (nippy/extend-freeze
@@ -124,11 +146,16 @@
 
 (nippy/extend-thaw
   :dtlv/gia [^DataInput in]
-  (let [size  (.readInt in)
+  (let [csize (.readInt in)
+        comp? (neg? csize)
+        size  (if comp? (- csize) csize)
         car   (int-array size)
         items (GrowingIntArray.)]
     (dotimes [i size] (aset car i (.readInt in)))
-    (.addAll items (.uncompress ^IntCompressor compressor car))
+    (.addAll items
+             (if comp?
+               (uncompress ^ICompressor compressor car)
+               car))
     items))
 
 (nippy/extend-thaw
