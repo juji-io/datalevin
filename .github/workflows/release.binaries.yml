@@ -37,11 +37,18 @@ jobs:
           lein uberjar
 
       - name: Upload Uberjar
-        uses: shogo82148/actions-upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
-          overwrite: true
+        env:
+          DTLV_TAG: '0.8.1'
+          DTLV_ARCHIVE: 'dtlv-0.8.1-standalone.jar'
+        run: |
+          brew install borkdude/brew/babashka
+          bb --config ../.build/bb.edn release-artifact
+      # - name: Upload Uberjar
+      #   uses: shogo82148/actions-upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
+      #     overwrite: true
 
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
@@ -67,12 +74,12 @@ jobs:
       - name: Zip Binary
         env:
           DTLV_TAG: '0.8.1'
-          DTLV_ARCHIVE: 'dtlv-0.8.1-macos-latest-amd64.zip'
+          DTLV_ARCHIVE: 'dtlv-0.8.1-${{ matrix.os}}-amd64.zip'
         run: |
           cd native
           # 7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
           7z a -tzip dtlv-0.8.1-${{ matrix.os}}-amd64.zip dtlv
-          brew install borkdude/brew/babashka
+          # brew install borkdude/brew/babashka
           bb --config ../.build/bb.edn release-artifact
 
       # - name: Upload Binary
