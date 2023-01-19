@@ -8,6 +8,7 @@ on:
 
 jobs:
   build:
+    permissions: write-all
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -65,7 +66,7 @@ jobs:
           linux: native/dtlv-test0
 
 
-      - name: Zip Binary
+      - name: Zip and Upload Binary
         run: |
           cd native
           7z a -tzip dtlv-0.8.0-macos-latest-amd64.zip dtlv
