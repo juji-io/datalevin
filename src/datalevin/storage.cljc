@@ -351,21 +351,21 @@
                        (let [[data giant?] (insert-data this datom ft-ds)]
                          (when giant? (advance-max-gt this))
                          (reduce conj! holder data))
-                       (reduce conj! holder (delete-data this datom ft-ds))))
-            txs    (persistent!
-                     (-> (reduce add-fn (transient []) datoms)
-                         (conj! [:put c/meta :max-tx (advance-max-tx this)
-                                 :attr :long])
-                         (conj! [:put c/meta :last-modified
-                                 (System/currentTimeMillis)
-                                 :attr :long])))]
+                       (reduce conj! holder (delete-data this datom ft-ds))))]
+        (lmdb/transact-kv
+          lmdb (persistent!
+                 (-> (reduce add-fn (transient []) datoms)
+                     (conj! [:put c/meta :max-tx (advance-max-tx this)
+                             :attr :long])
+                     (conj! [:put c/meta :last-modified
+                             (System/currentTimeMillis)
+                             :attr :long]))))
         (doseq [[op ^Datom d] (persistent! @ft-ds)
-                :let          [v (str (.-v d))]]
-          (println "op d =>" [op d])
+                :let          [v (str (.-v d))
+                               d' (d/datom-eav d)]]
           (case op
-            :a (s/add-doc search-engine d v false)
-            :d (s/remove-doc search-engine d)))
-        (lmdb/transact-kv lmdb txs))))
+            :a (s/add-doc search-engine d' v false)
+            :d (s/remove-doc search-engine d'))))))
 
   (fetch [_ datom]
     (mapv (partial retrieved->datom lmdb attrs)

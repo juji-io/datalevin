@@ -271,4 +271,4 @@
                          tx (nippy/thaw-from-in! in)]
                      (datom-from-reader (if tx
                                           (conj vs tx)
-                                          tx))))
+                                          vs))))

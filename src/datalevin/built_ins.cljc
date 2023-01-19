@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as str]
    [datalevin.db :as db]
+   [datalevin.datom :as dd]
    [datalevin.search :as s]
    [datalevin.entity :as de]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]])
@@ -47,7 +48,9 @@
    (fulltext db query nil))
   ([^DB db query opts]
    (let [^SearchEngine engine (.-search-engine ^Store (.-store db))]
-     (s/search engine query opts))))
+     (sequence
+       (map #(apply dd/datom %))
+       (s/search engine query opts)))))
 
 (def query-fns {'=                           =,
                 '==                          ==,
