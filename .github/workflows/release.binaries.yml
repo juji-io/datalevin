@@ -68,7 +68,8 @@ jobs:
       - name: Zip Binary
         run: |
           cd native
-          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
+          7z a -tzip dtlv-0.8.0-macos-latest-amd64.zip dtlv
+          # 7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
           upload_url=$(curl -sL https://api.github.com/repos/actions/checkout/releases/latest | jq -r '.upload_url')
           echo UPLOAD_URL=$upload_url >> $GITHUB_ENV
         shell: bash
@@ -78,6 +79,6 @@ jobs:
         with:
           # upload_url: ${{ github.event.release.upload_url }}
           upload_url: ${{ env.UPLOAD_URL }}
-          asset_path: native/dtlv-0.8.0-macos-amd64.zip
+          asset_path: native/dtlv-0.8.0-macos--latest-amd64.zip
           # asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
           overwrite: true
