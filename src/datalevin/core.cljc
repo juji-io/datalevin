@@ -286,9 +286,9 @@ Only usable for debug output.
        :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
 
-(def ^{:macro    true
-       :arglists '([[db orig-db] & body])
-       :doc      "Evaluate body within the context of a single new read/write transaction,
+#_(def ^{:macro    true
+         :arglists '([[db orig-db] & body])
+         :doc      "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of key-value operations.
 
   `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
@@ -301,7 +301,35 @@ Only usable for debug output.
             (let [^long now (get-value kv \"a\" :counter)]
               (transact-kv kv [[:put \"a\" :counter (inc now)]])
               (get-value kv \"a\" :counter)))"}
-  with-transaction-kv #'datalevin.lmdb/with-transaction-kv)
+    with-transaction-kv #'datalevin.lmdb/with-transaction-kv)
+
+(defmacro with-transaction-kv
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of key-value operations.
+
+  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
+
+  `body` should refer to `db`.
+
+  Example:
+
+          (with-transaction-kv [kv lmdb]
+            (let [^long now (get-value kv \"a\" :counter)]
+              (transact-kv kv [[:put \"a\" :counter (inc now)]])
+              (get-value kv \"a\" :counter)))"
+  [[db orig-db] & body]
+  `(locking (l/write-txn ~orig-db)
+     (let [writing# (l/writing? ~orig-db)]
+       (try
+         (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
+           (try
+             ~@body
+             (catch Exception ~'e
+               (if (and (:resized (ex-data ~'e)) (not writing#))
+                 (do ~@body)
+                 (throw ~'e)))))
+         (finally
+           (when-not writing# (l/close-transact-kv ~orig-db)))))))
 
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
@@ -342,7 +370,7 @@ Only usable for debug output.
            res#)
          (let [kv#   (.-lmdb ^Store s#)
                s1#   (volatile! nil)
-               res1# (with-transaction-kv [kv1# kv#]
+               res1# (l/with-transaction-kv [kv1# kv#]
                        (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
                                           :meta (meta ~orig-conn))
                              res#   (let [~conn conn1#]

@@ -2,13 +2,15 @@
 
 ## WIP
 ### Changed
-- [Search] **breaking** search index storage format change. Data re-indexing is
+- [Search] **Breaking** search index storage format change. Data re-indexing is
   necessary.
 ### Improved
-- [Search] Indexing speed: 3X `add-doc` speed improvement; orders of magnitude
-  `remove-doc` speed improvement; and 10X disk space reduction for default settings.
-- [Search] added caching for term and document index access, 5 percent query
-  speed improvement on average, 35 percent improvement at median.
+- [Search] significant indexing speed and space usage improvement: for default
+  setting, 5X faster bulk load speed; 2 orders of magnitude faster
+  `remove-doc` and 10X disk space reduction; when term positions and offsets are
+  indexed: 3X faster bulk load and 40 percent space reduction.
+- [Search] added caching for term and document index access, resulting in 5
+  percent query speed improvement on average, 35 percent improvement at median.
 ### Added
 - [Search] `:index-position?` option to indicate whether to record term
   positions inside documents, default `false`.

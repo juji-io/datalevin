@@ -6,7 +6,9 @@ Apache Lucene.
 
 ## Test Data
 
-The data source is [Wikipedia database backup dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2), over 20GB XML compressed.
+The data source is [Wikipedia database backup
+dump](https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2),
+over 20GB XML compressed (downloaded 2023-01-10).
 
 For our purpose, we use
 [WikiExtractor](https://github.com/attardi/wikiextractor), a python script, to
@@ -22,7 +24,7 @@ jq -s '.[] | select((.text | {url, text}' > wiki.json
 
 ```
 This may take a few of hours to run, depending on your hardware. It produces a JSON
-file containing over 16.8 million articles, totaling 15 GB.
+file containing over 4.1 million articles, totaling 15 GB.
 
 ## Test Queries
 
@@ -90,8 +92,8 @@ expected, as Datalevin transacts the indices to the database.
 Datalevin's index is a single database file of 6.7 GB, while Lucene produced 168
 files totaling 14 GB.
 
-If `index-position?` option is turned on, Datalevin took 80 minutes to index, and
-produced an file of 78 GB.
+If `:index-position?` option is turned on, Datalevin took 50 minutes to index the
+same data, and produced an index file of 60 GB instead.
 
 ### Searching
 
