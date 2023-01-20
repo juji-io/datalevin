@@ -43,7 +43,7 @@
                                (str "# " new-v " ("
                                     (.toString (LocalDate/now))
                                     ")")))
-    (update-file "project.clj" old->new)
+    (update-file "project.clj" #(str/replace-first % old-v new-v))
     (update-file "test-jar/deps.edn" old->new)
     (update-file "test-jar/test-uber.sh" old->new)
     (update-file "test-jar/project.clj" old->new)
