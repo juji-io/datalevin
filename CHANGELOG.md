@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] error when large `:db/fulltext` value is added then removed in the same transaction.
+
 ## 0.8.2 (2023-01-19)
 ### Fixed
 - [Search] `search-utils/create-ngram-token-filter` now works. #164

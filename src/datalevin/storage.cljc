@@ -354,23 +354,23 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      (let [;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
-            ft-ds  (transient [])
+      ;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
+      (let [ft-ds (transient [])
+            ;; needed because a giant may be deleted in the same tx
+            giants (volatile! {})
             add-fn (fn [holder datom]
                      (if (d/datom-added datom)
-                       (let [res (insert-data this datom ft-ds)]
-                         (when (nth res 1) (advance-max-gt this))
-                         (reduce conj! holder (nth res 0)))
-                       (reduce conj! holder (delete-data this datom ft-ds))))
-            txs    (persistent!
-                     (conj! (reduce add-fn (transient []) datoms)
-                            [:put c/meta :max-tx (advance-max-tx this)
-                             :attr :long]))]
-        (lmdb/transact-kv lmdb txs)
+                       (reduce conj! holder
+                               (insert-data this datom ft-ds giants))
+                       (reduce conj! holder
+                               (delete-data this datom ft-ds giants))))]
+        (lmdb/transact-kv
+          lmdb (persistent! (reduce add-fn (transient []) datoms)))
         (fulltext-index search-engine ft-ds)
-        (lmdb/transact-kv lmdb [[:put c/meta :last-modified
-                                 (System/currentTimeMillis)
-                                 :attr :long]]))))
+        (lmdb/transact-kv
+          lmdb [[:put c/meta :max-tx (advance-max-tx this) :attr :long]
+                [:put c/meta :last-modified (System/currentTimeMillis)
+                 :attr :long]]))))
 
   (fetch [_ datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -566,7 +566,7 @@
       :pass-through)))
 
 (defn- insert-data
-  [^Store store ^Datom d ft-ds]
+  [^Store store ^Datom d ft-ds giants]
   (let [attr  (.-a d)
         props (or ((schema store) attr)
                   (swap-attr store attr identity))
@@ -582,38 +582,38 @@
         (u/raise "Invalid data, expecting " vt {:input v}))
     (if (b/giant? i)
       (let [max-gt (max-gt store)]
+        (advance-max-gt store)
+        (vswap! giants assoc e max-gt)
         (when ft?
           (let [v (str v)]
             (when-not (str/blank? v) (conj! ft-ds [:g [max-gt v]]))))
-        [(cond-> [[:put c/eav i max-gt :eav :id]
-                  [:put c/ave i max-gt :ave :id]
-                  [:put c/giants max-gt d :id :datom [:append]]]
-           ref? (conj [:put c/vea i max-gt :vea :id]))
-         true])
+        (cond-> [[:put c/eav i max-gt :eav :id]
+                 [:put c/ave i max-gt :ave :id]
+                 [:put c/giants max-gt d :id :datom [:append]]]
+          ref? (conj [:put c/vea i max-gt :vea :id])))
       (do (when ft?
             (let [v (str v)]
               (when-not (str/blank? v) (conj! ft-ds [:a [e aid v]]))))
-          [(cond-> [[:put c/eav i c/normal :eav :id]
-                    [:put c/ave i c/normal :ave :id]]
-             ref? (conj [:put c/vea i c/normal :vea :id]))
-           false]))))
+          (cond-> [[:put c/eav i c/normal :eav :id]
+                   [:put c/ave i c/normal :ave :id]]
+            ref? (conj [:put c/vea i c/normal :vea :id]))))))
 
 (defn- delete-data
-  [^Store store ^Datom d ft-ds]
-  (let [props  ((schema store) (.-a d))
-        vt     (:db/valueType props)
-        ref?   (= :db.type/ref vt)
-        e      (.-e d)
-        aid    (:db/aid props)
-        v      (.-v d)
-        i      (b/indexable e aid v vt)
-        giant? (b/giant? i)
-        gt     (when giant?
-                 (lmdb/get-value (.-lmdb store) c/eav i :eav :id))]
+  [^Store store ^Datom d ft-ds giants]
+  (let [props ((schema store) (.-a d))
+        vt    (:db/valueType props)
+        ref?  (= :db.type/ref vt)
+        e     (.-e d)
+        aid   (:db/aid props)
+        v     (.-v d)
+        i     (b/indexable e aid v vt)
+        gt    (when (b/giant? i)
+                (or (@giants e)
+                    (lmdb/get-value (.-lmdb store) c/eav i :eav :id)))]
     (when (:db/fulltext props)
       (let [v (str v)]
         (when-not (str/blank? v)
-          (conj! ft-ds (if giant? [:r gt] [:d [e aid v]])))))
+          (conj! ft-ds (if gt [:r gt] [:d [e aid v]])))))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
