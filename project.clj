@@ -34,7 +34,7 @@
    [org.graalvm.sdk/graal-sdk "22.3.0"]
    [org.graalvm.nativeimage/svm "22.3.0"]
    [org.graalvm.nativeimage/library-support "22.3.0"]
-   [org.lmdbjava/lmdbjava "0.8.3"]
+   [org.lmdbjava/lmdbjava "0.8.2"]
    [org.roaringbitmap/RoaringBitmap "0.9.38"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
