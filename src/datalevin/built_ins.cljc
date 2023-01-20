@@ -2,6 +2,8 @@
   (:require
    [clojure.string :as str]
    [datalevin.db :as db]
+   [datalevin.storage :as st]
+   [datalevin.constants :as c]
    [datalevin.datom :as dd]
    [datalevin.search :as s]
    [datalevin.entity :as de]
@@ -47,9 +49,14 @@
   ([db query]
    (fulltext db query nil))
   ([^DB db query opts]
-   (let [^SearchEngine engine (.-search-engine ^Store (.-store db))]
+   (let [^Store store         (.-store db)
+         lmdb                 (.-lmdb store)
+         ^SearchEngine engine (.-search-engine store)]
      (sequence
-       (map #(apply dd/datom %))
+       (map (fn [d]
+              (if (= :g (nth d 0))
+                (st/gt->datom lmdb (peek d))
+                (st/e-aid-v->datom store d))))
        (s/search engine query opts)))))
 
 (def query-fns {'=                           =,

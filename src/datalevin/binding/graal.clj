@@ -85,6 +85,8 @@
         (.clear ^BufVal kp)
         (b/put-buffer kb x t)
         (.flip ^BufVal kp))
+      (catch BufferOverflowException _
+        (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting read-only transaction key buffer: "
                (ex-message e)
@@ -199,6 +201,8 @@
         (.clear ^BufVal kp)
         (b/put-buffer kb x t)
         (.flip ^BufVal kp)
+        (catch BufferOverflowException _
+          (raise "Key cannot be larger than 511 bytes." {:input x}))
         (catch Exception e
           (raise "Error putting r/w key buffer of "
                  dbi-name ": " (ex-message e)

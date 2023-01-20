@@ -90,6 +90,8 @@
       (.clear kb)
       (b/put-buffer kb x t)
       (.flip kb)
+      (catch BufferOverflowException _
+        (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting read-only transaction key buffer: "
                (ex-message e)
@@ -177,9 +179,11 @@
       (.clear kb)
       (b/put-buffer kb x t)
       (.flip kb)
+      (catch BufferOverflowException _
+        (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting r/w key buffer of "
-               (.dbi-name this) "with value" x ": " (ex-message e)
+               (.dbi-name this) "with value" x ": " e
                {:type t}))))
   (put-val [this x t]
     (or (not validate-data?)

@@ -3,6 +3,7 @@
   (:require
    [datalevin.constants :as c]
    [datalevin.util :as u]
+   [datalevin.datom :as dd]
    [datalevin.sparselist :as sl]
    [clojure.string :as s]
    [taoensso.nippy :as nippy])
@@ -495,7 +496,7 @@
   (.write w "#datalevin/Indexable ")
   (.write w (pr-str (pr-indexable i))))
 
-(defn ^:no-doc indexable
+(defn indexable
   "Turn datom parts into a form that is suitable for putting in indices,
   where aid is the integer id of an attribute, vt is its :db/valueType"
   [eid aid val vt]
@@ -507,8 +508,8 @@
                    (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
                    vb)
             hsh  (when cut? (hash val))]
-        (->Indexable eid aid val hdr bas hsh))
-      (->Indexable eid aid val hdr nil nil))))
+        (Indexable. eid aid val hdr bas hsh))
+      (Indexable. eid aid val hdr nil nil))))
 
 (defn ^:no-doc giant?
   [^Indexable i]
@@ -620,15 +621,15 @@
     (do (.reset bf)
         (get-data bf post-v))))
 
-(deftype ^:no-doc Retrieved [e a v])
+(deftype Retrieved [e a v])
 
-(def ^:no-doc ^:const overflown-key (->Retrieved c/e0 c/overflown c/overflown))
+(def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown))
 
 (defn- indexable->retrieved
   [^Indexable i]
-  (->Retrieved (.-e i) (.-a i) (.-v i)))
+  (Retrieved. (.-e i) (.-a i) (.-v i)))
 
-(defn ^:no-doc expected-return
+(defn expected-return
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
@@ -645,7 +646,7 @@
   (let [e (get-long bf)
         a (get-int bf)
         v (get-value bf 1)]
-    (->Retrieved e a v)))
+    (Retrieved. e a v)))
 
 (defn- get-ave
   [bf]
@@ -653,14 +654,14 @@
         v (get-value bf 9)
         _ (get-byte bf)
         e (get-long bf)]
-    (->Retrieved e a v)))
+    (Retrieved. e a v)))
 
 (defn- get-vea
   [bf]
   (let [v (get-long bf)
         e (get-long bf)
         a (get-int bf)]
-    (->Retrieved e a v)))
+    (Retrieved. e a v)))
 
 (defn- put-attr
   "NB. not going to do range query on attr names"

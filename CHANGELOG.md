@@ -2,7 +2,8 @@
 
 ## WIP
 ### Fixed
-- [Search] `search-utils/create-ngram-token-filter` #164
+- [Search] `search-utils/create-ngram-token-filter` now works. #164
+- [Datalog] large datom value may throw off full-text indexing. #177
 
 ## 0.8.1 (2023-01-19)
 ### Fixed
