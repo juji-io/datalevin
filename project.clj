@@ -1,4 +1,4 @@
-(def version "0.8.2")
+(def version "0.8.3")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -34,7 +34,7 @@
    [org.graalvm.sdk/graal-sdk "22.3.0"]
    [org.graalvm.nativeimage/svm "22.3.0"]
    [org.graalvm.nativeimage/library-support "22.3.0"]
-   [org.lmdbjava/lmdbjava "0.8.2"]
+   [org.lmdbjava/lmdbjava "0.8.3"]
    [org.roaringbitmap/RoaringBitmap "0.9.38"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
