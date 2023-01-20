@@ -366,13 +366,15 @@
         start (System/currentTimeMillis)]
     (d/transact! conn data)
     (is (< (- (System/currentTimeMillis) start) 5000))
-    (is (= 1 (count (d/fulltext-datoms (d/db conn)
-                                       "GraphstatsR" {:top 1000}))))
-    (is (= (d/q '[:find (count ?e) .
-                  :in $ ?q
-                  :where [(fulltext $ ?q {:top 1000}) [[?e _ _]]]]
-                (d/db conn) "GraphstatsR")
-           1))
+    (is (= 1 (count (d/fulltext-datoms (d/db conn) "GraphstatsR"))))
+    (is (= (update (d/q '[:find [?i ?d]
+                          :in $ ?q
+                          :where
+                          [(fulltext $ ?q) [[?e _ ?d]]]
+                          [?e :id ?i]]
+                        (d/db conn) "GraphstatsR")
+                   1 count)
+           [6299 508]))
     (d/transact! conn [{:id          6299
                         :description "This is a new description"}])
     (is (= (d/q '[:find ?d .

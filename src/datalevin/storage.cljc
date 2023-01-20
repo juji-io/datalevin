@@ -583,7 +583,7 @@
     (if (b/giant? i)
       (let [max-gt (max-gt store)]
         (advance-max-gt store)
-        (vswap! giants assoc e max-gt)
+        (vswap! giants assoc [e aid v] max-gt)
         (when ft?
           (let [v (str v)]
             (when-not (str/blank? v) (conj! ft-ds [:g [max-gt v]]))))
@@ -608,7 +608,7 @@
         v     (.-v d)
         i     (b/indexable e aid v vt)
         gt    (when (b/giant? i)
-                (or (@giants e)
+                (or (@giants [e aid v])
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id)))]
     (when (:db/fulltext props)
       (let [v (str v)]
