@@ -7,6 +7,7 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
+   [cheshire "5.11.0"]
    [com.cognitect/transit-clj "1.0.329"]
    [com.fasterxml.jackson.core/jackson-core "2.14.1"]
    [com.fasterxml.jackson.core/jackson-databind "2.14.1"]
@@ -59,6 +60,7 @@
                      [org.clojure/tools.cli]
                      [org.clojure/data.csv]
                      [org.bouncycastle/bcprov-jdk15on]
+                     [cheshire]
                      [com.taoensso/timbre]]}
    :native-uberjar {:aot            [pod.huahaiy.datalevin],
                     :jar-inclusions [#"test"]
@@ -78,6 +80,7 @@
                     :dependencies
                     [[org.clojure/test.check]
                      [org.clojure/data.csv]
+                     [cheshire]
                      [org.clojure/tools.cli]
                      [org.bouncycastle/bcprov-jdk15on]
                      [com.taoensso/timbre]
