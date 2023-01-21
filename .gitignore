@@ -1,7 +1,9 @@
 search-bench/data
 search-bench/*.json
 search-bench/*.txt
+search-bench/target
 /test-jar/tmp
+/test-jar/target
 /target
 /bench/target
 /classes
