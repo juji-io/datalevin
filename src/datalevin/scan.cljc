@@ -219,7 +219,7 @@
             (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
               (l/return-rtx ~'lmdb ~'rtx))))))))
 
-(defmacro cursor-scan
+(defmacro scan-list
   [call error]
   `(let [~'dbi (l/get-dbi ~'this ~'dbi-name false)
          ~'rtx (if ~'writing?

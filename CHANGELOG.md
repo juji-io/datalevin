@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Added
+- [KV] List related API
+
 ## 0.8.4 (2023-01-20)
 ### Fixed
 - [Datalog] error when large `:db/fulltext` value is added then removed in the same transaction.

@@ -277,6 +277,44 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
+(defn- list-range*
+  [^Rtx rtx ^Cursor cur k kt vt]
+  (.put-key rtx k kt)
+  (when (.get cur (.-kb rtx) GetOp/MDB_SET)
+    (let [holder (transient [])]
+      (.seek cur SeekOp/MDB_FIRST_DUP)
+      (conj! holder (b/read-buffer (.val cur) vt))
+      (dotimes [_ (dec (.count cur))]
+        (.seek cur SeekOp/MDB_NEXT_DUP)
+        (conj! holder (b/read-buffer (.val cur) vt)))
+      (persistent! holder))))
+
+(defn- visit-list*
+  [^Rtx rtx ^Cursor cur k kt visitor]
+  (let [kv (reify IKV
+             (k [_] (.key cur))
+             (v [_] (.val cur)))]
+    (.put-key rtx k kt)
+    (when (.get cur (.-kb rtx) GetOp/MDB_SET)
+      (.seek cur SeekOp/MDB_FIRST_DUP)
+      (visitor kv)
+      (dotimes [_ (dec (.count cur))]
+        (.seek cur SeekOp/MDB_NEXT_DUP)
+        (visitor kv)))))
+
+(defn- list-count*
+  [^Rtx rtx ^Cursor cur k kt]
+  (.put-key rtx k kt)
+  (if (.get cur (.-kb rtx) GetOp/MDB_SET)
+    (.count cur)
+    0))
+
+(defn- in-list?*
+  [^Rtx rtx ^Cursor cur k kt v vt]
+  (.put-start-key rtx k kt)
+  (.put-stop-key rtx v vt)
+  (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH))
+
 (declare ->LMDB reset-write-txn)
 
 (deftype LMDB [^Env env
@@ -572,42 +610,49 @@
     (.open-list-dbi lmdb dbi-name nil))
 
   IList
-  (put-list-items [this dbi-name k vs kt vt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)]
-        (with-open [txn (.txnWrite env)]
-          (.put-key dbi k kt)
-          (doseq [v vs]
-            (.put-val dbi v vt)
-            (.put dbi txn))
-          (.commit txn)
-          :transacted))
-      (catch Exception e
-        (raise "Fail to put an inverted list: " (ex-message e) {}))))
+    (put-list-items [this dbi-name k vs kt vt]
+    (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
 
   (del-list-items [this dbi-name k kt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)]
-        (with-open [txn (.txnWrite env)]
-          (.put-key dbi k kt)
-          (.del dbi txn)
-          (.commit txn)
-          :transacted))
-      (catch Exception e
-        (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+    (.transact-kv this [[:del dbi-name k kt]]))
   (del-list-items [this dbi-name k vs kt vt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)]
-        (with-open [txn (.txnWrite env)]
-          (.put-key dbi k kt)
-          (doseq [v vs]
-            (.put-val dbi v vt)
-            (.del dbi txn false))
-          (.commit txn)
-          :transacted))
-      (catch Exception e
-        (raise "Fail to delete items from an inverted list: "
-               (ex-message e) {}))))
+    (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
+
+  (visit-list [this dbi-name visitor k kt]
+    (.visit-list this dbi-name visitor k kt false))
+  (visit-list [this dbi-name visitor k kt writing?]
+    (when k
+      (scan/scan-list
+        (visit-list* rtx cur k kt visitor)
+        (raise "Fail to visit list: " (ex-message e) {:dbi dbi-name :k k}))))
+
+  (list-count [this dbi-name k kt]
+    (.list-count this dbi-name k kt false))
+  (list-count [this dbi-name k kt writing?]
+    (if k
+      (scan/scan-list
+        (list-count* rtx cur k kt)
+        (raise "Fail to count list: " (ex-message e) {:dbi dbi-name :k k}))
+      0))
+
+  (in-list? [this dbi-name k v kt vt]
+    (.in-list? this dbi-name k v kt vt false))
+  (in-list? [this dbi-name k v kt vt writing?]
+    (if (and k v)
+      (scan/scan-list
+        (in-list?* rtx cur k kt v vt)
+        (raise "Fail to test if an item is in list: "
+               (ex-message e) {:dbi dbi-name :k k :v v}))
+      false))
+
+  (list-range [this dbi-name k kt v-range vt]
+    (.list-range this dbi-name k kt v-range vt false))
+  (list-range [this dbi-name k kt v-range vt writing?]
+    (when k
+      (scan/scan-list
+        (list-range* rtx cur k kt vt)
+        (raise "Fail to get list range: " (ex-message e)
+               {:dbi dbi-name :k k}))))
 
   (get-list [this dbi-name k kt vt]
     (when k
@@ -631,69 +676,13 @@
           (finally (.return-rtx this rtx)
                    (.return-cursor dbi cur))))))
 
-  (visit-list [this dbi-name visitor k kt]
-    (when k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)
-            kv          (reify IKV
-                          (k [_] (.key cur))
-                          (v [_] (.val cur)))]
-        (try
-          (.put-start-key rtx k kt)
-          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (.seek cur SeekOp/MDB_FIRST_DUP)
-            (visitor kv)
-            (dotimes [_ (dec (.count cur))]
-              (.seek cur SeekOp/MDB_NEXT_DUP)
-              (visitor kv)))
-          (catch Exception e
-            (raise "Fail to get count of inverted list: " (ex-message e)
-                   {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))))
-
-  (list-count [this dbi-name k kt]
-    (if k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-start-key rtx k kt)
-          (if (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (.count cur)
-            0)
-          (catch Exception e
-            (raise "Fail to get count of inverted list: " (ex-message e)
-                   {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))
-      0))
-
   (filter-list [this dbi-name k pred k-type v-type]
     (.range-filter this dbi-name pred [:closed k k] k-type v-type true))
 
   (filter-list-count [this dbi-name k pred k-type]
     (.range-filter-count this dbi-name pred [:closed k k] k-type))
 
-  (in-list? [this dbi-name k v kt vt]
-    (if (and k v)
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-start-key rtx k kt)
-          (.put-stop-key rtx v vt)
-          (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)
-          (catch Exception e
-            (raise "Fail to test if an item is in an inverted list: "
-                   (ex-message e) {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))
-      false)))
+  )
 
 (defn- reset-write-txn
   [^LMDB lmdb]

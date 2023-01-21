@@ -13,13 +13,11 @@
    [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
    [java.nio ByteBuffer BufferOverflowException]
    [java.lang AutoCloseable]
-   [java.io File]
-   [java.lang.annotation Retention RetentionPolicy]
    [clojure.lang IPersistentVector]
    [org.graalvm.word WordFactory]
    [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
-    Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo Lib$MDB_stat
-    Lib$MapFullException])
+    Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
+    Lib$MDB_stat Lib$MapFullException])
   (:gen-class :name datalevin.binding.graal))
 
 (defprotocol IFlag
@@ -155,10 +153,8 @@
                {:value x :type t}))))
 
   IRtx
-  (read-only? [_]
-    (.isReadOnly txn))
-  (get-txn [_]
-    txn)
+  (read-only? [_] (.isReadOnly txn))
+  (get-txn [_] txn)
   (close-rtx [_]
     (.close txn)
     (.close kp)
@@ -174,8 +170,8 @@
 
 (deftype KV [^BufVal kp ^BufVal vp]
   IKV
-  (k [this] (.outBuf kp))
-  (v [this] (.outBuf vp)))
+  (k [_] (.outBuf kp))
+  (v [_] (.outBuf vp)))
 
 (defn has?
   [rc]
@@ -189,6 +185,7 @@
               ^ConcurrentLinkedQueue curs
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
+              ^boolean dupsort?
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -231,26 +228,22 @@
                  {:value x :type t :dbi dbi-name})))))
 
   IDB
-  (dbi [_]
-    db)
+  (dbi [_] db)
 
-  (dbi-name [_]
-    (.getName db))
+  (dbi-name [_] (.getName db))
 
-  (put [this txn]
-    (.put this txn nil))
+  (put [this txn] (.put this txn nil))
   (put [_ txn flags]
     (let [i (.get db)]
       (Lib/checkRc
         (Lib/mdb_put (.get ^Txn txn) i (.getVal kp) (.getVal vp)
                      (kv-flags flags)))))
 
+  (del [this txn] (.del this txn true))
   (del [_ txn all?]
     (Lib/checkRc
       (Lib/mdb_del (.get ^Txn txn) (.get db) (.getVal kp)
                    (if all? (WordFactory/nullPointer) (.getVal vp)))))
-  (del [this txn]
-    (.del this txn true))
 
   (get-kv [_ rtx]
     (let [^BufVal kp (.-kp ^Rtx rtx)
@@ -273,22 +266,20 @@
             cur))
         (Cursor/create txn db)))
 
-  (close-cursor [_ cur]
-    (.close ^Cursor cur))
+  (close-cursor [_ cur] (.close ^Cursor cur))
 
-  (return-cursor [_ cur]
-    (.add curs cur)))
+  (return-cursor [_ cur] (.add curs cur)))
 
 (deftype CursorIterable [^Cursor cursor
-                    ^DBI db
-                    ^Rtx rtx
-                    forward?
-                    start-key?
-                    include-start?
-                    stop-key?
-                    include-stop?
-                    ^BufVal sk
-                    ^BufVal ek]
+                         ^DBI db
+                         ^Rtx rtx
+                         forward?
+                         start-key?
+                         include-start?
+                         stop-key?
+                         include-stop?
+                         ^BufVal sk
+                         ^BufVal ek]
   AutoCloseable
   (close [_]
     (if (.isReadOnly ^Txn (.-txn rtx))
@@ -296,22 +287,29 @@
       (.close cursor)))
 
   Iterable
-  (iterator [this]
-    (let [started?     (volatile! false)
-          ended?       (volatile! false)
-          ^BufVal k    (.-kp rtx)
-          ^BufVal v    (.-vp rtx)
-          ^Txn txn     (.-txn rtx)
-          ^Dbi dbi     (.dbi db)
-          i            (.get dbi)
-          op-get       Lib$MDB_cursor_op/MDB_GET_CURRENT
-          op-next      Lib$MDB_cursor_op/MDB_NEXT
-          op-prev      Lib$MDB_cursor_op/MDB_PREV
-          op-set-range Lib$MDB_cursor_op/MDB_SET_RANGE
-          op-set       Lib$MDB_cursor_op/MDB_SET
-          op-first     Lib$MDB_cursor_op/MDB_FIRST
-          op-last      Lib$MDB_cursor_op/MDB_LAST
-          get-cur      #(Lib/checkRc
+  (iterator [_]
+    (let [started?      (volatile! false)
+          ended?        (volatile! false)
+          ^BufVal k     (.-kp rtx)
+          ^BufVal v     (.-vp rtx)
+          ^Txn txn      (.-txn rtx)
+          dupsort?      (.-dupsort? db)
+          ^Dbi dbi      (.dbi db)
+          i             (.get dbi)
+          op-get        Lib$MDB_cursor_op/MDB_GET_CURRENT
+          op-next       Lib$MDB_cursor_op/MDB_NEXT
+          op-prev       Lib$MDB_cursor_op/MDB_PREV
+          op-set-range  Lib$MDB_cursor_op/MDB_SET_RANGE
+          op-set        Lib$MDB_cursor_op/MDB_SET
+          op-first      Lib$MDB_cursor_op/MDB_FIRST
+          op-last       Lib$MDB_cursor_op/MDB_LAST
+          op-first-dup  Lib$MDB_cursor_op/MDB_FIRST_DUP
+          op-last-dup   Lib$MDB_cursor_op/MDB_LAST_DUP
+          op-next-dup   Lib$MDB_cursor_op/MDB_NEXT_DUP
+          op-prev-dup   Lib$MDB_cursor_op/MDB_PREV_DUP
+          op-next-nodup Lib$MDB_cursor_op/MDB_NEXT_NODUP
+          op-prev-nodup Lib$MDB_cursor_op/MDB_PREV_NODUP
+          get-cur       #(Lib/checkRc
                           (Lib/mdb_cursor_get
                             (.get cursor) (.getVal k) (.getVal v) op-get))]
       (reify
@@ -333,35 +331,56 @@
                                  (Lib/mdb_cursor_get
                                    (.get cursor) (.getVal k) (.getVal v) %))
                              (continue?)
-                             false)]
-            (if @ended?
-              false
-              (if @started?
-                (if forward?
-                  (check op-next)
-                  (check op-prev))
-                (do
-                  (vreset! started? true)
-                  (if start-key?
-                    (if (has? (Lib/mdb_cursor_get
-                                (.get cursor) (.getVal sk) (.getVal v) op-set))
-                      (if include-start?
-                        (continue?)
-                        (if forward?
-                          (check op-next)
-                          (check op-prev)))
+                             false)
+                check-dup #(if (has?
+                                 (Lib/mdb_cursor_get
+                                   (.get cursor) (.getVal k) (.getVal v) %))
+                             true
+                             (if @ended?
+                               false
+                               (if forward?
+                                 (check op-next-nodup)
+                                 (check op-prev-nodup))))
+                seek      #(if (has? (Lib/mdb_cursor_get
+                                       (.get cursor) (.getVal sk) (.getVal v)
+                                       op-set-range))
+                             (if forward? (continue?) (check op-prev))
+                             (if forward? false (check op-last)))
+                start     #(if forward? (check op-first) (check op-last))]
+            (if dupsort?
+              (if @ended?
+                (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
+                (if @started?
+                  (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
+                  (do
+                    (vreset! started? true)
+                    (if start-key?
+                      (if (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal sk) (.getVal v) op-set))
+                        (if include-start?
+                          (if forward?
+                            (check-dup op-first-dup)
+                            (check-dup op-last-dup))
+                          (if forward?
+                            (check-dup op-next-nodup)
+                            (check-dup op-prev-nodup)))
+                        (seek))
+                      (start)))))
+              (if @ended?
+                false
+                (if @started?
+                  (if forward? (check op-next) (check op-prev))
+                  (do
+                    (vreset! started? true)
+                    (if start-key?
                       (if (has? (Lib/mdb_cursor_get
-                                  (.get cursor) (.getVal sk) (.getVal v)
-                                  op-set-range))
-                        (if forward?
+                                  (.get cursor) (.getVal sk) (.getVal v) op-set))
+                        (if include-start?
                           (continue?)
-                          (check op-prev))
-                        (if forward?
-                          false
-                          (check op-last))))
-                    (if forward?
-                      (check op-first)
-                      (check op-last))))))))
+                          (if forward? (check op-next) (check op-prev)))
+                        (seek))
+                      (start))))))))
         (next [_]
           (get-cur)
           (->KV k v))))))
@@ -748,41 +767,12 @@
 
   IList
   (put-list-items [this dbi-name k vs kt vt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)
-            ^Txn txn (Txn/create env)]
-        (.put-key dbi k kt)
-        (doseq [v vs]
-          (.put-val dbi v vt)
-          (.put dbi txn))
-        (.commit txn)
-        :transacted)
-      (catch Exception e
-        (raise "Fail to put an inverted list: " (ex-message e) {}))))
+    (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
 
   (del-list-items [this dbi-name k kt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)
-            ^Txn txn (Txn/create env)]
-        (.put-key dbi k kt)
-        (.del dbi txn)
-        (.commit txn)
-        :transacted)
-      (catch Exception e
-        (raise "Fail to delete an inverted list: " (ex-message e) {}))))
+    (.transact-kv this [[:del dbi-name k kt]]))
   (del-list-items [this dbi-name k vs kt vt]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name false)
-            ^Txn txn (Txn/create env)]
-        (.put-key dbi k kt)
-        (doseq [v vs]
-          (.put-val dbi v vt)
-          (.del dbi txn false))
-        (.commit txn)
-        :transacted)
-      (catch Exception e
-        (raise "Fail to delete items from an inverted list: "
-               (ex-message e) {}))))
+    (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
 
   (get-list [this dbi-name k kt vt]
     (when k
@@ -812,8 +802,11 @@
           (catch Exception e
             (raise "Fail to get inverted list: " (ex-message e)
                    {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))))
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))))
 
   (visit-list [this dbi-name visitor k kt]
     (when k
@@ -841,8 +834,11 @@
           (catch Exception e
             (raise "Fail to visit inverted list: " (ex-message e)
                    {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))))
+          (finally
+            (if (.isReadOnly txn)
+              (.return-cursor dbi cur)
+              (.close cur))
+            (.return-rtx this rtx))))))
 
   (list-count [this dbi-name k kt]
     (if k

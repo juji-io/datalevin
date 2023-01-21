@@ -48,11 +48,29 @@
     "visit a list, presumably for side effects")
   (list-count [db list-name k k-type]
     "get the number of items in the inverted list")
-  (filter-list [db list-name k pred k-type v-type] "predicate filtered items of a list")
+  (filter-list [db list-name k pred k-type v-type]
+    "predicate filtered items of a list")
   (filter-list-count [db list-name k pred k-type]
     "get the count of predicate filtered items of a list")
   (in-list? [db list-name k v k-type v-type]
-    "return true if an item is in an inverted list"))
+    "return true if an item is in an inverted list")
+  (list-range
+    [db list-name k k-type v-range v-type]
+    [db list-name k k-type v-range v-type writing?]
+    "Return a seq of values in the specified value range of the key")
+  (list-range-count
+    [db list-name k k-type v-range v-type]
+    [db list-name k k-type v-range v-type writing?]
+    "Return the number of values in the specified value range of the key")
+  (list-range-filter
+    [db list-name pred k k-type v-range v-type]
+    [db list-name pred k k-type v-range v-type writing?]
+    "Return a seq of values in the specified value range of the key,
+     filtered by pred")
+  (list-range-filter-count
+    [db list-name pred k k-type v-range v-type]
+    [db list-name pred k k-type v-range v-type writing?]
+    "Return the count of values in the specified value range of the key"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
