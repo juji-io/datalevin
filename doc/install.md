@@ -252,7 +252,7 @@ registry](https://github.com/babashka/pod-registry) within a Babashka script
 #!/usr/bin/env bb
 
 (require '[babashka.pods :as pods])
-(pods/load-pod 'huahaiy/datalevin "0.6.8")
+(pods/load-pod 'huahaiy/datalevin "0.8.4")
 
 ```
 

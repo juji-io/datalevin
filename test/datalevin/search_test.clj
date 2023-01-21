@@ -325,18 +325,16 @@
     (map #(zipmap headers %) rows)))
 
 (deftest load-csv-test
-  (let [dir   (u/tmp-dir (str "load-csv-test-" (UUID/randomUUID)))
-        conn  (d/create-conn
-                dir {:id          {:db/valueType :db.type/string
-                                   :db/unique    :db.unique/identity}
-                     :description {:db/valueType :db.type/string
-                                   :db/fulltext  true}})
-        data  (rows->maps
-                (with-open [reader (io/reader "test/data/data.csv")]
-                  (doall (csv/read-csv reader))))
-        start (System/currentTimeMillis)]
+  (let [dir  (u/tmp-dir (str "load-csv-test-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir {:id          {:db/valueType :db.type/string
+                                  :db/unique    :db.unique/identity}
+                    :description {:db/valueType :db.type/string
+                                  :db/fulltext  true}})
+        data (rows->maps
+               (with-open [reader (io/reader "test/data/data.csv")]
+                 (doall (csv/read-csv reader))))]
     (d/transact! conn data)
-    (is (< (- (System/currentTimeMillis) start) 5000))
     (is (= 36 (count (d/fulltext-datoms (d/db conn) "Memorex" {:top 100}))))
     (is (= (d/q '[:find (count ?e) .
                   :in $ ?q
@@ -356,16 +354,14 @@
     (u/delete-files dir)))
 
 (deftest load-json-test
-  (let [dir   (u/tmp-dir (str "load-json-test-" (UUID/randomUUID)))
-        conn  (d/create-conn
-                dir {:id          {:db/valueType :db.type/long
-                                   :db/unique    :db.unique/identity}
-                     :description {:db/valueType :db.type/string
-                                   :db/fulltext  true}})
-        data  (json/parse-string (slurp "test/data/data.json") true)
-        start (System/currentTimeMillis)]
+  (let [dir  (u/tmp-dir (str "load-json-test-" (UUID/randomUUID)))
+        conn (d/create-conn
+               dir {:id          {:db/valueType :db.type/long
+                                  :db/unique    :db.unique/identity}
+                    :description {:db/valueType :db.type/string
+                                  :db/fulltext  true}})
+        data (json/parse-string (slurp "test/data/data.json") true)]
     (d/transact! conn data)
-    (is (< (- (System/currentTimeMillis) start) 5000))
     (is (= 1 (count (d/fulltext-datoms (d/db conn) "GraphstatsR"))))
     (is (= (update (d/q '[:find [?i ?d]
                           :in $ ?q

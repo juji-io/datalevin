@@ -15,7 +15,7 @@
 (deftest exec-test
   (let [dir  (u/tmp-dir (str "datalevin-exec-test-" (UUID/randomUUID)))
         code (str
-               "(def schema (load-edn \"simple-schema.edn\"))"
+               "(def schema (load-edn \"test/data/simple-schema.edn\"))"
                "(def conn (get-conn \"" dir "\" schema))"
                "(transact! conn [{:name \"Datalevin\"}])"
                "(q (quote [:find ?e ?n :where [?e :name ?n]]) @conn)"

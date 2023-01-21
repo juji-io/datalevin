@@ -113,8 +113,8 @@
 
 (deftest defpodfn-test
   (let [dir    (u/tmp-dir (str "datalevin-podfn-test-" (UUID/randomUUID)))
-        schema (i/load-edn "movie-schema.edn")
-        data   (i/load-edn "movie-data.edn")
+        schema (i/load-edn "test/data/movie-schema.edn")
+        data   (i/load-edn "test/data/movie-data.edn")
         conn   (pd/get-conn dir schema)
         q      '[:find ?age .
                  :in $ ?today
