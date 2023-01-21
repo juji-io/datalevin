@@ -604,13 +604,14 @@
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
-    (.open-dbi this dbi-name {:key-size key-size :val-size val-size
-                              :flags    (conj c/default-dbi-flags :dupsort)}))
+    (.open-dbi this dbi-name
+               {:key-size key-size :val-size val-size
+                :flags    (conj c/default-dbi-flags :dupsort)}))
   (open-list-dbi [lmdb dbi-name]
     (.open-list-dbi lmdb dbi-name nil))
 
   IList
-    (put-list-items [this dbi-name k vs kt vt]
+  (put-list-items [this dbi-name k vs kt vt]
     (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
 
   (del-list-items [this dbi-name k kt]
@@ -619,16 +620,12 @@
     (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
 
   (visit-list [this dbi-name visitor k kt]
-    (.visit-list this dbi-name visitor k kt false))
-  (visit-list [this dbi-name visitor k kt writing?]
     (when k
       (scan/scan-list
         (visit-list* rtx cur k kt visitor)
         (raise "Fail to visit list: " (ex-message e) {:dbi dbi-name :k k}))))
 
   (list-count [this dbi-name k kt]
-    (.list-count this dbi-name k kt false))
-  (list-count [this dbi-name k kt writing?]
     (if k
       (scan/scan-list
         (list-count* rtx cur k kt)
@@ -636,8 +633,6 @@
       0))
 
   (in-list? [this dbi-name k v kt vt]
-    (.in-list? this dbi-name k v kt vt false))
-  (in-list? [this dbi-name k v kt vt writing?]
     (if (and k v)
       (scan/scan-list
         (in-list?* rtx cur k kt v vt)
@@ -646,8 +641,6 @@
       false))
 
   (list-range [this dbi-name k kt v-range vt]
-    (.list-range this dbi-name k kt v-range vt false))
-  (list-range [this dbi-name k kt v-range vt writing?]
     (when k
       (scan/scan-list
         (list-range* rtx cur k kt vt)
