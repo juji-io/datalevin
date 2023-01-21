@@ -13,14 +13,16 @@ over 20GB XML compressed (downloaded 2023-01-10).
 For our purpose, we use
 [WikiExtractor](https://github.com/attardi/wikiextractor), a python script, to
 extract all articles into a JSON file. Furthermore, we use
-[jq](https://stedolan.github.io/jq/) to strip away unneeded
-meta data, just leave the article text and the url as the identifier.
+[jq](https://stedolan.github.io/jq/) to remove articles containing less than 500
+characters (e.g. those only refer to other articles, empty articles, etc.) and
+strip away unneeded meta data, just leave the article text and the url as the
+identifier.
 
 ```console
 wget https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2
 
 wikiextractor -o - --json --no-templates enwiki-latest-pages-articles.xml.bz2 |
-jq -s '.[] | select((.text | {url, text}' > wiki.json
+jq -s '.[] | select((.text | length) > 500) | {url, text}' > wiki.json
 
 ```
 This may take a few of hours to run, depending on your hardware. It produces a JSON
