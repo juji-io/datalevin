@@ -5,11 +5,10 @@
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.lmdb :as l :refer [open-kv open-list-dbi IBuffer IRange
-                                 IRtx IDB IKV IList ILMDB IWriting]]
+   [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
+                                 IList ILMDB IWriting]]
    [clojure.stacktrace :as st]
-   [clojure.java.io :as io]
-   [clojure.string :as s])
+   [clojure.java.io :as io])
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
@@ -17,7 +16,7 @@
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator UUID]
    [java.io File InputStream OutputStream]
-   [java.nio.file Files OpenOption StandardOpenOption]
+   [java.nio.file Files OpenOption]
    [clojure.lang IPersistentVector]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.nio ByteBuffer BufferOverflowException]))
@@ -83,6 +82,8 @@
               ^ByteBuffer kb
               ^ByteBuffer start-kb
               ^ByteBuffer stop-kb
+              ^ByteBuffer start-vb
+              ^ByteBuffer stop-vb
               aborted?]
   IBuffer
   (put-key [_ x t]
@@ -100,48 +101,34 @@
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
-  (range-info [this range-type _ _]
-    (let [kb1 (.-start-kb this)
-          kb2 (.-stop-kb this)]
-      (case range-type
-        :all               (KeyRange/all)
-        :all-back          (KeyRange/allBackward)
-        :at-least          (KeyRange/atLeast kb1)
-        :at-most-back      (KeyRange/atLeastBackward kb1)
-        :at-most           (KeyRange/atMost kb1)
-        :at-least-back     (KeyRange/atMostBackward kb1)
-        :closed            (KeyRange/closed kb1 kb2)
-        :closed-back       (KeyRange/closedBackward kb1 kb2)
-        :closed-open       (KeyRange/closedOpen kb1 kb2)
-        :closed-open-back  (KeyRange/closedOpenBackward kb1 kb2)
-        :greater-than      (KeyRange/greaterThan kb1)
-        :less-than-back    (KeyRange/greaterThanBackward kb1)
-        :less-than         (KeyRange/lessThan kb1)
-        :greater-than-back (KeyRange/lessThanBackward kb1)
-        :open              (KeyRange/open kb1 kb2)
-        :open-back         (KeyRange/openBackward kb1 kb2)
-        :open-closed       (KeyRange/openClosed kb1 kb2)
-        :open-closed-back  (KeyRange/openClosedBackward kb1 kb2))))
-  (put-start-key [_ x t]
-    (when x
-      (try
-        (.clear start-kb)
-        (b/put-buffer start-kb x t)
-        (.flip start-kb)
-        (catch Exception e
-          (raise "Error putting read-only transaction start key buffer: "
-                 (ex-message e)
-                 {:value x :type t})))))
-  (put-stop-key [_ x t]
-    (when x
-      (try
-        (.clear stop-kb)
-        (b/put-buffer stop-kb x t)
-        (.flip stop-kb)
-        (catch Exception e
-          (raise "Error putting read-only transaction stop key buffer: "
-                 (ex-message e)
-                 {:value x :type t})))))
+  (range-info [_ range-type k1 k2 kt]
+    (when k1
+      (.clear start-kb)
+      (b/put-buffer start-kb k1 kt)
+      (.flip start-kb))
+    (when k2
+      (.clear stop-kb)
+      (b/put-buffer stop-kb k2 kt)
+      (.flip stop-kb))
+    (case range-type
+      :all               (KeyRange/all)
+      :all-back          (KeyRange/allBackward)
+      :at-least          (KeyRange/atLeast start-kb)
+      :at-most-back      (KeyRange/atLeastBackward start-kb)
+      :at-most           (KeyRange/atMost start-kb)
+      :at-least-back     (KeyRange/atMostBackward start-kb)
+      :closed            (KeyRange/closed start-kb stop-kb)
+      :closed-back       (KeyRange/closedBackward start-kb stop-kb)
+      :closed-open       (KeyRange/closedOpen start-kb stop-kb)
+      :closed-open-back  (KeyRange/closedOpenBackward start-kb stop-kb)
+      :greater-than      (KeyRange/greaterThan start-kb)
+      :less-than-back    (KeyRange/greaterThanBackward start-kb)
+      :less-than         (KeyRange/lessThan start-kb)
+      :greater-than-back (KeyRange/lessThanBackward start-kb)
+      :open              (KeyRange/open start-kb stop-kb)
+      :open-back         (KeyRange/openBackward start-kb stop-kb)
+      :open-closed       (KeyRange/openClosed start-kb stop-kb)
+      :open-closed-back  (KeyRange/openClosedBackward start-kb stop-kb)))
 
   IRtx
   (read-only? [_]
@@ -279,15 +266,15 @@
 
 (defn- get-list*
   [^Rtx rtx ^Cursor cur k kt vt]
-  (.put-start-key rtx k kt)
-  (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-    (let [holder (transient [])]
-      (.seek cur SeekOp/MDB_FIRST_DUP)
-      (conj! holder (b/read-buffer (.val cur) vt))
-      (dotimes [_ (dec (.count cur))]
-        (.seek cur SeekOp/MDB_NEXT_DUP)
-        (conj! holder (b/read-buffer (.val cur) vt)))
-      (persistent! holder))))
+  (let [info (l/range-info rtx :at-least k nil kt)]
+    (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
+      (let [holder (transient [])]
+        (.seek cur SeekOp/MDB_FIRST_DUP)
+        (conj! holder (b/read-buffer (.val cur) vt))
+        (dotimes [_ (dec (.count cur))]
+          (.seek cur SeekOp/MDB_NEXT_DUP)
+          (conj! holder (b/read-buffer (.val cur) vt)))
+        (persistent! holder)))))
 
 (defn- visit-list*
   [^Rtx rtx ^Cursor cur k kt visitor]
@@ -311,8 +298,6 @@
 
 (defn- in-list?*
   [^Rtx rtx ^Cursor cur k kt v vt]
-  (.put-start-key rtx k kt)
-  (.put-stop-key rtx v vt)
   (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH))
 
 (declare ->LMDB reset-write-txn)
@@ -326,6 +311,8 @@
                ^ByteBuffer kb-w
                ^ByteBuffer start-kb-w
                ^ByteBuffer stop-kb-w
+               ^ByteBuffer start-vb-w
+               ^ByteBuffer stop-vb-w
                write-txn
                writing?]
   IWriting
@@ -335,7 +322,8 @@
 
   (mark-write [_]
     (->LMDB
-      env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
+      env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w
+      start-vb-w stop-vb-w write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -427,6 +415,8 @@
             (.renew rtx))
           (->Rtx this
                  (.txnRead env)
+                 (b/allocate-buffer c/+max-key-size+)
+                 (b/allocate-buffer c/+max-key-size+)
                  (b/allocate-buffer c/+max-key-size+)
                  (b/allocate-buffer c/+max-key-size+)
                  (b/allocate-buffer c/+max-key-size+)
@@ -653,15 +643,21 @@
   [^LMDB lmdb]
   (let [kb-w       ^ByteBuffer (.-kb-w lmdb)
         start-kb-w ^ByteBuffer (.-start-kb-w lmdb)
-        stop-kb-w  ^ByteBuffer (.-stop-kb-w lmdb)]
+        stop-kb-w  ^ByteBuffer (.-stop-kb-w lmdb)
+        start-vb-w ^ByteBuffer (.-start-vb-w lmdb)
+        stop-vb-w  ^ByteBuffer (.-stop-vb-w lmdb)]
     (.clear kb-w)
     (.clear start-kb-w)
     (.clear stop-kb-w)
+    (.clear start-vb-w)
+    (.clear stop-vb-w)
     (vreset! (.-write-txn lmdb) (->Rtx lmdb
                                        (.txnWrite ^Env (.-env lmdb))
                                        kb-w
                                        start-kb-w
                                        stop-kb-w
+                                       start-vb-w
+                                       stop-vb-w
                                        (volatile! false)))))
 
 (defmethod open-kv :java
@@ -685,6 +681,8 @@
                               opts
                               (ConcurrentLinkedQueue.)
                               (UnifiedMap.)
+                              (b/allocate-buffer c/+max-key-size+)
+                              (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)

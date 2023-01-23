@@ -7,10 +7,12 @@
   (put-val [this data v-type] "put data in val buffer"))
 
 (defprotocol IRange
-  (range-info [this range-type k1 k2]
-    "return necessary range information for iterators")
-  (put-start-key [this data k-type] "put data in start-key buffer.")
-  (put-stop-key [this data k-type] "put data in stop-key buffer."))
+  (range-info [this range-type k1 k2 kt]
+    "return key range information for kv iterators")
+  (list-key-range-info [this range-type k1 k2 kt]
+    "return key range information for list iterators")
+  (list-val-range-info [this range-type k1 k2 kt]
+    "return value range information for list iterators"))
 
 (defprotocol IRtx
   (read-only? [this] "is this a read only transaction")
@@ -38,35 +40,34 @@
 
 (defprotocol IList
   (put-list-items [db list-name k vs k-type v-type]
-    "put an inverted list by key")
+    "put some list items by a key")
   (del-list-items
     [db list-name k k-type]
     [db list-name k vs k-type v-type]
-    "delete an inverted list by key")
+    "delete a list or some items of a list by the key")
   (get-list [db list-name k k-type v-type] "get a list by key")
   (visit-list [db list-name visitor k k-type]
     "visit a list, presumably for side effects")
   (list-count [db list-name k k-type]
-    "get the number of items in the inverted list")
+    "return the number of items in the list of a key")
   (in-list? [db list-name k v k-type v-type]
-    "return true if an item is in an inverted list")
+    "return true if an item is in the value list of the key")
   (list-range
-    [db list-name k k-type v-range v-type]
-    [db list-name k k-type v-range v-type writing?]
-    "Return a seq of values in the specified value range of the key")
+    [db list-name k-range k-type v-range v-type]
+    "Return a seq of key-values in the specified value range of the
+     specified key range")
   (list-range-count
-    [db list-name k k-type v-range v-type]
-    [db list-name k k-type v-range v-type writing?]
-    "Return the number of values in the specified value range of the key")
+    [db list-name k-range k-type v-range v-type]
+    "Return the number of key-values in the specified value range of the
+     specified key range")
   (list-range-filter
-    [db list-name pred k k-type v-range v-type]
-    [db list-name pred k k-type v-range v-type writing?]
-    "Return a seq of values in the specified value range of the key,
-     filtered by pred")
+    [db list-name pred k-range k-type v-range v-type]
+    "Return a seq of key-values in the specified value range of the
+     specified key range, filtered by pred")
   (list-range-filter-count
-    [db list-name pred k k-type v-range v-type]
-    [db list-name pred k k-type v-range v-type writing?]
-    "Return the count of values in the specified value range of the key"))
+    [db list-name pred k-range k-type v-range v-type]
+    "Return the count of key-values in the specified value range of the
+     specified key range"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")
