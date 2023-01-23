@@ -274,7 +274,7 @@
            (l/get-range lmdb "inverted" [:all-back] :string :long)))
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
            (l/get-range lmdb "inverted" [:closed "a" "b"] :string :long)))
-    ;; TODO this doesn't work
+    ;; TODO this doesn't work in LMDBJava
     ;; (is (= [["b" 7] ["b" 6] ["b" 5] ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
     ;;        (l/get-range lmdb "inverted" [:closed-back "b" "a"] :string :long)))
     (is (= [["b" 5] ["b" 6] ["b" 7]]
@@ -291,7 +291,7 @@
     (is (not (l/in-list? lmdb "inverted" "a" 7 :string :long)))
     (is (l/in-list? lmdb "inverted" "b" 7 :string :long))
 
-    ;; (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
+    (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
 
     (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
 
@@ -352,14 +352,14 @@
     (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
     (is (l/in-list? lmdb "str" "b" "hello" :string :string))
 
-    ;; (is (= (l/get-list lmdb "str" "a" :string :string)
-    ;;        ["abc" "defg" "hi"]))
+    (is (= (l/get-list lmdb "str" "a" :string :string)
+           ["abc" "defg" "hi"]))
 
     (l/del-list-items lmdb "str" "a" :string)
 
     (is (= (l/list-count lmdb "str" "a" :string) 0))
     (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
-    ;; (is (nil? (l/get-list lmdb "str" "a" :string :string)))
+    (is (nil? (l/get-list lmdb "str" "a" :string :string)))
 
     (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
 
@@ -371,9 +371,9 @@
     (is (= (l/list-count lmdb "str" "b" :string) 3))
     (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
 
-    ;; (is (= (l/filter-list lmdb "str" "b" pred :string :string)
-    ;;        ["good" "nice"]))
-    ;; (is (= (l/filter-list-count lmdb "str" "b" pred :string) 2))
+    (is (= (l/filter-list lmdb "str" "b" pred :string :string)
+           ["good" "nice"]))
+    (is (= (l/filter-list-count lmdb "str" "b" pred :string) 2))
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
