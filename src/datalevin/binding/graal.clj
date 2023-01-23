@@ -863,72 +863,72 @@
                    (.return-cursor dbi cur))))
       0))
 
-  (filter-list [this dbi-name k pred kt vt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn)]
-      (try
-        (.put-start-key rtx k kt)
-        (let [rc (Lib/mdb_cursor_get
-                   (.get cur)
-                   (.getVal ^BufVal (.-start-kp rtx))
-                   (.getVal ^BufVal (.-stop-kp rtx))
-                   Lib$MDB_cursor_op/MDB_SET)]
-          (if (has? rc)
-            (let [k      ^BufVal (.-kp rtx)
-                  v      ^BufVal (.-vp rtx)
-                  holder (transient [])
-                  work   #(let [kv (->KV k v)]
-                            (when (pred kv)
-                              (conj! holder (b/read-buffer (.outBuf v) vt))))]
-              (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
-                                  Lib$MDB_cursor_op/MDB_FIRST_DUP)
-              (work)
-              (dotimes [_ (dec (.count cur))]
+  #_(filter-list [this dbi-name k pred kt vt]
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (let [k      ^BufVal (.-kp rtx)
+                    v      ^BufVal (.-vp rtx)
+                    holder (transient [])
+                    work   #(let [kv (->KV k v)]
+                              (when (pred kv)
+                                (conj! holder (b/read-buffer (.outBuf v) vt))))]
                 (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
-                                    Lib$MDB_cursor_op/MDB_NEXT_DUP)
-                (work))
-              (persistent! holder))
-            []))
-        (catch Exception e
-          (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                (work)
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  (work))
+                (persistent! holder))
+              []))
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur)))))
 
-  (filter-list-count [this dbi-name k pred kt]
-    (let [^DBI dbi    (.get-dbi this dbi-name false)
-          ^Rtx rtx    (.get-rtx this)
-          txn         (.-txn rtx)
-          ^Cursor cur (.get-cursor dbi txn)]
-      (try
-        (.put-start-key rtx k kt)
-        (let [rc (Lib/mdb_cursor_get
-                   (.get cur)
-                   (.getVal ^BufVal (.-start-kp rtx))
-                   (.getVal ^BufVal (.-stop-kp rtx))
-                   Lib$MDB_cursor_op/MDB_SET)]
-          (if (has? rc)
-            (let [k    ^BufVal (.-kp rtx)
-                  v    ^BufVal (.-vp rtx)
-                  c    (volatile! 0)
-                  work #(when (pred (->KV k v))
-                          (vreset! c (inc ^long @c)))]
-              (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
-                                  Lib$MDB_cursor_op/MDB_FIRST_DUP)
-              (work)
-              (dotimes [_ (dec (.count cur))]
+  #_(filter-list-count [this dbi-name k pred kt]
+      (let [^DBI dbi    (.get-dbi this dbi-name false)
+            ^Rtx rtx    (.get-rtx this)
+            txn         (.-txn rtx)
+            ^Cursor cur (.get-cursor dbi txn)]
+        (try
+          (.put-start-key rtx k kt)
+          (let [rc (Lib/mdb_cursor_get
+                     (.get cur)
+                     (.getVal ^BufVal (.-start-kp rtx))
+                     (.getVal ^BufVal (.-stop-kp rtx))
+                     Lib$MDB_cursor_op/MDB_SET)]
+            (if (has? rc)
+              (let [k    ^BufVal (.-kp rtx)
+                    v    ^BufVal (.-vp rtx)
+                    c    (volatile! 0)
+                    work #(when (pred (->KV k v))
+                            (vreset! c (inc ^long @c)))]
                 (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
-                                    Lib$MDB_cursor_op/MDB_NEXT_DUP)
-                (work))
-              @c)
-            0))
-        (catch Exception e
-          (raise "Fail to get count of inverted list: " (ex-message e)
-                 {:dbi dbi-name}))
-        (finally (.return-rtx this rtx)
-                 (.return-cursor dbi cur)))))
+                                    Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                (work)
+                (dotimes [_ (dec (.count cur))]
+                  (Lib/mdb_cursor_get (.get cur) (.getVal k) (.getVal v)
+                                      Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                  (work))
+                @c)
+              0))
+          (catch Exception e
+            (raise "Fail to get count of inverted list: " (ex-message e)
+                   {:dbi dbi-name}))
+          (finally (.return-rtx this rtx)
+                   (.return-cursor dbi cur)))))
 
   (in-list? [this dbi-name k v kt vt]
     (if (and k v)

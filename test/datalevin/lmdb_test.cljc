@@ -314,8 +314,6 @@
     (is (= (l/list-count lmdb "inverted" "b" :string) 5))
     (is (not (l/in-list? lmdb "inverted" "b" 1 :string :long)))
 
-    (is (= (l/filter-list lmdb "inverted" "b" pred :string :long) [3 5 7]))
-    (is (= (l/filter-list-count lmdb "inverted" "b" pred :string) 3))
 
     (l/close-kv lmdb)
     (u/delete-files dir)))

@@ -48,10 +48,6 @@
     "visit a list, presumably for side effects")
   (list-count [db list-name k k-type]
     "get the number of items in the inverted list")
-  (filter-list [db list-name k pred k-type v-type]
-    "predicate filtered items of a list")
-  (filter-list-count [db list-name k pred k-type]
-    "get the count of predicate filtered items of a list")
   (in-list? [db list-name k v k-type v-type]
     "return true if an item is in an inverted list")
   (list-range
@@ -137,7 +133,7 @@
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
-    "Return a eager seq of kv pairs in the specified key range;")
+    "Return an eager seq of kv pairs in the specified key range;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]

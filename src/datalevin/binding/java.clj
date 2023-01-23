@@ -277,10 +277,10 @@
                       (.del dbi txn false)))
         (raise "Unknown kv operator: " op {})))))
 
-(defn- list-range*
+(defn- get-list*
   [^Rtx rtx ^Cursor cur k kt vt]
-  (.put-key rtx k kt)
-  (when (.get cur (.-kb rtx) GetOp/MDB_SET)
+  (.put-start-key rtx k kt)
+  (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
     (let [holder (transient [])]
       (.seek cur SeekOp/MDB_FIRST_DUP)
       (conj! holder (b/read-buffer (.val cur) vt))
@@ -640,40 +640,12 @@
                (ex-message e) {:dbi dbi-name :k k :v v}))
       false))
 
-  (list-range [this dbi-name k kt v-range vt]
-    (when k
-      (scan/scan-list
-        (list-range* rtx cur k kt vt)
-        (raise "Fail to get list range: " (ex-message e)
-               {:dbi dbi-name :k k}))))
-
   (get-list [this dbi-name k kt vt]
     (when k
-      (let [^DBI dbi    (.get-dbi this dbi-name false)
-            ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
-            ^Cursor cur (.get-cursor dbi txn)]
-        (try
-          (.put-start-key rtx k kt)
-          (when (.get cur (.-start-kb rtx) GetOp/MDB_SET)
-            (let [holder (transient [])]
-              (.seek cur SeekOp/MDB_FIRST_DUP)
-              (conj! holder (b/read-buffer (.val cur) vt))
-              (dotimes [_ (dec (.count cur))]
-                (.seek cur SeekOp/MDB_NEXT_DUP)
-                (conj! holder (b/read-buffer (.val cur) vt)))
-              (persistent! holder)))
-          (catch Exception e
-            (raise "Fail to get inverted list: " (ex-message e)
-                   {:dbi dbi-name}))
-          (finally (.return-rtx this rtx)
-                   (.return-cursor dbi cur))))))
-
-  (filter-list [this dbi-name k pred k-type v-type]
-    (.range-filter this dbi-name pred [:closed k k] k-type v-type true))
-
-  (filter-list-count [this dbi-name k pred k-type]
-    (.range-filter-count this dbi-name pred [:closed k k] k-type))
+      (scan/scan-list
+        (get-list* rtx cur k kt vt)
+        (raise "Fail to get a list: "
+               (ex-message e) {:dbi dbi-name :k k}))))
 
   )
 
