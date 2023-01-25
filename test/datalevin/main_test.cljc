@@ -223,5 +223,5 @@
              (set vs)))
       (d/close conn1)
       ;; (u/delete-files src-dir)
-      (u/delete-files dest-dir)
+      ;; (u/delete-files dest-dir)
       (u/delete-files (str (u/tmp-dir) "dl")))))
