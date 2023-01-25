@@ -56,9 +56,9 @@
              (let [^long now (d/q query @cn 1)]
                (d/transact! cn [{:db/id 1 :counter (inc now)}])
                (d/q query @cn 1)))]
-      (is (= (set [5 6 7])
-             (set (pcalls count-f count-f count-f)))))
-    (is (= 7 (d/q query @conn 1)))
+      (is (= (set [5 6 7 8 9])
+             (set (pcalls count-f count-f count-f count-f count-f)))))
+    (is (= 9 (d/q query @conn 1)))
     (d/close conn)))
 
 (deftest with-txn-map-resize-test
