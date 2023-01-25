@@ -61,7 +61,7 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           linux: native/dtlv-test0
-          macos: echo "open file limit is too small"
+          macos: native/dtlv-test0
 
 
       - name: Zip Binary
