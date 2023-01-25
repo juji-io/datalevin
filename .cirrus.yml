@@ -2,8 +2,8 @@ macos_instance:
   image: ghcr.io/cirruslabs/macos-monterey-base:latest
 
 task:
-  # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
+  only_if: $CIRRUS_TAG != ''
+  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
   env:
     LEIN_ROOT: "true"
     GRAALVM_VERSION: "22.3.1"
@@ -27,15 +27,15 @@ task:
     cd ..
     native/dtlv-test0
 
-    # cd native
+    cd native
 
-    # brew install p7zip
+    brew install p7zip
 
-    # export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
-    # export DTLV_TAG="${CIRRUS_TAG}"
+    export DTLV_ARCHIVE="dtlv-${CIRRUS_TAG}-macos-latest-aarch64.zip"
+    export DTLV_TAG="${CIRRUS_TAG}"
 
-    # 7z a -tzip "$DTLV_ARCHIVE" dtlv
+    7z a -tzip "$DTLV_ARCHIVE" dtlv
 
-    # brew install borkdude/brew/babashka
+    brew install borkdude/brew/babashka
 
-    # bb --config ../.build/bb.edn release-artifact
+    bb --config ../.build/bb.edn release-artifact
