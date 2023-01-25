@@ -309,6 +309,7 @@
           (recur iter)))
       (.sync env true)
       (.close env))
+    (when temp? (u/delete-files dir))
     nil)
 
   (closed-kv? [_] (.isClosed env))

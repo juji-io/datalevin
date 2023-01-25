@@ -222,6 +222,6 @@
                (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
              (set vs)))
       (d/close conn1)
-      (u/delete-files src-dir)
+      ;; (u/delete-files src-dir)
       (u/delete-files dest-dir)
       (u/delete-files (str (u/tmp-dir) "dl")))))
