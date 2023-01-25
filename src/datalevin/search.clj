@@ -582,7 +582,7 @@
 
 (defn- init-terms
   [lmdb terms-dbi]
-  (let [terms  (sp/new-spillable-intobj-map {} {:spill-threshold 60})
+  (let [terms  (sp/new-spillable-intobj-map)
         max-id (volatile! 0)
         load   (fn [kv]
                  (let [term (b/read-buffer (l/k kv) :string)
@@ -595,7 +595,7 @@
 (defn- init-docs
   [lmdb docs-dbi]
   (let [norms  (IntShortHashMap.)
-        docs   (sp/new-spillable-intobj-map {} {:spill-threshold 60})
+        docs   (sp/new-spillable-intobj-map)
         max-id (volatile! 0)
         load   (fn [kv]
                  (let [ref  (b/read-buffer (l/k kv) :data)

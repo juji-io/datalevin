@@ -46,7 +46,7 @@ jobs:
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
         with:
-          graalvm-version: '22.3.0.java11'
+          graalvm-version: '22.3.1.java11'
 
       - name: Install Native Image
         run: |
@@ -61,7 +61,7 @@ jobs:
         uses: knicknic/os-specific-run@v1.0.3
         with:
           linux: native/dtlv-test0
-          macos: echo "open file limit is too small"
+          macos: native/dtlv-test0
 
 
       - name: Zip Binary

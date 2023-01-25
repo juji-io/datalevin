@@ -1,9 +1,47 @@
 (ns datalevin.test1
-  "tests for remote operations"
+  "more extensive tests"
   (:require
    #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer        [is are deftest testing]])
    #?(:clj [clojure.java.shell :as sh])
+   datalevin.interpret-test
+   datalevin.search-utils-test
+   datalevin.spill-test
+   datalevin.bits-test
+   datalevin.storage-test
+   datalevin.protocol-test
+   datalevin.test.core
+   datalevin.test.transact
+   datalevin.test.components
+   datalevin.test.conn
+   datalevin.test.db
+   datalevin.test.entity
+   datalevin.test.explode
+   datalevin.test.ident
+   datalevin.test.index
+   datalevin.test.listen
+   datalevin.test.lookup-refs
+   datalevin.test.lru
+   datalevin.test.parser
+   datalevin.test.parser-find
+   datalevin.test.parser-rules
+   datalevin.test.parser-query
+   datalevin.test.parser-where
+   datalevin.test.pull-api
+   datalevin.test.pull-parser
+   datalevin.test.query
+   datalevin.test.query-aggregates
+   datalevin.test.query-find-specs
+   datalevin.test.query-fns
+   datalevin.test.query-not
+   datalevin.test.query-or
+   datalevin.test.query-pull
+   datalevin.test.query-rules
+   datalevin.test.tuples
+   datalevin.test.validation
+   datalevin.test.upsert
+   datalevin.test.issues
+   datalevin.scan-test
    datalevin.server-test
    datalevin.client-test
    datalevin.remote-withtxnkv-test
@@ -20,6 +58,44 @@
 (defn ^:export test-clj []
   (let [{:keys [fail error]}
         (t/run-tests
+          'datalevin.spill-test
+          'datalevin.scan-test
+          'datalevin.search-utils-test
+          'datalevin.bits-test
+          'datalevin.storage-test
+          'datalevin.protocol-test
+          'datalevin.interpret-test
+          'datalevin.test.core
+          'datalevin.test.components
+          'datalevin.test.conn
+          'datalevin.test.db
+          'datalevin.test.entity
+          'datalevin.test.explode
+          'datalevin.test.ident
+          'datalevin.test.index
+          'datalevin.test.listen
+          'datalevin.test.lookup-refs
+          'datalevin.test.lru
+          'datalevin.test.parser
+          'datalevin.test.parser-find
+          'datalevin.test.parser-rules
+          'datalevin.test.parser-query
+          'datalevin.test.parser-where
+          'datalevin.test.pull-api
+          'datalevin.test.pull-parser
+          'datalevin.test.query
+          'datalevin.test.query-aggregates
+          'datalevin.test.query-find-specs
+          'datalevin.test.query-fns
+          'datalevin.test.query-not
+          'datalevin.test.query-or
+          'datalevin.test.query-pull
+          'datalevin.test.query-rules
+          'datalevin.test.transact
+          'datalevin.test.tuples
+          'datalevin.test.validation
+          'datalevin.test.upsert
+          'datalevin.test.issues
           'datalevin.server-test
           'datalevin.client-test
           'datalevin.remote-kv-test
