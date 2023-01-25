@@ -24,7 +24,7 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 
 cd ..
 
-.\dtlv-test0 -Xmx5g
+native\dtlv-test0 -Xmx5g
 
 if %errorlevel% neq 0 exit /b %errorlevel%
 
