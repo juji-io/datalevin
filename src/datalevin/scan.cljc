@@ -34,157 +34,150 @@
                     k-type))))
 
 (defn- fetch-first
-  [dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (let [^Iterator iter (.iterator ^Iterable iterable)]
-        (when (.hasNext iter)
+  [dbi rtx k-range k-type v-type ignore-key?]
+  (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (let [^Iterator iter (.iterator ^Iterable iterable)]
+      (when (.hasNext iter)
+        (let [kv (.next iter)
+              v  (when (not= v-type :ignore)
+                   (b/read-buffer (l/v kv) v-type))]
+          (if ignore-key?
+            (if v v true)
+            [(read-key kv k-type v) v]))))))
+
+(defn- fetch-range
+  [lmdb dbi rtx k-range k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
+  (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (let [^SpillableVector holder
+          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+      (loop [^Iterator iter (.iterator ^Iterable iterable)]
+        (if (.hasNext iter)
           (let [kv (.next iter)
                 v  (when (not= v-type :ignore)
                      (b/read-buffer (l/v kv) v-type))]
-            (if ignore-key?
-              (if v v true)
-              [(read-key kv k-type v) v])))))))
-
-(defn- fetch-range
-  [lmdb dbi rtx [range-type k1 k2] k-type v-type ignore-key?]
-  (assert (not (and (= v-type :ignore) ignore-key?))
-          "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (let [^SpillableVector holder
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-        (loop [^Iterator iter (.iterator ^Iterable iterable)]
-          (if (.hasNext iter)
-            (let [kv (.next iter)
-                  v  (when (not= v-type :ignore)
-                       (b/read-buffer (l/v kv) v-type))]
-              (.cons holder (if ignore-key?
-                              v
-                              [(read-key kv k-type v) v]))
-              (recur iter))
-            holder))))))
+            (.cons holder (if ignore-key?
+                            v
+                            [(read-key kv k-type v) v]))
+            (recur iter))
+          holder)))))
 
 (defn- range-seq*
-  [lmdb dbi rtx [range-type k1 k2] k-type v-type ignore-key?
+  [lmdb dbi rtx k-range k-type v-type ignore-key?
    {:keys [batch-size] :or {batch-size 100}}]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (let [^Iterable itb  (l/iterate-kv dbi rtx info)
-          ^Iterator iter (.iterator itb)
-          item           (fn [kv]
-                           (let [v (when (not= v-type :ignore)
-                                     (b/read-buffer (l/v kv) v-type))]
-                             (if ignore-key?
-                               (if v v true)
-                               [(read-key kv k-type v) v])))
-          fetch          (fn [^long k]
-                           (let [holder (transient [])]
-                             (loop [i 0]
-                               (if (.hasNext iter)
-                                 (let [kv (.next iter)]
-                                   (conj! holder (item kv))
-                                   (if (< i k)
-                                     (recur (inc i))
-                                     {:batch  (persistent! holder)
-                                      :next-k k}))
-                                 {:batch  (persistent! holder)
-                                  :next-k nil}))))]
-      (reify
-        Seqable
-        (seq [_]
-          (u/lazy-concat
-            ((fn next [ret]
-               (when (clojure.core/seq (:batch ret))
-                 (cons (:batch ret)
-                       (when-some [k (:next-k ret)]
-                         (lazy-seq (next (fetch k)))))))
-             (fetch batch-size))))
+  (let [^Iterable itb  (l/iterate-kv dbi rtx k-range k-type)
+        ^Iterator iter (.iterator itb)
+        item           (fn [kv]
+                         (let [v (when (not= v-type :ignore)
+                                   (b/read-buffer (l/v kv) v-type))]
+                           (if ignore-key?
+                             (if v v true)
+                             [(read-key kv k-type v) v])))
+        fetch          (fn [^long k]
+                         (let [holder (transient [])]
+                           (loop [i 0]
+                             (if (.hasNext iter)
+                               (let [kv (.next iter)]
+                                 (conj! holder (item kv))
+                                 (if (< i k)
+                                   (recur (inc i))
+                                   {:batch  (persistent! holder)
+                                    :next-k k}))
+                               {:batch  (persistent! holder)
+                                :next-k nil}))))]
+    (reify
+      Seqable
+      (seq [_]
+        (u/lazy-concat
+          ((fn next [ret]
+             (when (clojure.core/seq (:batch ret))
+               (cons (:batch ret)
+                     (when-some [k (:next-k ret)]
+                       (lazy-seq (next (fetch k)))))))
+           (fetch batch-size))))
 
-        IReduceInit
-        (reduce [_ rf init]
-          (loop [acc init
-                 ret (fetch batch-size)]
-            (if (clojure.core/seq (:batch ret))
-              (let [acc (rf acc (:batch ret))]
-                (if (reduced? acc)
-                  @acc
-                  (if-some [k (:next-k ret)]
-                    (recur acc (fetch k))
-                    acc)))
-              acc)))
+      IReduceInit
+      (reduce [_ rf init]
+        (loop [acc init
+               ret (fetch batch-size)]
+          (if (clojure.core/seq (:batch ret))
+            (let [acc (rf acc (:batch ret))]
+              (if (reduced? acc)
+                @acc
+                (if-some [k (:next-k ret)]
+                  (recur acc (fetch k))
+                  acc)))
+            acc)))
 
-        AutoCloseable
-        (close [_]
-          (.close ^AutoCloseable itb)
-          (l/return-rtx lmdb rtx))
+      AutoCloseable
+      (close [_]
+        (.close ^AutoCloseable itb)
+        (l/return-rtx lmdb rtx))
 
-        Object
-        (toString [this] (str (apply list this)))))))
+      Object
+      (toString [this] (str (apply list this))))))
 
 (defn- fetch-range-count
-  [dbi rtx [range-type k1 k2] k-type]
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (loop [^Iterator iter (.iterator ^Iterable iterable)
-             c              0]
-        (if (.hasNext iter)
-          (do (.next iter) (recur iter (inc c)))
-          c)))))
+  [dbi rtx k-range k-type]
+  (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (loop [^Iterator iter (.iterator ^Iterable iterable)
+           c              0]
+      (if (.hasNext iter)
+        (do (.next iter) (recur iter (inc c)))
+        c))))
 
 (defn- fetch-some
-  [dbi rtx pred [range-type k1 k2] k-type v-type ignore-key?]
+  [dbi rtx pred k-range k-type v-type ignore-key?]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
+  (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (loop [^Iterator iter (.iterator ^Iterable iterable)]
+      (when (.hasNext iter)
+        (let [kv (.next iter)]
+          (if (pred kv)
+            (let [v (when (not= v-type :ignore)
+                      (b/read-buffer (.rewind ^ByteBuffer (l/v kv))
+                                     v-type))]
+              (if ignore-key?
+                v
+                [(read-key kv k-type v true) v]))
+            (recur iter)))))))
+
+(defn- fetch-range-filtered
+  [lmdb dbi rtx pred k-range k-type v-type ignore-key?]
+  (assert (not (and (= v-type :ignore) ignore-key?))
+          "Cannot ignore both key and value")
+  (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (let [^SpillableVector holder
+          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
       (loop [^Iterator iter (.iterator ^Iterable iterable)]
-        (when (.hasNext iter)
+        (if (.hasNext iter)
           (let [kv (.next iter)]
             (if (pred kv)
               (let [v (when (not= v-type :ignore)
-                        (b/read-buffer (.rewind ^ByteBuffer (l/v kv))
-                                       v-type))]
-                (if ignore-key?
-                  v
-                  [(read-key kv k-type v true) v]))
-              (recur iter))))))))
-
-(defn- fetch-range-filtered
-  [lmdb dbi rtx pred [range-type k1 k2] k-type v-type ignore-key?]
-  (assert (not (and (= v-type :ignore) ignore-key?))
-          "Cannot ignore both key and value")
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (let [^SpillableVector holder
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-        (loop [^Iterator iter (.iterator ^Iterable iterable)]
-          (if (.hasNext iter)
-            (let [kv (.next iter)]
-              (if (pred kv)
-                (let [v (when (not= v-type :ignore)
-                          (b/read-buffer
-                            (.rewind ^ByteBuffer (l/v kv)) v-type))]
-                  (.cons holder (if ignore-key?
-                                  v
-                                  [(read-key kv k-type v true) v]))
-                  (recur iter))
-                (recur iter)))
-            holder))))))
+                        (b/read-buffer
+                          (.rewind ^ByteBuffer (l/v kv)) v-type))]
+                (.cons holder (if ignore-key?
+                                v
+                                [(read-key kv k-type v true) v]))
+                (recur iter))
+              (recur iter)))
+          holder)))))
 
 (defn- fetch-range-filtered-count
-  [dbi rtx pred [range-type k1 k2] k-type]
-  (let [info (l/range-info rtx range-type k1 k2 k-type)]
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-      (loop [^Iterator iter (.iterator ^Iterable iterable)
-             c              0]
-        (if (.hasNext iter)
-          (let [kv (.next iter)]
-            (if (pred kv)
-              (recur iter (inc c))
-              (recur iter c)))
-          c)))))
+  [dbi rtx pred k-range k-type]
+  (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (loop [^Iterator iter (.iterator ^Iterable iterable)
+           c              0]
+      (if (.hasNext iter)
+        (let [kv (.next iter)]
+          (if (pred kv)
+            (recur iter (inc c))
+            (recur iter c)))
+        c))))
 
 (defmacro scan
   ([call error]
@@ -291,12 +284,10 @@
 (defn visit
   [lmdb dbi-name visitor k-range k-type]
   (scan
-    (let [[range-type k1 k2] k-range
-          info               (l/range-info rtx range-type k1 k2 k-type)]
-      (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx info)]
-        (loop [^Iterator iter (.iterator ^Iterable iterable)]
-          (when (.hasNext iter)
-            (when-not (= (visitor (.next iter)) :datalevin/terminate-visit)
-              (recur iter))))))
+    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+      (loop [^Iterator iter (.iterator ^Iterable iterable)]
+        (when (.hasNext iter)
+          (when-not (= (visitor (.next iter)) :datalevin/terminate-visit)
+            (recur iter)))))
     (raise "Fail to visit: " (ex-message e)
            {:dbi dbi-name :k-range k-range :k-type k-type})))

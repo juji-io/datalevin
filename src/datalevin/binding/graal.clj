@@ -93,7 +93,7 @@
     (raise "put-val not allowed for read only txn buffer" {}))
 
   IRange
-  (range-info [this range-type k1 k2]
+  (range-info [this range-type k1 k2 kt]
     (let [chk1 #(if k1
                   %1
                   (raise "Missing start/end key for range type " %2 {}))
@@ -129,28 +129,28 @@
         :open-closed-back  (chk2 [false true false true true v1 v2]
                                  :open-closed-back)
         (raise "Unknown range type" range-type {}))))
-  (put-start-key [_ x t]
-    (try
-      (when x
-        (let [^ByteBuffer start-kb (.inBuf start-kp)]
-          (.clear ^BufVal start-kp)
-          (b/put-buffer start-kb x t)
-          (.flip ^BufVal start-kp)))
-      (catch Exception e
-        (raise "Error putting read-only transaction start key buffer: "
-               (ex-message e)
-               {:value x :type t}))))
-  (put-stop-key [_ x t]
-    (try
-      (when x
-        (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
-          (.clear ^BufVal stop-kp)
-          (b/put-buffer stop-kb x t)
-          (.flip ^BufVal stop-kp)))
-      (catch Exception e
-        (raise "Error putting read-only transaction stop key buffer: "
-               (ex-message e)
-               {:value x :type t}))))
+  #_(put-start-key [_ x t]
+      (try
+        (when x
+          (let [^ByteBuffer start-kb (.inBuf start-kp)]
+            (.clear ^BufVal start-kp)
+            (b/put-buffer start-kb x t)
+            (.flip ^BufVal start-kp)))
+        (catch Exception e
+          (raise "Error putting read-only transaction start key buffer: "
+                 (ex-message e)
+                 {:value x :type t}))))
+  #_(put-stop-key [_ x t]
+      (try
+        (when x
+          (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
+            (.clear ^BufVal stop-kp)
+            (b/put-buffer stop-kb x t)
+            (.flip ^BufVal stop-kp)))
+        (catch Exception e
+          (raise "Error putting read-only transaction stop key buffer: "
+                 (ex-message e)
+                 {:value x :type t}))))
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
@@ -185,7 +185,6 @@
               ^ConcurrentLinkedQueue curs
               ^BufVal kp
               ^:volatile-mutable ^BufVal vp
-              ^boolean dupsort?
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -254,7 +253,7 @@
       (when-not (= rc (Lib/MDB_NOTFOUND))
         (.outBuf vp))))
 
-  (iterate-kv [this rtx [f? sk? is? ek? ie? sk ek]]
+  (iterate-kv [this rtx [f? sk? is? ek? ie? sk ek] kt]
     (let [txn (.-txn ^Rtx rtx)
           cur (.get-cursor this txn)]
       (->CursorIterable cur this rtx f? sk? is? ek? ie? sk ek)))
@@ -293,7 +292,6 @@
           ^BufVal k     (.-kp rtx)
           ^BufVal v     (.-vp rtx)
           ^Txn txn      (.-txn rtx)
-          dupsort?      (.-dupsort? db)
           ^Dbi dbi      (.dbi db)
           i             (.get dbi)
           op-get        Lib$MDB_cursor_op/MDB_GET_CURRENT
@@ -303,15 +301,11 @@
           op-set        Lib$MDB_cursor_op/MDB_SET
           op-first      Lib$MDB_cursor_op/MDB_FIRST
           op-last       Lib$MDB_cursor_op/MDB_LAST
-          op-first-dup  Lib$MDB_cursor_op/MDB_FIRST_DUP
-          op-last-dup   Lib$MDB_cursor_op/MDB_LAST_DUP
-          op-next-dup   Lib$MDB_cursor_op/MDB_NEXT_DUP
-          op-prev-dup   Lib$MDB_cursor_op/MDB_PREV_DUP
           op-next-nodup Lib$MDB_cursor_op/MDB_NEXT_NODUP
           op-prev-nodup Lib$MDB_cursor_op/MDB_PREV_NODUP
           get-cur       #(Lib/checkRc
-                          (Lib/mdb_cursor_get
-                            (.get cursor) (.getVal k) (.getVal v) op-get))]
+                           (Lib/mdb_cursor_get
+                             (.get cursor) (.getVal k) (.getVal v) op-get))]
       (reify
         Iterator
         (hasNext [_]
@@ -332,55 +326,26 @@
                                    (.get cursor) (.getVal k) (.getVal v) %))
                              (continue?)
                              false)
-                check-dup #(if (has?
-                                 (Lib/mdb_cursor_get
-                                   (.get cursor) (.getVal k) (.getVal v) %))
-                             true
-                             (if @ended?
-                               false
-                               (if forward?
-                                 (check op-next-nodup)
-                                 (check op-prev-nodup))))
                 seek      #(if (has? (Lib/mdb_cursor_get
                                        (.get cursor) (.getVal sk) (.getVal v)
                                        op-set-range))
                              (if forward? (continue?) (check op-prev))
                              (if forward? false (check op-last)))
                 start     #(if forward? (check op-first) (check op-last))]
-            (if dupsort?
-              (if @ended?
-                (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
-                (if @started?
-                  (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
-                  (do
-                    (vreset! started? true)
-                    (if start-key?
-                      (if (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal sk) (.getVal v) op-set))
-                        (if include-start?
-                          (if forward?
-                            (check-dup op-first-dup)
-                            (check-dup op-last-dup))
-                          (if forward?
-                            (check-dup op-next-nodup)
-                            (check-dup op-prev-nodup)))
-                        (seek))
-                      (start)))))
-              (if @ended?
-                false
-                (if @started?
-                  (if forward? (check op-next) (check op-prev))
-                  (do
-                    (vreset! started? true)
-                    (if start-key?
-                      (if (has? (Lib/mdb_cursor_get
-                                  (.get cursor) (.getVal sk) (.getVal v) op-set))
-                        (if include-start?
-                          (continue?)
-                          (if forward? (check op-next) (check op-prev)))
-                        (seek))
-                      (start))))))))
+            (if @ended?
+              false
+              (if @started?
+                (if forward? (check op-next) (check op-prev))
+                (do
+                  (vreset! started? true)
+                  (if start-key?
+                    (if (has? (Lib/mdb_cursor_get
+                                (.get cursor) (.getVal sk) (.getVal v) op-set))
+                      (if include-start?
+                        (continue?)
+                        (if forward? (check op-next) (check op-prev)))
+                      (seek))
+                    (start)))))))
         (next [_]
           (get-cur)
           (->KV k v))))))
@@ -781,7 +746,7 @@
             txn         (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn) ]
         (try
-          (.put-start-key rtx k kt)
+          ;; (.put-start-key rtx k kt)
           (let [rc (Lib/mdb_cursor_get
                      (.get cur)
                      (.getVal ^BufVal (.-start-kp rtx))
@@ -815,7 +780,7 @@
             txn         (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
-          (.put-start-key rtx k kt)
+          ;; (.put-start-key rtx k kt)
           (let [rc (Lib/mdb_cursor_get
                      (.get cur)
                      (.getVal ^BufVal (.-start-kp rtx))
@@ -847,7 +812,7 @@
             txn         (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
-          (.put-start-key rtx k kt)
+          ;; (.put-start-key rtx k kt)
           (let [rc (Lib/mdb_cursor_get
                      (.get cur)
                      (.getVal ^BufVal (.-start-kp rtx))
@@ -937,8 +902,8 @@
             txn         (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
-          (.put-start-key rtx k kt)
-          (.put-stop-key rtx v vt)
+          ;; (.put-start-key rtx k kt)
+          ;; (.put-stop-key rtx v vt)
           (has? (Lib/mdb_cursor_get
                   (.get cur)
                   (.getVal ^BufVal (.-start-kp rtx))

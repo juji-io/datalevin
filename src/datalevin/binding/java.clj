@@ -13,8 +13,9 @@
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
+   [java.lang AutoCloseable]
    [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator UUID]
+   [java.util Iterator UUID ]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
    [clojure.lang IPersistentVector]
@@ -77,6 +78,13 @@
       (make-array t 0)
       (into-array t (mapv flag flags)))))
 
+(defn- put-bf
+  [^ByteBuffer bf data type]
+  (when data
+    (.clear bf)
+    (b/put-buffer bf data type)
+    (.flip bf)))
+
 (deftype Rtx [lmdb
               ^Txn txn
               ^ByteBuffer kb
@@ -88,9 +96,7 @@
   IBuffer
   (put-key [_ x t]
     (try
-      (.clear kb)
-      (b/put-buffer kb x t)
-      (.flip kb)
+      (put-bf kb x t)
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
@@ -102,14 +108,33 @@
 
   IRange
   (range-info [_ range-type k1 k2 kt]
-    (when k1
-      (.clear start-kb)
-      (b/put-buffer start-kb k1 kt)
-      (.flip start-kb))
-    (when k2
-      (.clear stop-kb)
-      (b/put-buffer stop-kb k2 kt)
-      (.flip stop-kb))
+    (put-bf start-kb k1 kt)
+    (put-bf stop-kb k2 kt)
+    (case range-type
+      :all               (KeyRange/all)
+      :all-back          (KeyRange/allBackward)
+      :at-least          (KeyRange/atLeast start-kb)
+      :at-most-back      (KeyRange/atLeastBackward start-kb)
+      :at-most           (KeyRange/atMost start-kb)
+      :at-least-back     (KeyRange/atMostBackward start-kb)
+      :closed            (KeyRange/closed start-kb stop-kb)
+      :closed-back       (KeyRange/closedBackward start-kb stop-kb)
+      :closed-open       (KeyRange/closedOpen start-kb stop-kb)
+      :closed-open-back  (KeyRange/closedOpenBackward start-kb stop-kb)
+      :greater-than      (KeyRange/greaterThan start-kb)
+      :less-than-back    (KeyRange/greaterThanBackward start-kb)
+      :less-than         (KeyRange/lessThan start-kb)
+      :greater-than-back (KeyRange/lessThanBackward start-kb)
+      :open              (KeyRange/open start-kb stop-kb)
+      :open-back         (KeyRange/openBackward start-kb stop-kb)
+      :open-closed       (KeyRange/openClosed start-kb stop-kb)
+      :open-closed-back  (KeyRange/openClosedBackward start-kb stop-kb)))
+
+  (list-range-info [_ k-range-type k1 k2 kt v-range-type v1 v2 vt]
+    (put-bf start-kb k1 kt)
+    (put-bf stop-kb k2 kt)
+    (put-bf start-vb v1 vt)
+    (put-bf stop-vb v2 vt)
     (case range-type
       :all               (KeyRange/all)
       :all-back          (KeyRange/allBackward)
@@ -152,10 +177,12 @@
    :overflow-pages (.-overflowPages stat)
    :entries        (.-entries stat)})
 
+(declare ->ListIterable)
+
 (deftype DBI [^Dbi db
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
-              ^:volatile-mutable ^ByteBuffer vb
+              ^:unsynchronized-mutable ^ByteBuffer vb
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -209,8 +236,17 @@
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
-  (iterate-kv [_ rtx range-info]
-    (.iterate db (.-txn ^Rtx rtx) range-info))
+  (iterate-kv [_ rtx [range-type k1 k2] k-type]
+    (let [range-info (l/range-info rtx range-type k1 k2 k-type)]
+      (.iterate db (.-txn ^Rtx rtx) range-info)))
+  (iterate-list [this rtx [k-range-type k1 k2] k-type
+                 [v-range-type v1 v2] v-type]
+    (let [txn (.-txn ^Rtx rtx)
+          cur (.get-cursor this txn)
+          [f? sk? is? ek? ie? sk ek]
+          (l/list-range-info rtx k-range-type k1 k2 k-type
+                             v-range-type v1 v2 v-type)]
+      (->ListIterable db cur rtx f? sk? is? ek? ie? sk ek)))
   (get-cursor [_ txn]
     (or (when (.isReadOnly ^Txn txn)
           (when-let [^Cursor cur (.poll curs)]
@@ -222,9 +258,115 @@
   (return-cursor [_ cur]
     (.add curs cur)))
 
+(deftype ListIterable [^DBI db
+                       ^Cursor cur
+                       ^Rtx rtx
+                       forward-key?
+                       start-key?
+                       include-start-key?
+                       stop-key?
+                       include-stop-key?
+                       ^ByteBuffer sk
+                       ^ByteBuffer ek
+                       forward-val?
+                       start-val?
+                       include-start-val?
+                       stop-val?
+                       include-stop-val?
+                       ^ByteBuffer sv
+                       ^ByteBuffer ev]
+  AutoCloseable
+  (close [_]
+    (if (.isReadOnly ^Txn (.-txn rtx))
+      (.return-cursor db cursor)
+      (.close cursor)))
+
+  Iterable
+  (iterator [_]
+    (let [started?      (volatile! false)
+          ended?        (volatile! false)
+          ^ByteBuffer k (.-kb rtx)
+          ^ByteBuffer v (.-vb rtx)
+          ^Txn txn      (.-txn rtx)
+          ^Dbi dbi      (.dbi db)
+          i             (.get dbi)
+          get-cur       (.get cur k v SeekOp/MDB_GET_CURRENT)]
+      (reify
+        Iterator
+        (hasNext [_]
+          (let [end       #(do (vreset! ended? true) false)
+                continue? #(if stop-key?
+                             (let [_ (get-cur)
+                                   r (Lib/mdb_cmp (.get txn) i (.getVal k)
+                                                  (.getVal ek))]
+                               (if (= r 0)
+                                 (do (vreset! ended? true)
+                                     include-stop?)
+                                 (if (> r 0)
+                                   (if forward? (end) true)
+                                   (if forward? true (end)))))
+                             true)
+                check     #(if (has?
+                                 (Lib/mdb_cursor_get
+                                   (.get cursor) (.getVal k) (.getVal v) %))
+                             (continue?)
+                             false)
+                check-dup #(if (has?
+                                 (Lib/mdb_cursor_get
+                                   (.get cursor) (.getVal k) (.getVal v) %))
+                             true
+                             (if @ended?
+                               false
+                               (if forward?
+                                 (check op-next-nodup)
+                                 (check op-prev-nodup))))
+                seek      #(if (has? (Lib/mdb_cursor_get
+                                       (.get cursor) (.getVal sk) (.getVal v)
+                                       op-set-range))
+                             (if forward? (continue?) (check op-prev))
+                             (if forward? false (check op-last)))
+                start     #(if forward? (check op-first) (check op-last))]
+            (if dupsort?
+              (if @ended?
+                (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
+                (if @started?
+                  (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
+                  (do
+                    (vreset! started? true)
+                    (if start-key?
+                      (if (has?
+                            (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal sk) (.getVal v) op-set))
+                        (if include-start?
+                          (if forward?
+                            (check-dup op-first-dup)
+                            (check-dup op-last-dup))
+                          (if forward?
+                            (check-dup op-next-nodup)
+                            (check-dup op-prev-nodup)))
+                        (seek))
+                      (start)))))
+              (if @ended?
+                false
+                (if @started?
+                  (if forward? (check op-next) (check op-prev))
+                  (do
+                    (vreset! started? true)
+                    (if start-key?
+                      (if (has? (Lib/mdb_cursor_get
+                                  (.get cursor) (.getVal sk) (.getVal v) op-set))
+                        (if include-start?
+                          (continue?)
+                          (if forward? (check op-next) (check op-prev)))
+                        (seek))
+                      (start))))))))
+        (next [_]
+          (get-cur)
+          (->KV k v))))))
+
 (defn- up-db-size [^Env env]
-  (.setMapSize env
-               (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
+  (.setMapSize env (* ^long c/+buffer-grow-factor+
+                      ^long (-> env .info .mapSize))))
 
 (defn- transact*
   [txs ^UnifiedMap dbis txn]
@@ -298,7 +440,8 @@
 
 (defn- in-list?*
   [^Rtx rtx ^Cursor cur k kt v vt]
-  (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH))
+  (let [info (l/range-info rtx :at-least k nil kt)]
+    (.get cur (.-start-kb rtx) (.-stop-kb rtx) SeekOp/MDB_GET_BOTH)))
 
 (declare ->LMDB reset-write-txn)
 
@@ -635,9 +778,7 @@
       (scan/scan-list
         (get-list* rtx cur k kt vt)
         (raise "Fail to get a list: "
-               (ex-message e) {:dbi dbi-name :k k}))))
-
-  )
+               (ex-message e) {:dbi dbi-name :k k})))))
 
 (defn- reset-write-txn
   [^LMDB lmdb]

@@ -9,10 +9,8 @@
 (defprotocol IRange
   (range-info [this range-type k1 k2 kt]
     "return key range information for kv iterators")
-  (list-key-range-info [this range-type k1 k2 kt]
-    "return key range information for list iterators")
-  (list-val-range-info [this range-type k1 k2 kt]
-    "return value range information for list iterators"))
+  (list-range-info [this k-range-type k1 k2 kt v-range-type v1 v2 vt]
+    "return key value range information for list iterators"))
 
 (defprotocol IRtx
   (read-only? [this] "is this a read only transaction")
@@ -29,7 +27,10 @@
   (del [this txn] [this txn all?]
     "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx range-info] "Return an Iterable given the range")
+  (iterate-kv [this rtx k-range k-type]
+    "Return an Iterable given the key range")
+  (iterate-list [this rtx k-range k-type v-range v-type]
+    "Return an Iterable given the key and value range")
   (get-cursor [this txn] "Get a reusable read-only cursor")
   (close-cursor [this cur] "Close cursor")
   (return-cursor [this cur] "Return a read-only cursor after use"))
@@ -67,7 +68,10 @@
   (list-range-filter-count
     [db list-name pred k-range k-type v-range v-type]
     "Return the count of key-values in the specified value range of the
-     specified key range"))
+     specified key range")
+  (visit-list-range
+    [db list-name visitor k-range k-type v-range v-type]
+    "visit a list range, presumably for side effects"))
 
 (defprotocol ILMDB
   (close-kv [db] "Close this LMDB env")

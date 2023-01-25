@@ -2,11 +2,13 @@
 
 ## WIP
 ### Added
-- [KV] List related API
+- [KV] Expose LMDB dupsort functionality as a set of `list-*` functions.
+- [KV] `datalevin/kv-meta` dbi to keep information, such as dbi flags, etc.
 
 ## 0.8.4 (2023-01-20)
 ### Fixed
-- [Datalog] error when large `:db/fulltext` value is added then removed in the same transaction.
+- [Datalog] error when large `:db/fulltext` value is added then removed in the
+  same transaction.
 
 ## 0.8.2 (2023-01-19)
 ### Fixed
