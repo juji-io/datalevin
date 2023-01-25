@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-GRAALVM_VERSION="${GRAALVM_VERSION:-22.3.0}"
+GRAALVM_VERSION="${GRAALVM_VERSION:-22.3.1}"
 
 case "$DTLV_PLATFORM" in
 	macos)
