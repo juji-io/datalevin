@@ -1,8 +1,6 @@
 # Change Log
 
 ## WIP
-### Improved
-- [Native] faster C comparator
 
 ## 0.8.4 (2023-01-20)
 ### Fixed
