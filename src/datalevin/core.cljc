@@ -1579,13 +1579,15 @@ all documents. Used only with [[search-index-writer]]"}
     - `:long`, 64 bits integer
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
+    - `:bigint`, a `java.math.BigInteger` in range `[-2^1015, 2^1015-1]`
+    - `:bigdec`, a `java.math.BigDecimal`, the unscaled value is in range `[-2^1015, 2^1015-1]`
     - `:byte`, single byte
     - `:bytes`, byte array
     - `:keyword`, EDN keyword
     - `:symbol`, EDN symbol
     - `:boolean`, `true` or `false`
-    - `:instant`, timestamp, same as `java.util.Date`
-    - `:uuid`, UUID, same as `java.util.UUID`
+    - `:instant`, a `java.util.Date`
+    - `:uuid`, a `java.util.UUID`
 
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."}
@@ -1600,6 +1602,8 @@ one of the following data types:
   - `:long`, 64 bits integer
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
+  - `:bigint`, a `java.math.BigInteger` in range `[-2^1015, 2^1015-1]`,
+  - `:bigdec`, a `java.math.BigDecimal`, the unscaled value is in range `[-2^1015, 2^1015-1]`,
   - `:byte`, single byte
   - `:bytes`, an byte array
   - `:keyword`, EDN keyword

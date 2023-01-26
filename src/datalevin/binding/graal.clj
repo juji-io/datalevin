@@ -15,6 +15,7 @@
    [java.lang AutoCloseable]
    [clojure.lang IPersistentVector]
    [org.graalvm.word WordFactory]
+   [datalevin.utl BufOps]
    [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
     Lib$MDB_stat Lib$MapFullException])
@@ -286,69 +287,74 @@
       (.close cursor)))
 
   Iterable
-  (iterator [_]
-    (let [started?      (volatile! false)
-          ended?        (volatile! false)
-          ^BufVal k     (.-kp rtx)
-          ^BufVal v     (.-vp rtx)
-          ^Txn txn      (.-txn rtx)
-          ^Dbi dbi      (.dbi db)
-          i             (.get dbi)
-          op-get        Lib$MDB_cursor_op/MDB_GET_CURRENT
-          op-next       Lib$MDB_cursor_op/MDB_NEXT
-          op-prev       Lib$MDB_cursor_op/MDB_PREV
-          op-set-range  Lib$MDB_cursor_op/MDB_SET_RANGE
-          op-set        Lib$MDB_cursor_op/MDB_SET
-          op-first      Lib$MDB_cursor_op/MDB_FIRST
-          op-last       Lib$MDB_cursor_op/MDB_LAST
-          op-next-nodup Lib$MDB_cursor_op/MDB_NEXT_NODUP
-          op-prev-nodup Lib$MDB_cursor_op/MDB_PREV_NODUP
-          get-cur       #(Lib/checkRc
-                           (Lib/mdb_cursor_get
-                             (.get cursor) (.getVal k) (.getVal v) op-get))]
+  (iterator [this]
+    (let [started?     (volatile! false)
+          ended?       (volatile! false)
+          ^BufVal k    (.-kp rtx)
+          ^BufVal v    (.-vp rtx)
+          ^Txn txn     (.-txn rtx)
+          ^Dbi dbi     (.dbi db)
+          i            (.get dbi)
+          op-get       Lib$MDB_cursor_op/MDB_GET_CURRENT
+          op-next      Lib$MDB_cursor_op/MDB_NEXT
+          op-prev      Lib$MDB_cursor_op/MDB_PREV
+          op-set-range Lib$MDB_cursor_op/MDB_SET_RANGE
+          op-set       Lib$MDB_cursor_op/MDB_SET
+          op-first     Lib$MDB_cursor_op/MDB_FIRST
+          op-last      Lib$MDB_cursor_op/MDB_LAST
+          get-cur      #(Lib/checkRc
+                          (Lib/mdb_cursor_get
+                            (.get cursor) (.getVal k) (.getVal v) op-get))
+          end          #(do (vreset! ended? true) false)
+          continue?    #(if stop-key?
+                          (let [_ (get-cur)
+                                r (Lib/mdb_cmp (.get txn) i (.getVal k)
+                                               (.getVal ek))]
+                            (if (= r 0)
+                              (do (vreset! ended? true)
+                                  include-stop?)
+                              (if (> r 0)
+                                (if forward? (end) true)
+                                (if forward? true (end)))))
+                          true)
+          check        #(if (has?
+                              (Lib/mdb_cursor_get
+                                (.get cursor) (.getVal k) (.getVal v) %))
+                          (continue?)
+                          false)]
       (reify
         Iterator
         (hasNext [_]
-          (let [end       #(do (vreset! ended? true) false)
-                continue? #(if stop-key?
-                             (let [_ (get-cur)
-                                   r (Lib/mdb_cmp (.get txn) i (.getVal k)
-                                                  (.getVal ek))]
-                               (if (= r 0)
-                                 (do (vreset! ended? true)
-                                     include-stop?)
-                                 (if (> r 0)
-                                   (if forward? (end) true)
-                                   (if forward? true (end)))))
-                             true)
-                check     #(if (has?
-                                 (Lib/mdb_cursor_get
-                                   (.get cursor) (.getVal k) (.getVal v) %))
-                             (continue?)
-                             false)
-                seek      #(if (has? (Lib/mdb_cursor_get
-                                       (.get cursor) (.getVal sk) (.getVal v)
-                                       op-set-range))
-                             (if forward? (continue?) (check op-prev))
-                             (if forward? false (check op-last)))
-                start     #(if forward? (check op-first) (check op-last))]
-            (if @ended?
-              false
-              (if @started?
-                (if forward? (check op-next) (check op-prev))
-                (do
-                  (vreset! started? true)
-                  (if start-key?
+          (if @ended?
+            false
+            (if @started?
+              (if forward?
+                (check op-next)
+                (check op-prev))
+              (do
+                (vreset! started? true)
+                (if start-key?
+                  (if (has? (Lib/mdb_cursor_get
+                              (.get cursor) (.getVal sk) (.getVal v) op-set))
+                    (if include-start?
+                      (continue?)
+                      (if forward?
+                        (check op-next)
+                        (check op-prev)))
                     (if (has? (Lib/mdb_cursor_get
-                                (.get cursor) (.getVal sk) (.getVal v) op-set))
-                      (if include-start?
+                                (.get cursor) (.getVal sk) (.getVal v)
+                                op-set-range))
+                      (if forward?
                         (continue?)
-                        (if forward? (check op-next) (check op-prev)))
-                      (seek))
-                    (start)))))))
+                        (check op-prev))
+                      (if forward?
+                        false
+                        (check op-last))))
+                  (if forward?
+                    (check op-first)
+                    (check op-last)))))))
         (next [_]
-          (get-cur)
-          (->KV k v))))))
+          (KV. k v))))))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.ms_psize ^Lib$MDB_stat (.get stat))
