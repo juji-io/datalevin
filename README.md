@@ -8,7 +8,7 @@
 src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.8.4"
 alt="datalevin linux/macos amd64 build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
-<a href="https://api.cirrus-ci.com/github/juji-io/datalevin"><img src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg"
+<a href="https://cirrus-ci.com/github/juji-io/datalevin"><img src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg"
 alt="datalevin apple silicon build status"></img></a>
 </p>
 
