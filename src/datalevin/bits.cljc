@@ -770,21 +770,11 @@
   ([^ByteBuffer bf v-type]
    (case v-type
      :string         (do (get-byte bf) (get-string bf))
-     :short          (get-short bf)
-     :int            (get-int bf)
-     :int-int        [(get-int bf) (get-int bf)]
      :bigint         (do (get-byte bf) (get-bigint bf))
      :bigdec         (do (get-byte bf) (get-bigdec bf))
-     :ints           (sl/get-ints bf)
-     :bitmap         (get-bitmap bf)
-     :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info       [(get-int bf) (get-short bf) (sl/get-ints bf)]
-     :pos-info       [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
      :long           (do (get-byte bf) (get-long bf))
-     :id             (get-long bf)
      :float          (do (get-byte bf) (get-float bf))
      :double         (do (get-byte bf) (get-double bf))
-     :byte           (get-byte bf)
      :bytes          (do (get-byte bf) (get-bytes bf))
      :keyword        (do (get-byte bf) (get-keyword bf 0))
      :symbol         (do (get-byte bf) (get-symbol bf 0))
@@ -799,7 +789,19 @@
      :avet           (get-ave bf)
      :vea            (get-vea bf)
      :veat           (get-vea bf)
+     :byte           (get-byte bf)
      :raw            (get-bytes bf)
+
+     ;; range query are NOT supported on these
+     :short     (get-short bf)
+     :int       (get-int bf)
+     :int-int   [(get-int bf) (get-int bf)]
+     :ints      (sl/get-ints bf)
+     :bitmap    (get-bitmap bf)
+     :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
+     :doc-info  [(get-int bf) (get-short bf) (sl/get-ints bf)]
+     :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
+     :id        (get-long bf)
      (get-data bf))))
 
 (defn valid-data?
