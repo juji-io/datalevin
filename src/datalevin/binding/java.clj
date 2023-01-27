@@ -12,20 +12,25 @@
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
-    Cursor CursorIterable$KeyVal GetOp SeekOp]
+    Cursor CursorIterable$KeyVal GetOp SeekOp KeyVal]
    [java.lang AutoCloseable]
    [java.util.concurrent ConcurrentLinkedQueue]
-   [java.util Iterator UUID ]
+   [java.util Iterator UUID]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
-   [clojure.lang IPersistentVector]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [java.nio ByteBuffer BufferOverflowException]))
+   [java.nio ByteBuffer BufferOverflowException]
+   [clojure.lang IPersistentVector MapEntry]
+   [datalevin.utl BufOps]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal
   (k [this] (.key ^CursorIterable$KeyVal this))
-  (v [this] (.val ^CursorIterable$KeyVal this)))
+  (v [this] (.val ^CursorIterable$KeyVal this))
+
+  MapEntry
+  (k [this] (.key ^MapEntry this))
+  (v [this] (.val ^MapEntry this)))
 
 (defn- flag
   [flag-key]
@@ -135,25 +140,9 @@
     (put-bf stop-kb k2 kt)
     (put-bf start-vb v1 vt)
     (put-bf stop-vb v2 vt)
-    (case range-type
-      :all               (KeyRange/all)
-      :all-back          (KeyRange/allBackward)
-      :at-least          (KeyRange/atLeast start-kb)
-      :at-most-back      (KeyRange/atLeastBackward start-kb)
-      :at-most           (KeyRange/atMost start-kb)
-      :at-least-back     (KeyRange/atMostBackward start-kb)
-      :closed            (KeyRange/closed start-kb stop-kb)
-      :closed-back       (KeyRange/closedBackward start-kb stop-kb)
-      :closed-open       (KeyRange/closedOpen start-kb stop-kb)
-      :closed-open-back  (KeyRange/closedOpenBackward start-kb stop-kb)
-      :greater-than      (KeyRange/greaterThan start-kb)
-      :less-than-back    (KeyRange/greaterThanBackward start-kb)
-      :less-than         (KeyRange/lessThan start-kb)
-      :greater-than-back (KeyRange/lessThanBackward start-kb)
-      :open              (KeyRange/open start-kb stop-kb)
-      :open-back         (KeyRange/openBackward start-kb stop-kb)
-      :open-closed       (KeyRange/openClosed start-kb stop-kb)
-      :open-closed-back  (KeyRange/openClosedBackward start-kb stop-kb)))
+    (let [kvalues (l/range-table k-range-type k1 k2 start-kb stop-kb)
+          vvalues (l/range-table v-range-type v1 v2 start-vb stop-vb)]
+      (into kvalues vvalues)))
 
   IRtx
   (read-only? [_]
@@ -243,10 +232,9 @@
                  [v-range-type v1 v2] v-type]
     (let [txn (.-txn ^Rtx rtx)
           cur (.get-cursor this txn)
-          [f? sk? is? ek? ie? sk ek]
-          (l/list-range-info rtx k-range-type k1 k2 k-type
-                             v-range-type v1 v2 v-type)]
-      (->ListIterable db cur rtx f? sk? is? ek? ie? sk ek)))
+          ctx (l/list-range-info rtx k-range-type k1 k2 k-type
+                                 v-range-type v1 v2 v-type)]
+      (->ListIterable this cur rtx ctx)))
   (get-cursor [_ txn]
     (or (when (.isReadOnly ^Txn txn)
           (when-let [^Cursor cur (.poll curs)]
@@ -261,108 +249,100 @@
 (deftype ListIterable [^DBI db
                        ^Cursor cur
                        ^Rtx rtx
-                       forward-key?
-                       start-key?
-                       include-start-key?
-                       stop-key?
-                       include-stop-key?
-                       ^ByteBuffer sk
-                       ^ByteBuffer ek
-                       forward-val?
-                       start-val?
-                       include-start-val?
-                       stop-val?
-                       include-stop-val?
-                       ^ByteBuffer sv
-                       ^ByteBuffer ev]
+                       ctx]
   AutoCloseable
   (close [_]
     (if (.isReadOnly ^Txn (.-txn rtx))
-      (.return-cursor db cursor)
-      (.close cursor)))
+      (.return-cursor db cur)
+      (.close cur)))
 
   Iterable
   (iterator [_]
-    (let [started?      (volatile! false)
-          ended?        (volatile! false)
-          ^ByteBuffer k (.-kb rtx)
-          ^ByteBuffer v (.-vb rtx)
+    (let [[forward-key?
+           start-key?
+           include-start-key?
+           stop-key?
+           include-stop-key?
+           ^ByteBuffer sk
+           ^ByteBuffer ek
+           forward-val?
+           start-val?
+           include-start-val?
+           stop-val?
+           include-stop-val?
+           ^ByteBuffer sv
+           ^ByteBuffer ev]
+          ctx
+          key-started?  (volatile! false)
+          key-ended?    (volatile! false)
+          val-started?  (volatile! false)
+          val-ended?    (volatile! false)
           ^Txn txn      (.-txn rtx)
           ^Dbi dbi      (.dbi db)
-          i             (.get dbi)
-          get-cur       (.get cur k v SeekOp/MDB_GET_CURRENT)]
+          key-end       #(do (vreset! key-ended? true) false)
+          val-end       #(do (vreset! val-ended? true) @key-ended?)
+          key-continue? #(if stop-key?
+                           (let [r (BufOps/compareByteBuf (.key cur) ek)]
+                             (if (= r 0)
+                               (do (vreset! key-ended? true)
+                                   include-stop-key?)
+                               (if (> r 0)
+                                 (if forward-key? (key-end) true)
+                                 (if forward-key? true (key-end)))))
+                           true)
+          check-key     #(if (.seek cur %) (key-continue?) (key-end))
+          advance-key   #(if forward-key?
+                           (check-key SeekOp/MDB_NEXT_NODUP)
+                           (check-key SeekOp/MDB_PREV_NODUP))
+          val-continue? #(if stop-val?
+                           (let [r (BufOps/compareByteBuf (.val cur) ev)]
+                             (if (= r 0)
+                               (if include-stop-val? true (val-end))
+                               (if (> r 0)
+                                 (if forward-val? (val-end) true)
+                                 (if forward-val? true (val-end)))))
+                           true)
+          check-val     #(if (.seek cur %) (val-continue?) (val-end))
+          advance-val   #(if forward-val?
+                           (check-val SeekOp/MDB_NEXT_DUP)
+                           (check-val SeekOp/MDB_PREV_DUP))
+          init-k        #(do
+                           (vreset! key-started? true)
+                           (if start-key?
+                             (if include-start-key?
+                               (.get cur sk GetOp/MDB_SET_KEY)
+                               (and (.get cur sk GetOp/MDB_SET_KEY)
+                                    (if forward-key?
+                                      (.seek cur SeekOp/MDB_NEXT_NODUP)
+                                      (.seek cur SeekOp/MDB_PREV_NODUP))))
+                             (if forward-key?
+                               (.seek cur SeekOp/MDB_FIRST)
+                               (.seek cur SeekOp/MDB_LAST))))
+          init-v        #(do
+                           (vreset! val-started? true)
+                           (if start-val?
+                             (if include-start-val?
+                               (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH)
+                               (and
+                                 (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH)
+                                 (if forward-val?
+                                   (.seek cur SeekOp/MDB_NEXT_DUP)
+                                   (.seek cur SeekOp/MDB_PREV_DUP))))
+                             (if forward-key?
+                               (.seek cur SeekOp/MDB_FIRST_DUP)
+                               (.seek cur SeekOp/MDB_LAST_DUP))))
+          ]
       (reify
         Iterator
         (hasNext [_]
-          (let [end       #(do (vreset! ended? true) false)
-                continue? #(if stop-key?
-                             (let [_ (get-cur)
-                                   r (Lib/mdb_cmp (.get txn) i (.getVal k)
-                                                  (.getVal ek))]
-                               (if (= r 0)
-                                 (do (vreset! ended? true)
-                                     include-stop?)
-                                 (if (> r 0)
-                                   (if forward? (end) true)
-                                   (if forward? true (end)))))
-                             true)
-                check     #(if (has?
-                                 (Lib/mdb_cursor_get
-                                   (.get cursor) (.getVal k) (.getVal v) %))
-                             (continue?)
-                             false)
-                check-dup #(if (has?
-                                 (Lib/mdb_cursor_get
-                                   (.get cursor) (.getVal k) (.getVal v) %))
-                             true
-                             (if @ended?
-                               false
-                               (if forward?
-                                 (check op-next-nodup)
-                                 (check op-prev-nodup))))
-                seek      #(if (has? (Lib/mdb_cursor_get
-                                       (.get cursor) (.getVal sk) (.getVal v)
-                                       op-set-range))
-                             (if forward? (continue?) (check op-prev))
-                             (if forward? false (check op-last)))
-                start     #(if forward? (check op-first) (check op-last))]
-            (if dupsort?
-              (if @ended?
-                (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
-                (if @started?
-                  (if forward? (check-dup op-next-dup) (check-dup op-prev-dup))
-                  (do
-                    (vreset! started? true)
-                    (if start-key?
-                      (if (has?
-                            (Lib/mdb_cursor_get
-                              (.get cursor) (.getVal sk) (.getVal v) op-set))
-                        (if include-start?
-                          (if forward?
-                            (check-dup op-first-dup)
-                            (check-dup op-last-dup))
-                          (if forward?
-                            (check-dup op-next-nodup)
-                            (check-dup op-prev-nodup)))
-                        (seek))
-                      (start)))))
-              (if @ended?
-                false
-                (if @started?
-                  (if forward? (check op-next) (check op-prev))
-                  (do
-                    (vreset! started? true)
-                    (if start-key?
-                      (if (has? (Lib/mdb_cursor_get
-                                  (.get cursor) (.getVal sk) (.getVal v) op-set))
-                        (if include-start?
-                          (continue?)
-                          (if forward? (check op-next) (check op-prev)))
-                        (seek))
-                      (start))))))))
+          (cond
+            (and (not @key-ended?) @val-ended?) (advance-key)
+            (and (not @key-started?)
+                 (not @val-started?))           (and (init-k) (init-v))
+            (not @val-ended?)                   (advance-val)
+            (and @key-ended? @val-ended?)       false))
         (next [_]
-          (get-cur)
-          (->KV k v))))))
+          (MapEntry. (.key cur) (.val cur)))))))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* ^long c/+buffer-grow-factor+

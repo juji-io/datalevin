@@ -9,7 +9,7 @@
 (defprotocol IRange
   (range-info [this range-type k1 k2 kt]
     "return key range information for kv iterators")
-  (list-range-info [this k-range-type k1 k2 kt v-range-type v1 v2 vt]
+  (list-range-info [this k-range-type k1 k2 kt v-range-type b1 b2 vt]
     "return key value range information for list iterators"))
 
 (defprotocol IRtx
@@ -194,3 +194,54 @@
                  (throw ~'e)))))
          (finally
            (when-not writing# (close-transact-kv ~orig-db)))))))
+
+(defn range-table
+  "produce following context values for iterator control logic:
+    * forward-key?
+    * start-key?
+    * include-start-key?
+    * stop-key?
+    * include-stop-key?
+    * start-key-buffer
+    * stop-key-buffer
+    * forward-val?
+    * start-val?
+    * include-start-val?
+    * stop-val?
+    * include-stop-val?
+    * start-val-buffer
+    * end-val-buffer"
+  [range-type k1 k2 b1 b2]
+  (let [chk1 #(if k1
+                %1
+                (u/raise "Missing start/end key for range type" %2 {}))
+        chk2 #(if (and k1 k2)
+                %1
+                (u/raise "Missing start/end key for range type" %2 {}))]
+    (case range-type
+      :all               [true false false false false nil nil]
+      :all-back          [false false false false false nil nil]
+      :at-least          (chk1 [true true true false false b1 nil] :at-least)
+      :at-most-back      (chk1 [false true true false false b1 nil]
+                               :at-most-back)
+      :at-most           (chk1 [true false false true true nil b1] :at-most)
+      :at-least-back     (chk1 [false false false true true nil b1]
+                               :at-least-back)
+      :closed            (chk2 [true true true true true b1 b2] :closed)
+      :closed-back       (chk2 [false true true true true b1 b2] :closed-back)
+      :closed-open       (chk2 [true true true true false b1 b2] :closed-open)
+      :closed-open-back  (chk2 [false true true true false b1 b2]
+                               :closed-open-back)
+      :greater-than      (chk1 [true true false false false b1 nil]
+                               :greater-than)
+      :less-than-back    (chk1 [false true false false false b1 nil]
+                               :less-than-back)
+      :less-than         (chk1 [true false false true false nil b1] :less-than)
+      :greater-than-back (chk1 [false false false true false nil b1]
+                               :greater-than-back)
+      :open              (chk2 [true true false true false b1 b2] :open)
+      :open-back         (chk2 [false true false true false b1 b2] :open-back)
+      :open-closed       (chk2 [true true false true true b1 b2] :open-closed)
+      :open-closed-back  (chk2 [false true false true true b1 b2]
+                               :open-closed-back)
+      (u/raise "Unknown range type" range-type {}))))

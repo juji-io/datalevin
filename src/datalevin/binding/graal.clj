@@ -15,7 +15,6 @@
    [java.lang AutoCloseable]
    [clojure.lang IPersistentVector]
    [org.graalvm.word WordFactory]
-   [datalevin.utl BufOps]
    [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
     Lib$MDB_stat Lib$MapFullException])
@@ -749,7 +748,7 @@
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
+            ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn) ]
         (try
           ;; (.put-start-key rtx k kt)
@@ -783,7 +782,7 @@
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
-            txn         (.-txn rtx)
+            ^Txn txn    (.-txn rtx)
             ^Cursor cur (.get-cursor dbi txn)]
         (try
           ;; (.put-start-key rtx k kt)
