@@ -22,7 +22,6 @@
    [java.nio ByteBuffer BufferOverflowException]
    [clojure.lang IPersistentVector MapEntry]
    [datalevin.spill SpillableVector]
-   [datalevin.utl BufOps]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]))
 
 (extend-protocol IKV
@@ -87,9 +86,9 @@
 
 (defn- put-bf
   [^ByteBuffer bf data type]
-  (when data
+  (when-some [x data]
     (.clear bf)
-    (b/put-buffer bf data type)
+    (b/put-buffer bf x type)
     (.flip bf)))
 
 (deftype Rtx [lmdb
@@ -278,13 +277,13 @@
              (and (.get cur sk GetOp/MDB_SET_RANGE)
                   (if include-start-key?
                     (if stop-key?
-                      (<= (BufOps/compareByteBuf (.key cur) ek) 0)
+                      (<= (b/compare-buffer (.key cur) ek) 0)
                       true)
                     (if forward-key?
-                      (if (zero? (BufOps/compareByteBuf (.key cur) sk))
+                      (if (zero? (b/compare-buffer (.key cur) sk))
                         (.seek cur SeekOp/MDB_NEXT_NODUP)
                         (if stop-key?
-                          (<= (BufOps/compareByteBuf (.key cur) ek) 0)
+                          (<= (b/compare-buffer (.key cur) ek) 0)
                           true))
                       (.seek cur SeekOp/MDB_PREV_NODUP))))
              (if forward-key?
@@ -294,7 +293,7 @@
           init-val
           #(if start-val?
              (and (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
-                  (let [rs (BufOps/compareByteBuf (.val cur) sv)]
+                  (let [rs (b/compare-buffer (.val cur) sv)]
                     (if (= rs 0)
                       (if include-start-val?
                         true
@@ -304,20 +303,20 @@
                       (if (> rs 0)
                         (if forward-val?
                           (if stop-val?
-                            (<= (BufOps/compareByteBuf (.val cur) ev) 0)
+                            (<= (b/compare-buffer (.val cur) ev) 0)
                             true)
                           (.seek cur SeekOp/MDB_PREV_DUP))
                         (if forward-val?
                           (.seek cur SeekOp/MDB_NEXT_DUP)
                           (if stop-val?
-                            (>= (BufOps/compareByteBuf (.val cur) ev) 0)
+                            (>= (b/compare-buffer (.val cur) ev) 0)
                             true))))))
              (if forward-val?
                (.seek cur SeekOp/MDB_FIRST_DUP)
                (.seek cur SeekOp/MDB_LAST_DUP)))
           key-end       #(do (vreset! key-ended? true) false)
           key-continue? #(if stop-key?
-                           (let [r (BufOps/compareByteBuf (.key cur) ek)]
+                           (let [r (b/compare-buffer (.key cur) ek)]
                              (if (= r 0)
                                (do (vreset! key-ended? true)
                                    include-stop-key?)
@@ -336,7 +335,7 @@
                                  (advance-key)))
           val-end       #(if @key-ended? false (advance-key))
           val-continue? #(if stop-val?
-                           (let [r (BufOps/compareByteBuf (.val cur) ev)]
+                           (let [r (b/compare-buffer (.val cur) ev)]
                              (if (= r 0)
                                (if include-stop-val? true (val-end))
                                (if (> r 0)
@@ -779,7 +778,17 @@
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
 
-  )
+  (list-range-count [this dbi-name k-range kt v-range vt]
+    (scan/list-range-count this dbi-name k-range kt v-range vt))
+
+  (list-range-filter [this dbi-name pred k-range kt v-range vt]
+    (scan/list-range-filter this dbi-name pred k-range kt v-range vt))
+
+  (list-range-filter-count [this dbi-name pred k-range kt v-range vt]
+    (scan/list-range-filter-count this dbi-name pred k-range kt v-range vt))
+
+  (visit-list-range [this dbi-name visitor k-range kt v-range vt]
+    (scan/visit-list-range this dbi-name visitor k-range kt v-range vt)))
 
 (defn- reset-write-txn
   [^LMDB lmdb]

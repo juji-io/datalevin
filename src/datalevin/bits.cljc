@@ -3,7 +3,6 @@
   (:require
    [datalevin.constants :as c]
    [datalevin.util :as u]
-   [datalevin.datom :as dd]
    [datalevin.sparselist :as sl]
    [clojure.string :as s]
    [taoensso.nippy :as nippy])
@@ -17,7 +16,7 @@
    [java.lang String Character]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
    [me.lemire.integercompression IntCompressor]
-   [datalevin.utl BitOps]))
+   [datalevin.utl BitOps BufOps]))
 
 (defonce base64-encoder (.withoutPadding (Base64/getEncoder)))
 
@@ -146,6 +145,10 @@
    (.put dst src))
   ([^ByteBuffer src ^ByteBuffer dst n]
    (dotimes [_ n] (.put dst (.get src)))))
+
+(defn compare-buffer
+  ^long [^ByteBuffer b1 ^ByteBuffer b2]
+  (BufOps/compareByteBuf b1 b2))
 
 (defn- get-long
   "Get a long from a ByteBuffer"

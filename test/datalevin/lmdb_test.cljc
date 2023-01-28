@@ -206,7 +206,7 @@
                       gen/any-equatable)
      v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
                       gen/any-equatable)]
-    (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+    (let [dir    (u/tmp-dir (str "data-test-" (UUID/randomUUID)))
           lmdb   (l/open-kv dir)
           _      (l/open-dbi lmdb "a")
           _      (l/transact-kv lmdb [[:put "a" k v]])
@@ -254,10 +254,6 @@
 (deftest list-basic-ops-test
   (let [dir     (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
         lmdb    (l/open-kv dir)
-        pred    (i/inter-fn
-                  [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :long)]
-                    (odd? v)))
         sum     (volatile! 0)
         visitor (i/inter-fn
                   [kv]
@@ -278,8 +274,9 @@
            (l/get-range lmdb "list" [:closed "b" "b"] :string :long)))
     (is (= [["b" 5] ["b" 6] ["b" 7]]
            (l/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
-    ;; TODO backward list doesn't work in LMDBJava
-    ;; (is (= [["c" 9] ["c" 6] ["b" 7] ["b" 6] ["b" 5]
+
+    ;; NOTE: backward list doesn't work in LMDBJava, hence our list fns
+    ;; (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
     ;;         ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
     ;;        (l/get-range lmdb "list" [:all-back] :string :long)))
 
@@ -363,6 +360,10 @@
            (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
     (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
            (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
+
+    (is (= [["b" "nice"]]
+           (l/list-range-filter lmdb "str" pred [:greater-than "a"] :string
+                                [:all] :string)))
 
     (is (= ["a" "abc"]
            (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))

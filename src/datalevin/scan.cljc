@@ -318,9 +318,11 @@
           (if (.hasNext iter)
             (let [kv (.next iter)]
               (if (pred kv)
-                (do (.cons holder [(b/read-buffer (l/k kv) k-type)
-                                   (b/read-buffer (l/v kv) v-type)])
-                    (recur iter))
+                (let [k (.rewind ^ByteBuffer (l/k kv))
+                      v (.rewind ^ByteBuffer (l/v kv))]
+                  (.cons holder [(b/read-buffer k k-type)
+                                 (b/read-buffer v v-type)])
+                  (recur iter))
                 (recur iter)))
             holder))))
     (raise "Fail to filter list range: " e

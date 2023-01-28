@@ -1,15 +1,17 @@
 (ns ^:no-doc datalevin.storage
   "Storage layer of Datalog store"
-  (:require [datalevin.lmdb :as lmdb :refer [IWriting]]
-            [datalevin.util :as u]
-            [datalevin.bits :as b]
-            [datalevin.search :as s]
-            [datalevin.constants :as c]
-            [datalevin.datom :as d]
-            [clojure.string :as str])
-  (:import [java.util UUID]
-           [datalevin.datom Datom]
-           [datalevin.bits Retrieved]))
+  (:require
+   [datalevin.lmdb :as lmdb :refer [IWriting]]
+   [datalevin.util :as u]
+   [datalevin.bits :as b]
+   [datalevin.search :as s]
+   [datalevin.constants :as c]
+   [datalevin.datom :as d]
+   [clojure.string :as str])
+  (:import
+   [java.util UUID]
+   [datalevin.datom Datom]
+   [datalevin.bits Retrieved]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)

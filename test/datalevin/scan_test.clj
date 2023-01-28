@@ -473,9 +473,26 @@
 
 (deftest list-fns-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir)
+        pred (i/inter-fn
+               [kv]
+               (let [^long v (b/read-buffer (l/v kv) :long)]
+                 (odd? v)))
+        ]
     (l/open-list-dbi lmdb "a")
     (l/put-list-items lmdb "a" 1 [3 4 3 2] :long :long)
-    (is (= 3 (l/list-count lmdb "a" 1 :long)))
+    (l/put-list-items lmdb "a" 2 [7 9 4 3 2] :long :long)
+    (l/put-list-items lmdb "a" 4 [14 13 20] :long :long)
+    (l/put-list-items lmdb "a" 5 [7 9 14 30 12] :long :long)
+    (l/put-list-items lmdb "a" 8 [17 9 4 3 12] :long :long)
+
+    (is (= 3 (l/list-count lmdb "a" 1 :long))) ;; set behavior
+    (is (l/in-list? lmdb "a" 8 17 :long :long))
+    (is (= [2 3 4] (l/get-list lmdb "a" 1 :long :long)))
+
+    (l/del-list-items lmdb "a" 8 [17 3] :long :long)
+    (is (not (l/in-list? lmdb "a" 8 17 :long :long)))
+
+
     (l/close-kv lmdb)
     (u/delete-files dir)))
