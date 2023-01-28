@@ -270,120 +270,89 @@
            ^ByteBuffer sv
            ^ByteBuffer ev] ctx
 
-          key-ended?   (volatile! false)
-          val-started? (volatile! false)
+          key-ended? (volatile! false)
+          started?   (volatile! false)
 
           init-key
-          #(do
-             (println "init-key")
-             (if start-key?
-               (and (.get cur sk GetOp/MDB_SET_RANGE)
-                    (if include-start-key?
-                      (if stop-key?
-                        (<= (BufOps/compareByteBuf (.key cur) ek) 0)
-                        true)
-                      (if forward-key?
-                        (if (zero? (BufOps/compareByteBuf (.key cur) sk))
-                          (.seek cur SeekOp/MDB_NEXT_NODUP)
-                          (if stop-key?
-                            (<= (BufOps/compareByteBuf (.key cur) ek) 0)
-                            true))
-                        (.seek cur SeekOp/MDB_PREV_NODUP))))
-               (if forward-key?
-                 (.seek cur SeekOp/MDB_FIRST)
-                 (.seek cur SeekOp/MDB_LAST))))
+          #(if start-key?
+             (and (.get cur sk GetOp/MDB_SET_RANGE)
+                  (if include-start-key?
+                    (if stop-key?
+                      (<= (BufOps/compareByteBuf (.key cur) ek) 0)
+                      true)
+                    (if forward-key?
+                      (if (zero? (BufOps/compareByteBuf (.key cur) sk))
+                        (.seek cur SeekOp/MDB_NEXT_NODUP)
+                        (if stop-key?
+                          (<= (BufOps/compareByteBuf (.key cur) ek) 0)
+                          true))
+                      (.seek cur SeekOp/MDB_PREV_NODUP))))
+             (if forward-key?
+               (.seek cur SeekOp/MDB_FIRST)
+               (.seek cur SeekOp/MDB_LAST)))
+
           init-val
-          #(do
-             (let [^ByteBuffer k (.key cur)]
-               (when-not (zero? (.limit k))
-                 (println "init-val cur key =>" (b/read-buffer k :string))
-                 (.rewind k)))
-             (vreset! val-started? true)
-             (if start-val?
-               (and (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
-                    (let [rs (BufOps/compareByteBuf (.val cur) sv)]
-                      (if (= rs 0)
-                        (if include-start-val?
-                          true
-                          (if forward-val?
-                            (.seek cur SeekOp/MDB_NEXT_DUP)
-                            (.seek cur SeekOp/MDB_PREV_DUP)))
-                        (if (> rs 0)
-                          (if forward-val?
-                            (if stop-val?
-                              (<= (BufOps/compareByteBuf (.val cur) ev) 0)
-                              true)
-                            (.seek cur SeekOp/MDB_PREV_DUP))
-                          (if forward-val?
-                            (.seek cur SeekOp/MDB_NEXT_DUP)
-                            (if stop-val?
-                              (>= (BufOps/compareByteBuf (.val cur) ev) 0)
-                              true))))))
-               (if forward-val?
-                 (.seek cur SeekOp/MDB_FIRST_DUP)
-                 (.seek cur SeekOp/MDB_LAST_DUP))))
-          key-end       #(do
-                           (println "key-end")
-                           (vreset! key-ended? true) false)
-          key-continue? #(do
-                           (println "key-continue?")
-                           (if stop-key?
-                             (let [r (BufOps/compareByteBuf (.key cur) ek)]
-                               (if (= r 0)
-                                 (do (vreset! key-ended? true)
-                                     include-stop-key?)
-                                 (if (> r 0)
-                                   (if forward-key? (key-end) true)
-                                   (if forward-key? true (key-end)))))
-                             true))
-          check-key     #(do
-                           (println "check-key")
-                           (if (.seek cur %) (key-continue?) (key-end)))
+          #(if start-val?
+             (and (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
+                  (let [rs (BufOps/compareByteBuf (.val cur) sv)]
+                    (if (= rs 0)
+                      (if include-start-val?
+                        true
+                        (if forward-val?
+                          (.seek cur SeekOp/MDB_NEXT_DUP)
+                          (.seek cur SeekOp/MDB_PREV_DUP)))
+                      (if (> rs 0)
+                        (if forward-val?
+                          (if stop-val?
+                            (<= (BufOps/compareByteBuf (.val cur) ev) 0)
+                            true)
+                          (.seek cur SeekOp/MDB_PREV_DUP))
+                        (if forward-val?
+                          (.seek cur SeekOp/MDB_NEXT_DUP)
+                          (if stop-val?
+                            (>= (BufOps/compareByteBuf (.val cur) ev) 0)
+                            true))))))
+             (if forward-val?
+               (.seek cur SeekOp/MDB_FIRST_DUP)
+               (.seek cur SeekOp/MDB_LAST_DUP)))
+          key-end       #(do (vreset! key-ended? true) false)
+          key-continue? #(if stop-key?
+                           (let [r (BufOps/compareByteBuf (.key cur) ek)]
+                             (if (= r 0)
+                               (do (vreset! key-ended? true)
+                                   include-stop-key?)
+                               (if (> r 0)
+                                 (if forward-key? (key-end) true)
+                                 (if forward-key? true (key-end)))))
+                           true)
+          check-key     #(if (.seek cur %) (key-continue?) (key-end))
           advance-key   #(or (and (if forward-key?
                                     (check-key SeekOp/MDB_NEXT_NODUP)
                                     (check-key SeekOp/MDB_PREV_NODUP))
                                   (init-val))
                              (if @key-ended? false (recur)))
-          init-kv       #(or (and (init-key) (init-val))
-                             (advance-key))
-          val-end       #(do
-                           (println "val-end")
-                           (if @key-ended? false (advance-key)))
-          val-continue? #(do
-                           (println "val-continue?")
-                           (if stop-val?
-                             (let [r (BufOps/compareByteBuf
-                                       (.val cur) ev)]
-                               (if (= r 0)
-                                 (if include-stop-val? true (val-end))
-                                 (if (> r 0)
-                                   (if forward-val? (val-end) true)
-                                   (if forward-val? true (val-end)))))
-                             true))
-          check-val     #(do
-                           (println "check-val")
-                           (if (.seek cur %) (val-continue?) (val-end)))
+          init-kv       #(do (vreset! started? true)
+                             (or (and (init-key) (init-val))
+                                 (advance-key)))
+          val-end       #(if @key-ended? false (advance-key))
+          val-continue? #(if stop-val?
+                           (let [r (BufOps/compareByteBuf (.val cur) ev)]
+                             (if (= r 0)
+                               (if include-stop-val? true (val-end))
+                               (if (> r 0)
+                                 (if forward-val? (val-end) true)
+                                 (if forward-val? true (val-end)))))
+                           true)
+          check-val     #(if (.seek cur %) (val-continue?) (val-end))
           advance-val   #(if forward-val?
                            (check-val SeekOp/MDB_NEXT_DUP)
-                           (check-val SeekOp/MDB_PREV_DUP))
-          ]
+                           (check-val SeekOp/MDB_PREV_DUP))]
       (reify
         Iterator
         (hasNext [_]
-          (if (not @val-started?)
-            (init-kv)
-            (advance-val)))
+          (if (not @started?) (init-kv) (advance-val)))
         (next [_]
-          (println "~~~")
-          (let [^ByteBuffer k (.key cur)
-                ^ByteBuffer v (.val cur)]
-            (when-not (zero? (.limit k))
-              (println "cur key =>" (b/read-buffer k :string))
-              (.rewind k))
-            (when-not (zero? (.limit v))
-              (println "cur val =>" (b/read-buffer v :long))
-              (.rewind v))
-            (MapEntry. k v)))))))
+          (MapEntry. (.key cur) (.val cur)))))))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* ^long c/+buffer-grow-factor+

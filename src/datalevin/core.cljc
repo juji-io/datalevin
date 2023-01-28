@@ -387,6 +387,8 @@ Only usable for debug output.
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
 
+(declare close open-kv clear-dbi close-kv)
+
 (defn clear
   "Close the Datalog database, then clear all data, including schema."
   [conn]
