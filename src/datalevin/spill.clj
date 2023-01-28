@@ -205,6 +205,8 @@
 
   (toString [this] (str (into [] this)))
 
+  ;; TODO migrate to cleaner API when dropping Java 8 support
+  ;; as finalizer API is scheduled to be removed in future JVM
   (finalize ^void [_]
     (when @disk
       (l/close-kv @disk)

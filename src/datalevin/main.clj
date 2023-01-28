@@ -426,11 +426,11 @@
                                (map #(apply d/datom %)))]
         (d/init-db datoms dir schema opts)))
     (catch IOException e
-      (raise "IO error while loading Datalog data: " (ex-message e) {}))
+      (raise "IO error while loading Datalog data: " e {}))
     (catch RuntimeException e
-      (raise "Parse error while loading Datalog data: " (ex-message e) {}))
+      (raise "Parse error while loading Datalog data: " e {}))
     (catch Exception e
-      (raise "Error loading Datalog data: " (ex-message e) {}))))
+      (raise "Error loading Datalog data: " e {}))))
 
 (defn- load-kv [dbi [k v]]
   [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
@@ -446,11 +446,11 @@
                                  (take entries)
                                  (map (partial load-kv dbi))))))
     (catch IOException e
-      (raise "IO error while loading raw data: " (ex-message e) {}))
+      (raise "IO error while loading raw data: " e {}))
     (catch RuntimeException e
-      (raise "Parse error while loading raw data: " (ex-message e) {}))
+      (raise "Parse error while loading raw data: " e {}))
     (catch Exception e
-      (raise "Error loading raw data: " (ex-message e) {}))))
+      (raise "Error loading raw data: " e {}))))
 
 (defn- load-all [lmdb in]
   (try
@@ -470,11 +470,11 @@
                                  (partition 2 2 nil)
                                  (mapcat load-dbi)))))
     (catch IOException e
-      (raise "IO error while loading raw data: " (ex-message e) {}))
+      (raise "IO error while loading raw data: " e {}))
     (catch RuntimeException e
-      (raise "Parse error while loading raw data: " (ex-message e) {}))
+      (raise "Parse error while loading raw data: " e {}))
     (catch Exception e
-      (raise "Error loading raw data: " (ex-message e) {}))))
+      (raise "Error loading raw data: " e {}))))
 
 (defn load
   "Load content into the database at data directory path `dir`,

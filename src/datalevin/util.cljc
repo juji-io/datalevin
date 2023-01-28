@@ -108,9 +108,9 @@
         (create-dirs path))
       (io/file path))
     (catch AccessDeniedException e
-      (raise "Access denied " (ex-message e) {:path path}))
+      (raise "Access denied " e {:path path}))
     (catch Exception e
-      (raise "Error openning file " (ex-message e) {:path path}))))
+      (raise "Error openning file " e {:path path}))))
 
 (defn empty-dir?
   "test if the given File is an empty directory"

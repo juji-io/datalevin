@@ -39,7 +39,7 @@
         (ByteArrayInputStream. (.getBytes s "utf-8")) :json
         {:handlers transit-read-handlers}))
     (catch Exception e
-      (u/raise "Unable to read transit:" (ex-message e) {:string s}))))
+      (u/raise "Unable to read transit:" e {:string s}))))
 
 (defn write-transit-string
   "Write a Clojure value as a transit+json encoded string"
@@ -50,7 +50,7 @@
         (transit/writer baos :json {:handlers transit-write-handlers}) v)
       (.toString baos "utf-8"))
     (catch Exception e
-      (u/raise "Unable to write transit:" (ex-message e) {:value v}))))
+      (u/raise "Unable to write transit:" e {:value v}))))
 
 (defn read-nippy-bf
   "Read from a ByteBuffer containing nippy encoded bytes, return a Clojure

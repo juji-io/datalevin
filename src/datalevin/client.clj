@@ -35,7 +35,7 @@
           (send-n-receive this msg)))
       (catch Exception e
         (u/raise "Error sending message and receiving response: "
-                 (ex-message e) {:msg msg}))))
+                 e {:msg msg}))))
 
   (send-only [this msg]
     (try
@@ -45,7 +45,7 @@
           (set! bf (b/allocate-buffer size))
           (send-only this msg)))
       (catch Exception e
-        (u/raise "Error sending message: " (ex-message e) {:msg msg}))))
+        (u/raise "Error sending message: " e {:msg msg}))))
 
   (receive [this]
     (try
@@ -53,7 +53,7 @@
         (when-not (identical? bf' bf) (set! bf bf'))
         resp)
       (catch Exception e
-        (u/raise "Error receiving data:" (ex-message e) {}))))
+        (u/raise "Error receiving data:" e {}))))
 
   (close [this]
     (.close ch)))
@@ -67,7 +67,7 @@
       (.setOption StandardSocketOptions/TCP_NODELAY true)
       (.connect (InetSocketAddress. host ^int port)))
     (catch Exception e
-      (u/raise "Unable to connect to server: " (ex-message e)
+      (u/raise "Unable to connect to server: " e
                {:host host :port port}))))
 
 (defn- new-connection
@@ -210,7 +210,7 @@
             (do (doseq [d msg] (conj! data d))
                 (recur))))))
     (catch Exception e
-      (u/raise "Unable to receive copy:" (ex-message e) {:req req}))))
+      (u/raise "Unable to receive copy:" e {:req req}))))
 
 (defn- copy-in*
   [conn req data batch-size ]
@@ -223,7 +223,7 @@
         result))
     (catch Exception e
       (send-n-receive conn {:type :copy-fail})
-      (u/raise "Unable to copy in:" (ex-message e)
+      (u/raise "Unable to copy in:" e
                {:req req :count (count data)}))))
 
 (deftype ^:no-doc Client [username password host port pool-size time-out

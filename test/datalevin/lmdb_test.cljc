@@ -251,130 +251,149 @@
 ;;                   (u/delete-files dir)
 ;;                   (is (and put-ok del-ok)))))
 
-#_(deftest list-basic-ops-test
-    (let [dir     (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
-          lmdb    (l/open-kv dir)
-          pred    (i/inter-fn
-                    [kv]
-                    (let [^long v (b/read-buffer (l/v kv) :long)]
-                      (odd? v)))
-          sum     (volatile! 0)
-          visitor (i/inter-fn
-                    [kv]
-                    (let [^long v (b/read-buffer (l/v kv) :long)]
-                      (vswap! sum #(+ ^long %1 ^long %2) v)))]
-      (l/open-list-dbi lmdb "list")
+(deftest list-basic-ops-test
+  (let [dir     (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
+        lmdb    (l/open-kv dir)
+        pred    (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (odd? v)))
+        sum     (volatile! 0)
+        visitor (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
+    (l/open-list-dbi lmdb "list")
 
-      (l/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
-      (l/put-list-items lmdb "list" "b" [5 6 7] :string :long)
-      (l/put-list-items lmdb "list" "c" [3 6 9] :string :long)
+    (l/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
+    (l/put-list-items lmdb "list" "b" [5 6 7] :string :long)
+    (l/put-list-items lmdb "list" "c" [3 6 9] :string :long)
 
-      (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
-              ["c" 3] ["c" 6] ["c" 9]]
-             (l/get-range lmdb "list" [:all] :string :long)))
-      ;; TODO this doesn't work in LMDBJava
-      (is (= [["c" 9] ["c" 6] ["b" 7] ["b" 6] ["b" 5]
-              ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
-             (l/get-range lmdb "list" [:all-back] :string :long)))
-      (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
-             (l/get-range lmdb "list" [:closed "a" "b"] :string :long)))
-      ;; TODO this doesn't work in LMDBJava
-      (is (= [["b" 7] ["b" 6] ["b" 5] ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
-             (l/get-range lmdb "list" [:closed-back "b" "a"] :string :long)))
-      (is (= [["b" 5] ["b" 6] ["b" 7]]
-             (l/get-range lmdb "list" [:closed "b" "b"] :string :long)))
-      (is (= [["b" 5] ["b" 6] ["b" 7]]
-             (l/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
+            ["c" 3] ["c" 6] ["c" 9]]
+           (l/get-range lmdb "list" [:all] :string :long)))
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "list" [:closed "a" "b"] :string :long)))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "list" [:closed "b" "b"] :string :long)))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
+    ;; TODO backward list doesn't work in LMDBJava
+    ;; (is (= [["c" 9] ["c" 6] ["b" 7] ["b" 6] ["b" 5]
+    ;;         ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
+    ;;        (l/get-range lmdb "list" [:all-back] :string :long)))
 
-      (is (= ["a" 1]
-             (l/get-first lmdb "list" [:closed "a" "a"] :string :long)))
+    (is (= ["a" 1]
+           (l/get-first lmdb "list" [:closed "a" "a"] :string :long)))
 
-      (is (= (l/list-count lmdb "list" "a" :string) 4))
-      (is (= (l/list-count lmdb "list" "b" :string) 3))
+    (is (= [3 6 9]
+           (l/get-list lmdb "list" "c" :string :long)))
 
-      (is (not (l/in-list? lmdb "list" "a" 7 :string :long)))
-      (is (l/in-list? lmdb "list" "b" 7 :string :long))
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
+            ["c" 3] ["c" 6] ["c" 9]]
+           (l/list-range lmdb "list" [:all] :string [:all] :long)))
+    (is (= [["a" 2] ["a" 3] ["a" 4] ["c" 3]]
+           (l/list-range lmdb "list" [:closed "a" "c"] :string
+                         [:closed 2 4] :long)))
+    (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
+            ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
+           (l/list-range lmdb "list" [:all-back] :string [:all-back] :long)))
+    (is (= [["c" 3]]
+           (l/list-range lmdb "list" [:at-least "b"] :string
+                         [:at-most-back 4] :long)))
 
-      (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+    (is (= [["b" 5]]
+           (l/list-range lmdb "list" [:open "a" "c"] :string
+                         [:less-than 6] :long)))
 
-      (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+    (is (= (l/list-count lmdb "list" "a" :string) 4))
+    (is (= (l/list-count lmdb "list" "b" :string) 3))
 
-      (l/visit-list lmdb "list" visitor "a" :string)
-      (is (= @sum 10))
+    (is (not (l/in-list? lmdb "list" "a" 7 :string :long)))
+    (is (l/in-list? lmdb "list" "b" 7 :string :long))
 
-      (l/del-list-items lmdb "list" "a" :string)
+    (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+    (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
 
-      (is (= (l/list-count lmdb "list" "a" :string) 0))
-      (is (not (l/in-list? lmdb "list" "a" 1 :string :long)))
-      (is (nil? (l/get-list lmdb "list" "a" :string :long)))
+    (l/visit-list lmdb "list" visitor "a" :string)
+    (is (= @sum 10))
 
-      (l/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
+    (l/del-list-items lmdb "list" "a" :string)
 
-      (is (= (l/list-count lmdb "list" "b" :string) 7))
-      (is (l/in-list? lmdb "list" "b" 1 :string :long))
+    (is (= (l/list-count lmdb "list" "a" :string) 0))
+    (is (not (l/in-list? lmdb "list" "a" 1 :string :long)))
+    (is (nil? (l/get-list lmdb "list" "a" :string :long)))
 
-      (l/del-list-items lmdb "list" "b" [1 2] :string :long)
+    (l/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
 
-      (is (= (l/list-count lmdb "list" "b" :string) 5))
-      (is (not (l/in-list? lmdb "list" "b" 1 :string :long)))
+    (is (= [1 2 3 4 5 6 7]
+           (l/get-list lmdb "list" "b" :string :long)))
+    (is (= (l/list-count lmdb "list" "b" :string) 7))
+    (is (l/in-list? lmdb "list" "b" 1 :string :long))
 
+    (l/del-list-items lmdb "list" "b" [1 2] :string :long)
 
-      (l/close-kv lmdb)
-      (u/delete-files dir)))
+    (is (= (l/list-count lmdb "list" "b" :string) 5))
+    (is (not (l/in-list? lmdb "list" "b" 1 :string :long)))
+    (is (= [3 4 5 6 7]
+           (l/get-list lmdb "list" "b" :string :long)))
 
-#_(deftest list-string-test
-    (let [dir  (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
-          lmdb (l/open-kv dir)
-          pred (i/inter-fn
-                 [kv]
-                 (let [^String v (b/read-buffer (l/v kv) :string)]
-                   (< (count v) 5)))]
-      (l/open-list-dbi lmdb "str")
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
-      (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
-      (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
+(deftest list-string-test
+  (let [dir  (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        pred (i/inter-fn
+               [kv]
+               (let [^String v (b/read-buffer (l/v kv) :string)]
+                 (< (count v) 5)))]
+    (l/open-list-dbi lmdb "str")
 
-      (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
-              ["b" "hello"] ["b" "nice"] ["b" "world"]]
-             (l/get-range lmdb "str" [:all] :string :string)))
-      (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
-              ["b" "hello"] ["b" "nice"] ["b" "world"]]
-             (l/get-range lmdb "str" [:closed "a" "b"] :string :string)))
-      (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
-             (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
-      (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
-             (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
+    (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
+    (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
 
-      (is (= ["a" "abc"]
-             (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))
+    (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
+            ["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:all] :string :string)))
+    (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
+            ["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:closed "a" "b"] :string :string)))
+    (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
+    (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
 
-      (is (= (l/list-count lmdb "str" "a" :string) 3))
-      (is (= (l/list-count lmdb "str" "b" :string) 3))
+    (is (= ["a" "abc"]
+           (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))
 
-      (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
-      (is (l/in-list? lmdb "str" "b" "hello" :string :string))
+    (is (= (l/list-count lmdb "str" "a" :string) 3))
+    (is (= (l/list-count lmdb "str" "b" :string) 3))
 
-      (is (= (l/get-list lmdb "str" "a" :string :string)
-             ["abc" "defg" "hi"]))
+    (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
+    (is (l/in-list? lmdb "str" "b" "hello" :string :string))
 
-      (l/del-list-items lmdb "str" "a" :string)
+    (is (= (l/get-list lmdb "str" "a" :string :string)
+           ["abc" "defg" "hi"]))
 
-      (is (= (l/list-count lmdb "str" "a" :string) 0))
-      (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
-      (is (nil? (l/get-list lmdb "str" "a" :string :string)))
+    (l/del-list-items lmdb "str" "a" :string)
 
-      (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
+    (is (= (l/list-count lmdb "str" "a" :string) 0))
+    (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
+    (is (nil? (l/get-list lmdb "str" "a" :string :string)))
 
-      (is (= (l/list-count lmdb "str" "b" :string) 5))
-      (is (l/in-list? lmdb "str" "b" "good" :string :string))
+    (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
 
-      (l/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
+    (is (= (l/list-count lmdb "str" "b" :string) 5))
+    (is (l/in-list? lmdb "str" "b" "good" :string :string))
 
-      (is (= (l/list-count lmdb "str" "b" :string) 3))
-      (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
+    (l/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
 
-      (l/close-kv lmdb)
-      (u/delete-files dir)))
+    (is (= (l/list-count lmdb "str" "b" :string) 3))
+    (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
 
 ;; (deftest validate-data-test
 ;;   (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))

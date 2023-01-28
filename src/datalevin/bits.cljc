@@ -791,17 +791,16 @@
      :veat           (get-vea bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
-
+     :short          (get-short bf)
+     :int            (get-int bf)
+     :id             (get-long bf)
      ;; range query are NOT supported on these
-     :short     (get-short bf)
-     :int       (get-int bf)
-     :int-int   [(get-int bf) (get-int bf)]
-     :ints      (sl/get-ints bf)
-     :bitmap    (get-bitmap bf)
-     :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info  [(get-int bf) (get-short bf) (sl/get-ints bf)]
-     :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
-     :id        (get-long bf)
+     :int-int        [(get-int bf) (get-int bf)]
+     :ints           (sl/get-ints bf)
+     :bitmap         (get-bitmap bf)
+     :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
+     :doc-info       [(get-int bf) (get-short bf) (sl/get-ints bf)]
+     :pos-info       [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
      (get-data bf))))
 
 (defn valid-data?

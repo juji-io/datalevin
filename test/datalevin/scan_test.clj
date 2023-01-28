@@ -470,3 +470,12 @@
            (eduction (map identity) (l/get-range lmdb "a" [:all]))))
     (l/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest list-fns-test
+  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-list-dbi lmdb "a")
+    (l/put-list-items lmdb "a" 1 [3 4 3 2] :long :long)
+    (is (= 3 (l/list-count lmdb "a" 1 :long)))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))

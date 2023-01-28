@@ -731,7 +731,7 @@
       (.bind (InetSocketAddress. port))
       (.configureBlocking false))
     (catch Exception e
-      (u/raise "Error opening port:" (ex-message e) {}))))
+      (u/raise "Error opening port:" e {}))))
 
 (defn- get-ip [^SelectionKey skey]
   (let [ch ^SocketChannel (.channel skey)]
@@ -756,7 +756,7 @@
      ~@body
      (catch Exception ~'e
        (log/error ~'e)
-       (error-response ~'skey (ex-message ~'e) (ex-data ~'e)))))
+       (error-response ~'skey ~'e (ex-data ~'e)))))
 
 ;; db
 
@@ -2003,7 +2003,7 @@
     (catch Exception e
       ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"
-                                (ex-message e))))))
+                                e)))))
 
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]
@@ -2015,7 +2015,7 @@
         (message-cases skey type)))
     (catch Exception e
       ;; (stt/print-stack-trace e)
-      (log/error "Error Handling message:" (ex-message e)))))
+      (log/error "Error Handling message:" e))))
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
@@ -2042,10 +2042,10 @@
     (catch java.io.IOException e
       (if (s/includes? (ex-message e) "Connection reset by peer")
         (.close (.channel skey))
-        (log/error "Read IOException:" (ex-message e))))
+        (log/error "Read IOException:" e)))
     (catch Exception e
       ;; (stt/print-stack-trace e)
-      (log/error "Read error:" (ex-message e)))))
+      (log/error "Read error:" e))))
 
 (defn- handle-registration
   [^Server server]
@@ -2103,4 +2103,4 @@
                 clients
                 dbs))
     (catch Exception e
-      (u/raise "Error creating server:" (ex-message e) {}))))
+      (u/raise "Error creating server:" e {}))))

@@ -387,6 +387,16 @@ Only usable for debug output.
   {:pre [(db/db? db)]}
   (:db-after (with db tx-data)))
 
+(defn clear
+  "Close the Datalog database, then clear all data, including schema."
+  [conn]
+  (close conn)
+  (let [dir  (s/dir ^Store (.-store ^DB @conn))
+        lmdb (open-kv dir)]
+    (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
+      (clear-dbi lmdb dbi))
+    (close-kv lmdb)))
+
 ;; Index lookups
 
 (defn datoms
@@ -566,7 +576,6 @@ Only usable for debug output.
   ([datoms dir] (conn-from-db (init-db datoms dir)))
   ([datoms dir schema] (conn-from-db (init-db datoms dir schema)))
   ([datoms dir schema opts] (conn-from-db (init-db datoms dir schema opts))))
-
 
 (defn create-conn
   "Creates a mutable reference (a “connection”) to a Datalog database at the given
@@ -1088,7 +1097,8 @@ Only usable for debug output.
   list-dbis l/list-dbis)
 
 (defn copy
-  "Copy a Datalog or key-value database to a destination directory path, optionally compact while copying, default not compact. "
+  "Copy a Datalog or a key-value database to a destination directory path,
+  optionally compact while copying, default not compact. "
   ([db dest]
    (copy db dest false))
   ([db dest compact?]
@@ -1443,15 +1453,104 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
               "}
   visit l/visit)
 
-(defn clear
-  "Close the Datalog database, then clear all data, including schema."
-  [conn]
-  (close conn)
-  (let [dir  (s/dir ^Store (.-store ^DB @conn))
-        lmdb (open-kv dir)]
-    (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
-      (clear-dbi lmdb dbi))
-    (close-kv lmdb)))
+;; List related functions
+
+(def ^{:arglists '([db list-name] [db list-name opts])
+       :doc      "Open a special kind of DBI, that permits a list of
+  values for the same key.
+
+  `list-name` is a string, the DBI name. `opts` is the same option map as
+  in [[open-dbi]].
+
+  These values (the list) will be stored together in a sorted set.
+  They should be of the same type. Each list item cannot be
+  larger than 511 bytes. Point and range queries on these values are
+  supported.
+
+  See [[put-list-items]], [[get-list]], [[list-range]], and so on."}
+  open-list-dbi l/open-list-dbi)
+
+(def ^{:arglists '([db list-name k vs k-type v-type])
+       :doc      "Put some list items to a key.
+  `list-name` is the name of the sub-database that is opened by
+  [[open-list-dbi]].
+
+  `vs` is a seq of values that will be associated with the key `k`.
+
+  These values (the list) will be stored together in a sorted set.
+  They should be of the same type. Each list item cannot be
+  larger than 511 bytes. Point and range queries on these values are
+  supported.
+
+  See [[get-list]], [[list-range]], and so on."}
+  put-list-items l/put-list-items)
+
+(def ^{:arglists '([db list-name k k-type]
+                   [db list-name k vs k-type v-type])
+       :doc      "Delete a list or some items of the list by the key.
+  `list-name` is the name of the sub-database that is opened by
+  [[open-list-dbi]].
+
+  `vs` is a seq of values that are associated with the key `k`, and will
+   be deleted. If unspecified, all list items and the key will be deleted.
+
+   See also [[put-list-items]]."}
+  del-list-items l/del-list-items)
+
+(def ^{:arglists '([db list-name k k-type v-type])
+       :doc      "Get a list by the key. The list items were added
+  by [[put-list-items]]."}
+  get-list l/get-list)
+
+(def ^{:arglists '([db list-name visitor k k-type])
+       :doc      "Visit the list associated with a key, presumably for
+  side effects. The list items were added by [[put-list-items]]."}
+  visit-list l/visit-list)
+
+(def ^{:arglists '([db list-name k k-type])
+       :doc      "Return the number of items in the list associated with a
+  key. The list items were added by [[put-list-items]]."}
+  list-count l/list-count)
+
+(def ^{:arglists '([db list-name k v k-type v-type])
+       :doc      "Return true if an item is in the list associated with the
+ key. The list items were added by [[put-list-items]]."}
+  in-list? l/in-list?)
+
+(def ^{:arglists '([db list-name k-range k-type v-range v-type])
+       :doc      "Return a seq of key-values in the specified value range
+     and the specified key range of a sub-database opened by
+     [[open-list-dbi]].
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range l/list-range)
+
+(def ^{:arglists '([db list-name k-range k-type v-range v-type])
+       :doc      "Return the number of key-values in the specified value
+     range and the specified key range of a sub-database opened by
+     [[open-list-dbi]].
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-count l/list-range-count)
+
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
+       :doc      "Return a seq of key-values in the specified value range
+     and the specified key range of a sub-database opened by
+     [[open-list-dbi]], filtered by a predicate `pred`.
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-filter l/list-range-filter)
+
+(def ^{:arglists '([db list-name visitor k-range k-type v-range v-type])
+       :doc      "Visit a list range, presumably for side effects, in a
+     sub-database opened by [[open-list-dbi]].
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  visit-list-range l/visit-list-range)
 
 ;; -------------------------------------
 ;; Search API
@@ -1541,7 +1640,7 @@ words.
 
 (def ^{:arglists '([writer doc-ref doc-text] [writer doc-ref doc-text opts])
        :doc      "Create a writer for writing documents to the search index
-  in bulk.
+  in bulk. Note that this is not supported in the client/server mode.
 
   The search index is stored in the passed-in key value database opened
   by [[open-kv]]. See also [[write]] and [[commit]].

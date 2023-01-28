@@ -87,7 +87,7 @@
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting read-only transaction key buffer: "
-               (ex-message e)
+               e
                {:value x :type t}))))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
@@ -129,28 +129,6 @@
         :open-closed-back  (chk2 [false true false true true v1 v2]
                                  :open-closed-back)
         (raise "Unknown range type" range-type {}))))
-  #_(put-start-key [_ x t]
-      (try
-        (when x
-          (let [^ByteBuffer start-kb (.inBuf start-kp)]
-            (.clear ^BufVal start-kp)
-            (b/put-buffer start-kb x t)
-            (.flip ^BufVal start-kp)))
-        (catch Exception e
-          (raise "Error putting read-only transaction start key buffer: "
-                 (ex-message e)
-                 {:value x :type t}))))
-  #_(put-stop-key [_ x t]
-      (try
-        (when x
-          (let [^ByteBuffer stop-kb (.inBuf stop-kp)]
-            (.clear ^BufVal stop-kp)
-            (b/put-buffer stop-kb x t)
-            (.flip ^BufVal stop-kp)))
-        (catch Exception e
-          (raise "Error putting read-only transaction stop key buffer: "
-                 (ex-message e)
-                 {:value x :type t}))))
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
@@ -223,7 +201,7 @@
         (catch Exception e
           ;; (st/print-stack-trace e)
           (raise "Error putting r/w value buffer of "
-                 dbi-name ": " (ex-message e)
+                 dbi-name ": " e
                  {:value x :type t :dbi dbi-name})))))
 
   IDB
@@ -488,7 +466,7 @@
         (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0))
         (.commit txn))
       (catch Exception e
-        (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
+        (raise "Fail to clear DBI: " dbi-name " " e {}))))
 
   (drop-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
@@ -500,7 +478,7 @@
         (.remove dbis dbi-name)
         nil)
       (catch Exception e
-        (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+        (raise "Fail to drop DBI: " dbi-name e {}))))
 
   (get-rtx [this]
     (try
@@ -547,7 +525,7 @@
                   (recur iter holder'))
                 (persistent! holder)))))
         (catch Exception e
-          (raise "Fail to list DBIs: " (ex-message e) {}))
+          (raise "Fail to list DBIs: " e {}))
         (finally (.return-rtx this rtx)))))
 
   (copy [this dest]
@@ -566,7 +544,7 @@
         (.close stat)
         m)
       (catch Exception e
-        (raise "Fail to get statistics: " (ex-message e) {}))))
+        (raise "Fail to get statistics: " e {}))))
   (stat [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (if dbi-name
@@ -580,7 +558,7 @@
             (.close stat)
             m)
           (catch Exception e
-            (raise "Fail to get statistics: " (ex-message e)
+            (raise "Fail to get statistics: " e
                    {:dbi dbi-name}))
           (finally (.return-rtx this rtx))))
       (l/stat this)))
