@@ -11,13 +11,13 @@
          com.cognitect/transit-clj                   {:mvn/version "1.0.329"}
 
          org.clojars.huahaiy/dtlvnative-macos-aarch64-shared
-         {:mvn/version \"0.8.2\"}
+         {:mvn/version "0.8.2"}
          org.clojars.huahaiy/dtlvnative-windows-amd64-shared
-         {:mvn/version \"0.8.2\"}
+         {:mvn/version "0.8.2"}
          org.clojars.huahaiy/dtlvnative-linux-amd64-shared
-         {:mvn/version \"0.8.2\"}
+         {:mvn/version "0.8.2"}
          org.clojars.huahaiy/dtlvnative-macos-amd64-shared
-         {:mvn/version \"0.8.2\"}
+         {:mvn/version "0.8.2"}
          }
 
  :deps/prep-lib {:alias  :build
