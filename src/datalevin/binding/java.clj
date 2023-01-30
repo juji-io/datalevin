@@ -9,6 +9,7 @@
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
                                  IList ILMDB IWriting]]
    [clojure.stacktrace :as st]
+   [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
@@ -254,104 +255,113 @@
 
   Iterable
   (iterator [_]
-    (let [[forward-key?
-           start-key?
-           include-start-key?
-           stop-key?
-           include-stop-key?
-           ^ByteBuffer sk
-           ^ByteBuffer ek
-           forward-val?
-           start-val?
-           include-start-val?
-           stop-val?
-           include-stop-val?
-           ^ByteBuffer sv
-           ^ByteBuffer ev] ctx
+    (let [[forward-key? include-start-key? include-stop-key?
+           ^ByteBuffer sk ^ByteBuffer ek
+           forward-val? include-start-val? include-stop-val?
+           ^ByteBuffer sv ^ByteBuffer ev] ctx
 
           key-ended? (volatile! false)
-          started?   (volatile! false)
-
-          init-key
-          #(if start-key?
-             (and (.get cur sk GetOp/MDB_SET_RANGE)
-                  (if include-start-key?
-                    (if stop-key?
-                      (<= (b/compare-buffer (.key cur) ek) 0)
-                      true)
-                    (if forward-key?
+          started?   (volatile! false)]
+      (letfn [(init-key []
+                (if sk
+                  (if (.get cur sk GetOp/MDB_SET_RANGE)
+                    (if include-start-key?
+                      (key-continue?)
                       (if (zero? (b/compare-buffer (.key cur) sk))
-                        (.seek cur SeekOp/MDB_NEXT_NODUP)
-                        (if stop-key?
-                          (<= (b/compare-buffer (.key cur) ek) 0)
-                          true))
-                      (.seek cur SeekOp/MDB_PREV_NODUP))))
-             (if forward-key?
-               (.seek cur SeekOp/MDB_FIRST)
-               (.seek cur SeekOp/MDB_LAST)))
-
-          init-val
-          #(if start-val?
-             (and (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
-                  (let [rs (b/compare-buffer (.val cur) sv)]
-                    (if (= rs 0)
-                      (if include-start-val?
-                        true
-                        (if forward-val?
-                          (.seek cur SeekOp/MDB_NEXT_DUP)
-                          (.seek cur SeekOp/MDB_PREV_DUP)))
-                      (if (> rs 0)
-                        (if forward-val?
-                          (if stop-val?
-                            (<= (b/compare-buffer (.val cur) ev) 0)
-                            true)
-                          (.seek cur SeekOp/MDB_PREV_DUP))
-                        (if forward-val?
-                          (.seek cur SeekOp/MDB_NEXT_DUP)
-                          (if stop-val?
-                            (>= (b/compare-buffer (.val cur) ev) 0)
-                            true))))))
-             (if forward-val?
-               (.seek cur SeekOp/MDB_FIRST_DUP)
-               (.seek cur SeekOp/MDB_LAST_DUP)))
-          key-end       #(do (vreset! key-ended? true) false)
-          key-continue? #(if stop-key?
-                           (let [r (b/compare-buffer (.key cur) ek)]
-                             (if (= r 0)
-                               (do (vreset! key-ended? true)
-                                   include-stop-key?)
-                               (if (> r 0)
-                                 (if forward-key? (key-end) true)
-                                 (if forward-key? true (key-end)))))
-                           true)
-          check-key     #(if (.seek cur %) (key-continue?) (key-end))
-          advance-key   #(or (and (if forward-key?
-                                    (check-key SeekOp/MDB_NEXT_NODUP)
-                                    (check-key SeekOp/MDB_PREV_NODUP))
-                                  (init-val))
-                             (if @key-ended? false (recur)))
-          init-kv       #(do (vreset! started? true)
-                             (or (and (init-key) (init-val))
-                                 (advance-key)))
-          val-end       #(if @key-ended? false (advance-key))
-          val-continue? #(if stop-val?
-                           (let [r (b/compare-buffer (.val cur) ev)]
-                             (if (= r 0)
-                               (if include-stop-val? true (val-end))
-                               (if (> r 0)
-                                 (if forward-val? (val-end) true)
-                                 (if forward-val? true (val-end)))))
-                           true)
-          check-val     #(if (.seek cur %) (val-continue?) (val-end))
-          advance-val   #(if forward-val?
-                           (check-val SeekOp/MDB_NEXT_DUP)
-                           (check-val SeekOp/MDB_PREV_DUP))]
-      (reify
-        Iterator
-        (hasNext [_]
-          (if (not @started?) (init-kv) (advance-val)))
-        (next [_]
-          (MapEntry. (.key cur) (.val cur)))))))
+                        (check-key SeekOp/MDB_NEXT_NODUP)
+                        (key-continue?)))
+                    false)
+                  (check-key SeekOp/MDB_FIRST)))
+              (init-key-back []
+                (if sk
+                  (if (.get cur sk GetOp/MDB_SET_RANGE)
+                    (if include-start-key?
+                      (key-continue-back?)
+                      (check-key-back SeekOp/MDB_PREV_NODUP))
+                    (check-key-back SeekOp/MDB_LAST))
+                  (check-key-back SeekOp/MDB_LAST)))
+              (init-val []
+                (if sv
+                  (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
+                    (if include-start-val?
+                      (val-continue?)
+                      (if (zero? (b/compare-buffer (.val cur) sv))
+                        (check-val SeekOp/MDB_NEXT_DUP)
+                        (val-continue?)))
+                    false)
+                  (check-val SeekOp/MDB_FIRST_DUP)))
+              (init-val-back []
+                (if sv
+                  (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
+                    (if include-start-val?
+                      (if (zero? (b/compare-buffer (.val cur) sv))
+                        (val-continue-back?)
+                        (check-val-back SeekOp/MDB_PREV_DUP))
+                      (check-val-back SeekOp/MDB_PREV_DUP))
+                    (check-val-back SeekOp/MDB_LAST_DUP))
+                  (check-val-back SeekOp/MDB_LAST_DUP)))
+              (key-end [] (vreset! key-ended? true) false)
+              (val-end [] (if @key-ended? false (advance-key)))
+              (key-continue? []
+                (if ek
+                  (let [r (b/compare-buffer (.key cur) ek)]
+                    (if (= r 0)
+                      (do (vreset! key-ended? true)
+                          include-stop-key?)
+                      (if (> r 0) (key-end) true)))
+                  true))
+              (key-continue-back? []
+                (if ek
+                  (let [r (b/compare-buffer (.key cur) ek)]
+                    (if (= r 0)
+                      (do (vreset! key-ended? true)
+                          include-stop-key?)
+                      (if (> r 0) true (key-end))))
+                  true))
+              (check-key [op]
+                (if (.seek cur op) (key-continue?) (key-end)))
+              (check-key-back [op]
+                (if (.seek cur op) (key-continue-back?) (key-end)))
+              (advance-key []
+                (or (and (if forward-key?
+                           (check-key SeekOp/MDB_NEXT_NODUP)
+                           (check-key-back SeekOp/MDB_PREV_NODUP))
+                         (if forward-val? (init-val) (init-val-back)))
+                    (if @key-ended? false (recur))))
+              (init-kv []
+                (vreset! started? true)
+                (or (and (if forward-key? (init-key) (init-key-back))
+                         (if forward-val? (init-val) (init-val-back)))
+                    (advance-key)))
+              (val-continue? []
+                (if ev
+                  (let [r (b/compare-buffer (.val cur) ev)]
+                    (if (= r 0)
+                      (if include-stop-val? true (val-end))
+                      (if (> r 0) (val-end) true)))
+                  true))
+              (val-continue-back? []
+                (if ev
+                  (let [r (b/compare-buffer (.val cur) ev)]
+                    (if (= r 0)
+                      (if include-stop-val? true (val-end))
+                      (if (> r 0) true (val-end))))
+                  true))
+              (check-val [op]
+                (if (.seek cur op) (val-continue?) (val-end)))
+              (check-val-back [op]
+                (if (.seek cur op) (val-continue-back?) (val-end)))
+              (advance-val []
+                (check-val SeekOp/MDB_NEXT_DUP))
+              (advance-val-back [] (check-val-back SeekOp/MDB_PREV_DUP))]
+        (reify
+          Iterator
+          (hasNext [_]
+            (if (not @started?)
+              (init-kv)
+              (if forward-val? (advance-val) (advance-val-back))))
+          (next [_]
+            (MapEntry. (.key cur) (.val cur))))))))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* ^long c/+buffer-grow-factor+
@@ -845,32 +855,43 @@
        ;; (st/print-stack-trace e)
        (raise "Fail to open database: " (ex-message e) {:dir dir})))))
 
-;; TODO remove after LMDBJava supports apple silicon
-(defn apple-silicon-lmdb []
-  (when (and (u/apple-silicon?)
-             (not (System/getenv "DTLV_COMPILE_NATIVE"))
-             (not (u/graal?)))
+(defn extract-lmdb []
+  (let [os-arch         (System/getProperty "os.arch")
+        amd64?          (#{"x64" "amd64" "x86_64"} os-arch)
+        aarch64?        (= "aarch64" os-arch)
+        os-name         (s/lower-case (System/getProperty "os.name"))
+        linux?          (s/starts-with? os-name "linux")
+        windows?        (s/starts-with? os-name "windows")
+        osx?            (s/starts-with? os-name "mac os x")
+        [lib-name platform]
+        (cond
+          (and amd64?
+               linux?)   ["liblmdb.so" "ubuntu-latest-amd64-shared"]
+          (and amd64?
+               windows?) ["lmdb.dll" "windows-amd64-shared"]
+          (and amd64?
+               osx?)     ["liblmdb.dylib" "macos-latest-amd64-shared"]
+          (and aarch64?
+               osx?)     ["liblmdb.dylib"  "macos-latest-aarch64-shared"]
+          :else          (u/raise "Unsupported platform: " os-name
+                                  " on " os-arch))
+        resource        (str "dtlvnative/" platform "/" lib-name)
+        ^String dir     (u/tmp-dir (str "lmdbjava-native-lib-"
+                                        (UUID/randomUUID)))
+        ^File file      (File. dir ^String lib-name)
+        path            (.toPath file)
+        fpath           (.getAbsolutePath file)
+        ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
     (try
-      (let [dir             (u/tmp-dir (str "lmdbjava-native-lib-"
-                                            (UUID/randomUUID)) )
-            ^File file      (File. ^String dir "liblmdb.dylib")
-            path            (.toPath file)
-            fpath           (.getAbsolutePath file)
-            ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
-        (u/create-dirs dir)
-        (.deleteOnExit file)
-        (System/setProperty "lmdbjava.native.lib" fpath)
-
-        (with-open [^InputStream in
-                    (.getResourceAsStream
-                      cl "dtlvnative/macos-latest-aarch64-shared/liblmdb.dylib")
-                    ^OutputStream out
-                    (Files/newOutputStream path (into-array OpenOption []))]
-          (io/copy in out))
-        (println "Library extraction is successful:" fpath
-                 "with size" (Files/size path)))
+      (u/create-dirs dir)
+      (.deleteOnExit file)
+      (System/setProperty "lmdbjava.native.lib" fpath)
+      (with-open [^InputStream in   (.getResourceAsStream cl resource)
+                  ^OutputStream out (Files/newOutputStream
+                                      path (into-array OpenOption []))]
+        (io/copy in out))
       (catch Exception e
-        ;; (st/print-stack-trace e)
-        (u/raise "Failed to extract LMDB library" {})))))
+        (u/raise "Failed to extract LMDB library: " e
+                 {:resource resource :path fpath})))))
 
-(apple-silicon-lmdb)
+(extract-lmdb)

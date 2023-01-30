@@ -1,14 +1,12 @@
 # Change Log
 
 ## WIP
-<<<<<<< HEAD
-### Improved
-- [Native] faster C comparator
 ### Added
 - [KV] Expose LMDB dupsort functionality as a set of `list-*` functions.
 - [KV] `datalevin/kv-meta` dbi to keep information, such as dbi flags, etc.
-=======
->>>>>>> master
+### Changed
+- [KV] Upgrade LMDB to the latest, now tracking master branch, as it includes
+  important fixes, such as https://bugs.openldap.org/show_bug.cgi?id=9723
 
 ## 0.8.4 (2023-01-20)
 ### Fixed

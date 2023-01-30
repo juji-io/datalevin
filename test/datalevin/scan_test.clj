@@ -77,7 +77,8 @@
 (deftest range-no-gap-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (l/open-dbi lmdb "c"
+                {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 1000))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -86,21 +87,25 @@
           rc   (count res)]
       (l/transact-kv lmdb txs)
       (is (= res (l/get-range lmdb "c" [:all] :long :long)))
-      (with-open [^AutoCloseable rs (l/range-seq lmdb "c" [:all] :long :long)]
+      (with-open [^AutoCloseable rs
+                  (l/range-seq lmdb "c" [:all] :long :long)]
         (is (= res (seq rs))))
 
       (is (= rc (l/range-count lmdb "c" [:all] :long)))
 
       (is (= rres (l/get-range lmdb "c" [:all-back] :long :long)))
-      (with-open [^AutoCloseable rs (l/range-seq lmdb "c" [:all-back] :long :long)]
+      (with-open [^AutoCloseable rs
+                  (l/range-seq lmdb "c" [:all-back] :long :long)]
         (is (= (seq rs) rres)))
 
       (is (= (->> res (drop 990))
              (l/get-range lmdb "c" [:at-least 990] :long :long)))
-      (with-open [^AutoCloseable rs (l/range-seq lmdb "c" [:at-least 990] :long :long)]
+      (with-open [^AutoCloseable rs
+                  (l/range-seq lmdb "c" [:at-least 990] :long :long)]
         (is (= (seq rs) (->> res (drop 990)))))
 
-      (is (= [] (l/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
+      (is (= []
+             (l/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:greater-than 1500] :long :ignore)]
         (is (= (seq rs) [])))
@@ -110,7 +115,8 @@
       (is (= res
              (l/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
       (with-open [^AutoCloseable rs
-                  (l/range-seq lmdb "c" [:less-than Long/MAX_VALUE] :long :long)]
+                  (l/range-seq lmdb "c" [:less-than Long/MAX_VALUE]
+                               :long :long)]
         (is (= (seq rs) res)))
 
       (is (= rc (l/range-count lmdb "c" [:less-than Long/MAX_VALUE] :long)))
@@ -196,11 +202,7 @@
     (is (= [16384 8192 4096 2048]
            (l/get-range db misc-table [:at-least-back 2000] :long :long true)))
 
-
-
     (is (= [2] (l/get-range db misc-table [:closed 2 2] :long :long true)))
-
-
 
     (is (= [] (l/get-range db misc-table [:closed 2 1] :long :long true)))
 
@@ -215,206 +217,140 @@
                 (l/range-seq db misc-table [:closed 2 32] :long :long true)]
       (is (= [2 4 8 16 32] (seq rs))))
 
-    (is (= [4 8 16] (l/get-range db misc-table [:closed 3 30] :long :long true)))
+    (is (= [4 8 16]
+           (l/get-range db misc-table [:closed 3 30] :long :long true)))
 
-    (is (= [1 2 4 8 16 32] (l/get-range db misc-table [:closed 0 40]
-                                        :long :long true)))
-
-
-    (is (= [] (l/get-range db misc-table [:closed-back 2 32] :long :long true)))
+    (is (= [1 2 4 8 16 32]
+           (l/get-range db misc-table [:closed 0 40] :long :long true)))
 
 
-    (is (= [32 16 8 4 2] (l/get-range db misc-table [:closed-back 32 2]
-                                      :long :long true)))
+    (is (= []
+           (l/get-range db misc-table [:closed-back 2 32] :long :long true)))
+
+    (is (= [32 16 8 4 2]
+           (l/get-range db misc-table [:closed-back 32 2] :long :long true)))
 
     (with-open [^AutoCloseable rs
                 (l/range-seq db misc-table [:closed-back 32 2]
                              :long :long true)]
       (is (= [32 16 8 4 2] (seq rs))))
 
-    (is (= [16 8 4] (l/get-range db misc-table [:closed-back 30 3]
-                                 :long :long true)))
+    (is (= [16 8 4]
+           (l/get-range db misc-table [:closed-back 30 3] :long :long true)))
 
+    (is (= [32 16 8 4 2 1]
+           (l/get-range db misc-table [:closed-back 40 0] :long :long true)))
 
-    (is (= [32 16 8 4 2 1] (l/get-range db misc-table [:closed-back 40 0]
-                                        :long :long true)))
-
-    (is (= [2 4 8 16] (l/get-range db misc-table [:closed-open 2 32]
-                                   :long :long true)))
+    (is (= [2 4 8 16]
+           (l/get-range db misc-table [:closed-open 2 32] :long :long true)))
 
     (with-open [^AutoCloseable rs
                 (l/range-seq db misc-table [:closed-open 2 32]
                              :long :long true)]
       (is (= (seq rs) [2 4 8 16])))
 
-    (is (= [4 8 16] (l/get-range db misc-table [:closed-open 3 30]
-                                 :long :long true)))
+    (is (= [4 8 16]
+           (l/get-range db misc-table [:closed-open 3 30] :long :long true)))
 
+    (is (= [1 2 4 8 16 32]
+           (l/get-range db misc-table [:closed-open 0 40] :long :long true)))
 
-    (is (= [1 2 4 8 16 32] (l/get-range db misc-table [:closed-open 0 40]
-                                        :long :long true)))
-
-    (is (= [] (l/get-range db misc-table [:closed-open-back 2 32]
-                           :long :long true)))
+    (is (= []
+           (l/get-range db misc-table [:closed-open-back 2 32]
+                        :long :long true)))
 
     (with-open [^AutoCloseable rs
                 (l/range-seq db misc-table [:closed-open-back 2 32]
                              :long :long true) ]
       (is (= (seq rs) [])))
 
-    (is (= [32 16 8 4] (l/get-range db misc-table
-                                    [:closed-open-back 32 2] :long :long true)))
-
-
-    (is (= [16 8 4] (l/get-range db misc-table
-                                 [:closed-open-back 30 3] :long :long true)))
-
-
-    (is (= [32 16 8 4 2 1] (l/get-range db misc-table
-                                        [:closed-open-back 40 0]
-                                        :long :long true)))
-
-
-    (is (= [4096 8192 16384] (l/get-range db misc-table
-                                          [:greater-than 2048]
-                                          :long :long true)))
-
-
-
-    (is (= [2048 4096 8192 16384] (l/get-range db misc-table
-                                               [:greater-than 2000]
-                                               :long :long true)))
+    (is (= [32 16 8 4]
+           (l/get-range db misc-table [:closed-open-back 32 2]
+                        :long :long true)))
+    (is (= [16 8 4]
+           (l/get-range db misc-table [:closed-open-back 30 3]
+                        :long :long true)))
+    (is (= [32 16 8 4 2 1]
+           (l/get-range db misc-table [:closed-open-back 40 0]
+                        :long :long true)))
+    (is (= [4096 8192 16384]
+           (l/get-range db misc-table [:greater-than 2048] :long :long true)))
+    (is (= [2048 4096 8192 16384]
+           (l/get-range db misc-table [:greater-than 2000] :long :long true)))
 
     (with-open [^AutoCloseable rs
-                (l/range-seq db misc-table
-                             [:greater-than 2000] :long :long true)]
+                (l/range-seq db misc-table [:greater-than 2000]
+                             :long :long true)]
       (is (= (seq rs) [2048 4096 8192 16384])))
 
-    (is (= [8 4 2 1] (l/get-range db misc-table
-                                  [:less-than-back 16] :long :long true)))
-
-
-    (is (= [16 8 4 2 1] (l/get-range db misc-table
-                                     [:less-than-back 17] :long :long true)))
+    (is (= [8 4 2 1]
+           (l/get-range db misc-table [:less-than-back 16] :long :long true)))
+    (is (= [16 8 4 2 1]
+           (l/get-range db misc-table [:less-than-back 17] :long :long true)))
 
     (with-open [^AutoCloseable rs
                 (l/range-seq db misc-table
                              [:less-than-back 17] :long :long true)]
       (is (= (seq rs) [16 8 4 2 1])))
 
-    (is (= [1 2 4 8] (l/get-range db misc-table
-                                  [:less-than 16] :long :long true)))
-
-
-    (is (= [1 2 4 8 16] (l/get-range db misc-table
-                                     [:less-than 17] :long :long true)))
-
-
-
-    (is (= [16384 8192 4096] (l/get-range db misc-table
-                                          [:greater-than-back 2048]
-                                          :long :long true)))
-
-
-
-    (is (= [16384 8192 4096 2048] (l/get-range db misc-table
-                                               [:greater-than-back 2000]
-                                               :long :long true)))
-
-
-
-    (is (= [] (l/get-range db misc-table [:open 2 2]
-                           :long :long true)))
-
-
-
+    (is (= [1 2 4 8]
+           (l/get-range db misc-table [:less-than 16] :long :long true)))
+    (is (= [1 2 4 8 16]
+           (l/get-range db misc-table [:less-than 17] :long :long true)))
+    (is (= [16384 8192 4096]
+           (l/get-range db misc-table [:greater-than-back 2048]
+                        :long :long true)))
+    (is (= [16384 8192 4096 2048]
+           (l/get-range db misc-table [:greater-than-back 2000]
+                        :long :long true)))
+    (is (= []
+           (l/get-range db misc-table [:open 2 2] :long :long true)))
     (is (= [] (l/get-range db misc-table [:open 2 1]
                            :long :long true)))
-
-
-
-    (is (= [4 8 16] (l/get-range db misc-table [:open 2 32] :long :long true)))
-
-
-
-    (is (= [4 8 16] (l/get-range db misc-table [:open 3 30] :long :long true)))
-
-
-
-    (is (= [1 2 4 8 16 32] (l/get-range db misc-table [:open 0 40]
-                                        :long :long true)))
-
-
-
+    (is (= [4 8 16]
+           (l/get-range db misc-table [:open 2 32] :long :long true)))
+    (is (= [4 8 16]
+           (l/get-range db misc-table [:open 3 30] :long :long true)))
+    (is (= [1 2 4 8 16 32]
+           (l/get-range db misc-table [:open 0 40] :long :long true)))
     (is (= [] (l/get-range db misc-table [:open-back 2 2] :long :long true)))
-
-
-
     (is (= [] (l/get-range db misc-table [:open-back 2 1] :long :long true)))
-
-
-
-    (is (= [16 8 4] (l/get-range db misc-table [:open-back 32 2]
-                                 :long :long true)))
-
-
-
-    (is (= [16 8 4] (l/get-range db misc-table [:open-back 30 3]
-                                 :long :long true)))
-
-
-
-    (is (= [32 16 8 4 2 1] (l/get-range db misc-table [:open-back 40 0]
-                                        :long :long true)))
-
-
-
-    (is (= [4 8 16 32] (l/get-range db misc-table [:open-closed 2 32]
-                                    :long :long true)))
-
-
-
-    (is (= [4 8 16] (l/get-range db misc-table [:open-closed 3 30]
-                                 :long :long true)))
-
-
-
-    (is (= [1 2 4 8 16 32] (l/get-range db misc-table [:open-closed 0 40]
-                                        :long :long true)))
-
-
-
-    (is (= [] (l/get-range db misc-table [:open-closed-back 2 32]
-                           :long :long true)))
-
-
-
-    (is (= [16 8 4 2] (l/get-range db misc-table [:open-closed-back 32 2]
-                                   :long :long true)))
-
-
-
-    (is (= [16 8 4] (l/get-range db misc-table [:open-closed-back 30 3]
-                                 :long :long true)))
-
-
-
-    (is (= [32 16 8 4 2 1] (l/get-range db misc-table
-                                        [:open-closed-back 40 0]
-                                        :long :long true)))
-
+    (is (= [16 8 4]
+           (l/get-range db misc-table [:open-back 32 2] :long :long true)))
+    (is (= [16 8 4]
+           (l/get-range db misc-table [:open-back 30 3] :long :long true)))
+    (is (= [32 16 8 4 2 1]
+           (l/get-range db misc-table [:open-back 40 0] :long :long true)))
+    (is (= [4 8 16 32]
+           (l/get-range db misc-table [:open-closed 2 32] :long :long true)))
+    (is (= [4 8 16]
+           (l/get-range db misc-table [:open-closed 3 30] :long :long true)))
+    (is (= [1 2 4 8 16 32]
+           (l/get-range db misc-table [:open-closed 0 40] :long :long true)))
+    (is (= []
+           (l/get-range db misc-table [:open-closed-back 2 32]
+                        :long :long true)))
+    (is (= [16 8 4 2]
+           (l/get-range db misc-table [:open-closed-back 32 2]
+                        :long :long true)))
+    (is (= [16 8 4]
+           (l/get-range db misc-table [:open-closed-back 30 3]
+                        :long :long true)))
+    (is (= [32 16 8 4 2 1]
+           (l/get-range db misc-table [:open-closed-back 40 0]
+                        :long :long true)))
     (with-open [^AutoCloseable rs
                 (l/range-seq db misc-table
                              [:open-closed-back 40 0] :long :long true)]
       (is (= (seq rs) [32 16 8 4 2 1])))
-
     (l/close-kv db)
     (u/delete-files dir)))
 
 (deftest get-some-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (l/open-dbi lmdb "c"
+                {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -430,7 +366,8 @@
 (deftest range-filter-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir)]
-    (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (l/open-dbi lmdb "c"
+                {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
@@ -446,7 +383,8 @@
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
       (is (= res (l/range-filter lmdb "c" pred [:all] :long :long)))
       (is (= fks (map first
-                      (l/range-filter lmdb "c" pred [:all] :long :ignore false))))
+                      (l/range-filter lmdb "c" pred [:all]
+                                      :long :ignore false))))
 
       (let [hm      (HashMap.)
             visitor (i/inter-fn [kv]
@@ -477,8 +415,7 @@
         pred (i/inter-fn
                [kv]
                (let [^long v (b/read-buffer (l/v kv) :long)]
-                 (odd? v)))
-        ]
+                 (even? v)))]
     (l/open-list-dbi lmdb "a")
     (l/put-list-items lmdb "a" 1 [3 4 3 2] :long :long)
     (l/put-list-items lmdb "a" 2 [7 9 4 3 2] :long :long)
@@ -490,9 +427,92 @@
     (is (l/in-list? lmdb "a" 8 17 :long :long))
     (is (= [2 3 4] (l/get-list lmdb "a" 1 :long :long)))
 
-    (l/del-list-items lmdb "a" 8 [17 3] :long :long)
+    (l/del-list-items lmdb "a" 8 [17 12] :long :long)
     (is (not (l/in-list? lmdb "a" 8 17 :long :long)))
 
+    (is (= []
+           (l/list-range lmdb "a" [:open-back 10 8] :long
+                         [:less-than-back 8] :long)))
+    (is (= [] (l/list-range lmdb "a" [:greater-than 12] :long
+                            [:greater-than 5] :long)))
+    (is (= [] (l/list-range lmdb "a" [:less-than 2] :long
+                            [:greater-than 5] :long)))
+    (is (= []
+           (l/list-range lmdb "a" [:closed-back 30 10] :long
+                         [:closed-open-back 10 2] :long)))
+    (is (= []
+           (l/list-range lmdb "a" [:closed 0 30] :long
+                         [:at-least 50] :long)))
+    (is (= [[2 4] [2 3] [2 2] [1 4] [1 3] [1 2] ]
+           (l/list-range lmdb "a" [:at-most-back 2] :long
+                         [:at-most-back 5] :long)))
+    (is (= [[5 30] [5 14] [5 12] [5 9] [5 7] [4 20] [4 14] [4 13]
+            [2 9] [2 7]]
+           (l/list-range lmdb "a" [:less-than-back 7] :long
+                         [:greater-than-back 5] :long)))
+    (is (= [[8 9]]
+           (l/list-range lmdb "a" [:at-least-back 7] :long
+                         [:at-least-back 5] :long)))
+    (is (= [[2 4] [2 3] [2 2] [1 4] [1 3] [1 2] ]
+           (l/list-range lmdb "a" [:at-most-back 3] :long
+                         [:at-most-back 5] :long)))
+    (is (= [[1 3] [1 2] [2 3] [2 2]]
+           (l/list-range lmdb "a" [:at-most 2] :long
+                         [:at-most-back 3] :long)))
+    (is (= [[2 4]]
+           (l/list-range lmdb "a" [:closed 2 2] :long
+                         [:closed 4 5] :long)))
+    (is (= [[4 14] [4 13] [5 14] [5 12] [5 9] [5 7]]
+           (l/list-range lmdb "a" [:open-closed 2 5] :long
+                         [:closed-back 14 5] :long)))
+    (is (= [[2 9] [2 7] [2 4] [1 4]]
+           (l/list-range lmdb "a" [:closed-back 3 0] :long
+                         [:closed-back 10 4] :long)))
+    (is (= [[2 9] [2 7]]
+           (l/list-range lmdb "a" [:at-most 3] :long
+                         [:at-least-back 7] :long)))
+    (is (= [[8 9]]
+           (l/list-range lmdb "a" [:open 5 13] :long
+                         [:open-back 17 5] :long)))
+    (is (= [[2 7]]
+           (l/list-range lmdb "a" [:less-than-back 3] :long
+                         [:closed-open-back 7 5] :long)))
+    (is (= [[5 30]]
+           (l/list-range lmdb "a" [:closed-back 10 0] :long
+                         [:closed-open-back 30 20] :long)))
+    (is (= [[1 4] [1 3] [2 4] [2 3]]
+           (l/list-range lmdb "a" [:less-than 3] :long
+                         [:open-closed-back 5 3] :long)))
+    (is (= [[5 14] [5 30] [4 14] [4 20]]
+           (l/list-range lmdb "a" [:open-back 7 3] :long
+                         [:greater-than 13] :long)))
+    (is (= [[8 4] [8 3]]
+           (l/list-range lmdb "a" [:open 5 10] :long
+                         [:less-than-back 8] :long)))
+    (is (= [[8 4] [8 3]]
+           (l/list-range lmdb "a" [:open 5 10] :long
+                         [:less-than-back 8] :long)))
+    (is (= [[8 3] [8 4] [8 9]]
+           (l/list-range lmdb "a" [:open 5 10] :long [:all] :long)))
+    (is (= [[1 3] [1 4]]
+           (l/list-range lmdb "a" [:closed 0 1] :long [:closed 3 4] :long)))
+    (is (= [[8 3] [8 4]]
+           (l/list-range lmdb "a" [:closed-open-back 15 5] :long
+                         [:less-than 8] :long)))
+    (is (= [[1 2] [1 3] [1 4] [2 2] [2 3] [2 4]]
+           (l/list-range lmdb "a" [:less-than 5] :long
+                         [:less-than 5] :long)))
+    (is (= [[8 9]]
+           (l/list-range lmdb "a" [:greater-than 5] :long
+                         [:greater-than 5] :long)))
+
+    (is (= 1 (l/list-range-count lmdb "a" [:greater-than 3] :long
+                                 [:greater-than 20] :long)))
+    (is (= [[2 2] [2 4]]
+           (l/list-range-filter lmdb "a" pred [:closed 2 2] :long
+                                [:all] :long)))
+    (is (= 5 (l/list-range-filter-count
+               lmdb "a" pred [:open 2 6] :long [:greater-than 5] :long)))
 
     (l/close-kv lmdb)
     (u/delete-files dir)))

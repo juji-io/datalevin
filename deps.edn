@@ -1,5 +1,7 @@
 {:paths ["src" "target/classes"]
- :deps  {org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
+ :deps  {
+         com.github.jnr/jnr-ffi                      {:mvn/version "2.2.13"}
+         org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
          com.taoensso/nippy                          {:mvn/version "3.2.0"}
          org.babashka/sci                            {:mvn/version "0.4.33"}
          com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.4"}
@@ -7,6 +9,15 @@
          org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
          com.cognitect/transit-clj                   {:mvn/version "1.0.329"}
+
+         org.clojars.huahaiy/dtlvnative-macos-aarch64-shared
+         {:mvn/version \"0.8.2\"}
+         org.clojars.huahaiy/dtlvnative-windows-amd64-shared
+         {:mvn/version \"0.8.2\"}
+         org.clojars.huahaiy/dtlvnative-linux-amd64-shared
+         {:mvn/version \"0.8.2\"}
+         org.clojars.huahaiy/dtlvnative-macos-amd64-shared
+         {:mvn/version \"0.8.2\"}
          }
 
  :deps/prep-lib {:alias  :build

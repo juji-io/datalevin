@@ -78,8 +78,8 @@
            "-Sdeps"
            (cond
              (= "latest" version)
-             (str "{:paths [\"src\" \"../src\" \"../target/classes\"]"
-                  ":deps {datalevin/datalevin {:local/root \"..\"}
+             (str "{:paths [\"src\"]"
+                  ":deps { datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.1\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}
                   com.taoensso/nippy    {:mvn/version \"3.2.0\"}
@@ -87,6 +87,10 @@
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.37\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
+                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.8.2\"}
+                  org.clojars.huahaiy/dtlvnative-windows-amd64-shared {:mvn/version \"0.8.2\"}
+                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.8.2\"}
+                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.8.2\"}
                   }}"
                   )
 

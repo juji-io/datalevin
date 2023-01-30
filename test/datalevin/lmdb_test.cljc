@@ -275,7 +275,7 @@
     (is (= [["b" 5] ["b" 6] ["b" 7]]
            (l/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
 
-    ;; NOTE: backward list doesn't work in LMDBJava, hence our list fns
+    ;; NOTE: backward list doesn't work in LMDBJava iterator
     ;; (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
     ;;         ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
     ;;        (l/get-range lmdb "list" [:all-back] :string :long)))
