@@ -81,4 +81,17 @@ public class Dbi {
         return name;
     }
 
+    public void put(Txn txn, BufVal k, BufVal v, int mask) {
+        Lib.checkRc(Lib.mdb_put(txn.get(), get(), k.ptr(), v.ptr(), mask));
+    }
+
+    public void del(Txn txn, BufVal k, BufVal v) {
+        Lib.MDB_val vp;
+        if (v == null) {
+            vp = WordFactory.nullPointer();
+        } else {
+            vp = v.ptr();
+        }
+        Lib.checkRc(Lib.mdb_del(txn.get(), get(), k.ptr(), vp));
+    }
 }

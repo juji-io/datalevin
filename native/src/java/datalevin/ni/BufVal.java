@@ -15,12 +15,15 @@ import java.nio.ByteOrder;
 @CContext(Directives.class)
 public class BufVal {
 
+    private int size;
     private ByteBuffer inBuf;
 
     private VoidPointer data;
     private Lib.MDB_val ptr;
 
     public BufVal(int size) {
+
+        this.size = size;
 
         data = UnmanagedMemory.calloc(size);
         ptr = UnmanagedMemory.calloc(SizeOf.get(Lib.MDB_val.class));
@@ -58,6 +61,14 @@ public class BufVal {
         UnmanagedMemory.free(ptr);
     }
 
+    public int size() {
+        return size;
+    }
+
+    public VoidPointer data() {
+        return data;
+    }
+
     /**
      * Return a ByteBuffer for getting data out of MDB_val
      */
@@ -78,9 +89,17 @@ public class BufVal {
     }
 
     /**
+     * Set MDB_val to that of the passed-in BufVal
+     */
+    public void in(BufVal ib) {
+        ptr.set_mv_size(ib.size());
+        ptr.set_mv_data(ib.data());
+    }
+
+    /**
      * Return the MDB_val pointer to be used in LMDB calls
      */
-    public Lib.MDB_val getVal() {
+    public Lib.MDB_val ptr() {
         return (Lib.MDB_val)ptr;
     }
 

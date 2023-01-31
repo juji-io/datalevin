@@ -505,6 +505,12 @@
     (is (= [[8 9]]
            (l/list-range lmdb "a" [:greater-than 5] :long
                          [:greater-than 5] :long)))
+    (is (= [[2 2] [2 3] [2 4] [1 2] [1 3] [1 4]]
+           (l/list-range lmdb "a" [:closed-back 5 0] :long
+                         [:closed 0 5] :long)))
+    (is (= [[2 4] [2 3] [2 2] [1 4] [1 3] [1 2]]
+           (l/list-range lmdb "a" [:closed-back 5 0] :long
+                         [:closed-back 5 0] :long)))
 
     (is (= 1 (l/list-range-count lmdb "a" [:greater-than 3] :long
                                  [:greater-than 20] :long)))

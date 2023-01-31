@@ -8,22 +8,20 @@
    [datalevin.scan :as scan]
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
                                  IList ILMDB IWriting]]
-   [clojure.stacktrace :as st]
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
-    Cursor CursorIterable$KeyVal GetOp SeekOp KeyVal]
+    Cursor CursorIterable$KeyVal GetOp SeekOp]
    [java.lang AutoCloseable]
-   [java.util.concurrent ConcurrentLinkedQueue]
+   [java.util.concurrent ConcurrentLinkedQueue ConcurrentHashMap]
    [java.util Iterator UUID]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
    [java.nio ByteBuffer BufferOverflowException]
    [clojure.lang IPersistentVector MapEntry]
-   [datalevin.spill SpillableVector]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]))
+   [datalevin.spill SpillableVector]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal
@@ -85,13 +83,6 @@
       (make-array t 0)
       (into-array t (mapv flag flags)))))
 
-(defn- put-bf
-  [^ByteBuffer bf data type]
-  (when-some [x data]
-    (.clear bf)
-    (b/put-buffer bf x type)
-    (.flip bf)))
-
 (deftype Rtx [lmdb
               ^Txn txn
               ^ByteBuffer kb
@@ -103,7 +94,7 @@
   IBuffer
   (put-key [_ x t]
     (try
-      (put-bf kb x t)
+      (b/put-bf kb x t)
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
@@ -114,8 +105,8 @@
 
   IRange
   (range-info [_ range-type k1 k2 kt]
-    (put-bf start-kb k1 kt)
-    (put-bf stop-kb k2 kt)
+    (b/put-bf start-kb k1 kt)
+    (b/put-bf stop-kb k2 kt)
     (case range-type
       :all               (KeyRange/all)
       :all-back          (KeyRange/allBackward)
@@ -137,27 +128,20 @@
       :open-closed-back  (KeyRange/openClosedBackward start-kb stop-kb)))
 
   (list-range-info [_ k-range-type k1 k2 kt v-range-type v1 v2 vt]
-    (put-bf start-kb k1 kt)
-    (put-bf stop-kb k2 kt)
-    (put-bf start-vb v1 vt)
-    (put-bf stop-vb v2 vt)
+    (b/put-bf start-kb k1 kt)
+    (b/put-bf stop-kb k2 kt)
+    (b/put-bf start-vb v1 vt)
+    (b/put-bf stop-vb v2 vt)
     (let [kvalues (l/range-table k-range-type k1 k2 start-kb stop-kb)
           vvalues (l/range-table v-range-type v1 v2 start-vb stop-vb)]
       (into kvalues vvalues)))
 
   IRtx
-  (read-only? [_]
-    (.isReadOnly txn))
-  (get-txn [_]
-    txn)
-  (close-rtx [_]
-    (.close txn))
-  (reset [this]
-    (.reset txn)
-    this)
-  (renew [this]
-    (.renew txn)
-    this))
+  (read-only? [_] (.isReadOnly txn))
+  (get-txn [_] txn)
+  (close-rtx [_] (.close txn))
+  (reset [this] (.reset txn) this)
+  (renew [this] (.renew txn) this))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.-pageSize stat)
@@ -180,20 +164,25 @@
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t {:input x}))
     (try
-      (put-bf kb x t)
+      (b/put-bf kb x t)
       (catch BufferOverflowException _
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting r/w key buffer of "
-               (.dbi-name this) "with value" x ": " e
-               {:type t}))))
+               (.dbi-name this) "with value" x ": " e {:type t}))))
   (put-val [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t {:input x}))
     (try
-      (put-bf vb x t)
+      (b/put-bf vb x t)
       (catch BufferOverflowException _
+        (locking curs
+          (loop [^Iterator iter (.iterator curs)]
+            (when (.hasNext iter)
+              (.close ^Cursor (.next iter))
+              (.remove iter)
+              (recur iter))))
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
           (b/put-buffer vb x t)
@@ -205,20 +194,17 @@
 
   IDB
   (dbi [_] db)
-  (dbi-name [_]
-    (b/text-ba->str (.getName db)))
+  (dbi-name [_] (b/text-ba->str (.getName db)))
   (put [_ txn flags]
     (if flags
       (.put db txn kb vb (kv-flags :put flags))
       (.put db txn kb vb (kv-flags :put c/default-put-flags))))
-  (put [this txn]
-    (.put this txn nil))
+  (put [this txn] (.put this txn nil))
   (del [_ txn all?]
     (if all?
       (.delete db txn kb)
       (.delete db txn kb vb)))
-  (del [this txn]
-    (.del this txn true))
+  (del [this txn] (.del this txn true))
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
@@ -227,21 +213,19 @@
       (.iterate db (.-txn ^Rtx rtx) range-info)))
   (iterate-list [this rtx [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
-    (let [txn (.-txn ^Rtx rtx)
-          cur (.get-cursor this txn)
+    (let [cur (.get-cursor this (.-txn ^Rtx rtx))
           ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
   (get-cursor [_ txn]
-    (or (when (.isReadOnly ^Txn txn)
-          (when-let [^Cursor cur (.poll curs)]
-            (.renew cur txn)
-            cur))
+    (or (locking curs
+          (when (.isReadOnly ^Txn txn)
+            (when-let [^Cursor cur (.poll curs)]
+              (.renew cur txn)
+              cur)))
         (.openCursor db txn)))
-  (close-cursor [_ cur]
-    (.close ^Cursor cur))
-  (return-cursor [_ cur]
-    (.add curs cur)))
+  (close-cursor [_ cur] (.close ^Cursor cur))
+  (return-cursor [_ cur] (locking curs (.add curs cur))))
 
 (deftype ListIterable [^DBI db
                        ^Cursor cur
@@ -261,13 +245,15 @@
            ^ByteBuffer sv ^ByteBuffer ev] ctx
 
           key-ended? (volatile! false)
-          started?   (volatile! false)]
+          started?   (volatile! false)
+          k          (.key cur)
+          v          (.val cur)]
       (letfn [(init-key []
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start-key?
                       (key-continue?)
-                      (if (zero? (b/compare-buffer (.key cur) sk))
+                      (if (zero? (b/compare-buffer k sk))
                         (check-key SeekOp/MDB_NEXT_NODUP)
                         (key-continue?)))
                     false)
@@ -285,7 +271,7 @@
                   (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
                       (val-continue?)
-                      (if (zero? (b/compare-buffer (.val cur) sv))
+                      (if (zero? (b/compare-buffer v sv))
                         (check-val SeekOp/MDB_NEXT_DUP)
                         (val-continue?)))
                     false)
@@ -294,7 +280,7 @@
                 (if sv
                   (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
-                      (if (zero? (b/compare-buffer (.val cur) sv))
+                      (if (zero? (b/compare-buffer v sv))
                         (val-continue-back?)
                         (check-val-back SeekOp/MDB_PREV_DUP))
                       (check-val-back SeekOp/MDB_PREV_DUP))
@@ -304,18 +290,16 @@
               (val-end [] (if @key-ended? false (advance-key)))
               (key-continue? []
                 (if ek
-                  (let [r (b/compare-buffer (.key cur) ek)]
+                  (let [r (b/compare-buffer k ek)]
                     (if (= r 0)
-                      (do (vreset! key-ended? true)
-                          include-stop-key?)
+                      (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) (key-end) true)))
                   true))
               (key-continue-back? []
                 (if ek
-                  (let [r (b/compare-buffer (.key cur) ek)]
+                  (let [r (b/compare-buffer k ek)]
                     (if (= r 0)
-                      (do (vreset! key-ended? true)
-                          include-stop-key?)
+                      (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) true (key-end))))
                   true))
               (check-key [op]
@@ -335,14 +319,14 @@
                     (advance-key)))
               (val-continue? []
                 (if ev
-                  (let [r (b/compare-buffer (.val cur) ev)]
+                  (let [r (b/compare-buffer v ev)]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) (val-end) true)))
                   true))
               (val-continue-back? []
                 (if ev
-                  (let [r (b/compare-buffer (.val cur) ev)]
+                  (let [r (b/compare-buffer v ev)]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) true (val-end))))
@@ -360,15 +344,14 @@
             (if (not @started?)
               (init-kv)
               (if forward-val? (advance-val) (advance-val-back))))
-          (next [_]
-            (MapEntry. (.key cur) (.val cur))))))))
+          (next [_] (MapEntry. k v)))))))
 
 (defn- up-db-size [^Env env]
   (.setMapSize env (* ^long c/+buffer-grow-factor+
                       ^long (-> env .info .mapSize))))
 
 (defn- transact*
-  [txs ^UnifiedMap dbis txn]
+  [txs ^ConcurrentHashMap dbis txn]
   (doseq [^IPersistentVector tx txs]
     (let [cnt      (.length tx)
           op       (.nth tx 0)
@@ -450,7 +433,7 @@
                temp?
                opts
                ^ConcurrentLinkedQueue pool
-               ^UnifiedMap dbis
+               ^ConcurrentHashMap dbis
                ^ByteBuffer kb-w
                ^ByteBuffer start-kb-w
                ^ByteBuffer stop-kb-w
@@ -571,7 +554,7 @@
            and managed like a stateful resource. Refer to the documentation of
            `datalevin.core/open-kv` for more details." {}))))
 
-  (return-rtx [this rtx]
+  (return-rtx [_ rtx]
     (.reset ^Rtx rtx)
     (.add pool rtx))
 
@@ -591,7 +574,7 @@
                 ^Txn txn (.-txn rtx)]
             (stat-map (.stat db txn)))
           (catch Exception e
-            (raise "Fail to get stat: " (ex-message e) {:dbi dbi-name}))
+            (raise "Fail to get stat: " e {:dbi dbi-name}))
           (finally (.return-rtx this rtx))))
       (l/stat this)))
 
@@ -602,8 +585,7 @@
       (try
         (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))
         (catch Exception e
-          (raise "Fail to get entries: " (ex-message e)
-                 {:dbi dbi-name}))
+          (raise "Fail to get entries: " e {:dbi dbi-name}))
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
@@ -612,9 +594,7 @@
       (reset-write-txn this)
       (.mark-write this)
       (catch Exception e
-        ;; (st/print-stack-trace e)
-        (raise "Fail to open read/write transaction in LMDB: "
-               (ex-message e) {}))))
+        (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
   (close-transact-kv [this]
     (try
@@ -627,9 +607,7 @@
             (if aborted? :aborted :committed)))
         (raise "Calling `close-transact-kv` without opening" {}))
       (catch Exception e
-        ;; (st/print-stack-trace e)
-        (raise "Fail to commit read/write transaction in LMDB: "
-               (ex-message e) {}))))
+        (raise "Fail to commit read/write transaction in LMDB: " e {}))))
 
   (abort-transact-kv [this]
     (when-let [^Rtx wtxn @write-txn]
@@ -657,7 +635,6 @@
               (do (reset-write-txn this)
                   (raise "DB resized" {:resized true}))))
           (catch Exception e
-            ;; (st/print-stack-trace e)
             (raise "Fail to transact to LMDB: " e {}))))))
 
   (get-value [this dbi-name k]
@@ -757,15 +734,14 @@
       (let [lmdb this]
         (scan/scan-list
           (visit-list* rtx cur k kt visitor)
-          (raise "Fail to visit list: " (ex-message e)
-                 {:dbi dbi-name :k k})))))
+          (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
     (if k
       (let [lmdb this]
         (scan/scan-list
           (list-count* rtx cur k kt)
-          (raise "Fail to count list: " (ex-message e) {:dbi dbi-name :k k})))
+          (raise "Fail to count list: " e {:dbi dbi-name :k k})))
       0))
 
   (in-list? [this dbi-name k v kt vt]
@@ -774,7 +750,7 @@
         (scan/scan-list
           (in-list?* rtx cur k kt v vt)
           (raise "Fail to test if an item is in list: "
-                 (ex-message e) {:dbi dbi-name :k k :v v})))
+                 e {:dbi dbi-name :k k :v v})))
       false))
 
   (get-list [this dbi-name k kt vt]
@@ -782,8 +758,7 @@
       (let [lmdb this]
         (scan/scan-list
           (get-list* this rtx cur k kt vt)
-          (raise "Fail to get a list: " (ex-message e)
-                 {:dbi dbi-name :key k})))))
+          (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))
@@ -841,7 +816,7 @@
                               temp?
                               opts
                               (ConcurrentLinkedQueue.)
-                              (UnifiedMap.)
+                              (ConcurrentHashMap.)
                               (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)
@@ -851,9 +826,7 @@
                               false)]
        (when temp? (u/delete-on-exit file))
        lmdb)
-     (catch Exception e
-       ;; (st/print-stack-trace e)
-       (raise "Fail to open database: " (ex-message e) {:dir dir})))))
+     (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 
 (defn extract-lmdb []
   (let [os-arch         (System/getProperty "os.arch")

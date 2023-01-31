@@ -761,6 +761,14 @@
      :raw            (put-bytes bf x)
      (put-data bf x))))
 
+(defn put-bf
+  "clear the buffer, put in the data, and prepare it for reading"
+  [^ByteBuffer bf data type]
+  (when-some [x data]
+    (.clear bf)
+    (put-buffer bf x type)
+    (.flip bf)))
+
 (defn- get-sparse-list
   [bf]
   (let [sl (sl/sparse-arraylist)]
