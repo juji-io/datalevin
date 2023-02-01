@@ -31,9 +31,9 @@
           (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
             (l/return-rtx ~'lmdb ~'rtx)))))))
 
-(defmacro scan-list
+(defmacro cursor-scan
   ([call error]
-   `(scan-list ~call ~error false))
+   `(cursor-scan ~call ~error false))
   ([call error keep-rtx?]
    `(let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
           ~'rtx (if (l/writing? ~'lmdb)
@@ -113,6 +113,21 @@
     (raise "Fail to get-range: " e
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
+
+(defn key-range
+  [lmdb dbi-name k-range k-type]
+  (scan
+    (with-open [^AutoCloseable iterable (l/iterate-key dbi rtx k-range k-type)]
+      (let [^SpillableVector holder
+            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+        (loop [^Iterator iter (.iterator ^Iterable iterable)]
+          (if (.hasNext iter)
+            (let [k (.next iter)]
+              (.cons holder (b/read-buffer k k-type))
+              (recur iter))
+            holder))))
+    (raise "Fail to get key-range: " e
+           {:dbi dbi-name :k-range k-range :k-type k-type })))
 
 (defn- range-seq*
   [lmdb dbi rtx k-range k-type v-type ignore-key?
@@ -282,7 +297,7 @@
 
 (defn list-range
   [lmdb dbi-name k-range k-type v-range v-type]
-  (scan-list
+  (scan
     (let [^SpillableVector holder
           (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
       (with-open [^AutoCloseable iterable
@@ -299,7 +314,7 @@
 
 (defn list-range-count
   [lmdb dbi-name k-range k-type v-range v-type]
-  (scan-list
+  (scan
     (with-open [^AutoCloseable iterable
                 (l/iterate-list dbi rtx k-range k-type v-range v-type)]
       (range-count* iterable))
@@ -308,7 +323,7 @@
 
 (defn list-range-filter
   [lmdb dbi-name pred k-range k-type v-range v-type]
-  (scan-list
+  (scan
     (let [^SpillableVector holder
           (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
       (with-open [^AutoCloseable iterable
@@ -329,7 +344,7 @@
 
 (defn list-range-filter-count
   [lmdb dbi-name pred k-range k-type v-range v-type]
-  (scan-list
+  (scan
     (with-open [^AutoCloseable iterable
                 (l/iterate-list dbi rtx k-range k-type v-range v-type)]
       (filter-count* iterable pred))
@@ -338,7 +353,7 @@
 
 (defn visit-list-range
   [lmdb dbi-name visitor k-range k-type v-range v-type]
-  (scan-list
+  (scan
     (with-open [^AutoCloseable iterable
                 (l/iterate-list dbi rtx k-range k-type v-range v-type)]
       (visit* iterable visitor))

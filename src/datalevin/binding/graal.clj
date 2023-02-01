@@ -190,7 +190,7 @@
     (let [cur (.get-cursor this (.-txn ^Rtx rtx))
           ctx (l/range-info rtx range-type k1 k2 kt)]
       (->KVIterable this cur rtx ctx)))
-  (iterate-keys [this rtx [range-type k1 k2] k-type]
+  (iterate-key [this rtx [range-type k1 k2] k-type]
     (let [cur (.get-cursor this (.-txn ^Rtx rtx))
           ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeyIterable this cur rtx ctx)))
@@ -620,14 +620,14 @@
       (try
         (with-open [^Cursor cursor (.get-cursor dbi (.-txn rtx))]
           (with-open [^AutoCloseable iterable
-                      (->CursorIterable dbi cursor rtx
-                                        (l/range-info rtx :all nil nil nil))]
+                      (->KeyIterable dbi cursor rtx
+                                     (l/range-info rtx :all nil nil nil))]
             (loop [^Iterator iter (.iterator ^Iterable iterable)
                    holder         (transient [])]
               (if (.hasNext iter)
-                (let [kv      (.next iter)
+                (let [k       (.next iter)
                       holder' (conj! holder
-                                     (-> kv l/k b/get-bytes b/text-ba->str))]
+                                     (-> k b/get-bytes b/text-ba->str))]
                   (recur iter holder'))
                 (persistent! holder)))))
         (catch Exception e
@@ -764,6 +764,11 @@
   (get-range [this dbi-name k-range k-type v-type ignore-key?]
     (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
 
+  (key-range [this dbi-name k-range]
+    (.key-range this dbi-name k-range :data))
+  (key-range [this dbi-name k-range k-type]
+    (scan/key-range this dbi-name k-range k-type))
+
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
   (range-seq [this dbi-name k-range k-type]
@@ -831,21 +836,21 @@
   (get-list [this dbi-name k kt vt]
     (when k
       (let [lmdb this]
-        (scan/scan-list
+        (scan/cursor-scan
           (get-list* this rtx cur k kt vt)
           (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (visit-list [this dbi-name visitor k kt]
     (when k
       (let [lmdb this]
-        (scan/scan-list
+        (scan/cursor-scan
           (visit-list* rtx cur k kt visitor)
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
     (if k
       (let [lmdb this]
-        (scan/scan-list
+        (scan/cursor-scan
           (list-count* rtx cur k kt)
           (raise "Fail to count list: " e {:dbi dbi-name :k k})))
       0))
@@ -853,7 +858,7 @@
   (in-list? [this dbi-name k v kt vt]
     (if (and k v)
       (let [lmdb this]
-        (scan/scan-list
+        (scan/cursor-scan
           (in-list?* rtx cur k kt v vt)
           (raise "Fail to test if an item is in list: "
                  e {:dbi dbi-name :k k :v v})))

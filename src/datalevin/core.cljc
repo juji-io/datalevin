@@ -1269,6 +1269,22 @@ If value is to be ignored, put `:ignore` as `v-type`.
   get-range l/get-range)
 
 (def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type])
+       :doc      "Returns a seq of keys in the specified key range in the key-value store. This does not read the values, so it is faster than [[get-range]].
+
+This function is eager and attempts to load all data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]]. See [[range-seq]] for a lazy version of this function.
+
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`.
+
+`k-type` is data type of `k`. The allowed data types are described in [[read-buffer]].
+
+     Examples:
+
+              (key-range lmdb \"c\" [:greater-than 9] :long)
+              ;;==> [11 15 14]"}
+  key-range l/key-range)
+
+(def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
                    [db dbi-name k-range k-type v-type ignore-key?]

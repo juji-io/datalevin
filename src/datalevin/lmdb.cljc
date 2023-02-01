@@ -29,7 +29,7 @@
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
   (iterate-kv [this rtx k-range k-type]
     "Return an Iterable of key-values, given the key range")
-  (iterate-keys [this rtx k-range k-type]
+  (iterate-key [this rtx k-range k-type]
     "Return an Iterable of keys only, given the key range")
   (iterate-list [this rtx k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
@@ -142,6 +142,11 @@
     [db dbi-name k-range k-type v-type]
     [db dbi-name k-range k-type v-type ignore-key?]
     "Return an eager seq of kv pairs in the specified key range;")
+  (key-range
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    "Return an eager seq of keys in the specified key range, does not read
+values;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]

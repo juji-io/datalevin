@@ -87,6 +87,7 @@
           rc   (count res)]
       (l/transact-kv lmdb txs)
       (is (= res (l/get-range lmdb "c" [:all] :long :long)))
+      (is (= (range 0 1000) (l/key-range lmdb "c" [:all] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:all] :long :long)]
         (is (= res (seq rs))))
@@ -94,18 +95,22 @@
       (is (= rc (l/range-count lmdb "c" [:all] :long)))
 
       (is (= rres (l/get-range lmdb "c" [:all-back] :long :long)))
+      (is (= (reverse (range 0 1000))
+             (l/key-range lmdb "c" [:all-back] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:all-back] :long :long)]
         (is (= (seq rs) rres)))
 
       (is (= (->> res (drop 990))
              (l/get-range lmdb "c" [:at-least 990] :long :long)))
+      (is (= (range 990 1000) (l/key-range lmdb "c" [:at-least 990] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:at-least 990] :long :long)]
         (is (= (seq rs) (->> res (drop 990)))))
 
       (is (= []
              (l/get-range lmdb "c" [:greater-than 1500] :long :ignore)))
+      (is (= [] (l/key-range lmdb "c" [:greater-than 1500] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:greater-than 1500] :long :ignore)]
         (is (= (seq rs) [])))
@@ -114,6 +119,8 @@
 
       (is (= res
              (l/get-range lmdb "c" [:less-than Long/MAX_VALUE] :long :long)))
+      (is (= (range 0 1000)
+             (l/key-range lmdb "c" [:less-than Long/MAX_VALUE] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:less-than Long/MAX_VALUE]
                                :long :long)]
@@ -123,12 +130,16 @@
 
       (is (= (take 10 res)
              (l/get-range lmdb "c" [:at-most 9] :long :long)))
+      (is (= (range 0 10)
+             (l/key-range lmdb "c" [:at-most 9] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:at-most 9] :long :long)]
         (is (= (seq rs) (take 10 res))))
 
       (is (= (->> res (drop 10) (take 100))
              (l/get-range lmdb "c" [:closed 10 109] :long :long)))
+      (is (= (range 10 110)
+             (l/key-range lmdb "c" [:closed 10 109] :long)))
       (with-open [^AutoCloseable rs
                   (l/range-seq lmdb "c" [:closed 10 109] :long :long)]
         (is (= (seq rs) (->> res (drop 10) (take 100)))))
