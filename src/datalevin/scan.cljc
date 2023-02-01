@@ -44,7 +44,6 @@
       (try
         ~call
         (catch Exception ~'e
-          ;; (st/print-stack-trace ~'e)
           ~error)
         (finally
           (if (l/read-only? ~'rtx)

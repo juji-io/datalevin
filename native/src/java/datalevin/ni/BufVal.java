@@ -62,11 +62,11 @@ public class BufVal {
     }
 
     public int size() {
-        return size;
+        return (int)ptr.get_mv_size();
     }
 
     public VoidPointer data() {
-        return data;
+        return ptr.get_mv_data();
     }
 
     /**
