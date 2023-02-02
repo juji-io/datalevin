@@ -12,14 +12,7 @@ In Datalevin, compression/decompression process happens automatically in the key
 
 ### Key Compression
 
-The criteria of key compression methods are lightweight computation that are
-fast for index scan and join. Ideally, index search and joins can be conducted
-directly on the compressed data without having to decompress first.
-
-#### String key
-
-For keys that are binary encoding of string values, e.g. `V` part of a triple,
-we use an order preserving string key compression method, so that point queries,
+For keys, we use an order preserving compression method, so that point queries,
 range queries and some predicates can run directly on the compressed data
 without having to decompress data first.
 
@@ -42,9 +35,7 @@ binary alphabetic tree is saved for both encoding and decoding.
 
 ### Value Compression
 
-LZ4 is used for compressing values, as it has a good balance of speed and
-compression ratio. The more heavier cost in compression/decompress is acceptable
-for values, for they do not participate in index scans and joins.
+LZ4 is used for compressing large values, as it has a good balance of speed and compression ratio.
 
 ## Triple Compression
 
