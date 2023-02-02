@@ -1,12 +1,17 @@
 (ns datalevin.scan-test
-  (:require [datalevin.lmdb :as l]
-            [datalevin.bits :as b]
-            [datalevin.interpret :as i]
-            [datalevin.util :as u]
-            [datalevin.test.core :as tdc :refer [db-fixture]]
-            [clojure.test :refer [deftest testing is use-fixtures]])
-  (:import [java.util UUID HashMap]
-           [java.lang Long AutoCloseable]))
+  (:require
+   [datalevin.lmdb :as l]
+   [datalevin.bits :as b]
+   [datalevin.interpret :as i]
+   [datalevin.util :as u]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop])
+  (:import
+   [java.util UUID HashMap]
+   [java.lang Long AutoCloseable]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -533,3 +538,107 @@
 
     (l/close-kv lmdb)
     (u/delete-files dir)))
+
+(def range-types
+  #{:all :all-back :at-least :at-most-back :at-most :at-least-back
+    :closed :closed-back :closed-open :closed-open-back :greater-than
+    :less-than-back :less-than :greater-than-back :open :open-back
+    :open-closed :open-closed-back})
+
+(test/defspec list-range-generative-test
+  100
+  (prop/for-all
+    [ss (gen/sorted-set gen/nat {:num-elements 4})
+     ranges (gen/vector (gen/elements range-types) 2)
+     knoise gen/small-integer
+     vnoise gen/small-integer]
+    (let [dir  (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
+          lmdb (l/open-kv dir)
+          _    (l/open-list-dbi lmdb "a")
+          top  20
+          _    (dotimes [i top]
+                 (dotimes [j top]
+                   (l/transact-kv
+                     lmdb [[:put "a" i j :long :long]])))
+
+          [^long n1 ^long n2 ^long n3 ^long n4] (vec ss)
+
+          n3'             (+ ^long n3 ^long knoise)
+          kstart          (min n1 n3')
+          kend            (max n1 n3')
+          n4'             (+ ^long n4 ^long vnoise)
+          vstart          (min n2 n4')
+          vend            (max n2 n4')
+          [krange vrange] ranges
+
+          res
+          (fn [rt ^long start ^long end]
+            (case rt
+              :all               (range top)
+              :all-back          (reverse (range top))
+              :at-least          (range (if (< 0 start) start 0) top)
+              :at-most-back      (reverse
+                                   (range (if (< end top) (inc end) top)))
+              :at-most           (range (if (< end top) (inc end) top))
+              :at-least-back     (reverse
+                                   (range (if (< 0 start) start 0) top))
+              :closed            (range (if (< 0 start) start 0)
+                                        (if (< end top) (inc end) top))
+              :closed-back       (reverse
+                                   (range (if (< 0 start) start 0)
+                                          (if (< end top) (inc end) top)))
+              :closed-open       (range (if (< 0 start) start 0)
+                                        (if (< end top) end top))
+              :closed-open-back  (reverse
+                                   (range (if (<= 0 start) (inc start) 0)
+                                          (if (< end top) (inc end) top)))
+              :greater-than      (range (if (<= 0 start) (inc start) 0)
+                                        top)
+              :less-than-back    (reverse
+                                   (range 0 (if (< end top) end top)))
+              :less-than         (range 0 (if (< end top) end top))
+              :greater-than-back (reverse
+                                   (range (if (<= 0 start)
+                                            (inc start) 0)
+                                          top))
+              :open              (range (if (<= 0 start) (inc start) 0)
+                                        (if (< end top) end top))
+              :open-back         (reverse
+                                   (range (if (<= 0 start) (inc start) 0)
+                                          (if (< end top) end top)))
+              :open-closed       (range (if (<= 0 start) (inc start) 0)
+                                        (if (< end top) (inc end) top))
+              :open-closed-back  (reverse
+                                   (range (if (< 0 start) start 0)
+                                          (if (< end top) end top)))))
+          info (fn [rt s e]
+                 (case rt
+                   :all               [:all]
+                   :all-back          [:all-back]
+                   :at-least          [:at-least s]
+                   :at-most-back      [:at-most-back e]
+                   :at-most           [:at-most e]
+                   :at-least-back     [:at-least-back s]
+                   :closed            [:closed s e]
+                   :closed-back       [:closed-back e s]
+                   :closed-open       [:closed-open s e]
+                   :closed-open-back  [:closed-open-back e s]
+                   :greater-than      [:greater-than s]
+                   :less-than-back    [:less-than-back e]
+                   :less-than         [:less-than e]
+                   :greater-than-back [:greater-than-back s]
+                   :open              [:open s e]
+                   :open-back         [:open-back e s]
+                   :open-closed       [:open-closed s e]
+                   :open-closed-back  [:open-closed-back e s]))]
+      (try
+        (let [expected (for [i (res krange kstart kend)
+                             j (res vrange vstart vend)]
+                         [i j])
+              got      (l/list-range lmdb "a"
+                                     (info krange kstart kend) :long
+                                     (info vrange vstart vend) :long)]
+          (is (= expected got)))
+        (finally
+          (l/close-kv lmdb)
+          (u/delete-files dir))))))

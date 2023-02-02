@@ -65,7 +65,7 @@
     (let [flag (Flag.)]
       (reduce (fn [r f] (bit-or ^int r ^int f))
               0
-              (map #(value ^Flag flag %) flags)))
+              (map #(value ^Flag flag %) (set flags))))
     (int 0)))
 
 (defn- put-bufval
@@ -601,7 +601,7 @@
           (Rtx. this
                 (Txn/createReadOnly env)
                 (BufVal/create c/+max-key-size+)
-                (BufVal/create 1)
+                (BufVal/create 0)
                 (BufVal/create c/+max-key-size+)
                 (BufVal/create c/+max-key-size+)
                 (BufVal/create c/+max-key-size+)
@@ -939,7 +939,7 @@
                             (ConcurrentHashMap.)
                             false
                             (BufVal/create c/+max-key-size+)
-                            (BufVal/create 1)
+                            (BufVal/create 0)
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create c/+max-key-size+)
