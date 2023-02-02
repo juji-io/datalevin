@@ -2,7 +2,6 @@
 
 ## WIP
 ### Added
-- [KV] `key-range` function that returns a range of keys only.
 - [KV] Expose LMDB dupsort functionality as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -16,6 +15,7 @@
     * `list-range-filter`
     * `list-range-filter-count`
     * `visit-list-range`
+- [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-meta` dbi to keep information, such as dbi flags, etc.
 ### Changed
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
