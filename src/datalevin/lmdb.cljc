@@ -27,14 +27,14 @@
   (del [this txn] [this txn all?]
     "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
-  (iterate-kv [this rtx k-range k-type]
+  (iterate-kv [this rtx k-range k-type v-type]
     "Return an Iterable of key-values, given the key range")
   (iterate-key [this rtx k-range k-type]
     "Return an Iterable of keys only, given the key range")
   (iterate-list [this rtx k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
      applicable only to list dbi")
-  (get-cursor [this txn] "Get a reusable read-only cursor")
+  (get-cursor [this rtx] "Get a reusable read-only cursor")
   (close-cursor [this cur] "Close cursor")
   (return-cursor [this cur] "Return a read-only cursor after use"))
 

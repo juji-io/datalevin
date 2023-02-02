@@ -5,8 +5,7 @@
    [datalevin.spill :as sp]
    [datalevin.constants :as c]
    [datalevin.util :as u :refer [raise]]
-   [datalevin.lmdb :as l]
-   [clojure.stacktrace :as st])
+   [datalevin.lmdb :as l])
   (:import
    [datalevin.spill SpillableVector]
    [clojure.lang Seqable IReduceInit]
@@ -21,26 +20,8 @@
    `(let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
           ~'rtx (if (l/writing? ~'lmdb)
                   @(l/write-txn ~'lmdb)
-                  (l/get-rtx ~'lmdb))]
-      (try
-        ~call
-        (catch Exception ~'e
-          ;; (st/print-stack-trace ~'e)
-          ~error)
-        (finally
-          (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
-            (l/return-rtx ~'lmdb ~'rtx)))))))
-
-(defmacro cursor-scan
-  ([call error]
-   `(cursor-scan ~call ~error false))
-  ([call error keep-rtx?]
-   `(let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
-          ~'rtx (if (l/writing? ~'lmdb)
-                  @(l/write-txn ~'lmdb)
                   (l/get-rtx ~'lmdb))
-          ~'txn (l/get-txn ~'rtx)
-          ~'cur (l/get-cursor ~'dbi ~'txn)]
+          ~'cur (l/get-cursor ~'dbi ~'rtx)]
       (try
         ~call
         (catch Exception ~'e
@@ -78,7 +59,8 @@
 (defn get-first
   [lmdb dbi-name k-range k-type v-type ignore-key?]
   (scan
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (with-open [^AutoCloseable iterable
+                (l/iterate-kv dbi rtx k-range k-type v-type)]
       (let [^Iterator iter (.iterator ^Iterable iterable)]
         (when (.hasNext iter)
           (let [kv (.next iter)
@@ -97,7 +79,8 @@
     (do
       (assert (not (and (= v-type :ignore) ignore-key?))
               "Cannot ignore both key and value")
-      (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+      (with-open [^AutoCloseable iterable
+                  (l/iterate-kv dbi rtx k-range k-type v-type)]
         (let [^SpillableVector holder
               (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
           (loop [^Iterator iter (.iterator ^Iterable iterable)]
@@ -122,8 +105,8 @@
             (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
         (loop [^Iterator iter (.iterator ^Iterable iterable)]
           (if (.hasNext iter)
-            (let [k (.next iter)]
-              (.cons holder (b/read-buffer k k-type))
+            (let [kv (.next iter)]
+              (.cons holder (b/read-buffer (l/k kv) k-type))
               (recur iter))
             holder))))
     (raise "Fail to get key-range: " e
@@ -134,7 +117,7 @@
    {:keys [batch-size] :or {batch-size 100}}]
   (assert (not (and (= v-type :ignore) ignore-key?))
           "Cannot ignore both key and value")
-  (let [^Iterable itb  (l/iterate-kv dbi rtx k-range k-type)
+  (let [^Iterable itb  (l/iterate-kv dbi rtx k-range k-type v-type)
         ^Iterator iter (.iterator itb)
         item           (fn [kv]
                          (let [v (when (not= v-type :ignore)
@@ -208,7 +191,8 @@
 (defn range-count
   [lmdb dbi-name k-range k-type]
   (scan
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (with-open [^AutoCloseable iterable
+                (l/iterate-kv dbi rtx k-range k-type nil)]
       (range-count* iterable))
     (raise "Fail to range-count: " e
            {:dbi dbi-name :k-range k-range :k-type k-type})))
@@ -219,7 +203,8 @@
     (do
       (assert (not (and (= v-type :ignore) ignore-key?))
               "Cannot ignore both key and value")
-      (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+      (with-open [^AutoCloseable iterable
+                  (l/iterate-kv dbi rtx k-range k-type v-type)]
         (loop [^Iterator iter (.iterator ^Iterable iterable)]
           (when (.hasNext iter)
             (let [kv (.next iter)]
@@ -243,7 +228,8 @@
               "Cannot ignore both key and value")
       (let [^SpillableVector holder
             (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-        (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+        (with-open [^AutoCloseable iterable
+                    (l/iterate-kv dbi rtx k-range k-type v-type)]
           (loop [^Iterator iter (.iterator ^Iterable iterable)]
             (if (.hasNext iter)
               (let [kv (.next iter)]
@@ -275,7 +261,8 @@
 (defn range-filter-count
   [lmdb dbi-name pred k-range k-type]
   (scan
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (with-open [^AutoCloseable iterable
+                (l/iterate-kv dbi rtx k-range k-type nil)]
       (filter-count* iterable pred))
     (raise "Fail to range-filter-count: " e
            {:dbi dbi-name :k-range k-range :k-type k-type})))
@@ -290,7 +277,8 @@
 (defn visit
   [lmdb dbi-name visitor k-range k-type]
   (scan
-    (with-open [^AutoCloseable iterable (l/iterate-kv dbi rtx k-range k-type)]
+    (with-open [^AutoCloseable iterable
+                (l/iterate-kv dbi rtx k-range k-type nil)]
       (visit* iterable visitor))
     (raise "Fail to visit: " e
            {:dbi dbi-name :k-range k-range :k-type k-type})))

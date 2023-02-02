@@ -81,9 +81,7 @@
   (let [t (flag-type type)]
     (if (empty? flags)
       (make-array t 0)
-      (into-array t (mapv flag flags)))))
-
-
+      (into-array t (mapv flag (set flags))))))
 
 (deftype Rtx [lmdb
               ^Txn txn
@@ -109,34 +107,15 @@
   (range-info [_ range-type k1 k2 kt]
     (b/put-bf start-kb k1 kt)
     (b/put-bf stop-kb k2 kt)
-    (case range-type
-      :all               (KeyRange/all)
-      :all-back          (KeyRange/allBackward)
-      :at-least          (KeyRange/atLeast start-kb)
-      :at-most-back      (KeyRange/atLeastBackward start-kb)
-      :at-most           (KeyRange/atMost start-kb)
-      :at-least-back     (KeyRange/atMostBackward start-kb)
-      :closed            (KeyRange/closed start-kb stop-kb)
-      :closed-back       (KeyRange/closedBackward start-kb stop-kb)
-      :closed-open       (KeyRange/closedOpen start-kb stop-kb)
-      :closed-open-back  (KeyRange/closedOpenBackward start-kb stop-kb)
-      :greater-than      (KeyRange/greaterThan start-kb)
-      :less-than-back    (KeyRange/greaterThanBackward start-kb)
-      :less-than         (KeyRange/lessThan start-kb)
-      :greater-than-back (KeyRange/lessThanBackward start-kb)
-      :open              (KeyRange/open start-kb stop-kb)
-      :open-back         (KeyRange/openBackward start-kb stop-kb)
-      :open-closed       (KeyRange/openClosed start-kb stop-kb)
-      :open-closed-back  (KeyRange/openClosedBackward start-kb stop-kb)))
+    (l/range-table range-type k1 k2 start-kb stop-kb))
 
   (list-range-info [_ k-range-type k1 k2 kt v-range-type v1 v2 vt]
     (b/put-bf start-kb k1 kt)
     (b/put-bf stop-kb k2 kt)
     (b/put-bf start-vb v1 vt)
     (b/put-bf stop-vb v2 vt)
-    (let [kvalues (l/range-table k-range-type k1 k2 start-kb stop-kb)
-          vvalues (l/range-table v-range-type v1 v2 start-vb stop-vb)]
-      (into kvalues vvalues)))
+    (into (l/range-table k-range-type k1 k2 start-kb stop-kb)
+          (l/range-table v-range-type v1 v2 start-vb stop-vb)))
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
@@ -144,14 +123,6 @@
   (close-rtx [_] (.close txn))
   (reset [this] (.reset txn) this)
   (renew [this] (.renew txn) this))
-
-(defn- key-range-info
-  [^Rtx rtx k-range-type k1 k2 kt]
-  (let [start-kb (.-start-kb rtx)
-        stop-kb  (.-stop-kb rtx)]
-    (b/put-bf start-kb k1 kt)
-    (b/put-bf stop-kb k2 kt)
-    (l/range-table k-range-type k1 k2 start-kb stop-kb)))
 
 (defn- stat-map [^Stat stat]
   {:psize          (.-pageSize stat)
@@ -167,6 +138,7 @@
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
               ^:unsynchronized-mutable ^ByteBuffer vb
+              ^boolean dupsort?
               ^boolean validate-data?]
   IBuffer
   (put-key [this x t]
@@ -218,26 +190,27 @@
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
-  (iterate-kv [_ rtx [range-type k1 k2] k-type]
-    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
-      (.iterate db (.-txn ^Rtx rtx) ctx)))
   (iterate-key [this rtx [range-type k1 k2] k-type]
-    (let [cur (.get-cursor this (.-txn ^Rtx rtx))
-          ctx (key-range-info rtx range-type k1 k2 k-type)]
+    (let [cur (.get-cursor this rtx)
+          ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeyIterable this cur rtx ctx)))
   (iterate-list [this rtx [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
-    (let [cur (.get-cursor this (.-txn ^Rtx rtx))
+    (let [cur (.get-cursor this rtx)
           ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (get-cursor [_ txn]
-    (or (locking curs
-          (when (.isReadOnly ^Txn txn)
+  (iterate-kv [this rtx k-range k-type v-type]
+    (if dupsort?
+      (.iterate-list this rtx k-range k-type [:all] v-type)
+      (.iterate-key this rtx k-range k-type)))
+  (get-cursor [_ rtx]
+    (let [txn ^Txn (.-txn ^Rtx rtx)]
+      (or (when (.isReadOnly txn)
             (when-let [^Cursor cur (.poll curs)]
               (.renew cur txn)
-              cur)))
-        (.openCursor db txn)))
+              cur))
+          (.openCursor db txn))))
   (close-cursor [_ cur] (.close ^Cursor cur))
   (return-cursor [_ cur] (locking curs (.add curs cur))))
 
@@ -257,7 +230,8 @@
            ^ByteBuffer sk ^ByteBuffer ek] ctx
 
           started? (volatile! false)
-          k        (.key cur)]
+          k        (.key cur)
+          v        (.val cur)]
       (letfn [(init-key []
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
@@ -272,7 +246,9 @@
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start-key?
-                      (key-continue-back?)
+                      (if (zero? (b/compare-buffer k sk))
+                        (key-continue-back?)
+                        (check-key-back SeekOp/MDB_PREV_NODUP))
                       (check-key-back SeekOp/MDB_PREV_NODUP))
                     (check-key-back SeekOp/MDB_LAST))
                   (check-key-back SeekOp/MDB_LAST)))
@@ -305,7 +281,7 @@
           Iterator
           (hasNext [_]
             (if (not @started?) (init-k) (advance-key)))
-          (next [_] k))))))
+          (next [_] (MapEntry. k v)))))))
 
 (deftype ListIterable [^DBI db
                        ^Cursor cur
@@ -342,7 +318,9 @@
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start-key?
-                      (key-continue-back?)
+                      (if (zero? (b/compare-buffer k sk))
+                        (key-continue-back?)
+                        (check-key-back SeekOp/MDB_PREV_NODUP))
                       (check-key-back SeekOp/MDB_PREV_NODUP))
                     (check-key-back SeekOp/MDB_LAST))
                   (check-key-back SeekOp/MDB_LAST)))
@@ -552,18 +530,24 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?]
+  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?
+                                   dupsort?]
                             :or   {key-size       c/+max-key-size+
                                    val-size       c/+default-val-size+
                                    flags          c/default-dbi-flags
+                                   dupsort?       false
                                    validate-data? false}}]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
-                        ^"[Lorg.lmdbjava.DbiFlags;" (kv-flags :dbi flags))
-          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb validate-data?)]
+                        ^"[Lorg.lmdbjava.DbiFlags;"
+                        (kv-flags :dbi (if dupsort?
+                                         (conj flags :dupsort)
+                                         flags)))
+          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb dupsort?
+                     validate-data?)]
       (.put dbis dbi-name dbi)
       dbi))
 
@@ -800,8 +784,7 @@
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
     (.open-dbi this dbi-name
-               {:key-size key-size :val-size val-size
-                :flags    (conj c/default-dbi-flags :dupsort)}))
+               {:key-size key-size :val-size val-size :dupsort? true}))
   (open-list-dbi [lmdb dbi-name]
     (.open-list-dbi lmdb dbi-name nil))
 
@@ -817,14 +800,14 @@
   (visit-list [this dbi-name visitor k kt]
     (when k
       (let [lmdb this]
-        (scan/cursor-scan
+        (scan/scan
           (visit-list* rtx cur k kt visitor)
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
     (if k
       (let [lmdb this]
-        (scan/cursor-scan
+        (scan/scan
           (list-count* rtx cur k kt)
           (raise "Fail to count list: " e {:dbi dbi-name :k k})))
       0))
@@ -832,7 +815,7 @@
   (in-list? [this dbi-name k v kt vt]
     (if (and k v)
       (let [lmdb this]
-        (scan/cursor-scan
+        (scan/scan
           (in-list?* rtx cur k kt v vt)
           (raise "Fail to test if an item is in list: "
                  e {:dbi dbi-name :k k :v v})))
@@ -841,7 +824,7 @@
   (get-list [this dbi-name k kt vt]
     (when k
       (let [lmdb this]
-        (scan/cursor-scan
+        (scan/scan
           (get-list* this rtx cur k kt vt)
           (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
