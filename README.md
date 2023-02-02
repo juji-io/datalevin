@@ -4,6 +4,7 @@
 <p align="center">
 <a href="https://cljdoc.org/d/datalevin/datalevin"><img src="https://cljdoc.org/badge/datalevin/datalevin" alt="datalevin on cljdoc"></img></a>
 <a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
+<a href="https://github.com/juji-io/datalevin/blob/master/doc/install.md#babashka-pod"><img src="https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg" alt="bb compatible"></img></a>
 <a href="https://github.com/juji-io/datalevin/actions"><img
 src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.8.4"
 alt="datalevin linux/macos amd64 build status"></img></a>
