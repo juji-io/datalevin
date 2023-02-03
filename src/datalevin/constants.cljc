@@ -18,6 +18,8 @@
 (def ^:const txmax 0x7FFFFFFFFFFFFFFF)
 (def ^:const v0    :db.value/sysMin)
 (def ^:const vmax  :db.value/sysMax)
+(def ^:const g0    1)
+(def ^:const gmax  0x7FFFFFFFFFFFFFFF)
 (def ^:const a0    0)
 (def ^:const amax  0x7FFFFFFF)
 
@@ -55,7 +57,6 @@
 ;; tmp lmdb
 
 (def ^:const +default-spill-threshold+ 80)   ; percentage of Xmx
-
 (def ^:const +default-spill-root+ (u/tmp-dir))
 
 (def ^:const tmp-dbi "t")
@@ -63,11 +64,12 @@
 
 ;; index storage
 
-(def ^:const +val-prefix-size+  498)  ; - eid - aid - s
-(def ^:const +val-bytes-wo-hdr+ 496)  ; - hdr - 1 byte TBD
-(def ^:const +val-bytes-trunc+  491)  ; - hsh - tr
+(def ^:const +val-prefix-size+  494)  ; - eid - s - gid
+(def ^:const +val-bytes-wo-hdr+ 493)  ; - hdr
+(def ^:const +val-bytes-trunc+  492)  ; - tr
 
 (def ^:const +id-bytes+ Long/BYTES)
+(def ^:const +short-id-bytes+ Integer/BYTES)
 
 ;; value headers
 (def ^:const type-long-neg (unchecked-byte 0xC0))
@@ -206,10 +208,6 @@
 (def +use-readers+      32)    ; leave the rest to others
 (def +init-db-size+     100)   ; in megabytes
 (def +default-val-size+ 16384) ; in bytes
-
-;; storage
-
-(def +tx-datom-batch-size+ 100000)
 
 ;; query
 

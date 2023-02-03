@@ -489,10 +489,10 @@
     :db.type/long    (long-header v)
     nil))
 
-(deftype ^:no-doc Indexable [e a v f b h])
+(deftype Indexable [e a v f b g])
 
 (defn pr-indexable [^Indexable i]
-  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-h i)])
+  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-g i)])
 
 (defmethod print-method Indexable
   [^Indexable i, ^Writer w]
@@ -501,8 +501,9 @@
 
 (defn indexable
   "Turn datom parts into a form that is suitable for putting in indices,
-  where aid is the integer id of an attribute, vt is its :db/valueType"
-  [eid aid val vt]
+  where aid is the integer id of an attribute, vt is its :db/valueType
+  max-gt is current max giant id"
+  [eid aid val vt max-gt]
   (let [hdr (val-header val vt)]
     (if-let [vb (val-bytes val vt)]
       (let [bl   (alength ^bytes vb)
@@ -510,13 +511,13 @@
             bas  (if cut?
                    (Arrays/copyOf ^bytes vb c/+val-bytes-trunc+)
                    vb)
-            hsh  (when cut? (hash val))]
-        (Indexable. eid aid val hdr bas hsh))
-      (Indexable. eid aid val hdr nil nil))))
+            gid  (if cut? max-gt c/normal)]
+        (Indexable. eid aid val hdr bas gid))
+      (Indexable. eid aid val hdr nil c/normal))))
 
-(defn ^:no-doc giant?
+(defn giant?
   [^Indexable i]
-  (.-h i))
+  (not= (.-g i) c/normal))
 
 (defn- put-uuid
   [bf ^UUID val]
@@ -544,35 +545,63 @@
     -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
                                    (if val c/true-value c/false-value)))))
 
-(defn- put-eav
+;; (defn- put-eav
+;;   [bf ^Indexable x]
+;;   (put-long bf (.-e x))
+;;   (put-int bf (.-a x))
+;;   (when-let [hdr (.-f x)] (put-byte bf hdr))
+;;   (if-let [bs (.-b x)]
+;;     (do (put-bytes bf bs)
+;;         (when (.-h x) (put-byte bf c/truncator)))
+;;     (put-fixed bf (.-v x) (.-f x)))
+;;   (put-byte bf c/separator)
+;;   (when-let [h (.-h x)] (put-int bf h)))
+
+;; (defn- put-ave
+;;   [bf ^Indexable x]
+;;   (put-int bf (.-a x))
+;;   (when-let [hdr (.-f x)] (put-byte bf hdr))
+;;   (if-let [bs (.-b x)]
+;;     (do (put-bytes bf bs)
+;;         (when (.-h x) (put-byte bf c/truncator)))
+;;     (put-fixed bf (.-v x) (.-f x)))
+;;   (put-byte bf c/separator)
+;;   (put-long bf (.-e x))
+;;   (when-let [h (.-h x)] (put-int bf h)))
+
+;; (defn- put-vea
+;;   [bf ^Indexable x]
+;;   (put-fixed bf (.-v x) (.-f x))
+;;   (put-long bf (.-e x))
+;;   (put-int bf (.-a x)))
+
+(defn- put-avg
   [bf ^Indexable x]
-  (put-long bf (.-e x))
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
-        (when (.-h x) (put-byte bf c/truncator)))
+        (when (giant? x) (put-byte bf c/truncator)))
     (put-fixed bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
-  (when-let [h (.-h x)] (put-int bf h)))
+  (put-long bf (g x)))
 
-(defn- put-ave
+(defn- put-veg
   [bf ^Indexable x]
-  (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
-        (when (.-h x) (put-byte bf c/truncator)))
+        (when (giant? x) (put-byte bf c/truncator)))
     (put-fixed bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
-  (when-let [h (.-h x)] (put-int bf h)))
+  (put-long bf (g x)))
 
-(defn- put-vea
+(defn- put-eag
   [bf ^Indexable x]
-  (put-fixed bf (.-v x) (.-f x))
   (put-long bf (.-e x))
-  (put-int bf (.-a x)))
+  (put-int bf (.-a x))
+  (put-long bf (g x)))
 
 (defn- sep->slash
   [^bytes bs]
@@ -582,6 +611,10 @@
         (= (aget bs i) c/separator) (aset-byte bs i c/slash)
         (< i n-1)                   (recur (inc i)))))
   bs)
+
+(defn- skip
+  [^ByteBuffer bf ^long bytes]
+  (.position bf (+ (.position bf) bytes)))
 
 (defn- get-string
   ([^ByteBuffer bf]
@@ -624,47 +657,96 @@
     (do (.reset bf)
         (get-data bf post-v))))
 
-(deftype Retrieved [e a v])
+(defprotocol IRetrieved
+  (e [this])
+  (set-e [this e])
+  (a [this])
+  (set-a [this a])
+  (v [this])
+  (set-v [this v]))
 
-(def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown))
+(deftype Retrieved [^:unsynchronized-mutable e
+                    ^:unsynchronized-mutable a
+                    ^:unsynchronized-mutable v
+                    g]
+  IRetrieved
+  (e [_] e)
+  (set-e [_ x] (set! e x))
+  (a [_] a)
+  (set-a [_ x] (set! a x))
+  (v [_] v)
+  (set-v [_ x] (set! v x)) )
 
-(defn- indexable->retrieved
-  [^Indexable i]
-  (Retrieved. (.-e i) (.-a i) (.-v i)))
+(defn pr-retrieved [^Retrieved r]
+  [(e r) (a r) (v r) (.-g r)])
 
-(defn expected-return
-  "Given what's put in, return the expected output from storage"
-  [x x-type]
-  (case x-type
-    :eav  (indexable->retrieved x)
-    :eavt (indexable->retrieved x)
-    :ave  (indexable->retrieved x)
-    :avet (indexable->retrieved x)
-    :vea  (indexable->retrieved x)
-    :veat (indexable->retrieved x)
-    x))
+(defmethod print-method Retrieved
+  [^Retrieved r, ^Writer w]
+  (.write w "#datalevin/Retrieved ")
+  (.write w (pr-str (pr-retrieved r))))
 
-(defn- get-eav
-  [bf]
-  (let [e (get-long bf)
-        a (get-int bf)
-        v (get-value bf 1)]
-    (Retrieved. e a v)))
+;; (def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown))
 
-(defn- get-ave
+(defn- get-avg
   [bf]
   (let [a (get-int bf)
         v (get-value bf 9)
         _ (get-byte bf)
-        e (get-long bf)]
-    (Retrieved. e a v)))
+        g (get-long bf)]
+    (Retrieved. nil a v g)))
 
-(defn- get-vea
+(defn- get-veg
   [bf]
-  (let [v (get-long bf)
+  (let [v (get-value bf 17)
+        _ (get-byte bf)
         e (get-long bf)
-        a (get-int bf)]
-    (Retrieved. e a v)))
+        g (get-long bf)]
+    (Retrieved. e nil v g)))
+
+(defn- get-eag
+  [bf]
+  (let [e (get-long bf)
+        a (get-int bf)
+        g (get-long bf)]
+    (Retrieved. e a nil g)))
+
+;; (defn- indexable->retrieved
+;;   [^Indexable i]
+;;   (Retrieved. (.-e i) (.-a i) (.-v i)))
+
+;; (defn expected-return
+;;   "Given what's put in, return the expected output from storage"
+;;   [x x-type]
+;;   (case x-type
+;;     :eav  (indexable->retrieved x)
+;;     :eavt (indexable->retrieved x)
+;;     :ave  (indexable->retrieved x)
+;;     :avet (indexable->retrieved x)
+;;     :vea  (indexable->retrieved x)
+;;     :veat (indexable->retrieved x)
+;;     x))
+
+;; (defn- get-eav
+;;   [bf]
+;;   (let [e (get-long bf)
+;;         a (get-int bf)
+;;         v (get-value bf 1)]
+;;     (Retrieved. e a v)))
+
+;; (defn- get-ave
+;;   [bf]
+;;   (let [a (get-int bf)
+;;         v (get-value bf 9)
+;;         _ (get-byte bf)
+;;         e (get-long bf)]
+;;     (Retrieved. e a v)))
+
+;; (defn- get-vea
+;;   [bf]
+;;   (let [v (get-long bf)
+;;         e (get-long bf)
+;;         a (get-int bf)]
+;;     (Retrieved. e a v)))
 
 (defn- put-attr
   "NB. not going to do range query on attr names"
@@ -752,12 +834,15 @@
      :uuid           (do (put-byte bf (raw-header x :uuid))
                          (put-uuid bf x))
      :attr           (put-attr bf x)
-     :eav            (put-eav bf x)
-     :eavt           (put-eav bf x)
-     :ave            (put-ave bf x)
-     :avet           (put-ave bf x)
-     :vea            (put-vea bf x)
-     :veat           (put-vea bf x)
+     ;; :eav            (put-eav bf x)
+     ;; :eavt           (put-eav bf x)
+     ;; :ave            (put-ave bf x)
+     ;; :avet           (put-ave bf x)
+     ;; :vea            (put-vea bf x)
+     ;; :veat           (put-vea bf x)
+     :avg            (put-avg bf x)
+     :veg            (put-veg bf x)
+     :eag            (put-eag bf x)
      :raw            (put-bytes bf x)
      (put-data bf x))))
 
@@ -794,12 +879,15 @@
      :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
      :uuid           (do (get-byte bf) (get-uuid bf))
      :attr           (get-attr bf)
-     :eav            (get-eav bf)
-     :eavt           (get-eav bf)
-     :ave            (get-ave bf)
-     :avet           (get-ave bf)
-     :vea            (get-vea bf)
-     :veat           (get-vea bf)
+     ;; :eav            (get-eav bf)
+     ;; :eavt           (get-eav bf)
+     ;; :ave            (get-ave bf)
+     ;; :avet           (get-ave bf)
+     ;; :vea            (get-vea bf)
+     ;; :veat           (get-vea bf)
+     :avg            (get-avg bf)
+     :veg            (get-veg bf)
+     :eag            (get-eag bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
      :short          (get-short bf)
