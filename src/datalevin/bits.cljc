@@ -584,7 +584,7 @@
         (when (giant? x) (put-byte bf c/truncator)))
     (put-fixed bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
-  (put-long bf (g x)))
+  (put-long bf (.-g x)))
 
 (defn- put-veg
   [bf ^Indexable x]
@@ -595,13 +595,13 @@
     (put-fixed bf (.-v x) (.-f x)))
   (put-byte bf c/separator)
   (put-long bf (.-e x))
-  (put-long bf (g x)))
+  (put-long bf (.-g x)))
 
 (defn- put-eag
   [bf ^Indexable x]
   (put-long bf (.-e x))
   (put-int bf (.-a x))
-  (put-long bf (g x)))
+  (put-long bf (.-g x)))
 
 (defn- sep->slash
   [^bytes bs]
@@ -657,28 +657,10 @@
     (do (.reset bf)
         (get-data bf post-v))))
 
-(defprotocol IRetrieved
-  (e [this])
-  (set-e [this e])
-  (a [this])
-  (set-a [this a])
-  (v [this])
-  (set-v [this v]))
-
-(deftype Retrieved [^:unsynchronized-mutable e
-                    ^:unsynchronized-mutable a
-                    ^:unsynchronized-mutable v
-                    g]
-  IRetrieved
-  (e [_] e)
-  (set-e [_ x] (set! e x))
-  (a [_] a)
-  (set-a [_ x] (set! a x))
-  (v [_] v)
-  (set-v [_ x] (set! v x)) )
+(deftype Retrieved [e a v g])
 
 (defn pr-retrieved [^Retrieved r]
-  [(e r) (a r) (v r) (.-g r)])
+  [(.-e r) (.-a r) (.-v r) (.-g r)])
 
 (defmethod print-method Retrieved
   [^Retrieved r, ^Writer w]
@@ -686,6 +668,7 @@
   (.write w (pr-str (pr-retrieved r))))
 
 ;; (def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown))
+(def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown nil))
 
 (defn- get-avg
   [bf]
@@ -710,21 +693,21 @@
         g (get-long bf)]
     (Retrieved. e a nil g)))
 
-;; (defn- indexable->retrieved
-;;   [^Indexable i]
-;;   (Retrieved. (.-e i) (.-a i) (.-v i)))
+(defn- indexable->retrieved
+  [^Indexable i]
+  (Retrieved. (.-e i) (.-a i) (.-v i) (.-g i)))
 
-;; (defn expected-return
-;;   "Given what's put in, return the expected output from storage"
-;;   [x x-type]
-;;   (case x-type
-;;     :eav  (indexable->retrieved x)
-;;     :eavt (indexable->retrieved x)
-;;     :ave  (indexable->retrieved x)
-;;     :avet (indexable->retrieved x)
-;;     :vea  (indexable->retrieved x)
-;;     :veat (indexable->retrieved x)
-;;     x))
+(defn expected-return
+  "Given what's put in, return the expected output from storage"
+  [x x-type]
+  (case x-type
+    :eav  (indexable->retrieved x)
+    :eavt (indexable->retrieved x)
+    :ave  (indexable->retrieved x)
+    :avet (indexable->retrieved x)
+    :vea  (indexable->retrieved x)
+    :veat (indexable->retrieved x)
+    x))
 
 ;; (defn- get-eav
 ;;   [bf]

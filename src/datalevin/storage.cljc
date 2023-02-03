@@ -155,7 +155,6 @@
 (defn- datom->indexable
   [schema max-gt ^Datom d high?]
   (let [e  (.-e d)
-        am (if high? c/amax c/a0)
         vm (if high? c/vmax c/v0)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
@@ -163,14 +162,15 @@
           (b/indexable e (:db/aid p) v (:db/valueType p) max-gt)
           (b/indexable e (:db/aid p) vm (:db/valueType p) max-gt))
         (b/indexable e c/a0 c/v0 nil max-gt))
-      (if-some [v (.-v d)]
-        (if (integer? v)
-          (if e
-            (b/indexable e am v :db.type/ref max-gt)
-            (b/indexable (if high? c/emax c/e0) am v :db.type/ref max-gt))
-          (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
-                   {:v v}))
-        (b/indexable e am vm :db.type/sysMin max-gt)))))
+      (let [am (if high? c/amax c/a0)]
+        (if-some [v (.-v d)]
+          (if (integer? v)
+            (if e
+              (b/indexable e am v :db.type/ref max-gt)
+              (b/indexable (if high? c/emax c/e0) am v :db.type/ref max-gt))
+            (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
+                     {:v v}))
+          (b/indexable e am vm :db.type/sysMin max-gt))))))
 
 (defn- index->dbi
   [index]
@@ -390,6 +390,7 @@
       (let [ft-ds  (transient [])
             ;; needed because a giant may be deleted in the same tx
             giants (volatile! {})
+
             add-fn (fn [holder datom]
                      (if (d/datom-added datom)
                        (reduce conj! holder
@@ -579,24 +580,24 @@
         (u/raise "Value type change is not allowed when data exist"
                  {:attribute attr})))))
 
-#_(defn- violate-unique?
-   [^Store store low-datom high-datom]
-   (let [prev-v   (volatile! nil)
-         violate? (volatile! false)
-         schema   (schema store)
-         visitor  (fn [kv]
-                    (let [^Retrieved ave (b/read-buffer (lmdb/k kv) :ave)
-                          v              (.-v ave)]
-                      (if (= @prev-v v)
-                        (do (vreset! violate? true)
-                            :datalevin/terminate-visit)
-                        (vreset! prev-v v))))]
-     (lmdb/visit (.-lmdb store) c/ave visitor
-                 [:open
-                  (low-datom->indexable schema low-datom)
-                  (high-datom->indexable schema high-datom)]
-                 :ave)
-     @violate?))
+(defn- violate-unique?
+  [^Store store low-datom high-datom]
+  (let [prev-v   (volatile! nil)
+        violate? (volatile! false)
+        schema   (schema store)
+        visitor  (fn [kv]
+                   (let [^Retrieved ave (b/read-buffer (lmdb/k kv) :ave)
+                         v              (.-v ave)]
+                     (if (= @prev-v v)
+                       (do (vreset! violate? true)
+                           :datalevin/terminate-visit)
+                       (vreset! prev-v v))))]
+    #_(lmdb/visit (.-lmdb store) c/ave visitor
+                  [:open
+                   (low-datom->indexable schema low-datom)
+                   (high-datom->indexable schema high-datom)]
+                  :ave)
+    @violate?))
 
 (defn- check-unique
   [store attr old new]
@@ -618,7 +619,7 @@
       :pass-through)))
 
 (defn- insert-data
-  [^Store store ^Datom d ft-ds giants]
+  [^Store store ^Datom d eav ave vea ft-ds giants]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
@@ -641,10 +642,10 @@
       (let [v (str v)]
         (when-not (str/blank? v)
           (conj! ft-ds (if giant? [:g [max-gt v]] [:a [e aid v]])))))
-    (cond-> [[:put :eav e i]
-             [:put :ave aid i]]
-      ref?   (conj [:put :vea v i])
-      giant? (conj [:put c/giants max-gt d]))))
+    (conj! eav [:put e i])
+    (conj! ave [:put aid i])
+    (when ref? (conj! vea [:put v i]))
+    (when giant? (conj! [:put c/giants max-gt d]))))
 
 (defn- delete-data
   [^Store store ^Datom d ft-ds giants]

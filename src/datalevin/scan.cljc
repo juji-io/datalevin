@@ -37,12 +37,12 @@
   ([kv k-type v]
    (read-key kv k-type v false))
   ([kv k-type v rewind?]
-   #_(if (and v (not= v c/normal) (c/index-types k-type))
-       b/overflown-key
-       (b/read-buffer (if rewind?
-                        (.rewind ^ByteBuffer (l/k kv))
-                        (l/k kv))
-                      k-type))))
+   (if (and v (not= v c/normal) (c/index-types k-type))
+     b/overflown-key
+     (b/read-buffer (if rewind?
+                      (.rewind ^ByteBuffer (l/k kv))
+                      (l/k kv))
+                    k-type))))
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
@@ -50,9 +50,9 @@
     (do
       (l/put-key rtx k k-type)
       (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
-        #_(if ignore-key?
-            (b/read-buffer bb v-type)
-            [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
+        (if ignore-key?
+          (b/read-buffer bb v-type)
+          [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
     (raise "Fail to get-value: " e
            {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
 
