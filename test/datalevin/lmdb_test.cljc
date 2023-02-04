@@ -266,6 +266,8 @@
     (l/put-list-items lmdb "list" "b" [5 6 7] :string :long)
     (l/put-list-items lmdb "list" "c" [3 6 9] :string :long)
 
+    (is (= (l/entries lmdb "list") 10))
+
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]
            (l/get-range lmdb "list" [:all] :string :long)))

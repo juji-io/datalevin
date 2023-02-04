@@ -119,39 +119,6 @@
   (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
       c/tx0))
 
-;; (defn- low-datom->indexable
-;;   [schema ^Datom d]
-;;   (let [e (.-e d)]
-;;     (if-let [a (.-a d)]
-;;       (if-let [p (schema a)]
-;;         (if-some [v (.-v d)]
-;;           (b/indexable e (:db/aid p) v (:db/valueType p))
-;;           (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
-;;         (b/indexable e c/a0 c/v0 nil))
-;;       (if-some [v (.-v d)]
-;;         (if (integer? v)
-;;           (b/indexable e c/a0 v :db.type/ref)
-;;           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
-;;                    {:v v}))
-;;         (b/indexable e c/a0 c/v0 :db.type/sysMin)))))
-
-;; (defn- high-datom->indexable
-;;   [schema ^Datom d]
-;;   (let [e (.-e d)]
-;;     (if-let [a (.-a d)]
-;;       (if-let [p (schema a)]
-;;         (if-some [v (.-v d)]
-;;           (b/indexable e (:db/aid p) v (:db/valueType p))
-;;           (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
-;;         ;; same as low-datom-indexable to get [] fast
-;;         (b/indexable e c/a0 c/v0 nil))
-;;       (if-some [v (.-v d)]
-;;         (if (integer? v)
-;;           (b/indexable e c/amax v :db.type/ref)
-;;           (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
-;;                    {:v v}))
-;;         (b/indexable e c/amax c/vmax :db.type/sysMax)))))
-
 (defn- datom->indexable
   [schema max-gt ^Datom d high?]
   (let [e  (.-e d)
@@ -168,29 +135,38 @@
             (if e
               (b/indexable e am v :db.type/ref max-gt)
               (b/indexable (if high? c/emax c/e0) am v :db.type/ref max-gt))
-            (u/raise "When v is known but a is unknown, v must be a :db.type/ref"
-                     {:v v}))
+            (u/raise
+              "When v is known but a is unknown, v must be a :db.type/ref"
+              {:v v}))
           (b/indexable e am vm :db.type/sysMin max-gt))))))
 
 (defn- index->dbi
   [index]
   (case index
-    :eavt c/eav
-    :eav  c/eav
-    :avet c/ave
-    :ave  c/ave
-    :veat c/vea
-    :vea  c/vea))
+    (:eav :eavt) c/eav
+    (:ave :avet) c/ave
+    (:vea :veat) c/vea))
 
 (defn- index->vtype
   [index]
   (case index
-    :eavt :avg
-    :eav  :avg
-    :avet :veg
-    :ave  :veg
-    :veat :eag
-    :vea  :eag))
+    (:eav :eavt) :avg
+    (:ave :avet) :veg
+    (:vea :veat) :eag))
+
+(defn- index->ktype
+  [index]
+  (case index
+    (:eav :eavt) :id
+    (:ave :avet) :int
+    (:vea :veat) :id))
+
+(defn- index->k
+  [index schema ^Datom datom]
+  (case index
+    (:eav :eavt) (.-e datom)
+    (:ave :avet) (:db/aid (schema (.-a datom)))
+    (:vea :veat) (.-v datom)))
 
 (defn gt->datom
   [lmdb gt]
@@ -203,11 +179,18 @@
   (d/datom (nth e-aid-v 0) ((attrs store) (nth e-aid-v 1)) (peek e-aid-v)))
 
 (defn- retrieved->datom
-  [lmdb attrs [^Retrieved k ^long v :as kv]]
+  [lmdb attrs [k ^Retrieved r :as kv]]
   (when kv
-    (if (= v c/normal)
-      (d/datom (.-e k) (attrs (.-a k)) (.-v k))
-      (gt->datom lmdb v))))
+    (let [g (.-g r)]
+      (if (= g c/normal)
+        (let [e (.-e r)
+              a (.-a r)
+              v (.-v r)]
+          (cond
+            (nil? e) (d/datom k (attrs a) v)
+            (nil? a) (d/datom e (attrs (int k)) v)
+            (nil? v) (d/datom e (attrs a) k)))
+        (gt->datom lmdb g)))))
 
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
@@ -273,7 +256,8 @@
     that return true for (pred x), where x is the datom")
   )
 
-(declare insert-data delete-data fulltext-index check)
+(declare insert-datom delete-datom transact-list transact-giants
+         fulltext-index check)
 
 (deftype Store [lmdb
                 search-engine
@@ -359,7 +343,8 @@
       p))
 
   (del-attr [this attr]
-    (if (populated? this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
+    (if (populated? this :ave
+                    (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
       (let [aid (:db/aid (schema attr))]
         (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
@@ -386,170 +371,156 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      ;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
-      (let [ft-ds  (transient [])
-            ;; needed because a giant may be deleted in the same tx
-            giants (volatile! {})
-
-            add-fn (fn [holder datom]
-                     (if (d/datom-added datom)
-                       (reduce conj! holder
-                               (insert-data this datom ft-ds giants))
-                       (reduce conj! holder
-                               (delete-data this datom ft-ds giants))))]
-        (lmdb/transact-kv
-          lmdb (persistent! (reduce add-fn (transient []) datoms)))
+      (let [eav    (transient [])
+            ave    (transient [])
+            vea    (transient [])
+            ;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
+            ft-ds  (transient [])
+            giants (volatile! {})]
+        (doseq [datom datoms]
+          (if (d/datom-added datom)
+            (insert-datom this datom eav ave vea ft-ds giants)
+            (delete-datom this datom eav ave vea ft-ds giants)))
+        (transact-list lmdb :eav eav)
+        (transact-list lmdb :ave ave)
+        (transact-list lmdb :vea vea)
+        (transact-giants lmdb giants)
         (fulltext-index search-engine ft-ds)
         (lmdb/transact-kv
           lmdb [[:put c/meta :max-tx (advance-max-tx this) :attr :long]
                 [:put c/meta :last-modified (System/currentTimeMillis)
                  :attr :long]]))))
 
-  #_(fetch [_ datom]
-      (mapv (partial retrieved->datom lmdb attrs)
-            (when-some [kv (lmdb/get-value lmdb
-                                           c/eav
-                                           (low-datom->indexable schema datom)
-                                           :eav
-                                           :id
-                                           false)]
-              [kv])))
+  (fetch [_ datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (let [^Datom datom datom
+                e            (.-e datom)
+                props        (schema (.-a datom))
+                aid          (:db/aid props)
+                vt           (:db/valueType props)
+                v            (.-v datom)
+                ^Indexable i (b/indexable e aid v vt c/g0)]
+            (lmdb/list-range
+              lmdb c/eav
+              [:closed e e] :id
+              [:closed i (b/indexable e aid v vt c/gmax)] :avg))))
 
   (populated? [_ index low-datom high-datom]
-    (lmdb/get-first lmdb (index->dbi index)
-                    [:closed
-                     (datom->indexable schema c/g0 low-datom false)
-                     (datom->indexable schema c/gmax high-datom true)]
-                    index :ignore true))
+    (lmdb/list-range-first
+      lmdb (index->dbi index)
+      [:closed (index->k index schema low-datom)
+       (index->k index schema high-datom)] (index->ktype index)
+      [:closed
+       (datom->indexable schema c/g0 low-datom false)
+       (datom->indexable schema c/gmax high-datom true)] (index->vtype index)))
 
   (size [_ index low-datom high-datom]
-    (lmdb/range-count lmdb
-                      (index->dbi index)
-                      [:closed
-                       (datom->indexable schema c/g0 low-datom false)
-                       (datom->indexable schema c/gmax high-datom true)]
-                      index))
+    (lmdb/list-range-count lmdb (index->dbi index)
+                           [:closed (index->k index schema low-datom)
+                            (index->k index schema high-datom)]
+                           (index->ktype index)
+                           [:closed
+                            (datom->indexable schema c/g0 low-datom false)
+                            (datom->indexable schema c/gmax high-datom true)]
+                           (index->vtype index)))
 
-  (head [_ index low-datom high-datom]
-    (retrieved->datom
-      lmdb attrs
-      (lmdb/get-first lmdb
-                      (index->dbi index)
-                      [:closed
-                       (datom->indexable schema c/g0 low-datom false)
-                       (datom->indexable schema c/gmax high-datom true)
-                       ]
-                      index :id)))
+  (head [this index low-datom high-datom]
+    (retrieved->datom lmdb attrs
+                      (.populated? this index low-datom high-datom)))
 
   (tail [_ index high-datom low-datom]
     (retrieved->datom
       lmdb attrs
-      (lmdb/get-first lmdb
-                      (index->dbi index)
+      (lmdb/get-first lmdb (index->dbi index)
+                      [:closed-back (index->k index schema high-datom)
+                       (index->k index schema low-datom)]
+                      (index->ktype index)
                       [:closed-back
                        (datom->indexable schema c/gmax high-datom true)
-                       (datom->indexable schema c/g0 low-datom false)
-                       ]
-                      index
-                      :id)))
+                       (datom->indexable schema c/g0 low-datom false)]
+                      (index->vtype index))))
 
-  ;; (slice [_ index low-datom high-datom]
-  ;;   (mapv (partial retrieved->datom lmdb attrs)
-  ;;         (lmdb/get-range
-  ;;           lmdb
-  ;;           (index->dbi index)
-  ;;           [:closed
+  (slice [_ index low-datom high-datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/list-range
+            lmdb (index->dbi index)
+            [:closed (index->k index schema low-datom)
+             (index->k index schema high-datom)] (index->ktype index)
+            [:closed
+             (datom->indexable schema c/g0 low-datom false)
+             (datom->indexable schema c/gmax high-datom true)]
+            (index->vtype index))))
 
-  ;;            (datom->indexable schema c/g0 low-datom false)
-  ;;            (datom->indexable schema c/gmax high-datom true)
-  ;;            ;; (low-datom->indexable schema low-datom)
-  ;;            ;; (high-datom->indexable schema high-datom)
-  ;;            ]
-  ;;           index
-  ;;           :id)))
+  (rslice [_ index high-datom low-datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/list-range
+            lmdb (index->dbi index)
+            [:closed-back (index->k index schema high-datom)
+             (index->k index schema low-datom)] (index->ktype index)
+            [:closed-back
+             (datom->indexable schema c/gmax high-datom true)
+             (datom->indexable schema c/g0 low-datom false)]
+            (index->vtype index))))
 
-  ;; (rslice [_ index high-datom low-datom]
-  ;;   (mapv (partial retrieved->datom lmdb attrs)
-  ;;         (lmdb/get-range
-  ;;           lmdb
-  ;;           (index->dbi index)
-  ;;           [:closed-back
+  (size-filter [_ index pred low-datom high-datom]
+    (lmdb/list-range-filter-count
+      lmdb (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed (index->k index schema low-datom)
+       (index->k index schema high-datom)] (index->ktype index)
+      [:closed (datom->indexable schema c/g0 low-datom false)
+       (datom->indexable schema c/gmax high-datom true)]
+      (index->vtype index)))
 
-  ;;            (datom->indexable schema c/gmax high-datom true)
-  ;;            (datom->indexable schema c/g0 low-datom false)
-  ;;            ;; (high-datom->indexable schema high-datom)
-  ;;            ;; (low-datom->indexable schema low-datom)
-  ;;            ]
-  ;;           index
-  ;;           :id)))
+  (head-filter [_ index pred low-datom high-datom]
+    (retrieved->datom
+      lmdb attrs
+      (lmdb/list-range-some
+        lmdb (index->dbi index)
+        (datom-pred->kv-pred lmdb attrs index pred)
+        [:closed (index->k index schema low-datom)
+         (index->k index schema high-datom)] (index->ktype index)
+        [:closed
+         (datom->indexable schema c/g0 low-datom false)
+         (datom->indexable schema c/gmax high-datom true)]
+        (index->vtype index))))
 
-  ;; (size-filter [_ index pred low-datom high-datom]
-  ;;   (lmdb/range-filter-count lmdb
-  ;;                            (index->dbi index)
-  ;;                            (datom-pred->kv-pred lmdb attrs index pred)
-  ;;                            [:closed
+  (tail-filter [_ index pred high-datom low-datom]
+    (retrieved->datom
+      lmdb attrs
+      (lmdb/list-range-some
+        lmdb (index->dbi index)
+        (datom-pred->kv-pred lmdb attrs index pred)
+        [:closed-back (index->k index schema high-datom)
+         (index->k index schema low-datom)] (index->ktype index)
+        [:closed-back
+         (datom->indexable schema c/gmax high-datom true)
+         (datom->indexable schema c/g0 low-datom false)]
+        (index->vtype index))))
 
-  ;;                             (datom->indexable schema c/g0 low-datom false)
-  ;;                             (datom->indexable schema c/gmax high-datom true)
-  ;;                             (low-datom->indexable schema low-datom)
-  ;;                             (high-datom->indexable schema high-datom)]
-  ;;                            index))
+  (slice-filter [_ index pred low-datom high-datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/list-range-filter
+            lmdb (index->dbi index)
+            (datom-pred->kv-pred lmdb attrs index pred)
+            [:closed (index->k index schema low-datom)
+             (index->k index schema high-datom)] (index->ktype index)
+            [:closed
+             (datom->indexable schema c/g0 low-datom false)
+             (datom->indexable schema c/gmax high-datom true)]
+            (index->vtype index))))
 
-  ;; (head-filter [_ index pred low-datom high-datom]
-  ;;   (retrieved->datom
-  ;;     lmdb attrs (lmdb/get-some lmdb
-  ;;                               (index->dbi index)
-  ;;                               (datom-pred->kv-pred lmdb attrs index pred)
-  ;;                               [:closed
-
-  ;;                                (datom->indexable schema c/g0 low-datom false)
-  ;;                                (datom->indexable schema c/gmax high-datom true)
-  ;;                                (low-datom->indexable schema low-datom)
-  ;;                                (high-datom->indexable schema high-datom)]
-  ;;                               index
-  ;;                               :id)))
-
-  ;; (tail-filter [_ index pred high-datom low-datom]
-  ;;   (retrieved->datom
-  ;;     lmdb attrs (lmdb/get-some lmdb
-  ;;                               (index->dbi index)
-  ;;                               (datom-pred->kv-pred lmdb attrs index pred)
-  ;;                               [:closed-back
-
-  ;;                                (datom->indexable schema c/gmax high-datom true)
-  ;;                                (datom->indexable schema c/g0 low-datom false)
-  ;;                                (high-datom->indexable schema high-datom)
-  ;;                                (low-datom->indexable schema low-datom)]
-  ;;                               index
-  ;;                               :id)))
-
-  ;; (slice-filter [_ index pred low-datom high-datom]
-  ;;   (mapv
-  ;;     (partial retrieved->datom lmdb attrs)
-  ;;     (lmdb/range-filter
-  ;;       lmdb
-  ;;       (index->dbi index)
-  ;;       (datom-pred->kv-pred lmdb attrs index pred)
-  ;;       [:closed
-
-  ;;        (datom->indexable schema c/g0 low-datom false)
-  ;;        (datom->indexable schema c/gmax high-datom true)
-  ;;        (low-datom->indexable schema low-datom)
-  ;;        (high-datom->indexable schema high-datom)]
-  ;;       index
-  ;;       :id)))
-
-  ;; (rslice-filter [_ index pred high-datom low-datom]
-  ;;   (mapv
-  ;;     (partial retrieved->datom lmdb attrs)
-  ;;     (lmdb/range-filter
-  ;;       lmdb
-  ;;       (index->dbi index)
-  ;;       (datom-pred->kv-pred lmdb attrs index pred)
-  ;;       [:closed-back
-  ;;        (datom->indexable schema c/gmax high-datom true)
-  ;;        (datom->indexable schema c/g0 low-datom false)]
-  ;;       index :id)))
+  (rslice-filter [_ index pred high-datom low-datom]
+    (mapv (partial retrieved->datom lmdb attrs)
+          (lmdb/list-range-filter
+            lmdb (index->dbi index)
+            (datom-pred->kv-pred lmdb attrs index pred)
+            [:closed-back (index->k index schema high-datom)
+             (index->k index schema low-datom)] (index->ktype index)
+            [:closed-back
+             (datom->indexable schema c/gmax high-datom true)
+             (datom->indexable schema c/g0 low-datom false)]
+            (index->vtype index))))
   )
 
 (defn fulltext-index
@@ -586,17 +557,19 @@
         violate? (volatile! false)
         schema   (schema store)
         visitor  (fn [kv]
-                   (let [^Retrieved ave (b/read-buffer (lmdb/k kv) :ave)
-                         v              (.-v ave)]
+                   (let [^Retrieved veg (b/read-buffer (lmdb/v kv) :veg)
+                         v              (.-v veg)]
                      (if (= @prev-v v)
                        (do (vreset! violate? true)
                            :datalevin/terminate-visit)
                        (vreset! prev-v v))))]
-    #_(lmdb/visit (.-lmdb store) c/ave visitor
-                  [:open
-                   (low-datom->indexable schema low-datom)
-                   (high-datom->indexable schema high-datom)]
-                  :ave)
+    (lmdb/visit-list-range
+      (.-lmdb store) c/ave visitor
+      [:open (index->k :ave schema low-datom)
+       (index->k :ave schema high-datom)] (index->ktype :ave)
+      [:open (datom->indexable schema c/g0 low-datom false)
+       (datom->indexable schema c/gmax high-datom true)]
+      (index->vtype :ave))
     @violate?))
 
 (defn- check-unique
@@ -618,7 +591,7 @@
       :db/unique      (check-unique store attr v' v)
       :pass-through)))
 
-(defn- insert-data
+(defn- insert-datom
   [^Store store ^Datom d eav ave vea ft-ds giants]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
@@ -637,44 +610,91 @@
         (u/raise "Invalid data, expecting " vt {:input v}))
     (when giant?
       (advance-max-gt store)
-      (vswap! giants assoc [e aid v] max-gt))
+      (vswap! giants assoc [e attr v] [:put max-gt]))
     (when ft?
       (let [v (str v)]
         (when-not (str/blank? v)
           (conj! ft-ds (if giant? [:g [max-gt v]] [:a [e aid v]])))))
     (conj! eav [:put e i])
     (conj! ave [:put aid i])
-    (when ref? (conj! vea [:put v i]))
-    (when giant? (conj! [:put c/giants max-gt d]))))
+    (when ref? (conj! vea [:put v i]))))
 
-(defn- delete-data
-  [^Store store ^Datom d ft-ds giants]
-  (let [props        ((schema store) (.-a d))
+(defn- delete-datom
+  [^Store store ^Datom d eav ave vea ft-ds giants]
+  (let [attr         (.-a d)
+        props        ((schema store) attr)
         vt           (:db/valueType props)
         ref?         (= :db.type/ref vt)
         e            (.-e d)
         aid          (:db/aid props)
         v            (.-v d)
         ^Indexable i (b/indexable e aid v vt c/g0)
+        d-eav        [e attr v]
+        gt-now       (peek (@giants d-eav))
         gt           (when (b/giant? i)
-                       (or (@giants [e aid v])
+                       (or gt-now
                            (let [[_ ^Retrieved r]
-                                 (first
+                                 (nth
                                    (lmdb/list-range
                                      (.-lmdb store) c/eav [:closed e e] :id
                                      [:closed i
                                       (Indexable. e aid v (.-f i)
                                                   (.-b i) c/gmax)]
-                                     :avg))]
+                                     :avg) 0)]
                              (.-g r))))]
     (when (:db/fulltext props)
       (let [v (str v)]
         (when-not (str/blank? v)
           (conj! ft-ds (if gt [:r gt] [:d [e aid v]])))))
-    (cond-> [[:del :eav i]
-             [:del :ave i]]
-      ref? (conj [:del :vea i])
-      gt   (conj [:del c/giants gt]))))
+    (conj! eav [:del e i])
+    (conj! ave [:del aid i])
+    (when ref? (conj! vea [:del v i]))
+    (when gt
+      (if gt-now
+        (vswap! giants dissoc d-eav)
+        (vswap! giants assoc d-eav [:del gt])))))
+
+(defn- data->tx
+  [data]
+  (sequence
+    (comp
+      (partition-by second)
+      (map (fn [coll]
+             (let [f  (first coll)
+                   k  (second f)
+                   vs (persistent!
+                        (reduce
+                          (fn [txs d] (conj! txs (peek d)))
+                          (transient [])
+                          coll))]
+               (case (first f)
+                 :put [:put-list k vs]
+                 :del [:del-list k vs])))))
+    data))
+
+(defn- transact-list
+  [lmdb index data]
+  (lmdb/transact-kv lmdb
+                    (index->dbi index)
+                    (sequence
+                      (comp
+                        (partition-by first)
+                        (map #(sort-by second %))
+                        (mapcat data->tx))
+                      data)
+                    (index->ktype index)
+                    (index->vtype index)))
+
+(defn- transact-giants
+  [lmdb giants]
+  (lmdb/transact-kv lmdb
+                    c/giants
+                    (map (fn [[d [op gt]]]
+                           (case op
+                             :put [:put gt (apply d/datom d)]
+                             :del [:del gt]))
+                         giants)
+                    :id :data))
 
 (defn- transact-opts
   [lmdb opts]

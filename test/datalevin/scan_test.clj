@@ -449,6 +449,8 @@
     (is (= []
            (l/list-range lmdb "a" [:open-back 10 8] :long
                          [:less-than-back 8] :long)))
+    (is (nil? (l/list-range-first lmdb "a" [:open-back 10 8] :long
+                                  [:less-than-back 8] :long)))
     (is (= [] (l/list-range lmdb "a" [:greater-than 12] :long
                             [:greater-than 5] :long)))
     (is (= [] (l/list-range lmdb "a" [:less-than 2] :long
@@ -530,9 +532,15 @@
 
     (is (= 1 (l/list-range-count lmdb "a" [:greater-than 3] :long
                                  [:greater-than 20] :long)))
+    (is (= [5 30]
+           (l/list-range-first lmdb "a" [:greater-than 3] :long
+                               [:greater-than 20] :long)))
     (is (= [[2 2] [2 4]]
            (l/list-range-filter lmdb "a" pred [:closed 2 2] :long
                                 [:all] :long)))
+    (is (= [2 2]
+           (l/list-range-some lmdb "a" pred [:closed 2 2] :long
+                              [:all] :long)))
     (is (= 5 (l/list-range-filter-count
                lmdb "a" pred [:open 2 6] :long [:greater-than 5] :long)))
 

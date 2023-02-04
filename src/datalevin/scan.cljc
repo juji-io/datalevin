@@ -300,6 +300,19 @@
     (raise "Fail to get list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
 
+(defn list-range-first
+  [lmdb dbi-name k-range k-type v-range v-type]
+  (scan
+    (with-open [^AutoCloseable iterable
+                (l/iterate-list dbi rtx k-range k-type v-range v-type)]
+      (let [^Iterator iter (.iterator ^Iterable iterable)]
+        (when (.hasNext iter)
+          (let [kv (.next iter)]
+            [(b/read-buffer (l/k kv) k-type)
+             (b/read-buffer (l/v kv) v-type)]))))
+    (raise "Fail to get list range: " e
+           {:dbi dbi-name :key-range k-range :val-range v-range})) )
+
 (defn list-range-count
   [lmdb dbi-name k-range k-type v-range v-type]
   (scan
@@ -328,6 +341,22 @@
                 (recur iter)))
             holder))))
     (raise "Fail to filter list range: " e
+           {:dbi dbi-name :key-range k-range :val-range v-range})) )
+
+(defn list-range-some
+  [lmdb dbi-name pred k-range k-type v-range v-type]
+  (scan
+    (with-open [^AutoCloseable iterable
+                (l/iterate-list dbi rtx k-range k-type v-range v-type)]
+      (loop [^Iterator iter (.iterator ^Iterable iterable)]
+        (when (.hasNext iter)
+          (let [kv (.next iter)]
+            (if (pred kv)
+              (let [k (.rewind ^ByteBuffer (l/k kv))
+                    v (.rewind ^ByteBuffer (l/v kv))]
+                [(b/read-buffer k k-type) (b/read-buffer v v-type)])
+              (recur iter))))))
+    (raise "Fail to find some in list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
 
 (defn list-range-filter-count

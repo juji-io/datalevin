@@ -13,6 +13,8 @@
     * `list-range`
     * `list-range-count`
     * `list-range-filter`
+    * `list-range-first`
+    * `list-range-some`
     * `list-range-filter-count`
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.

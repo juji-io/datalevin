@@ -408,6 +408,31 @@
   (.setMapSize env (* ^long c/+buffer-grow-factor+
                       ^long (-> env .info .mapSize))))
 
+(defn- transact1*
+  [txs ^DBI dbi txn kt vt]
+  (doseq [^IPersistentVector tx txs]
+    (let [cnt (.length tx)
+          op  (.nth tx 0)
+          k   (.nth tx 1)]
+      (case op
+        :put      (let [v     (.nth tx 2)
+                        flags (when (< 3 cnt) (.nth tx 3))]
+                    (.put-key dbi k kt)
+                    (.put-val dbi v vt)
+                    (if flags (.put dbi txn flags) (.put dbi txn)))
+        :del      (do (.put-key dbi k kt) (.del dbi txn))
+        :put-list (let [vs (.nth tx 2)]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.put dbi txn)))
+        :del-list (let [vs (.nth tx 2)]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.del dbi txn false)))
+        (raise "Unknown kv operator: " op {})))))
+
 (defn- transact*
   [txs ^ConcurrentHashMap dbis txn]
   (doseq [^IPersistentVector tx txs]
@@ -680,22 +705,36 @@
       nil))
 
   (transact-kv [this txs]
+    (.transact-kv this nil txs))
+  (transact-kv [this dbi-name txs]
+    (.transact-kv this dbi-name txs :data :data))
+  (transact-kv [this dbi-name txs k-type]
+    (.transact-kv this dbi-name txs k-type :data))
+  (transact-kv [this dbi-name txs k-type v-type]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (locking  write-txn
       (let [^Rtx rtx  @write-txn
-            one-shot? (nil? rtx)]
+            one-shot? (nil? rtx)
+            ^DBI dbi  (when dbi-name
+                        (or (.get dbis dbi-name)
+                            (raise dbi-name " is not open" {})))]
         (try
           (if one-shot?
             (with-open [txn (.txnWrite env)]
-              (transact* txs dbis txn)
+              (if dbi
+                (transact1* txs dbi txn k-type v-type)
+                (transact* txs dbis txn))
               (.commit txn))
-            (transact* txs dbis (.-txn rtx)))
+            (let [txn (.-txn rtx)]
+              (if dbi
+                (transact1* txs dbi txn k-type v-type)
+                (transact* txs dbis txn))))
           :transacted
           (catch Env$MapFullException _
             (when-not one-shot? (.close ^Txn (.-txn rtx)))
             (up-db-size env)
             (if one-shot?
-              (.transact-kv this txs)
+              (.transact-kv this dbi-name txs k-type v-type)
               (do (reset-write-txn this)
                   (raise "DB resized" {:resized true}))))
           (catch Exception e
@@ -834,8 +873,14 @@
   (list-range-count [this dbi-name k-range kt v-range vt]
     (scan/list-range-count this dbi-name k-range kt v-range vt))
 
+  (list-range-first [this dbi-name k-range kt v-range vt]
+    (scan/list-range-first this dbi-name k-range kt v-range vt))
+
   (list-range-filter [this dbi-name pred k-range kt v-range vt]
     (scan/list-range-filter this dbi-name pred k-range kt v-range vt))
+
+  (list-range-some [this dbi-name pred k-range kt v-range vt]
+    (scan/list-range-some this dbi-name pred k-range kt v-range vt))
 
   (list-range-filter-count [this dbi-name pred k-range kt v-range vt]
     (scan/list-range-filter-count this dbi-name pred k-range kt v-range vt))

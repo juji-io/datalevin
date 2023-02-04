@@ -26,7 +26,8 @@
     "Put kv pair given in `put-key` and `put-val` of dbi")
   (del [this txn] [this txn all?]
     "Delete the key given in `put-key` of dbi")
-  (get-kv [this rtx] "Get value of the key given in `put-key` of rtx")
+  (get-kv [this rtx]
+    "Get value of the key given in `put-key` of rtx, return a byte buffer")
   (iterate-kv [this rtx k-range k-type v-type]
     "Return an Iterable of key-values, given the key range")
   (iterate-key [this rtx k-range k-type]
@@ -60,6 +61,10 @@
     [db list-name k-range k-type v-range v-type]
     "Return a seq of key-values in the specified value range of the
      specified key range")
+  (list-range-first
+    [db list-name k-range k-type v-range v-type]
+    "Return the first key-value pair in the specified value range of the
+     specified key range")
   (list-range-count
     [db list-name k-range k-type v-range v-type]
     "Return the number of key-values in the specified value range of the
@@ -68,6 +73,10 @@
     [db list-name pred k-range k-type v-range v-type]
     "Return a seq of key-values in the specified value range of the
      specified key range, filtered by pred")
+  (list-range-some
+    [db list-name pred k-range k-type v-range v-type]
+    "Return the first kv pair that has logical true value of `(pred kv)`in
+     the specified value range of the specified key range")
   (list-range-filter-count
     [db list-name pred k-range k-type v-range v-type]
     "Return the count of key-values in the specified value range of the
@@ -115,7 +124,11 @@
   (open-transact-kv [db] "open an explicit read/write rtx, return writing db")
   (close-transact-kv [db] "close and commit the read/write rtx")
   (abort-transact-kv [db] "abort the explicit read/write rtx")
-  (transact-kv [db txs]
+  (transact-kv
+    [db txs]
+    [db dbi-name txs]
+    [db dbi-name txs k-type]
+    [db dbi-name txs k-type v-type]
     "Update DB, insert or delete key value pairs.")
   (get-value
     [db dbi-name k]
