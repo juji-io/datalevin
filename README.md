@@ -14,6 +14,7 @@ alt="datalevin linux/macos amd64 build status"></img></a>
 <a href="https://cirrus-ci.com/github/juji-io/datalevin"><img src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg"
 alt="datalevin apple silicon build status"></img></a>
 </p>
+
 ## :hear_no_evil: What and why
 
 > I love Datalog, why hasn't everyone used this already?
