@@ -8,8 +8,7 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [datalevin.util :as u]
-   [datalevin.bits :as b])
+   [datalevin.util :as u])
   (:import
    [java.util Arrays Date]
    [java.util.concurrent Semaphore]
@@ -24,9 +23,10 @@
 
 (def e 123456)
 (def a 235)
+(def g 4792)
 
 (defn- bf-compare
-  "Jave ByteBuffer compareTo is byte-wise signed comparison, not good"
+  "Jveg ByteBuffer compareTo is byte-wise signed comparison, not good"
   [^ByteBuffer bf1 ^ByteBuffer bf2]
   (loop []
     (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
@@ -363,10 +363,10 @@
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)]
     (.clear bf)
-    (sut/put-buffer bf d :eav)
+    (sut/put-buffer bf d :avg)
     (.flip bf)
     (.clear bf1)
-    (sut/put-buffer bf1 dmin :eav)
+    (sut/put-buffer bf1 dmin :avg)
     (.flip bf1)
     (is (>= (bf-compare bf bf1) 0)
         (do
@@ -376,15 +376,15 @@
                " d: " (sut/hexify (sut/get-bytes bf))
                " dmin: " (sut/hexify (sut/get-bytes bf1)))))
     (.clear bf1)
-    (sut/put-buffer bf1 dmax :eav)
+    (sut/put-buffer bf1 dmax :avg)
     (.flip bf1)
     (.rewind bf)
     (is (<= (bf-compare bf bf1) 0))
     (.clear bf)
-    (sut/put-buffer bf d :ave)
+    (sut/put-buffer bf d :veg)
     (.flip bf)
     (.clear bf1)
-    (sut/put-buffer bf1 dmin :ave)
+    (sut/put-buffer bf1 dmin :veg)
     (.flip bf1)
     ;; TODO deal with occasional fail here, basically, empty character
     #_(is (>=(bf-compare bf bf1) 0)
@@ -395,7 +395,7 @@
                  " d: " (sut/hexify (sut/get-bytes bf))
                  " dmin: " (sut/hexify (sut/get-bytes bf1)))))
     (.clear bf1)
-    (sut/put-buffer bf1 dmax :ave)
+    (sut/put-buffer bf1 dmax :veg)
     (.flip bf1)
     (.rewind bf)
     (is (<= (bf-compare bf bf1) 0))))
@@ -403,20 +403,20 @@
 (test/defspec keyword-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/keyword-ns]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/keyword)
-                 (sut/indexable e a c/v0 :db.type/keyword)
-                 (sut/indexable e a c/vmax :db.type/keyword))))
+    [v  gen/keyword-ns]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/keyword g)
+                  (sut/indexable e a c/v0 :db.type/keyword c/g0)
+                  (sut/indexable e a c/vmax :db.type/keyword c/gmax))))
 
 (test/defspec symbol-extrema-generative-test
   100
   (prop/for-all
     [v  gen/symbol-ns]
     (test-extrema v
-                  (sut/indexable e a v :db.type/symbol)
-                  (sut/indexable e a c/v0 :db.type/symbol)
-                  (sut/indexable e a c/vmax :db.type/symbol))))
+                  (sut/indexable e a v :db.type/symbol g)
+                  (sut/indexable e a c/v0 :db.type/symbol c/g0)
+                  (sut/indexable e a c/vmax :db.type/symbol c/gmax))))
 
 ;; null character "^@" is a special case
 (test/defspec string-extrema-generative-test
@@ -426,36 +426,36 @@
                              (not= "^@" %))
                        gen/string)]
     (test-extrema v
-                  (sut/indexable e a v :db.type/string)
-                  (sut/indexable e a c/v0 :db.type/string)
-                  (sut/indexable e a c/vmax :db.type/string))))
+                  (sut/indexable e a v :db.type/string g)
+                  (sut/indexable e a c/v0 :db.type/string c/g0)
+                  (sut/indexable e a c/vmax :db.type/string c/gmax))))
 
 (test/defspec boolean-extrema-generative-test
   5
   (prop/for-all
-   [v  gen/boolean]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/boolean)
-                 (sut/indexable e a c/v0 :db.type/boolean)
-                 (sut/indexable e a c/vmax :db.type/boolean))))
+    [v  gen/boolean]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/boolean g)
+                  (sut/indexable e a c/v0 :db.type/boolean c/g0)
+                  (sut/indexable e a c/vmax :db.type/boolean c/gmax))))
 
 (test/defspec long-extrema-generative-test
   100
   (prop/for-all
-   [v  gen/large-integer]
-   (test-extrema v
-                 (sut/indexable e a v :db.type/long)
-                 (sut/indexable e a c/v0 :db.type/long)
-                 (sut/indexable e a c/vmax :db.type/long))))
+    [v  gen/large-integer]
+    (test-extrema v
+                  (sut/indexable e a v :db.type/long g)
+                  (sut/indexable e a c/v0 :db.type/long c/g0)
+                  (sut/indexable e a c/vmax :db.type/long c/gmax))))
 
 (test/defspec double-extrema-generative-test
   100
   (prop/for-all
     [v (gen/double* {:NaN? false})]
     (test-extrema v
-                  (sut/indexable e a v :db.type/double)
-                  (sut/indexable e a c/v0 :db.type/double)
-                  (sut/indexable e a c/vmax :db.type/double))))
+                  (sut/indexable e a v :db.type/double g)
+                  (sut/indexable e a c/v0 :db.type/double c/g0)
+                  (sut/indexable e a c/vmax :db.type/double c/gmax))))
 
 (test/defspec float-extrema-generative-test
   100
@@ -463,27 +463,27 @@
     [v (gen/double* {:NaN? false})]
     (let [f (float v)]
       (test-extrema f
-                    (sut/indexable e a f :db.type/float)
-                    (sut/indexable e a c/v0 :db.type/float)
-                    (sut/indexable e a c/vmax :db.type/float)))))
+                    (sut/indexable e a f :db.type/float g)
+                    (sut/indexable e a c/v0 :db.type/float c/g0)
+                    (sut/indexable e a c/vmax :db.type/float c/gmax)))))
 
 (test/defspec ref-extrema-generative-test
   100
   (prop/for-all
     [v  gen/nat]
     (test-extrema v
-                  (sut/indexable e a v :db.type/ref)
-                  (sut/indexable e a c/v0 :db.type/ref)
-                  (sut/indexable e a c/vmax :db.type/ref))))
+                  (sut/indexable e a v :db.type/ref g)
+                  (sut/indexable e a c/v0 :db.type/ref c/g0)
+                  (sut/indexable e a c/vmax :db.type/ref c/gmax))))
 
 (test/defspec uuid-extrema-generative-test
   100
   (prop/for-all
     [v  gen/uuid]
     (test-extrema v
-                  (sut/indexable e a v :db.type/uuid)
-                  (sut/indexable e a c/v0 :db.type/uuid)
-                  (sut/indexable e a c/vmax :db.type/uuid))))
+                  (sut/indexable e a v :db.type/uuid g)
+                  (sut/indexable e a c/v0 :db.type/uuid c/g0)
+                  (sut/indexable e a c/vmax :db.type/uuid c/gmax))))
 
 (test/defspec bigint-extrema-generative-test
   100
@@ -491,9 +491,9 @@
     [i  gen-bigint]
     (let [^BigInteger v (.toBigInteger ^clojure.lang.BigInt i)]
       (test-extrema v
-                    (sut/indexable e a v :db.type/bigint)
-                    (sut/indexable e a c/v0 :db.type/bigint)
-                    (sut/indexable e a c/vmax :db.type/bigint)))))
+                    (sut/indexable e a v :db.type/bigint g)
+                    (sut/indexable e a c/v0 :db.type/bigint c/g0)
+                    (sut/indexable e a c/vmax :db.type/bigint c/gmax)))))
 
 (test/defspec bigdec-extrema-generative-test
   100
@@ -503,31 +503,57 @@
     (let [^BigInteger n (.toBigInteger ^clojure.lang.BigInt i)
           ^BigDecimal v (BigDecimal. n ^int s)]
       (test-extrema v
-                    (sut/indexable e a v :db.type/bigdec)
-                    (sut/indexable e a c/v0 :db.type/bigdec)
-                    (sut/indexable e a c/vmax :db.type/bigdec)))))
+                    (sut/indexable e a v :db.type/bigdec g)
+                    (sut/indexable e a c/v0 :db.type/bigdec c/g0)
+                    (sut/indexable e a c/vmax :db.type/bigdec c/gmax)))))
 
 ;; orders
 
-(defn- ave-test
-  [v e1 a1 v1 ^Indexable d ^Indexable d1]
+(defn- veg-test
+  [v e1 v1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)
         _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :ave)
+        _               (sut/put-buffer bf d :veg)
         _               (.flip ^ByteBuffer bf)
         _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :ave)
+        _               (sut/put-buffer bf1 d1 :veg)
         _               (.flip ^ByteBuffer bf1)
         ^long res       (bf-compare bf bf1)
         v-cmp           (compare v v1)]
+    (if (= v-cmp 0)
+      (if (= e e1)
+        (is (= res 0))
+        (if (< ^long e ^long e1)
+          (is (< res 0))
+          (is (> res 0))))
+      (if (< v-cmp 0)
+        (is (< res 0))
+        (is (> res 0))))
+    (.rewind ^ByteBuffer bf)
+    (let [^Retrieved r (sut/read-buffer bf :veg)]
+      (is (= e (.-e r)))
+      (is (= v (.-v r))))
+    (.rewind ^ByteBuffer bf1)
+    (let [^Retrieved r (sut/read-buffer bf1 :veg)]
+      (is (= e1 (.-e r)))
+      (is (= v1 (.-v r))))))
+
+(defn- avg-test
+  [v a1 v1 ^Indexable d ^Indexable d1]
+  (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
+        ^ByteBuffer bf1 (sut/allocate-buffer 16384)
+        _               (.clear ^ByteBuffer bf)
+        _               (sut/put-buffer bf d :avg)
+        _               (.flip ^ByteBuffer bf)
+        _               (.clear ^ByteBuffer bf1)
+        _               (sut/put-buffer bf1 d1 :avg)
+        _               (.flip ^ByteBuffer bf1)
+        ^long  res      (bf-compare bf bf1)
+        v-cmp           (compare v v1)]
     (if (= a a1)
       (if (= v-cmp 0)
-        (if (= e e1)
-          (is (= res 0))
-          (if (< ^long e ^long e1)
-            (is (< res 0))
-            (is (> res 0))))
+        (is (= res 0))
         (if (< v-cmp 0)
           (is (< res 0))
           (is (> res 0))))
@@ -535,61 +561,23 @@
         (is (< res 0))
         (is (> res 0))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :ave)]
-      (is (= e (.-e r)))
+    (let [^Retrieved r (sut/read-buffer bf :avg)]
       (is (= a (.-a r)))
       (is (= v (.-v r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :ave)]
-      (is (= e1 (.-e r)))
+    (let [^Retrieved r (sut/read-buffer bf1 :avg)]
       (is (= a1 (.-a r)))
       (is (= v1 (.-v r))))))
 
-(defn- eav-test
-  [v e1 a1 v1 ^Indexable d ^Indexable d1]
+(defn- eag-test
+  [e1 a1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)
         _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :eav)
+        _               (sut/put-buffer bf d :eag)
         _               (.flip ^ByteBuffer bf)
         _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :eav)
-        _               (.flip ^ByteBuffer bf1)
-        ^long  res      (bf-compare bf bf1)
-        v-cmp           (compare v v1)]
-    (if (= e e1)
-      (if (= a a1)
-        (if (= v-cmp 0)
-          (is (= res 0))
-          (if (< v-cmp 0)
-            (is (< res 0))
-            (is (> res 0))))
-        (if (< ^int a ^int a1)
-          (is (< res 0))
-          (is (> res 0))))
-      (if (< ^long e ^long e1)
-        (is (< res 0))
-        (is (> res 0))))
-    (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :eav)]
-      (is (= e (.-e r)))
-      (is (= a (.-a r)))
-      (is (= v (.-v r))))
-    (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :eav)]
-      (is (= e1 (.-e r)))
-      (is (= a1 (.-a r)))
-      (is (= v1 (.-v r))))))
-
-(defn- vea-test
-  [v e1 a1 ^Indexable d ^Indexable d1]
-  (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
-        ^ByteBuffer bf1 (sut/allocate-buffer 16384)
-        _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :vea)
-        _               (.flip ^ByteBuffer bf)
-        _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :vea)
+        _               (sut/put-buffer bf1 d1 :eag)
         _               (.flip ^ByteBuffer bf1)
         ^long  res      (bf-compare bf bf1)]
     (if (= e e1)
@@ -602,27 +590,25 @@
         (is (< res 0))
         (is (> res 0))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :vea)]
+    (let [^Retrieved r (sut/read-buffer bf :eag)]
       (is (= e (.-e r)))
-      (is (= a (.-a r)))
-      (is (= v (.-v r))))
+      (is (= a (.-a r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :vea)]
+    (let [^Retrieved r (sut/read-buffer bf1 :eag)]
       (is (= e1 (.-e r)))
-      (is (= a1 (.-a r)))
-      (is (= v (.-v r))))))
+      (is (= a1 (.-a r))))))
 
-(test/defspec vea-generative-test
+(test/defspec eag-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v  (gen/large-integer* {:min c/e0})]
-    (vea-test v e1 a1
-              (sut/indexable e a v :db.type/ref)
-              (sut/indexable e1 a1 v :db.type/ref))))
+    (eag-test e1 a1
+              (sut/indexable e a v :db.type/ref g)
+              (sut/indexable e1 a1 v :db.type/ref g))))
 
-(test/defspec instant-eav-generative-test
+(test/defspec instant-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -631,11 +617,11 @@
      v gen/int]
     (let [v'  (Date. ^long v)
           v1' (Date. ^long v1)]
-      (eav-test v' e1 a1 v1'
-                (sut/indexable e a v' :db.type/instant)
-                (sut/indexable e1 a1 v1' :db.type/instant)))))
+      (avg-test v' a1 v1'
+                (sut/indexable e a v' :db.type/instant g)
+                (sut/indexable e1 a1 v1' :db.type/instant g)))))
 
-(test/defspec instant-vea-generative-test
+(test/defspec instant-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -644,77 +630,77 @@
      v gen/int]
     (let [v'  (Date. ^long v)
           v1' (Date. ^long v1)]
-      (ave-test v' e1 a1 v1'
-                (sut/indexable e a v' :db.type/instant)
-                (sut/indexable e1 a1 v1' :db.type/instant)))))
+      (veg-test v' e1 v1'
+                (sut/indexable e a v' :db.type/instant g)
+                (sut/indexable e1 a1 v1' :db.type/instant g)))))
 
-(test/defspec keyword-eav-generative-test
+(test/defspec keyword-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/keyword-ns
      v gen/keyword-ns]
-    (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/keyword)
-              (sut/indexable e1 a1 v1 :db.type/keyword))))
+    (avg-test v a1 v1
+              (sut/indexable e a v :db.type/keyword g)
+              (sut/indexable e1 a1 v1 :db.type/keyword g))))
 
-(test/defspec keyword-ave-generative-test
+(test/defspec keyword-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/keyword-ns
      v gen/keyword-ns]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/keyword)
-              (sut/indexable e1 a1 v1 :db.type/keyword))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/keyword g)
+              (sut/indexable e1 a1 v1 :db.type/keyword g))))
 
-(test/defspec symbol-eav-generative-test
+(test/defspec symbol-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/symbol-ns
      v gen/symbol-ns]
-    (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/symbol)
-              (sut/indexable e1 a1 v1 :db.type/symbol))))
+    (avg-test v a1 v1
+              (sut/indexable e a v :db.type/symbol g)
+              (sut/indexable e1 a1 v1 :db.type/symbol g))))
 
-(test/defspec symbol-ave-generative-test
+(test/defspec symbol-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/symbol-ns
      v  gen/symbol-ns]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/symbol)
-              (sut/indexable e1 a1 v1 :db.type/symbol))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/symbol g)
+              (sut/indexable e1 a1 v1 :db.type/symbol g))))
 
-(test/defspec string-eav-generative-test
+(test/defspec string-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/string
      v  gen/string]
-    (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/string)
-              (sut/indexable e1 a1 v1 :db.type/string))))
+    (avg-test v a1 v1
+              (sut/indexable e a v :db.type/string g)
+              (sut/indexable e1 a1 v1 :db.type/string g))))
 
-(test/defspec string-ave-generative-test
+(test/defspec string-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/string
      v  gen/string]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/string)
-              (sut/indexable e1 a1 v1 :db.type/string))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/string g)
+              (sut/indexable e1 a1 v1 :db.type/string g))))
 
-(test/defspec bigint-eav-generative-test
+(test/defspec bigint-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -723,11 +709,11 @@
      i  gen-bigint]
     (let [^BigInteger v1 (.toBigInteger ^clojure.lang.BigInt i1)
           ^BigInteger v  (.toBigInteger ^clojure.lang.BigInt i)]
-      (eav-test v e1 a1 v1
-                (sut/indexable e a v :db.type/bigint)
-                (sut/indexable e1 a1 v1 :db.type/bigint)))))
+      (avg-test v a1 v1
+                (sut/indexable e a v :db.type/bigint g)
+                (sut/indexable e1 a1 v1 :db.type/bigint g)))))
 
-(test/defspec bigint-eav-generative-test
+(test/defspec bigint-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -736,11 +722,11 @@
      i  gen-bigint]
     (let [^BigInteger v1 (.toBigInteger ^clojure.lang.BigInt i1)
           ^BigInteger v  (.toBigInteger ^clojure.lang.BigInt i)]
-      (ave-test v e1 a1 v1
-                (sut/indexable e a v :db.type/bigint)
-                (sut/indexable e1 a1 v1 :db.type/bigint)))))
+      (veg-test v e1 v1
+                (sut/indexable e a v :db.type/bigint g)
+                (sut/indexable e1 a1 v1 :db.type/bigint g)))))
 
-(test/defspec bigdec-eav-generative-test
+(test/defspec bigdec-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -751,11 +737,11 @@
           ^BigInteger u  (.toBigInteger ^clojure.lang.BigInt i)
           v1             (BigDecimal. u1 -10)
           v              (BigDecimal. u -10)]
-      (eav-test v e1 a1 v1
-                (sut/indexable e a v :db.type/bigdec)
-                (sut/indexable e1 a1 v1 :db.type/bigdec)))))
+      (avg-test v a1 v1
+                (sut/indexable e a v :db.type/bigdec g)
+                (sut/indexable e1 a1 v1 :db.type/bigdec g)))))
 
-(test/defspec bigdec-ave-generative-test
+(test/defspec bigdec-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -766,89 +752,89 @@
           ^BigInteger u  (.toBigInteger ^clojure.lang.BigInt i)
           v1             (BigDecimal. u1 -10)
           v              (BigDecimal. u -10)]
-      (ave-test v e1 a1 v1
-                (sut/indexable e a v :db.type/bigdec)
-                (sut/indexable e1 a1 v1 :db.type/bigdec)))))
+      (veg-test v e1 v1
+                (sut/indexable e a v :db.type/bigdec g)
+                (sut/indexable e1 a1 v1 :db.type/bigdec g)))))
 
-(test/defspec string-ave-generative-test
+(test/defspec string-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/string
      v  gen/string]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/string)
-              (sut/indexable e1 a1 v1 :db.type/string))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/string g)
+              (sut/indexable e1 a1 v1 :db.type/string g))))
 
-(test/defspec boolean-eav-generative-test
+(test/defspec boolean-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/boolean
      v  gen/boolean]
-    (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/boolean)
-              (sut/indexable e1 a1 v1 :db.type/boolean))))
+    (avg-test v a1 v1
+              (sut/indexable e a v :db.type/boolean g)
+              (sut/indexable e1 a1 v1 :db.type/boolean g))))
 
-(test/defspec boolean-ave-generative-test
+(test/defspec boolean-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/boolean
      v  gen/boolean]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/boolean)
-              (sut/indexable e1 a1 v1 :db.type/boolean))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/boolean g)
+              (sut/indexable e1 a1 v1 :db.type/boolean g))))
 
-(test/defspec long-eav-generative-test
+(test/defspec long-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/large-integer
      v  gen/large-integer]
-    (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/long)
-              (sut/indexable e1 a1 v1 :db.type/long))))
+    (avg-test v a1 v1
+              (sut/indexable e a v :db.type/long g)
+              (sut/indexable e1 a1 v1 :db.type/long g))))
 
 
-(test/defspec long-ave-generative-test
+(test/defspec long-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 gen/large-integer
      v  gen/large-integer]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/long)
-              (sut/indexable e1 a1 v1 :db.type/long))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/long g)
+              (sut/indexable e1 a1 v1 :db.type/long g))))
 
-(test/defspec double-eav-generative-test
+(test/defspec double-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 (gen/double* {:NaN? false})
      v  (gen/double* {:NaN? false})]
-    (eav-test v e1 a1 v1
-              (sut/indexable e a v :db.type/double)
-              (sut/indexable e1 a1 v1 :db.type/double))))
+    (avg-test v a1 v1
+              (sut/indexable e a v :db.type/double g)
+              (sut/indexable e1 a1 v1 :db.type/double g))))
 
-(test/defspec double-ave-generative-test
+(test/defspec double-veg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v1 (gen/double* {:NaN? false})
      v  (gen/double* {:NaN? false})]
-    (ave-test v e1 a1 v1
-              (sut/indexable e a v :db.type/double)
-              (sut/indexable e1 a1 v1 :db.type/double))))
+    (veg-test v e1 v1
+              (sut/indexable e a v :db.type/double g)
+              (sut/indexable e1 a1 v1 :db.type/double g))))
 
-(test/defspec float-ave-generative-test
+(test/defspec float-avg-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
@@ -857,100 +843,107 @@
      v  (gen/double* {:NaN? false})]
     (let [f1 (float v1)
           f  (float v)]
-      (ave-test f e1 a1 f1
-                (sut/indexable e a f :db.type/float)
-                (sut/indexable e1 a1 f1 :db.type/float)))))
+      (avg-test f a1 f1
+                (sut/indexable e a f :db.type/float g)
+                (sut/indexable e1 a1 f1 :db.type/float g)))))
 
-(test/defspec uuid-eav-generative-test
+(test/defspec float-veg-generative-test
+  100
+  (prop/for-all
+    [e1 (gen/large-integer* {:min c/e0})
+     a1 gen/nat
+     v1 (gen/double* {:NaN? false})
+     v  (gen/double* {:NaN? false})]
+    (let [f1 (float v1)
+          f  (float v)]
+      (veg-test f e1 f1
+                (sut/indexable e a f :db.type/float g)
+                (sut/indexable e1 a1 f1 :db.type/float g)))))
+
+(test/defspec uuid-avg-generative-test
   50
   (prop/for-all
     [v  gen/uuid]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/uuid)
+          ^Indexable d   (sut/indexable e a v :db.type/uuid g)
           _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :eav)
+          _              (sut/put-buffer bf d :avg)
           _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :eav)]
-      (is (= e (.-e r)))
+          ^Retrieved r   (sut/read-buffer bf :avg)]
       (is (= a (.-a r)))
       (is (= v (.-v r))))))
 
-(test/defspec uuid-ave-generative-test
+(test/defspec uuid-veg-generative-test
   50
   (prop/for-all
     [v  gen/uuid]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/uuid)
+          ^Indexable d   (sut/indexable e a v :db.type/uuid g)
           _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :ave)
+          _              (sut/put-buffer bf d :veg)
           _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :ave)]
+          ^Retrieved r   (sut/read-buffer bf :veg)]
       (is (= e (.-e r)))
-      (is (= a (.-a r)))
       (is (= v (.-v r))))))
 
-(test/defspec bytes-eav-generative-test
+(test/defspec bytes-avg-generative-test
   50
   (prop/for-all
     [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/bytes)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/bytes)
+          ^Indexable d   (sut/indexable e a v :db.type/bytes g)
           _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :eav)
+          _              (sut/put-buffer bf d :avg)
           _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :eav)]
-      (is (= e (.-e r)))
+          ^Retrieved r   (sut/read-buffer bf :avg)]
       (is (= a (.-a r)))
       (is (Arrays/equals ^bytes v ^bytes (.-v r))))))
 
-(test/defspec bytes-ave-generative-test
+(test/defspec bytes-veg-generative-test
   50
   (prop/for-all
     [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/bytes)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v :db.type/bytes)
+          ^Indexable d   (sut/indexable e a v :db.type/bytes g)
           _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :ave)
+          _              (sut/put-buffer bf d :veg)
           _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :ave)]
+          ^Retrieved r   (sut/read-buffer bf :veg)]
       (is (= e (.-e r)))
-      (is (= a (.-a r)))
       (is (Arrays/equals ^bytes v ^bytes (.-v r))))))
 
 (defn data-size-less-than?
   [^long limit data]
   (< (alength ^bytes (sut/serialize data)) limit))
 
-(test/defspec data-eav-generative-test
+(test/defspec data-avg-generative-test
   50
   (prop/for-all
     [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/any-equatable)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v nil)
+          ^Indexable d   (sut/indexable e a v nil g)
           _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :eav)
+          _              (sut/put-buffer bf d :avg)
           _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :eav)]
-      (is (= e (.-e r)))
+          ^Retrieved r   (sut/read-buffer bf :avg)]
       (is (= a (.-a r)))
       (is (= v (.-v r))))))
 
-(test/defspec data-ave-generative-test
+(test/defspec data-veg-generative-test
   50
   (prop/for-all
     [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/any-equatable)]
     (let [^ByteBuffer bf (sut/allocate-buffer 16384)
-          ^Indexable d   (sut/indexable e a v nil)
+          ^Indexable d   (sut/indexable e a v nil g)
           _              (.clear ^ByteBuffer bf)
-          _              (sut/put-buffer bf d :ave)
+          _              (sut/put-buffer bf d :veg)
           _              (.flip ^ByteBuffer bf)
-          ^Retrieved r   (sut/read-buffer bf :ave)]
+          ^Retrieved r   (sut/read-buffer bf :veg)]
       (is (= e (.-e r)))
-      (is (= a (.-a r)))
       (is (= v (.-v r))))))
 
 (deftest bitmap-roundtrip-test

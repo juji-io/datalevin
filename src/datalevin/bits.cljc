@@ -545,36 +545,6 @@
     -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
                                    (if val c/true-value c/false-value)))))
 
-;; (defn- put-eav
-;;   [bf ^Indexable x]
-;;   (put-long bf (.-e x))
-;;   (put-int bf (.-a x))
-;;   (when-let [hdr (.-f x)] (put-byte bf hdr))
-;;   (if-let [bs (.-b x)]
-;;     (do (put-bytes bf bs)
-;;         (when (.-h x) (put-byte bf c/truncator)))
-;;     (put-fixed bf (.-v x) (.-f x)))
-;;   (put-byte bf c/separator)
-;;   (when-let [h (.-h x)] (put-int bf h)))
-
-;; (defn- put-ave
-;;   [bf ^Indexable x]
-;;   (put-int bf (.-a x))
-;;   (when-let [hdr (.-f x)] (put-byte bf hdr))
-;;   (if-let [bs (.-b x)]
-;;     (do (put-bytes bf bs)
-;;         (when (.-h x) (put-byte bf c/truncator)))
-;;     (put-fixed bf (.-v x) (.-f x)))
-;;   (put-byte bf c/separator)
-;;   (put-long bf (.-e x))
-;;   (when-let [h (.-h x)] (put-int bf h)))
-
-;; (defn- put-vea
-;;   [bf ^Indexable x]
-;;   (put-fixed bf (.-v x) (.-f x))
-;;   (put-long bf (.-e x))
-;;   (put-int bf (.-a x)))
-
 (defn- put-avg
   [bf ^Indexable x]
   (put-int bf (.-a x))
@@ -667,24 +637,28 @@
   (.write w "#datalevin/Retrieved ")
   (.write w (pr-str (pr-retrieved r))))
 
-;; (def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown))
-(def ^:const overflown-key (Retrieved. c/e0 c/overflown c/overflown nil))
-
 (defn- get-avg
-  [bf]
-  (let [a (get-int bf)
-        v (get-value bf 9)
-        _ (get-byte bf)
-        g (get-long bf)]
-    (Retrieved. nil a v g)))
+  [^ByteBuffer bf]
+  (.position bf (- (.limit bf) 8))
+  (let [g (get-long bf)]
+    (.rewind bf)
+    (if (= g c/normal)
+      (let [a (get-int bf)
+            v (get-value bf 9)]
+        (Retrieved. nil a v g))
+      (Retrieved. nil nil nil g))))
 
 (defn- get-veg
-  [bf]
-  (let [v (get-value bf 17)
-        _ (get-byte bf)
-        e (get-long bf)
-        g (get-long bf)]
-    (Retrieved. e nil v g)))
+  [^ByteBuffer bf]
+  (.position bf (- (.limit bf) 8))
+  (let [g (get-long bf)]
+    (.rewind bf)
+    (if (= g c/normal)
+      (let [v (get-value bf 17)
+            _ (get-byte bf)
+            e (get-long bf)]
+        (Retrieved. e nil v g))
+      (Retrieved. nil nil nil g))))
 
 (defn- get-eag
   [bf]
@@ -817,12 +791,6 @@
      :uuid           (do (put-byte bf (raw-header x :uuid))
                          (put-uuid bf x))
      :attr           (put-attr bf x)
-     ;; :eav            (put-eav bf x)
-     ;; :eavt           (put-eav bf x)
-     ;; :ave            (put-ave bf x)
-     ;; :avet           (put-ave bf x)
-     ;; :vea            (put-vea bf x)
-     ;; :veat           (put-vea bf x)
      :avg            (put-avg bf x)
      :veg            (put-veg bf x)
      :eag            (put-eag bf x)
@@ -862,12 +830,6 @@
      :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
      :uuid           (do (get-byte bf) (get-uuid bf))
      :attr           (get-attr bf)
-     ;; :eav            (get-eav bf)
-     ;; :eavt           (get-eav bf)
-     ;; :ave            (get-ave bf)
-     ;; :avet           (get-ave bf)
-     ;; :vea            (get-vea bf)
-     ;; :veat           (get-vea bf)
      :avg            (get-avg bf)
      :veg            (get-veg bf)
      :eag            (get-eag bf)

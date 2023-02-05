@@ -64,8 +64,7 @@
 
 ;; index storage
 
-(def ^:const +val-prefix-size+  494)  ; - eid - s - gid
-(def ^:const +val-bytes-wo-hdr+ 493)  ; - hdr
+(def ^:const +val-bytes-wo-hdr+ 493)  ; - hdr - eid - s - gid
 (def ^:const +val-bytes-trunc+  492)  ; - tr
 
 (def ^:const +id-bytes+ Long/BYTES)
@@ -128,9 +127,7 @@
 
 (def min-bigdec (BigDecimal. ^BigInteger min-bigint Integer/MIN_VALUE))
 
-(def ^:const overflown :overflown)
-(def ^:const normal 0)
-(def ^:const dl-index-types #{:avg :veg :eag})
+(def ^:const normal 0)  ; non-giant datom
 
 ;; dbi-names
 (def ^:const eav "datalevin/eav")

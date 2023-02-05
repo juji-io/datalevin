@@ -79,7 +79,7 @@
         (is (= 0 (st/datom-count store :vea)))
         (is (= [d] (st/fetch store d)))
         (is (= [d] (st/slice store :eavt d d)))
-        (is (= true (st/populated? store :eav d d)))
+        (is (st/populated? store :eav d d))
         (is (= 1 (st/size store :eav d d)))
         (is (= d (st/head store :eav d d)))
         (st/swap-attr store b (i/inter-fn [& ms] (apply merge ms)) p1)

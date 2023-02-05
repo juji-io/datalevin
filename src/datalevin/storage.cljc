@@ -569,8 +569,8 @@
                        (vreset! prev-v v))))]
     (lmdb/visit-list-range
       (.-lmdb store) c/ave visitor
-      [:open (index->k :ave schema low-datom)
-       (index->k :ave schema high-datom)] (index->ktype :ave)
+      [:open (index->k :ave schema low-datom false)
+       (index->k :ave schema high-datom true)] (index->ktype :ave)
       [:open (datom->indexable schema c/g0 low-datom false)
        (datom->indexable schema c/gmax high-datom true)]
       (index->vtype :ave))

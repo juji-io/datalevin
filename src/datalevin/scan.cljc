@@ -33,22 +33,6 @@
           (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
             (l/return-rtx ~'lmdb ~'rtx)))))))
 
-;; (defn- read-key
-;;   ([kv k-type v]
-;;    (read-key kv k-type v false))
-;;   ([kv k-type v rewind?]
-;;    (if (and v (not= v c/normal) (c/index-types k-type))
-;;      b/overflown-key
-;;      (b/read-buffer (if rewind?
-;;                       (.rewind ^ByteBuffer (l/k kv))
-;;                       (l/k kv))
-;;                     k-type))))
-
-(defn- read-dl-value
-  [kv v-type]
-  (if (c/dl-index-types v-type)))
-
-
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
   (scan
@@ -73,7 +57,7 @@
                      (b/read-buffer (l/v kv) v-type))]
             (if ignore-key?
               (if v v true)
-              [(read-key kv k-type v) v])))))
+              [(b/read-buffer (l/k kv) k-type) v])))))
     (raise "Fail to get-first: " e
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
@@ -95,7 +79,7 @@
                          (b/read-buffer (l/v kv) v-type))]
                 (.cons holder (if ignore-key?
                                 v
-                                [(read-key kv k-type v) v]))
+                                [(b/read-buffer (l/k kv) k-type) v]))
                 (recur iter))
               holder)))))
     (raise "Fail to get-range: " e
@@ -129,7 +113,7 @@
                                    (b/read-buffer (l/v kv) v-type))]
                            (if ignore-key?
                              (if v v true)
-                             [(read-key kv k-type v) v])))
+                             [(b/read-buffer (l/k kv) k-type) v])))
         fetch          (fn [^long k]
                          (let [holder (transient [])]
                            (loop [i 0]
@@ -219,7 +203,8 @@
                                          v-type))]
                   (if ignore-key?
                     v
-                    [(read-key kv k-type v true) v]))
+                    [(b/read-buffer (.rewind ^ByteBuffer (l/k kv)) k-type)
+                     v]))
                 (recur iter)))))))
     (raise "Fail to get-some: " e
            {:dbi    dbi-name :k-range k-range
@@ -244,7 +229,9 @@
                               (.rewind ^ByteBuffer (l/v kv)) v-type))]
                     (.cons holder (if ignore-key?
                                     v
-                                    [(read-key kv k-type v true) v]))
+                                    [(b/read-buffer
+                                       (.rewind ^ByteBuffer (l/k kv))
+                                       k-type) v]))
                     (recur iter))
                   (recur iter)))
               holder)))))
