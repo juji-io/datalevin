@@ -226,10 +226,10 @@ values;")
   [range-type k1 k2 b1 b2]
   (let [chk1 #(if k1
                 %1
-                (u/raise "Missing start/end key for range type" %2 {}))
+                (u/raise "Missing start/end key for range type " %2 {}))
         chk2 #(if (and k1 k2)
                 %1
-                (u/raise "Missing start/end key for range type" %2 {}))]
+                (u/raise "Missing start/end key for range type " %2 {}))]
     (case range-type
       :all               [true false false nil nil]
       :all-back          [false false false nil nil]

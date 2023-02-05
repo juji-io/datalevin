@@ -128,12 +128,9 @@
 
 (def min-bigdec (BigDecimal. ^BigInteger min-bigint Integer/MIN_VALUE))
 
-(def ^:const overflown :overflown-key)
+(def ^:const overflown :overflown)
 (def ^:const normal 0)
-(def ^:const gt0 1)
-
-(def ^:const index-types #{:eavt :eav :ave :avet :vea :veat})
-
+(def ^:const dl-index-types #{:avg :veg :eag})
 
 ;; dbi-names
 (def ^:const eav "datalevin/eav")

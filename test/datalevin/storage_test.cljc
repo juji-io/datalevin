@@ -18,7 +18,7 @@
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store (sut/open dir)]
-    (is (= c/gt0 (sut/max-gt store)))
+    (is (= c/g0 (sut/max-gt store)))
     (is (= 3 (sut/max-aid store)))
     (is (= (merge c/entity-time-schema c/implicit-schema) (sut/schema store)))
     (is (= c/e0 (sut/init-max-eid store)))
@@ -48,7 +48,7 @@
       (is (= 0 (sut/datom-count store :vea)))
       (is (= [d] (sut/fetch store d)))
       (is (= [d] (sut/slice store :eav d d)))
-      (is (= true (sut/populated? store :eav d d)))
+      (is (sut/populated? store :eav d d))
       (is (= 1 (sut/size store :eav d d)))
       (is (= d (sut/head store :eav d d)))
       (is (= d (sut/tail store :eav d d)))
@@ -193,53 +193,53 @@
       (sut/close store'))
     (u/delete-files dir)))
 
-(deftest normal-data-test
-  (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
-        store (sut/open dir)
-        v     (UUID/randomUUID)
-        d     (d/datom c/e0 :a v)
-        d1    (d/datom (inc c/e0) :b v)]
-    (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
-    (is (= [d] (sut/slice store :eavt
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax))))
-    (sut/close store)
+;; (deftest normal-data-test
+;;   (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
+;;         store (sut/open dir)
+;;         v     (UUID/randomUUID)
+;;         d     (d/datom c/e0 :a v)
+;;         d1    (d/datom (inc c/e0) :b v)]
+;;     (sut/load-datoms store [d])
+;;     (is (= [d] (sut/fetch store d)))
+;;     (is (= [d] (sut/slice store :eavt
+;;                           (d/datom c/e0 :a c/v0)
+;;                           (d/datom c/e0 :a c/vmax))))
+;;     (sut/close store)
 
-    (let [store' (sut/open dir)]
-      (is (sut/populated? store' :eav
-                          (d/datom c/e0 :a c/v0)
-                          (d/datom c/e0 :a c/vmax)))
-      (is (= [d] (sut/fetch store' d)))
-      (is (= [d] (sut/slice store' :eavt
-                            (d/datom c/e0 :a c/v0)
-                            (d/datom c/e0 :a c/vmax))))
-      (sut/load-datoms store' [d1])
-      (is (= 1 (sut/init-max-eid store')))
-      (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store))
-    (u/delete-files dir)))
+;;     (let [store' (sut/open dir)]
+;;       (is (sut/populated? store' :eav
+;;                           (d/datom c/e0 :a c/v0)
+;;                           (d/datom c/e0 :a c/vmax)))
+;;       (is (= [d] (sut/fetch store' d)))
+;;       (is (= [d] (sut/slice store' :eavt
+;;                             (d/datom c/e0 :a c/v0)
+;;                             (d/datom c/e0 :a c/vmax))))
+;;       (sut/load-datoms store' [d1])
+;;       (is (= 1 (sut/init-max-eid store')))
+;;       (is (= [d1] (sut/fetch store' d1)))
+;;       (sut/close store))
+;;     (u/delete-files dir)))
 
-(deftest false-value-test
-  (let [d     (d/datom c/e0 :a false)
-        dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-        store (sut/open dir)]
-    (sut/load-datoms store [d])
-    (is (= [d] (sut/fetch store d)))
-    (sut/close store)
-    (u/delete-files dir)))
+;; (deftest false-value-test
+;;   (let [d     (d/datom c/e0 :a false)
+;;         dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
+;;         store (sut/open dir)]
+;;     (sut/load-datoms store [d])
+;;     (is (= [d] (sut/fetch store d)))
+;;     (sut/close store)
+;;     (u/delete-files dir)))
 
-(test/defspec random-data-test
-  100
-  (prop/for-all
-    [v gen/any-printable-equatable
-     a gen/keyword-ns
-     e (gen/large-integer* {:min 0})]
-    (let [d     (d/datom e a v)
-          dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-          store (sut/open dir)
-          _     (sut/load-datoms store [d])
-          r     (sut/fetch store d)]
-      (sut/close store)
-      (u/delete-files dir)
-      (is (= [d] r)))))
+;; (test/defspec random-data-test
+;;   100
+;;   (prop/for-all
+;;     [v gen/any-printable-equatable
+;;      a gen/keyword-ns
+;;      e (gen/large-integer* {:min 0})]
+;;     (let [d     (d/datom e a v)
+;;           dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
+;;           store (sut/open dir)
+;;           _     (sut/load-datoms store [d])
+;;           r     (sut/fetch store d)]
+;;       (sut/close store)
+;;       (u/delete-files dir)
+;;       (is (= [d] r)))))

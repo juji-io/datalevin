@@ -33,16 +33,21 @@
           (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
             (l/return-rtx ~'lmdb ~'rtx)))))))
 
-(defn- read-key
-  ([kv k-type v]
-   (read-key kv k-type v false))
-  ([kv k-type v rewind?]
-   (if (and v (not= v c/normal) (c/index-types k-type))
-     b/overflown-key
-     (b/read-buffer (if rewind?
-                      (.rewind ^ByteBuffer (l/k kv))
-                      (l/k kv))
-                    k-type))))
+;; (defn- read-key
+;;   ([kv k-type v]
+;;    (read-key kv k-type v false))
+;;   ([kv k-type v rewind?]
+;;    (if (and v (not= v c/normal) (c/index-types k-type))
+;;      b/overflown-key
+;;      (b/read-buffer (if rewind?
+;;                       (.rewind ^ByteBuffer (l/k kv))
+;;                       (l/k kv))
+;;                     k-type))))
+
+(defn- read-dl-value
+  [kv v-type]
+  (if (c/dl-index-types v-type)))
+
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]

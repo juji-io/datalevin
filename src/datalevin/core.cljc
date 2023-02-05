@@ -1207,7 +1207,8 @@ Only usable for debug output.
     `k-type` and `v-type` are data types of `k` and `v`, respectively.
      The allowed data types are described in [[read-buffer]].
 
-     Only the value will be returned if `ignore-key?` is `true`;
+     Only the value will be returned if `ignore-key?` is `true`
+     (default if `false`);
      If value is to be ignored, put `:ignore` as `v-type`
 
      If both key and value are ignored, return true if found an entry, otherwise
