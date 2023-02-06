@@ -75,18 +75,12 @@
       (is (= (map dvec (d/seek-datoms db :avet :name "P"))
              [
               [1 :name "Petr"]
-              [3 :name "Sergey"]
-              [3 :age 11]
-              [2 :age 25]
-              [1 :age 44]])))
+              [3 :name "Sergey"]])))
 
     (testing "Exact value lookup"
       (is (= (map dvec (d/seek-datoms db :avet :name "Petr"))
              [ [1 :name "Petr"]
-              [3 :name "Sergey"]
-              [3 :age 11]
-              [2 :age 25]
-              [1 :age 44]])))
+              [3 :name "Sergey"]])))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -112,17 +106,12 @@
       (is (= (map dvec (d/rseek-datoms db :avet :age 26))
              [[2 :age 25]
               [3 :age 11]
-              [3 :name "Sergey"]
-              [1 :name "Petr"]
-              [2 :name "Ivan"]])))
+              ])))
 
     (testing "Exact value lookup"
       (is (= (map dvec (d/rseek-datoms db :avet :age 25))
              [[2 :age 25]
-              [3 :age 11]
-              [3 :name "Sergey"]
-              [1 :name "Petr"]
-              [2 :name "Ivan"]])))
+              [3 :age 11]])))
     (d/close-db db)
     (u/delete-files dir)))
 

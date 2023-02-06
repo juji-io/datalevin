@@ -304,7 +304,7 @@
 (deftest id-large-bytes-test
   (let [dir        (u/tmp-dir (str "id-large-bytes-test-" (UUID/randomUUID)))
         ^bytes bs  (.getBytes ^String (apply str (range 1000)))
-        ^bytes bs1 (.getBytes ^String (apply str (range 1000)))
+        ^bytes bs1 (.getBytes ^String (apply str (range 1001)))
         db         (-> (sut/empty-db
                          dir
                          {:id    {:db/valueType :db.type/string
@@ -314,7 +314,7 @@
                          [{:id    "foo"
                            :bytes bs}])
                        (sut/db-with
-                         [{:id    "foo"
+                         [{:id    "bar"
                            :bytes bs1}]))]
     (let [res (sort-by second
                        (sut/q '[:find ?b ?e

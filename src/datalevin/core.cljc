@@ -461,7 +461,7 @@ Only usable for debug output.
 
 
 (defn seek-datoms
-  "Similar to [[datoms]], but will return datoms starting from specified components and including rest of the database until the end of the index.
+  "Similar to [[datoms]], but will return datoms starting from specified components.
 
    If no datom matches passed arguments exactly, iterator will start from first datom that could be considered “greater” in index order.
 
@@ -477,10 +477,7 @@ Only usable for debug output.
        ;     #datalevin/Datom [2 :likes \"pizza\"])
 
        (seek-datoms db :eavt 1 :name)
-       ; => (#datalevin/Datom [1 :name \"Ivan\"]
-       ;     #datalevin/Datom [2 :likes \"candy\"]
-       ;     #datalevin/Datom [2 :likes \"pie\"]
-       ;     #datalevin/Datom [2 :likes \"pizza\"])
+       ; => (#datalevin/Datom [1 :name \"Ivan\"])
 
        (seek-datoms db :eavt 2)
        ; => (#datalevin/Datom [2 :likes \"candy\"]
@@ -499,7 +496,7 @@ Only usable for debug output.
 
 
 (defn rseek-datoms
-  "Same as [[seek-datoms]], but goes backwards until the beginning of the index."
+  "Same as [[seek-datoms]], but goes backwards."
   ([db index]             {:pre [(db/db? db)]} (db/-rseek-datoms db index []))
   ([db index c1]          {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1]))
   ([db index c1 c2]       {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2]))
