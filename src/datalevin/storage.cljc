@@ -9,7 +9,9 @@
    [datalevin.datom :as d]
    [clojure.string :as str])
   (:import
-   [java.util UUID]
+   [java.util UUID Map$Entry]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -374,25 +376,21 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      (let [eav    (transient [])
-            ave    (transient [])
-            vea    (transient [])
-            ;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
-            ft-ds  (transient [])
-            giants (volatile! {})]
+      (let [;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
+            ft-ds  (FastList.)
+            txs    (FastList.)
+            giants (UnifiedMap.)]
         (doseq [datom datoms]
           (if (d/datom-added datom)
-            (insert-datom this datom eav ave vea ft-ds giants)
-            (delete-datom this datom eav ave vea ft-ds giants)))
-        (transact-list lmdb :eav (persistent! eav))
-        (transact-list lmdb :ave (persistent! ave))
-        (transact-list lmdb :vea (persistent! vea))
-        (transact-giants lmdb @giants)
-        (fulltext-index search-engine (persistent! ft-ds))
+            (insert-datom this datom txs ft-ds giants)
+            (delete-datom this datom txs ft-ds giants)))
         (lmdb/transact-kv
-          lmdb [[:put c/meta :max-tx (advance-max-tx this) :attr :long]
-                [:put c/meta :last-modified (System/currentTimeMillis)
-                 :attr :long]]))))
+          lmdb (doto txs
+                 (.add [:put c/meta :max-tx (advance-max-tx this)
+                        :attr :long])
+                 (.add [:put c/meta :last-modified (System/currentTimeMillis)
+                        :attr :long])))
+        (fulltext-index search-engine ft-ds))))
 
   (fetch [_ datom]
     (mapv (partial retrieved->datom lmdb attrs)
@@ -592,7 +590,7 @@
       :pass-through)))
 
 (defn- insert-datom
-  [^Store store ^Datom d eav ave vea ft-ds giants]
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
@@ -608,19 +606,21 @@
     (or (not (:validate-data? (.-opts store)))
         (b/valid-data? v vt)
         (u/raise "Invalid data, expecting " vt {:input v}))
+    (.add txs [:put c/eav e i :id :avg])
+    (.add txs [:put c/ave aid i :int :veg])
+    (when ref? (.add txs [:put c/vea v i :id :eag]))
     (when giant?
       (advance-max-gt store)
-      (vswap! giants assoc [e attr v] [:put max-gt]))
+      (let [gd [e attr v]]
+        (.put giants gd max-gt)
+        (.add txs [:put c/giants max-gt (apply d/datom gd) :id :data])))
     (when ft?
       (let [v (str v)]
         (when-not (str/blank? v)
-          (conj! ft-ds (if giant? [:g [max-gt v]] [:a [e aid v]])))))
-    (conj! eav [:put e i])
-    (conj! ave [:put aid i])
-    (when ref? (conj! vea [:put v i]))))
+          (.add ft-ds (if giant? [:g [max-gt v]] [:a [e aid v]])))))))
 
 (defn- delete-datom
-  [^Store store ^Datom d eav ave vea ft-ds giants]
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
   (let [attr         (.-a d)
         props        ((schema store) attr)
         vt           (:db/valueType props)
@@ -630,7 +630,7 @@
         v            (.-v d)
         ^Indexable i (b/indexable e aid v vt c/g0)
         d-eav        [e attr v]
-        gt-this-tx   (peek (@giants d-eav))
+        gt-this-tx   (.get giants d-eav)
         gt           (when (b/giant? i)
                        (or gt-this-tx
                            (let [[_ ^Retrieved r]
@@ -645,59 +645,15 @@
     (when (:db/fulltext props)
       (let [v (str v)]
         (when-not (str/blank? v)
-          (conj! ft-ds (if gt [:r gt] [:d [e aid v]])))))
+          (.add ft-ds (if gt [:r gt] [:d [e aid v]])))))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
-      (conj! eav [:del e ii])
-      (conj! ave [:del aid ii])
-      (when ref? (conj! vea [:del v ii])))
+      (.add txs [:del-list c/eav e [ii] :id :avg])
+      (.add txs [:del-list c/ave aid [ii] :int :veg])
+      (when ref? (.add txs [:del-list c/vea v [ii] :id :eag])))
     (when gt
       (if gt-this-tx
-        (vswap! giants dissoc d-eav)
-        (vswap! giants assoc d-eav [:del gt])))))
-
-(defn- data->tx
-  [data]
-  (sequence
-    (comp
-      (partition-by second)
-      (map (fn [coll]
-             (let [f  (first coll)
-                   k  (second f)
-                   vs (persistent!
-                        (reduce
-                          (fn [txs d] (conj! txs (peek d)))
-                          (transient [])
-                          coll))]
-               (case (first f)
-                 :put [:put-list k vs]
-                 :del [:del-list k vs])))))
-    data))
-
-(defn- transact-list
-  [lmdb index data]
-  (let [txs (sequence
-              (comp
-                (partition-by first)
-                (map #(sort-by second %))
-                (mapcat data->tx))
-              data)]
-    (lmdb/transact-kv lmdb
-                      (index->dbi index)
-                      txs
-                      (index->ktype index)
-                      (index->vtype index))))
-
-(defn- transact-giants
-  [lmdb giants]
-  (let [txs (mapv (fn [[d [op gt]]]
-                    (case op
-                      :put [:put gt (apply d/datom d)]
-                      :del [:del gt]))
-                  giants)]
-    (lmdb/transact-kv lmdb
-                      c/giants
-                      txs
-                      :id :data)))
+        (.remove giants d-eav)
+        (.add txs [:del c/giants gt :id])))))
 
 (defn- transact-opts
   [lmdb opts]

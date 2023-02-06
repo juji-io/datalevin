@@ -114,17 +114,13 @@
 (defn- seq-datom [^Datom d]
   (list (.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)))
 
-;; keep it fast by duplicating for both keyword and string cases
-;; instead of using sets or some other matching func
 (defn- val-at-datom [^Datom d k not-found]
   (case k
-    :e (.-e d) "e" (.-e d)
-    :a (.-a d) "a" (.-a d)
-    :v (.-v d) "v" (.-v d)
-    :tx (datom-tx d)
-    "tx" (datom-tx d)
-    :added (datom-added d)
-    "added" (datom-added d)
+    (:e "e")         (.-e d)
+    (:a "a")         (.-a d)
+    (:v "v")         (.-v d)
+    (:tx "tx")       (datom-tx d)
+    (:added "added") (datom-added d)
     not-found))
 
 (defn- nth-datom
@@ -190,7 +186,7 @@
             (cmp-fn o1 o2)))))
 
 (defn- compare-with-type [a b]
-  (if (identical? (type a) (type b))
+  (if (identical? (class a) (class b))
     ;; using `compare` on colls throws when
     ;; items at the same index of the coll
     ;; are not of the same type, so we use `=`.

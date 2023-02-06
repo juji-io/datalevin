@@ -448,16 +448,16 @@
     :db.type/keyword (keyword-bytes v)
     :db.type/symbol  (symbol-bytes v)
     :db.type/string  (string-bytes v)
-    :db.type/boolean nil
-    :db.type/long    nil
-    :db.type/double  nil
-    :db.type/float   nil
-    :db.type/ref     nil
-    :db.type/instant nil
-    :db.type/uuid    nil
     :db.type/bytes   (wrap-extrema v c/min-bytes c/max-bytes v)
     :db.type/bigint  (bigint-bytes v)
     :db.type/bigdec  (bigdec-bytes v)
+    (:db.type/boolean
+     :db.type/long
+     :db.type/double
+     :db.type/float
+     :db.type/ref
+     :db.type/instant
+     :db.type/uuid)  nil
     (data-bytes v)))
 
 (defn- long-header

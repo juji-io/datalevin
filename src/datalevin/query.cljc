@@ -8,22 +8,16 @@
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise cond+]]
    [datalevin.lru :as lru]
-   [datalevin.parser :as dp #?@(:cljs [:refer [BindColl BindIgnore BindScalar BindTuple Constant
-                                               FindColl FindRel FindScalar FindTuple PlainSymbol
-                                               RulesVar SrcVar Variable]])]
+   [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
-   [datalevin.pull-parser :as dpp]
    [datalevin.timeout :as timeout])
-  #?(:clj
-     (:import
-      [clojure.lang ILookup LazilyPersistentVector]
-      [datalevin.parser BindColl BindIgnore BindScalar BindTuple
-       Constant Pull FindColl FindRel FindScalar FindTuple PlainSymbol
-       RulesVar SrcVar Variable]
-      [datalevin.storage Store]
-      [datalevin.search SearchEngine]
-      [datalevin.db DB]
-      [java.lang Long])))
+  (:import
+   [clojure.lang ILookup]
+   [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
+    FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
+    Variable]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [java.lang Long]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -319,12 +313,11 @@
 
 (defn -group-by
   [f init coll]
-  (persistent!
-    (reduce
-      (fn [ret x]
-        (let [k (f x)]
-          (assoc! ret k (conj (get ret k init) x))))
-      (transient {}) coll)))
+  (let [^UnifiedMap ret (UnifiedMap.)]
+    (doseq [x    coll
+            :let [k (f x)]]
+      (.put ret k (conj (.getIfAbsentPut ret k init) x)))
+    ret))
 
 (defn hash-attrs [key-fn tuples]
   (-group-by key-fn '() tuples))
@@ -348,13 +341,13 @@
         key-fn1      (tuple-key-fn attrs1 common-attrs)
         key-fn2      (tuple-key-fn attrs2 common-attrs)]
     (if (< (count tuples1) (count tuples2))
-      (let [hash (hash-attrs key-fn1 tuples1)
+      (let [^UnifiedMap hash (hash-attrs key-fn1 tuples1)
             new-tuples
             (->>
               (reduce
                 (fn outer [acc tuple2]
                   (let [key (key-fn2 tuple2)]
-                    (if-some [tuples1 (hash key)]
+                    (if-some [tuples1 (.get hash key)]
                       (reduce
                         (fn inner [acc tuple1]
                           (conj! acc
@@ -366,13 +359,13 @@
               (persistent!))]
         (relation! (zipmap (concat keep-attrs1 keep-attrs2) (range))
                    new-tuples))
-      (let [hash (hash-attrs key-fn2 tuples2)
+      (let [^UnifiedMap hash (hash-attrs key-fn2 tuples2)
             new-tuples
             (->>
               (reduce
                 (fn outer [acc tuple1]
                   (let [key (key-fn1 tuple1)]
-                    (if-some [tuples2 (hash key)]
+                    (if-some [tuples2 (.get hash key)]
                       (reduce
                         (fn inner [acc tuple2]
                           (conj! acc
@@ -389,11 +382,11 @@
   (let [{attrs-a :attrs, tuples-a :tuples} a
         {attrs-b :attrs, tuples-b :tuples} b
 
-        attrs    (vec (intersect-keys attrs-a attrs-b))
-        key-fn-b (tuple-key-fn attrs-b attrs)
-        hash     (hash-attrs key-fn-b tuples-b)
-        key-fn-a (tuple-key-fn attrs-a attrs)]
-    (assoc a :tuples (filterv #(nil? (hash (key-fn-a %))) tuples-a))))
+        attrs            (vec (intersect-keys attrs-a attrs-b))
+        key-fn-b         (tuple-key-fn attrs-b attrs)
+        ^UnifiedMap hash (hash-attrs key-fn-b tuples-b)
+        key-fn-a         (tuple-key-fn attrs-a attrs)]
+    (assoc a :tuples (filterv #(nil? (.get hash (key-fn-a %))) tuples-a))))
 
 (defn lookup-pattern-db [db pattern]
   ;; TODO optimize with bound attrs min/max values here

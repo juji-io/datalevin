@@ -14,8 +14,9 @@
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
     PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.lang AutoCloseable]
-   [java.util.concurrent ConcurrentLinkedQueue ConcurrentHashMap]
+   [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator UUID]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
@@ -114,8 +115,8 @@
     (b/put-bf stop-kb k2 kt)
     (b/put-bf start-vb v1 vt)
     (b/put-bf stop-vb v2 vt)
-    (into (l/range-table k-range-type k1 k2 start-kb stop-kb)
-          (l/range-table v-range-type v1 v2 start-vb stop-vb)))
+    [(l/range-table k-range-type k1 k2 start-kb stop-kb)
+     (l/range-table v-range-type v1 v2 start-vb stop-vb)])
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
@@ -295,10 +296,10 @@
 
   Iterable
   (iterator [_]
-    (let [[forward-key? include-start-key? include-stop-key?
-           ^ByteBuffer sk ^ByteBuffer ek
-           forward-val? include-start-val? include-stop-val?
-           ^ByteBuffer sv ^ByteBuffer ev] ctx
+    (let [[[forward-key? include-start-key? include-stop-key?
+            ^ByteBuffer sk ^ByteBuffer ek]
+           [forward-val? include-start-val? include-stop-val?
+            ^ByteBuffer sv ^ByteBuffer ev]] ctx
 
           key-ended? (volatile! false)
           started?   (volatile! false)
@@ -434,7 +435,7 @@
         (raise "Unknown kv operator: " op {})))))
 
 (defn- transact*
-  [txs ^ConcurrentHashMap dbis txn]
+  [txs ^UnifiedMap dbis txn]
   (doseq [^IPersistentVector tx txs]
     (let [cnt      (.length tx)
           op       (.nth tx 0)
@@ -516,7 +517,7 @@
                temp?
                opts
                ^ConcurrentLinkedQueue pool
-               ^ConcurrentHashMap dbis
+               ^UnifiedMap dbis
                ^ByteBuffer kb-w
                ^ByteBuffer start-kb-w
                ^ByteBuffer stop-kb-w
@@ -930,7 +931,7 @@
                               temp?
                               opts
                               (ConcurrentLinkedQueue.)
-                              (ConcurrentHashMap.)
+                              (UnifiedMap.)
                               (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)
                               (b/allocate-buffer c/+max-key-size+)
