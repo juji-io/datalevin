@@ -19,10 +19,18 @@
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-meta` dbi to keep information, such as dbi flags, etc.
+
 ### Changed
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
   includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
+- [KV] Store Spillable data in sub-dbs rather than in individual db, to prevent
+  file handle exhaustion
+- [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
+
+### Improved
+- [Datalog] Query performance improvement by using mutable collections
+  whenever appropriate.
 
 ## 0.8.4 (2023-01-20)
 ### Fixed

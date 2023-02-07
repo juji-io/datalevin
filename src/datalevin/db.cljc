@@ -1175,12 +1175,11 @@
                      (= op :db/retract))
                  (if-some [e (entid db e)]
                    (let [_      (validate-attr a entity)
-                         datoms (vec
-                                  (concat
-                                    (.subSet ^TreeSortedSet (:eavt db)
-                                             (datom e a nil tx0)
-                                             (datom e a nil txmax))
-                                    (-search db [e a])))]
+                         datoms (u/concatv
+                                  (.subSet ^TreeSortedSet (:eavt db)
+                                           (datom e a nil tx0)
+                                           (datom e a nil txmax))
+                                  (-search db [e a]))]
                      (recur (reduce transact-retract-datom report datoms)
                             (concat (retract-components db datoms) entities)))
                    (recur report entities))
@@ -1188,20 +1187,18 @@
                  (or (= op :db.fn/retractEntity)
                      (= op :db/retractEntity))
                  (if-some [e (entid db e)]
-                   (let [e-datoms (vec
-                                    (concat
-                                      (.subSet ^TreeSortedSet (:eavt db)
-                                               (datom e nil nil tx0)
-                                               (datom e nil nil txmax))
-                                      (-search db [e])))
-                         v-datoms (vec
-                                    (concat
-                                      (.subSet ^TreeSortedSet (:veat db)
-                                               (datom e0 nil e tx0)
-                                               (datom emax nil e txmax))
-                                      (-search db [nil nil e])))]
+                   (let [e-datoms (u/concatv
+                                    (.subSet ^TreeSortedSet (:eavt db)
+                                             (datom e nil nil tx0)
+                                             (datom e nil nil txmax))
+                                    (-search db [e]))
+                         v-datoms (u/concatv
+                                    (.subSet ^TreeSortedSet (:veat db)
+                                             (datom e0 nil e tx0)
+                                             (datom emax nil e txmax))
+                                    (-search db [nil nil e]))]
                      (recur (reduce transact-retract-datom report
-                                    (concat e-datoms v-datoms))
+                                    (u/concatv e-datoms v-datoms))
                             (concat (retract-components db e-datoms) entities)))
                    (recur report entities))
 

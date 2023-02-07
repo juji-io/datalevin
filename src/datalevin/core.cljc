@@ -740,7 +740,7 @@ Only usable for debug output.
    (let [report (db/map->TxReport
                   { :db-before @conn
                    :db-after   db
-                   :tx-data    (concat
+                   :tx-data    (u/concatv
                                  (map #(assoc % :added false) (datoms @conn :eavt))
                                  (datoms db :eavt))
                    :tx-meta    tx-meta})]

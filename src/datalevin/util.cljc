@@ -64,12 +64,15 @@
      (and (= (System/getProperty "os.name") "Mac OS X")
           (= (System/getProperty "os.arch") "aarch64"))))
 
+(defn concatv [& xs]
+  (into [] cat xs))
+
 (defn delete-files
   "Recursively delete file"
   [& fs]
   (when-let [f (first fs)]
     (if-let [cs (seq (.listFiles (io/file f)))]
-      (recur (concat cs fs))
+      (recur (concatv cs fs))
       (do (io/delete-file f)
           (recur (rest fs))))))
 

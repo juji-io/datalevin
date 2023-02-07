@@ -352,10 +352,10 @@
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (concat rp-txs p-txs
-                                  [[:db/retractEntity urid]
-                                   [:db/retractEntity rid]
-                                   [:db/retractEntity uid]]))))
+    (d/transact! sys-conn (u/concatv rp-txs p-txs
+                                     [[:db/retractEntity urid]
+                                      [:db/retractEntity rid]
+                                      [:db/retractEntity uid]]))))
 
 (defn- transact-new-role
   [sys-conn role-key]
@@ -383,8 +383,8 @@
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (concat rp-txs p-txs ur-txs
-                                  [[:db/retractEntity rid]]))))
+    (d/transact! sys-conn (u/concatv rp-txs p-txs ur-txs
+                                     [[:db/retractEntity rid]]))))
 
 (defn- transact-user-role
   [sys-conn rid username]
@@ -457,7 +457,8 @@
                                 @sys-conn pid))
                          pids)
         rp-txs   (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (concat rp-txs pids-txs [[:db/retractEntity did]]))))
+    (d/transact! sys-conn (u/concatv rp-txs pids-txs
+                                     [[:db/retractEntity did]]))))
 
 (defn- close-store
   [store]

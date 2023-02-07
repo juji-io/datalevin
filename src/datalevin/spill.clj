@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.spill
-  "A mutable vector that spills to disk automatically
-  when memory pressure is high. Presents a `IPersistentVector` API
+  "Mutable data structures that spills to disk automatically
+  when memory pressure is high. Presents a `IPersistent*` API
   for compatibility and convenience."
   (:require
    [datalevin.constants :as c]
@@ -272,12 +272,12 @@
         :or   {spill-threshold c/+default-spill-threshold+
                spill-root      c/+default-spill-root+}}]
    (when (empty? @listeners) (memory-updater))
-   (let [svec (->SpillableVector spill-threshold
-                                 spill-root
-                                 (volatile! nil)
-                                 (FastList.)
-                                 (volatile! nil)
-                                 (volatile! 0))]
+   (let [svec (SpillableVector. spill-threshold
+                                spill-root
+                                (volatile! nil)
+                                (FastList.)
+                                (volatile! nil)
+                                (volatile! 0))]
      (doseq [v vs] (conj svec v))
      svec)))
 
@@ -449,10 +449,10 @@
        :or   {spill-threshold c/+default-spill-threshold+
               spill-root      c/+default-spill-root+}}]
    (when (empty? @listeners) (memory-updater))
-   (let [smap (->SpillableIntObjMap spill-threshold
-                                    spill-root
-                                    (volatile! nil)
-                                    (IntObjectHashMap.)
-                                    (volatile! nil))]
+   (let [smap (SpillableIntObjMap. spill-threshold
+                                   spill-root
+                                   (volatile! nil)
+                                   (IntObjectHashMap.)
+                                   (volatile! nil))]
      (doseq [[k v] m] (assoc smap k v))
      smap)))

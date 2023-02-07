@@ -12,11 +12,14 @@
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout])
   (:import
-   [clojure.lang ILookup]
-   [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
-    FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
-    Variable]
+   [clojure.lang ILookup LazilyPersistentVector]
+   [datalevin.parser BindColl BindIgnore BindScalar BindTuple
+    Constant Pull FindColl FindRel FindScalar FindTuple PlainSymbol
+    RulesVar SrcVar Variable]
+   [datalevin.db DB]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [org.eclipse.collections.impl.set.mutable UnifiedSet]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [java.lang Long]))
 
 ;; ----------------------------------------------------------------------------
@@ -50,9 +53,6 @@
 (defn intersect-keys [attrs1 attrs2]
   (set/intersection (set (keys attrs1))
                     (set (keys attrs2))))
-
-(defn concatv [& xs]
-  (into [] cat xs))
 
 (defn zip
   ([a b] (mapv vector a b))
@@ -160,7 +160,7 @@
          idxs1  (to-array (map (:attrs rel1) attrs1))
          idxs2  (to-array (map (:attrs rel2) attrs2))]
      (relation!
-       (zipmap (concat attrs1 attrs2) (range))
+       (zipmap (u/concatv attrs1 attrs2) (range))
        (persistent!
          (reduce
            (fn [acc t1]
@@ -357,7 +357,7 @@
                       acc)))
                 (transient []) tuples2)
               (persistent!))]
-        (relation! (zipmap (concat keep-attrs1 keep-attrs2) (range))
+        (relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
                    new-tuples))
       (let [^UnifiedMap hash (hash-attrs key-fn2 tuples2)
             new-tuples
@@ -375,7 +375,7 @@
                       acc)))
                 (transient []) tuples1)
               (persistent!))]
-        (relation! (zipmap (concat keep-attrs1 keep-attrs2) (range))
+        (relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
                    new-tuples)))))
 
 (defn subtract-rel [a b]
@@ -419,7 +419,7 @@
 (defn normalize-pattern-clause [clause]
   (if (source? (first clause))
     clause
-    (concat ['$] clause)))
+    (into ['$] clause)))
 
 (defn lookup-pattern [source pattern]
   (if (db/-searchable? source)
@@ -626,8 +626,8 @@
   (let [[rule & call-args] rule-clause
         prev-call-args     (get used-args rule)]
     (for [prev-args prev-call-args
-          :let [[call-args prev-args] (remove-pairs call-args prev-args)]]
-      [(concat ['-differ?] call-args prev-args)])))
+          :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
+      [(u/concatv ['-differ?] call-args prev-args)])))
 
 (defn walk-collect [form pred]
   (let [res (atom [])]
@@ -646,7 +646,7 @@
 (defn solve-rule [context clause]
   (let [final-attrs     (filter free-var? clause)
         final-attrs-map (zipmap final-attrs (range))
-;;         clause-cache    (atom {}) ;; TODO
+        ;;         clause-cache    (atom {}) ;; TODO
         solve           (fn [prefix-context clauses]
                           (reduce -resolve-clause prefix-context clauses))
         empty-rels?     (fn [context]
@@ -670,14 +670,14 @@
             ;; has rule -> add guards -> check if dead -> expand rule -> push to stack, recur
             (let [[rule & call-args]     rule-clause
                   guards                 (rule-gen-guards rule-clause (:used-args frame))
-                  [active-gs pending-gs] (split-guards (concat (:prefix-clauses frame) clauses)
-                                                       (concat guards (:pending-guards frame)))]
+                  [active-gs pending-gs] (split-guards (u/concatv (:prefix-clauses frame) clauses)
+                                                       (u/concatv guards (:pending-guards frame)))]
               (if (some #(= % '[(-differ?)]) active-gs) ;; trivial always false case like [(not= [?a ?b] [?a ?b])]
 
                 ;; this branch has no data, just drop it from stack
                 (recur (next stack) rel)
 
-                (let [prefix-clauses (concat clauses active-gs)
+                (let [prefix-clauses (u/concatv clauses active-gs)
                       prefix-context (solve (:prefix-context frame) prefix-clauses)]
                   (if (empty-rels? prefix-context)
 
@@ -685,14 +685,14 @@
                     (recur (next stack) rel)
 
                     ;; need to expand rule to branches
-                    (let [used-args  (assoc (:used-args frame) rule
-                                       (conj (get (:used-args frame) rule []) call-args))
-                          branches   (expand-rule rule-clause context used-args)]
-                      (recur (concat
+                    (let [used-args (assoc (:used-args frame) rule
+                                           (conj (get (:used-args frame) rule []) call-args))
+                          branches  (expand-rule rule-clause context used-args)]
+                      (recur (u/concatv
                                (for [branch branches]
                                  {:prefix-clauses prefix-clauses
                                   :prefix-context prefix-context
-                                  :clauses        (concatv branch next-clauses)
+                                  :clauses        (u/concatv branch next-clauses)
                                   :used-args      used-args
                                   :pending-guards pending-gs})
                                (next stack))
@@ -705,7 +705,8 @@
       (->
         [(if (or (lookup-ref? e) (attr? e)) (db/entid-strict source e) e)
          a
-         (if (and v (attr? a) (db/ref? source a) (or (lookup-ref? v) (attr? v))) (db/entid-strict source v) v)
+         (if (and v (attr? a) (db/ref? source a) (or (lookup-ref? v) (attr? v)))
+           (db/entid-strict source v) v)
          (if (lookup-ref? tx) (db/entid-strict source tx) tx)]
         (subvec 0 (count pattern))))
     pattern))
@@ -971,11 +972,11 @@
             (let [f    (-context-resolve (:fn element) context)
                   args (map #(-context-resolve % context) (butlast (:args element)))
                   vals (map #(nth % i) tuples)]
-              (apply f (concat args [vals])))
+              (apply f (u/concatv args [vals])))
             fixed-value))
-    find-elements
-    (first tuples)
-    (range)))
+        find-elements
+        (first tuples)
+        (range)))
 
 (defn- idxs-of [pred coll]
   (->> (map #(when (pred %1) %2) coll (range))
@@ -1051,7 +1052,7 @@
         timeout       (:qtimeout parsed-q)]
     (binding [timeout/*deadline* (timeout/to-deadline timeout)]
       (let [;; TODO utilize parser
-            all-vars  (concat find-vars (map :symbol with))
+            all-vars  (u/concatv find-vars (map :symbol with))
             q         (cond-> q
                         (sequential? q) dp/query->map)
             wheres    (:where q)

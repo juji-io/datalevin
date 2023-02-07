@@ -167,12 +167,12 @@
     (let [[required rest] (if (sequential? (first form))
                             [(first form) (next form)]
                             [nil form])
-          required* (parse-seq parse-var-required required)
-          free*     (parse-seq parse-var-required rest)]
+          required*       (parse-seq parse-var-required required)
+          free*           (parse-seq parse-var-required rest)]
       (when (and (empty? required*) (empty? free*))
         (raise "Cannot parse rule-vars, expected [ variable+ | ([ variable+ ] variable*) ]"
                {:error :parser/rule-vars, :form form}))
-      (when-not (distinct? (concat required* free*))
+      (when-not (distinct? (u/concatv required* free*))
         (raise "Rule variables should be distinct"
                {:error :parser/rule-vars, :form form}))
       (RuleVars. required* free*))
@@ -180,7 +180,7 @@
            {:error :parser/rule-vars, :form form})))
 
 (defn flatten-rule-vars [rule-vars]
-  (concat
+  (u/concatv
     (when (:required rule-vars)
       [(mapv :symbol (:required rule-vars))])
     (mapv :symbol (:free rule-vars))))
