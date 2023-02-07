@@ -940,6 +940,13 @@
                               (volatile! nil)
                               false)]
        (when temp? (u/delete-on-exit file))
+       ;; (l/open-dbi lmdb c/kv-meta {:key-size c/+max-key-size+})
+       ;; (l/transact-kv lmdb c/kv-meta
+       ;;                [[:put :dir dir]
+       ;;                 [:put :flags flags]
+       ;;                 [:put :temp? temp?]
+       ;;                 [:put :max-dbis c/+max-dbs+]]
+       ;;                :attr)
        lmdb)
      (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 

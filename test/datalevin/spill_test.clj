@@ -150,7 +150,7 @@
     (vreset! sp/memory-pressure 99)
 
     (conj vs 0)
-    (is (not (l/closed-kv? @(.-disk vs))))
+    (is (= 1 (.disk-count vs)))
     (is (= [0] vs))
     (is (= 0 (vs 0)))
     (is (= 0 (get vs 0)))
@@ -198,7 +198,7 @@
     (is (= [1] (subvec vs 1 2)))
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))
-    (is (= @(.total vs)
+    (is (= (.length vs)
            (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))
     (vreset! sp/memory-pressure 0)))
 

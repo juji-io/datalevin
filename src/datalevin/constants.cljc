@@ -130,6 +130,11 @@
 (def ^:const normal 0)  ; non-giant datom
 
 ;; dbi-names
+
+;; kv
+(def ^:const kv-meta "datalevin/kv-meta")
+
+;; dl
 (def ^:const eav "datalevin/eav")
 (def ^:const ave "datalevin/ave")
 (def ^:const vea "datalevin/vea")
@@ -138,6 +143,7 @@
 (def ^:const meta "datalevin/meta")
 (def ^:const opts "datalevin/opts")
 
+;; search
 (def ^:const terms "terms")
 (def ^:const docs "docs")
 (def ^:const positions "positions")

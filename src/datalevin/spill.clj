@@ -52,6 +52,8 @@
 
 (def memory-updater (memoize install-memory-updater)) ; do it once
 
+(memory-updater)
+
 (defprotocol ISpillable
   (memory-count [this] "The number of items reside in memory")
   (disk-count [this] "The number of items reside on disk")
@@ -271,7 +273,6 @@
   ([vs {:keys [spill-threshold spill-root]
         :or   {spill-threshold c/+default-spill-threshold+
                spill-root      c/+default-spill-root+}}]
-   (when (empty? @listeners) (memory-updater))
    (let [svec (SpillableVector. spill-threshold
                                 spill-root
                                 (volatile! nil)
@@ -448,7 +449,6 @@
   ([m {:keys [spill-threshold spill-root]
        :or   {spill-threshold c/+default-spill-threshold+
               spill-root      c/+default-spill-root+}}]
-   (when (empty? @listeners) (memory-updater))
    (let [smap (SpillableIntObjMap. spill-threshold
                                    spill-root
                                    (volatile! nil)
