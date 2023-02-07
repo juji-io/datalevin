@@ -1087,7 +1087,9 @@
                        nv            (if (ref? db a) (entid-strict db nv) nv)
                        _             (validate-val nv entity)
                        datoms        (clojure.set/union
-                                       (-search db [e a])
+                                       (s/slice (:store db) :eav
+                                                (datom e a c/v0)
+                                                (datom e a c/vmax))
                                        (.subSet ^TreeSortedSet (:eavt db)
                                                 (datom e a nil tx0)
                                                 (datom e a nil txmax)))]
@@ -1180,7 +1182,9 @@
                                   (.subSet ^TreeSortedSet (:eavt db)
                                            (datom e a nil tx0)
                                            (datom e a nil txmax))
-                                  (-search db [e a]))]
+                                  (s/slice (:store db) :eav
+                                           (datom e a c/v0)
+                                           (datom e a c/vmax)))]
                      (recur (reduce transact-retract-datom report datoms)
                             (concat (retract-components db datoms) entities)))
                    (recur report entities))
@@ -1192,12 +1196,16 @@
                                     (.subSet ^TreeSortedSet (:eavt db)
                                              (datom e nil nil tx0)
                                              (datom e nil nil txmax))
-                                    (-search db [e]))
+                                    (s/slice (:store db) :eav
+                                             (datom e nil nil)
+                                             (datom e nil nil)))
                          v-datoms (u/concatv
                                     (.subSet ^TreeSortedSet (:veat db)
                                              (datom e0 nil e tx0)
                                              (datom emax nil e txmax))
-                                    (-search db [nil nil e]))]
+                                    (s/slice (:store db) :vea
+                                             (datom e0 nil e)
+                                             (datom emax nil e)))]
                      (recur (reduce transact-retract-datom report
                                     (u/concatv e-datoms v-datoms))
                             (concat (retract-components db e-datoms) entities)))
