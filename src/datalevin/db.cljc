@@ -822,11 +822,12 @@
                            (or (sf (.subSet ^TreeSortedSet (:eavt db)
                                             (datom e a v tx0)
                                             (datom e a v txmax)))
-                               (-first db [e a v]))
+                               (first (s/fetch (:store db) (datom e a v))))
                            (or (sf (.subSet ^TreeSortedSet (:eavt db)
                                             (datom e a nil tx0)
                                             (datom e a nil txmax)))
-                               (-first db [e a])))]
+                               (s/head (:store db) :eav
+                                       (datom e a c/v0) (datom e a c/vmax))))]
     (cond
       (nil? old-datom)
       (transact-report report new-datom)
