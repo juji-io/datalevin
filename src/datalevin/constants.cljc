@@ -1,7 +1,6 @@
 (ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
   (:require
-   [taoensso.nippy :as nippy]
    [datalevin.util :as u])
   (:import
    [java.util UUID Arrays HashSet]

@@ -370,14 +370,13 @@ adjust the priorities based on feedback.
 * 0.9.0 Store data in compressed form.
 * 0.10.0 A new Datalog query engine with improved performance.
 * 1.0.0 Transaction log storage and access API.
+* 1.1.0 Read-only replicas for server.
 * 1.2.0 As a document store: automatic indexing and incremental updates.
-* 2.0.0 As a production rule engine: iterative rules application and truth
-  maintenance (i.e. materialized views and maintenance).
-* 2.2.0 Read-only replicas for server.
-* 3.0.0 Distributed mode.
-* 3.1.0 Arbitrary data as attribute.
-* 3.2.0 Fully automatic schema migration on write.
-* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 2.0.0 As a production rule engine with truth maintenance.
+* 2.1.0 Arbitrary data as attribute.
+* 2.2.0 Fully automatic schema migration on write.
+* 3.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 4.0.0 Distributed mode.
 
 ## :rocket: Status
 

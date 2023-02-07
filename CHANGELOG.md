@@ -1,6 +1,11 @@
 # Change Log
 
 ## WIP
+### Added
+- [KV] added `:tuple` data type that accepts 2-8 scalar values, e.g. useful as
+  path keys for indexing documents.
+- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples
+  `:db/tupleType` for values. #167
 
 ## 0.8.4 (2023-01-20)
 ### Fixed
