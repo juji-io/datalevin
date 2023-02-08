@@ -613,7 +613,8 @@
       (advance-max-gt store)
       (let [gd [e attr v]]
         (.put giants gd max-gt)
-        (.add txs [:put c/giants max-gt (apply d/datom gd) :id :data])))
+        (.add txs
+              [:put c/giants max-gt (apply d/datom gd) :id :data [:append]])))
     (when ft?
       (let [v (str v)]
         (when-not (str/blank? v)
@@ -651,9 +652,8 @@
       (.add txs [:del-list c/ave aid [ii] :int :veg])
       (when ref? (.add txs [:del-list c/vea v [ii] :id :eag])))
     (when gt
-      (if gt-this-tx
-        (.remove giants d-eav)
-        (.add txs [:del c/giants gt :id])))))
+      (when gt-this-tx (.remove giants d-eav))
+      (.add txs [:del c/giants gt :id]))))
 
 (defn- transact-opts
   [lmdb opts]
