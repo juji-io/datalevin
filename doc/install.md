@@ -50,6 +50,15 @@ For `dep.edn`, this is known to work:
 ```
 Then `clj -A:jvm-base`
 
+### Other JVM Languages
+
+Datalevin can be used in other JVM languages than Clojure, such as Java, Scala, Kotlin,
+and so on, by using the official [Clojure Java
+API](http://clojure.github.io/clojure/javadoc/clojure/java/api/package-summary.html).
+If you have done so, a PR to document your example will be welcome here. In
+addition, one can build a Datalevin wrapper in other JVM languages this way, and
+we will be happy to link to it here if you have done so.
+
 ### GraalVM Native Image
 
 If your application depends on the Datalevin library and you want to compile your
