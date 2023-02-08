@@ -44,6 +44,12 @@
    [com.taoensso/encore]
    [com.taoensso/nippy]
    [org.babashka/sci]
+   [nrepl/bencode]
+   [org.clojure/tools.cli]
+   [org.clojure/data.csv]
+   [org.bouncycastle/bcprov-jdk15on]
+   [cheshire]
+   [com.taoensso/timbre]
    [com.fasterxml.jackson.core/jackson-core]
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
@@ -54,14 +60,7 @@
   :profiles
   {:uberjar        {:main           datalevin.main
                     :aot            [datalevin.main]
-                    :jar-inclusions [#"graal" #"test"]
-                    :dependencies
-                    [[nrepl/bencode]
-                     [org.clojure/tools.cli]
-                     [org.clojure/data.csv]
-                     [org.bouncycastle/bcprov-jdk15on]
-                     [cheshire]
-                     [com.taoensso/timbre]]}
+                    :jar-inclusions [#"graal" #"test"]}
    :native-uberjar {:aot            [pod.huahaiy.datalevin],
                     :jar-inclusions [#"test"]
                     :uberjar-name   "main.uberjar.jar"}

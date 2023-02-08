@@ -33,7 +33,7 @@ jobs:
 
       - name: Run Tests then Uberjar
         run: |
-          lein test
+          lein run
           lein uberjar
 
       - name: Upload Uberjar
@@ -62,7 +62,6 @@ jobs:
         with:
           linux: native/dtlv-test0
           macos: native/dtlv-test0
-
 
       - name: Zip Binary
         run: |

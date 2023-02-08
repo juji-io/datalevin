@@ -6,6 +6,8 @@
   path keys for indexing documents.
 - [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples
   `:db/tupleType` for values. #167
+### Improved
+- [native] upgrade graalvm to 22.3.1
 
 ## 0.8.4 (2023-01-20)
 ### Fixed
