@@ -1125,7 +1125,7 @@ Only usable for debug output.
   `k-type`, `v-type` and `flags` are optional.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
-  of `v`. The allowed data types are described in [[put-buffer]]
+  of `v`. The allowed data types are described in [[put-buffer]].
 
   `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
        Pass in `:append` when the data is sorted to gain better write performance.
@@ -1572,7 +1572,7 @@ all documents. Used only with [[search-index-writer]]"}
 
 (def ^{:arglists '([bf x] [bf x x-type])
        :doc      "Put the given type of data `x` in buffer `bf`. `x-type` can be
-    one of the following data types:
+    one of following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
     - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
     - `:string`, UTF-8 string
@@ -1595,7 +1595,7 @@ all documents. Used only with [[search-index-writer]]"}
 
 (def ^{:arglists '([bf] [bf v-type])
        :doc      "Get the given type of data from buffer `bf`, `v-type` can be
-one of the following data types:
+one of the following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
   - `:data` (default), arbitrary EDN data
   - `:string`, UTF-8 string

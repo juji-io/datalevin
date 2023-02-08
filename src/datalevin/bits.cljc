@@ -694,69 +694,75 @@
     :long    (long-header v)
     nil))
 
-(defn- put-sparse-list [bf x] (sl/serialize x bf))
+(defn- put-buffer*
+  [^ByteBuffer bf x x-type]
+  (case x-type
+    ;; user facing
+    :string         (do (put-byte bf (raw-header x :string))
+                        (put-bytes
+                          bf (.getBytes ^String x StandardCharsets/UTF_8)))
+    :bigint         (do (put-byte bf (raw-header x :bigint))
+                        (put-bigint bf x))
+    :bigdec         (do (put-byte bf (raw-header x :bigdec))
+                        (put-bigdec bf x))
+    :long           (do (put-byte bf (raw-header x :long))
+                        (put-long bf x))
+    :float          (do (put-byte bf (raw-header x :float))
+                        (put-float bf x))
+    :double         (do (put-byte bf (raw-header x :double))
+                        (put-double bf x))
+    :bytes          (do (put-byte bf (raw-header x :bytes))
+                        (put-bytes bf x))
+    :keyword        (do (put-byte bf (raw-header x :keyword))
+                        (put-bytes bf (key-sym-bytes x)))
+    :symbol         (do (put-byte bf (raw-header x :symbol))
+                        (put-bytes bf (key-sym-bytes x)))
+    :boolean        (do (put-byte bf (raw-header x :boolean))
+                        (put-byte bf (if x c/true-value c/false-value)))
+    :instant        (do (put-byte bf (raw-header x :instant))
+                        (put-instant bf x))
+    :instant-pre-06 (do (put-byte bf (raw-header x :instant))
+                        (.putLong bf (.getTime ^Date x)))
+    :uuid           (do (put-byte bf (raw-header x :uuid))
+                        (put-uuid bf x))
+    ;; internal use
+    :byte           (put-byte bf x)
+    :short          (put-short bf x)
+    :int            (put-int bf x)
+    :id             (put-long bf x)
+    :int-int        (let [[i1 i2] x]
+                      (put-int bf i1)
+                      (put-int bf i2))
+    :ints           (sl/put-ints bf x)
+    :bitmap         (put-bitmap bf x)
+    :term-info      (let [[i1 i2 i3] x]
+                      (put-int bf i1)
+                      (.putFloat bf (float i2))
+                      (sl/serialize i3 bf))
+    :doc-info       (let [[i1 i2 i3] x]
+                      (put-int bf i1)
+                      (put-short bf i2)
+                      (sl/put-ints bf i3))
+    :pos-info       (let [[i1 i2] x]
+                      (sl/put-sorted-ints bf i1)
+                      (sl/put-sorted-ints bf i2))
+    :attr           (put-attr bf x)
+    :raw            (put-bytes bf x)
+    (:eav :eavt)    (put-eav bf x)
+    (:ave :avet)    (put-ave bf x)
+    (:vea :veat)    (put-vea bf x)
+    (put-data bf x)))
 
 (defn put-buffer
   ([bf x]
    (put-buffer bf x :data))
   ([^ByteBuffer bf x x-type]
-   (case x-type
-     :string         (do (put-byte bf (raw-header x :string))
-                         (put-bytes
-                           bf (.getBytes ^String x StandardCharsets/UTF_8)))
-     :int            (put-int bf x)
-     :bigint         (do (put-byte bf (raw-header x :bigint))
-                         (put-bigint bf x))
-     :bigdec         (do (put-byte bf (raw-header x :bigdec))
-                         (put-bigdec bf x))
-     :short          (put-short bf x)
-     :int-int        (let [[i1 i2] x]
-                       (put-int bf i1)
-                       (put-int bf i2))
-     :ints           (sl/put-ints bf x)
-     :bitmap         (put-bitmap bf x)
-     :term-info      (let [[i1 i2 i3] x]
-                       (put-int bf i1)
-                       (.putFloat bf (float i2))
-                       (put-sparse-list bf i3))
-     :doc-info       (let [[i1 i2 i3] x]
-                       (put-int bf i1)
-                       (put-short bf i2)
-                       (sl/put-ints bf i3))
-     :pos-info       (let [[i1 i2] x]
-                       (sl/put-sorted-ints bf i1)
-                       (sl/put-sorted-ints bf i2))
-     :long           (do (put-byte bf (raw-header x :long))
-                         (put-long bf x))
-     :id             (put-long bf x)
-     :float          (do (put-byte bf (raw-header x :float))
-                         (put-float bf x))
-     :double         (do (put-byte bf (raw-header x :double))
-                         (put-double bf x))
-     :byte           (put-byte bf x)
-     :bytes          (do (put-byte bf (raw-header x :bytes))
-                         (put-bytes bf x))
-     :keyword        (do (put-byte bf (raw-header x :keyword))
-                         (put-bytes bf (key-sym-bytes x)))
-     :symbol         (do (put-byte bf (raw-header x :symbol))
-                         (put-bytes bf (key-sym-bytes x)))
-     :boolean        (do (put-byte bf (raw-header x :boolean))
-                         (put-byte bf (if x c/true-value c/false-value)))
-     :instant        (do (put-byte bf (raw-header x :instant))
-                         (put-instant bf x))
-     :instant-pre-06 (do (put-byte bf (raw-header x :instant))
-                         (.putLong bf (.getTime ^Date x)))
-     :uuid           (do (put-byte bf (raw-header x :uuid))
-                         (put-uuid bf x))
-     :attr           (put-attr bf x)
-     :eav            (put-eav bf x)
-     :eavt           (put-eav bf x)
-     :ave            (put-ave bf x)
-     :avet           (put-ave bf x)
-     :vea            (put-vea bf x)
-     :veat           (put-vea bf x)
-     :raw            (put-bytes bf x)
-     (put-data bf x))))
+   (if (vector? x-type)
+     (doseq [t (interpose :s x-type)]
+       (if (= t :s)
+         (put-byte bf c/separator)
+         (put-buffer* bf x t)))
+     (put-buffer* bf x x-type))))
 
 (defn- get-sparse-list
   [bf]
@@ -782,26 +788,23 @@
      :instant        (do (get-byte bf) (get-instant bf))
      :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
      :uuid           (do (get-byte bf) (get-uuid bf))
+     :id             (get-long bf)
+     :short          (get-short bf)
+     :int            (get-int bf)
      :attr           (get-attr bf)
-     :eav            (get-eav bf)
-     :eavt           (get-eav bf)
-     :ave            (get-ave bf)
-     :avet           (get-ave bf)
-     :vea            (get-vea bf)
-     :veat           (get-vea bf)
+     (:eav :eavt)    (get-eav bf)
+     (:ave :avet)    (get-ave bf)
+     (:vea :veat)    (get-vea bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
 
      ;; range query are NOT supported on these
-     :short     (get-short bf)
-     :int       (get-int bf)
      :int-int   [(get-int bf) (get-int bf)]
      :ints      (sl/get-ints bf)
      :bitmap    (get-bitmap bf)
      :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
      :doc-info  [(get-int bf) (get-short bf) (sl/get-ints bf)]
      :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
-     :id        (get-long bf)
      (get-data bf))))
 
 (defn valid-data?
@@ -828,5 +831,5 @@
     (:db.type/boolean :boolean) (boolean? x)
     (:db.type/instant :instant) (inst? x)
     (:db.type/uuid :uuid)       (uuid? x)
-    (:db.type/tuple :tuple)     (and (sequential? x) (< 1 (count x) 8))
+    :db.type/tuple              (vector? x)
     true))

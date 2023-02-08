@@ -1,26 +1,28 @@
 (ns datalevin.main
   "Functions and vars to support the `dtlv` command line tool"
   (:refer-clojure :exclude [drop load])
-  (:require [clojure.tools.cli :refer [parse-opts]]
-            [clojure.string :as s]
-            [clojure.pprint :as p]
-            [clojure.java.io :as io]
-            [clojure.edn :as edn]
-            [clojure.stacktrace :as st]
-            [sci.core :as sci]
-            [datalevin.core :as d]
-            [datalevin.datom :as dd]
-            [datalevin.util :as u :refer [raise]]
-            [datalevin.interpret :as i]
-            [datalevin.lmdb :as l]
-            [datalevin.db :as db]
-            [datalevin.bits :as b]
-            [datalevin.server :as srv]
-            [pod.huahaiy.datalevin :as pod]
-            [datalevin.constants :as c])
-  (:import [java.io BufferedReader PushbackReader IOException]
-           [java.lang RuntimeException]
-           [datalevin.datom Datom])
+  (:require
+   [clojure.tools.cli :refer [parse-opts]]
+   [clojure.string :as s]
+   [clojure.pprint :as p]
+   [clojure.java.io :as io]
+   [clojure.edn :as edn]
+   [clojure.stacktrace :as st]
+   [sci.core :as sci]
+   [datalevin.core :as d]
+   [datalevin.datom :as dd]
+   [datalevin.util :as u :refer [raise]]
+   [datalevin.interpret :as i]
+   [datalevin.lmdb :as l]
+   [datalevin.db :as db]
+   [datalevin.bits :as b]
+   [datalevin.server :as srv]
+   [pod.huahaiy.datalevin :as pod]
+   [datalevin.constants :as c])
+  (:import
+   [java.io BufferedReader PushbackReader IOException]
+   [java.lang RuntimeException]
+   [datalevin.datom Datom])
   (:gen-class))
 
 (if (u/graal?)
@@ -295,6 +297,7 @@
     (exit 0 (usage summary))))
 
 (defn exec
+  "Execuate code that passed in as a seq of strings."
   [arguments]
   (i/exec-code (s/join (if (seq arguments)
                          arguments

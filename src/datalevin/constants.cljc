@@ -145,12 +145,10 @@
 (def ^:const docs "docs")
 (def ^:const positions "positions")
 
-(def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
-                                   :db.type/string :db.type/boolean
-                                   :db.type/long :db.type/double
-                                   :db.type/float :db.type/ref
-                                   :db.type/instant :db.type/uuid
-                                   :db.type/bytes :db.type/tuple})
+(def ^:const datalog-value-types
+  #{:db.type/keyword :db.type/symbol :db.type/string :db.type/boolean
+    :db.type/long :db.type/double :db.type/float :db.type/ref
+    :db.type/instant :db.type/uuid :db.type/bytes :db.type/tuple})
 
 ;; search engine
 

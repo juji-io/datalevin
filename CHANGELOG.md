@@ -2,12 +2,15 @@
 
 ## WIP
 ### Added
-- [KV] added `:tuple` data type that accepts 2-8 scalar values, e.g. useful as
-  path keys for indexing documents.
-- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples
-  `:db/tupleType` for values. #167
+- [KV] added tuple data type that accepts a vector of scalar values. This
+  supports range query, e.g. having expected ordering by first element, then
+  second element, and so on. This is useful, for example, as path keys for
+  indexing documents. When used in keys, the same 511 bytes limitation applies.
+- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples `:db/tupleType` for values. #167
 ### Improved
-- [native] upgrade graalvm to 22.3.1
+- [Native] upgrade Graalvm to 22.3.1
+- [Native] static build on Linux. #185
+- [Lib] update deps
 
 ## 0.8.4 (2023-01-20)
 ### Fixed
