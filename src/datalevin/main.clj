@@ -46,15 +46,18 @@
 
 ;; Data Readers
 
-(def data-readers {'datalevin/Datom    dd/datom-from-reader
-                   'datalevin/DB       db/db-from-reader
-                   'datalevin/bytes    b/bytes-from-reader
-                   'datalevin/regex    b/regex-from-reader
-                   'datalevin/inter-fn i/inter-fn-from-reader
-                   })
+(def datalevin-data-readers
+  {'datalevin/Datom    dd/datom-from-reader
+   'datalevin/DB       db/db-from-reader
+   'datalevin/bytes    b/bytes-from-reader
+   'datalevin/regex    b/regex-from-reader
+   'datalevin/inter-fn i/inter-fn-from-reader
+   })
+
+(def ^:dynamic *datalevin-data-readers* datalevin-data-readers)
 
 ;; #?(:cljs
-;;    (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))
+;;    (doseq [[tag cb] datalevin-data-readers] (edn/register-tag-parser! tag cb)))
 
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
@@ -418,7 +421,7 @@
   (try
     (with-open [^PushbackReader r in]
       (let [read-form     #(edn/read {:eof     ::EOF
-                                      :readers data-readers} r)
+                                      :readers *datalevin-data-readers*} r)
             read-maps     #(let [m1 (read-form)]
                              (if (:db/ident m1)
                                [nil m1]
