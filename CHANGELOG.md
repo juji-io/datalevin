@@ -6,7 +6,8 @@
   supports range query, e.g. having expected ordering by first element, then
   second element, and so on. This is useful, for example, as path keys for
   indexing documents. When used in keys, the same 511 bytes limitation applies.
-- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples `:db/tupleType` for values. #167
+- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples `:db/tupleType`. #167
+- [Main] support loading custom tag literals. (thx @respatialized)
 ### Improved
 - [Native] upgrade Graalvm to 22.3.1
 - [Native] static build on Linux. #185

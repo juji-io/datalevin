@@ -1574,14 +1574,13 @@ all documents. Used only with [[search-index-writer]]"}
        :doc      "Put the given type of data `x` in buffer `bf`. `x-type` can be
     one of following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
-    - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
+    - `:data` (default), arbitrary EDN data. Avoid this as keys for range queries. This type is not permitted in a tuple.
     - `:string`, UTF-8 string
     - `:long`, 64 bits integer
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
     - `:bigint`, a `java.math.BigInteger` in range `[-2^1015, 2^1015-1]`
     - `:bigdec`, a `java.math.BigDecimal`, the unscaled value is in range `[-2^1015, 2^1015-1]`
-    - `:byte`, single byte
     - `:bytes`, byte array
     - `:keyword`, EDN keyword
     - `:symbol`, EDN symbol
@@ -1597,14 +1596,13 @@ all documents. Used only with [[search-index-writer]]"}
        :doc      "Get the given type of data from buffer `bf`, `v-type` can be
 one of the following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
-  - `:data` (default), arbitrary EDN data
+  - `:data` (default), arbitrary serialized EDN data.
   - `:string`, UTF-8 string
   - `:long`, 64 bits integer
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
   - `:bigint`, a `java.math.BigInteger` in range `[-2^1015, 2^1015-1]`,
   - `:bigdec`, a `java.math.BigDecimal`, the unscaled value is in range `[-2^1015, 2^1015-1]`,
-  - `:byte`, single byte
   - `:bytes`, an byte array
   - `:keyword`, EDN keyword
   - `:symbol`, EDN symbol

@@ -570,7 +570,7 @@
   (let [attr  (.-a d)
         props (or ((schema store) attr)
                   (swap-attr store attr identity))
-        vt    (:db/valueType props)
+        vt    (or (:db/valueType props) :data)
         ref?  (= :db.type/ref vt)
         e     (.-e d)
         v     (.-v d)

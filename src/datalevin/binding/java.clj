@@ -174,7 +174,7 @@
   (put-key [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
-        (raise "Invalid data, expecting " t {:input x}))
+        (raise "Invalid data, expecting" t {:input x}))
     (try
       (.clear kb)
       (b/put-buffer kb x t)

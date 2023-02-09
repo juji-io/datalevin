@@ -694,38 +694,56 @@
     :long    (long-header v)
     nil))
 
+(defn- raw-bytes
+  [v t]
+  (case t
+    :keyword (keyword-bytes v)
+    :symbol  (symbol-bytes v)
+    :string  (string-bytes v)
+    :boolean nil
+    :long    nil
+    :double  nil
+    :float   nil
+    :instant nil
+    :uuid    nil
+    :bytes   v
+    :bigint  (bigint-bytes v)
+    :bigdec  (bigdec-bytes v)
+    (data-bytes v)))
+
 (defn- put-buffer*
   [^ByteBuffer bf x x-type]
   (case x-type
     ;; user facing
-    :string         (do (put-byte bf (raw-header x :string))
-                        (put-bytes
-                          bf (.getBytes ^String x StandardCharsets/UTF_8)))
-    :bigint         (do (put-byte bf (raw-header x :bigint))
-                        (put-bigint bf x))
-    :bigdec         (do (put-byte bf (raw-header x :bigdec))
-                        (put-bigdec bf x))
-    :long           (do (put-byte bf (raw-header x :long))
-                        (put-long bf x))
-    :float          (do (put-byte bf (raw-header x :float))
-                        (put-float bf x))
-    :double         (do (put-byte bf (raw-header x :double))
-                        (put-double bf x))
-    :bytes          (do (put-byte bf (raw-header x :bytes))
-                        (put-bytes bf x))
-    :keyword        (do (put-byte bf (raw-header x :keyword))
-                        (put-bytes bf (key-sym-bytes x)))
-    :symbol         (do (put-byte bf (raw-header x :symbol))
-                        (put-bytes bf (key-sym-bytes x)))
-    :boolean        (do (put-byte bf (raw-header x :boolean))
-                        (put-byte bf (if x c/true-value c/false-value)))
-    :instant        (do (put-byte bf (raw-header x :instant))
-                        (put-instant bf x))
+    :string  (do (put-byte bf (raw-header x :string))
+                 (put-bytes
+                   bf (.getBytes ^String x StandardCharsets/UTF_8)))
+    :bigint  (do (put-byte bf (raw-header x :bigint))
+                 (put-bigint bf x))
+    :bigdec  (do (put-byte bf (raw-header x :bigdec))
+                 (put-bigdec bf x))
+    :long    (do (put-byte bf (raw-header x :long))
+                 (put-long bf x))
+    :float   (do (put-byte bf (raw-header x :float))
+                 (put-float bf x))
+    :double  (do (put-byte bf (raw-header x :double))
+                 (put-double bf x))
+    :bytes   (do (put-byte bf (raw-header x :bytes))
+                 (put-bytes bf x))
+    :keyword (do (put-byte bf (raw-header x :keyword))
+                 (put-bytes bf (key-sym-bytes x)))
+    :symbol  (do (put-byte bf (raw-header x :symbol))
+                 (put-bytes bf (key-sym-bytes x)))
+    :boolean (do (put-byte bf (raw-header x :boolean))
+                 (put-byte bf (if x c/true-value c/false-value)))
+    :instant (do (put-byte bf (raw-header x :instant))
+                 (put-instant bf x))
+    :uuid    (do (put-byte bf (raw-header x :uuid))
+                 (put-uuid bf x))
+
+    ;; internal use
     :instant-pre-06 (do (put-byte bf (raw-header x :instant))
                         (.putLong bf (.getTime ^Date x)))
-    :uuid           (do (put-byte bf (raw-header x :uuid))
-                        (put-uuid bf x))
-    ;; internal use
     :byte           (put-byte bf x)
     :short          (put-short bf x)
     :int            (put-int bf x)
@@ -753,15 +771,27 @@
     (:vea :veat)    (put-vea bf x)
     (put-data bf x)))
 
+(defn put-homo-tuple
+  [^ByteBuffer bf x x-type]
+  (put-byte bf c/type-homo-tuple)
+  (put-byte bf (raw-header (nth x 0) x-type))
+  (let [c (count x)]
+    (put-byte bf (short c))
+    (dotimes [i c]
+      )))
+
+(defn put-hete-tuple
+  [^ByteBuffer bf x x-type]
+  (put-byte bf c/type-hete-tuple))
+
 (defn put-buffer
   ([bf x]
    (put-buffer bf x :data))
-  ([^ByteBuffer bf x x-type]
+  ([bf x x-type]
    (if (vector? x-type)
-     (doseq [t (interpose :s x-type)]
-       (if (= t :s)
-         (put-byte bf c/separator)
-         (put-buffer* bf x t)))
+     (if (= 1 (count x-type))
+       (put-homo-tuple bf x x-type)
+       (put-hete-tuple bf x x-type))
      (put-buffer* bf x x-type))))
 
 (defn- get-sparse-list
@@ -775,19 +805,22 @@
    (read-buffer bf :data))
   ([^ByteBuffer bf v-type]
    (case v-type
-     :string         (do (get-byte bf) (get-string bf))
-     :bigint         (do (get-byte bf) (get-bigint bf))
-     :bigdec         (do (get-byte bf) (get-bigdec bf))
-     :long           (do (get-byte bf) (get-long bf))
-     :float          (do (get-byte bf) (get-float bf))
-     :double         (do (get-byte bf) (get-double bf))
-     :bytes          (do (get-byte bf) (get-bytes bf))
-     :keyword        (do (get-byte bf) (get-keyword bf 0))
-     :symbol         (do (get-byte bf) (get-symbol bf 0))
-     :boolean        (do (get-byte bf) (get-boolean bf))
-     :instant        (do (get-byte bf) (get-instant bf))
+     ;; user facing
+     :string  (do (get-byte bf) (get-string bf))
+     :bigint  (do (get-byte bf) (get-bigint bf))
+     :bigdec  (do (get-byte bf) (get-bigdec bf))
+     :long    (do (get-byte bf) (get-long bf))
+     :float   (do (get-byte bf) (get-float bf))
+     :double  (do (get-byte bf) (get-double bf))
+     :bytes   (do (get-byte bf) (get-bytes bf))
+     :keyword (do (get-byte bf) (get-keyword bf 0))
+     :symbol  (do (get-byte bf) (get-symbol bf 0))
+     :boolean (do (get-byte bf) (get-boolean bf))
+     :instant (do (get-byte bf) (get-instant bf))
+     :uuid    (do (get-byte bf) (get-uuid bf))
+
+     ;; internal use
      :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
-     :uuid           (do (get-byte bf) (get-uuid bf))
      :id             (get-long bf)
      :short          (get-short bf)
      :int            (get-int bf)
@@ -807,29 +840,39 @@
      :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
      (get-data bf))))
 
+(defn- valid-data*
+  [x t]
+  (if (or (c/datalog-value-types t) (c/kv-value-types t))
+    (case t
+      (:db.type/string :string)   (string? x)
+      (:db.type/bigint :bigint)   (and (instance? java.math.BigInteger x)
+                                       (<= c/min-bigint x c/max-bigint))
+      (:db.type/bigdec :bigdec)   (and (instance? java.math.BigDecimal x)
+                                       (<= c/min-bigdec x c/max-bigdec))
+      (:db.type/long :db.type/ref
+                     :long)       (int? x)
+      (:db.type/float :float)     (and (float? x)
+                                       (<= Float/MIN_VALUE x Float/MAX_VALUE))
+      (:db.type/double :double)   (float? x)
+      (:db.type/bytes :bytes)     (bytes? x)
+      (:db.type/keyword :keyword) (keyword? x)
+      (:db.type/symbol :symbol)   (symbol? x)
+      (:db.type/boolean :boolean) (boolean? x)
+      (:db.type/instant :instant) (inst? x)
+      (:db.type/uuid :uuid)       (uuid? x)
+      :db.type/tuple              (vector? x)
+      true)
+    false))
+
 (defn valid-data?
   "validate data type"
   [x t]
-  (case t
-    (:db.type/string :string)   (string? x)
-    :int                        (and (int? x)
-                                     (<= Integer/MIN_VALUE x Integer/MAX_VALUE))
-    (:db.type/bigint :bigint)   (and (instance? java.math.BigInteger x)
-                                     (<= c/min-bigint x c/max-bigint))
-    (:db.type/bigdec :bigdec)   (and (instance? java.math.BigDecimal x)
-                                     (<= c/min-bigdec x c/max-bigdec))
-    (:db.type/long :db.type/ref
-                   :long)       (int? x)
-    (:db.type/float :float)     (and (float? x)
-                                     (<= Float/MIN_VALUE x Float/MAX_VALUE))
-    (:db.type/double :double)   (float? x)
-    :byte                       (or (instance? java.lang.Byte x)
-                                    (and (int? x) (<= -128 x 127)))
-    (:db.type/bytes :bytes)     (bytes? x)
-    (:db.type/keyword :keyword) (keyword? x)
-    (:db.type/symbol :symbol)   (symbol? x)
-    (:db.type/boolean :boolean) (boolean? x)
-    (:db.type/instant :instant) (inst? x)
-    (:db.type/uuid :uuid)       (uuid? x)
-    :db.type/tuple              (vector? x)
-    true))
+  (if (vector? t)
+    (and (vector? x)
+         (not (some #(= % :data) t))
+         (let [ct (count t)]
+           (if (= 1 ct)
+             (every? #(valid-data* % t) x)
+             (and (= ct (count x))
+                  (every? true? (map #(valid-data* %1 %2) x t))))))
+    (valid-data* x t)))
