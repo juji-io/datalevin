@@ -11,7 +11,7 @@
 ### Improved
 - [Native] upgrade Graalvm to 22.3.1
 - [Native] static build on Linux. #185
-- [Lib] update deps
+- [Lib] update deps.
 
 ## 0.8.4 (2023-01-20)
 ### Fixed
