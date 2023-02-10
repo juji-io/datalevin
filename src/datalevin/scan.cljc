@@ -257,7 +257,7 @@
   [lmdb dbi-name k-range k-type v-type ignore-key?]
   (scan
     (fetch-range lmdb dbi rtx k-range k-type v-type ignore-key?)
-    (raise "Fail to get-range: " (ex-message e)
+    (raise "Fail to get-range: " e
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
 

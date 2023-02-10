@@ -117,14 +117,24 @@
   (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
       c/tx0))
 
+(defn- value-type
+  [props]
+  (if-let [vt (:db/valueType props)]
+    (if (= vt :db.type/tuple)
+      (if-let [tts (:db/tupleTypes props)]
+        tts
+        (if-let [tt (:db/tupleType props)] [tt] :data))
+      vt)
+    :data))
+
 (defn- low-datom->indexable
   [schema ^Datom d]
   (let [e (.-e d)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-some [v (.-v d)]
-          (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) c/v0 (:db/valueType p)))
+          (b/indexable e (:db/aid p) v (value-type p))
+          (b/indexable e (:db/aid p) c/v0 (value-type p)))
         (b/indexable e c/a0 c/v0 nil))
       (if-some [v (.-v d)]
         (if (integer? v)
@@ -139,8 +149,8 @@
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-some [v (.-v d)]
-          (b/indexable e (:db/aid p) v (:db/valueType p))
-          (b/indexable e (:db/aid p) c/vmax (:db/valueType p)))
+          (b/indexable e (:db/aid p) v (value-type p))
+          (b/indexable e (:db/aid p) c/vmax (value-type p)))
         ;; same as low-datom-indexable to get [] fast
         (b/indexable e c/a0 c/v0 nil))
       (if-some [v (.-v d)]
@@ -570,7 +580,7 @@
   (let [attr  (.-a d)
         props (or ((schema store) attr)
                   (swap-attr store attr identity))
-        vt    (or (:db/valueType props) :data)
+        vt    (value-type props)
         ref?  (= :db.type/ref vt)
         e     (.-e d)
         v     (.-v d)
@@ -601,7 +611,7 @@
 (defn- delete-data
   [^Store store ^Datom d ft-ds giants]
   (let [props ((schema store) (.-a d))
-        vt    (:db/valueType props)
+        vt    (value-type props)
         ref?  (= :db.type/ref vt)
         e     (.-e d)
         aid   (:db/aid props)
