@@ -189,8 +189,8 @@
   ([^ByteBuffer bb]
    (when-let [bs (get-bytes bb)]
      (deserialize bs)))
-  ([^ByteBuffer bb n]
-   (when-let [bs (get-bytes-val bb n)] (deserialize bs))))
+  ([^ByteBuffer bb post-v]
+   (when-let [bs (get-bytes-val bb post-v)] (deserialize bs))))
 
 (def ^:no-doc ^:const float-sign-idx 31)
 (def ^:no-doc ^:const double-sign-idx 63)
@@ -442,19 +442,15 @@
   "Turn value into bytes according to :db/valueType"
   [v t]
   (case t
+    (:db.type/boolean :db.type/long :db.type/double :db.type/float
+                      :db.type/ref :db.type/instant :db.type/uuid) nil
+
     :db.type/keyword (keyword-bytes v)
     :db.type/symbol  (symbol-bytes v)
     :db.type/string  (string-bytes v)
-    :db.type/boolean nil
-    :db.type/long    nil
-    :db.type/double  nil
-    :db.type/float   nil
-    :db.type/ref     nil
-    :db.type/instant nil
-    :db.type/uuid    nil
-    :db.type/bytes   (wrap-extrema v c/min-bytes c/max-bytes v)
     :db.type/bigint  (bigint-bytes v)
     :db.type/bigdec  (bigdec-bytes v)
+    :db.type/bytes   (wrap-extrema v c/min-bytes c/max-bytes v)
     (data-bytes v)))
 
 (defn- long-header
@@ -464,9 +460,7 @@
       c/v0   c/type-long-neg
       c/vmax c/type-long-pos
       (u/raise "Illegal keyword value " v {}))
-    (if (neg? ^long v)
-      c/type-long-neg
-      c/type-long-pos)))
+    (if (neg? ^long v) c/type-long-neg c/type-long-pos)))
 
 (defn- val-header
   [v t]
@@ -520,9 +514,7 @@
   (put-long bf (.getMostSignificantBits val))
   (put-long bf (.getLeastSignificantBits val)))
 
-(defn- get-uuid
-  [bf]
-  (UUID. (get-long bf) (get-long bf)))
+(defn- get-uuid [bf] (UUID. (get-long bf) (get-long bf)))
 
 (defn- put-fixed
   [bf val hdr]
@@ -600,10 +592,9 @@
   [^ByteBuffer bf ^long post-v]
   (symbol (get-key-sym-str bf post-v)))
 
-(defn- get-value
-  [^ByteBuffer bf post-v]
-  (.mark bf)
-  (case (short (get-byte bf))
+(defn- get-value*
+  [^ByteBuffer bf post-v hdr]
+  (case (short hdr)
     -64 (get-long bf)
     -63 (get-long bf)
     -15 (get-bigint bf)
@@ -620,6 +611,31 @@
     -2  (get-bytes-val bf post-v)
     (do (.reset bf)
         (get-data bf post-v))))
+
+(defn- get-var-value*
+  [^ByteBuffer bf post-v hdr]
+  (case (short hdr)
+    -64 (get-long bf)
+    -63 (get-long bf)
+    -15 (get-bigint bf)
+    -14 (get-bigdec bf)
+    -11 (get-float bf)
+    -10 (get-double bf)
+    -9  (get-instant bf)
+    -8  (get-long bf)
+    -7  (get-uuid bf)
+    -6  (get-string bf post-v)
+    -5  (get-keyword bf post-v)
+    -4  (get-symbol bf post-v)
+    -3  (get-boolean bf)
+    -2  (get-bytes-val bf post-v)
+    (do (.reset bf)
+        (get-data bf post-v))))
+
+(defn- get-value
+  [^ByteBuffer bf post-v]
+  (.mark bf)
+  (get-value* bf post-v (get-byte bf)))
 
 (deftype Retrieved [e a v])
 
@@ -694,22 +710,24 @@
     :long    (long-header v)
     nil))
 
-(defn- raw-bytes
-  [v t]
+(def known-size-types
+  #{:boolean :long :double :float :instant :uuid :bigint :bigdec})
+
+(defn- put-raw-bytes
+  [bf x t]
   (case t
-    :keyword (keyword-bytes v)
-    :symbol  (symbol-bytes v)
-    :string  (string-bytes v)
-    :boolean nil
-    :long    nil
-    :double  nil
-    :float   nil
-    :instant nil
-    :uuid    nil
-    :bytes   v
-    :bigint  (bigint-bytes v)
-    :bigdec  (bigdec-bytes v)
-    (data-bytes v)))
+    :string  (put-bytes bf (.getBytes ^String x StandardCharsets/UTF_8))
+    :bigint  (put-bigint bf x)
+    :bigdec  (put-bigdec bf x)
+    :long    (put-long bf x)
+    :float   (put-float bf x)
+    :double  (put-double bf x)
+    :bytes   (put-bytes bf x)
+    :keyword (put-bytes bf (key-sym-bytes x))
+    :symbol  (put-bytes bf (key-sym-bytes x))
+    :boolean (put-byte bf (if x c/true-value c/false-value))
+    :instant (put-instant bf x)
+    :uuid    (put-uuid bf x)))
 
 (defn- put-buffer*
   [^ByteBuffer bf x x-type]
@@ -773,16 +791,52 @@
 
 (defn put-homo-tuple
   [^ByteBuffer bf x x-type]
-  (put-byte bf c/type-homo-tuple)
-  (put-byte bf (raw-header (nth x 0) x-type))
-  (let [c (count x)]
-    (put-byte bf (short c))
-    (dotimes [i c]
-      )))
+  (let [c (count x)
+        f (nth x 0)]
+    (put-byte bf c/type-tuple)
+    (put-byte bf (raw-header f x-type))
+    (put-byte bf (unchecked-byte c))
+    (if (known-size-types x-type)
+      (dotimes [i c] (put-raw-bytes bf (nth x i) x-type))
+      (let [c-1   ^long (dec c)
+            sizes (loop [ss [] i 0 cp (.position bf)]
+                    (if (< i c)
+                      (let [v (nth x i)]
+                        (put-raw-bytes bf v x-type)
+                        (let [np   (.position bf)
+                              size (- np cp)]
+                          (when (< 255 size)
+                            (u/raise "The maximal tuple element size is
+                              255 bytes" {:too-large v}))
+                          (when (< i c-1) (put-byte bf c/separator))
+                          (recur (conj ss size) (inc i) (inc np))))
+                      ss))]
+        (put-byte bf c/truncator)
+        (doseq [s sizes] (put-byte bf (unchecked-byte s)))))))
 
 (defn put-hete-tuple
   [^ByteBuffer bf x x-type]
-  (put-byte bf c/type-hete-tuple))
+  (let [c (count x-type)]
+    (put-byte bf c/type-tuple)
+    (put-byte bf (unchecked-byte c))
+    (let [c-1   ^long (dec c)
+          sizes (loop [ss [] i 0 cp (.position bf)]
+                  (if (< i c)
+                    (let [v (nth x i)
+                          t (nth x-type i)]
+                      (put-byte bf (raw-header v t))
+                      (put-raw-bytes bf v t)
+                      (when (and (not (known-size-types t)) (< i c-1))
+                        (put-byte bf c/separator))
+                      (let [np   (.position bf)
+                            size (- np cp)]
+                        (when (< 255 size)
+                          (u/raise "The maximal tuple element size is
+                              255 bytes" {:too-large v}))
+                        (recur (conj ss size) (inc i) np)))
+                    ss))]
+      (put-byte bf c/truncator)
+      (doseq [s sizes] (put-byte bf (unchecked-byte s))))))
 
 (defn put-buffer
   ([bf x]
@@ -790,7 +844,7 @@
   ([bf x x-type]
    (if (vector? x-type)
      (if (= 1 (count x-type))
-       (put-homo-tuple bf x x-type)
+       (put-homo-tuple bf x (nth x-type 0))
        (put-hete-tuple bf x x-type))
      (put-buffer* bf x x-type))))
 
@@ -800,45 +854,110 @@
     (sl/deserialize sl bf)
     sl))
 
+(defn- read-buffer*
+  [^ByteBuffer bf v-type]
+  (case v-type
+    ;; user facing
+    :string  (do (get-byte bf) (get-string bf))
+    :bigint  (do (get-byte bf) (get-bigint bf))
+    :bigdec  (do (get-byte bf) (get-bigdec bf))
+    :long    (do (get-byte bf) (get-long bf))
+    :float   (do (get-byte bf) (get-float bf))
+    :double  (do (get-byte bf) (get-double bf))
+    :bytes   (do (get-byte bf) (get-bytes bf))
+    :keyword (do (get-byte bf) (get-keyword bf 0))
+    :symbol  (do (get-byte bf) (get-symbol bf 0))
+    :boolean (do (get-byte bf) (get-boolean bf))
+    :instant (do (get-byte bf) (get-instant bf))
+    :uuid    (do (get-byte bf) (get-uuid bf))
+
+    ;; internal use
+    :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
+    :id             (get-long bf)
+    :short          (get-short bf)
+    :int            (get-int bf)
+    :attr           (get-attr bf)
+    (:eav :eavt)    (get-eav bf)
+    (:ave :avet)    (get-ave bf)
+    (:vea :veat)    (get-vea bf)
+    :byte           (get-byte bf)
+    :raw            (get-bytes bf)
+
+    ;; range query are NOT supported on these
+    :int-int   [(get-int bf) (get-int bf)]
+    :ints      (sl/get-ints bf)
+    :bitmap    (get-bitmap bf)
+    :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
+    :doc-info  [(get-int bf) (get-short bf) (sl/get-ints bf)]
+    :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
+    (get-data bf)))
+
+(defn- get-sizes
+  [^ByteBuffer bf ^long c]
+  (.position bf (- (.limit bf) c))
+  (let [ss (volatile! [])]
+    (dotimes [_ c]
+      (vswap! ss conj (short (get-byte bf))))
+    @ss))
+
+(defn- get-homo-tuple
+  [^ByteBuffer bf v-type]
+  (get-byte bf)
+  (let [hdr   (get-byte bf)
+        c     (short (get-byte bf))
+        tuple (volatile! [])]
+    (if (known-size-types v-type)
+      (dotimes [_ c] (vswap! tuple conj (get-value* bf 0 hdr)))
+      (let [op      (.position bf)
+            post-vs (->> (get-sizes bf c)
+                         reverse
+                         (reduce
+                           (fn [vs s]
+                             (conj vs (+ ^long s (inc ^long (first vs)))))
+                           '(0))
+                         rest
+                         (map #(+ ^long % c 1)))]
+        (.position bf op)
+        (doseq [post-v post-vs]
+          (vswap! tuple conj (get-value* bf post-v hdr))
+          (get-byte bf))))
+    @tuple))
+
+(defn- get-hete-tuple
+  [^ByteBuffer bf v-type]
+  (get-byte bf)
+  (let [c       (short (get-byte bf))
+        c-1     (dec c)
+        tuple   (volatile! [])
+        op      (.position bf)
+        post-vs (->> (get-sizes bf c)
+                     reverse
+                     (reduce
+                       (fn [vs s] (conj vs (+ ^long s ^long (first vs))))
+                       '(0))
+                     rest
+                     (map #(+ ^long % c 1))
+                     vec)]
+    (.position bf op)
+    (dotimes [i c]
+      (let [hdr    (get-byte bf)
+            known  (known-size-types (nth v-type i))
+            post-v (if (or known (= i c-1))
+                     (nth post-vs i)
+                     (inc ^long (nth post-vs i)))]
+        (vswap! tuple conj (get-value* bf post-v hdr))
+        (when-not known (get-byte bf))))
+    @tuple))
+
 (defn read-buffer
   ([bf]
    (read-buffer bf :data))
-  ([^ByteBuffer bf v-type]
-   (case v-type
-     ;; user facing
-     :string  (do (get-byte bf) (get-string bf))
-     :bigint  (do (get-byte bf) (get-bigint bf))
-     :bigdec  (do (get-byte bf) (get-bigdec bf))
-     :long    (do (get-byte bf) (get-long bf))
-     :float   (do (get-byte bf) (get-float bf))
-     :double  (do (get-byte bf) (get-double bf))
-     :bytes   (do (get-byte bf) (get-bytes bf))
-     :keyword (do (get-byte bf) (get-keyword bf 0))
-     :symbol  (do (get-byte bf) (get-symbol bf 0))
-     :boolean (do (get-byte bf) (get-boolean bf))
-     :instant (do (get-byte bf) (get-instant bf))
-     :uuid    (do (get-byte bf) (get-uuid bf))
-
-     ;; internal use
-     :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
-     :id             (get-long bf)
-     :short          (get-short bf)
-     :int            (get-int bf)
-     :attr           (get-attr bf)
-     (:eav :eavt)    (get-eav bf)
-     (:ave :avet)    (get-ave bf)
-     (:vea :veat)    (get-vea bf)
-     :byte           (get-byte bf)
-     :raw            (get-bytes bf)
-
-     ;; range query are NOT supported on these
-     :int-int   [(get-int bf) (get-int bf)]
-     :ints      (sl/get-ints bf)
-     :bitmap    (get-bitmap bf)
-     :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info  [(get-int bf) (get-short bf) (sl/get-ints bf)]
-     :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
-     (get-data bf))))
+  ([bf v-type]
+   (if (vector? v-type)
+     (if (= 1 (count v-type))
+       (get-homo-tuple bf (nth v-type 0))
+       (get-hete-tuple bf v-type))
+     (read-buffer* bf v-type))))
 
 (defn- valid-data*
   [x t]

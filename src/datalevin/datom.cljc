@@ -3,7 +3,7 @@
    #?(:cljs [goog.array :as garray])
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]
-   [datalevin.util :refer [combine-hashes]])
+   [datalevin.util :refer [combine-hashes combine-cmp]])
   #?(:cljs
      (:require-macros [datalevin.util :refer [combine-cmp]]))
   #?(:clj
@@ -170,18 +170,6 @@
 ;; ----------------------------------------------------------------------------
 ;; datom cmp macros/funcs
 ;;
-
-(defmacro combine-cmp [& comps]
-  (loop [comps (reverse comps)
-         res   (num 0)]
-    (if (not-empty comps)
-      (recur
-        (next comps)
-        `(let [c# ~(first comps)]
-           (if (= 0 c#)
-             ~res
-             c#)))
-      res)))
 
 (defn nil-check-cmp-fn [cmp-fn]
   (fn nil-check-cmp [o1 o2]

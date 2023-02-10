@@ -1574,7 +1574,7 @@ all documents. Used only with [[search-index-writer]]"}
        :doc      "Put the given type of data `x` in buffer `bf`. `x-type` can be
     one of following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
-    - `:data` (default), arbitrary EDN data. Avoid this as keys for range queries. This type is not permitted in a tuple.
+    - `:data` (default), arbitrary EDN data. Avoid this as keys for range queries. Further more, `:data` is not permitted in a tuple.
     - `:string`, UTF-8 string
     - `:long`, 64 bits integer
     - `:float`, 32 bits IEEE754 floating point number
@@ -1587,6 +1587,8 @@ all documents. Used only with [[search-index-writer]]"}
     - `:boolean`, `true` or `false`
     - `:instant`, a `java.util.Date`
     - `:uuid`, a `java.util.UUID`
+
+  No tuple element can be more than 255 bytes in size.
 
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."}
