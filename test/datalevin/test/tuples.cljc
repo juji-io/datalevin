@@ -375,23 +375,31 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-(deftest test-homogeneous-tuple
+(deftest test-homogeneous-and-heterogeneous-tuple
   (let [dir (u/tmp-dir (str "homo-tuples-" (random-uuid)))
         db  (-> (d/empty-db dir
                             {:a {:db/valueType :db.type/tuple
                                  :db/tupleType :db.type/string
-                                 :db/unique    :db.unique/identity}})
-                (d/db-with [{:db/id 1 :a ["A" "B"]}
-                            {:db/id 2 :a ["A" "b"]}
-                            {:db/id 3 :a ["a" "B"]}
-                            {:db/id 4 :a ["a" "b"]}]))]
+                                 :db/unique    :db.unique/identity}
+                             :b {:db/valueType  :db.type/tuple
+                                 :db/tupleTypes [:db.type/keyword
+                                                 :db.type/long
+                                                 :db.type/string]}})
+                (d/db-with [{:db/id 1 :a ["A" "B"] :b [:id 1 "AB"]}
+                            {:db/id 2 :a ["A" "b"] :b [:id 2 "Ab"]}
+                            {:db/id 3 :a ["a" "B"] :b [:id 3 "aB"]}
+                            {:db/id 4 :a ["a" "b"] :b [:id 4 "ab"]}]))]
     (is (= #{[3]}
            (d/q '[:find ?e
                   :where [?e :a ["a" "B"]]] db)))
-
     (is (= #{[["a" "B"]]}
            (d/q '[:find ?a
                   :where [[:a ["a" "B"]] :a ?a]] db)))
-
+    (is (= #{[3] [4]}
+           (d/q '[:find ?e
+                  :where
+                  [?e :b ?b]
+                  [(untuple ?b) [_ ?l _]]
+                  [(< 2 ?l)]] db)))
     (d/close-db db)
     (u/delete-files dir)))

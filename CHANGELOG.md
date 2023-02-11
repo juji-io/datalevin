@@ -3,10 +3,16 @@
 ## WIP
 ### Added
 - [KV] added tuple data type that accepts a vector of scalar values. This
-  supports range query, e.g. having expected ordering by first element, then
+  supports range queries, e.g. having expected ordering by first element, then
   second element, and so on. This is useful, for example, as path keys for
-  indexing documents. When used in keys, the same 511 bytes limitation applies.
-- [Datalog] added heterogeneous tuple `:db/tupleTypes` and homogeneous tuples `:db/tupleType`. #167
+  indexing content inside documents. When used in keys, the same 511 bytes
+  limitation applies.
+- [Datalog] added heterogeneous tuples `:db/tupleTypes` and homogeneous tuples
+  `:db/tupleType` types. The number of elements in a tuple are not limited to 8
+  like in Datomic, as long as they fit inside a 496 bytes buffer. In addition,
+  instead of using `nil` to indicate minimal value like in Datomic, one can use
+  `:db.value/sysMin` or `:db.value/sysMax` to indicate minimal or maximal
+  values, useful for range queries. #167
 - [Main] support loading custom tag literals. (thx @respatialized)
 ### Improved
 - [Native] upgrade Graalvm to 22.3.1

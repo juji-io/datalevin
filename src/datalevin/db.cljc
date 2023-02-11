@@ -371,11 +371,11 @@
       (let [ex-data {:error     :schema/validation
                      :attribute a
                      :key       :db/tupleTypes}]
-        (let [attrs (:db/tupleType kv)]
+        (let [attrs (:db/tupleTypes kv)]
           (when-not (and (sequential? attrs) (< 1 (count attrs))
                          (every? c/datalog-value-types attrs)
                          (not (some #(= :db.type/tuple %) attrs)))
-            (raise a " :db/tupleType must be a sequential collection of more than one value types, got: " attrs ex-data)))))
+            (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data)))))
 
     ))
 

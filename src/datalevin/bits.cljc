@@ -493,8 +493,7 @@
     :long    (long-header v)
     nil))
 
-(def known-size-types
-  #{:boolean :long :double :float :instant :uuid :bigint :bigdec})
+(def known-size-types #{:boolean :long :double :float :instant :uuid})
 
 (defn- put-fixed
   [bf v hdr]
