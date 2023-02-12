@@ -22,3 +22,7 @@ cd ..
 # Install libz.a in the correct place so ldd can find it
 install -Dm644 "/usr/local/lib/libz.a" "/usr/lib/x86_64-linux-musl/libz.a"
 
+if [ ! -f /usr/bin/x86_64-linux-musl-gcc ]
+then
+    ln -s /usr/bin/musl-gcc /usr/bin/x86_64-linux-musl-gcc
+fi
