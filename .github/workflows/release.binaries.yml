@@ -61,7 +61,7 @@ jobs:
           linux: |
             cd native
             sudo bash script/setup-musl
-            sudo bash script/compile-static
+            bash script/compile-static
 
       - name: Run Native Tests
         run: |
