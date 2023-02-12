@@ -148,11 +148,12 @@
 (def ^:const datalog-value-types
   #{:db.type/keyword :db.type/symbol :db.type/string :db.type/boolean
     :db.type/long :db.type/double :db.type/float :db.type/ref
-    :db.type/instant :db.type/uuid :db.type/bytes :db.type/tuple})
+    :db.type/bigint :db.type/bigdec :db.type/instant :db.type/uuid
+    :db.type/bytes :db.type/tuple})
 
 (def ^:const kv-value-types
   #{:keyword :symbol :string :boolean :long :double :float :instant :uuid
-    :bytes :data})
+    :bytes :bigint :bigdec :data})
 
 ;; search engine
 

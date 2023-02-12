@@ -47,17 +47,18 @@
 ;; Data Readers
 
 (def datalevin-data-readers
+  "Built-in data readers."
   {'datalevin/Datom    dd/datom-from-reader
    'datalevin/DB       db/db-from-reader
    'datalevin/bytes    b/bytes-from-reader
    'datalevin/regex    b/regex-from-reader
+   'datalevin/bigint   b/bigint-from-reader
    'datalevin/inter-fn i/inter-fn-from-reader
    })
 
-(def ^:dynamic *datalevin-data-readers* datalevin-data-readers)
-
-;; #?(:cljs
-;;    (doseq [[tag cb] datalevin-data-readers] (edn/register-tag-parser! tag cb)))
+(def ^:dynamic *datalevin-data-readers*
+  "Can be bound to support reading custom tag literals."
+  datalevin-data-readers)
 
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})

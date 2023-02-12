@@ -53,15 +53,19 @@ jobs:
           gu install native-image
 
       - name: Build Native Datalevin
-        run: |
-          cd native
-          bash script/compile
-
-      - name: Run Native Tests
         uses: knicknic/os-specific-run@v1.0.3
         with:
-          linux: native/dtlv-test0
-          macos: native/dtlv-test0
+          macos: |
+            cd native
+            bash script/compile
+          linux: |
+            cd native
+            bash script/setup-musl
+            bash script/compile-static
+
+      - name: Run Native Tests
+        run: |
+          native/dtlv-test0
 
       - name: Zip Binary
         run: |

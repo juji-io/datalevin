@@ -69,21 +69,33 @@
 
 (defmethod print-method (Class/forName "[B")
   [^bytes bs, ^Writer w]
-  (.write w "#datalevin/bytes ")
-  (.write w "\"")
-  (.write w ^String (encode-base64 bs))
-  (.write w "\""))
+  (doto w
+    (.write "#datalevin/bytes ")
+    (.write "\"")
+    (.write ^String (encode-base64 bs))
+    (.write "\"")))
 
 (defn ^bytes bytes-from-reader [s] (decode-base64 s))
 
 (defmethod print-method Pattern
   [^Pattern p, ^Writer w]
-  (.write w "#datalevin/regex ")
-  (.write w "\"")
-  (.write w ^String (s/escape (.toString p) {\\ "\\\\"}))
-  (.write w "\""))
+  (doto w
+    (.write "#datalevin/regex ")
+    (.write "\"")
+    (.write ^String (s/escape (.toString p) {\\ "\\\\"}))
+    (.write "\"")))
 
 (defn ^Pattern regex-from-reader [s] (Pattern/compile s))
+
+(defmethod print-method BigInteger
+  [^BigInteger bi, ^Writer w]
+  (doto w
+    (.write "#datalevin/bigint ")
+    (.write "\"")
+    (.write ^String (.toString bi))
+    (.write "\"")))
+
+(defn ^BigInteger bigint-from-reader [^String s] (BigInteger. s))
 
 ;; nippy
 
