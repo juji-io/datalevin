@@ -60,8 +60,8 @@ jobs:
             bash script/compile
           linux: |
             cd native
-            bash script/setup-musl
-            bash script/compile-static
+            sudo bash script/setup-musl
+            sudo bash script/compile-static
 
       - name: Run Native Tests
         run: |
