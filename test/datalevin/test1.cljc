@@ -41,7 +41,6 @@
    datalevin.test.validation
    datalevin.test.upsert
    datalevin.test.issues
-   datalevin.scan-test
    datalevin.server-test
    datalevin.client-test
    datalevin.remote-withtxnkv-test
@@ -59,7 +58,6 @@
   (let [{:keys [fail error]}
         (t/run-tests
           'datalevin.spill-test
-          'datalevin.scan-test
           'datalevin.search-utils-test
           'datalevin.bits-test
           'datalevin.storage-test

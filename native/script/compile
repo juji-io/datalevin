@@ -29,8 +29,6 @@ lein with-profile native-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
   --verbose \
-  --enable-url-protocols=https \
-  --features=InitAtBuildTimeFeature \
   -jar "$MAIN_JAR" ${app_name}
 
 lein clean
@@ -38,6 +36,4 @@ lein with-profile test0-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
      --verbose \
-     --enable-url-protocols=https \
-     --features=InitAtBuildTimeFeature \
      -jar "$TEST0_JAR" ${test0_name}

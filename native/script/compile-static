@@ -31,8 +31,6 @@ lein with-profile native-uberjar uberjar
   --static \
   --libc=musl \
   -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
-  --enable-url-protocols=https \
-  --features=InitAtBuildTimeFeature \
   -jar "$MAIN_JAR" ${app_name}
 
 lein clean
@@ -43,6 +41,4 @@ lein with-profile test0-uberjar uberjar
      --static \
      --libc=musl \
      -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
-     --enable-url-protocols=https \
-     --features=InitAtBuildTimeFeature \
      -jar "$TEST0_JAR" ${test0_name}
