@@ -297,7 +297,7 @@
       (.close cursor)))
 
   Iterable
-  (iterator [this]
+  (iterator [_]
     (let [started?     (volatile! false)
           ended?       (volatile! false)
           ^BufVal k    (.-kp rtx)
