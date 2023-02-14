@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.5 (2023-02-13)
 ### Added
 - [KV] added tuple data type that accepts a vector of scalar values. This
   supports range queries, i.e. having expected ordering by first element, then
