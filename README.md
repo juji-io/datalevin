@@ -390,8 +390,8 @@ Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it
 looks.
 
 <p align="center">
-<img src="bench/datalevin-bench-query-01-05-2021.png" alt="query benchmark" height="300"></img>
-<img src="bench/datalevin-bench-write-01-05-2021.png" alt="write benchmark" height="300"></img>
+<img src="bench/datalevin-bench-query-02-14-2023.png" alt="query benchmark" height="300"></img>
+<img src="bench/datalevin-bench-write-02-14-2023.png" alt="write benchmark" height="300"></img>
 </p>
 
 In all benchmarked queries, Datalevin is faster than Datascript. Considering
