@@ -20,7 +20,7 @@ latter runs core Datalevin tests in native mode. These are standalone
 executable that you can immediately run.
 
 Because of the recent libc version problems on the latest Ubuntu, the Linux
-build should preferably be static using musl compiler, so it is preferable to
+build should preferably be static using musl libc, so it is preferable to
 run `script/setup-musl`, then`script/compile-static` on the x86 Linux platform
 for step 3.
 
@@ -42,7 +42,7 @@ code](https://yyhh.org/blog/2021/02/writing-c-code-in-javaclojure-graalvm-specif
 that will fail to compile in regular JVM. It also includes pre-compiled native
 dependencies for these platforms:
 
-* Linux x86-64 (Ubuntu 22.04)
+* Linux x86-64
 * MacOS arm64 (i.e. Apple Silicon M series)
 * MacOS x86-64
 * Windows x86-64
