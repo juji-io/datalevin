@@ -222,10 +222,22 @@
 #?(:clj
    (defmacro defrecord-updatable [name fields & impls]
      `(if-cljs
-       ~(apply make-record-updatable-cljs name fields impls)
-       ~(apply make-record-updatable-clj  name fields impls))))
+          ~(apply make-record-updatable-cljs name fields impls)
+        ~(apply make-record-updatable-clj  name fields impls))))
 
 ;; ----------------------------------------------------------------------------
+
+(defmacro combine-cmp [& comps]
+  (loop [comps (reverse comps)
+         res   (num 0)]
+    (if (not-empty comps)
+      (recur
+        (next comps)
+        `(let [c# ~(first comps)]
+           (if (= 0 c#)
+             ~res
+             c#)))
+      res)))
 
 (defn combine-hashes [x y]
   #?(:clj  (clojure.lang.Util/hashCombine x y)

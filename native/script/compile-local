@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# compile the full test suite on amd64 linux
+
 set -eou pipefail
 
 app_name=dtlv
@@ -16,6 +18,7 @@ export JAVA_HOME=$GRAALVM_HOME
 export PATH=$GRAALVM_HOME/bin:$PATH
 
 export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
+
 MAIN_JAR="target/main.uberjar.jar"
 
 TEST0_JAR="target/test0.uberjar.jar"
@@ -26,7 +29,9 @@ lein with-profile native-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
   --verbose \
-  --features=InitAtBuildTimeFeature \
+  --static \
+  --libc=musl \
+  -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
   -jar "$MAIN_JAR" ${app_name}
 
 lein clean
@@ -34,13 +39,17 @@ lein with-profile test0-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
      --verbose \
-     --features=InitAtBuildTimeFeature \
-  -jar "$TEST0_JAR" ${test0_name}
+     --static \
+     --libc=musl \
+     -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
+     -jar "$TEST0_JAR" ${test0_name}
 
 lein clean
 lein with-profile test1-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
      --verbose \
-     --features=InitAtBuildTimeFeature \
-  -jar "$TEST1_JAR" ${test1_name}
+     --static \
+     --libc=musl \
+     -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
+     -jar "$TEST1_JAR" ${test1_name}

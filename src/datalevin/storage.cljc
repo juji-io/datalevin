@@ -121,6 +121,16 @@
   (or (lmdb/get-value lmdb c/meta :max-tx :attr :long)
       c/tx0))
 
+(defn- value-type
+  [props]
+  (if-let [vt (:db/valueType props)]
+    (if (= vt :db.type/tuple)
+      (if-let [tts (:db/tupleTypes props)]
+        tts
+        (if-let [tt (:db/tupleType props)] [tt] :data))
+      vt)
+    :data))
+
 (defn- datom->indexable
   [schema max-gt ^Datom d high?]
   (let [e  (.-e d)
@@ -128,8 +138,8 @@
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-some [v (.-v d)]
-          (b/indexable e (:db/aid p) v (:db/valueType p) max-gt)
-          (b/indexable e (:db/aid p) vm (:db/valueType p) max-gt))
+          (b/indexable e (:db/aid p) v (value-type p) max-gt)
+          (b/indexable e (:db/aid p) vm (value-type p) max-gt))
         (b/indexable e c/a0 c/v0 nil max-gt))
       (let [am (if high? c/amax c/a0)]
         (if-some [v (.-v d)]
@@ -594,7 +604,7 @@
   (let [attr   (.-a d)
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
-        vt     (:db/valueType props)
+        vt     (value-type props)
         ref?   (= :db.type/ref vt)
         e      (.-e d)
         v      (.-v d)
@@ -624,7 +634,7 @@
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
   (let [attr         (.-a d)
         props        ((schema store) attr)
-        vt           (:db/valueType props)
+        vt           (value-type props)
         ref?         (= :db.type/ref vt)
         e            (.-e d)
         aid          (:db/aid props)

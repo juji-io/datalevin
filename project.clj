@@ -1,4 +1,4 @@
-(def version "0.8.4")
+(def version "0.8.5")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -13,13 +13,13 @@
    [com.fasterxml.jackson.core/jackson-databind "2.14.2"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.13"]
-   [com.taoensso/encore "3.48.0"]
+   [com.taoensso/encore "3.49.0"]
    [com.taoensso/nippy "3.2.0"]
    [com.taoensso/timbre "6.0.4"]
    [joda-time/joda-time "2.12.2"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
-   [org.babashka/sci "0.6.37"]
+   [org.babashka/sci "0.7.38"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
    [org.clojure/clojure "1.11.1"]
    [org.clojure/tools.cli "1.0.214"]
@@ -33,12 +33,12 @@
    [org.clojars.huahaiy/dtlvnative-linux-amd64-shared "0.8.3"]
    [org.clojars.huahaiy/dtlvnative-macos-amd64-shared "0.8.3"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.8.3"]
-   [org.eclipse.collections/eclipse-collections "11.1.0"]
+   [org.eclipse.collections/eclipse-collections "12.0.0.M1"]
    [org.graalvm.sdk/graal-sdk "22.3.1"]
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
-   [org.lmdbjava/lmdbjava "0.8.2"]
-   [org.roaringbitmap/RoaringBitmap "0.9.38"]]
+   [org.lmdbjava/lmdbjava "0.8.3"]
+   [org.roaringbitmap/RoaringBitmap "0.9.39"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
@@ -50,6 +50,12 @@
    [com.taoensso/encore]
    [com.taoensso/nippy]
    [org.babashka/sci]
+   [nrepl/bencode]
+   [org.clojure/tools.cli]
+   [org.clojure/data.csv]
+   [org.bouncycastle/bcprov-jdk15on]
+   [cheshire]
+   [com.taoensso/timbre]
    [com.fasterxml.jackson.core/jackson-core]
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
@@ -60,14 +66,7 @@
   :profiles
   {:uberjar        {:main           datalevin.main
                     :aot            [datalevin.main]
-                    :jar-inclusions [#"graal" #"test"]
-                    :dependencies
-                    [[nrepl/bencode]
-                     [org.clojure/tools.cli]
-                     [org.clojure/data.csv]
-                     [org.bouncycastle/bcprov-jdk15on]
-                     [cheshire]
-                     [com.taoensso/timbre]]}
+                    :jar-inclusions [#"graal" #"test"]}
    :native-uberjar {:aot            [pod.huahaiy.datalevin],
                     :jar-inclusions [#"test"]
                     :uberjar-name   "main.uberjar.jar"}

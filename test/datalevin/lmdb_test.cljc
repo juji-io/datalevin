@@ -57,6 +57,12 @@
                       [:put "b" "ok" 42 :string :long]
                       [:put "d" 3.14 :pi :double :keyword]
                       [:put "d" #inst "1969-01-01" "nice year" :instant :string]
+                      [:put "d" [-1 0 1 2 3 4] 1 [:long]]
+                      [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
+                      [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
+                       [:long :string :keyword]]
+                      [:put "d"  [:ok -0.687 "nice"] [2 4]
+                       [:keyword :double :string] [:long]]
                       ]))
 
     (testing "entries"
@@ -66,6 +72,12 @@
       (is (= 10 (l/entries lmdb "b"))))
 
     (testing "get-value"
+      (is (= 1 (l/get-value lmdb "d" [-1 0 1 2 3 4] [:long])))
+      (is (= [1 2 3] (l/get-value lmdb "d" [:a :b :c :d] [:keyword] [:long])))
+      (is (= 2 (l/get-value lmdb "d" [-1 "heterogeneous" :datalevin/tuple]
+                            [:long :string :keyword])))
+      (is (= [2 4] (l/get-value lmdb "d" [:ok -0.687 "nice"]
+                                [:keyword :double :string] [:long])))
       (is (= 2 (l/get-value lmdb "a" 1)))
       (is (= [1 2] (l/get-value lmdb "a" 1 :data :data false)))
       (is (= true (l/get-value lmdb "a" :annunaki/enki :attr :data)))

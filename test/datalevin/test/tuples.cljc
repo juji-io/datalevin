@@ -56,7 +56,7 @@
                             :t1 {:db/tupleAttrs [:a :b :c]}})))
 
     (is (thrown-msg?
-          "Bad attribute specification for :foo+bar: {:db/valueType :db.type/tuple} should also have :db/tupleAttrs"
+          "Bad attribute specification for :foo+bar: {:db/valueType :db.type/tuple} should also have :db/tupleAttrs, :db/tupleTypes, or :db/tupleType"
           (d/empty-db dir6 {:foo+bar {:db/valueType :db.type/tuple}})))
 
     (d/close-db db)
@@ -372,5 +372,34 @@
            (d/q '[:find ?a ?b
                   :where [?e :a+b ?a+b]
                   [(untuple ?a+b) [?a ?b]]] db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-homogeneous-and-heterogeneous-tuple
+  (let [dir (u/tmp-dir (str "homo-tuples-" (random-uuid)))
+        db  (-> (d/empty-db dir
+                            {:a {:db/valueType :db.type/tuple
+                                 :db/tupleType :db.type/string
+                                 :db/unique    :db.unique/identity}
+                             :b {:db/valueType  :db.type/tuple
+                                 :db/tupleTypes [:db.type/keyword
+                                                 :db.type/long
+                                                 :db.type/string]}})
+                (d/db-with [{:db/id 1 :a ["A" "B"] :b [:id 1 "AB"]}
+                            {:db/id 2 :a ["A" "b"] :b [:id 2 "Ab"]}
+                            {:db/id 3 :a ["a" "B"] :b [:id 3 "aB"]}
+                            {:db/id 4 :a ["a" "b"] :b [:id 4 "ab"]}]))]
+    (is (= #{[3]}
+           (d/q '[:find ?e
+                  :where [?e :a ["a" "B"]]] db)))
+    (is (= #{[["a" "B"]]}
+           (d/q '[:find ?a
+                  :where [[:a ["a" "B"]] :a ?a]] db)))
+    (is (= #{[3] [4]}
+           (d/q '[:find ?e
+                  :where
+                  [?e :b ?b]
+                  [(untuple ?b) [_ ?l _]]
+                  [(< 2 ?l)]] db)))
     (d/close-db db)
     (u/delete-files dir)))

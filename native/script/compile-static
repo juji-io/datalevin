@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# compile on mac or aarch64 linux
+# compile static on amd64 linux, graal static native image only works there
 
 set -eou pipefail
 
@@ -21,21 +21,26 @@ export DTLV_COMPILE_NATIVE=true
 
 echo $JAVA_HOME
 
-
 MAIN_JAR="target/main.uberjar.jar"
 
 TEST0_JAR="target/test0.uberjar.jar"
 
-#lein clean
-#lein with-profile native-uberjar uberjar
+lein clean
+lein with-profile native-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
-    --verbose \
-    -jar "$MAIN_JAR" ${app_name}
+  --verbose \
+  --static \
+  --libc=musl \
+  -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
+  -jar "$MAIN_JAR" ${app_name}
 
 lein clean
 lein with-profile test0-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
      --verbose \
+     --static \
+     --libc=musl \
+     -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
      -jar "$TEST0_JAR" ${test0_name}

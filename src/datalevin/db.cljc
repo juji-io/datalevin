@@ -305,6 +305,8 @@
                      :key       k
                      :value     v}))))
 
+(def tuple-props #{:db/tupleAttrs :db/tupleTypes :db/tupleType})
+
 (defn- validate-schema [schema]
   (doseq [[a kv] schema]
     (let [comp? (:db/isComponent kv false)]
@@ -324,10 +326,10 @@
     (validate-schema-key a :db/fulltext (:db/fulltext kv)
                          #{true false})
 
-    ;; tuple should have tupleAttrs
+    ;; tuple should have one of tuple-props
     (when (and (= :db.type/tuple (:db/valueType kv))
-               (not (contains? kv :db/tupleAttrs)))
-      (raise "Bad attribute specification for " a ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs"
+               (not (some tuple-props (keys kv))))
+      (raise "Bad attribute specification for " a ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs, :db/tupleTypes, or :db/tupleType"
              {:error     :schema/validation
               :attribute a
               :key       :db/valueType}))
@@ -354,6 +356,27 @@
 
             (when (= :db.cardinality/many (:db/cardinality (get schema attr)))
               (raise a " :db/tupleAttrs can’t depend on :db.cardinality/many attribute: " attr ex-data))))))
+
+    (when (contains? kv :db/tupleType)
+      (let [ex-data {:error     :schema/validation
+                     :attribute a
+                     :key       :db/tupleType}
+            attr    (:db/tupleType kv)]
+        (when-not (c/datalog-value-types attr)
+          (raise a " :db/tupleType must be a single value type, got: " attr ex-data))
+        (when (= attr :db.type/tuple)
+          (raise a " :db/tupleType cannot be :db.type/tuple" ex-data))))
+
+    (when (contains? kv :db/tupleTypes)
+      (let [ex-data {:error     :schema/validation
+                     :attribute a
+                     :key       :db/tupleTypes}]
+        (let [attrs (:db/tupleTypes kv)]
+          (when-not (and (sequential? attrs) (< 1 (count attrs))
+                         (every? c/datalog-value-types attrs)
+                         (not (some #(= :db.type/tuple %) attrs)))
+            (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data)))))
+
     ))
 
 (defn- open-store

@@ -1,33 +1,35 @@
 (ns datalevin.main
   "Functions and vars to support the `dtlv` command line tool"
   (:refer-clojure :exclude [drop load])
-  (:require [clojure.tools.cli :refer [parse-opts]]
-            [clojure.string :as s]
-            [clojure.pprint :as p]
-            [clojure.java.io :as io]
-            [clojure.edn :as edn]
-            [clojure.stacktrace :as st]
-            [sci.core :as sci]
-            [datalevin.core :as d]
-            [datalevin.datom :as dd]
-            [datalevin.util :as u :refer [raise]]
-            [datalevin.interpret :as i]
-            [datalevin.lmdb :as l]
-            [datalevin.db :as db]
-            [datalevin.bits :as b]
-            [datalevin.server :as srv]
-            [pod.huahaiy.datalevin :as pod]
-            [datalevin.constants :as c])
-  (:import [java.io BufferedReader PushbackReader IOException]
-           [java.lang RuntimeException]
-           [datalevin.datom Datom])
+  (:require
+   [clojure.tools.cli :refer [parse-opts]]
+   [clojure.string :as s]
+   [clojure.pprint :as p]
+   [clojure.java.io :as io]
+   [clojure.edn :as edn]
+   [clojure.stacktrace :as st]
+   [sci.core :as sci]
+   [datalevin.core :as d]
+   [datalevin.datom :as dd]
+   [datalevin.util :as u :refer [raise]]
+   [datalevin.interpret :as i]
+   [datalevin.lmdb :as l]
+   [datalevin.db :as db]
+   [datalevin.bits :as b]
+   [datalevin.server :as srv]
+   [pod.huahaiy.datalevin :as pod]
+   [datalevin.constants :as c])
+  (:import
+   [java.io BufferedReader PushbackReader IOException]
+   [java.lang RuntimeException]
+   [datalevin.datom Datom])
   (:gen-class))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.8.4")
+(def ^:private version "0.8.5")
 
 (def ^:private version-str
   (str
@@ -44,15 +46,19 @@
 
 ;; Data Readers
 
-(def data-readers {'datalevin/Datom    dd/datom-from-reader
-                   'datalevin/DB       db/db-from-reader
-                   'datalevin/bytes    b/bytes-from-reader
-                   'datalevin/regex    b/regex-from-reader
-                   'datalevin/inter-fn i/inter-fn-from-reader
-                   })
+(def datalevin-data-readers
+  "Built-in data readers."
+  {'datalevin/Datom    dd/datom-from-reader
+   'datalevin/DB       db/db-from-reader
+   'datalevin/bytes    b/bytes-from-reader
+   'datalevin/regex    b/regex-from-reader
+   'datalevin/bigint   b/bigint-from-reader
+   'datalevin/inter-fn i/inter-fn-from-reader
+   })
 
-;; #?(:cljs
-;;    (doseq [[tag cb] data-readers] (edn/register-tag-parser! tag cb)))
+(def ^:dynamic *datalevin-data-readers*
+  "Can be bound to support reading custom tag literals."
+  datalevin-data-readers)
 
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
@@ -295,6 +301,7 @@
     (exit 0 (usage summary))))
 
 (defn exec
+  "Execuate code that passed in as a seq of strings."
   [arguments]
   (i/exec-code (s/join (if (seq arguments)
                          arguments
@@ -415,7 +422,7 @@
   (try
     (with-open [^PushbackReader r in]
       (let [read-form     #(edn/read {:eof     ::EOF
-                                      :readers data-readers} r)
+                                      :readers *datalevin-data-readers*} r)
             read-maps     #(let [m1 (read-form)]
                              (if (:db/ident m1)
                                [nil m1]

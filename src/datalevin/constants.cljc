@@ -1,7 +1,6 @@
 (ns ^:no-doc datalevin.constants
   (:refer-clojure :exclude [meta])
   (:require
-   [taoensso.nippy :as nippy]
    [datalevin.util :as u])
   (:import
    [java.util UUID Arrays HashSet]
@@ -71,29 +70,29 @@
 (def ^:const +short-id-bytes+ Integer/BYTES)
 
 ;; value headers
-(def ^:const type-long-neg (unchecked-byte 0xC0))
-(def ^:const type-long-pos (unchecked-byte 0xC1))
-(def ^:const type-bigint   (unchecked-byte 0xF1))
-(def ^:const type-bigdec   (unchecked-byte 0xF2))
-(def ^:const type-tuple    (unchecked-byte 0xF3))
+(def ^:const type-long-neg   (unchecked-byte 0xC0))
+(def ^:const type-long-pos   (unchecked-byte 0xC1))
+(def ^:const type-bigint     (unchecked-byte 0xF1))
+(def ^:const type-bigdec     (unchecked-byte 0xF2))
+(def ^:const type-homo-tuple (unchecked-byte 0xF3))
+(def ^:const type-hete-tuple (unchecked-byte 0xF4))
+(def ^:const type-float      (unchecked-byte 0xF5))
+(def ^:const type-double     (unchecked-byte 0xF6))
+(def ^:const type-instant    (unchecked-byte 0xF7))
+(def ^:const type-ref        (unchecked-byte 0xF8))
+(def ^:const type-uuid       (unchecked-byte 0xF9))
+(def ^:const type-string     (unchecked-byte 0xFA))
+(def ^:const type-keyword    (unchecked-byte 0xFB))
+(def ^:const type-symbol     (unchecked-byte 0xFC))
+(def ^:const type-boolean    (unchecked-byte 0xFD))
+(def ^:const type-bytes      (unchecked-byte 0xFE))
 
-(def ^:const type-float    (unchecked-byte 0xF5))
-(def ^:const type-double   (unchecked-byte 0xF6))
-(def ^:const type-instant  (unchecked-byte 0xF7))
-(def ^:const type-ref      (unchecked-byte 0xF8))
-(def ^:const type-uuid     (unchecked-byte 0xF9))
-(def ^:const type-string   (unchecked-byte 0xFA))
-(def ^:const type-keyword  (unchecked-byte 0xFB))
-(def ^:const type-symbol   (unchecked-byte 0xFC))
-(def ^:const type-boolean  (unchecked-byte 0xFD))
-(def ^:const type-bytes    (unchecked-byte 0xFE))
+(def ^:const false-value     (unchecked-byte 0x01))
+(def ^:const true-value      (unchecked-byte 0x02))
 
-(def ^:const false-value   (unchecked-byte 0x01))
-(def ^:const true-value    (unchecked-byte 0x02))
-
-(def ^:const separator     (unchecked-byte 0x00))
-(def ^:const truncator     (unchecked-byte 0xFF))
-(def ^:const slash         (unchecked-byte 0x2F))
+(def ^:const separator       (unchecked-byte 0x00))
+(def ^:const truncator       (unchecked-byte 0xFF))
+(def ^:const slash           (unchecked-byte 0x2F))
 
 (def separator-ba (byte-array [(unchecked-byte 0x00)]))
 
@@ -148,12 +147,15 @@
 (def ^:const docs "docs")
 (def ^:const positions "positions")
 
-(def ^:const datalog-value-types #{:db.type/keyword :db.type/symbol
-                                   :db.type/string :db.type/boolean
-                                   :db.type/long :db.type/double
-                                   :db.type/float :db.type/ref
-                                   :db.type/instant :db.type/uuid
-                                   :db.type/bytes :db.type/tuple})
+(def ^:const datalog-value-types
+  #{:db.type/keyword :db.type/symbol :db.type/string :db.type/boolean
+    :db.type/long :db.type/double :db.type/float :db.type/ref
+    :db.type/bigint :db.type/bigdec :db.type/instant :db.type/uuid
+    :db.type/bytes :db.type/tuple})
+
+(def ^:const kv-value-types
+  #{:keyword :symbol :string :boolean :long :double :float :instant :uuid
+    :bytes :bigint :bigdec :data})
 
 ;; search engine
 

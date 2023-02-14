@@ -10,7 +10,7 @@
    [clojure.test.check.properties :as prop]
    [datalevin.util :as u])
   (:import
-   [java.util Arrays Date]
+   [java.util Arrays Date UUID]
    [java.util.concurrent Semaphore]
    [java.nio ByteBuffer]
    [java.nio.charset StandardCharsets]
@@ -509,6 +509,12 @@
 
 ;; orders
 
+(defn- same-sign?
+  [^long x ^long y]
+  (or (= x y 0)
+      (and (< x 0) (< y 0))
+      (and (> x 0) (> y 0))))
+
 (defn- veg-test
   [v e1 v1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
@@ -520,16 +526,9 @@
         _               (sut/put-buffer bf1 d1 :veg)
         _               (.flip ^ByteBuffer bf1)
         ^long res       (bf-compare bf bf1)
-        v-cmp           (compare v v1)]
-    (if (= v-cmp 0)
-      (if (= e e1)
-        (is (= res 0))
-        (if (< ^long e ^long e1)
-          (is (< res 0))
-          (is (> res 0))))
-      (if (< v-cmp 0)
-        (is (< res 0))
-        (is (> res 0))))
+        ]
+    (is (same-sign? res (u/combine-cmp (compare v v1)
+                                       (compare e v1))))
     (.rewind ^ByteBuffer bf)
     (let [^Retrieved r (sut/read-buffer bf :veg)]
       (is (= e (.-e r)))
@@ -549,17 +548,9 @@
         _               (.clear ^ByteBuffer bf1)
         _               (sut/put-buffer bf1 d1 :avg)
         _               (.flip ^ByteBuffer bf1)
-        ^long  res      (bf-compare bf bf1)
-        v-cmp           (compare v v1)]
-    (if (= a a1)
-      (if (= v-cmp 0)
-        (is (= res 0))
-        (if (< v-cmp 0)
-          (is (< res 0))
-          (is (> res 0))))
-      (if (< ^int a ^int a1)
-        (is (< res 0))
-        (is (> res 0))))
+        ^long  res      (bf-compare bf bf1)]
+    (is (same-sign? res (u/combine-cmp (compare a a1)
+                                       (compare v v1))))
     (.rewind ^ByteBuffer bf)
     (let [^Retrieved r (sut/read-buffer bf :avg)]
       (is (= a (.-a r)))
@@ -580,23 +571,18 @@
         _               (sut/put-buffer bf1 d1 :eag)
         _               (.flip ^ByteBuffer bf1)
         ^long  res      (bf-compare bf bf1)]
-    (if (= e e1)
-      (if (= a a1)
-        (is (= res 0))
-        (if (< ^int a ^int a)
-          (is (< res 0))
-          (is (> res 0))))
-      (if (< ^long e ^long e1)
-        (is (< res 0))
-        (is (> res 0))))
+    (is (same-sign? res (u/combine-cmp (compare e e1)
+                                       (compare a a1))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :eag)]
+    (let [^Retrieved r (sut/read-buffer bf :eav)]
       (is (= e (.-e r)))
-      (is (= a (.-a r))))
+      (is (= a (.-a r)))
+      (is (= v (.-v r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :eag)]
+    (let [^Retrieved r (sut/read-buffer bf1 :eav)]
       (is (= e1 (.-e r)))
-      (is (= a1 (.-a r))))))
+      (is (= a1 (.-a r)))
+      (is (= v1 (.-v r))))))
 
 (test/defspec eag-generative-test
   100
@@ -980,3 +966,79 @@
                 (Arrays/equals k
                                ^bytes (sut/decode-base64
                                         (sut/encode-base64 k)))))
+
+(deftest homo-tuple-round-trip-test
+  (let [bf (ByteBuffer/allocateDirect c/+max-key-size+)
+        t1 [:entities :id :name]
+        t2 ["docs" "type" "mac"]
+        t3 [-23 42 -97 10 10 1 24 8 1 9 39 19 4]
+        t4 [(UUID/randomUUID) (UUID/randomUUID)]]
+    (sut/put-buffer bf t1 [:keyword])
+    (.flip bf)
+    (is (= t1 (sut/read-buffer bf [:keyword])))
+    (.clear bf)
+    (sut/put-buffer bf t2 [:string])
+    (.flip bf)
+    (is (= t2 (sut/read-buffer bf [:string])))
+    (.clear bf)
+    (sut/put-buffer bf t3 [:long])
+    (.flip bf)
+    (is (= t3 (sut/read-buffer bf [:long])))
+    (.clear bf)
+    (sut/put-buffer bf t4 [:uuid])
+    (.flip bf)
+    (is (= t4 (sut/read-buffer bf [:uuid])))))
+
+(deftest hete-tuple-round-trip-test
+  (let [bf (ByteBuffer/allocateDirect c/+max-key-size+)
+        t1 [:entities 1 :names "John" :id]
+        t2 ["docs" 1 "types" :mac :id (UUID/randomUUID)]
+        t3 [42 0.5 "id"]
+        t4 [(UUID/randomUUID) :key 1]]
+    (sut/put-buffer bf t1 [:keyword :long :keyword :string :keyword])
+    (.flip bf)
+    (is (= t1
+           (sut/read-buffer bf [:keyword :long :keyword :string :keyword])))
+    (.clear bf)
+    (sut/put-buffer bf t2 [:string :long :string :keyword :keyword :uuid])
+    (.flip bf)
+    (is (= t2
+           (sut/read-buffer
+             bf [:string :long :string :keyword :keyword :uuid])))
+    (.clear bf)
+    (sut/put-buffer bf t3 [:long :float :string])
+    (.flip bf)
+    (is (= t3 (sut/read-buffer bf [:long :float :string])))
+    (.clear bf)
+    (sut/put-buffer bf t4 [:uuid :keyword :long])
+    (.flip bf)
+    (is (= t4 (sut/read-buffer bf [:uuid :keyword :long])))
+    ))
+
+(def ts1 "datalevin")
+(def tk1 :rocks)
+(def tl1 42)
+(def tf1 10.0)
+
+(test/defspec hete-tuple-generative-test
+  100
+  (prop/for-all
+    [ts gen/string-alphanumeric
+     tk gen/keyword
+     tl gen/int
+     tf (gen/double* {:NaN? false})]
+    (let [^ByteBuffer bf  (sut/allocate-buffer c/+max-key-size+)
+          ^ByteBuffer bf1 (sut/allocate-buffer c/+max-key-size+)
+          _               (.clear ^ByteBuffer bf)
+          _               (sut/put-buffer bf [ts tk tl tf]
+                                          [:string :keyword :long :float])
+          _               (.flip ^ByteBuffer bf)
+          _               (.clear ^ByteBuffer bf1)
+          _               (sut/put-buffer bf1 [ts1 tk1 tl1 tf1]
+                                          [:string :keyword :long :float])
+          _               (.flip ^ByteBuffer bf1)
+          ^long res       (bf-compare bf bf1)]
+      (is (same-sign? res (u/combine-cmp (compare ts ts1)
+                                         (compare tk tk1)
+                                         (compare tl tl1)
+                                         (compare tf tf1)))))))

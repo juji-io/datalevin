@@ -1134,7 +1134,7 @@ Only usable for debug output.
   `k-type`, `v-type` and `flags` are optional.
 
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
-  of `v`. The allowed data types are described in [[put-buffer]]
+  of `v`. The allowed data types are described in [[put-buffer]].
 
   `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
        Pass in `:append` when the data is sorted to gain better write performance.
@@ -1687,16 +1687,15 @@ all documents. Used only with [[search-index-writer]]"}
 
 (def ^{:arglists '([bf x] [bf x x-type])
        :doc      "Put the given type of data `x` in buffer `bf`. `x-type` can be
-    one of the following data types:
+    one of following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
-    - `:data` (default), arbitrary EDN data, avoid this as keys for range queries
+    - `:data` (default), arbitrary EDN data. Avoid this as keys for range queries. Further more, `:data` is not permitted in a tuple.
     - `:string`, UTF-8 string
     - `:long`, 64 bits integer
     - `:float`, 32 bits IEEE754 floating point number
     - `:double`, 64 bits IEEE754 floating point number
     - `:bigint`, a `java.math.BigInteger` in range `[-2^1015, 2^1015-1]`
     - `:bigdec`, a `java.math.BigDecimal`, the unscaled value is in range `[-2^1015, 2^1015-1]`
-    - `:byte`, single byte
     - `:bytes`, byte array
     - `:keyword`, EDN keyword
     - `:symbol`, EDN symbol
@@ -1704,22 +1703,23 @@ all documents. Used only with [[search-index-writer]]"}
     - `:instant`, a `java.util.Date`
     - `:uuid`, a `java.util.UUID`
 
+  No tuple element can be more than 255 bytes in size.
+
   If the value is to be put in a LMDB key buffer, it must be less than
   511 bytes."}
   put-buffer b/put-buffer)
 
 (def ^{:arglists '([bf] [bf v-type])
        :doc      "Get the given type of data from buffer `bf`, `v-type` can be
-one of the following data types:
+one of the following scalar data types, a vector of these scalars to indicate a heterogeneous tuple data type, or a vector of a single scalar to indicate a homogeneous tuple data type:
 
-  - `:data` (default), arbitrary EDN data
+  - `:data` (default), arbitrary serialized EDN data.
   - `:string`, UTF-8 string
   - `:long`, 64 bits integer
   - `:float`, 32 bits IEEE754 floating point number
   - `:double`, 64 bits IEEE754 floating point number
   - `:bigint`, a `java.math.BigInteger` in range `[-2^1015, 2^1015-1]`,
   - `:bigdec`, a `java.math.BigDecimal`, the unscaled value is in range `[-2^1015, 2^1015-1]`,
-  - `:byte`, single byte
   - `:bytes`, an byte array
   - `:keyword`, EDN keyword
   - `:symbol`, EDN symbol
