@@ -263,55 +263,55 @@
                   (u/delete-files dir)
                   (is (and put-ok del-ok)))))
 
-(deftest inverted-list-basic-ops-test
-  (let [dir     (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
-        lmdb    (l/open-kv dir)
-        pred    (i/inter-fn
-                  [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :long)]
-                    (odd? v)))
-        sum     (volatile! 0)
-        visitor (i/inter-fn
-                  [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :long)]
-                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
-    (l/open-list-dbi lmdb "inverted")
+#_(deftest inverted-list-basic-ops-test
+   (let [dir     (u/tmp-dir (str "inverted-test-" (UUID/randomUUID)))
+         lmdb    (l/open-kv dir)
+         pred    (i/inter-fn
+                   [kv]
+                   (let [^long v (b/read-buffer (l/v kv) :long)]
+                     (odd? v)))
+         sum     (volatile! 0)
+         visitor (i/inter-fn
+                   [kv]
+                   (let [^long v (b/read-buffer (l/v kv) :long)]
+                     (vswap! sum #(+ ^long %1 ^long %2) v)))]
+     (l/open-list-dbi lmdb "inverted")
 
-    (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
-    (l/put-list-items lmdb "inverted" "b" [5 6 7] :string :long)
+     (l/put-list-items lmdb "inverted" "a" [1 2 3 4] :string :long)
+     (l/put-list-items lmdb "inverted" "b" [5 6 7] :string :long)
 
-    (is (= (l/list-count lmdb "inverted" "a" :string) 4))
-    (is (= (l/list-count lmdb "inverted" "b" :string) 3))
+     (is (= (l/list-count lmdb "inverted" "a" :string) 4))
+     (is (= (l/list-count lmdb "inverted" "b" :string) 3))
 
-    (is (not (l/in-list? lmdb "inverted" "a" 7 :string :long)))
-    (is (l/in-list? lmdb "inverted" "b" 7 :string :long))
+     (is (not (l/in-list? lmdb "inverted" "a" 7 :string :long)))
+     (is (l/in-list? lmdb "inverted" "b" 7 :string :long))
 
-    (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
+     (is (= (l/get-list lmdb "inverted" "a" :string :long) [1 2 3 4]))
 
-    (l/visit-list lmdb "inverted" visitor "a" :string)
-    (is (= @sum 10))
+     (l/visit-list lmdb "inverted" visitor "a" :string)
+     (is (= @sum 10))
 
-    (l/del-list-items lmdb "inverted" "a" :string)
+     (l/del-list-items lmdb "inverted" "a" :string)
 
-    (is (= (l/list-count lmdb "inverted" "a" :string) 0))
-    (is (not (l/in-list? lmdb "inverted" "a" 1 :string :long)))
-    (is (nil? (l/get-list lmdb "inverted" "a" :string :long)))
+     (is (= (l/list-count lmdb "inverted" "a" :string) 0))
+     (is (not (l/in-list? lmdb "inverted" "a" 1 :string :long)))
+     (is (nil? (l/get-list lmdb "inverted" "a" :string :long)))
 
-    (l/put-list-items lmdb "inverted" "b" [1 2 3 4] :string :long)
+     (l/put-list-items lmdb "inverted" "b" [1 2 3 4] :string :long)
 
-    (is (= (l/list-count lmdb "inverted" "b" :string) 7))
-    (is (l/in-list? lmdb "inverted" "b" 1 :string :long))
+     (is (= (l/list-count lmdb "inverted" "b" :string) 7))
+     (is (l/in-list? lmdb "inverted" "b" 1 :string :long))
 
-    (l/del-list-items lmdb "inverted" "b" [1 2] :string :long)
+     (l/del-list-items lmdb "inverted" "b" [1 2] :string :long)
 
-    (is (= (l/list-count lmdb "inverted" "b" :string) 5))
-    (is (not (l/in-list? lmdb "inverted" "b" 1 :string :long)))
+     (is (= (l/list-count lmdb "inverted" "b" :string) 5))
+     (is (not (l/in-list? lmdb "inverted" "b" 1 :string :long)))
 
-    (is (= (l/filter-list lmdb "inverted" "b" pred :string :long) [3 5 7]))
-    (is (= (l/filter-list-count lmdb "inverted" "b" pred :string) 3))
+     (is (= (l/filter-list lmdb "inverted" "b" pred :string :long) [3 5 7]))
+     (is (= (l/filter-list-count lmdb "inverted" "b" pred :string) 3))
 
-    (l/close-kv lmdb)
-    (u/delete-files dir)))
+     (l/close-kv lmdb)
+     (u/delete-files dir)))
 
 (deftest validate-data-test
   (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))

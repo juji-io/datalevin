@@ -78,7 +78,7 @@
            "-Sdeps"
            (cond
              (= "latest" version)
-             (str "{:paths [\"src\" \"../src\" \"../target/classes\"]"
+             (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.1\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.2\"}

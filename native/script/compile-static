@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# compile static on amd64 linux, graal static native image only works there
+
 set -eou pipefail
 
 app_name=dtlv

@@ -18,6 +18,8 @@
 ### Fixed
 - [Main] dump and load big integers.
 ### Improved
+- [Datalog] avoid unnecessary caching, improve transaction speed up to 25% for
+large transactions.
 - [Native] upgrade Graalvm to 22.3.1
 - [Native] static build on Linux. #185
 - [Lib] update deps.
