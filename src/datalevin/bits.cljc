@@ -75,7 +75,7 @@
     (.write ^String (encode-base64 bs))
     (.write "\"")))
 
-(defn ^bytes bytes-from-reader [s] (decode-base64 s))
+(defn bytes-from-reader ^bytes [s] (decode-base64 s))
 
 (defmethod print-method Pattern
   [^Pattern p, ^Writer w]
@@ -85,7 +85,7 @@
     (.write ^String (s/escape (.toString p) {\\ "\\\\"}))
     (.write "\"")))
 
-(defn ^Pattern regex-from-reader [s] (Pattern/compile s))
+(defn regex-from-reader ^Pattern [s] (Pattern/compile s))
 
 (defmethod print-method BigInteger
   [^BigInteger bi, ^Writer w]
@@ -95,7 +95,7 @@
     (.write ^String (.toString bi))
     (.write "\"")))
 
-(defn ^BigInteger bigint-from-reader [^String s] (BigInteger. s))
+(defn bigint-from-reader ^BigInteger [^String s] (BigInteger. s))
 
 ;; nippy
 
@@ -145,9 +145,9 @@
 
 ;; byte buffer
 
-(defn ^ByteBuffer allocate-buffer
+(defn allocate-buffer
   "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
-  [size]
+  ^ByteBuffer [size]
   (ByteBuffer/allocateDirect size))
 
 (defn buffer-transfer
@@ -300,8 +300,8 @@
   [^ByteBuffer bb ^BigInteger x]
   (put-bytes bb (encode-bigint x)))
 
-(defn ^BigInteger decode-bigint
-  [^bytes bs]
+(defn decode-bigint
+  ^BigInteger [^bytes bs]
   (BigInteger. ^bytes (Arrays/copyOfRange bs 1 (alength bs))))
 
 (defn- get-bigint
@@ -796,30 +796,6 @@
 
 (defn giant? [^Indexable i] (not= (.-g i) c/normal))
 
-(defn- put-uuid
-  [bf ^UUID val]
-  (put-long bf (.getMostSignificantBits val))
-  (put-long bf (.getLeastSignificantBits val)))
-
-(defn- get-uuid [bf] (UUID. (get-long bf) (get-long bf)))
-
-(defn- put-fixed
-  [bf val hdr]
-  (case (short hdr)
-    -64 (put-long bf (wrap-extrema val Long/MIN_VALUE -1 val))
-    -63 (put-long bf (wrap-extrema val 0 Long/MAX_VALUE val))
-    -11 (put-float bf (wrap-extrema val Float/NEGATIVE_INFINITY
-                                    Float/POSITIVE_INFINITY val))
-    -10 (put-double bf (wrap-extrema val Double/NEGATIVE_INFINITY
-                                     Double/POSITIVE_INFINITY val))
-    -9  (put-long bf (code-instant
-                       (wrap-extrema val Long/MIN_VALUE Long/MAX_VALUE
-                                     (.getTime ^Date val))))
-    -8  (put-long bf (wrap-extrema val c/e0 Long/MAX_VALUE val))
-    -7  (put-uuid bf (wrap-extrema val c/min-uuid c/max-uuid val))
-    -3  (put-byte bf (wrap-extrema val c/false-value c/true-value
-                                   (if val c/true-value c/false-value)))))
-
 (defn- put-avg
   [bf ^Indexable x]
   (put-int bf (.-a x))
@@ -847,60 +823,6 @@
   (put-long bf (.-e x))
   (put-int bf (.-a x))
   (put-long bf (.-g x)))
-
-(defn- sep->slash
-  [^bytes bs]
-  (let [n-1 (dec (alength bs))]
-    (loop [i 0]
-      (cond
-        (= (aget bs i) c/separator) (aset-byte bs i c/slash)
-        (< i n-1)                   (recur (inc i)))))
-  bs)
-
-(defn- skip
-  [^ByteBuffer bf ^long bytes]
-  (.position bf (+ (.position bf) bytes)))
-
-(defn- get-string
-  ([^ByteBuffer bf]
-   (String. ^bytes (get-bytes bf) StandardCharsets/UTF_8))
-  ([^ByteBuffer bf ^long post-v]
-   (String. ^bytes (get-bytes-val bf post-v) StandardCharsets/UTF_8)))
-
-(defn- get-key-sym-str
-  [^ByteBuffer bf ^long post-v]
-  (let [^bytes ba (sep->slash (get-bytes-val bf post-v))
-        s         (String. ^bytes ba StandardCharsets/UTF_8)]
-    (if (= (aget ba 0) c/slash) (subs s 1) s)))
-
-(defn- get-keyword
-  [^ByteBuffer bf ^long post-v]
-  (keyword (get-key-sym-str bf post-v)))
-
-(defn- get-symbol
-  [^ByteBuffer bf ^long post-v]
-  (symbol (get-key-sym-str bf post-v)))
-
-(defn- get-value
-  [^ByteBuffer bf post-v]
-  (.mark bf)
-  (case (short (get-byte bf))
-    -64 (get-long bf)
-    -63 (get-long bf)
-    -15 (get-bigint bf)
-    -14 (get-bigdec bf)
-    -11 (get-float bf)
-    -10 (get-double bf)
-    -9  (get-instant bf)
-    -8  (get-long bf)
-    -7  (get-uuid bf)
-    -6  (get-string bf post-v)
-    -5  (get-keyword bf post-v)
-    -4  (get-symbol bf post-v)
-    -3  (get-boolean bf)
-    -2  (get-bytes-val bf post-v)
-    (do (.reset bf)
-        (get-data bf post-v))))
 
 (deftype Retrieved [e a v g])
 
@@ -957,35 +879,6 @@
     :vea  (indexable->retrieved x)
     :veat (indexable->retrieved x)
     x))
-
-;; (defn- get-eav
-;;   [bf]
-;;   (let [e (get-long bf)
-;;         a (get-int bf)
-;;         v (get-value bf 1)]
-;;     (Retrieved. e a v)))
-
-;; (defn- get-ave
-;;   [bf]
-;;   (let [a (get-int bf)
-;;         v (get-value bf 9)
-;;         _ (get-byte bf)
-;;         e (get-long bf)]
-;;     (Retrieved. e a v)))
-
-;; (defn- get-vea
-;;   [bf]
-;;   (let [v (get-long bf)
-;;         e (get-long bf)
-;;         a (get-int bf)]
-;;     (Retrieved. e a v)))
-
-(defn- get-sparse-list
-  [bf]
-  (let [sl (sl/sparse-arraylist)]
-    (sl/deserialize sl bf)
-    sl))
-
 
 (defn put-buffer
   ([bf x]
