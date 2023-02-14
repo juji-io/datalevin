@@ -39,12 +39,12 @@ any flavor of SQL, once they get to use it. Perhaps it is because Datalog is
 more declarative and composable than SQL, e.g. the automatic implicit joins seem
 to be its killer feature.
 
-Datomic® is an enterprise grade software, and its feature set may be an overkill
-for some use cases. One thing that may confuse casual users is its [temporal
+The feature set of Datomic®  may be an overkill for some use cases. One thing
+that may confuse casual users is its [temporal
 features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To
-keep things simple and familiar, Datalevin does not store transaction history,
-and behaves the same way as most other databases: when data are deleted, they
-are gone.
+keep things simple and familiar, Datalevin does not store transaction ids along
+with the datoms, and behaves the same way as most other databases: when data are
+deleted, they are gone.
 
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
@@ -54,13 +54,6 @@ retains the library property of Datascript, and it is meant to be embedded in
 applications to manage state. Because data is persistent on disk in Datalevin,
 application state can survive application restarts, and data size can be larger
 than memory.
-
-Datalevin can also run in an event-driven networked [client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md) mode (default
-port is 8898). The mode change is transparent. In the local mode, a data
-directory path, e.g. `/data/mydb`, is needed for database location, whereas a
-URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the client/server
-mode. The same set of core functions work in both modes. In addition,
-full-fledged role-based access control (RBAC) is provided on the server.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,
@@ -75,13 +68,23 @@ written, they are indexed. There are no separate processes or threads for
 indexing, compaction or doing any database maintenance work that compete with
 your applications for resources. Since Datalog is simply a more ergonomic query
 language than SQL, Datalevin can serve the role of an easier-to-use and
-more lightweight relational database (RDBMS), e.g. where SQLite or Firebird is called for.
+more lightweight relational database (RDBMS), e.g. where SQLite or Firebird is
+called for.
 
 Independent from Datalog, Datalevin can be used as a fast key-value store for
 [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with support
 for range queries, predicate filtering and more. The native EDN data capability
 of Datalevin should be beneficial for Clojure programs. One can use this feature
 in situations where something like Redis is called for, for instance.
+
+Datalevin can also run in an event-driven networked
+[client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
+mode (default port is 8898). The mode change is transparent. In the local mode,
+a data directory path, e.g. `/data/mydb`, is needed for database location,
+whereas a URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the
+client/server mode. The same set of core functions work in both modes. In
+addition, full-fledged role-based access control (RBAC) is provided on the
+server.
 
 In addition, Datalevin has a [built-in full-text search
 engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
@@ -398,20 +401,17 @@ In all benchmarked queries, Datalevin is faster than Datascript. Considering
 that we are comparing a disk store with a memory store, this result may be
 counter-intuitive. One reason is that Datalevin caches more
 aggressively, whereas Datascript chose not to do so (e.g. see [this
-issue](https://github.com/tonsky/datascript/issues/6)). Before we introduced
-caching in version 0.2.8, Datalevin was only faster than Datascript for single
-clause queries due to the highly efficient reads of LMDB. With caching enabled,
-Datalevin is now faster across the board. In addition, we will soon move to a
-more efficient query implementation.
+issue](https://github.com/tonsky/datascript/issues/6)). In addition, we
+implemented more query optimizations.
 
 Writes are slower than Datascript, as expected, as Datalevin is writing to disk
 while Datascript is in memory. The bulk write speed is good, writing 100K datoms
-to disk in less than 0.5 seconds; the same data can also be transacted with all
-the integrity checks as a whole in less than 2 seconds. Transacting one datom or
-five datoms at a time, it takes more or less than that time.
+to disk in less than 0.2 seconds; the same data can also be transacted with all
+the integrity checks as a whole or five datoms at a time in less than 1.5
+seconds. Transacting one datom at a time, it takes longer time. Therefore, it is
+preferable to have batch transactions.
 
 In short, Datalevin is quite capable for small or medium projects right now.
-Large scale projects can be supported when distributed mode is implemented.
 
 ## :floppy_disk: Differences from Datascript
 
@@ -440,6 +440,9 @@ than just the difference in data durability and running mode:
   [EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) blobs, and are
   de/serialized with [nippy](https://github.com/ptaoussanis/nippy).
 
+* In addition to composite tuples, Datalevin also supports heterogeneous and
+  homogeneous tuples.
+
 * Has a value leading index (VEA) for datoms with `:db.type/ref` type attribute;
   The attribute and value leading index (AVE) is enabled for all datoms, so
   there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
@@ -465,7 +468,7 @@ than just the difference in data durability and running mode:
 
 * Floating point `NaN` cannot be stored.
 
-* Cannot store big integer beyond the range of `[-2^1015, 2^1015-1]`, the
+* Big integers do not go beyond the range of `[-2^1015, 2^1015-1]`, the
   unscaled value of big decimal has the same limit.
 
 * The maximum individual value size is 2GB. Limited by the maximum size of
