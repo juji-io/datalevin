@@ -6,7 +6,7 @@ branches:
   only:
     - master
 
-# skip_non_tags: true
+skip_non_tags: true
 
 image: Visual Studio 2019
 
@@ -49,14 +49,10 @@ build_script:
 
     call script\compile.bat
 
-    7z a dtlv-0.8.5-windows-amd64.zip dtlv.exe
-
-# 7z a dtlv-%APPVEYOR_REPO_TAG_NAME%-windows-amd64.zip dtlv.exe
+    7z a dtlv-%APPVEYOR_REPO_TAG_NAME%-windows-amd64.zip dtlv.exe
 
 artifacts:
-  - path: native\dtlv-0.8.5-windows-amd64.zip
-
-# - path: native\dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
+  - path: native\dtlv-$(APPVEYOR_REPO_TAG_NAME)-windows-amd64.zip
 
 deploy:
   provider: GitHub
@@ -65,6 +61,5 @@ deploy:
   artifact: /.*\.zip/
   force_update: true
   on:
-    branch: master
-
-# APPVEYOR_REPO_TAG: true
+    APPVEYOR_REPO_TAG: true
+# branch: master
