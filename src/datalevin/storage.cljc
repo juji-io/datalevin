@@ -433,7 +433,7 @@
 
   (head [this index low-datom high-datom]
     (retrieved->datom lmdb attrs
-                      (.populated? this index low-datom high-datom)))
+                      (populated? this index low-datom high-datom)))
 
   (tail [_ index high-datom low-datom]
     (retrieved->datom
