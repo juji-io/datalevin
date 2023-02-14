@@ -8,6 +8,12 @@ set JAVA_HOME=%GRAALVM_HOME%\bin
 set PATH=%GRAALVM_HOME%\bin;%PATH%
 set USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 
+cd ..
+
+call lein.bat run
+
+cd native
+
 call %GRAALVM_HOME%\bin\gu.cmd install native-image
 
 call ..\lein.bat with-profile test0-uberjar do clean, uberjar
