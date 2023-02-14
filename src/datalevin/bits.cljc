@@ -980,14 +980,6 @@
 ;;         a (get-int bf)]
 ;;     (Retrieved. e a v)))
 
-(defn put-bf
-  "clear the buffer, put in the data, and prepare it for reading"
-  [^ByteBuffer bf data type]
-  (when-some [x data]
-    (.clear bf)
-    (put-buffer bf x type)
-    (.flip bf)))
-
 (defn- get-sparse-list
   [bf]
   (let [sl (sl/sparse-arraylist)]
@@ -1064,6 +1056,14 @@
              (put-hete-tuple bf x x-type)))
        (put-data bf x)))))
 
+(defn put-bf
+  "clear the buffer, put in the data, and prepare it for reading"
+  [^ByteBuffer bf data type]
+  (when-some [x data]
+    (.clear bf)
+    (put-buffer bf x type)
+    (.flip bf)))
+
 (defn read-buffer
   ([bf]
    (read-buffer bf :data))
@@ -1094,16 +1094,13 @@
      :eag            (get-eag bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
-     :short          (get-short bf)
-     :int            (get-int bf)
-     :id             (get-long bf)
      ;; range query are NOT supported on these
-     :int-int   [(get-int bf) (get-int bf)]
-     :ints      (sl/get-ints bf)
-     :bitmap    (get-bitmap bf)
-     :term-info [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info  [(get-int bf) (get-short bf) (sl/get-ints bf)]
-     :pos-info  [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
+     :int-int        [(get-int bf) (get-int bf)]
+     :ints           (sl/get-ints bf)
+     :bitmap         (get-bitmap bf)
+     :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
+     :doc-info       [(get-int bf) (get-short bf) (sl/get-ints bf)]
+     :pos-info       [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
 
      (if (vector? v-type)
        (do (get-byte bf)

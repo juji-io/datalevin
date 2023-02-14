@@ -56,9 +56,7 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :data)
-                  (.flip bf)
+                  (sut/put-bf bf k :data)
                   (= k (sut/read-buffer bf :data)))))
 
 (test/defspec string-generative-test
@@ -66,18 +64,14 @@
   (prop/for-all [k (gen/such-that (partial string-size-less-than? c/+val-bytes-wo-hdr+)
                                   gen/string)]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :string)
-                  (.flip bf)
+                  (sut/put-bf bf k :string)
                   (= k (sut/read-buffer bf :string)))))
 
 (test/defspec int-generative-test
   100
   (prop/for-all [k gen/int]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :int)
-                  (.flip bf)
+                  (sut/put-bf bf k :int)
                   (= k (sut/read-buffer bf :int)))))
 
 (test/defspec int-int-generative-test
@@ -85,9 +79,7 @@
   (prop/for-all [k1 gen/int
                  k2 gen/int]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf [k1 k2] :int-int)
-                  (.flip bf)
+                  (sut/put-bf bf [k1 k2] :int-int)
                   (= [k1 k2] (sut/read-buffer bf :int-int)))))
 
 (test/defspec doc-info-generative-test
@@ -97,9 +89,7 @@
                  k3 (gen/list-distinct gen/small-integer)]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
                       ^ints ar       (int-array k3)]
-                  (.clear bf)
-                  (sut/put-buffer bf [k1 k2 ar] :doc-info)
-                  (.flip bf)
+                  (sut/put-bf bf [k1 k2 ar] :doc-info)
                   (let [[k1' k2' ar'] (sut/read-buffer bf :doc-info)]
                     (is (and (= k1 k1')
                              (= k2 k2')
@@ -112,9 +102,7 @@
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
                       ^ints ar1      (int-array (sort k1))
                       ^ints ar2      (int-array (sort k2))]
-                  (.clear bf)
-                  (sut/put-buffer bf [ar1 ar2] :pos-info)
-                  (.flip bf)
+                  (sut/put-bf bf [ar1 ar2] :pos-info)
                   (let [[ar1' ar2'] (sut/read-buffer bf :pos-info)]
                     (is (and  (Arrays/equals ar1 ^ints ar1')
                               (Arrays/equals ar2 ^ints ar2')))))))
@@ -129,27 +117,21 @@
                       k2                     (float k2)
                       k3                     (sort k3)
                       ^SparseIntArrayList sl (sl/sparse-arraylist k3 k4)]
-                  (.clear bf)
-                  (sut/put-buffer bf [k1 k2 sl] :term-info)
-                  (.flip bf)
+                  (sut/put-bf bf [k1 k2 sl] :term-info)
                   (= [k1 k2 sl] (sut/read-buffer bf :term-info)))))
 
 (test/defspec long-generative-test
   100
   (prop/for-all [k gen/large-integer]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :long)
-                  (.flip bf)
+                  (sut/put-bf bf k :long)
                   (= k (sut/read-buffer bf :long)))))
 
 (test/defspec double-generative-test
   100
   (prop/for-all [k (gen/double* {:NaN? false})]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :double)
-                  (.flip bf)
+                  (sut/put-bf bf k :double)
                   (= k (sut/read-buffer bf :double)))))
 
 (test/defspec float-generative-test
@@ -157,9 +139,7 @@
   (prop/for-all [k (gen/double* {:NaN? false})]
                 (let [f              (float k)
                       ^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf f :float)
-                  (.flip bf)
+                  (sut/put-bf bf k :float)
                   (= f (sut/read-buffer bf :float)))))
 
 (def gen-bigint (gen/such-that
@@ -244,45 +224,35 @@
   100
   (prop/for-all [^bytes k (gen/not-empty gen/bytes)]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :bytes)
-                  (.flip bf)
+                  (sut/put-bf bf k :bytes)
                   (Arrays/equals k ^bytes (sut/read-buffer bf :bytes)))))
 
 (test/defspec byte-generative-test
   100
   (prop/for-all [k gen/byte]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :byte)
-                  (.flip bf)
+                  (sut/put-bf bf k :byte)
                   (= k (sut/read-buffer bf :byte)))))
 
 (test/defspec keyword-generative-test
   100
   (prop/for-all [k gen/keyword-ns]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :keyword)
-                  (.flip bf)
+                  (sut/put-bf bf k :keyword)
                   (= k (sut/read-buffer bf :keyword)))))
 
 (test/defspec symbol-generative-test
   100
   (prop/for-all [k gen/symbol-ns]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :symbol)
-                  (.flip bf)
+                  (sut/put-bf bf k :symbol)
                   (= k (sut/read-buffer bf :symbol)))))
 
 (test/defspec boolean-generative-test
   100
   (prop/for-all [k gen/boolean]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :boolean)
-                  (.flip bf)
+                  (sut/put-bf bf k :boolean)
                   (= k (sut/read-buffer bf :boolean)))))
 
 (test/defspec instant-generative-test
@@ -290,9 +260,7 @@
   (prop/for-all [k gen/int]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
                       d              (Date. ^long k)]
-                  (.clear bf)
-                  (sut/put-buffer bf d :instant)
-                  (.flip bf)
+                  (sut/put-bf bf d :instant)
                   (= d (sut/read-buffer bf :instant)))))
 
 (test/defspec instant-compare-test
@@ -308,29 +276,22 @@
                                           (< 0 diff) 1
                                           (= 0 diff) 0
                                           (< diff 0) -1))]
-                  (.clear bf)
-                  (sut/put-buffer bf d :instant)
-                  (.flip bf)
-                  (.clear bf1)
-                  (sut/put-buffer bf1 d1 :instant)
-                  (.flip bf1)
-                  (= (sign (- ^long k ^long k1)) (sign (bf-compare bf bf1))))))
+                  (sut/put-bf bf d :instant)
+                  (sut/put-bf bf1 d1 :instant)
+                  (= (sign (- ^long k ^long k1))
+                     (sign (bf-compare bf bf1))))))
 
 (test/defspec uuid-generative-test
   100
   (prop/for-all [k gen/uuid]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :uuid)
-                  (.flip bf)
+                  (sut/put-bf bf k :uuid)
                   (= k (sut/read-buffer bf :uuid)))))
 
 (deftest datom-test
   (let [d1             (d/datom 1 :pet/name "Mr. Kitty")
         ^ByteBuffer bf (sut/allocate-buffer 16384)]
-    (.clear bf)
-    (sut/put-buffer bf d1 :datom)
-    (.flip bf)
+    (sut/put-bf bf d1 :datom)
     (is (= d1 (sut/deserialize (sut/serialize d1))))
     (is (= d1 (sut/read-buffer bf :datom)))))
 
@@ -342,18 +303,14 @@
                  t gen/large-integer]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)
                       d              (d/datom e a v t)]
-                  (.clear bf)
-                  (sut/put-buffer bf d :datom)
-                  (.flip bf)
+                  (sut/put-bf bf d :datom)
                   (is (= d (sut/read-buffer bf :datom))))))
 
 (test/defspec attr-generative-test
   100
   (prop/for-all [k gen/keyword-ns]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (.clear bf)
-                  (sut/put-buffer bf k :attr)
-                  (.flip bf)
+                  (sut/put-bf bf k :attr)
                   (= k (sut/read-buffer bf :attr)))))
 
 ;; extrema bounds
@@ -362,12 +319,8 @@
   [v d dmin dmax]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)]
-    (.clear bf)
-    (sut/put-buffer bf d :avg)
-    (.flip bf)
-    (.clear bf1)
-    (sut/put-buffer bf1 dmin :avg)
-    (.flip bf1)
+    (sut/put-bf bf d :avg)
+    (sut/put-bf bf1 dmin :avg)
     (is (>= (bf-compare bf bf1) 0)
         (do
           (.rewind bf)
@@ -375,17 +328,11 @@
           (str "v: " v
                " d: " (sut/hexify (sut/get-bytes bf))
                " dmin: " (sut/hexify (sut/get-bytes bf1)))))
-    (.clear bf1)
-    (sut/put-buffer bf1 dmax :avg)
-    (.flip bf1)
+    (sut/put-bf bf1 dmax :avg)
     (.rewind bf)
     (is (<= (bf-compare bf bf1) 0))
-    (.clear bf)
-    (sut/put-buffer bf d :veg)
-    (.flip bf)
-    (.clear bf1)
-    (sut/put-buffer bf1 dmin :veg)
-    (.flip bf1)
+    (sut/put-bf bf d :veg)
+    (sut/put-bf bf1 dmin :veg)
     ;; TODO deal with occasional fail here, basically, empty character
     #_(is (>=(bf-compare bf bf1) 0)
           (do
@@ -394,9 +341,7 @@
             (str "v: " v
                  " d: " (sut/hexify (sut/get-bytes bf))
                  " dmin: " (sut/hexify (sut/get-bytes bf1)))))
-    (.clear bf1)
-    (sut/put-buffer bf1 dmax :veg)
-    (.flip bf1)
+    (sut/put-bf bf1 dmax :veg)
     (.rewind bf)
     (is (<= (bf-compare bf bf1) 0))))
 
@@ -528,7 +473,7 @@
         ^long res       (bf-compare bf bf1)
         ]
     (is (same-sign? res (u/combine-cmp (compare v v1)
-                                       (compare e v1))))
+                                       (compare e e1))))
     (.rewind ^ByteBuffer bf)
     (let [^Retrieved r (sut/read-buffer bf :veg)]
       (is (= e (.-e r)))
@@ -574,15 +519,13 @@
     (is (same-sign? res (u/combine-cmp (compare e e1)
                                        (compare a a1))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :eav)]
+    (let [^Retrieved r (sut/read-buffer bf :eag)]
       (is (= e (.-e r)))
-      (is (= a (.-a r)))
-      (is (= v (.-v r))))
+      (is (= a (.-a r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :eav)]
+    (let [^Retrieved r (sut/read-buffer bf1 :eag)]
       (is (= e1 (.-e r)))
-      (is (= a1 (.-a r)))
-      (is (= v1 (.-v r))))))
+      (is (= a1 (.-a r))))))
 
 (test/defspec eag-generative-test
   100
