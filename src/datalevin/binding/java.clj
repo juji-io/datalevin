@@ -12,7 +12,7 @@
    [clojure.java.io :as io])
   (:import
    [org.lmdbjava Env EnvFlags Env$MapFullException Stat Dbi DbiFlags
-    PutFlags Txn TxnFlags KeyRange Txn$BadReaderLockException CopyFlags
+    PutFlags Txn TxnFlags Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [java.lang AutoCloseable]
