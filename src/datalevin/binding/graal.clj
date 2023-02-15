@@ -2,23 +2,28 @@
   "LMDB binding for GraalVM native image"
   (:require
    [datalevin.bits :as b]
+   [datalevin.spill :as sp]
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.spill :as sp]
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
                                  IList ILMDB IWriting]])
   (:import
-   [java.util Iterator]
-   [java.util.concurrent ConcurrentHashMap ConcurrentLinkedQueue]
-   [java.nio BufferOverflowException]
-   [java.lang AutoCloseable]
-   [clojure.lang IPersistentVector MapEntry]
-   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
+  [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
-    Lib$MDB_stat Lib$MapFullException]
-   [datalevin.spill SpillableVector])
-  (:gen-class :name datalevin.binding.graal))
+    Lib$MDB_stat Lib$MapFullException] [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [java.lang AutoCloseable]
+   [java.util.concurrent ConcurrentLinkedQueue]
+   [java.util Iterator]
+   [java.nio BufferOverflowException]
+   [clojure.lang IPersistentVector MapEntry]
+   [datalevin.spill SpillableVector]))
+
+(deftype KV [^BufVal kp ^BufVal vp]
+  IKV
+  (k [_] (.outBuf kp))
+  (v [_] (.outBuf vp)))
 
 (defprotocol IFlag
   (value [this flag-key]))
@@ -94,8 +99,7 @@
         (raise "Key cannot be larger than 511 bytes." {:input x}))
       (catch Exception e
         (raise "Error putting read-only transaction key buffer: "
-               (ex-message e)
-               {:value x :type t}))))
+               e {:value x :type t}))))
   (put-val [_ x t]
     (raise "put-val not allowed for read only txn buffer" {}))
 
@@ -127,17 +131,20 @@
   (reset [this] (.reset txn) this)
   (renew [this] (.renew txn) this))
 
-(deftype KV [^BufVal kp ^BufVal vp]
-  IKV
-  (k [_] (.outBuf kp))
-  (v [_] (.outBuf vp)))
+(defn- stat-map [^Stat stat]
+  {:psize          (.ms_psize ^Lib$MDB_stat (.get stat))
+   :depth          (.ms_depth ^Lib$MDB_stat (.get stat))
+   :branch-pages   (.ms_branch_pages ^Lib$MDB_stat (.get stat))
+   :leaf-pages     (.ms_leaf_pages ^Lib$MDB_stat (.get stat))
+   :overflow-pages (.ms_overflow_pages ^Lib$MDB_stat (.get stat))
+   :entries        (.ms_entries ^Lib$MDB_stat (.get stat))})
 
 (declare ->KeyIterable ->ListIterable)
 
 (deftype DBI [^Dbi db
               ^ConcurrentLinkedQueue curs
               ^BufVal kp
-              ^:volatile-mutable ^BufVal vp
+              ^:unsynchroized-mutable ^BufVal vp
               ^boolean dupsort?
               ^boolean validate-data?]
   IBuffer
@@ -145,40 +152,35 @@
     (or (not validate-data?)
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t {:input x}))
-    (let [dbi-name (.dbi-name this)]
-      (try
-        (put-bufval kp x t)
-        (catch BufferOverflowException _
-          (raise "Key cannot be larger than 511 bytes." {:input x}))
-        (catch Exception e
-          (raise "Error putting r/w key buffer of "
-                 dbi-name ": " (ex-message e)
-                 {:value x :type t :dbi dbi-name})))))
+    (try
+      (put-bufval kp x t)
+      (catch BufferOverflowException _
+        (raise "Key cannot be larger than 511 bytes." {:input x}))
+      (catch Exception e
+        (raise "Error putting r/w key buffer of "
+               (.dbi-name this)": " e {:value x :type t}))))
   (put-val [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
         (raise "Invalid data, expecting " t {:input x}))
-    (let [dbi-name (.dbi-name this)]
-      (try
+    (try
         (put-bufval vp x t)
         (catch BufferOverflowException _
-          (let [size (* ^long c/+buffer-grow-factor+
-                        ^long (b/measure-size x))]
+          (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
             (.close vp)
             (set! vp (BufVal/create size))
             (put-bufval vp x t)))
         (catch Exception e
           (raise "Error putting r/w value buffer of "
-                 dbi-name ": " e
-                 {:value x :type t :dbi dbi-name})))))
+                 (.dbi-name this)": " e {:value x :type t}))))
 
   IDB
   (dbi [_] db)
   (dbi-name [_] (.getName db))
-  (put [this txn] (.put this txn nil))
   (put [_ txn flags] (.put db txn kp vp (kv-flags flags)))
-  (del [this txn] (.del this txn true))
+  (put [this txn] (.put this txn nil))
   (del [_ txn all?] (if all? (.del db txn kp nil) (.del db txn kp vp)))
+  (del [this txn] (.del this txn true))
   (get-kv [_ rtx]
     (let [^BufVal kp (.-kp ^Rtx rtx)
           ^BufVal vp (.-vp ^Rtx rtx)
@@ -202,8 +204,7 @@
       (.iterate-list this rtx k-range k-type [:all] v-type)
       (.iterate-key this rtx k-range k-type)))
   (get-cursor [_ rtx]
-    (let [^Rtx rtx rtx
-          ^Txn txn (.-txn rtx)]
+    (let [ ^Txn txn (.-txn ^Rtx rtx)]
       (or (when (.isReadOnly txn)
             (when-let [^Cursor cur (.poll curs)]
               (.renew cur txn)
@@ -224,7 +225,8 @@
 
   Iterable
   (iterator [_]
-    (let [[forward? include-start? include-stop? ^BufVal sk ^BufVal ek] ctx
+    (let [[forward? include-start? include-stop? 
+           ^BufVal sk ^BufVal ek] ctx
 
           started?  (volatile! false)
           ^BufVal k (.key cur)
@@ -345,16 +347,14 @@
                 (if ek
                   (let [r (b/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
-                      (do (vreset! key-ended? true)
-                          include-stop-key?)
+                      (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) (key-end) true)))
                   true))
               (key-continue-back? []
                 (if ek
                   (let [r (b/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
-                      (do (vreset! key-ended? true)
-                          include-stop-key?)
+                      (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) true (key-end))))
                   true))
               (check-key [op]
@@ -402,16 +402,33 @@
               (if forward-val? (advance-val) (advance-val-back))))
           (next [_] (KV. k v)))))))
 
-(defn- stat-map [^Stat stat]
-  {:psize          (.ms_psize ^Lib$MDB_stat (.get stat))
-   :depth          (.ms_depth ^Lib$MDB_stat (.get stat))
-   :branch-pages   (.ms_branch_pages ^Lib$MDB_stat (.get stat))
-   :leaf-pages     (.ms_leaf_pages ^Lib$MDB_stat (.get stat))
-   :overflow-pages (.ms_overflow_pages ^Lib$MDB_stat (.get stat))
-   :entries        (.ms_entries ^Lib$MDB_stat (.get stat))})
+(defn- transact1*
+  [txs ^DBI dbi txn kt vt]
+  (doseq [^IPersistentVector tx txs]
+    (let [cnt (.length tx)
+          op  (.nth tx 0)
+          k   (.nth tx 1)]
+      (case op
+        :put      (let [v     (.nth tx 2)
+                        flags (when (< 3 cnt) (.nth tx 3))]
+                    (.put-key dbi k kt)
+                    (.put-val dbi v vt)
+                    (if flags (.put dbi txn flags) (.put dbi txn)))
+        :del      (do (.put-key dbi k kt) (.del dbi txn))
+        :put-list (let [vs (.nth tx 2)]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.put dbi txn)))
+        :del-list (let [vs (.nth tx 2)]
+                    (.put-key dbi k kt)
+                    (doseq [v vs]
+                      (.put-val dbi v vt)
+                      (.del dbi txn false)))
+        (raise "Unknown kv operator: " op {})))))
 
 (defn- transact*
-  [txs ^ConcurrentHashMap dbis ^Txn txn]
+  [txs ^UnifiedMap dbis txn]
   (doseq [^IPersistentVector tx txs]
     (let [cnt      (.length tx)
           op       (.nth tx 0)
@@ -494,7 +511,7 @@
                temp?
                opts
                ^ConcurrentLinkedQueue pool
-               ^ConcurrentHashMap dbis
+               ^UnifiedMap dbis
                ^:volatile-mutable closed?
                ^BufVal kp-w
                ^BufVal vp-w
@@ -575,48 +592,24 @@
   (clear-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
-            ^Txn txn (Txn/create env)]
-        (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0))
-        (.commit txn))
+      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name)) ]
+        (with-open [^Txn txn (Txn/create env)]
+          (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 0)) 
+          (.commit txn))
       (catch Exception e
         (raise "Fail to clear DBI: " dbi-name " " e {}))))
 
   (drop-dbi [this dbi-name]
     (assert (not closed?) "LMDB env is closed.")
     (try
-      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
-            ^Txn txn (Txn/create env)]
-        (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
-        (.commit txn)
+      (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))]
+        (with-open [^Txn txn (Txn/create env)] 
+          (Lib/checkRc (Lib/mdb_drop (.get txn) (.get dbi) 1))
+          (.commit txn))
         (.remove dbis dbi-name)
         nil)
       (catch Exception e
         (raise "Fail to drop DBI: " dbi-name e {}))))
-
-  (get-rtx [this]
-    (try
-      (or (when-let [^Rtx rtx (.poll pool)]
-            (.renew rtx))
-          (Rtx. this
-                (Txn/createReadOnly env)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create 0)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (BufVal/create c/+max-key-size+)
-                (volatile! false)))
-      (catch Lib$BadReaderLockException _
-        (raise
-          "Please do not open multiple LMDB connections to the same DB
-           in the same process. Instead, a LMDB connection should be held onto
-           and managed like a stateful resource. Refer to the documentation of
-           `datalevin.core/open-kv` for more details." {}))))
-
-  (return-rtx [this rtx]
-    (.reset ^Rtx rtx)
-    (.add pool rtx))
 
   (list-dbis [this]
     (assert (not closed?) "LMDB env is closed.")
@@ -653,6 +646,30 @@
       (.copy env dest (if compact? true false))
       (raise "Destination directory is not empty." {})))
 
+  (get-rtx [this]
+    (try
+      (or (when-let [^Rtx rtx (.poll pool)]
+            (.renew rtx))
+          (Rtx. this
+                (Txn/createReadOnly env)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create 0)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (BufVal/create c/+max-key-size+)
+                (volatile! false)))
+      (catch Lib$BadReaderLockException _
+        (raise
+          "Please do not open multiple LMDB connections to the same DB
+           in the same process. Instead, a LMDB connection should be held onto
+           and managed like a stateful resource. Refer to the documentation of
+           `datalevin.core/open-kv` for more details." {}))))
+
+  (return-rtx [_ rtx]
+    (.reset ^Rtx rtx)
+    (.add pool rtx))
+
   (stat [this]
     (assert (not closed?) "LMDB env is closed.")
     (try
@@ -675,8 +692,7 @@
             (.close stat)
             m)
           (catch Exception e
-            (raise "Fail to get statistics: " e
-                   {:dbi dbi-name}))
+            (raise "Fail to get statistics: " e {:dbi dbi-name}))
           (finally (.return-rtx this rtx))))
       (l/stat this)))
 
@@ -701,22 +717,20 @@
       (reset-write-txn this)
       (.mark-write this)
       (catch Exception e
-        (raise "Fail to open read/write transaction in LMDB: "
-               (ex-message e) {}))))
+        (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
   (close-transact-kv [_]
-    (when-let [^Rtx wtxn @write-txn]
+(try
+    (if-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
-        (try
-          (let [aborted? @(.-aborted? wtxn)]
-            (if aborted? (.close txn) (.commit txn))
+(let [aborted? @(.-aborted? wtxn)]
+            (when-not aborted? (.commit txn))
             (vreset! write-txn nil)
-            (if aborted? :aborted :committed))
-          (catch Exception e
             (.close txn)
-            (vreset! write-txn nil)
-            (raise "Fail to commit read/write transaction in LMDB: "
-                   (ex-message e) {}))))))
+            (if aborted? :aborted :committed)))
+      (raise "Calling `close-transact-kv` without opening" {}))      
+          (catch Exception e
+            (raise "Fail to commit read/write transaction in LMDB: " e {}))))
 
   (abort-transact-kv [_]
     (when-let [^Rtx wtxn @write-txn]
@@ -724,29 +738,43 @@
       (vreset! write-txn wtxn)
       nil))
 
-  (transact-kv [this txs]
+  (transact-kv [this txs] (.transact-kv this nil txs))
+  (transact-kv [this dbi-name txs]
+    (.transact-kv this dbi-name txs :data :data))
+  (transact-kv [this dbi-name txs k-type]
+    (.transact-kv this dbi-name txs k-type :data))
+  (transact-kv [this dbi-name txs k-type v-type]
     (assert (not closed?) "LMDB env is closed.")
     (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
-            ^Txn txn  (if one-shot? (Txn/create env) (.-txn rtx))]
+^DBI dbi  (when dbi-name
+                        (or (.get dbis dbi-name)
+                            (raise dbi-name " is not open" {})))]
         (try
-          (transact* txs dbis txn)
-          (when one-shot? (.commit txn))
+(if one-shot? 
+  (with-open [txn (Txn/create env)]
+    (if dbi
+                (transact1* txs dbi txn k-type v-type)
+                (transact* txs dbis txn))
+    (.commit txn))
+  (let [txn (.-txn rtx)]
+    (if dbi
+                (transact1* txs dbi txn k-type v-type)
+                (transact* txs dbis txn))))
           :transacted
           (catch Lib$MapFullException _
-            (.close txn)
+            (when-not one-shot? (.close ^Txn (.-txn rtx)))
             (let [^Info info (Info/create env)]
               (.setMapSize env (* ^long c/+buffer-grow-factor+
                                   (.me_mapsize ^Lib$MDB_envinfo (.get info))))
               (.close info))
             (if one-shot?
-              (.transact-kv this txs)
+              (.transact-kv this dbi-name txs k-type v-type)
               (do (reset-write-txn this)
-                  (raise "DB needs resize" {:resized true}))))
+                  (raise "DB resized" {:resized true}))))
           (catch Exception e
-            (when one-shot? (.close txn))
-            (raise "Fail to transact to LMDB: " (ex-message e) {}))))))
+            (raise "Fail to transact to LMDB: " e {}))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))
@@ -942,7 +970,7 @@
                             temp?
                             opts
                             (ConcurrentLinkedQueue.)
-                            (ConcurrentHashMap.)
+                            (UnifiedMap.)
                             false
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create 0)
@@ -954,5 +982,4 @@
                             false)]
        (when temp? (u/delete-on-exit file))
        lmdb)
-     (catch Exception e
-       (raise "Fail to open database: " e {:dir dir})))))
+     (catch Exception e (raise "Fail to open database: " e {:dir dir})))))

@@ -18,9 +18,9 @@
    [java.lang AutoCloseable]
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator UUID]
+   [java.nio ByteBuffer BufferOverflowException]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
-   [java.nio ByteBuffer BufferOverflowException]
    [clojure.lang IPersistentVector MapEntry]
    [datalevin.spill SpillableVector]))
 
@@ -160,20 +160,12 @@
     (try
       (b/put-bf vb x t)
       (catch BufferOverflowException _
-        #_(locking curs
-            (loop [^Iterator iter (.iterator curs)]
-              (when (.hasNext iter)
-                (.close ^Cursor (.next iter))
-                (.remove iter)
-                (recur iter))))
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
-          (b/put-buffer vb x t)
-          (.flip vb)))
+          (b/put-bf vb xt)))
       (catch Exception e
         (raise "Error putting r/w value buffer of "
-               (.dbi-name this) ": " e
-               {:value x :type t :dbi (.dbi-name this)}))))
+               (.dbi-name this) ": " e {:value x :type t}))))
 
   IDB
   (dbi [_] db)
@@ -224,61 +216,59 @@
 
   Iterable
   (iterator [_]
-    (let [[forward-key? include-start-key? include-stop-key?
+    (let [[forward? include-start? include-stop?  
            ^ByteBuffer sk ^ByteBuffer ek] ctx
 
           started? (volatile! false)
-          k        (.key cur)
-          v        (.val cur)]
-      (letfn [(init-key []
+          ^ByteBuffer k (.key cur)
+          ^ByteBuffer v (.val cur)]
+      (letfn [(init []
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
-                    (if include-start-key?
-                      (key-continue?)
+                    (if include-start?
+                      (continue?)
                       (if (zero? (b/compare-buffer k sk))
-                        (check-key SeekOp/MDB_NEXT_NODUP)
-                        (key-continue?)))
+                        (check SeekOp/MDB_NEXT_NODUP)
+                        (continue?)))
                     false)
-                  (check-key SeekOp/MDB_FIRST)))
-              (init-key-back []
+                  (check SeekOp/MDB_FIRST)))
+              (init-back []
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
-                    (if include-start-key?
+                    (if include-start?
                       (if (zero? (b/compare-buffer k sk))
-                        (key-continue-back?)
-                        (check-key-back SeekOp/MDB_PREV_NODUP))
-                      (check-key-back SeekOp/MDB_PREV_NODUP))
-                    (check-key-back SeekOp/MDB_LAST))
-                  (check-key-back SeekOp/MDB_LAST)))
-              (key-continue? []
+                        (continue-back?)
+                        (check-back SeekOp/MDB_PREV_NODUP))
+                      (check-back SeekOp/MDB_PREV_NODUP))
+                    (check-back SeekOp/MDB_LAST))
+                  (check-back SeekOp/MDB_LAST)))
+              (continue? []
                 (if ek
                   (let [r (b/compare-buffer k ek)]
                     (if (= r 0)
-                      include-stop-key?
+                      include-stop?
                       (if (> r 0) false true)))
                   true))
-              (key-continue-back? []
+              (continue-back? []
                 (if ek
                   (let [r (b/compare-buffer k ek)]
                     (if (= r 0)
-                      include-stop-key?
+                      include-stop?
                       (if (> r 0) true false)))
                   true))
-              (check-key [op]
-                (if (.seek cur op) (key-continue?) false))
-              (check-key-back [op]
-                (if (.seek cur op) (key-continue-back?) false))
-              (advance-key []
-                (if forward-key?
-                  (check-key SeekOp/MDB_NEXT_NODUP)
-                  (check-key-back SeekOp/MDB_PREV_NODUP)))
+              (check [op] (if (.seek cur op) (continue?) false))
+              (check-back [op] (if (.seek cur op) (continue-back?) false))
+              (advance []
+                (if forward?
+                  (check SeekOp/MDB_NEXT_NODUP)
+                  (check-back SeekOp/MDB_PREV_NODUP)))
               (init-k []
                 (vreset! started? true)
-                (if forward-key? (init-key) (init-key-back)))]
+                (if forward? (init) (init-back)))]
         (reify
           Iterator
           (hasNext [_]
-            (if (not @started?) (init-k) (advance-key)))
+            (if (not @started?) (init-k) (advance)))
           (next [_] (MapEntry. k v)))))))
 
 (deftype ListIterable [^DBI db
@@ -401,10 +391,6 @@
               (init-kv)
               (if forward-val? (advance-val) (advance-val-back))))
           (next [_] (MapEntry. k v)))))))
-
-(defn- up-db-size [^Env env]
-  (.setMapSize env (* ^long c/+buffer-grow-factor+
-                      ^long (-> env .info .mapSize))))
 
 (defn- transact1*
   [txs ^DBI dbi txn kt vt]
@@ -702,15 +688,14 @@
       (vreset! write-txn wtxn)
       nil))
 
-  (transact-kv [this txs]
-    (.transact-kv this nil txs))
+  (transact-kv [this txs] (.transact-kv this nil txs))
   (transact-kv [this dbi-name txs]
     (.transact-kv this dbi-name txs :data :data))
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [this dbi-name txs k-type v-type]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
-    (locking  write-txn
+    (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
             ^DBI dbi  (when dbi-name
@@ -730,7 +715,8 @@
           :transacted
           (catch Env$MapFullException _
             (when-not one-shot? (.close ^Txn (.-txn rtx)))
-            (up-db-size env)
+            (.setMapSize env (* ^long c/+buffer-grow-factor+
+                                ^long (-> env .info .mapSize)))
             (if one-shot?
               (.transact-kv this dbi-name txs k-type v-type)
               (do (reset-write-txn this)
@@ -834,6 +820,13 @@
   (del-list-items [this dbi-name k vs kt vt]
     (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
 
+  (get-list [this dbi-name k kt vt]
+    (when k
+      (let [lmdb this]
+        (scan/scan
+          (get-list* this rtx cur k kt vt)
+          (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
+
   (visit-list [this dbi-name visitor k kt]
     (when k
       (let [lmdb this]
@@ -857,13 +850,6 @@
           (raise "Fail to test if an item is in list: "
                  e {:dbi dbi-name :k k :v v})))
       false))
-
-  (get-list [this dbi-name k kt vt]
-    (when k
-      (let [lmdb this]
-        (scan/scan
-          (get-list* this rtx cur k kt vt)
-          (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (list-range [this dbi-name k-range kt v-range vt]
     (scan/list-range this dbi-name k-range kt v-range vt))

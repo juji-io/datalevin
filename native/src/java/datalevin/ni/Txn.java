@@ -74,7 +74,6 @@ public class Txn {
 
     public void commit() {
         Lib.checkRc(Lib.mdb_txn_commit(get()));
-        UnmanagedMemory.free(ptr);
     }
 
     public boolean isReadOnly() {
