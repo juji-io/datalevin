@@ -65,7 +65,6 @@
                   :in $ ?i ?j
                   :where [?e :i*j ?i*j] [?e :i ?i] [?e :j ?j]]
         trials  (atom 0)
-        res     (repeat 5 (atom nil))
         futures (mapv (fn [^long i]
                         (future
                           (dotimes [j 100]

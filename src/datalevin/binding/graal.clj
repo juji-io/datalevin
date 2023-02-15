@@ -110,8 +110,8 @@
     (put-bufval stop-kp k2 kt)
     (put-bufval start-vp v1 vt)
     (put-bufval stop-vp v2 vt)
-    (into (l/range-table k-range-type k1 k2 start-kp stop-kp)
-          (l/range-table v-range-type v1 v2 start-vp stop-vp)))
+    [(l/range-table k-range-type k1 k2 start-kp stop-kp)
+     (l/range-table v-range-type v1 v2 start-vp stop-vp)])
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
@@ -290,10 +290,10 @@
 
   Iterable
   (iterator [_]
-    (let [[forward-key? include-start-key? include-stop-key?
-           ^BufVal sk ^BufVal ek
-           forward-val? include-start-val? include-stop-val?
-           ^BufVal sv ^BufVal ev] ctx
+    (let [[[forward-key? include-start-key? include-stop-key?
+            ^BufVal sk ^BufVal ek]
+           [forward-val? include-start-val? include-stop-val?
+            ^BufVal sv ^BufVal ev]] ctx
 
           key-ended? (volatile! false)
           started?   (volatile! false)
@@ -881,8 +881,14 @@
   (list-range-count [this dbi-name k-range kt v-range vt]
     (scan/list-range-count this dbi-name k-range kt v-range vt))
 
+  (list-range-first [this dbi-name k-range kt v-range vt]
+    (scan/list-range-first this dbi-name k-range kt v-range vt))
+
   (list-range-filter [this dbi-name pred k-range kt v-range vt]
     (scan/list-range-filter this dbi-name pred k-range kt v-range vt))
+
+  (list-range-some [this dbi-name pred k-range kt v-range vt]
+    (scan/list-range-some this dbi-name pred k-range kt v-range vt))
 
   (list-range-filter-count [this dbi-name pred k-range kt v-range vt]
     (scan/list-range-filter-count this dbi-name pred k-range kt v-range vt))

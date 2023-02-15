@@ -6,7 +6,8 @@
    [datalevin.constants :as c]
    [datalevin.util :as u]
    [datalevin.lmdb :as l]
-   [taoensso.nippy :as nippy])
+   [taoensso.nippy :as nippy]
+   [clojure.set :as set])
   (:import
    [java.util Iterator List UUID NoSuchElementException Map]
    [java.io DataInput DataOutput]
@@ -82,11 +83,13 @@
   IPersistentVector
 
   (assocN [this i v]
-    (let [mc (memory-count this)]
+    (let [^long mc (memory-count this)
+          ^long tc @total]
       (cond
-        (= i @total)            (.cons this v)
-        (or (< 0 i mc) (= i 0)) (.add memory i v)
-        :else                   (throw (IndexOutOfBoundsException.))))
+        (= i tc) (.cons this v)
+        (< i mc) (.add memory i v)
+        (< i tc) (l/transact-kv @disk [[:put c/tmp-dbi i v :id]])
+        :else    (throw (IndexOutOfBoundsException.))))
     this)
 
   (cons [this v]
@@ -107,24 +110,26 @@
 
   (containsKey [this k]
     (if (integer? k)
-      (or (if (get this k) true false)
-          (if @disk
-            (if (l/get-value @disk c/tmp-dbi k :id) true false)
-            false))
+      (if (some? (get this k))
+        true
+        (if @disk
+          (some? (l/get-value @disk c/tmp-dbi k :id))
+          false))
       false))
 
   (entryAt [_ k]
     (when (integer? k)
-      (if-let [v (.get memory k)]
+      (if-some [v (.get memory k)]
         (MapEntry. k v)
-        (when-let [v (l/get-value @disk c/tmp-dbi k :id)]
+        (when-some [v (l/get-value @disk c/tmp-dbi k :id)]
           (MapEntry. k v)))))
 
   (valAt [_ k nf]
     (if (integer? k)
-      (or (when (< ^long k (.size memory)) (.get memory k))
-          (when @disk (l/get-value @disk c/tmp-dbi k :id))
-          nf)
+      (cond
+        (< ^long k (.size memory)) (.get memory k)
+        @disk                      (l/get-value @disk c/tmp-dbi k :id)
+        :else                      nf)
       nf))
   (valAt [this k]
     (.valAt this k nil))
@@ -272,13 +277,13 @@
         :or   {spill-threshold c/+default-spill-threshold+
                spill-root      c/+default-spill-root+}}]
    (when (empty? @listeners) (memory-updater))
-   (let [svec (SpillableVector. spill-threshold
-                                spill-root
-                                (volatile! nil)
-                                (FastList.)
-                                (volatile! nil)
-                                (volatile! 0))]
-     (doseq [v vs] (conj svec v))
+   (let [^SpillableVector svec (SpillableVector. spill-threshold
+                                                 spill-root
+                                                 (volatile! nil)
+                                                 (FastList.)
+                                                 (volatile! nil)
+                                                 (volatile! 0))]
+     (doseq [v vs] (.cons svec v))
      svec)))
 
 (nippy/extend-freeze
@@ -291,9 +296,9 @@
 (nippy/extend-thaw
   :spillable-vec
   [^DataInput in]
-  (let [n  (.readLong in)
-        vs (new-spillable-vector)]
-    (dotimes [_ n] (conj vs (nippy/thaw-from-in! in)))
+  (let [n                   (.readLong in)
+        ^SpillableVector vs (new-spillable-vector)]
+    (dotimes [_ n] (.cons vs (nippy/thaw-from-in! in)))
     vs))
 
 (deftype SpillableIntObjMap [^long spill-threshold
@@ -331,21 +336,27 @@
                @disk (+ ^long (l/entries @disk c/tmp-dbi))))
 
   (containsKey [_ k]
-    (if (or (.containsKey memory (int k))
-            (and @disk (l/get-value @disk c/tmp-dbi k :int)))
-      true false))
+    (if (.containsKey memory (int k))
+      true
+      (if @disk
+        (some? (l/get-value @disk c/tmp-dbi k :int))
+        false)))
 
   (entryAt [_ k]
-    (if-let [v (.get memory k)]
+    (if-some [v (.get memory k)]
       (MapEntry. k v)
-      (when-let [v (l/get-value @disk c/tmp-dbi k :int)]
+      (when-some [v (l/get-value @disk c/tmp-dbi k :int)]
         (MapEntry. k v))))
 
   (valAt [_ k nf]
     (if (integer? k)
-      (or (when-not (.isEmpty memory) (.get memory k))
-          (when @disk (l/get-value @disk c/tmp-dbi k :int))
-          nf)
+      (if-some [v (.get memory k)]
+        v
+        (if @disk
+          (if-some [v (l/get-value @disk c/tmp-dbi k :int)]
+            v
+            nf)
+          nf))
       nf))
   (valAt [this k]
     (.valAt this k nil))
@@ -359,6 +370,10 @@
 
   MapEquivalence
 
+  (keySet [_]
+    (set/union (set (.toArray (.keySet memory)))
+               (when @disk (set (l/key-range @disk c/tmp-dbi [:all] :int)))))
+
   (equiv [this other]
     (cond
       (identical? this other) true
@@ -367,11 +382,8 @@
       (if (not= (count this) (count other))
         false
         (if (every? true?
-                    (map #(Util/equiv
-                            %
-                            (.entryAt ^SpillableIntObjMap other
-                                      (.key ^MapEntry %)))
-                         this))
+                    (map #(Util/equiv (get this %) (get other %))
+                         (.keySet this)))
           true
           false))
 
@@ -448,6 +460,7 @@
   ([m {:keys [spill-threshold spill-root]
        :or   {spill-threshold c/+default-spill-threshold+
               spill-root      c/+default-spill-root+}}]
+   (when (empty? @listeners) (memory-updater))
    (let [smap (SpillableIntObjMap. spill-threshold
                                    spill-root
                                    (volatile! nil)

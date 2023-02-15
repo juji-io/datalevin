@@ -28,6 +28,9 @@
   file handle exhaustion
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
 
+### Fixed
+- [KV] spillable results handle `false` value correctly
+
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate.

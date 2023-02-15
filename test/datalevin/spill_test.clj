@@ -3,7 +3,11 @@
    [datalevin.lmdb :as l]
    [datalevin.spill :as sp]
    [datalevin.util :as u]
-   [clojure.test :refer [deftest testing is]])
+   [taoensso.nippy :as nippy]
+   [clojure.test :refer [deftest testing is]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop])
   (:import
    [datalevin.spill SpillableVector SpillableIntObjMap]))
 
@@ -265,6 +269,7 @@
     (vreset! sp/memory-pressure 99)
 
     (assoc m 1 1)
+    (is (= #{0 1} (.keySet m) ))
     (is (= {1 1 0 0} m))
     (is (= 1 (get m 1)))
     (is (= 1 (m 1)))
@@ -336,3 +341,25 @@
     (is (not (contains? m 0)))
 
     (vreset! sp/memory-pressure 0)))
+
+(test/defspec spillable-vector-nippy-test
+  100
+  (prop/for-all
+    [k (gen/vector gen/any-equatable)]
+    (let [vs (sp/new-spillable-vector k)]
+      (vreset! sp/memory-pressure 0)
+      (= vs (nippy/fast-thaw (nippy/fast-freeze vs)))
+      (vreset! sp/memory-pressure 99)
+      (= vs (nippy/fast-thaw (nippy/fast-freeze vs))))))
+
+(deftest test-false
+  (let [^SpillableVector vs (sp/new-spillable-vector)]
+    (conj vs false)
+    (vreset! sp/memory-pressure 0)
+    (is (= false (vs 0)))
+    (= vs (nippy/fast-thaw (nippy/fast-freeze vs))))
+  (let [^SpillableVector vs (sp/new-spillable-vector)]
+    (vreset! sp/memory-pressure 99)
+    (conj vs false)
+    (is (= false (vs 0)))
+    (= vs (nippy/fast-thaw (nippy/fast-freeze vs)))))

@@ -160,12 +160,12 @@
     (try
       (b/put-bf vb x t)
       (catch BufferOverflowException _
-        (locking curs
-          (loop [^Iterator iter (.iterator curs)]
-            (when (.hasNext iter)
-              (.close ^Cursor (.next iter))
-              (.remove iter)
-              (recur iter))))
+        #_(locking curs
+            (loop [^Iterator iter (.iterator curs)]
+              (when (.hasNext iter)
+                (.close ^Cursor (.next iter))
+                (.remove iter)
+                (recur iter))))
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
           (b/put-buffer vb x t)
@@ -183,10 +183,7 @@
       (.put db txn kb vb (kv-flags :put flags))
       (.put db txn kb vb (kv-flags :put c/default-put-flags))))
   (put [this txn] (.put this txn nil))
-  (del [_ txn all?]
-    (if all?
-      (.delete db txn kb)
-      (.delete db txn kb vb)))
+  (del [_ txn all?] (if all? (.delete db txn kb) (.delete db txn kb vb)))
   (del [this txn] (.del this txn true))
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
@@ -213,7 +210,7 @@
               cur))
           (.openCursor db txn))))
   (close-cursor [_ cur] (.close ^Cursor cur))
-  (return-cursor [_ cur] (locking curs (.add curs cur))))
+  (return-cursor [_ cur] (.add curs cur)))
 
 (deftype KeyIterable [^DBI db
                       ^Cursor cur

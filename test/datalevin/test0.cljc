@@ -4,6 +4,7 @@
    [clojure.test :as t :refer [is are deftest testing]]
    datalevin.lmdb-test
    datalevin.scan-test
+   datalevin.storage-test
    datalevin.search-test
    datalevin.main-test
    datalevin.core-test)
@@ -14,6 +15,7 @@
         (t/run-tests
           'datalevin.lmdb-test
           'datalevin.scan-test
+          'datalevin.storage-test
           'datalevin.search-test
           'datalevin.main-test
           'datalevin.core-test
