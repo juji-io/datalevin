@@ -175,20 +175,20 @@ Using this benchmark, Datalevin before the rewrite was already the fastest, now
 we show that this benchmark is too easy, as it involves only one encla, so it
 does not even exercise the new query planner.
 
-datascript, datahike, asami, xtdb, datalevin 0.6, datalevin 0.7
+datascript, datahike, asami, xtdb, datalevin 0.9
 
 ### WatDiv
 
 This is a standard benchmark for RDF stores [1].
 
-neo4j, xtdb, jena, rdf4j, datalevin
+cozodb, typedb, neo4j, xtdb, jena, rdf4j, datalevin
 
 ### JOB
 
 We compare with a RDBMS using JOB benchmark [5], which is based on real world
 data and designed to stress the query optimizer.
 
-postgresql, datalevin
+sqlite, postgresql, datalevin
 
 ## Remark
 
