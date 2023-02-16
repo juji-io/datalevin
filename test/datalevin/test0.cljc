@@ -5,6 +5,8 @@
    datalevin.lmdb-test
    datalevin.scan-test
    datalevin.storage-test
+   datalevin.test.transact
+   datalevin.remote-withtxn-test
    datalevin.search-test
    datalevin.main-test
    datalevin.core-test)
@@ -16,11 +18,12 @@
           'datalevin.lmdb-test
           'datalevin.scan-test
           'datalevin.storage-test
+          'datalevin.test.transact
+          'datalevin.remote-withtxn-test
           'datalevin.search-test
           'datalevin.main-test
-          'datalevin.core-test
-          )]
-    (System/exit (if (zero? (+ fail error)) 0 1))))
+          'datalevin.core-test)]
+    (System/exit (if (zero? ^long (+ ^long fail ^long error)) 0 1))))
 
 (defn -main [& _args]
   (println "clojure version" (clojure-version))

@@ -162,7 +162,7 @@
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (b/allocate-buffer size))
-          (b/put-bf vb xt)))
+          (b/put-bf vb x t)))
       (catch Exception e
         (raise "Error putting r/w value buffer of "
                (.dbi-name this) ": " e {:value x :type t}))))
@@ -216,10 +216,10 @@
 
   Iterable
   (iterator [_]
-    (let [[forward? include-start? include-stop?  
+    (let [[forward? include-start? include-stop?
            ^ByteBuffer sk ^ByteBuffer ek] ctx
 
-          started? (volatile! false)
+          started?      (volatile! false)
           ^ByteBuffer k (.key cur)
           ^ByteBuffer v (.val cur)]
       (letfn [(init []
@@ -721,8 +721,7 @@
               (.transact-kv this dbi-name txs k-type v-type)
               (do (reset-write-txn this)
                   (raise "DB resized" {:resized true}))))
-          (catch Exception e
-            (raise "Fail to transact to LMDB: " e {}))))))
+          (catch Exception e (raise "Fail to transact to LMDB: " e {}))))))
 
   (get-value [this dbi-name k]
     (.get-value this dbi-name k :data :data true))

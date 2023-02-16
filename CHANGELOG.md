@@ -34,6 +34,7 @@
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate.
+- [Datalog] More robust handling of multiple threads concurrent transactions
 
 ## 0.8.5 (2023-02-13)
 ### Added

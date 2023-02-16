@@ -8,10 +8,8 @@
    datalevin.search-utils-test
    datalevin.spill-test
    datalevin.bits-test
-   datalevin.storage-test
    datalevin.protocol-test
    datalevin.test.core
-   datalevin.test.transact
    datalevin.test.components
    datalevin.test.conn
    datalevin.test.db
@@ -49,7 +47,6 @@
    datalevin.remote-kv-test
    datalevin.remote-test
    datalevin.remote-dl-test
-   datalevin.remote-withtxn-test
    datalevin.remote-entity-test
    datalevin.remote-transact-test)
   (:gen-class))
@@ -60,7 +57,6 @@
           'datalevin.spill-test
           'datalevin.search-utils-test
           'datalevin.bits-test
-          'datalevin.storage-test
           'datalevin.protocol-test
           'datalevin.interpret-test
           'datalevin.test.core
@@ -89,7 +85,6 @@
           'datalevin.test.query-or
           'datalevin.test.query-pull
           'datalevin.test.query-rules
-          'datalevin.test.transact
           'datalevin.test.tuples
           'datalevin.test.validation
           'datalevin.test.upsert
@@ -102,7 +97,6 @@
           'datalevin.remote-sutil-test
           'datalevin.remote-test
           'datalevin.remote-dl-test
-          'datalevin.remote-withtxn-test
           'datalevin.remote-entity-test
           'datalevin.remote-transact-test)]
     (System/exit (if (zero? (+ ^long fail ^long error)) 0 1))))

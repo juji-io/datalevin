@@ -69,8 +69,8 @@
                         (future
                           (dotimes [j 100]
                             (d/transact! conn [{:i+j (+ i j) :i i :j j}])
-                            (is (= (+ i j) (d/q q+ (d/db conn) i j)))
                             (d/with-transaction [cn conn]
+                              (is (= (+ i j) (d/q q+ (d/db cn) i j)))
                               (swap! trials u/long-inc)
                               (d/transact! cn [{:i*j (* i j) :i i :j j}])
                               (is (= (* i j) (d/q q* (d/db cn) i j)))))))
