@@ -546,7 +546,6 @@
                                    flags          c/default-dbi-flags
                                    dupsort?       false
                                    validate-data? false}}]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
@@ -571,7 +570,6 @@
                                     :flags    c/read-dbi-flags}))))
 
   (clear-dbi [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (let [^DBI dbi (.get-dbi this dbi-name )]
         (with-open [txn (.txnWrite env)]
@@ -581,7 +579,6 @@
         (raise "Fail to clear DBI: " dbi-name " " e {}))))
 
   (drop-dbi [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (let [^DBI dbi (.get-dbi this dbi-name)]
         (with-open [txn (.txnWrite env)]
@@ -593,7 +590,6 @@
         (raise "Fail to drop DBI: " dbi-name e {}))))
 
   (list-dbis [this]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (mapv b/text-ba->str (.getDbiNames env))
       (catch Exception e
@@ -602,7 +598,6 @@
   (copy [this dest]
     (.copy this dest false))
   (copy [this dest compact?]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
         (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
@@ -632,13 +627,11 @@
     (.add pool rtx))
 
   (stat [this]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (stat-map (.stat env))
       (catch Exception e
         (raise "Fail to get statistics: " e {}))))
   (stat [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (if dbi-name
       (let [^Rtx rtx (.get-rtx this)]
         (try
@@ -652,7 +645,6 @@
       (l/stat this)))
 
   (entries [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (let [^DBI dbi (.get-dbi this dbi-name false)
           ^Rtx rtx (.get-rtx this)]
       (try
@@ -662,7 +654,6 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (try
       (reset-write-txn this)
       (.mark-write this)
@@ -694,7 +685,6 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [this dbi-name txs k-type v-type]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
     (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
