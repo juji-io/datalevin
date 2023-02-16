@@ -9,15 +9,14 @@
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
                                  IList ILMDB IWriting]])
   (:import
-  [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
+   [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
-    Lib$MDB_stat Lib$MapFullException] [org.eclipse.collections.impl.map.mutable UnifiedMap]
+    Lib$MDB_stat Lib$MapFullException]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [java.lang AutoCloseable]
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator]
    [java.nio BufferOverflowException]
-   [clojure.lang IPersistentVector MapEntry]
+   [clojure.lang IPersistentVector]
    [datalevin.spill SpillableVector]))
 
 (deftype KV [^BufVal kp ^BufVal vp]
@@ -189,20 +188,18 @@
       (Lib/checkRc rc)
       (when-not (= rc (Lib/MDB_NOTFOUND))
         (.outBuf vp))))
-  (iterate-key [this rtx [range-type k1 k2] k-type]
-    (let [cur (.get-cursor this rtx)
-          ctx (l/range-info rtx range-type k1 k2 k-type)]
+  (iterate-key [this rtx cur [range-type k1 k2] k-type]
+    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeyIterable this cur rtx ctx)))
-  (iterate-list [this rtx [k-range-type k1 k2] k-type
+  (iterate-list [this rtx cur [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
-    (let [cur (.get-cursor this rtx)
-          ctx (l/list-range-info rtx k-range-type k1 k2 k-type
+    (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (iterate-kv [this rtx k-range k-type v-type]
+  (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
-      (.iterate-list this rtx k-range k-type [:all] v-type)
-      (.iterate-key this rtx k-range k-type)))
+      (.iterate-list this rtx cur k-range k-type [:all] v-type)
+      (.iterate-key this rtx cur k-range k-type)))
   (get-cursor [_ rtx]
     (let [^Rtx rtx rtx
           ^Txn txn (.-txn rtx)]
@@ -218,12 +215,6 @@
                       ^Cursor cur
                       ^Rtx rtx
                       ctx]
-  AutoCloseable
-  (close [_]
-    (if (.isReadOnly ^Txn (.-txn rtx))
-      (.return-cursor db cur)
-      (.close cur)))
-
   Iterable
   (iterator [_]
     (let [[forward? include-start? include-stop?
@@ -285,12 +276,6 @@
                        ^Cursor cur
                        ^Rtx rtx
                        ctx]
-  AutoCloseable
-  (close [_]
-    (if (.isReadOnly ^Txn (.-txn rtx))
-      (.return-cursor db cur)
-      (.close cur)))
-
   Iterable
   (iterator [_]
     (let [[[forward-key? include-start-key? include-stop-key?
@@ -606,34 +591,32 @@
         (.commit txn)
         (.remove dbis dbi-name)
         nil)
-      (catch Exception e
-        (raise "Fail to drop DBI: " dbi-name e {}))))
+      (catch Exception e (raise "Fail to drop DBI: " dbi-name e {}))))
 
   (list-dbis [this]
-    (let [^Dbi main (Dbi/create env 0)
-          ^DBI dbi  (->DBI main
-                           (ConcurrentLinkedQueue.)
-                           (BufVal/create c/+max-key-size+)
-                           (BufVal/create c/+max-key-size+)
-                           false
-                           false)
-          ^Rtx rtx  (.get-rtx this)]
+    (let [^Dbi main   (Dbi/create env 0)
+          ^DBI dbi    (->DBI main
+                             (ConcurrentLinkedQueue.)
+                             (BufVal/create c/+max-key-size+)
+                             (BufVal/create c/+max-key-size+)
+                             false
+                             false)
+          ^Rtx rtx    (.get-rtx this)
+          ^Cursor cur (.get-cursor dbi rtx)]
       (try
-        (with-open [^Cursor cursor (.get-cursor dbi rtx)]
-          (with-open [^AutoCloseable iterable
-                      (->KeyIterable dbi cursor rtx
-                                     (l/range-info rtx :all nil nil nil))]
-            (loop [^Iterator iter (.iterator ^Iterable iterable)
-                   holder         (transient [])]
-              (if (.hasNext iter)
-                (let [kv      (.next iter)
-                      holder' (conj! holder
-                                     (-> kv l/k b/get-bytes b/text-ba->str))]
-                  (recur iter holder'))
-                (persistent! holder)))))
-        (catch Exception e
-          (raise "Fail to list DBIs: " e {}))
-        (finally (.return-rtx this rtx)))))
+        (let [iterable (->KeyIterable dbi cur rtx
+                                      (l/range-info rtx :all nil nil nil))]
+          (loop [^Iterator iter (.iterator ^Iterable iterable)
+                 holder         (transient [])]
+            (if (.hasNext iter)
+              (let [kv      (.next iter)
+                    holder' (conj! holder
+                                   (-> kv l/k b/get-bytes b/text-ba->str))]
+                (recur iter holder'))
+              (persistent! holder))))
+        (catch Exception e (raise "Fail to list DBIs: " e {}))
+        (finally (.return-cursor dbi cur)
+                 (.return-rtx this rtx)))))
 
   (copy [this dest]
     (.copy this dest false))

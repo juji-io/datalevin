@@ -28,11 +28,11 @@
     "Delete the key given in `put-key` of dbi")
   (get-kv [this rtx]
     "Get value of the key given in `put-key` of rtx, return a byte buffer")
-  (iterate-kv [this rtx k-range k-type v-type]
+  (iterate-kv [this rtx cur k-range k-type v-type]
     "Return an Iterable of key-values, given the key range")
-  (iterate-key [this rtx k-range k-type]
+  (iterate-key [this rtx cur k-range k-type]
     "Return an Iterable of keys only, given the key range")
-  (iterate-list [this rtx k-range k-type v-range v-type]
+  (iterate-list [this rtx cur k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
      applicable only to list dbi")
   (get-cursor [this rtx] "Get a reusable read-only cursor")

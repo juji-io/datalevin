@@ -15,7 +15,6 @@
     PutFlags Txn TxnFlags Txn$BadReaderLockException CopyFlags
     Cursor CursorIterable$KeyVal GetOp SeekOp]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [java.lang AutoCloseable]
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator UUID]
    [java.nio ByteBuffer BufferOverflowException]
@@ -180,20 +179,18 @@
   (get-kv [_ rtx]
     (let [^ByteBuffer kb (.-kb ^Rtx rtx)]
       (.get db (.-txn ^Rtx rtx) kb)))
-  (iterate-key [this rtx [range-type k1 k2] k-type]
-    (let [cur (.get-cursor this rtx)
-          ctx (l/range-info rtx range-type k1 k2 k-type)]
+  (iterate-key [this rtx cur [range-type k1 k2] k-type]
+    (let [ctx (l/range-info rtx range-type k1 k2 k-type)]
       (->KeyIterable this cur rtx ctx)))
-  (iterate-list [this rtx [k-range-type k1 k2] k-type
+  (iterate-list [this rtx cur [k-range-type k1 k2] k-type
                  [v-range-type v1 v2] v-type]
-    (let [cur (.get-cursor this rtx)
-          ctx (l/list-range-info rtx k-range-type k1 k2 k-type
+    (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (iterate-kv [this rtx k-range k-type v-type]
+  (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
-      (.iterate-list this rtx k-range k-type [:all] v-type)
-      (.iterate-key this rtx k-range k-type)))
+      (.iterate-list this rtx cur k-range k-type [:all] v-type)
+      (.iterate-key this rtx cur k-range k-type)))
   (get-cursor [_ rtx]
     (let [txn ^Txn (.-txn ^Rtx rtx)]
       (or (when (.isReadOnly txn)
@@ -208,12 +205,6 @@
                       ^Cursor cur
                       ^Rtx rtx
                       ctx]
-  AutoCloseable
-  (close [_]
-    (if (.isReadOnly ^Txn (.-txn rtx))
-      (.return-cursor db cur)
-      (.close cur)))
-
   Iterable
   (iterator [_]
     (let [[forward? include-start? include-stop?
@@ -275,12 +266,6 @@
                        ^Cursor cur
                        ^Rtx rtx
                        ctx]
-  AutoCloseable
-  (close [_]
-    (if (.isReadOnly ^Txn (.-txn rtx))
-      (.return-cursor db cur)
-      (.close cur)))
-
   Iterable
   (iterator [_]
     (let [[[forward-key? include-start-key? include-stop-key?
@@ -586,14 +571,12 @@
           (.commit txn))
         (.remove dbis dbi-name)
         nil)
-      (catch Exception e
-        (raise "Fail to drop DBI: " dbi-name e {}))))
+      (catch Exception e (raise "Fail to drop DBI: " dbi-name e {}))))
 
   (list-dbis [this]
     (try
       (mapv b/text-ba->str (.getDbiNames env))
-      (catch Exception e
-        (raise "Fail to list DBIs: " e {}))))
+      (catch Exception e (raise "Fail to list DBIs: " e {}))))
 
   (copy [this dest]
     (.copy this dest false))
