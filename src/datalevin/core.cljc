@@ -1551,6 +1551,15 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      supported for both `k-range` and `v-range`."}
   list-range-count l/list-range-count)
 
+(def ^{:arglists '([db list-name k-range k-type v-range v-type])
+       :doc      "Return the first key-values in the specified value range
+     and the specified key range of a sub-database opened by
+     [[open-list-dbi]].
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-first l/list-range-first)
+
 (def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
        :doc      "Return a seq of key-values in the specified value range
      and the specified key range of a sub-database opened by
@@ -1559,6 +1568,24 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
   list-range-filter l/list-range-filter)
+
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
+       :doc      "Return the number of key-values in the specified value range
+     and the specified key range of a sub-database opened by
+     [[open-list-dbi]], filtered by a predicate `pred`.
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-filter-count l/list-range-filter-count)
+
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
+       :doc      "Return the first key-values in the specified value range
+     and the specified key range of a sub-database opened by
+     [[open-list-dbi]], filtered by a predicate `pred`.
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-some l/list-range-some)
 
 (def ^{:arglists '([db list-name visitor k-range k-type v-range v-type])
        :doc      "Visit a list range, presumably for side effects, in a

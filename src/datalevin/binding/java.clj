@@ -524,13 +524,13 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?
-                                   dupsort?]
-                            :or   {key-size       c/+max-key-size+
-                                   val-size       c/+default-val-size+
-                                   flags          c/default-dbi-flags
-                                   dupsort?       false
-                                   validate-data? false}}]
+  (open-dbi [_ dbi-name {:keys [key-size val-size flags validate-data?
+                                dupsort?]
+                         :or   {key-size       c/+max-key-size+
+                                val-size       c/+default-val-size+
+                                flags          c/default-dbi-flags
+                                dupsort?       false
+                                validate-data? false}}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
@@ -580,7 +580,7 @@
 
   (copy [this dest]
     (.copy this dest false))
-  (copy [this dest compact?]
+  (copy [_ dest compact?]
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
         (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
@@ -609,7 +609,7 @@
     (.reset ^Rtx rtx)
     (.add pool rtx))
 
-  (stat [this]
+  (stat [_]
     (try
       (stat-map (.stat env))
       (catch Exception e
@@ -643,7 +643,7 @@
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
-  (close-transact-kv [this]
+  (close-transact-kv [_]
     (try
       (if-let [^Rtx wtxn @write-txn]
         (when-let [^Txn txn (.-txn wtxn)]
@@ -656,7 +656,7 @@
       (catch Exception e
         (raise "Fail to commit read/write transaction in LMDB: " e {}))))
 
-  (abort-transact-kv [this]
+  (abort-transact-kv [_]
     (when-let [^Rtx wtxn @write-txn]
       (vreset! (.-aborted? wtxn) true)
       (vreset! write-txn wtxn)

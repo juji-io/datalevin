@@ -337,7 +337,15 @@
           wl (.-lmdb ^Store ws)]
       (d/abort-transact-kv wl))))
 
-(defn transact-kv [db txs] (when-let [d (get-kv db)] (d/transact-kv d txs)))
+(defn transact-kv
+  ([db txs]
+   (when-let [d (get-kv db)] (d/transact-kv d txs)))
+  ([db dbi-name txs]
+   (when-let [d (get-kv db)] (d/transact-kv d dbi-name txs)))
+  ([db dbi-name txs k-type]
+   (when-let [d (get-kv db)] (d/transact-kv d dbi-name txs k-type)))
+  ([db dbi-name txs k-type v-type]
+   (when-let [d (get-kv db)] (d/transact-kv d dbi-name txs k-type v-type))))
 
 (defn get-value
   ([db dbi-name k]
@@ -366,16 +374,24 @@
 (defn get-range
   ([db dbi-name k-range]
    (when-let [d (get-kv db)]
-     (into [](d/get-range d dbi-name k-range))))
+     (into [] (d/get-range d dbi-name k-range))))
   ([db dbi-name k-range k-type]
    (when-let [d (get-kv db)]
-     (into [](d/get-range d dbi-name k-range k-type))))
+     (into [] (d/get-range d dbi-name k-range k-type))))
   ([db dbi-name k-range k-type v-type]
    (when-let [d (get-kv db)]
      (into [] (d/get-range d dbi-name k-range k-type v-type))))
   ([db dbi-name k-range k-type v-type ignore-key?]
    (when-let [d (get-kv db)]
      (into [] (d/get-range d dbi-name k-range k-type v-type ignore-key?)))))
+
+(defn key-range
+  ([db dbi-name k-range]
+   (when-let [d (get-kv db)]
+     (into [] (d/key-range d dbi-name k-range))))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-kv db)]
+     (into [] (d/key-range d dbi-name k-range k-type)))))
 
 (defn range-count
   ([db dbi-name k-range]
@@ -408,77 +424,159 @@
      (into [] (d/range-filter d dbi-name pred k-range k-type v-type))))
   ([db dbi-name pred k-range k-type v-type ignore-key?]
    (when-let [d (get-kv db)]
-     (into [] (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?)))))
+     (into
+       []
+       (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?)))))
 
 (defn range-filter-count
   ([db dbi-name pred k-range]
    (when-let [d (get-kv db)] (d/range-count d dbi-name pred k-range)))
   ([db dbi-name pred k-range k-type]
-   (when-let [d (get-kv db)]
-     (d/range-count d dbi-name pred k-range k-type))))
+   (when-let [d (get-kv db)] (d/range-count d dbi-name pred k-range k-type))))
 
 (defn visit
   ([db dbi-name pred k-range]
    (when-let [d (get-kv db)] (d/visit d dbi-name pred k-range)))
   ([db dbi-name pred k-range k-type]
-   (when-let [d (get-kv db)]
-     (d/visit d dbi-name pred k-range k-type))))
+   (when-let [d (get-kv db)] (d/visit d dbi-name pred k-range k-type))))
+
+(defn open-list-dbi
+  ([db dbi-name]
+   (when-let [d (get-kv db)] (d/open-list-dbi d dbi-name) nil))
+  ([db dbi-name opts]
+   (when-let [d (get-kv db)] (d/open-list-dbi d dbi-name opts) nil)))
+
+(defn put-list-items
+  [db dbi-name k vs kt vt]
+  (when-let [d (get-kv db)] (d/put-list-items d dbi-name k vs kt vt) nil))
+
+(defn del-list-items
+  ([db dbi-name k kt]
+   (when-let [d (get-kv db)] (d/del-list-items d dbi-name k kt) nil))
+  ([db dbi-name k vs kt vt]
+   (when-let [d (get-kv db)] (d/del-list-items d dbi-name k vs kt vt) nil)))
+
+(defn get-list
+  [db dbi-name k kt vt]
+  (when-let [d (get-kv db)]
+    (when-let [res (d/get-list d dbi-name k kt vt)]
+      (into [] res))))
+
+(defn visit-list
+  [db dbi-name visitor k kt]
+  (when-let [d (get-kv db)] (d/visit-list d dbi-name visitor k kt)))
+
+(defn list-count
+  [db dbi-name k kt]
+  (when-let [d (get-kv db)] (d/list-count d dbi-name k kt)))
+
+(defn in-list?
+  [db dbi-name k v kt vt]
+  (when-let [d (get-kv db)] (d/in-list? d dbi-name k v kt vt)))
+
+(defn list-range
+  [db dbi-name k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (into [] (d/list-range d dbi-name k-range kt v-range vt))))
+
+(defn list-range-count
+  [db dbi-name k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (d/list-range-count d dbi-name k-range kt v-range vt)))
+
+(defn list-range-first
+  [db dbi-name k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (d/list-range-first d dbi-name k-range kt v-range vt)))
+
+(defn list-range-filter
+  [db dbi-name pred k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (into [] (d/list-range-filter d dbi-name pred k-range kt v-range vt))))
+
+(defn list-range-some
+  [db dbi-name pred k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (d/list-range-some d dbi-name pred k-range kt v-range vt)))
+
+(defn list-range-filter-count [this dbi-name pred k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (d/list-range-filter-count d dbi-name pred k-range kt v-range vt)))
+
+(defn visit-list-range [this dbi-name visitor k-range kt v-range vt]
+  (when-let [d (get-kv db)]
+    (d/visit-list-range d dbi-name visitor k-range kt v-range vt)))
 
 ;; pods
 
 (def ^:private exposed-vars
-  {'pod-fn             pod-fn
-   'entid              entid
-   'entity             entity
-   'touch              touch
-   'pull               pull
-   'pull-many          pull-many
-   'empty-db           empty-db
-   'db?                db?
-   'init-db            init-db
-   'close-db           close-db
-   'datoms             datoms
-   'seek-datoms        seek-datoms
-   'fulltext-datoms    fulltext-datoms
-   'rseek-datoms       rseek-datoms
-   'index-range        index-range
-   'conn?              conn?
-   'conn-from-db       conn-from-db
-   'create-conn        create-conn
-   'close              close
-   'closed?            closed?
-   'transact!          transact!
-   'db                 db
-   'schema             schema
-   'update-schema      update-schema
-   'get-conn           get-conn
-   'q                  q
-   'open-kv            open-kv
-   'close-kv           close-kv
-   'closed-kv?         closed-kv?
-   'dir                dir
-   'open-dbi           open-dbi
-   'clear-dbi          clear-dbi
-   'drop-dbi           drop-dbi
-   'list-dbis          list-dbis
-   'copy               copy
-   'stat               stat
-   'entries            entries
-   'open-transact-kv   open-transact-kv
-   'close-transact-kv  close-transact-kv
-   'abort-transact-kv  abort-transact-kv
-   'open-transact      open-transact
-   'close-transact     close-transact
-   'abort-transact     abort-transact
-   'transact-kv        transact-kv
-   'get-value          get-value
-   'get-first          get-first
-   'get-range          get-range
-   'range-count        range-count
-   'get-some           get-some
-   'range-filter       range-filter
-   'range-filter-count range-filter-count
-   'visit              visit
+  {'pod-fn                  pod-fn
+   'entid                   entid
+   'entity                  entity
+   'touch                   touch
+   'pull                    pull
+   'pull-many               pull-many
+   'empty-db                empty-db
+   'db?                     db?
+   'init-db                 init-db
+   'close-db                close-db
+   'datoms                  datoms
+   'seek-datoms             seek-datoms
+   'fulltext-datoms         fulltext-datoms
+   'rseek-datoms            rseek-datoms
+   'index-range             index-range
+   'conn?                   conn?
+   'conn-from-db            conn-from-db
+   'create-conn             create-conn
+   'close                   close
+   'closed?                 closed?
+   'transact!               transact!
+   'db                      db
+   'schema                  schema
+   'update-schema           update-schema
+   'get-conn                get-conn
+   'q                       q
+   'open-kv                 open-kv
+   'close-kv                close-kv
+   'closed-kv?              closed-kv?
+   'dir                     dir
+   'open-dbi                open-dbi
+   'clear-dbi               clear-dbi
+   'drop-dbi                drop-dbi
+   'list-dbis               list-dbis
+   'copy                    copy
+   'stat                    stat
+   'entries                 entries
+   'open-transact-kv        open-transact-kv
+   'close-transact-kv       close-transact-kv
+   'abort-transact-kv       abort-transact-kv
+   'open-transact           open-transact
+   'close-transact          close-transact
+   'abort-transact          abort-transact
+   'transact-kv             transact-kv
+   'get-value               get-value
+   'get-first               get-first
+   'get-range               get-range
+   'key-range               key-range
+   'range-count             range-count
+   'get-some                get-some
+   'range-filter            range-filter
+   'range-filter-count      range-filter-count
+   'visit                   visit
+   'open-list-dbi           open-list-dbi
+   'put-list-items          put-list-items
+   'del-list-items          del-list-items
+   'get-list                get-list
+   'visit-list              visit-list
+   'list-count              list-count
+   'in-list?                in-list?
+   'list-range              list-range
+   'list-range-count        list-range-count
+   'list-range-first        list-range-first
+   'list-range-filter       list-range-filter
+   'list-range-some         list-range-some
+   'list-range-filter-count list-range-filter-count
+   'visit-list-range        visit-list-range
    })
 
 (defmacro defpodfn
@@ -582,8 +680,7 @@
                     ;; (debug "var" var "args" args)
                     (if-let [f (lookup var)]
                       (let [res   (apply f args)
-                            value (p/write-transit-string
-                                    res)
+                            value (p/write-transit-string res)
                             reply {"value"  value
                                    "id"     id
                                    "status" ["done"]}]

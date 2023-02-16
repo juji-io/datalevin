@@ -1,36 +1,36 @@
 (ns ^:no-doc datalevin.server
   "Non-blocking event-driven database server with role based access control"
-  (:require [datalevin.util :as u]
-            [datalevin.core :as d]
-            [datalevin.bits :as b]
-            [datalevin.query :as q]
-            [datalevin.db :as db]
-            [datalevin.lmdb :as l]
-            [datalevin.protocol :as p]
-            [datalevin.storage :as st]
-            [datalevin.search :as sc]
-            [datalevin.built-ins :as dbq]
-            [datalevin.constants :as c]
-            [taoensso.timbre :as log]
-            [clojure.stacktrace :as stt]
-            [clojure.string :as s])
-  (:import [java.nio.charset StandardCharsets]
-           [java.nio ByteBuffer BufferOverflowException]
-           [java.nio.file Files Paths]
-           [java.nio.channels Selector SelectionKey ServerSocketChannel
-            SocketChannel]
-           [java.net InetSocketAddress]
-           [java.security SecureRandom]
-           [java.util Iterator UUID Map]
-           [java.util.concurrent.atomic AtomicBoolean]
-           [java.util.concurrent Executors Executor ExecutorService
-            ConcurrentLinkedQueue ConcurrentHashMap Semaphore]
-           [datalevin.db DB]
-           [datalevin.storage IStore Store]
-           [datalevin.lmdb ILMDB]
-           [org.bouncycastle.crypto.generators Argon2BytesGenerator]
-           [org.bouncycastle.crypto.params Argon2Parameters
-            Argon2Parameters$Builder]))
+  (:require
+   [datalevin.util :as u]
+   [datalevin.core :as d]
+   [datalevin.bits :as b]
+   [datalevin.query :as q]
+   [datalevin.db :as db]
+   [datalevin.lmdb :as l]
+   [datalevin.protocol :as p]
+   [datalevin.storage :as st]
+   [datalevin.search :as sc]
+   [datalevin.built-ins :as dbq]
+   [datalevin.constants :as c]
+   [taoensso.timbre :as log]
+   [clojure.stacktrace :as stt]
+   [clojure.string :as s])
+  (:import
+   [java.nio.charset StandardCharsets]
+   [java.nio ByteBuffer BufferOverflowException]
+   [java.nio.file Files Paths]
+   [java.nio.channels Selector SelectionKey ServerSocketChannel SocketChannel]
+   [java.net InetSocketAddress]
+   [java.security SecureRandom]
+   [java.util Iterator UUID Map]
+   [java.util.concurrent.atomic AtomicBoolean]
+   [java.util.concurrent Executors Executor ExecutorService
+    ConcurrentLinkedQueue ConcurrentHashMap Semaphore]
+   [datalevin.db DB]
+   [datalevin.storage IStore Store]
+   [datalevin.lmdb ILMDB]
+   [org.bouncycastle.crypto.generators Argon2BytesGenerator]
+   [org.bouncycastle.crypto.params Argon2Parameters Argon2Parameters$Builder]))
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -1085,12 +1085,24 @@
    'transact-kv
    'get-value
    'get-first
+   'key-range
    'get-range
    'range-count
    'get-some
    'range-filter
    'range-filter-count
    'visit
+   'get-list
+   'visit-list
+   'list-count
+   'in-list?
+   'list-range
+   'list-range-count
+   'list-range-first
+   'list-range-filter
+   'list-range-some
+   'list-range-filter-count
+   'visit-list-range
    'q
    'fulltext-datoms
    'new-search-engine
@@ -1870,6 +1882,17 @@
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
+(defn- key-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          data    (apply l/key-range
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler range-count)))
@@ -1907,6 +1930,85 @@
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler visit))))
+
+(defn- get-list
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          data    (apply l/get-list
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- visit-list
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler visit-list))))
+
+(defn- list-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-count)))
+
+(defn- in-list?
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler in-list?)))
+
+(defn- list-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          data    (apply l/list-range
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- list-range-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-range-count)))
+
+(defn- list-range-first
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-range-first)))
+
+(defn- list-range-filter
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen  (nth args 2)
+          args    (replace {frozen (b/deserialize frozen)} args)
+          db-name (nth args 0)
+          data    (apply l/list-range-filter
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- list-range-some
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler list-range-some))))
+
+(defn- list-range-filter-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler list-range-filter-count))))
+
+(defn- visit-list-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler visit-list-range))))
 
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
@@ -2004,7 +2106,7 @@
     (catch Exception e
       ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"
-                                (ex-message e))))))
+                                (ex-message e)) {}))))
 
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]

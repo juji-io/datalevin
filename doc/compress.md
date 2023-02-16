@@ -18,20 +18,28 @@ without having to decompress data first.
 
 A complete and order preserving dictionary based encoding scheme is implemented,
 where a fixed length interval and variable length code are used [1]. The fixed
-length chosen is two bytes, and the variable length code is Hu-Tucker codes [2],
-which is optimal.
+length chosen is two bytes, which capture second order patterns in data, and yet
+would not impose too much of a memory and computation overhead. The variable
+length code is Hu-Tucker codes [2], which is optimal.
 
-When a sub-database is initialized, we first transact the data uncompressed in a
-temporary sub-database, where we collect statistics of the keys. Once a large
-enough sample of keys (default 100K) is collected, the system computes the
-dictionary, and compress the keys of all current and future data using the
-dictionary in the permanent sub-database. Optionally, the same process can
-happen when copying the database with `optimize?` set to `true`, in order to
-improve compression rate with newer samples.
+When a sub-database is initialized, it is generation zero. We first transact the
+data uncompressed in generation zero sub-database, where we collect statistics
+of the keys. When every 100k keys are stored, the system checks to see if a new
+compression dictionary is needed, if so, compute a new dictionary, compress the
+keys of all current data using the new dictionary and store them in generation
+one sub-database. Optionally, the same process can happen when copying the
+database with `optimize?` set to `true`, in order to improve compression rate
+with newer samples.
 
-Because the frequencies are integers, a fast linear time
-algorithm [3] [4] is used to compute the Hu-Tucker codes, and the resulting optimal
-binary alphabetic tree is saved for both encoding and decoding.
+System decides to compute new dictionary based on the Kullback-Leibler
+divergence of the current 2-bytes distribution against the previous distribution
+using a Dirichlet prior. We will empirically determine the threshold of number
+of bits increment that would significantly impact system performance.
+
+Because the frequencies are integers within a bound, a fast linear time
+algorithm [3] [4] is used to compute the Hu-Tucker codes, and the resulting
+optimal binary alphabetic tree is saved as tables (as byte arrays) for both
+encoding and decoding.
 
 ### Value Compression
 

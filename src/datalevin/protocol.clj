@@ -20,14 +20,14 @@
 
 (def transit-read-handlers
   {"datalevin/Datom" (transit/read-handler d/datom-from-reader)
-   "spillable"       (transit/read-handler sp/new-spillable-vector)})
+   "datalevin/SpillableVector"       (transit/read-handler sp/new-spillable-vector)})
 
 (def transit-write-handlers
   {Datom           (transit/write-handler
                      "datalevin/Datom"
                      (fn [^Datom d] [(.-e d) (.-a d) (.-v d) (.-tx d)]))
    SpillableVector (transit/write-handler
-                     "spillable"
+                     "datalevin/SpillableVector"
                      (fn [v] (into [] v)))})
 
 (defn read-transit-string

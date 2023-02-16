@@ -12,7 +12,7 @@
   (:import
    [datalevin.client Client]
    [datalevin.storage IStore]
-   [datalevin.lmdb ILMDB]
+   [datalevin.lmdb ILMDB IList]
    [datalevin.search ISearchEngine]
    [java.nio.file Files Paths StandardOpenOption LinkOption]
    [java.net URI]))
@@ -277,7 +277,7 @@
   (list-dbis [db] (cl/normal-request client :list-dbis [db-name] writing?))
 
   (copy [db dest] (l/copy db dest false))
-  (copy [db dest compact?]
+  (copy [_ dest compact?]
     (let [bs   (->> (cl/normal-request client :copy [db-name compact?] writing?)
                     (apply str)
                     b/decode-base64)
@@ -291,33 +291,40 @@
                    (into-array StandardOpenOption []))))
 
   (stat [db] (l/stat db nil))
-  (stat [db dbi-name]
+  (stat [_ dbi-name]
     (cl/normal-request client :stat [db-name dbi-name] writing?))
 
-  (entries [db dbi-name]
+  (entries [_ dbi-name]
     (cl/normal-request client :entries [db-name dbi-name] writing?))
 
   (open-transact-kv [db]
     (cl/normal-request client :open-transact-kv [db-name])
     (.mark-write db))
 
-  (close-transact-kv [db]
+  (close-transact-kv [_]
     (cl/normal-request client :close-transact-kv [db-name] true))
 
-  (abort-transact-kv [db]
+  (abort-transact-kv [_]
     (cl/normal-request client :abort-transact-kv [db-name] true))
 
-  (transact-kv [db txs]
+  (transact-kv [this txs] (.transact-kv this nil txs))
+  (transact-kv [this dbi-name txs]
+    (.transact-kv this dbi-name txs :data :data))
+  (transact-kv [this dbi-name txs k-type]
+    (.transact-kv this dbi-name txs k-type :data))
+  (transact-kv [_ dbi-name txs k-type v-type]
     (let [{:keys [type message err-data]}
           (if (< (count txs) ^long c/+wire-datom-batch-size+)
-            (cl/request client {:type     :transact-kv
-                                :mode     :request
-                                :writing? writing?
-                                :args     [db-name txs]})
-            (cl/copy-in client {:type     :transact-kv
-                                :mode     :copy-in
-                                :writing? writing?
-                                :args     [db-name]}
+            (cl/request client
+                        {:type     :transact-kv
+                         :mode     :request
+                         :writing? writing?
+                         :args     [db-name dbi-name txs k-type v-type]})
+            (cl/copy-in client
+                        {:type     :transact-kv
+                         :mode     :copy-in
+                         :writing? writing?
+                         :args     [db-name dbi-name txs k-type v-type]}
                         txs c/+wire-datom-batch-size+))]
       (when (= type :error-response)
         (if (:resized err-data)
@@ -330,7 +337,7 @@
     (l/get-value db dbi-name k k-type :data true))
   (get-value [db dbi-name k k-type v-type]
     (l/get-value db dbi-name k k-type v-type true))
-  (get-value [db dbi-name k k-type v-type ignore-key?]
+  (get-value [_ dbi-name k k-type v-type ignore-key?]
     (cl/normal-request
       client :get-value
       [db-name dbi-name k k-type v-type ignore-key?] writing?))
@@ -341,7 +348,7 @@
     (l/get-first db dbi-name k-range k-type :data false))
   (get-first [db dbi-name k-range k-type v-type]
     (l/get-first db dbi-name k-range k-type v-type false))
-  (get-first [db dbi-name k-range k-type v-type ignore-key?]
+  (get-first [_ dbi-name k-range k-type v-type ignore-key?]
     (cl/normal-request
       client :get-first
       [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
@@ -352,29 +359,34 @@
     (l/get-range db dbi-name k-range k-type :data false))
   (get-range [db dbi-name k-range k-type v-type]
     (l/get-range db dbi-name k-range k-type v-type false))
-  (get-range [db dbi-name k-range k-type v-type ignore-key?]
+  (get-range [_ dbi-name k-range k-type v-type ignore-key?]
     (cl/normal-request
       client :get-range
       [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
+
+  (key-range [db dbi-name k-range]
+    (.key-range db dbi-name k-range :data))
+  (key-range [_ dbi-name k-range k-type]
+    (cl/normal-request client :key-range
+                       [db-name dbi-name k-range k-type] writing?))
 
   ;; TODO implements batch remote request
-  (range-seq [this dbi-name k-range]
-    (l/range-seq this dbi-name k-range :data :data false nil))
-  (range-seq [this dbi-name k-range k-type]
-    (l/range-seq this dbi-name k-range k-type :data false nil))
-  (range-seq [this dbi-name k-range k-type v-type]
-    (l/range-seq this dbi-name k-range k-type v-type false nil))
-  (range-seq [this dbi-name k-range k-type v-type ignore-key?]
-    (l/range-seq this dbi-name k-range k-type v-type ignore-key? nil))
-  (range-seq [this dbi-name k-range k-type v-type ignore-key? opts]
-    (cl/normal-request
-      client :get-range
-      [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
-
+  ;; (range-seq [db dbi-name k-range]
+  ;;   (l/range-seq db dbi-name k-range :data :data false nil))
+  ;; (range-seq [db dbi-name k-range k-type]
+  ;;   (l/range-seq db dbi-name k-range k-type :data false nil))
+  ;; (range-seq [db dbi-name k-range k-type v-type]
+  ;;   (l/range-seq db dbi-name k-range k-type v-type false nil))
+  ;; (range-seq [db dbi-name k-range k-type v-type ignore-key?]
+  ;;   (l/range-seq db dbi-name k-range k-type v-type ignore-key? nil))
+  ;; (range-seq [_ dbi-name k-range k-type v-type ignore-key? opts]
+  ;;   (cl/normal-request
+  ;;     client :get-range
+  ;;     [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
 
   (range-count [db dbi-name k-range]
     (l/range-count db dbi-name k-range :data))
-  (range-count [db dbi-name k-range k-type]
+  (range-count [_ dbi-name k-range k-type]
     (cl/normal-request
       client :range-count [db-name dbi-name k-range k-type] writing?))
 
@@ -384,7 +396,7 @@
     (l/get-some db dbi-name pred k-range k-type :data false))
   (get-some [db dbi-name pred k-range k-type v-type]
     (l/get-some db dbi-name pred k-range k-type v-type false))
-  (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
+  (get-some [_ dbi-name pred k-range k-type v-type ignore-key?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :get-some
@@ -406,7 +418,7 @@
 
   (range-filter-count [db dbi-name pred k-range]
     (l/range-filter-count db dbi-name pred k-range :data))
-  (range-filter-count [db dbi-name pred k-range k-type]
+  (range-filter-count [_ dbi-name pred k-range k-type]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :range-filter-count
@@ -414,11 +426,84 @@
 
   (visit [db dbi-name visitor k-range]
     (l/visit db dbi-name visitor k-range :data))
-  (visit [db dbi-name visitor k-range k-type]
+  (visit [_ dbi-name visitor k-range k-type]
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request
         client :visit
-        [db-name dbi-name frozen-visitor k-range k-type] writing?))))
+        [db-name dbi-name frozen-visitor k-range k-type] writing?)))
+
+  (open-list-dbi [db dbi-name {:keys [key-size val-size]
+                               :or   {key-size c/+max-key-size+
+                                      val-size c/+max-key-size+}
+                               :as   opts}]
+    (.open-dbi db dbi-name
+               (merge opts
+                      {:key-size key-size :val-size val-size
+                       :dupsort? true})))
+  (open-list-dbi [db dbi-name] (.open-list-dbi db dbi-name nil))
+
+  IList
+  (put-list-items [db dbi-name k vs kt vt]
+    (.transact-kv db [[:put-list dbi-name k vs kt vt]]))
+
+  (del-list-items [db dbi-name k kt]
+    (.transact-kv db [[:del dbi-name k kt]]))
+  (del-list-items [db dbi-name k vs kt vt]
+    (.transact-kv db [[:del-list dbi-name k vs kt vt]]))
+
+  (get-list [_ dbi-name k kt vt]
+    (cl/normal-request client :get-list
+                       [db-name dbi-name k kt vt] writing?))
+  (visit-list [_ dbi-name visitor k kt]
+    (let [frozen-visitor (b/serialize visitor)]
+      (cl/normal-request
+        client :visit-list
+        [db-name dbi-name frozen-visitor k kt] writing?)))
+
+  (list-count [_ dbi-name k kt]
+    (cl/normal-request client :list-count
+                       [db-name dbi-name k kt] writing?))
+
+  (in-list? [_ dbi-name k v kt vt]
+    (cl/normal-request client :in-count?
+                       [db-name dbi-name k v kt vt] writing?))
+
+  (list-range [_ dbi-name k-range kt v-range vt]
+    (cl/normal-request client :list-range
+                       [db-name dbi-name k-range kt v-range vt] writing?))
+
+  (list-range-count [_ dbi-name k-range kt v-range vt]
+    (cl/normal-request client :list-range-count
+                       [db-name dbi-name k-range kt v-range vt] writing?))
+
+  (list-range-first [_ dbi-name k-range kt v-range vt]
+    (cl/normal-request client :list-range-first
+                       [db-name dbi-name k-range kt v-range vt] writing?))
+
+  (list-range-filter [_ dbi-name pred k-range kt v-range vt]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :list-range-filter
+        [db-name dbi-name frozen-pred k-range kt v-range vt] writing?)))
+
+  (list-range-some [_ dbi-name pred k-range kt v-range vt]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :list-range-some
+        [db-name dbi-name frozen-pred k-range kt v-range vt] writing?)))
+
+  (list-range-filter-count [_ dbi-name pred k-range kt v-range vt]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :list-range-filter-count
+        [db-name dbi-name frozen-pred k-range kt v-range vt] writing?)))
+
+  (visit-list-range [_ dbi-name visitor k-range kt v-range vt]
+    (let [frozen-visitor (b/serialize visitor)]
+      (cl/normal-request
+        client :visit-list-range
+        [db-name dbi-name frozen-visitor k-range kt v-range vt] writing?)))
+  )
 
 (defn open-kv
   "Open a remote kv store."
@@ -441,28 +526,28 @@
 
 (deftype SearchEngine [^KVStore store]
   ISearchEngine
-  (add-doc [this doc-ref doc-text]
+  (add-doc [_ doc-ref doc-text]
     (cl/normal-request
       (.-client store) :add-doc
       [(.-db-name store) doc-ref doc-text]))
 
-  (remove-doc [this doc-ref]
+  (remove-doc [_ doc-ref]
     (cl/normal-request (.-client store) :remove-doc
                        [(.-db-name store) doc-ref]))
 
-  (clear-docs [this]
+  (clear-docs [_]
     (cl/normal-request (.-client store) :clear-docs [(.-db-name store)]))
 
-  (doc-indexed? [this doc-ref]
+  (doc-indexed? [_ doc-ref]
     (cl/normal-request (.-client store) :doc-indexed?
                        [(.-db-name store) doc-ref]))
 
-  (doc-count [this]
+  (doc-count [_]
     (cl/normal-request (.-client store) :doc-count [(.-db-name store)]))
 
   (search [this query]
     (sc/search this query {}))
-  (search [this query opts]
+  (search [_ query opts]
     (cl/normal-request (.-client store) :search
                        [(.-db-name store) query opts])))
 

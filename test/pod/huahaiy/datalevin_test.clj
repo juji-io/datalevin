@@ -1,5 +1,7 @@
 (ns pod.huahaiy.datalevin-test
   (:require [datalevin.util :as u]
+            [datalevin.bits :as b]
+            [datalevin.lmdb :as l]
             [datalevin.interpret :as i]
             [babashka.pods :as pods]
             [datalevin.test.core :as tdc :refer [db-fixture]]
@@ -295,4 +297,92 @@
             [#inst "1991-12-25T00:00:00.000-00:00" "USSR broke apart"]]
            (pd/get-range db date-table [:closed (Date. 0) (Date.)] :instant)))
     (pd/close-kv db)
+    (u/delete-files dir)))
+
+;; (def sum (volatile! 0))
+
+;; (pd/defpodfn visitor [kv]
+;;   (let [^long v (b/read-buffer (l/v kv) :long)]
+;;     (vswap! sum #(+ ^long %1 ^long %2) v)))
+
+(deftest list-basic-ops-test
+  (let [dir  (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
+        lmdb (pd/open-kv dir)]
+    (pd/open-list-dbi lmdb "list")
+
+    (pd/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
+    (pd/put-list-items lmdb "list" "b" [5 6 7] :string :long)
+    (pd/put-list-items lmdb "list" "c" [3 6 9] :string :long)
+
+    (is (= (pd/entries lmdb "list") 10))
+
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
+            ["c" 3] ["c" 6] ["c" 9]]
+           (pd/get-range lmdb "list" [:all] :string :long)))
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
+           (pd/get-range lmdb "list" [:closed "a" "b"] :string :long)))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (pd/get-range lmdb "list" [:closed "b" "b"] :string :long)))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (pd/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
+    (is (= [["c" 3] ["c" 6] ["c" 9] ["b" 5] ["b" 6] ["b" 7]
+            ["a" 1] ["a" 2] ["a" 3] ["a" 4]]
+           (pd/get-range lmdb "list" [:all-back] :string :long)))
+
+    (is (= ["a" 1]
+           (pd/get-first lmdb "list" [:closed "a" "a"] :string :long)))
+
+    (is (= [3 6 9]
+           (pd/get-list lmdb "list" "c" :string :long)))
+
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
+            ["c" 3] ["c" 6] ["c" 9]]
+           (pd/list-range lmdb "list" [:all] :string [:all] :long)))
+    (is (= [["a" 2] ["a" 3] ["a" 4] ["c" 3]]
+           (pd/list-range lmdb "list" [:closed "a" "c"] :string
+                          [:closed 2 4] :long)))
+    (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
+            ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
+           (pd/list-range lmdb "list" [:all-back] :string [:all-back] :long)))
+    (is (= [["c" 3]]
+           (pd/list-range lmdb "list" [:at-least "b"] :string
+                          [:at-most-back 4] :long)))
+
+    (is (= [["b" 5]]
+           (pd/list-range lmdb "list" [:open "a" "c"] :string
+                          [:less-than 6] :long)))
+
+    (is (= (pd/list-count lmdb "list" "a" :string) 4))
+    (is (= (pd/list-count lmdb "list" "b" :string) 3))
+
+    (is (not (pd/in-list? lmdb "list" "a" 7 :string :long)))
+    (is (pd/in-list? lmdb "list" "b" 7 :string :long))
+
+    (is (= (pd/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+    (is (= (pd/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
+
+    ;; (pd/visit-list lmdb "list" visitor "a" :string)
+    ;; (is (= @sum 10))
+
+    (pd/del-list-items lmdb "list" "a" :string)
+
+    (is (= (pd/list-count lmdb "list" "a" :string) 0))
+    (is (not (pd/in-list? lmdb "list" "a" 1 :string :long)))
+    (is (nil? (pd/get-list lmdb "list" "a" :string :long)))
+
+    (pd/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
+
+    (is (= [1 2 3 4 5 6 7]
+           (pd/get-list lmdb "list" "b" :string :long)))
+    (is (= (pd/list-count lmdb "list" "b" :string) 7))
+    (is (pd/in-list? lmdb "list" "b" 1 :string :long))
+
+    (pd/del-list-items lmdb "list" "b" [1 2] :string :long)
+
+    (is (= (pd/list-count lmdb "list" "b" :string) 5))
+    (is (not (pd/in-list? lmdb "list" "b" 1 :string :long)))
+    (is (= [3 4 5 6 7]
+           (pd/get-list lmdb "list" "b" :string :long)))
+
+    (pd/close-kv lmdb)
     (u/delete-files dir)))
