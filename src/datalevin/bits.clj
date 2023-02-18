@@ -872,12 +872,9 @@
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
-    :eav  (indexable->retrieved x)
-    :eavt (indexable->retrieved x)
-    :ave  (indexable->retrieved x)
-    :avet (indexable->retrieved x)
-    :vea  (indexable->retrieved x)
-    :veat (indexable->retrieved x)
+    (:eav :eavt) (indexable->retrieved x)
+    (:ave :avet) (indexable->retrieved x)
+    (:vea :veat) (indexable->retrieved x)
     x))
 
 (defn put-buffer

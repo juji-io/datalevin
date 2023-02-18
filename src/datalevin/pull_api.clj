@@ -190,7 +190,7 @@
 
         :let [name   (.-name attr)
               datoms (db/-range-datoms
-                       (.-db ^Context context) :avet
+                       (.-db ^Context context) :ave
                        (dd/datom c/e0 name id c/tx0)
                        (dd/datom c/emax name id c/txmax))]
 
@@ -247,7 +247,7 @@
 (defn attrs-frame [^Context context seen recursion-limits ^PullPattern pattern id]
   (let [datoms (cond+
                  (.-wildcard? pattern)
-                 (db/-range-datoms (.-db context) :eavt
+                 (db/-range-datoms (.-db context) :eav
                                    (dd/datom id nil nil c/tx0)
                                    (dd/datom id nil nil c/txmax))
 
@@ -256,7 +256,7 @@
 
                  :else
                  (db/-range-datoms
-                   (.-db context) :eavt
+                   (.-db context) :eav
                    (dd/datom id (.-name ^PullAttr (.-first-attr pattern)) nil c/tx0)
                    (dd/datom id (.-name ^PullAttr (.-last-attr pattern)) nil c/txmax)))]
     (when (.-wildcard? pattern)

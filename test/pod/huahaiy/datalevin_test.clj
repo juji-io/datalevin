@@ -254,7 +254,7 @@
                      [1 :aka "x"]])
         dir    (u/tmp-dir (str "query-or-" (random-uuid)))
         db     (pd/init-db datoms dir)
-        res    (set (pd/datoms db :eavt))]
+        res    (set (pd/datoms db :eav))]
     (is (= datoms res))
     (pd/close-db db)
     (u/delete-files dir)))
@@ -269,7 +269,7 @@
     (is (= (pd/schema conn2) (pd/update-schema conn1 s)))
     (pd/update-schema conn1 s1)
     (pd/transact! conn1 txs)
-    (is (not (nil? (second (first (pd/datoms (pd/db conn1) :eavt))))))
+    (is (not (nil? (second (first (pd/datoms (pd/db conn1) :eav))))))
     (pd/close conn1)
     (pd/close conn2)
     (u/delete-files dir)))

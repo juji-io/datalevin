@@ -466,7 +466,7 @@ Only usable for debug output.
 
    Usage:
 
-       (seek-datoms db :eavt 1)
+       (seek-datoms db :eav 1)
        ; => (#datalevin/Datom [1 :friends 2]
        ;     #datalevin/Datom [1 :likes \"fries\"]
        ;     #datalevin/Datom [1 :likes \"pizza\"]
@@ -475,16 +475,16 @@ Only usable for debug output.
        ;     #datalevin/Datom [2 :likes \"pie\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])
 
-       (seek-datoms db :eavt 1 :name)
+       (seek-datoms db :eav 1 :name)
        ; => (#datalevin/Datom [1 :name \"Ivan\"])
 
-       (seek-datoms db :eavt 2)
+       (seek-datoms db :eav 2)
        ; => (#datalevin/Datom [2 :likes \"candy\"]
        ;     #datalevin/Datom [2 :likes \"pie\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])
 
        ; no datom [2 :likes \"fish\"], so starts with one immediately following such in index
-       (seek-datoms db :eavt 2 :likes \"fish\")
+       (seek-datoms db :eav 2 :likes \"fish\")
        ; => (#datalevin/Datom [2 :likes \"pie\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])"
   ([db index]             {:pre [(db/db? db)]} (db/-seek-datoms db index []))
@@ -513,7 +513,7 @@ Only usable for debug output.
        (dbq/fulltext db query opts)))))
 
 (defn index-range
-  "Returns part of `:avet` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
+  "Returns part of `:ave` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
 
    Same properties as [[datoms]].
 
@@ -734,12 +734,12 @@ Only usable for debug output.
   ([conn db] (reset-conn! conn db nil))
   ([conn db tx-meta]
    (let [report (db/map->TxReport
-                  { :db-before @conn
-                   :db-after   db
-                   :tx-data    (u/concatv
-                                 (map #(assoc % :added false) (datoms @conn :eavt))
-                                 (datoms db :eavt))
-                   :tx-meta    tx-meta})]
+                  {:db-before @conn
+                   :db-after  db
+                   :tx-data   (u/concatv
+                                 (map #(assoc % :added false) (datoms @conn :eav))
+                                 (datoms db :eav))
+                   :tx-meta   tx-meta})]
      (reset! conn db)
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]
        (callback report))

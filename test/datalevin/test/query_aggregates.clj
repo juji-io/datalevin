@@ -1,7 +1,6 @@
 (ns datalevin.test.query-aggregates
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer        [is are deftest testing]]
    [datalevin.core :as d]))
 
 
@@ -95,9 +94,8 @@
                          sort-reverse))
                result))
 
-        #?(:clj
-           (is (= (set
-                    (d/q '[ :find ?color (datalevin.test.query-aggregates/sort-reverse ?x)
-                           :in   [[?color ?x]]]
-                         data))
-                  result)))))))
+        (is (= (set
+                 (d/q '[ :find ?color (datalevin.test.query-aggregates/sort-reverse ?x)
+                        :in   [[?color ?x]]]
+                      data))
+               result))))))

@@ -4,9 +4,9 @@
    [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.util :as u])
-  #?(:clj
-     (:import [clojure.lang ExceptionInfo]
-              [java.util UUID])))
+  (:import
+   [clojure.lang ExceptionInfo]
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -29,10 +29,10 @@
   (let [data (->> (range 1000)
                   (map (fn [^long i]
                          {:db/id i
-                          :a     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
-                          :b     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
-                          :c     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
-                          :d     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
+                          :a     (str (UUID/randomUUID))
+                          :b     (str (UUID/randomUUID))
+                          :c     (str (UUID/randomUUID))
+                          :d     (str (UUID/randomUUID))
                           :e     (rand-int 3)
                           :f     (rand-int 3)
                           :g     (rand-int 3)

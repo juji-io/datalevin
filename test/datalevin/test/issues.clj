@@ -7,8 +7,7 @@
 
 (use-fixtures :each db-fixture)
 
-(deftest ^{:doc "CLJS `apply` + `vector` will hold onto mutable array of arguments directly"}
-  issue-262
+(deftest issue-262
   (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
         db  (d/db-with (d/empty-db dir)
                        [{:attr "A"} {:attr "B"}])]

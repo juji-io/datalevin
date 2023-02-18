@@ -7,9 +7,6 @@
 
 (use-fixtures :each db-fixture)
 
-#?(:cljs
-   (def Throwable js/Error))
-
 (deftest test-with-validation
   (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
         db  (d/empty-db dir {:profile { :db/valueType :db.type/ref }

@@ -1,7 +1,6 @@
 (ns datalevin.test.query-deadline
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer        [is are deftest testing]]
    [datalevin.core :as d]))
 
 (deftest timeout

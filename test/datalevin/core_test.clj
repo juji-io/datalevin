@@ -4,8 +4,7 @@
    [datalevin.datom :as dd]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc :refer [db-fixture]]
-   #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer [is deftest testing use-fixtures]]))
+   [clojure.test :as t :refer [is deftest testing use-fixtures]])
   (:import
    [java.util UUID Arrays]
    [java.lang Thread]))
@@ -126,7 +125,7 @@
           :sales/top-product-use "CRM",
           :sales/total           23}]]
     (sut/transact! conn txs)
-    (is (= 83 (count (sut/datoms @conn :eavt))))
+    (is (= 83 (count (sut/datoms @conn :eav))))
     (is (= (set (sut/q '[:find [(pull ?e [*]) ...]
                          :in $ ?ns-in
                          :where
@@ -191,7 +190,7 @@
     (is (sut/conn? conn))
     (sut/clear conn)
     (let [conn1 (sut/create-conn dir)]
-      (is (= 0 (count (sut/datoms @conn1 :eavt))))
+      (is (= 0 (count (sut/datoms @conn1 :eav))))
       (sut/close conn1))
     (u/delete-files dir)))
 

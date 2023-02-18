@@ -1,53 +1,20 @@
 (ns datalevin.test.core
   (:require
-   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer [is are deftest testing]]
    [datalevin.core :as d]
    [datalevin.entity :as de]
    [taoensso.timbre :as log]
    [datalevin.constants :as c]
-   [datalevin.util :as u #?@(:cljs [:refer-macros [defrecord-updatable]]
-                             :clj  [:refer [defrecord-updatable]])]
-   #?(:clj [datalevin.server :as srv])
-   #?(:cljs [datalevin.test.cljs]))
-  #?(:clj (:import [java.util UUID])))
-
-
-#?(:cljs
-   (enable-console-print!))
-
-;; Added special case for printing ex-data of ExceptionInfo
-#?(:cljs
-  (defmethod t/report [::t/default :error] [m]
-    (t/inc-report-counter! :error)
-    (println "\nERROR in" (t/testing-vars-str m))
-    (when (seq (:testing-contexts (t/get-current-env)))
-      (println (t/testing-contexts-str)))
-    (when-let [message (:message m)] (println message))
-    (println "expected:" (pr-str (:expected m)))
-    (print "  actual: ")
-    (let [actual (:actual m)]
-      (cond
-        (instance? ExceptionInfo actual)
-          (println (.-stack actual) "\n" (pr-str (ex-data actual)))
-        (instance? js/Error actual)
-          (println (.-stack actual))
-        :else
-          (prn actual)))))
-
-#?(:cljs (def test-summary (atom nil)))
-#?(:cljs (defmethod t/report [::t/default :end-run-tests] [m]
-           (reset! test-summary (dissoc m :type))))
+   [datalevin.util :as u :refer [defrecord-updatable]]
+   [datalevin.server :as srv])
+  (:import [java.util UUID]))
 
 (defn wrap-res [f]
-  #?(:cljs (do (f) (clj->js @test-summary))
-     :clj  (let [res (f)]
-             (when (pos? ^long (+ ^long (:fail res) ^long (:error res)))
-               (System/exit 1)))))
+  (let [res (f)]
+    (when (pos? ^long (+ ^long (:fail res) ^long (:error res)))
+      (System/exit 1))))
 
 ;; utils
-#?(:clj
 (defmethod t/assert-expr 'thrown-msg? [msg form]
   (let [[_ match & body] form]
     `(try ~@body
@@ -57,7 +24,7 @@
               (if (= ~match m#)
                 (t/do-report {:type :pass, :message ~msg, :expected '~form, :actual e#})
                 (t/do-report {:type :fail, :message ~msg, :expected '~form, :actual e#})))
-            e#)))))
+            e#))))
 
 (defn entity-map [db e]
   (when-let [entity (d/entity db e)]
@@ -67,32 +34,30 @@
                                   %)))))
 
 (defn all-datoms [db]
-  (into #{} (map (juxt :e :a :v)) (d/datoms db :eavt)))
+  (into #{} (map (juxt :e :a :v)) (d/datoms db :eav)))
 
 (defn no-namespace-maps [t]
   (binding [*print-namespace-maps* false]
     (t)))
 
-#?(:clj
-   (defn server-fixture
-     [f]
-     (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
-           server (srv/create {:port c/default-port
-                               :root dir})]
-       ;; (log/set-min-level! :debug)
-       (log/set-min-level! :report)
-       (try
-         (srv/start server)
-         (f)
-         (catch Exception e (throw e))
-         (finally
-           (srv/stop server)
-           (u/delete-files dir))))
-     (System/gc)))
+(defn server-fixture
+  [f]
+  (let [dir    (u/tmp-dir (str "server-test-" (UUID/randomUUID)))
+        server (srv/create {:port c/default-port
+                            :root dir})]
+    ;; (log/set-min-level! :debug)
+    (log/set-min-level! :report)
+    (try
+      (srv/start server)
+      (f)
+      (catch Exception e (throw e))
+      (finally
+        (srv/stop server)
+        (u/delete-files dir))))
+  (System/gc))
 
-#?(:clj
-   (defn db-fixture
-     [f]
-     (log/set-min-level! :report)
-     (f)
-     (System/gc)))
+(defn db-fixture
+  [f]
+  (log/set-min-level! :report)
+  (f)
+  (System/gc))

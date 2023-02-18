@@ -8,9 +8,6 @@
 
 (use-fixtures :each db-fixture)
 
-#?(:cljs
-   (def Throwable js/Error))
-
 ;; break up the tests due to mutable nature of db
 
 (deftest test-upsert-1

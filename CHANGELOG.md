@@ -33,7 +33,7 @@
 
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
-  whenever appropriate, up to 40% improvement for some queries.
+  whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions
 
 ## 0.8.5 (2023-02-13)

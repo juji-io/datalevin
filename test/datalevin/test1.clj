@@ -2,7 +2,6 @@
   "more extensive tests"
   (:require
    [clojure.test :as t :refer        [is are deftest testing]]
-   [clojure.java.shell :as sh]
    datalevin.interpret-test
    datalevin.search-utils-test
    datalevin.spill-test
@@ -99,16 +98,6 @@
           'datalevin.remote-entity-test
           'datalevin.remote-transact-test)]
     (System/exit (if (zero? (+ ^long fail ^long error)) 0 1))))
-
-(defn ^:export test-cljs []
-  (datalevin.test.core/wrap-res #(t/run-all-tests #"datalevin\..*")))
-
-(defn test-node [& args]
-  (let [res (apply sh/sh "node" "test_node.js" args)]
-    (println (:out res))
-    (binding [*out* *err*]
-      (println (:err res)))
-    (System/exit (:exit res))))
 
 (defn -main [& _args]
   (println "clojure version" (clojure-version))

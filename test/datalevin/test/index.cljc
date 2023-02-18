@@ -26,7 +26,7 @@
               [2 :age 25]
               [3 :name "Sergey"]
               [3 :age 11]]
-             (map dvec (d/datoms db :eavt))))
+             (map dvec (d/datoms db :eav))))
 
       (is (= [[2 :name "Ivan"]
               [1 :name "Petr"]
@@ -34,20 +34,20 @@
               [3 :age 11]
               [2 :age 25]
               [1 :age 44] ]
-             (map dvec (d/datoms db :avet)))))
+             (map dvec (d/datoms db :ave)))))
 
     (testing "Components filtration"
       (is (= [[1 :name "Petr"]
               [1 :age 44]]
-             (map dvec (d/datoms db :eavt 1))))
+             (map dvec (d/datoms db :eav 1))))
 
       (is (= [ [1 :age 44] ]
-             (map dvec (d/datoms db :eavt 1 :age))))
+             (map dvec (d/datoms db :eav 1 :age))))
 
       (is (= [ [3 :age 11]
               [2 :age 25]
               [1 :age 44] ]
-             (map dvec (d/datoms db :avet :age)))))
+             (map dvec (d/datoms db :ave :age)))))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -66,19 +66,19 @@
                              [:db/add 3 :age 11]]))]
 
     (testing "Non-termination"
-      (is (= (map dvec (d/seek-datoms db :avet :age 10))
+      (is (= (map dvec (d/seek-datoms db :ave :age 10))
              [ [3 :age 11]
               [2 :age 25]
               [1 :age 44]])))
 
     (testing "Closest value lookup"
-      (is (= (map dvec (d/seek-datoms db :avet :name "P"))
+      (is (= (map dvec (d/seek-datoms db :ave :name "P"))
              [
               [1 :name "Petr"]
               [3 :name "Sergey"]])))
 
     (testing "Exact value lookup"
-      (is (= (map dvec (d/seek-datoms db :avet :name "Petr"))
+      (is (= (map dvec (d/seek-datoms db :ave :name "Petr"))
              [ [1 :name "Petr"]
               [3 :name "Sergey"]])))
     (d/close-db db)
@@ -98,18 +98,18 @@
                              [:db/add 3 :age 11]]))]
 
     (testing "Non-termination"
-      (is (= (map dvec (d/rseek-datoms db :avet :name "Petr"))
+      (is (= (map dvec (d/rseek-datoms db :ave :name "Petr"))
              [ [1 :name "Petr"]
               [2 :name "Ivan"]])))
 
     (testing "Closest value lookup"
-      (is (= (map dvec (d/rseek-datoms db :avet :age 26))
+      (is (= (map dvec (d/rseek-datoms db :ave :age 26))
              [[2 :age 25]
               [3 :age 11]
               ])))
 
     (testing "Exact value lookup"
-      (is (= (map dvec (d/rseek-datoms db :avet :age 25))
+      (is (= (map dvec (d/rseek-datoms db :ave :age 25))
              [[2 :age 25]
               [3 :age 11]])))
     (d/close-db db)

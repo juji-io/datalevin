@@ -4,8 +4,7 @@
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.util :as u])
-  #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+  (:import [clojure.lang ExceptionInfo]))
 
 (use-fixtures :each db-fixture)
 

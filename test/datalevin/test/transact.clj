@@ -655,21 +655,20 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-#?(:clj
-   (deftest test-transact-bytes
-     "requires comparing byte-arrays"
-     (let [schema      {:bytes {:db/valueType :db.type/bytes}}
-           byte-arrays (mapv #(.getBytes ^String %) ["foo" "bar" "foo"])]
-       (testing "equal bytes"
-         (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
-               db   (d/empty-db dir schema)
-               ents (mapv (fn [ba] {:bytes ba}) byte-arrays)]
-           (is (every? true?
-                       (map #(java.util.Arrays/equals ^bytes %1 ^bytes %2)
-                            byte-arrays
-                            (map :v (:tx-data (d/with db ents))))))
-           (d/close-db db)
-           (u/delete-files dir))))))
+(deftest test-transact-bytes
+  "requires comparing byte-arrays"
+  (let [schema      {:bytes {:db/valueType :db.type/bytes}}
+        byte-arrays (mapv #(.getBytes ^String %) ["foo" "bar" "foo"])]
+    (testing "equal bytes"
+      (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+            db   (d/empty-db dir schema)
+            ents (mapv (fn [ba] {:bytes ba}) byte-arrays)]
+        (is (every? true?
+                    (map #(java.util.Arrays/equals ^bytes %1 ^bytes %2)
+                         byte-arrays
+                         (map :v (:tx-data (d/with db ents))))))
+        (d/close-db db)
+        (u/delete-files dir)))))
 
 
 (deftest issue-127-test

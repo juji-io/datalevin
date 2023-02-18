@@ -1,7 +1,6 @@
 (ns datalevin.test.pull-parser
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer        [is are deftest testing]]
    [datalevin.core :as d]
    [datalevin.db :as db]
    [datalevin.datom :as dd]
@@ -91,9 +90,9 @@
       [['default :multival :xyz]]   (pattern :attrs [(attr :multival, :multival? true, :limit 1000, :default :xyz)])
 
                                         ; xform
-      [[:normal :xform 'inc]] (pattern :attrs [(attr :normal :xform inc)])
-      [[:normal :xform inc]]  (pattern :attrs [(attr :normal :xform inc)])
-      #?@(:clj [[[:normal :xform 'datalevin.datom/datom?]] (pattern :attrs [(attr :normal :xform dd/datom?)])])
+      [[:normal :xform 'inc]]                    (pattern :attrs [(attr :normal :xform inc)])
+      [[:normal :xform inc]]                     (pattern :attrs [(attr :normal :xform inc)])
+      [[:normal :xform 'datalevin.datom/datom?]] (pattern :attrs [(attr :normal :xform dd/datom?)])
 
                                         ; combined
       ['(:multival :limit 100 :default :xyz :as :other :xform inc)] (pattern :attrs [(attr :multival, :multival? true, :default :xyz, :limit 100, :as :other, :xform inc)])

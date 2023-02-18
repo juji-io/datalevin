@@ -1,12 +1,11 @@
 (ns datalevin.test.tuples
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer        [is are deftest testing]]
    [datalevin.core :as d]
    [datalevin.db :as db]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc])
-  (:import #?(:clj [clojure.lang ExceptionInfo])))
+  (:import [clojure.lang ExceptionInfo]))
 
 (deftest test-schema
   (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))

@@ -1,8 +1,7 @@
 (ns datalevin.test.entity
   (:require
-   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-   #?(:cljs [cljs.test :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer [is deftest testing]])
+   [clojure.edn :as edn]
+   [clojure.test :as t :refer [is deftest testing]]
    [datalevin.core :as d]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc])

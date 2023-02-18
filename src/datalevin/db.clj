@@ -443,9 +443,9 @@
 
 (defn- components->pattern [db index [c0 c1 c2 c3] default-e default-tx]
   (case index
-    :eav (resolve-datom db c0 c1 c2 c3 default-e default-tx)
-    :ave (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    :vea (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
+    (:eav :eavt) (resolve-datom db c0 c1 c2 c3 default-e default-tx)
+    (:ave :avet) (resolve-datom db c2 c0 c1 c3 default-e default-tx)
+    (:vea :veat) (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
 
 ;; ----------------------------------------------------------------------------
 

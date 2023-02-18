@@ -1,10 +1,8 @@
 (ns datalevin.test.parser-where
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer        [is are deftest testing]]
    [datalevin.parser :as dp])
-  #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+  (:import [clojure.lang ExceptionInfo]))
 
 (deftest pattern
   (are [clause pattern] (= (dp/parse-clause clause) pattern)

@@ -78,7 +78,7 @@
         (is (= 1 (st/datom-count store :ave)))
         (is (= 0 (st/datom-count store :vea)))
         (is (= [d] (st/fetch store d)))
-        (is (= [d] (st/slice store :eavt d d)))
+        (is (= [d] (st/slice store :eav d d)))
         (is (st/populated? store :eav d d))
         (is (= 1 (st/size store :eav d d)))
         (is (= d (st/head store :eav d d)))

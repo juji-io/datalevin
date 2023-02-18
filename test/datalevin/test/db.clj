@@ -1,11 +1,9 @@
 (ns datalevin.test.db
   (:require
    [clojure.data]
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer [is are deftest testing]]
    [datalevin.core :as d]
-   [datalevin.util #?@(:cljs [:refer-macros [defrecord-updatable]]
-                       :clj  [:refer [defrecord-updatable]])]))
+   [datalevin.util :refer [defrecord-updatable]]))
 
 ;;
 ;; verify that defrecord-updatable works with compiler/core macro configuration
@@ -13,15 +11,12 @@
 ;; compiler or runtime error
 ;;
 (defrecord-updatable HashBeef [x]
-  #?@(:cljs [IHash                (-hash  [hb] 0xBEEF)]
-      :clj  [clojure.lang.IHashEq (hasheq [hb] 0xBEEF)]))
+  clojure.lang.IHashEq (hasheq [hb] 0xBEEF))
 
 (deftest test-defrecord-updatable
   (is (= 0xBEEF (-> (map->HashBeef {:x :ignored}) hash))))
 
-(defn- now []
-  #?(:clj  (System/currentTimeMillis)
-     :cljs (.getTime (js/Date.))))
+(defn- now [] (System/currentTimeMillis))
 
 (deftest test-uuid
   (let [now-ms (loop []

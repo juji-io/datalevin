@@ -123,7 +123,7 @@
           :sales/top-product-use "CRM",
           :sales/total           23}]]
     (dc/transact! conn txs)
-    (is (= (count (dc/datoms @conn :eavt)) 83))
+    (is (= (count (dc/datoms @conn :eav)) 83))
     (is (= (dc/q '[:find ?st .
                    :where
                    [?e :sales/company "Unilever"]
@@ -195,7 +195,7 @@
     (is (thrown? Exception (dc/update-schema conn {} #{:sales/year})))
     (dc/clear conn)
     (let [conn1 (dc/create-conn dir)]
-      (is (= 0 (count (dc/datoms @conn1 :eavt))))
+      (is (= 0 (count (dc/datoms @conn1 :eav))))
       (dc/close conn1))))
 
 (deftest remote-conn-schema-update-test

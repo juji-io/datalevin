@@ -1,16 +1,12 @@
 (ns datalevin.test.components
   (:require
-   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
-   #?(:cljs [cljs.test    :as t :refer-macros [is deftest testing]]
-      :clj  [clojure.test :as t :refer        [is deftest testing]])
+   [clojure.edn :as edn]
+   [clojure.test :as t :refer        [is deftest testing]]
    [datalevin.core :as d]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
-
-#?(:cljs
-   (def Throwable js/Error))
 
 (deftest test-components-1
   (is (thrown-msg? "Bad attribute specification for :profile: {:db/isComponent true} should also have {:db/valueType :db.type/ref}"

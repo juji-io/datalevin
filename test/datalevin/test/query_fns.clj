@@ -4,8 +4,7 @@
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.util :as u]
    [datalevin.core :as d])
-  #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+  (:import [clojure.lang ExceptionInfo]))
 
 (use-fixtures :each db-fixture)
 
@@ -378,7 +377,6 @@
 
 (defn sample-query-fn [] 42)
 
-#?(:clj
-   (deftest test-symbol-resolution
-     (is (= 42 (d/q '[:find ?x .
-                      :where [(datalevin.test.query-fns/sample-query-fn) ?x]])))))
+(deftest test-symbol-resolution
+  (is (= 42 (d/q '[:find ?x .
+                   :where [(datalevin.test.query-fns/sample-query-fn) ?x]]))))

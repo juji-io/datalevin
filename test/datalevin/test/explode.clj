@@ -7,9 +7,6 @@
 
 (use-fixtures :each db-fixture)
 
-#?(:cljs
-   (def Throwable js/Error))
-
 (deftest test-explode
   (doseq [coll [["Devil" "Tupen"]
                 #{"Devil" "Tupen"}
