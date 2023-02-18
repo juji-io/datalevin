@@ -4,37 +4,25 @@
    [datalevin.db :as db]
    [datalevin.constants :as c]
    [datalevin.datom :as dd]
-   [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [cond+]]
+   [datalevin.util :as u :refer [cond+]]
    [datalevin.timeout :as timeout]
    [datalevin.lru :as lru])
-  #?(:clj
-     (:import
-      [datalevin.db DB]
-      [datalevin.datom Datom]
-      [datalevin.pull_parser PullAttr PullPattern])))
+  (:import
+   [datalevin.db DB]
+   [datalevin.datom Datom]
+   [datalevin.pull_parser PullAttr PullPattern]))
 
 (declare pull-impl attrs-frame ref-frame ->ReverseAttrsFrame)
 
-(defn- first-seq [#?(:clj xs :cljs ^seq xs)]
-  (if (nil? xs)
-    nil
-    #?(:clj (first xs) :cljs (-first xs))))
+(defn- first-seq [xs] (if (nil? xs) nil (first xs)))
 
-(defn- next-seq [#?(:clj xs :cljs ^seq xs)]
-  (if (nil? xs)
-    nil
-    #?(:clj (next xs) :cljs (-next xs))))
+(defn- next-seq [xs] (if (nil? xs) nil (next xs)))
 
-(defn- conj-seq [#?(:clj xs :cljs ^seq xs) x]
-  (if (nil? xs)
-    (list x)
-    #?(:clj (cons x xs) :cljs (-conj xs x))))
+(defn- conj-seq [xs x] (if (nil? xs) (list x) (cons x xs)))
 
-(defn- assoc-some! [m k v]
-  (if (nil? v) m (assoc! m k v)))
+(defn- assoc-some! [m k v] (if (nil? v) m (assoc! m k v)))
 
-(defn- conj-some! [xs v]
-  (if (nil? v) xs (conj! xs v)))
+(defn- conj-some! [xs v] (if (nil? v) xs (conj! xs v)))
 
 (defrecord Context [db visitor])
 
@@ -209,7 +197,8 @@
         :do (visit context :db.pull/reverse nil name id)
 
         (and (empty? datoms) (some? (.-default attr)))
-        (recur (assoc! acc (.-as attr) (#?(:clj .-default :cljs :default) attr)) (first-seq attrs) (next-seq attrs))
+        (recur (assoc! acc (.-as attr) (.-default attr))
+               (first-seq attrs) (next-seq attrs))
 
         (empty? datoms)
         (recur acc (first-seq attrs) (next-seq attrs))

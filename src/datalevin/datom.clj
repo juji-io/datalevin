@@ -1,93 +1,59 @@
 (ns ^:no-doc datalevin.datom
   (:require
-   #?(:cljs [goog.array :as garray])
    [taoensso.nippy :as nippy]
    [datalevin.constants :refer [tx0]]
    [datalevin.util :refer [combine-hashes combine-cmp]])
-  #?(:cljs
-     (:require-macros [datalevin.util :refer [combine-cmp]]))
-  #?(:clj
-     (:import
-      [clojure.lang IFn$OOL]
-      [java.util Arrays]
-      [java.io DataInput DataOutput])))
+  (:import
+   [clojure.lang IFn$OOL]
+   [java.util Arrays]
+   [java.io DataInput DataOutput]))
 
-(declare hash-datom equiv-datom seq-datom nth-datom assoc-datom val-at-datom)
+(declare hash-datom equiv-datom seq-datom nth-datom assoc-datom
+         val-at-datom)
 
 (defprotocol IDatom
   (datom-tx [this])
   (datom-added [this]))
 
-(deftype Datom #?(:clj  [^long e a v ^long tx ^:unsynchronized-mutable ^int _hash]
-                  :cljs [^number e a v ^number tx ^:mutable ^number _hash])
+(deftype Datom [^long e a v ^long tx ^:unsynchronized-mutable ^int _hash]
   IDatom
   (datom-tx [d] (if (pos? tx) tx (- tx)))
   (datom-added [d] (pos? tx))
 
-  #?@(:cljs
-      [IHash
-       (-hash [d] (if (zero? _hash)
-                    (set! _hash (hash-datom d))
-                    _hash))
-       IEquiv
-       (-equiv [d o] (and (instance? Datom o) (equiv-datom d o)))
+  Object
+  (hashCode [d]
+    (if (zero? _hash)
+      (let [h (int (hash-datom d))]
+        (set! _hash h)
+        h)
+      _hash))
+  (toString [d] (pr-str d))
 
-       ISeqable
-       (-seq [d] (seq-datom d))
+  clojure.lang.IHashEq
+  (hasheq [d] (.hashCode d))
 
-       ILookup
-       (-lookup [d k] (val-at-datom d k nil))
-       (-lookup [d k nf] (val-at-datom d k nf))
+  clojure.lang.Seqable
+  (seq [d] (seq-datom d))
 
-       IIndexed
-       (-nth [this i] (nth-datom this i))
-       (-nth [this i not-found] (nth-datom this i not-found))
+  clojure.lang.IPersistentCollection
+  (equiv [d o] (and (instance? Datom o) (equiv-datom d o)))
+  (empty [d] (throw (UnsupportedOperationException.
+                      "empty is not supported on Datom")))
+  (count [d] 5)
+  (cons [d [k v]] (assoc-datom d k v))
 
-       IAssociative
-       (-assoc [d k v] (assoc-datom d k v))
+  clojure.lang.Indexed
+  (nth [this i] (nth-datom this i))
+  (nth [this i not-found] (nth-datom this i not-found))
 
-       IPrintWithWriter
-       (-pr-writer [d writer opts]
-                   (pr-sequential-writer
-                     writer pr-writer "#datalevin/Datom [" " " "]" opts
-                     [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)]))]
-      :clj
-      [Object
-       (hashCode [d]
-         (if (zero? _hash)
-           (let [h (int (hash-datom d))]
-             (set! _hash h)
-             h)
-           _hash))
-       (toString [d] (pr-str d))
+  clojure.lang.ILookup
+  (valAt [d k] (val-at-datom d k nil))
+  (valAt [d k nf] (val-at-datom d k nf))
 
-       clojure.lang.IHashEq
-       (hasheq [d] (.hashCode d))
-
-       clojure.lang.Seqable
-       (seq [d] (seq-datom d))
-
-       clojure.lang.IPersistentCollection
-       (equiv [d o] (and (instance? Datom o) (equiv-datom d o)))
-       (empty [d] (throw (UnsupportedOperationException.
-                           "empty is not supported on Datom")))
-       (count [d] 5)
-       (cons [d [k v]] (assoc-datom d k v))
-
-       clojure.lang.Indexed
-       (nth [this i] (nth-datom this i))
-       (nth [this i not-found] (nth-datom this i not-found))
-
-       clojure.lang.ILookup
-       (valAt [d k] (val-at-datom d k nil))
-       (valAt [d k nf] (val-at-datom d k nf))
-
-       clojure.lang.Associative
-       (entryAt [d k] (some->> (val-at-datom d k nil) (clojure.lang.MapEntry k)))
-       (containsKey [e k] (#{:e :a :v :tx :added} k))
-       (assoc [d k v] (assoc-datom d k v))]))
-
-#?(:cljs (goog/exportSymbol "datalevin.datom.Datom" Datom))
+  clojure.lang.Associative
+  (entryAt [d k] (some->> (val-at-datom d k nil) (clojure.lang.MapEntry k)))
+  (containsKey [_ k] (#{:e :a :v :tx :added} k))
+  (assoc [d k v] (assoc-datom d k v)))
 
 (defn ^Datom datom
   ([e a v] (Datom. e a v tx0 0))
@@ -131,8 +97,7 @@
      2 (.-v d)
      3 (datom-tx d)
      4 (datom-added d)
-     #?(:clj  (throw (IndexOutOfBoundsException.))
-        :cljs (throw (js/Error. (str "Datom/-nth: Index out of bounds: " i))))))
+     (throw (IndexOutOfBoundsException.))))
   ([^Datom d ^long i not-found]
    (case i
      0 (.-e d)
@@ -154,14 +119,12 @@
 ;; printing and reading
 ;; #datomic/DB {:schema <map>, :datoms <vector of [e a v tx]>}
 
-(defn ^Datom datom-from-reader [vec]
-  (apply datom vec))
+(defn datom-from-reader ^Datom [vec] (apply datom vec))
 
-#?(:clj
-   (defmethod print-method Datom [^Datom d, ^java.io.Writer w]
-     (.write w (str "#datalevin/Datom "))
-     (binding [*out* w]
-       (pr [(.-e d) (.-a d) (.-v d)]))))
+(defmethod print-method Datom [^Datom d, ^java.io.Writer w]
+  (.write w (str "#datalevin/Datom "))
+  (binding [*out* w]
+    (pr [(.-e d) (.-a d) (.-v d)])))
 
 ;; ----------------------------------------------------------------------------
 ;; datom cmp macros/funcs
@@ -181,17 +144,15 @@
     ;; since `a` and `b` are of identical type
     ;; `coll?` check only one.
     (cond
-      (coll? a) (if (= a b) 0 1)
-      #?@(:clj [(bytes? a) (if (Arrays/equals ^bytes a ^bytes b) 0 1)])
-      :else     (compare a b))
+      (coll? a)  (if (= a b) 0 1)
+      (bytes? a) (if (Arrays/equals ^bytes a ^bytes b) 0 1)
+      :else      (compare a b))
     -1))
 
 (def nil-cmp (nil-check-cmp-fn compare))
 (def nil-cmp-type (nil-check-cmp-fn compare-with-type))
 
-(defmacro long-compare
-  [x y]
-  `(Long/compare ^long ~x ^long ~y))
+(defmacro long-compare [x y] `(Long/compare ^long ~x ^long ~y))
 
 (defmacro defcomp
   [sym [arg1 arg2] & body]
@@ -212,24 +173,24 @@
 
 (defcomp cmp-datoms-eavt [^Datom d1, ^Datom d2]
   (combine-cmp
-    (#?(:clj long-compare :cljs -) (.-e d1) (.-e d2))
+    (long-compare (.-e d1) (.-e d2))
     (nil-cmp (.-a d1) (.-a d2))
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj long-compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (long-compare (datom-tx d1) (datom-tx d2))))
 
 (defcomp cmp-datoms-avet [^Datom d1, ^Datom d2]
   (combine-cmp
     (nil-cmp (.-a d1) (.-a d2))
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj long-compare :cljs -) (.-e d1) (.-e d2))
-    (#?(:clj long-compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (long-compare (.-e d1) (.-e d2))
+    (long-compare (datom-tx d1) (datom-tx d2))))
 
 (defcomp cmp-datoms-veat [^Datom d1, ^Datom d2]
   (combine-cmp
     (nil-cmp-type (.-v d1) (.-v d2))
-    (#?(:clj long-compare :cljs -) (.-e d1) (.-e d2))
+    (long-compare (.-e d1) (.-e d2))
     (nil-cmp (.-a d1) (.-a d2))
-    (#?(:clj long-compare :cljs -) (datom-tx d1) (datom-tx d2))))
+    (long-compare (datom-tx d1) (datom-tx d2))))
 
 (defn datom-e [^Datom d] (.-e d))
 

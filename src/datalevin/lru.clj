@@ -1,33 +1,20 @@
 (ns ^:no-doc datalevin.lru
-  (:import [clojure.lang IPersistentCollection Associative
-            IPersistentMap]))
+  (:import [clojure.lang Associative]))
 
 (declare assoc-lru dissoc-lru cleanup-lru)
 
-#?(:cljs
-   (deftype LRU [key-value gen-key key-gen gen limit target]
-     IAssociative
-     (-assoc [this k v] (assoc-lru this k v))
-     (-contains-key? [_ k] (-contains-key? key-value k))
-     ILookup
-     (-lookup [_ k]    (-lookup key-value k nil))
-     (-lookup [_ k nf] (-lookup key-value k nf))
-     IPrintWithWriter
-     (-pr-writer [_ writer opts]
-       (-pr-writer key-value writer opts)))
-   :clj
-   (deftype LRU [^Associative key-value gen-key key-gen gen limit target]
-     clojure.lang.ILookup
-     (valAt [_ k]           (.valAt key-value k))
-     (valAt [_ k not-found] (.valAt key-value k not-found))
+(deftype LRU [^Associative key-value gen-key key-gen gen limit target]
+  clojure.lang.ILookup
+  (valAt [_ k]           (.valAt key-value k))
+  (valAt [_ k not-found] (.valAt key-value k not-found))
 
-     clojure.lang.Associative
-     (containsKey [_ k] (.containsKey key-value k))
-     (entryAt [_ k]     (.entryAt key-value k))
-     (assoc [this k v]  (assoc-lru this k v))
+  clojure.lang.Associative
+  (containsKey [_ k] (.containsKey key-value k))
+  (entryAt [_ k]     (.entryAt key-value k))
+  (assoc [this k v]  (assoc-lru this k v))
 
-     clojure.lang.IPersistentMap
-     (without [this k] (dissoc-lru this k))))
+  clojure.lang.IPersistentMap
+  (without [this k] (dissoc-lru this k)))
 
 (defn- assoc-lru [^LRU lru k v]
   (let [key-value (.-key-value lru)

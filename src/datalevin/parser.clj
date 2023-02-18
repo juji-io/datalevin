@@ -1,10 +1,8 @@
 (ns ^:no-doc datalevin.parser
   (:refer-clojure :exclude [distinct?])
-  #?(:cljs (:require-macros [datalevin.parser :refer [deftrecord]]))
   (:require
-    [clojure.set :as set]
-    [datalevin.timeout :as timeout]
-    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]]))
+   [clojure.set :as set]
+   [datalevin.util :as u :refer [raise]]))
 
 ;; utils
 
@@ -18,7 +16,7 @@
 (defprotocol Traversable
   (-traversable? [_]))
 
-(extend-type #?(:clj Object :cljs object)
+(extend-type Object
   Traversable
   (-traversable? [_] false))
 
@@ -26,31 +24,33 @@
   Traversable
   (-traversable? [_] false))
 
-#?(:clj
-   (defmacro deftrecord
-     "Augment all datalevin.parser/ records with default implementation of ITraversable"
-     [tagname fields & rest]
-     (let [f    (gensym "f")
-           pred (gensym "pred")
-           acc  (gensym "acc")]
-       `(defrecord ~tagname ~fields
-          ITraversable
-          (~'-postwalk [this# ~f]
-            (let [new# (new ~tagname ~@(map #(list 'datalevin.parser/postwalk % f) fields))]
-              (if-let [meta# (meta this#)]
-                (with-meta new# meta#)
-                new#)))
-          (~'-collect [_# ~pred ~acc]
-            ;; [x y z] -> (collect pred z (collect pred y (collect pred x acc)))
-            ~(reduce #(list 'datalevin.parser/collect pred %2 %1) acc fields))
-          (~'-collect-vars [_# ~acc]
-            ;; [x y z] -> (collect-vars-acc (collect-vars-acc (collect-vars-acc acc x) y) z)
-            ~(reduce #(list 'datalevin.parser/collect-vars-acc %1 %2) acc fields))
+(defmacro deftrecord
+  "Augment all datalevin.parser/ records with default implementation of
+  ITraversable"
+  [tagname fields & rest]
+  (let [f    (gensym "f")
+        pred (gensym "pred")
+        acc  (gensym "acc")]
+    `(defrecord ~tagname ~fields
+       ITraversable
+       (~'-postwalk [this# ~f]
+        (let [new# (new ~tagname
+                        ~@(map #(list 'datalevin.parser/postwalk % f)
+                               fields))]
+          (if-let [meta# (meta this#)]
+            (with-meta new# meta#)
+            new#)))
+       (~'-collect [_# ~pred ~acc]
+        ;; [x y z] -> (collect pred z (collect pred y (collect pred x acc)))
+        ~(reduce #(list 'datalevin.parser/collect pred %2 %1) acc fields))
+       (~'-collect-vars [_# ~acc]
+        ;; [x y z] -> (collect-vars-acc (collect-vars-acc (collect-vars-acc acc x) y) z)
+        ~(reduce #(list 'datalevin.parser/collect-vars-acc %1 %2) acc fields))
 
-          Traversable
-          (~'-traversable? [_#] true)
+       Traversable
+       (~'-traversable? [_#] true)
 
-          ~@rest))))
+       ~@rest)))
 
 (defn of-size? [form size]
   (and (sequential? form)
@@ -66,11 +66,12 @@
 (defn collect
   ([pred form] (collect pred form []))
   ([pred form acc]
-    (cond
-      (pred form)          (conj acc form)
-      (-traversable? form) (-collect form pred acc)
-      (u/seqable? form)    (reduce (fn [acc form] (collect pred form acc)) acc form)
-      :else                acc)))
+   (cond
+     (pred form)          (conj acc form)
+     (-traversable? form) (-collect form pred acc)
+     (u/seqable? form)    (reduce (fn [acc form] (collect pred form acc))
+                                  acc form)
+     :else                acc)))
 
 (defn distinct? [coll]
   (or (empty? coll)
@@ -80,11 +81,13 @@
   (cond
     ;; additional handling for maps and records that keeps structure type
     (-traversable? form) (f (-postwalk form f))
-    (map? form)  (f (reduce (fn [form [k v]] (assoc form k (postwalk v f))) form form))
+    (map? form)          (f (reduce (fn [form [k v]]
+                                      (assoc form k (postwalk v f)))
+                                    form form))
     ;; rest comes from clojure.core
-    (seq? form)  (f (map #(postwalk % f) form))
-    (coll? form) (f (into (empty form) (map #(postwalk % f) form)))
-    :else        (f form)))
+    (seq? form)          (f (map #(postwalk % f) form))
+    (coll? form)         (f (into (empty form) (map #(postwalk % f) form)))
+    :else                (f form)))
 
 (defn with-source [obj source]
   (with-meta obj {:source source}))

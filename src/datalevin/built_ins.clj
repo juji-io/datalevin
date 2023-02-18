@@ -3,15 +3,13 @@
    [clojure.string :as str]
    [datalevin.db :as db]
    [datalevin.storage :as st]
-   [datalevin.constants :as c]
-   [datalevin.datom :as dd]
    [datalevin.search :as s]
    [datalevin.entity :as de]
-   [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]])
-  #?(:clj (:import
-           [datalevin.storage Store]
-           [datalevin.search SearchEngine]
-           [datalevin.db DB])))
+   [datalevin.util :as u :refer [raise]])
+  (:import
+   [datalevin.storage Store]
+   [datalevin.search SearchEngine]
+   [datalevin.db DB]))
 
 (defn- -differ? [& xs]
   (let [l (count xs)]
@@ -137,11 +135,9 @@
 
 ;; Aggregates
 
-(defn- aggregate-sum [coll]
-  (reduce + 0 coll))
+(defn- aggregate-sum [coll] (reduce + 0 coll))
 
-(defn- aggregate-avg [coll]
-  (/ ^double (aggregate-sum coll) (count coll)))
+(defn- aggregate-avg [coll] (/ ^double (aggregate-sum coll) (count coll)))
 
 (defn- aggregate-median [coll]
   (let [terms (sort coll)
@@ -160,8 +156,7 @@
                  (* delta delta)))]
     (/ ^double sum (count coll))))
 
-(defn- aggregate-stddev [coll]
-  (#?(:cljs js/Math.sqrt :clj Math/sqrt) (aggregate-variance coll)))
+(defn- aggregate-stddev [coll] (Math/sqrt (aggregate-variance coll)))
 
 (defn- aggregate-min
   ([coll]

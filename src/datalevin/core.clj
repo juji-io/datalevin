@@ -1,7 +1,6 @@
 (ns datalevin.core
   "User facing API for Datalevin library features"
   (:require
-   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.util :as u]
    [datalevin.remote :as r]
    [datalevin.search :as sc]
@@ -546,9 +545,7 @@ Only usable for debug output.
   "Returns `true` if this is an open connection to a local Datalog db, `false`
   otherwise."
   [conn]
-  (and #?(:clj  (instance? clojure.lang.IDeref conn)
-          :cljs (satisfies? cljs.core/IDeref conn))
-       (db/db? @conn)))
+  (and (instance? clojure.lang.IDeref conn) (db/db? @conn)))
 
 (defn conn-from-db
   "Creates a mutable reference to a given Datalog database. See [[create-conn]]."
@@ -731,7 +728,6 @@ Only usable for debug output.
        (callback report))
      report)))
 
-
 (defn reset-conn!
   "Forces underlying `conn` value to become a Datalog `db`. Will generate a tx-report that
   will remove everything from old value and insert everything from the new one."
@@ -750,10 +746,7 @@ Only usable for debug output.
      db)))
 
 
-(defn- atom? [a]
-  #?(:cljs (instance? Atom a)
-     :clj  (instance? clojure.lang.IAtom a)))
-
+(defn- atom? [a] (instance? clojure.lang.IAtom a))
 
 (defn listen!
   "Listen for changes on the given connection to a Datalog db. Whenever a transaction is applied
@@ -916,37 +909,13 @@ Only usable for debug output.
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
    (let [res (transact! conn tx-data tx-meta)]
-     #?(:cljs
-        (reify
-          IDeref
-          (-deref [_] res)
-          IDerefWithTimeout
-          (-deref-with-timeout [_ _ _] res)
-          IPending
-          (-realized? [_] true))
-        :clj
-        (reify
-          clojure.lang.IDeref
-          (deref [_] res)
-          clojure.lang.IBlockingDeref
-          (deref [_ _ _] res)
-          clojure.lang.IPending
-          (isRealized [_] true))))))
-
-
-;; ersatz future without proper blocking
-#?(:cljs
-   (defn- future-call [f]
-     (let [res      (atom nil)
-           realized (atom false)]
-       (js/setTimeout #(do (reset! res (f)) (reset! realized true)) 0)
-       (reify
-         IDeref
-         (-deref [_] @res)
-         IDerefWithTimeout
-         (-deref-with-timeout [_ _ timeout-val] (if @realized @res timeout-val))
-         IPending
-         (-realized? [_] @realized)))))
+     (reify
+       clojure.lang.IDeref
+       (deref [_] res)
+       clojure.lang.IBlockingDeref
+       (deref [_ _ _] res)
+       clojure.lang.IPending
+       (isRealized [_] true)))))
 
 
 (defn transact-async
@@ -960,52 +929,27 @@ Only usable for debug output.
 (defn- rand-bits [^long pow]
   (rand-int (bit-shift-left 1 pow)))
 
-#?(:cljs
-   (defn- to-hex-string [n l]
-     (let [s (.toString n 16)
-           c (count s)]
-       (cond
-         (> c l) (subs s 0 l)
-         (< c l) (str (apply str (repeat (- l c) "0")) s)
-         :else   s))))
-
 (defn ^:no-doc squuid
   "Generates a UUID that grow with time. Such UUIDs will always go to the end  of the index and that will minimize insertions in the middle.
 
   Consist of 64 bits of current UNIX timestamp (in seconds) and 64 random bits (2^64 different unique values per second)."
   ([]
-   (squuid #?(:clj  (System/currentTimeMillis)
-              :cljs (.getTime (js/Date.)))))
+   (squuid (System/currentTimeMillis)))
   ([^long msec]
-   #?(:clj
-      (let [uuid     (UUID/randomUUID)
-            time     (int (/ msec 1000))
-            high     (.getMostSignificantBits uuid)
-            low      (.getLeastSignificantBits uuid)
-            new-high (bit-or (bit-and high 0x00000000FFFFFFFF)
-                             (bit-shift-left time 32)) ]
-        (UUID. new-high low))
-      :cljs
-      (uuid
-        (str
-          (-> (int (/ msec 1000))
-              (to-hex-string 8))
-          "-" (-> (rand-bits 16) (to-hex-string 4))
-          "-" (-> (rand-bits 16) (bit-and 0x0FFF) (bit-or 0x4000) (to-hex-string 4))
-          "-" (-> (rand-bits 16) (bit-and 0x3FFF) (bit-or 0x8000) (to-hex-string 4))
-          "-" (-> (rand-bits 16) (to-hex-string 4))
-          (-> (rand-bits 16) (to-hex-string 4))
-          (-> (rand-bits 16) (to-hex-string 4)))))))
+   (let [uuid     (UUID/randomUUID)
+         time     (int (/ msec 1000))
+         high     (.getMostSignificantBits uuid)
+         low      (.getLeastSignificantBits uuid)
+         new-high (bit-or (bit-and high 0x00000000FFFFFFFF)
+                          (bit-shift-left time 32)) ]
+     (UUID. new-high low))))
 
 (defn ^:no-doc squuid-time-millis
   "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
   [uuid]
-  #?(:clj (-> (.getMostSignificantBits ^UUID uuid)
-              (bit-shift-right 32)
-              (* 1000))
-     :cljs (-> (subs (str uuid) 0 8)
-               (js/parseInt 16)
-               (* 1000))))
+  (-> (.getMostSignificantBits ^UUID uuid)
+      (bit-shift-right 32)
+      (* 1000)))
 
 ;; -------------------------------------
 

@@ -1,12 +1,12 @@
 (ns ^:no-doc datalevin.query
   (:require
-   [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
+   [clojure.edn :as edn]
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise cond+]]
+   [datalevin.util :as u :refer [raise cond+]]
    [datalevin.lru :as lru]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
@@ -99,9 +99,7 @@
 
 ;; Relation algebra
 
-(def typed-aget
-  #?(:cljs aget
-     :clj  (fn [a i] (aget ^objects a ^Long i))))
+(def typed-aget (fn [a i] (aget ^objects a ^Long i)))
 
 (defn join-tuples [t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
                    t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
@@ -292,24 +290,20 @@
   (let [n (count common-attrs)]
     (if (== n 1)
       (getter-fn attrs (first common-attrs))
-      (let [^objects getters-arr #?(:clj (into-array Object common-attrs)
-                                    :cljs (into-array common-attrs))]
+      (let [^objects getters-arr (into-array Object common-attrs)]
         (loop [i 0]
           (if (< i n)
             (do
               (aset getters-arr i (getter-fn attrs (aget getters-arr i)))
               (recur (unchecked-inc i)))
-            #?(:clj
-               (fn [tuple]
-                 (let [^objects arr (make-array Object n)]
-                   (loop [i 0]
-                     (if (< i n)
-                       (do
-                         (aset arr i ((aget getters-arr i) tuple))
-                         (recur (unchecked-inc i)))
-                       (LazilyPersistentVector/createOwning arr)))))
-               :cljs (fn [tuple]
-                       (list* (.map getters-arr #(% tuple)))))))))))
+            (fn [tuple]
+              (let [^objects arr (make-array Object n)]
+                (loop [i 0]
+                  (if (< i n)
+                    (do
+                      (aset arr i ((aget getters-arr i) tuple))
+                      (recur (unchecked-inc i)))
+                    (LazilyPersistentVector/createOwning arr)))))))))))
 
 (defn -group-by
   [f init coll]
@@ -494,10 +488,7 @@
             (aset static-args i source)
             (aset tuples-args i (get attrs arg)))
           (aset static-args i arg))))
-    ;; CLJS `apply` + `vector` will hold onto mutable array of arguments directly
-    ;; https://github.com/tonsky/datascript/issues/262
-    (if #?(:clj  false
-           :cljs (identical? f vector))
+    (if false
       (fn [tuple]
         ;; TODO raise if not all args are bound
         (let [args (aclone static-args)]
@@ -518,11 +509,10 @@
         (make-call f static-args)))))
 
 (defn- resolve-sym [sym]
-  #?(:cljs nil
-     :clj (when-let [v (or (resolve sym)
-                           (when (find-ns 'pod.huahaiy.datalevin)
-                             (ns-resolve 'pod.huahaiy.datalevin sym)))]
-            @v)))
+  (when-let [v (or (resolve sym)
+                   (when (find-ns 'pod.huahaiy.datalevin)
+                     (ns-resolve 'pod.huahaiy.datalevin sym)))]
+    @v))
 
 (defn filter-by-pred [context clause]
   (let [[[f & args]]         clause
@@ -904,8 +894,7 @@
   (->Eduction
     (comp
       (map
-        (fn [#?(:cljs t1
-               :clj ^{:tag "[[Ljava.lang.Object;"} t1)]
+        (fn [^{:tag "[[Ljava.lang.Object;"} t1]
           (->Eduction
             (map
               (fn [t2]

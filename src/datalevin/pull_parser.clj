@@ -2,7 +2,7 @@
   (:require
    [datalevin.built-ins :as built-ins]
    [datalevin.db :as db]
-   [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [cond+ raise]]))
+   [datalevin.util :as u :refer [cond+ raise]]))
 
 (defrecord PullAttr [as default limit name pattern recursion-limit recursive?
                      reverse? xform multival? ref? component?])
@@ -62,9 +62,9 @@
     (when (fn? sym-or-fn)
       sym-or-fn)
     (get built-ins/query-fns sym-or-fn)
-    #?(:clj (when (namespace sym-or-fn)
-              (when-some [v (requiring-resolve sym-or-fn)]
-                @v)))
+    (when (namespace sym-or-fn)
+      (when-some [v (requiring-resolve sym-or-fn)]
+        @v))
     (raise "Can't resolve symbol " sym-or-fn {:error :parser/pull, :fragment sym-or-fn})))
 
 (defn parse-attr-expr [db attr-spec]

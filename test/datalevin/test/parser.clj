@@ -1,10 +1,8 @@
 (ns datalevin.test.parser
   (:require
-   #?(:cljs [cljs.test    :as t :refer-macros [is are deftest testing]]
-      :clj  [clojure.test :as t :refer        [is are deftest testing]])
+   [clojure.test :as t :refer        [is are deftest testing]]
    [datalevin.parser :as dp])
-  #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+  (:import [clojure.lang ExceptionInfo]))
 
 (deftest bindings
   (are [form res] (= (dp/parse-binding form) res)

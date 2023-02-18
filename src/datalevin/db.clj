@@ -15,19 +15,15 @@
    [datalevin.remote :as r]
    [datalevin.client :as cl]
    [datalevin.inline :refer [update]])
-  #?(:cljs
-     (:require-macros [datalevin.util
-                       :refer [case-tree raise defrecord-updatable cond+]]))
-  #?(:clj
-     (:import
-      [datalevin.datom Datom]
-      [datalevin.storage IStore Store]
-      [datalevin.remote DatalogStore]
-      [datalevin.lru LRU]
-      [java.net URI]
-      [java.util SortedSet Comparator]
-      [java.util.concurrent ConcurrentHashMap]
-      [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet])))
+  (:import
+   [datalevin.datom Datom]
+   [datalevin.storage IStore Store]
+   [datalevin.remote DatalogStore]
+   [datalevin.lru LRU]
+   [java.net URI]
+   [java.util SortedSet Comparator]
+   [java.util.concurrent ConcurrentHashMap]
+   [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
 
 ;;;;;;;;;; Protocols
 
@@ -55,13 +51,9 @@
 (defprotocol Searchable
   (-searchable? [_]))
 
-(extend-type #?(:clj Object :cljs object)
-  Searchable
-  (-searchable? [_] false))
+(extend-type Object Searchable (-searchable? [_] false))
 
-(extend-type nil
-  Searchable
-  (-searchable? [_] false))
+(extend-type nil Searchable (-searchable? [_] false))
 
 ;; ----------------------------------------------------------------------------
 
@@ -69,10 +61,9 @@
 
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
-#?(:clj
-   (defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
-     (binding [*out* w]
-       (pr {:datoms-transacted (count (:tx-data rp))}))))
+(defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
+  (binding [*out* w]
+    (pr {:datoms-transacted (count (:tx-data rp))})))
 
 (defn- sf [^SortedSet s] (when-not (.isEmpty s) (.first s)))
 
@@ -452,38 +443,25 @@
 
 (defn- components->pattern [db index [c0 c1 c2 c3] default-e default-tx]
   (case index
-    :eavt (resolve-datom db c0 c1 c2 c3 default-e default-tx)
-    :eav  (resolve-datom db c0 c1 c2 c3 default-e default-tx)
-    :avet (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    :ave  (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    :veat (resolve-datom db c2 c1 c0 c3 default-e default-tx)
-    :vea  (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
+    :eav (resolve-datom db c0 c1 c2 c3 default-e default-tx)
+    :ave (resolve-datom db c2 c0 c1 c3 default-e default-tx)
+    :vea (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
 
 ;; ----------------------------------------------------------------------------
 
-(defn #?@(:clj  [^Boolean is-attr?]
-          :cljs [^boolean is-attr?]) [db attr property]
+(defn is-attr?
+  ^Boolean [db attr property]
   (contains? (-attrs-by db property) attr))
 
-(defn #?@(:clj  [^Boolean multival?]
-          :cljs [^boolean multival?]) [db attr]
-  (is-attr? db attr :db.cardinality/many))
+(defn multival? ^Boolean [db attr] (is-attr? db attr :db.cardinality/many))
 
-(defn #?@(:clj  [^Boolean ref?]
-          :cljs [^boolean ref?]) [db attr]
-  (is-attr? db attr :db.type/ref))
+(defn ref? ^Boolean [db attr] (is-attr? db attr :db.type/ref))
 
-(defn #?@(:clj  [^Boolean component?]
-          :cljs [^boolean component?]) [db attr]
-  (is-attr? db attr :db/isComponent))
+(defn component? ^Boolean [db attr] (is-attr? db attr :db/isComponent))
 
-(defn #?@(:clj  [^Boolean tuple?]
-          :cljs [^boolean tuple?]) [db attr]
-  (is-attr? db attr :db.type/tuple))
+(defn tuple? ^Boolean [db attr] (is-attr? db attr :db.type/tuple))
 
-(defn #?@(:clj  [^Boolean tuple-source?]
-          :cljs [^boolean tuple-source?]) [db attr]
-  (is-attr? db attr :db/attrTuples))
+(defn tuple-source? ^Boolean [db attr] (is-attr? db attr :db/attrTuples))
 
 (defn entid [db eid]
   (cond
@@ -506,8 +484,6 @@
                              (datom e0 attr value tx0)
                              (datom emax attr value txmax))))
             (:e (-first-datom db :avet eid)))))
-
-    #?@(:cljs [(array? eid) (recur db (array-seq eid))])
 
     (keyword? eid)
     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
@@ -557,38 +533,27 @@
            {:error :transact/syntax, :value v, :context at})))
 
 (defn- current-tx
-  #?(:clj {:inline (fn [report] `(-> ~report :db-before :max-tx long inc))})
+  {:inline (fn [report] `(-> ~report :db-before :max-tx long inc))}
   ^long [report]
   (-> report :db-before :max-tx long inc))
 
 (defn- next-eid
-  #?(:clj {:inline (fn [db] `(inc (long (:max-eid ~db))))})
+  {:inline (fn [db] `(inc (long (:max-eid ~db))))}
   ^long [db]
   (inc (long (:max-eid db))))
 
-#?(:clj
-   (defn- ^Boolean tx-id?
-     [e]
-     (or (identical? :db/current-tx e)
-         (.equals ":db/current-tx" e) ;; for datascript.js interop
-         (.equals "datomic.tx" e)
-         (.equals "datascript.tx" e)))
+(defn- tx-id?
+  ^Boolean [e]
+  (or (identical? :db/current-tx e)
+      (.equals ":db/current-tx" e) ;; for datascript.js interop
+      (.equals "datomic.tx" e)
+      (.equals "datascript.tx" e)))
 
-   :cljs
-   (defn- ^boolean tx-id?
-     [e]
-     (or (= e :db/current-tx)
-         (= e ":db/current-tx") ;; for datascript.js interop
-         (= e "datomic.tx")
-         (= e "datascript.tx"))))
-
-(defn- #?@(:clj  [^Boolean tempid?]
-           :cljs [^boolean tempid?])
-  [x]
+(defn- tempid?
+  ^Boolean [x]
   (or (and (number? x) (neg? ^long x)) (string? x)))
 
-(defn- new-eid? [db ^long eid]
-  (> eid ^long (:max-eid db)))
+(defn- new-eid? [db ^long eid] (> eid ^long (:max-eid db)))
 
 (defn- advance-max-eid [db eid]
   (cond-> db
@@ -675,8 +640,8 @@
         (update report' ::queued-tuples assoc e queue'))
       report')))
 
-(defn #?@(:clj  [^Boolean reverse-ref?]
-          :cljs [^boolean reverse-ref?]) [attr]
+(defn reverse-ref?
+  ^Boolean [attr]
   (cond
     (keyword? attr)
     (= \_ (nth (name attr) 0))
