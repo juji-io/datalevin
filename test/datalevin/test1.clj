@@ -5,6 +5,7 @@
    datalevin.interpret-test
    datalevin.search-utils-test
    datalevin.spill-test
+   datalevin.hu-test
    datalevin.bits-test
    datalevin.protocol-test
    datalevin.test.core
@@ -53,6 +54,7 @@
   (let [{:keys [fail error]}
         (t/run-tests
           'datalevin.spill-test
+          'datalevin.hu-test
           'datalevin.search-utils-test
           'datalevin.bits-test
           'datalevin.protocol-test
