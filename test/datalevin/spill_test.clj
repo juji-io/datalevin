@@ -1,6 +1,5 @@
 (ns datalevin.spill-test
   (:require
-   [datalevin.lmdb :as l]
    [datalevin.spill :as sp]
    [datalevin.util :as u]
    [taoensso.nippy :as nippy]

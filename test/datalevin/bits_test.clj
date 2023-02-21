@@ -454,12 +454,6 @@
 
 ;; orders
 
-(defn- same-sign?
-  [^long x ^long y]
-  (or (= x y 0)
-      (and (< x 0) (< y 0))
-      (and (> x 0) (> y 0))))
-
 (defn- veg-test
   [v e1 v1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
@@ -472,8 +466,8 @@
         _               (.flip ^ByteBuffer bf1)
         ^long res       (bf-compare bf bf1)
         ]
-    (is (same-sign? res (u/combine-cmp (compare v v1)
-                                       (compare e e1))))
+    (is (u/same-sign? res (u/combine-cmp (compare v v1)
+                                         (compare e e1))))
     (.rewind ^ByteBuffer bf)
     (let [^Retrieved r (sut/read-buffer bf :veg)]
       (is (= e (.-e r)))
@@ -494,8 +488,8 @@
         _               (sut/put-buffer bf1 d1 :avg)
         _               (.flip ^ByteBuffer bf1)
         ^long  res      (bf-compare bf bf1)]
-    (is (same-sign? res (u/combine-cmp (compare a a1)
-                                       (compare v v1))))
+    (is (u/same-sign? res (u/combine-cmp (compare a a1)
+                                         (compare v v1))))
     (.rewind ^ByteBuffer bf)
     (let [^Retrieved r (sut/read-buffer bf :avg)]
       (is (= a (.-a r)))
@@ -516,8 +510,8 @@
         _               (sut/put-buffer bf1 d1 :eag)
         _               (.flip ^ByteBuffer bf1)
         ^long  res      (bf-compare bf bf1)]
-    (is (same-sign? res (u/combine-cmp (compare e e1)
-                                       (compare a a1))))
+    (is (u/same-sign? res (u/combine-cmp (compare e e1)
+                                         (compare a a1))))
     (.rewind ^ByteBuffer bf)
     (let [^Retrieved r (sut/read-buffer bf :eag)]
       (is (= e (.-e r)))
@@ -981,7 +975,7 @@
                                           [:string :keyword :long :float])
           _               (.flip ^ByteBuffer bf1)
           ^long res       (bf-compare bf bf1)]
-      (is (same-sign? res (u/combine-cmp (compare ts ts1)
-                                         (compare tk tk1)
-                                         (compare tl tl1)
-                                         (compare tf tf1)))))))
+      (is (u/same-sign? res (u/combine-cmp (compare ts ts1)
+                                           (compare tk tk1)
+                                           (compare tl tl1)
+                                           (compare tf tf1)))))))

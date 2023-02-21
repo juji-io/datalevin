@@ -4,16 +4,16 @@ import  org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
 
 public class OptimalCodeLength {
 
-    public static int [] generate(final long [] freqs) {
+    public static byte [] generate(final long [] freqs) {
         int n = freqs.length;
 
-        int [] L = new int[n];
+        byte [] L = new byte[n];
 
         long maxp = 1;
         long [] P = new long[n];
 
         for (int k = 0; k < n; k++) {
-            L[k] = 0;
+            L[k] = (byte)0;
 
             long fk = freqs[k];
             P[k] = fk;
@@ -28,7 +28,7 @@ public class OptimalCodeLength {
             int i1 = 0;
             int i2 = 0;
             long pmin = maxp;
-            int sumL = -1;
+            byte sumL = -1;
 
             while (i < n - 1) {
                 if (P[i] == 0) {
@@ -40,13 +40,13 @@ public class OptimalCodeLength {
                 int j2 = -1;
                 long min1 = P[i];
                 long min2 = maxp;
-                int minL1 = L[i];
-                int minL2 = -1;
+                byte minL1 = L[i];
+                byte minL2 = -1;
 
                 int j = 0;
                 for (j = i + 1; j < n; j++) {
                     long pj = P[j];
-                    int lj = L[j];
+                    byte lj = L[j];
 
                     if (pj == 0) continue;
                     if (pj < min1 || (pj == min1 && lj < minL1)) {
@@ -65,7 +65,7 @@ public class OptimalCodeLength {
                 }
 
                 long pt = P[j1] + P[j2];
-                int sumLt = L[j1] + L[j2];
+                byte sumLt = (byte)(L[j1] + L[j2]) ;
                 if (pt < pmin || (pt == pmin && sumLt < sumL)) {
                     pmin = pt;
                     sumL = sumLt;
@@ -84,7 +84,7 @@ public class OptimalCodeLength {
             d.add(i2);
             P[i1] = pmin;
             P[i2] = 0;
-            L[i1] = sumL + 1;
+            L[i1] = (byte)(sumL + 1);
         }
 
         int n2 = n - 2;

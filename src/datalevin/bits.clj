@@ -663,6 +663,8 @@
      (.position bf np)
      @tuple)))
 
+;; TODO remove this, use a lmdb specific buffer instead, due to concurrent
+;; writes
 (defonce ^ByteBuffer tuple-bf (ByteBuffer/wrap (byte-array c/+max-key-size+)))
 
 (defn- dl-type->raw

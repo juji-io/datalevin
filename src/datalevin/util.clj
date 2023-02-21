@@ -271,3 +271,9 @@
   (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
 
 (defn array? [^Object x] (some-> x .getClass .isArray))
+
+(defn same-sign?
+  [^long x ^long y]
+  (or (= x y 0)
+      (and (< x 0) (< y 0))
+      (and (> x 0) (> y 0))))
