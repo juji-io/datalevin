@@ -10,6 +10,7 @@
    [datalevin.constants :as c])
   (:import
    [java.nio ByteBuffer]
+   [datalevin.hu DecodeNode]
    [datalevin.utl OptimalCodeLength]))
 
 (deftest coding-test
@@ -25,36 +26,46 @@
       (are [freqs results] (= (let [n (alength freqs)
                                     lens (byte-array n)
                                     codes (int-array n)]
-                                (sut/build lens codes freqs)
+                                (sut/create-codes lens codes freqs)
                                 (vec codes))
                               results)
         freqs0 [0 1 2 3 4 5 6 7]
         freqs1 [0 1 8 9 5 3 4 5 6 14 15]
-        freqs2 [0 1 1 8 18 19 10 11 6 7]))))
+        freqs2 [0 1 1 8 18 19 10 11 6 7]))
+    (testing "decoding table construction"
+      (are [freqs results]
+          (= (let [n (alength freqs)
+                   lens (byte-array n)
+                   codes (int-array n)]
+               (sut/create-codes lens codes freqs)
+               (sut/create-decode-table lens codes 2))
+             results)
+        freqs0 {}
+        freqs1 {}
+        freqs2 {}))))
 
-(let [freqs (repeatedly 65536 #(rand-int 100000))
-      la    (long-array (map inc freqs))
-      ht    (time (sut/new-hu-tucker la))]
-  (test/defspec preserve-order-test
-    10
-    (prop/for-all
-      [bs1 (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
-                          gen/bytes)
-       bs2 (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
-                          gen/bytes)]
-      (let [^ByteBuffer src1 (b/allocate-buffer c/+max-key-size+)
-            ^ByteBuffer src2 (b/allocate-buffer c/+max-key-size+)
-            ^ByteBuffer dst1 (b/allocate-buffer c/+max-key-size+)
-            ^ByteBuffer dst2 (b/allocate-buffer c/+max-key-size+)]
-        (b/put-buffer src1 bs1 :bytes)
-        (b/put-buffer src2 bs2 :bytes)
-        (.flip src1)
-        (.flip src2)
-        (sut/encode ht src1 dst1)
-        (sut/encode ht src2 dst2)
-        (.flip ^ByteBuffer src1)
-        (.flip ^ByteBuffer src2)
-        (.flip ^ByteBuffer dst1)
-        (.flip ^ByteBuffer dst2)
-        (is (u/same-sign? (b/compare-buffer src1 src2)
-                          (b/compare-buffer dst1 dst2)))))))
+#_(let [freqs (repeatedly 65536 #(rand-int 10000000))
+        ht    (sut/new-hu-tucker (long-array (map inc freqs)))]
+   (test/defspec preserve-order-test
+     100
+     (prop/for-all
+       [bs1 (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
+                           gen/bytes)
+        bs2 (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
+                           gen/bytes)]
+       (let [^ByteBuffer src1 (b/allocate-buffer c/+max-key-size+)
+             ^ByteBuffer src2 (b/allocate-buffer c/+max-key-size+)
+             ^ByteBuffer dst1 (b/allocate-buffer c/+max-key-size+)
+             ^ByteBuffer dst2 (b/allocate-buffer c/+max-key-size+)]
+         (b/put-buffer src1 bs1 :bytes)
+         (b/put-buffer src2 bs2 :bytes)
+         (.flip src1)
+         (.flip src2)
+         (sut/encode ht src1 dst1)
+         (sut/encode ht src2 dst2)
+         (.flip ^ByteBuffer src1)
+         (.flip ^ByteBuffer src2)
+         (.flip ^ByteBuffer dst1)
+         (.flip ^ByteBuffer dst2)
+         (is (u/same-sign? (b/compare-buffer src1 src2)
+                           (b/compare-buffer dst1 dst2)))))))

@@ -142,6 +142,10 @@
 (def ^:const meta "datalevin/meta")
 (def ^:const opts "datalevin/opts")
 
+;; compression
+
+(def ^:const decoding-bits 4)
+
 ;; search
 (def ^:const terms "terms")
 (def ^:const docs "docs")
