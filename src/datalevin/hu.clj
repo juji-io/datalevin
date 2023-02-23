@@ -72,11 +72,10 @@
 
 (defn create-codes
   [^bytes lens ^ints codes ^longs freqs]
-  (let [n      (alength freqs)
-        levels (OptimalCodeLength/generate freqs)
+  (let [levels (OptimalCodeLength/generate freqs)
         nodes  (init-leaves levels)]
     (build-tree levels nodes)
-    (dotimes [i n] (create-code lens codes nodes i))))
+    (dotimes [i (alength freqs)] (create-code lens codes nodes i))))
 
 (deftype DecodeNode [^int prefix
                      ^byte len
@@ -137,20 +136,27 @@
 (defn create-decode-table
   ([lens codes]
    (create-decode-table lens codes c/decoding-bits))
-  ([lens codes decoding-bits]
+  ([^bytes lens ^ints codes ^long decoding-bits]
    (let [table (UnifiedMap.)
-         tree  (build-decode-tree lens codes)
-         m     (bit-shift-left 1 decoding-bits)]
-     (dotimes [i (alength lens)]
-       (dotimes [j m]
-         )))))
+         n     (bit-shift-left 1 decoding-bits)]
+     (letfn [(traverse [^DecodeNode node]
+               (let [entries (make-array TableEntry n)]
+                 (dotimes [i n]
+                   )
+                 (.put table (TableKey. (.-len node) (.-prefix node))
+                       entries))
+               (when-let [ln (left-child node)] (traverse ln))
+               (when-let [rn (right-child node)] (traverse rn)))]
+       (traverse (build-decode-tree lens codes)))
+     table)))
 
 (defprotocol IHuTucker
   (encode [this src-bf dst-bf])
   (decode [this src-bf dst-bf]))
 
-(deftype HuTucker [^bytes lens  ;; array of code lengths
-                   ^ints codes  ;; array of codes
+(deftype HuTucker [^bytes lens       ;; array of code lengths
+                   ^ints codes       ;; array of codes
+                   ^UnifiedMap table ;; decoding table
                    ]
   IHuTucker
   (encode [_ src dst]
@@ -182,7 +188,13 @@
                     r1  (- 64 o)]
                 (.putLong dst bf1)
                 (recur (+ i 2) (bit-shift-left ob r1) r1))))
-          (when-not (zero? bf) (.putLong dst bf)))))))
+          (when-not (zero? bf) (.putLong dst bf))))))
+
+  (decode [_ src dst]
+    (let [^ByteBuffer src src
+          ^ByteBuffer dst dst
+          ]
+      )))
 
 (defn new-hu-tucker
   [^longs freqs]
@@ -190,4 +202,4 @@
         lens  (byte-array n)
         codes (int-array n)]
     (create-codes lens codes freqs)
-    (HuTucker. lens codes)))
+    (HuTucker. lens codes (create-decode-table lens codes))))
