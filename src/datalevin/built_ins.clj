@@ -19,7 +19,7 @@
   [db e a else-val]
   (when (nil? else-val)
     (raise "get-else: nil default value is not supported" {:error :query/where}))
-  (if-some [datom (db/-first db [e a])]
+  (if-some [datom (db/-first db [(db/entid db e) a])]
     (:v datom)
     else-val))
 
@@ -27,7 +27,7 @@
   [db e & as]
   (reduce
     (fn [_ a]
-      (when-some [datom (db/-first db [e a])]
+      (when-some [datom (db/-first db [(db/entid db e) a])]
         (reduced [(:a datom) (:v datom)])))
     nil
     as))

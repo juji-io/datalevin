@@ -133,21 +133,26 @@
 
 (deftype TableEntry [^IntArrayList decoded ^TableKey link])
 
+(defn- create-entry
+  [tree decoding-bits entries i]
+  )
+
 (defn create-decode-table
   ([lens codes]
    (create-decode-table lens codes c/decoding-bits))
   ([^bytes lens ^ints codes ^long decoding-bits]
    (let [table (UnifiedMap.)
+         tree  (build-decode-tree lens codes)
          n     (bit-shift-left 1 decoding-bits)]
      (letfn [(traverse [^DecodeNode node]
                (let [entries (make-array TableEntry n)]
                  (dotimes [i n]
-                   )
+                   (create-entry tree decoding-bits entries i))
                  (.put table (TableKey. (.-len node) (.-prefix node))
                        entries))
                (when-let [ln (left-child node)] (traverse ln))
                (when-let [rn (right-child node)] (traverse rn)))]
-       (traverse (build-decode-tree lens codes)))
+       (traverse tree))
      table)))
 
 (defprotocol IHuTucker
