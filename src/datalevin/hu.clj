@@ -1,8 +1,10 @@
 (ns ^:no-doc datalevin.hu
   "Encoder and decoder for Hu-Tucker code."
   (:require
-   [datalevin.constants :as c])
+   [datalevin.constants :as c]
+   [datalevin.util :as u])
   (:import
+   [java.io Writer]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.list.mutable.primitive ByteArrayList
@@ -79,19 +81,33 @@
 
 (deftype DecodeNode [^int prefix
                      ^byte len
-                     ^int sym
+                     sym
                      ^:unsynchronized-mutable left-child
                      ^:unsynchronized-mutable right-child]
   INode
-  (leaf? [_] (not= sym -1))
+  (leaf? [_] (some? sym))
   (left-child [_] left-child)
   (right-child [_] right-child)
   (set-left-child [_ n] (set! left-child n) n)
   (set-right-child [_ n] (set! right-child n) n))
 
+(defmethod print-method DecodeNode
+  [^DecodeNode n ^Writer w]
+  (.write w "[")
+  (.write w (str (.-prefix n)))
+  (.write w " ")
+  (.write w (str (.-len n)))
+  (.write w " ")
+  (.write w (str (.-sym n)))
+  (.write w " ")
+  (.write w (str (if-let [^DecodeNode ln (left-child n)] (.-sym ln) nil)))
+  (.write w " ")
+  (.write w (str (if-let [^DecodeNode rn (right-child n)] (.-sym rn) nil)))
+  (.write w "]"))
+
 (defn- new-decode-node
-  ([prefix len] (DecodeNode. prefix len -1 nil nil))
-  ([sym] (DecodeNode. 0 0 sym nil nil)))
+  ([prefix len] (DecodeNode. prefix len nil nil nil))
+  ([sym] (DecodeNode. 0 0 (short sym) nil nil)))
 
 (defn- child-prefix
   [^DecodeNode n left?]
@@ -129,39 +145,83 @@
                 (set-right-child node (new-decode-node i))))))))
     root))
 
-(deftype TableKey [^byte len ^int prefix])
+(deftype TableKey [^byte len ^int prefix]
+  Object
+  (hashCode [_] (u/szudzik len prefix))
+  (equals [_ that]
+    (and (= len (.-len ^TableKey that))
+         (= prefix (.-prefix ^TableKey that)))))
 
-(deftype TableEntry [^IntArrayList decoded ^TableKey link])
+(defmethod print-method TableKey
+  [^TableKey k ^Writer w]
+  (.write w "[")
+  (.write w (str (.-prefix k)))
+  (.write w " ")
+  (.write w (str (.-len k)))
+  (.write w "]"))
+
+(deftype TableEntry [decoded ^TableKey link]
+  Object
+  (equals [_ that]
+    (and (= link (.-link ^TableEntry that))
+         (= decoded (.-decoded ^TableEntry that)))))
+
+(defmethod print-method TableEntry
+  [^TableEntry e ^Writer w]
+  (.write w "[")
+  (.write w (str (.-decoded e)))
+  (.write w " ")
+  (.write w (pr-str (.-link e)))
+  (.write w "]"))
 
 (defn- create-entry
-  [tree decoding-bits entries i]
-  )
+  [tree ^DecodeNode node decoding-bits
+   ^"[Ldatalevin.hu.TableEntry;" entries i]
+  (let [decoded   (volatile! nil)
+        prefix    (.-prefix node)
+        len       (.-len node)
+        n         (+ ^long decoding-bits len)
+        to-decode (bit-or (bit-shift-left prefix ^long decoding-bits)
+                          ^long i)]
+    (loop [j 0 mask (bit-shift-left 1 (dec n)) ^DecodeNode cur tree]
+      (if (< j n)
+        (let [nn (if (zero? (bit-and to-decode mask))
+                   (left-child cur) (right-child cur))]
+          ;; (println "nn =>" nn)
+          (if (leaf? nn)
+            (do (vreset! decoded (.-sym ^DecodeNode nn))
+                (recur (inc j) (unsigned-bit-shift-right mask 1) tree))
+            (recur (inc j) (unsigned-bit-shift-right mask 1) nn)))
+        (let [entry (TableEntry. @decoded
+                                 (TableKey. (.-len cur)
+                                            (.-prefix cur)))]
+          (aset entries i entry))))))
 
-(defn create-decode-table
-  ([lens codes]
-   (create-decode-table lens codes c/decoding-bits))
-  ([^bytes lens ^ints codes ^long decoding-bits]
-   (let [table (UnifiedMap.)
-         tree  (build-decode-tree lens codes)
-         n     (bit-shift-left 1 decoding-bits)]
-     (letfn [(traverse [^DecodeNode node]
-               (let [entries (make-array TableEntry n)]
-                 (dotimes [i n]
-                   (create-entry tree decoding-bits entries i))
-                 (.put table (TableKey. (.-len node) (.-prefix node))
-                       entries))
-               (when-let [ln (left-child node)] (traverse ln))
-               (when-let [rn (right-child node)] (traverse rn)))]
-       (traverse tree))
-     table)))
+(defn create-decode-tables
+  [^bytes lens ^ints codes ^long decoding-bits]
+  (let [tree  (build-decode-tree lens codes)
+        n     (bit-shift-left 1 decoding-bits)
+        table (UnifiedMap.)]
+    (letfn [(traverse [^DecodeNode node]
+              (when-not (leaf? node)
+                (let [entries (make-array TableEntry n)]
+                  (dotimes [i n]
+                    (create-entry tree node decoding-bits entries i))
+                  (.put table (TableKey. (.-len node) (.-prefix node))
+                        entries))
+                (when-let [ln (left-child node)] (traverse ln))
+                (when-let [rn (right-child node)] (traverse rn))))]
+      (traverse tree))
+    table))
 
 (defprotocol IHuTucker
   (encode [this src-bf dst-bf])
   (decode [this src-bf dst-bf]))
 
-(deftype HuTucker [^bytes lens       ;; array of code lengths
-                   ^ints codes       ;; array of codes
-                   ^UnifiedMap table ;; decoding table
+(deftype HuTucker [^bytes lens        ;; array of code lengths
+                   ^ints codes        ;; array of codes
+                   ^long decode-bits  ;; number of bits decoded at a time
+                   ^UnifiedMap tables ;; decoding tables
                    ]
   IHuTucker
   (encode [_ src dst]
@@ -198,13 +258,28 @@
   (decode [_ src dst]
     (let [^ByteBuffer src src
           ^ByteBuffer dst dst
-          ]
-      )))
+          total           (.remaining src)
+          decode-mask     (byte (u/n-bits-mask decode-bits))
+          ^long n         (/ 8 decode-bits)]
+      (dotimes [_ total]
+        (let [s (bit-and (.get src) 0x000000FF)]
+          (loop [i (dec n) k (TableKey. 0 0)]
+            (when (<= 0 i)
+              (let [c  (bit-and decode-mask
+                                (unsigned-bit-shift-right s (* 2 i)))
+                    es ^"[Ldatalevin.hu.TableEntry;" (.get tables k)
+                    e  ^TableEntry (aget es c)
+                    w  (.-decoded e)]
+                (when w (.putShort dst w))
+                (recur (dec i) (.-link e))))))))))
 
 (defn new-hu-tucker
-  [^longs freqs]
-  (let [n     (alength freqs)
-        lens  (byte-array n)
-        codes (int-array n)]
-    (create-codes lens codes freqs)
-    (HuTucker. lens codes (create-decode-table lens codes))))
+  ([freqs]
+   (new-hu-tucker freqs c/decoding-bits))
+  ([^longs freqs ^long decode-bits]
+   (let [n     (alength freqs)
+         lens  (byte-array n)
+         codes (int-array n)]
+     (create-codes lens codes freqs)
+     (HuTucker. lens codes decode-bits
+                (create-decode-tables lens codes decode-bits)))))

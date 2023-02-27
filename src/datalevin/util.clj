@@ -277,3 +277,13 @@
   (or (= x y 0)
       (and (< x 0) (< y 0))
       (and (> x 0) (> y 0))))
+
+(defn szudzik
+  "Szudzik's paring function"
+  [x y]
+  (let [x (int x) y (int y)]
+    (if (> y x)
+      (+ x (* y y))
+      (+ x y (* x x)))))
+
+(defn n-bits-mask ^long [^long n] (dec (bit-shift-left 1 n)))

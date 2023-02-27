@@ -69,11 +69,12 @@
 
 (defmethod print-method (Class/forName "[B")
   [^bytes bs, ^Writer w]
-  (doto w
-    (.write "#datalevin/bytes ")
-    (.write "\"")
-    (.write ^String (encode-base64 bs))
-    (.write "\"")))
+  (.write w "#datalevin/bytes ")
+  (.write w "\"")
+  ;; (.write ^String (encode-base64 bs))
+  (dotimes [i (alength bs)]
+    (.write w (Integer/toBinaryString (aget bs i))))
+  (.write w "\""))
 
 (defn bytes-from-reader ^bytes [s] (decode-base64 s))
 

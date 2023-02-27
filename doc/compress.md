@@ -24,9 +24,9 @@ The variable length code is Hu-Tucker code [2], which is optimal. The resulting
 optimal binary alphabetic tree of each DBI is represented as an array of code
 length (byte) and an array of codes (integer). These two arrays are stored in
 meta data of the DBI in compressed from, and are also kept in memory, as they
-are used for encoding raw data. Pre-computed decoding tables [3] are used for
-decoding compressed data 4 bits at a time, which are computed from the stored
-codes during DBI initialization.
+are used for encoding raw data. Pre-computed decoding tables [3] are used
+for decoding compressed data one byte at a time, which are computed from the
+stored codes during DBI initialization.
 
 When a sub-database is initialized, it is generation zero. We first transact the
 data uncompressed in generation zero sub-database, where we collect statistics
