@@ -2,9 +2,9 @@
   "Encoder and decoder for Hu-Tucker code."
   (:require
    [datalevin.constants :as c]
-   [datalevin.util :as u]
-   [datalevin.bits :as b])
+   [datalevin.util :as u])
   (:import
+   [java.util ArrayDeque Arrays LinkedList]
    [java.io Writer]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -13,8 +13,6 @@
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [datalevin.utl OptimalCodeLength]))
 
-;; Create codes
-
 (defprotocol INode
   (leaf? [_])
   (left-child [_])
@@ -22,67 +20,44 @@
   (set-left-child [_ node])
   (set-right-child [_ node]))
 
-(deftype Node [^int left-idx
-               ^int right-idx
-               left-child
-               right-child]
+;; Create codes
+
+(deftype Node [level sym left-child right-child]
   INode
   (leaf? [_] (nil? left-child)))
 
-(defn- new-node
-  ([i] (Node. i i nil nil))
-  ([li ri lc rc] (Node. li ri lc rc)))
-
-(defn- init-leaves
-  [^bytes levels]
-  (let [nodes (FastList.)]
-    (dotimes [i (alength levels)] (.add nodes (new-node i)))
-    nodes))
-
-(defn- merge-nodes
-  [^FastList nodes idx1 idx2]
-  (let [^Node ln (.get nodes idx1)
-        ^Node rn (.get nodes idx2)]
-    (.set nodes idx2 nil)
-    (.set nodes idx1 (new-node (.-left-idx ln) (.-right-idx rn) ln rn))))
-
 (defn- build-tree
-  [^bytes levels ^FastList nodes]
-  (let [n            (alength levels)
-        max-level    (apply max (seq levels))
-        tmp-levels   (ByteArrayList. levels)
-        node-indices (IntArrayList.)]
-    (println "max-level => " max-level)
-    (println "min-level => " (apply min (seq levels)))
-    (doseq [^long level (range max-level 0 -1)]
-      (.clear node-indices)
-      (dotimes [i n]
-        (when (= (.get tmp-levels i) (byte level) )
-          (.add node-indices i)))
-      (doseq [^long i (range 0 (.size node-indices) 2)
-              :let    [idx1 (.get node-indices i)
-                       idx2 (.get node-indices (inc i))]]
-        (merge-nodes nodes idx1 idx2)
-        (.set tmp-levels idx1 (int (dec level)))
-        (.set tmp-levels idx2 (int 0))))))
-
-(defn- create-code
-  [^bytes lens ^ints codes ^FastList nodes idx]
-  (loop [^Node node (.get nodes 0) len 0 code 0]
-    (if (leaf? node)
-      (do (aset lens idx (byte len)) (aset codes idx code))
-      (let [c (bit-shift-left code 1)
-            l (inc len)]
-        (if (< ^int (.-right-idx ^Node (.-left-child node)) ^int idx)
-          (recur (.-right-child node) l (inc c))
-          (recur (.-left-child node) l c))))))
+  [^bytes levels]
+  (let [n     (alength levels)
+        cur   (volatile! 0)
+        stack (LinkedList.)]
+    (while (not (and (= n @cur) (= 1 (.size stack))))
+      (if (and (<= 2 (.size stack)) (= (.-level ^Node (.get stack 0))
+                                       (.-level ^Node (.get stack 1))))
+        (let [top   ^Node (.pop stack)
+              top-1 ^Node (.pop stack)
+              level (dec ^byte (.-level top))]
+          (.push stack (Node. level nil top-1 top)))
+        (when (< ^long @cur n)
+          (let [sym   @cur
+                level (aget levels sym)]
+            (.push stack (Node. level sym nil nil))
+            (vswap! cur u/long-inc)))))
+    (.pop stack)))
 
 (defn create-codes
   [^bytes lens ^ints codes ^longs freqs]
   (let [levels (OptimalCodeLength/generate freqs)
-        nodes  (init-leaves levels)]
-    (build-tree levels nodes)
-    (dotimes [i (alength freqs)] (create-code lens codes nodes i))))
+        root   (build-tree levels)]
+    (letfn [(traverse [^Node node ^long code]
+              (if (leaf? node)
+                (let [sym (.-sym node)]
+                  (aset lens sym (byte (.-level node)))
+                  (aset codes sym (int code)))
+                (let [code1 (bit-shift-left code 1)]
+                  (traverse (.-left-child node) code1)
+                  (traverse (.-right-child node) (inc code1)))))]
+      (traverse root 0))))
 
 ;; Create decoding tables
 
@@ -95,8 +70,12 @@
   (leaf? [_] (some? sym))
   (left-child [_] left-child)
   (right-child [_] right-child)
-  (set-left-child [_ n] (set! left-child n) n)
-  (set-right-child [_ n] (set! right-child n) n))
+  (set-left-child [_ n]
+    (when left-child (println "SHOULD NOT HAPPEN: left child" left-child "exists"))
+    (set! left-child n) n)
+  (set-right-child [_ n]
+    (when right-child (println "SHOULD NOT HAPPEN: right child" right-child "exists"))
+    (set! right-child n) n))
 
 (defmethod print-method DecodeNode
   [^DecodeNode n ^Writer w]
@@ -125,11 +104,14 @@
   [^bytes lens ^ints codes]
   (println "min-lens =>" (apply min (seq lens)))
   (println "max-lens =>" (apply max (seq lens)))
-  (let [root (new-decode-node 0 0)]
+  (let [root    (new-decode-node 0 0)
+        ncounts (atom 1)
+        tcounts (atom 0)]
     (dotimes [i (alength codes)]
       (let [len   (aget lens i)
             len-1 (dec len)
             code  (aget codes i)]
+        ;; (println "len: " len  "code:" (Integer/toBinaryString code))
         (loop [j 0 mask (bit-shift-left 1 len-1) node root]
           (let [left? (zero? (bit-and code mask))
                 j+1   (inc j)]
@@ -138,16 +120,25 @@
                      (unsigned-bit-shift-right mask 1)
                      (if left?
                        (or (left-child node)
-                           (set-left-child node (new-decode-node
-                                                  (child-prefix node true)
-                                                  j+1)))
+                           (set-left-child node
+                                           (do (swap! ncounts inc)
+                                               (new-decode-node
+                                                 (child-prefix node true)
+                                                 j+1))))
                        (or (right-child node)
-                           (set-right-child node (new-decode-node
-                                                   (child-prefix node false)
-                                                   j+1)))))
-              (if left?
-                (set-left-child node (new-decode-node i))
-                (set-right-child node (new-decode-node i))))))))
+                           (set-right-child node
+                                            (do (swap! ncounts inc)
+                                                (new-decode-node
+                                                  (child-prefix node false)
+                                                  j+1))))))
+              (do #_(println " create " (if left? "left" "right")
+                             "leaf node for " node)
+                  (swap! tcounts inc)
+                  (if left?
+                    (set-left-child node (new-decode-node i))
+                    (set-right-child node (new-decode-node i)))))))))
+    (println "internal node count => " @ncounts)
+    (println "terminal node count => " @tcounts)
     root))
 
 (deftype TableKey [^byte len ^int prefix]
@@ -190,14 +181,6 @@
       (if (< j n)
         (let [nn (if (zero? (bit-and to-decode mask))
                    (left-child cur) (right-child cur))]
-          (when (nil? nn)
-            (println "node =>" node)
-            (println "cur =>" cur)
-            (println "j =>" j)
-            (println "n =>" n)
-            (println "to-decode =>" (Integer/toBinaryString to-decode))
-            (println "mask =>" (Integer/toBinaryString mask))
-            )
           (if (leaf? nn)
             (do (vreset! decoded (.-sym ^DecodeNode nn))
                 (recur (inc j) (unsigned-bit-shift-right mask 1) tree))
