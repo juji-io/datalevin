@@ -4,14 +4,11 @@
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
-   [java.util ArrayDeque Arrays LinkedList]
+   [java.util LinkedList]
    [java.io Writer]
    [java.nio ByteBuffer]
-   [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.list.mutable.primitive ByteArrayList
-    IntArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [datalevin.utl OptimalCodeLength]))
+   [datalevin.utl LeftistHeap LeftistHeap$Node]))
 
 (defprotocol INode
   (leaf? [_])
@@ -20,13 +17,77 @@
   (set-left-child [_ node])
   (set-right-child [_ node]))
 
+;; Find optimal levels
+
+(deftype SeqNode [^long min-sum
+                  ^int i
+                  ^int j
+                  ^LeftistHeap heap]
+  Object
+  (equals [_ other]
+    (and (= min-sum (.-min-sum ^SeqNode other))
+         (= i (.-i ^SeqNode other))
+         (= j (.-j ^SeqNode other))))
+  (toString [_] (str "SeqNode [" min-sum " " i " " j "]")))
+
+(defn- master-pq
+  []
+  (proxy [LeftistHeap] []
+    (lessThan [a b]
+      (< ^long (.-min-sum ^SeqNode a) ^long (.-min-sum ^SeqNode b)))))
+
+(def ^LeftistHeap master (master-pq))
+(.insert master (SeqNode. 2 0 0 nil))
+(.insert master (SeqNode. 4 1 3 nil))
+(.insert master (SeqNode. 6 1 1 nil))
+(.insert master (SeqNode. 1 0 1 nil))
+(.order master)
+(.findNode master (SeqNode. 1 0 1 nil))
+(.deleteElement master (SeqNode. 6 1 1 nil))
+
+(deftype TreeNode [^int idx
+                   ^long freq
+                   ^SeqNode left-seq
+                   ^SeqNode right-seq
+                   left-child
+                   right-child]
+  INode
+  (leaf? [_] (some? idx))
+
+  Object
+  (toString [_] (str "TreeNode [" idx " " freq "]")))
+
+(defn- huffman-pq
+  []
+  (proxy [LeftistHeap] []
+    (lessThan [a b]
+      (< ^long (.-freq ^TreeNode a) ^long (.-freq ^TreeNode b)))))
+
+(defn- init-queues
+  [freqs work pq]
+  )
+
+(defn- build-level-tree
+  [^longs freqs]
+  (let [n    (alength freqs)
+        work (make-array TreeNode n)]
+    (init-queues freqs work (master-pq))))
+
+(defn create-levels
+  [^longs freqs]
+  (let [n      (alength freqs)
+        tree   (build-level-tree freqs)
+        levels (byte-array n)]
+    (letfn [(traverse [^TreeNode node])]
+      (traverse tree))))
+
 ;; Create codes
 
 (deftype Node [level sym left-child right-child]
   INode
   (leaf? [_] (nil? left-child)))
 
-(defn- build-tree
+(defn- build-code-tree
   [^bytes levels]
   (let [n     (alength levels)
         cur   (volatile! 0)
@@ -47,8 +108,8 @@
 
 (defn create-codes
   [^bytes lens ^ints codes ^longs freqs]
-  (let [levels (OptimalCodeLength/generate freqs)
-        root   (build-tree levels)]
+  (let [levels (create-levels freqs)
+        root   (build-code-tree levels)]
     (letfn [(traverse [^Node node ^long code]
               (if (leaf? node)
                 (let [sym (.-sym node)]

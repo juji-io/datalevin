@@ -12,9 +12,7 @@
    [java.util Arrays]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [org.eclipse.collections.impl.list.mutable.primitive ShortArrayList]
-   [datalevin.hu TableKey TableEntry]
-   [datalevin.utl OptimalCodeLength]))
+   [datalevin.hu TableKey TableEntry]))
 
 (deftest basic-ops-test
   (let [^longs freqs0 (long-array [1 1 1 1 1 1 1 1])
@@ -26,7 +24,7 @@
         ^shorts data2 (short-array (range 10))
         ^shorts data3 (short-array (range 11))]
     (testing "level tree construction"
-      (are [freqs levels] (= (seq (OptimalCodeLength/generate freqs)) levels)
+      (are [freqs levels] (= (seq (sut/create-levels freqs)) levels)
         freqs0 [3 3 3 3 3 3 3 3]
         freqs1 [3 3 5 5 4 3 3 3 3 4 4]
         freqs2 [3 3 2 4 5 5 4 4 3 3]

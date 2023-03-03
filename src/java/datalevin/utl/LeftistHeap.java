@@ -1,56 +1,151 @@
 package datalevin.utl;
 
-public class LeftistHeap {
+public abstract class LeftistHeap<T> {
 
-    int element;
-    int s;
-    LeftistHeap leftChild;
-    LeftistHeap rightChild;
+    Node root;
 
-    public LeftistHeap(int e) {
-        this.element = e;
-        this.s = 1;
-        this.leftChild = null;
-        this.rightChild = null;
+    public LeftistHeap() { root = null; }
+
+    class Node {
+
+        T element;
+        int s;
+        Node parent;
+        Node leftChild;
+        Node rightChild;
+
+        public Node(T e) {
+            this.element = e;
+            this.s = 1;
+            this.parent = null;
+            this.leftChild = null;
+            this.rightChild = null;
+        }
+
+        public String toString() {
+            return "[" + element + " " + s
+                + " p: " + (parent != null ? parent.element : null)
+                + " l: " + (leftChild != null ? leftChild.element : null)
+                + " r: " + (rightChild != null ? rightChild.element : null)
+                + "]";
+        }
     }
 
-    public LeftistHeap merge(LeftistHeap x, LeftistHeap y) {
+    protected abstract boolean lessThan(T a, T b);
+
+    public void merge(LeftistHeap rhs) {
+        if (this == rhs) return;
+
+        root = merge(root, rhs.root);
+        rhs.root = null;
+    }
+
+    public Node merge(Node x, Node y) {
         if (x == null) return y;
         if (y == null) return x;
 
-        // if this were a max-heap, then the
-        // next line would be: if (x.element < y.element)
-        if (x.element > y.element) return merge(y, x);
+        if (lessThan(y.element, x.element)) return merge(y, x);
 
-        x.rightChild = merge(x.rightChild, y);
+        Node m = merge(x.rightChild, y);
+        x.rightChild = m;
+        m.parent = x;
 
-        if (x.leftChild == null) {
-            // left child doesn't exist, so move right child to the left side
-            x.leftChild = x.rightChild;
-            x.rightChild = null;
-            // x.s was, and remains, 1
-        } else {
-            // left child does exist, so compare s-values
-            if (x.leftChild.s < x.rightChild.s) {
-                LeftistHeap temp = x.leftChild;
-                x.leftChild = x.rightChild;
-                x.rightChild = temp;
-            }
-            // since we know the right child has the lower s-value, we can just
-            // add one to its s-value
-            x.s = x.rightChild.s + 1;
-        }
+        adjust(x);
         return x;
     }
 
-    public LeftistHeap insert(LeftistHeap x, int e) {
-        LeftistHeap y = new LeftistHeap(e);
-        return merge(x, y);
+    private void adjust(Node x) {
+        if (x.leftChild == null && x.rightChild == null) {
+            x.s = 1;
+            return;
+        }
+
+        if (x.leftChild == null) {
+            x.leftChild = x.rightChild;
+            x.rightChild = null;
+        }
+
+        if (x.rightChild == null) {
+            x.s = 1;
+        } else {
+            if (x.leftChild.s < x.rightChild.s) {
+                Node temp = x.leftChild;
+                x.leftChild = x.rightChild;
+                x.rightChild = temp;
+            }
+            x.s = x.rightChild.s + 1;
+        }
     }
 
-    public LeftistHeap deleteMin(LeftistHeap x) {
-        return merge(x.leftChild, x.rightChild);
+    public void insert(T e) {
+        root = merge(root, new Node(e));
     }
 
+    public void deleteMin() {
+        root = merge(root.leftChild, root.rightChild);
+    }
 
+    public T findMin() {
+        return root.element;
+    }
+
+    public void deleteElement(T e) {
+        if (root == null) return;
+
+        if (e.equals(root.element)) {
+            root = merge(root.leftChild, root.rightChild);
+            return;
+        }
+
+        Node h = findNode(e);
+        if (h == null) return;
+
+        Node h1 = merge(h.leftChild, h.rightChild);
+        Node p = h.parent;
+
+        if (h1 != null) h1.parent = p;
+
+        if (h == p.leftChild) {
+            p.leftChild = h1;
+        } else {
+            p.rightChild = h1;
+        }
+
+        int before = p.s;
+        adjust(p);
+        int after = p.s;
+        while (before != after && p != root) {
+            p = p.parent;
+            before = p.s;
+            adjust(p);
+            after = p.s;
+        }
+    }
+
+    public Node findNode(T e) {
+        return findNode(root, e);
+    }
+
+    private Node findNode(Node n, T e) {
+        if (n == null) return null;
+        if (e.equals(n.element)) return n;
+        Node l = findNode(n.leftChild, e);
+        if (l != null) return l;
+        Node r = findNode(n.rightChild, e);
+        if (r != null) return r;
+        return null;
+    }
+
+    public void order() {
+        order(root);
+        System.out.println();
+    }
+
+    private void order(Node r) {
+        if (r != null) {
+            System.out.println("[" + r.element + " " + r.s + "]");
+            order(r.leftChild);
+            order(r.rightChild);
+        }
+    }
 }
