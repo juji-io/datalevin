@@ -8,7 +8,7 @@
    [java.io Writer]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [datalevin.utl LeftistHeap LeftistHeap$Node]))
+   [datalevin.utl LeftistHeap]))
 
 (defprotocol INode
   (leaf? [_])
@@ -19,42 +19,54 @@
 
 ;; Find optimal levels
 
-(deftype SeqNode [^long min-sum
+(deftype SeqNode [^long sum
                   ^int i
                   ^int j
                   ^LeftistHeap heap]
   Object
+  (hashCode [_] (u/szudzik i j))
   (equals [_ other]
-    (and (= min-sum (.-min-sum ^SeqNode other))
-         (= i (.-i ^SeqNode other))
-         (= j (.-j ^SeqNode other))))
-  (toString [_] (str "SeqNode [" min-sum " " i " " j "]")))
+    (and (= i (.-i ^SeqNode other)) (= j (.-j ^SeqNode other))))
+  (toString [_] (str "SeqNode [" sum " " i " " j "]")))
 
 (defn- master-pq
   []
   (proxy [LeftistHeap] []
     (lessThan [a b]
-      (< ^long (.-min-sum ^SeqNode a) ^long (.-min-sum ^SeqNode b)))))
+      (< ^long (.-sum ^SeqNode a) ^long (.-sum ^SeqNode b)))))
 
-(def ^LeftistHeap master (master-pq))
-(.insert master (SeqNode. 2 0 0 nil))
-(.insert master (SeqNode. 4 1 3 nil))
-(.insert master (SeqNode. 6 1 1 nil))
-(.insert master (SeqNode. 1 0 1 nil))
-(.order master)
-(.findNode master (SeqNode. 1 0 1 nil))
-(.deleteElement master (SeqNode. 6 1 1 nil))
+(defprotocol ITreeNode
+  (left-seq [_])
+  (right-seq [_])
+  (set-left-seq [_ s])
+  (set-right-seq [_ s]))
 
 (deftype TreeNode [^int idx
                    ^long freq
-                   ^SeqNode left-seq
-                   ^SeqNode right-seq
+                   ^:unsynchronized-mutable ^SeqNode left-seq
+                   ^:unsynchronized-mutable ^SeqNode right-seq
                    left-child
                    right-child]
   INode
-  (leaf? [_] (some? idx))
+  (leaf? [_] (nil? left-child))
+
+  ITreeNode
+  (left-seq [_] left-seq)
+  (right-seq [_] right-seq)
+  (set-left-seq [_ s] (set! left-seq s))
+  (set-right-seq [_ s] (set! right-seq s))
 
   Object
+  (hashCode [_]
+    (let [h (+ (int (* 31 7)) idx)
+          h (+ (int (* 31 h)) (int (if left-seq (.hashCode left-seq) 0)))]
+      (+ (int (* 31 h)) (int (if right-seq (.hashCode right-seq) 0)))))
+  (equals [_ other]
+    (and
+      (= (.-i left-seq) (.-i ^SeqNode (.-left-seq ^TreeNode other)))
+      (= (.-j left-seq) (.-j ^SeqNode (.-left-seq ^TreeNode other)))
+      (= (.-i right-seq) (.-i ^SeqNode (.-right-seq ^TreeNode other)))
+      (= (.-j right-seq) (.-j ^SeqNode (.-right-seq ^TreeNode other)))))
   (toString [_] (str "TreeNode [" idx " " freq "]")))
 
 (defn- huffman-pq
@@ -64,14 +76,99 @@
       (< ^long (.-freq ^TreeNode a) ^long (.-freq ^TreeNode b)))))
 
 (defn- init-queues
-  [freqs work pq]
-  )
+  [^long n ^longs freqs ^"[Ldatalevin.hu.TreeNode;" work ^LeftistHeap mpq]
+  (dotimes [k n]
+    (aset work k (TreeNode. k (aget freqs k) nil nil nil nil)))
+  (dotimes [k (dec n)]
+    (let [k+1  (inc k)
+          t    ^TreeNode (aget work k)
+          t+1  ^TreeNode (aget work k+1)
+          wk   (.-freq t)
+          wk+1 (.-freq t+1)
+          i    (if (<= wk wk+1) k k+1)
+          j    (if (= i k) k+1 k)
+          hpq  ^LeftistHeap (huffman-pq)
+          sn   (SeqNode. (+ wk wk+1) i j hpq)]
+      (set-right-seq t sn)
+      (set-left-seq t+1 sn)
+      (.insert hpq t)
+      (.insert hpq t+1)
+      (.insert mpq sn))))
 
 (defn- build-level-tree
   [^longs freqs]
-  (let [n    (alength freqs)
-        work (make-array TreeNode n)]
-    (init-queues freqs work (master-pq))))
+  (let [n                                (alength freqs)
+        ^"[Ldatalevin.hu.TreeNode;" work (make-array TreeNode n)
+        ^LeftistHeap mpq                 (master-pq)]
+    (init-queues n freqs work mpq)
+    (dotimes [_ (dec n)]
+      (let [mpq-min ^SeqNode (.findMin mpq)
+            l       (.-i mpq-min)
+            r       (.-j mpq-min)
+            w       (.-sum mpq-min)
+            nl      (aget work l)
+            nr      (aget work r)
+            nn      (TreeNode. l w nil nil nl nr)]
+        (aset work l nn)
+        (aset work r nil)
+        (cond
+          (and (leaf? nl) (leaf? nr))
+          (let [ll-seq ^SeqNode (left-seq nl)
+                ll-hpq ^LeftistHeap (.-heap ll-seq)
+                _      (.deleteElement ll-hpq nl)
+                lr-hpq ^LeftistHeap (.-heap ^SeqNode (right-seq nl))
+                _      (.deleteElement lr-hpq nl)
+                rl-hpq ^LeftistHeap (.-heap ^SeqNode (left-seq nr))
+                _      (.deleteElement rl-hpq nr)
+                rr-seq ^SeqNode (right-seq nr)
+                rr-hpq ^LeftistHeap (.-heap rr-seq)
+                _      (.deleteElement rr-hpq nr)
+                n-hpq  ^LeftistHeap (doto ll-hpq
+                                      (.merge lr-hpq)
+                                      (.merge rr-hpq)
+                                      (.insert nn))
+                minn   ^TreeNode (.findMin n-hpq)
+                minn1  ^TreeNode (.findNextMin n-hpq)
+                sn     (SeqNode. (+ (.-freq minn) (.-freq minn1))
+                                 (.-idx minn) (.-idx minn1) n-hpq)]
+            (set-right-seq nl sn)
+            (set-left-seq nr sn)
+            (doto mpq
+              (.deleteElement ll-seq)
+              (.deleteElement rr-seq)
+              (.deleteMin)
+              (.insert sn)))
+
+          (and (not (leaf? nl)) (not (leaf? nr)))
+          (let [hpq   ^LeftistHeap (.-heap mpq-min)
+                minn  ^TreeNode (.findMin hpq)
+                minn1 ^TreeNode (.findNextMin hpq)
+                sn    (SeqNode. (+ (.-freq minn) (.-freq minn1))
+                                (.-idx minn) (.-idx minn1)
+                                (doto hpq
+                                  (.deleteMin) (.deleteMin) (.insert nn)))]
+            (set-right-seq nl sn)
+            (set-left-seq nr sn)
+            (doto mpq (.deleteMin) (.insert sn)))
+
+          :else
+          (let [hpq   ^LeftistHeap (.-heap mpq-min)
+                minn  ^TreeNode (.findMin hpq)
+                minn1 ^TreeNode (.findNextMin hpq)
+                nt    ^TreeNode (if (leaf? nl) nl nr)
+                l-hpq ^LeftistHeap (.-heap ^SeqNode (left-seq nt))
+                r-hpq ^LeftistHeap (.-heap ^SeqNode (right-seq nt))
+                o-hpq (if (= hpq l-hpq) r-hpq l-hpq)
+                _     (.deleteElement o-hpq nt)
+                sn    (SeqNode. (+ (.-freq minn) (.-freq minn1))
+                                (.-idx minn) (.-idx minn1)
+                                (doto hpq
+                                  (.deleteMin) (.deleteMin) (.merge o-hpq)
+                                  (.insert nn)))]
+            (set-right-seq nl sn)
+            (set-left-seq nr sn)
+            (doto mpq (.deleteMin) (.insert sn))))))
+    (aget work 0)))
 
 (defn create-levels
   [^longs freqs]
@@ -79,7 +176,8 @@
         tree   (build-level-tree freqs)
         levels (byte-array n)]
     (letfn [(traverse [^TreeNode node])]
-      (traverse tree))))
+      (traverse tree)
+      levels)))
 
 ;; Create codes
 
