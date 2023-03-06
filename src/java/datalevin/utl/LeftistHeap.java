@@ -2,6 +2,7 @@ package datalevin.utl;
 
 import java.util.Collection;
 import java.util.LinkedList;
+import java.util.Set;
 import org.eclipse.collections.impl.map.mutable.UnifiedMap;
 
 public abstract class LeftistHeap<T> {
@@ -13,12 +14,6 @@ public abstract class LeftistHeap<T> {
         root = null;
         nodes = new UnifiedMap<T, Node>();
     }
-
-    // public LeftistHeap(T e) {
-    //     root = new Node(e);
-    //     nodes = new UnifiedMap<T, Node>();
-    //     nodes.put(e, root);
-    // }
 
     class Node {
 
@@ -37,7 +32,8 @@ public abstract class LeftistHeap<T> {
         }
 
         public String toString() {
-            return "[" + element + " " + s
+            return "["
+                + element + " " + s
                 + " p: " + (parent != null ? parent.element : null)
                 + " l: " + (leftChild != null ? leftChild.element : null)
                 + " r: " + (rightChild != null ? rightChild.element : null)
@@ -47,21 +43,9 @@ public abstract class LeftistHeap<T> {
 
     protected abstract boolean lessThan(T a, T b);
 
-    // public static LeftistHeap init(Collection<LeftistHeap> coll) {
-    //     LinkedList<LeftistHeap> queue = new LinkedList<LeftistHeap>();
-    //     queue.addAll(coll);
-
-    //     while (queue.size() > 1) {
-    //         LeftistHeap top = queue.poll();
-    //         LeftistHeap top1 = queue.poll();
-    //         queue.add(top.merge(top1));
-    //     }
-
-    //     return queue.poll();
-    // }
-
     public LeftistHeap merge(LeftistHeap rhs) {
         if (this == rhs) return this;
+        if (rhs == null) return this;
 
         root = merge(root, rhs.root);
         rhs.root = null;
@@ -109,6 +93,8 @@ public abstract class LeftistHeap<T> {
     }
 
     public void insert(T e) {
+        if (e == null) return;
+
         Node n = new Node(e);
         root = merge(root, n);
         nodes.put(e, n);
@@ -125,8 +111,13 @@ public abstract class LeftistHeap<T> {
     }
 
     public T findNextMin() {
-        T le = root.leftChild.element;
-        T re = root.rightChild.element;
+        Node l = root.leftChild;
+        Node r = root.rightChild;
+        if (l == null) return null;
+        if (r == null) return l.element;
+
+        T le = l.element;
+        T re = r.element;
         if (lessThan(le, re)) {
             return le;
         } else {
@@ -136,6 +127,7 @@ public abstract class LeftistHeap<T> {
 
     public void deleteElement(T e) {
         if (root == null) return;
+        if (e == null) return;
 
         if (e.equals(root.element)) {
             deleteMin();
@@ -144,6 +136,8 @@ public abstract class LeftistHeap<T> {
 
         Node h = findNode(e);
         if (h == null) return;
+
+        nodes.remove(e);
 
         Node h1 = merge(h.leftChild, h.rightChild);
         Node p = h.parent;
@@ -169,6 +163,10 @@ public abstract class LeftistHeap<T> {
 
     public Node findNode(T e) {
         return nodes.get(e);
+    }
+
+    public Set<T> elements() {
+        return nodes.keySet();
     }
 
     public void print() {
