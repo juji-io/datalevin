@@ -1,8 +1,5 @@
 package datalevin.utl;
 
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.Set;
 import org.eclipse.collections.impl.map.mutable.UnifiedMap;
 
 public abstract class LeftistHeap<T> {
@@ -29,15 +26,6 @@ public abstract class LeftistHeap<T> {
             this.parent = null;
             this.leftChild = null;
             this.rightChild = null;
-        }
-
-        public String toString() {
-            return "["
-                + element + " " + s
-                + " p: " + (parent != null ? parent.element : null)
-                + " l: " + (leftChild != null ? leftChild.element : null)
-                + " r: " + (rightChild != null ? rightChild.element : null)
-                + "]";
         }
     }
 
@@ -66,9 +54,11 @@ public abstract class LeftistHeap<T> {
         m.parent = x;
 
         adjust(x);
+
         return x;
     }
 
+    // ensure the leftist properties
     private void adjust(Node x) {
         if (x.leftChild == null && x.rightChild == null) {
             x.s = 1;
@@ -163,22 +153,5 @@ public abstract class LeftistHeap<T> {
 
     public Node findNode(T e) {
         return nodes.get(e);
-    }
-
-    public Set<T> elements() {
-        return nodes.keySet();
-    }
-
-    public void print() {
-        print(root);
-        System.out.println();
-    }
-
-    private void print(Node r) {
-        if (r != null) {
-            System.out.println("[" + r.element + " " + r.s + "]");
-            print(r.leftChild);
-            print(r.rightChild);
-        }
     }
 }

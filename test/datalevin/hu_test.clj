@@ -91,7 +91,7 @@
             (sut/encode ht src dst)
             (.flip dst)
             (let [^bytes results (b/get-bytes dst)]
-              (println "results=>" (b/hexify results))
+              ;; (println "results=>" (b/hexify results))
               (Arrays/equals results bytes)))
         freqs0 data0 (byte-array [5 57 119])
         freqs1 data1 (byte-array [5 9 87 46 239])
@@ -151,7 +151,7 @@
 (let [freqs (repeatedly 65536 #(rand-int 1000000))
       ht    (sut/new-hu-tucker (long-array (map inc freqs)))]
   (test/defspec round-trip-generative-test
-    3
+    100
     (prop/for-all
       [^bytes bs (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
                                 gen/bytes)]
@@ -168,8 +168,8 @@
         (.flip dst)
         (sut/decode ht dst res)
         (.flip res)
-        (println "bs =>" (b/hexify bs))
+        ;; (println "bs =>" (b/hexify bs))
         (let [^bytes bs1 (b/get-bytes res)]
-          (println "bs1 =>" (b/hexify bs1))
+          ;; (println "bs1 =>" (b/hexify bs1))
           (is (or (Arrays/equals bs bs1)
                   (Arrays/equals bs0 bs1))))))))

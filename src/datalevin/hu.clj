@@ -17,7 +17,7 @@
   (set-left-child [_ node])
   (set-right-child [_ node]))
 
-;; Find optimal levels
+;; Find optimal code lengths
 
 (deftype SeqNode [^long sum          ;; sum of min freq and 2nd min freq
                   ^int i             ;; idx of min freq TreeNode
@@ -27,8 +27,7 @@
                   ^LeftistHeap heap] ;; heap of TreeNodes in this seq
   Object
   (hashCode [_] l)
-  (equals [_ other] (= l (.-l ^SeqNode other)))
-  (toString [_] (str "SeqNode [" sum " " i " " j " " l " " r "]")))
+  (equals [_ other] (= l (.-l ^SeqNode other))))
 
 (defn- master-pq
   []
@@ -36,8 +35,7 @@
     (lessThan [^SeqNode a ^SeqNode b]
       (< (long (u/combine-cmp
                  (compare ^long (.-sum a) ^long (.-sum b))
-                 ;; tie breaker
-                 (compare ^int (.-l a) ^int (.-l b))))
+                 (compare ^int (.-l a) ^int (.-l b)))) ;; tie breaker
          0))))
 
 (defprotocol ITreeNode
@@ -63,8 +61,7 @@
 
   Object
   (hashCode [_] idx)
-  (equals [_ other] (= idx (.-idx ^TreeNode other)))
-  (toString [_] (str "TreeNode [" idx " " freq "]")))
+  (equals [_ other] (= idx (.-idx ^TreeNode other))))
 
 (defn- huffman-pq
   []
@@ -110,10 +107,9 @@
             j  (.-j m)
             l  (if (<= i j) i j)
             r  (if (= l i) j i)
-            w  (.-sum m)
             nl (aget work l)
             nr (aget work r)
-            nn (TreeNode. l w nil nil nl nr)]
+            nn (TreeNode. l (.-sum m) nil nil nl nr)]
         (aset work l nn)
         (aset work r nil)
         (cond
@@ -122,7 +118,7 @@
           (let [tl     (aget terminals l)
                 tr     (aget terminals r)
                 ll-seq ^SeqNode (left-seq tl)
-                snl    (if ll-seq (.-l ll-seq) -1)
+                l      (if ll-seq (.-l ll-seq) -1)
                 ll-hpq (when ll-seq
                          (doto ^LeftistHeap (.-heap ll-seq)
                            (.deleteElement tl)))
@@ -131,25 +127,23 @@
                 _      (doto ^LeftistHeap (.-heap ^SeqNode (left-seq tr))
                          (.deleteElement tr))
                 rr-seq ^SeqNode (right-seq tr)
-                snr    (if rr-seq (.r rr-seq) n)
+                r      (if rr-seq (.r rr-seq) n)
                 rr-hpq (when rr-seq
                          (doto ^LeftistHeap (.-heap rr-seq)
                            (.deleteElement tr)))
                 n-hpq  ^LeftistHeap (doto lr-hpq
-                                      (.merge ll-hpq)
-                                      (.merge rr-hpq)
+                                      (.merge ll-hpq) (.merge rr-hpq)
                                       (.insert nn))
                 minn   ^TreeNode (.findMin n-hpq)
                 minn1  ^TreeNode (.findNextMin n-hpq)
                 sn     (SeqNode. (+ (.-freq minn) (.-freq minn1))
-                                 (.-idx minn) (.-idx minn1)
-                                 snl snr n-hpq)]
-            (when-not (= snl -1) (set-right-seq (aget terminals snl) sn))
-            (when-not (= snr n) (set-left-seq (aget terminals snr) sn))
+                                 (.-idx minn) (.-idx minn1) l r n-hpq)]
+            (when-not (= l -1) (set-right-seq (aget terminals l) sn))
+            (when-not (= r n) (set-left-seq (aget terminals r) sn))
             (doto mpq
               (.deleteElement ll-seq) (.deleteElement rr-seq)
               (.deleteMin) (.insert sn)))
-          ;; combine 2 internal nodes, no seq merge
+          ;; combine 2 internal nodes, no seq merge needed
           (and (not (leaf? nl)) (not (leaf? nr)))
           (let [hpq   ^LeftistHeap (.-heap m)
                 n-hpq (doto hpq
@@ -254,12 +248,8 @@
   (leaf? [_] (some? sym))
   (left-child [_] left-child)
   (right-child [_] right-child)
-  (set-left-child [_ n]
-    (when left-child (println "SHOULD NOT HAPPEN: left child" left-child "exists"))
-    (set! left-child n) n)
-  (set-right-child [_ n]
-    (when right-child (println "SHOULD NOT HAPPEN: right child" right-child "exists"))
-    (set! right-child n) n))
+  (set-left-child [_ n] (set! left-child n) n)
+  (set-right-child [_ n] (set! right-child n) n))
 
 (defmethod print-method DecodeNode
   [^DecodeNode n ^Writer w]
@@ -286,8 +276,6 @@
 
 (defn- build-decode-tree
   [^bytes lens ^ints codes]
-  (println "min-lens =>" (apply min (seq lens)))
-  (println "max-lens =>" (apply max (seq lens)))
   (let [root    (new-decode-node 0 0)
         ncounts (atom 1)
         tcounts (atom 0)]
@@ -295,7 +283,6 @@
       (let [len   (aget lens i)
             len-1 (dec len)
             code  (aget codes i)]
-        ;; (println "len: " len  "code:" (Integer/toBinaryString code))
         (loop [j 0 mask (bit-shift-left 1 len-1) node root]
           (let [left? (zero? (bit-and code mask))
                 j+1   (inc j)]
@@ -315,14 +302,10 @@
                                                 (new-decode-node
                                                   (child-prefix node false)
                                                   j+1))))))
-              (do #_(println " create " (if left? "left" "right")
-                             "leaf node for " node)
-                  (swap! tcounts inc)
+              (do (swap! tcounts inc)
                   (if left?
                     (set-left-child node (new-decode-node i))
                     (set-right-child node (new-decode-node i)))))))))
-    (println "internal node count => " @ncounts)
-    (println "terminal node count => " @tcounts)
     root))
 
 (deftype TableKey [^byte len ^int prefix]
@@ -380,12 +363,8 @@
         tables (UnifiedMap.)]
     (letfn [(traverse [^DecodeNode node]
               (when-not (leaf? node)
-                (if-let [ln (left-child node)]
-                  (traverse ln)
-                  (println "non-leaf node no left child =>" node))
-                (if-let [rn (right-child node)]
-                  (traverse rn)
-                  (println "non-leaf node no right child =>" node))
+                (traverse (left-child node))
+                (traverse (right-child node))
                 (let [entries (make-array TableEntry n)]
                   (dotimes [i n]
                     (create-entry tree node decoding-bits entries i))
@@ -461,8 +440,7 @@
                          (when w (.putShort dst w))
                          (recur (dec j) (.-link e)))
                        k1))]
-            (recur (inc i) k2))
-          (println "left over k =>" k))))))
+            (recur (inc i) k2)))))))
 
 (defn new-hu-tucker
   ([freqs]
