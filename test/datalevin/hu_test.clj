@@ -22,7 +22,8 @@
         ^shorts data1 (short-array (range 11))
         ^shorts data2 (short-array (range 10))]
     (testing "level tree construction"
-      (are [freqs levels] (= (seq (sut/create-levels freqs)) levels)
+      (are [freqs levels] (= (seq (sut/create-levels (alength freqs) freqs))
+                             levels)
         freqs0 [3 3 3 3 3 3 3 3]
         freqs1 [3 3 5 5 4 3 3 3 3 4 4]
         freqs2 [3 3 2 4 5 5 4 4 3 3]))
@@ -30,7 +31,7 @@
       (are [freqs results] (= (let [n (alength freqs)
                                     lens (byte-array n)
                                     codes (int-array n)]
-                                (sut/create-codes lens codes freqs)
+                                (sut/create-codes n lens codes freqs)
                                 [(vec codes) (vec lens)])
                               results)
         freqs0 [[0 1 2 3 4 5 6 7] [3 3 3 3 3 3 3 3]]
@@ -41,7 +42,7 @@
           (= (let [n (alength freqs)
                    lens (byte-array n)
                    codes (int-array n)
-                   _ (sut/create-codes lens codes freqs)
+                   _ (sut/create-codes n lens codes freqs)
                    ^UnifiedMap tables (sut/create-decode-tables lens codes 2)
                    keys (.keySet tables)]
                (into {}

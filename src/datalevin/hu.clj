@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.hu
-  "Encoder and decoder for Hu-Tucker codes."
+  "Fast encoder and decoder for Hu-Tucker codes."
   (:require
    [datalevin.constants :as c]
    [datalevin.util :as u])
@@ -185,9 +185,8 @@
     (aget work 0)))
 
 (defn create-levels
-  [^longs freqs]
-  (let [n      (alength freqs)
-        tree   (build-level-tree n freqs)
+  [^long n ^longs freqs]
+  (let [tree   (build-level-tree n freqs)
         levels (byte-array n)]
     (letfn [(traverse [^TreeNode node ^long level]
               (if (leaf? node)
@@ -205,9 +204,8 @@
   (leaf? [_] (nil? left-child)))
 
 (defn- build-code-tree
-  [^bytes levels]
-  (let [n     (alength levels)
-        cur   (volatile! 0)
+  [^long n ^bytes levels]
+  (let [cur   (volatile! 0)
         stack (LinkedList.)]
     (while (not (and (= n @cur) (= 1 (.size stack))))
       (if (and (<= 2 (.size stack)) (= (.-level ^Node (.get stack 0))
@@ -224,9 +222,9 @@
     (.pop stack)))
 
 (defn create-codes
-  [^bytes lens ^ints codes ^longs freqs]
-  (let [levels (create-levels freqs)
-        root   (build-code-tree levels)]
+  [^long n ^bytes lens ^ints codes ^longs freqs]
+  (let [levels (create-levels n freqs)
+        root   (build-code-tree n levels)]
     (letfn [(traverse [^Node node ^long code]
               (if (leaf? node)
                 (let [sym (.-sym node)]
@@ -251,20 +249,6 @@
   (set-left-child [_ n] (set! left-child n) n)
   (set-right-child [_ n] (set! right-child n) n))
 
-(defmethod print-method DecodeNode
-  [^DecodeNode n ^Writer w]
-  (.write w "[")
-  (.write w (str (.-prefix n)))
-  (.write w " ")
-  (.write w (str (.-len n)))
-  (.write w " ")
-  (.write w (str (.-sym n)))
-  (.write w " ")
-  (.write w (str (if-let [^DecodeNode ln (left-child n)] (.-sym ln) nil)))
-  (.write w " ")
-  (.write w (str (if-let [^DecodeNode rn (right-child n)] (.-sym rn) nil)))
-  (.write w "]"))
-
 (defn- new-decode-node
   ([prefix len] (DecodeNode. prefix len nil nil nil))
   ([sym] (DecodeNode. 0 0 (short sym) nil nil)))
@@ -276,9 +260,7 @@
 
 (defn- build-decode-tree
   [^bytes lens ^ints codes]
-  (let [root    (new-decode-node 0 0)
-        ncounts (atom 1)
-        tcounts (atom 0)]
+  (let [root (new-decode-node 0 0)]
     (dotimes [i (alength codes)]
       (let [len   (aget lens i)
             len-1 (dec len)
@@ -292,20 +274,17 @@
                      (if left?
                        (or (left-child node)
                            (set-left-child node
-                                           (do (swap! ncounts inc)
-                                               (new-decode-node
-                                                 (child-prefix node true)
-                                                 j+1))))
+                                           (new-decode-node
+                                             (child-prefix node true)
+                                             j+1)))
                        (or (right-child node)
                            (set-right-child node
-                                            (do (swap! ncounts inc)
-                                                (new-decode-node
-                                                  (child-prefix node false)
-                                                  j+1))))))
-              (do (swap! tcounts inc)
-                  (if left?
-                    (set-left-child node (new-decode-node i))
-                    (set-right-child node (new-decode-node i)))))))))
+                                            (new-decode-node
+                                              (child-prefix node false)
+                                              j+1)))))
+              (if left?
+                (set-left-child node (new-decode-node i))
+                (set-right-child node (new-decode-node i))))))))
     root))
 
 (deftype TableKey [^byte len ^int prefix]
@@ -315,31 +294,14 @@
     (and (= len (.-len ^TableKey that))
          (= prefix (.-prefix ^TableKey that)))))
 
-(defmethod print-method TableKey
-  [^TableKey k ^Writer w]
-  (.write w "[")
-  (.write w (str (.-prefix k)))
-  (.write w " ")
-  (.write w (str (.-len k)))
-  (.write w "]"))
-
 (deftype TableEntry [decoded ^TableKey link]
   Object
   (equals [_ that]
     (and (= link (.-link ^TableEntry that))
          (= decoded (.-decoded ^TableEntry that)))))
 
-(defmethod print-method TableEntry
-  [^TableEntry e ^Writer w]
-  (.write w "[")
-  (.write w (str (.-decoded e)))
-  (.write w " ")
-  (.write w (pr-str (.-link e)))
-  (.write w "]"))
-
 (defn- create-entry
-  [tree ^DecodeNode node decoding-bits
-   ^"[Ldatalevin.hu.TableEntry;" entries i]
+  [tree ^DecodeNode node decoding-bits ^"[Ldatalevin.hu.TableEntry;" entries i]
   (let [decoded   (volatile! nil)
         n         (+ ^long decoding-bits (.-len node))
         to-decode (bit-or (bit-shift-left (.-prefix node) ^long decoding-bits)
@@ -449,6 +411,6 @@
    (let [n     (alength freqs)
          lens  (byte-array n)
          codes (int-array n)]
-     (create-codes lens codes freqs)
+     (create-codes n lens codes freqs)
      (HuTucker. lens codes decode-bits
                 (create-decode-tables lens codes decode-bits)))))
