@@ -72,7 +72,9 @@
   (doto w
     (.write "#datalevin/bytes ")
     (.write "\"")
-    (.write ^String (encode-base64 bs))
+    (.write ^String (hexify bs))
+    ;; TODO
+    ;; (.write ^String (encode-base64 bs))
     (.write "\"")))
 
 (defn bytes-from-reader ^bytes [s] (decode-base64 s))

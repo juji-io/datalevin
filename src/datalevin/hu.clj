@@ -5,7 +5,6 @@
    [datalevin.util :as u])
   (:import
    [java.util LinkedList]
-   [java.io Writer]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [datalevin.utl LeftistHeap]))
@@ -340,11 +339,10 @@
     "Encode data, it is possible to produce some extra trailing zeros")
   (decode [this src-bf dst-bf]))
 
-(deftype HuTucker [^bytes lens        ;; array of code lengths
-                   ^ints codes        ;; array of codes
-                   ^long decode-bits  ;; number of bits decoded at a time
-                   ^UnifiedMap tables ;; decoding tables
-                   ]
+(deftype HuTucker [^bytes lens         ;; array of code lengths
+                   ^ints codes         ;; array of codes
+                   ^long decode-bits   ;; number of bits decoded at a time
+                   ^UnifiedMap tables] ;; decoding tables
   IHuTucker
   (encode [_ src dst]
     (let [^ByteBuffer src src
@@ -388,14 +386,12 @@
           decode-mask     (byte (u/n-bits-mask decode-bits))
           ^long n         (/ 8 decode-bits)]
       (loop [i 0 k (TableKey. 0 0)]
-        (if (< i total)
+        (when (< i total)
           (let [s  (bit-and (.get src) 0x000000FF)
                 k2 (loop [j (dec n) k1 k]
                      (if (<= 0 j)
-                       (let [c  (bit-and
-                                  decode-mask
-                                  (unsigned-bit-shift-right
-                                    s (* decode-bits j)))
+                       (let [c  (bit-and decode-mask (unsigned-bit-shift-right
+                                                       s (* decode-bits j)))
                              es ^"[Ldatalevin.hu.TableEntry;" (.get tables k1)
                              e  ^TableEntry (aget es c)
                              w  (.-decoded e)]

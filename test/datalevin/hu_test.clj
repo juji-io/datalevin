@@ -92,7 +92,6 @@
             (sut/encode ht src dst)
             (.flip dst)
             (let [^bytes results (b/get-bytes dst)]
-              ;; (println "results=>" (b/hexify results))
               (Arrays/equals results bytes)))
         freqs0 data0 (byte-array [5 57 119])
         freqs1 data1 (byte-array [5 9 87 46 239])
@@ -169,8 +168,17 @@
         (.flip dst)
         (sut/decode ht dst res)
         (.flip res)
-        ;; (println "bs =>" (b/hexify bs))
-        (let [^bytes bs1 (b/get-bytes res)]
-          ;; (println "bs1 =>" (b/hexify bs1))
-          (is (or (Arrays/equals bs bs1)
-                  (Arrays/equals bs0 bs1))))))))
+        (.rewind dst)
+        (let [^bytes bs1    (b/get-bytes res)
+              ^bytes bs-dst (b/get-bytes dst)
+              res           (or (Arrays/equals bs bs1)
+                                (Arrays/equals bs0 bs1))]
+          (if-not res
+            (let [s0 (bit-or (bit-shift-left (aget bs 0) 1) (aget bs 1))]
+              (println "s0 =>" (Integer/toHexString s0))
+              (println "code0 =>" (Integer/toHexString (aget (.-codes ht) s0)))
+              (println "bs =>" (b/hexify bs))
+              (println "bs-dst =>" (b/hexify bs-dst))
+              (println "bs1 =>" (b/hexify bs1))
+              (is res))
+            (is res)))))))
