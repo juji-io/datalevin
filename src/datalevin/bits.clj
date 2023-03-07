@@ -2,6 +2,7 @@
   "Handle binary encoding, byte buffers, etc."
   (:require
    [datalevin.constants :as c]
+   [datalevin.compress :as cp]
    [datalevin.util :as u]
    [datalevin.sparselist :as sl]
    [clojure.string :as s]
@@ -9,6 +10,7 @@
   (:import
    [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder]
    [java.util.regex Pattern]
+   [java.util.concurrent ConcurrentLinkedDeque]
    [java.math BigInteger BigDecimal]
    [java.io Writer]
    [java.nio ByteBuffer]
@@ -16,6 +18,9 @@
    [java.lang String Character]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
    [datalevin.utl BitOps BufOps]))
+
+
+;; base64
 
 (defonce base64-encoder (.withoutPadding (Base64/getEncoder)))
 
@@ -67,14 +72,14 @@
   [^bytes ba]
   (String. ba StandardCharsets/UTF_8))
 
+;; writer/reader
+
 (defmethod print-method (Class/forName "[B")
   [^bytes bs, ^Writer w]
   (doto w
     (.write "#datalevin/bytes ")
     (.write "\"")
-    (.write ^String (hexify bs))
-    ;; TODO
-    ;; (.write ^String (encode-base64 bs))
+    (.write ^String (encode-base64 bs))
     (.write "\"")))
 
 (defn bytes-from-reader ^bytes [s] (decode-base64 s))
@@ -101,14 +106,11 @@
 
 ;; nippy
 
-(defn serialize
-  "Serialize data to bytes"
-  [x]
-  (nippy/fast-freeze x))
+(defn serialize ^bytes [x] (nippy/fast-freeze x))
 
 (defn deserialize
   "Deserialize from bytes. "
-  [bs]
+  [^bytes bs]
   (binding [nippy/*thaw-serializable-allowlist*
             (into nippy/*thaw-serializable-allowlist*
                   c/*data-serializable-classes*)]
@@ -145,7 +147,7 @@
 
 (defn- put-bitmap [^ByteBuffer bf ^RoaringBitmap x] (.serialize x bf))
 
-;; byte buffer
+;; byte buffer ops
 
 (defn allocate-buffer
   "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
@@ -162,6 +164,28 @@
 (defn compare-buffer
   ^long [^ByteBuffer b1 ^ByteBuffer b2]
   (BufOps/compareByteBuf b1 b2))
+
+(defonce ^ConcurrentLinkedDeque buffers (ConcurrentLinkedDeque.))
+
+(defn- allocate-array-buffer
+  ^ByteBuffer [size]
+  (ByteBuffer/wrap (byte-array size)))
+
+(defn- get-buffer
+  ([] (get-buffer c/+max-key-size+))
+  (^ByteBuffer [^long size]
+   (if (.isEmpty buffers)
+     (allocate-array-buffer size)
+     (or (some #(let [^ByteBuffer bf (.peek buffers)]
+                  (when (<= size (.capacity bf))
+                    (.clear bf)
+                    (.poll buffers)))
+               buffers)
+         (allocate-array-buffer size)))))
+
+(defn- return-buffer [bf] (.offer buffers bf))
+
+;; data read/write from/to buffer
 
 (defn- get-long
   "Get a long from a ByteBuffer"
@@ -406,8 +430,6 @@
     (int? x)           8
     (instance? Byte x) 1
     :else              (alength ^bytes (serialize x))))
-
-;; index
 
 (defmacro wrap-extrema
   [v vmin vmax b]
@@ -887,32 +909,31 @@
   ([^ByteBuffer bf x x-type]
    (case x-type
      ;; user facing
-     :string  (do (put-byte bf (raw-header x :string))
-                  (put-bytes
-                    bf (.getBytes ^String x StandardCharsets/UTF_8)))
-     :bigint  (do (put-byte bf (raw-header x :bigint))
-                  (put-bigint bf x))
-     :bigdec  (do (put-byte bf (raw-header x :bigdec))
-                  (put-bigdec bf x))
-     :long    (do (put-byte bf (raw-header x :long))
-                  (put-long bf x))
-     :float   (do (put-byte bf (raw-header x :float))
-                  (put-float bf x))
-     :double  (do (put-byte bf (raw-header x :double))
-                  (put-double bf x))
-     :bytes   (do (put-byte bf (raw-header x :bytes))
-                  (put-bytes bf x))
-     :keyword (do (put-byte bf (raw-header x :keyword))
-                  (put-bytes bf (key-sym-bytes x)))
-     :symbol  (do (put-byte bf (raw-header x :symbol))
-                  (put-bytes bf (key-sym-bytes x)))
-     :boolean (do (put-byte bf (raw-header x :boolean))
-                  (put-byte bf (if x c/true-value c/false-value)))
-     :instant (do (put-byte bf (raw-header x :instant))
-                  (put-instant bf x))
-     :uuid    (do (put-byte bf (raw-header x :uuid))
-                  (put-uuid bf x))
-
+     :string         (do (put-byte bf (raw-header x :string))
+                         (put-bytes
+                           bf (.getBytes ^String x StandardCharsets/UTF_8)))
+     :bigint         (do (put-byte bf (raw-header x :bigint))
+                         (put-bigint bf x))
+     :bigdec         (do (put-byte bf (raw-header x :bigdec))
+                         (put-bigdec bf x))
+     :long           (do (put-byte bf (raw-header x :long))
+                         (put-long bf x))
+     :float          (do (put-byte bf (raw-header x :float))
+                         (put-float bf x))
+     :double         (do (put-byte bf (raw-header x :double))
+                         (put-double bf x))
+     :bytes          (do (put-byte bf (raw-header x :bytes))
+                         (put-bytes bf x))
+     :keyword        (do (put-byte bf (raw-header x :keyword))
+                         (put-bytes bf (key-sym-bytes x)))
+     :symbol         (do (put-byte bf (raw-header x :symbol))
+                         (put-bytes bf (key-sym-bytes x)))
+     :boolean        (do (put-byte bf (raw-header x :boolean))
+                         (put-byte bf (if x c/true-value c/false-value)))
+     :instant        (do (put-byte bf (raw-header x :instant))
+                         (put-instant bf x))
+     :uuid           (do (put-byte bf (raw-header x :uuid))
+                         (put-uuid bf x))
      ;; internal use
      :instant-pre-06 (do (put-byte bf (raw-header x :instant))
                          (.putLong bf (.getTime ^Date x)))
@@ -923,7 +944,7 @@
      :int-int        (let [[i1 i2] x]
                        (put-int bf i1)
                        (put-int bf i2))
-     :ints           (sl/put-ints bf x)
+     :ints           (cp/put-ints bf x)
      :bitmap         (put-bitmap bf x)
      :term-info      (let [[i1 i2 i3] x]
                        (put-int bf i1)
@@ -932,23 +953,29 @@
      :doc-info       (let [[i1 i2 i3] x]
                        (put-int bf i1)
                        (put-short bf i2)
-                       (sl/put-ints bf i3))
+                       (cp/put-ints bf i3))
      :pos-info       (let [[i1 i2] x]
-                       (sl/put-sorted-ints bf i1)
-                       (sl/put-sorted-ints bf i2))
+                       (cp/put-sorted-ints bf i1)
+                       (cp/put-sorted-ints bf i2))
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
      :veg            (put-veg bf x)
      :eag            (put-eag bf x)
      :raw            (put-bytes bf x)
-
      (if (vector? x-type)
        (if (= 1 (count x-type))
          (do (put-byte bf c/type-homo-tuple)
              (put-homo-tuple bf x (nth x-type 0)))
          (do (put-byte bf c/type-hete-tuple)
              (put-hete-tuple bf x x-type)))
-       (put-data bf x)))))
+       (put-data bf x))))
+  ([^ByteBuffer bf x x-type compressor]
+   (if compressor
+     (let [bf1 (get-buffer (.capacity bf))]
+       (put-buffer bf1 x x-type)
+       (cp/bf-compress compressor bf1 bf)
+       (return-buffer bf1))
+     (put-buffer bf x x-type))))
 
 (defn put-bf
   "clear the buffer, put in the data, and prepare it for reading"
@@ -964,19 +991,18 @@
   ([^ByteBuffer bf v-type]
    (case v-type
      ;; user facing
-     :string  (do (get-byte bf) (get-string bf))
-     :bigint  (do (get-byte bf) (get-bigint bf))
-     :bigdec  (do (get-byte bf) (get-bigdec bf))
-     :long    (do (get-byte bf) (get-long bf))
-     :float   (do (get-byte bf) (get-float bf))
-     :double  (do (get-byte bf) (get-double bf))
-     :bytes   (do (get-byte bf) (get-bytes bf))
-     :keyword (do (get-byte bf) (get-keyword bf 0))
-     :symbol  (do (get-byte bf) (get-symbol bf 0))
-     :boolean (do (get-byte bf) (get-boolean bf))
-     :instant (do (get-byte bf) (get-instant bf))
-     :uuid    (do (get-byte bf) (get-uuid bf))
-
+     :string         (do (get-byte bf) (get-string bf))
+     :bigint         (do (get-byte bf) (get-bigint bf))
+     :bigdec         (do (get-byte bf) (get-bigdec bf))
+     :long           (do (get-byte bf) (get-long bf))
+     :float          (do (get-byte bf) (get-float bf))
+     :double         (do (get-byte bf) (get-double bf))
+     :bytes          (do (get-byte bf) (get-bytes bf))
+     :keyword        (do (get-byte bf) (get-keyword bf 0))
+     :symbol         (do (get-byte bf) (get-symbol bf 0))
+     :boolean        (do (get-byte bf) (get-boolean bf))
+     :instant        (do (get-byte bf) (get-instant bf))
+     :uuid           (do (get-byte bf) (get-uuid bf))
      ;; internal use
      :instant-pre-06 (do (get-byte bf) (Date. (.getLong bf)))
      :id             (get-long bf)
@@ -990,18 +1016,27 @@
      :raw            (get-bytes bf)
      ;; range query are NOT supported on these
      :int-int        [(get-int bf) (get-int bf)]
-     :ints           (sl/get-ints bf)
+     :ints           (cp/get-ints bf)
      :bitmap         (get-bitmap bf)
      :term-info      [(get-int bf) (.getFloat bf) (get-sparse-list bf)]
-     :doc-info       [(get-int bf) (get-short bf) (sl/get-ints bf)]
-     :pos-info       [(sl/get-sorted-ints bf) (sl/get-sorted-ints bf)]
-
+     :doc-info       [(get-int bf) (get-short bf) (cp/get-ints bf)]
+     :pos-info       [(cp/get-sorted-ints bf) (cp/get-sorted-ints bf)]
      (if (vector? v-type)
        (do (get-byte bf)
            (if (= 1 (count v-type))
              (get-homo-tuple bf)
              (get-hete-tuple bf)))
-       (get-data bf)))))
+       (get-data bf))))
+  ([^ByteBuffer bf v-type compressor]
+   (if compressor
+     (let [bf1 (get-buffer (.capacity bf))
+           _   (cp/bf-uncompress compressor bf bf1)
+           res (read-buffer bf1 v-type)]
+       (return-buffer bf1)
+       res)
+     (read-buffer bf v-type))))
+
+;; data validation
 
 (defn- valid-data*
   [x t]

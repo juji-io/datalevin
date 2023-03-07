@@ -2,67 +2,13 @@
   "Sparse array list of integers"
   (:refer-clojure :exclude [get set remove])
   (:require
+   [datalevin.compress :as c]
    [taoensso.nippy :as nippy])
   (:import
    [java.io Writer DataInput DataOutput]
    [java.nio ByteBuffer]
    [datalevin.utl GrowingIntArray]
-   [me.lemire.integercompression IntCompressor]
-   [me.lemire.integercompression.differential IntegratedIntCompressor]
    [org.roaringbitmap RoaringBitmap]))
-
-(defprotocol ICompressor
-  (compress [this obj])
-  (uncompress [this obj]))
-
-(defonce compressor
-  (let [^IntCompressor int-compressor (IntCompressor.)]
-    (reify
-      ICompressor
-      (compress [_ ar]
-        (.compress int-compressor ar))
-      (uncompress [_ ar]
-        (.uncompress int-compressor ar)))) )
-
-(defonce sorted-compressor
-  (let [^IntegratedIntCompressor sorted-int-compressor
-        (IntegratedIntCompressor.)]
-    (reify
-      ICompressor
-      (compress [_ ar]
-        (.compress sorted-int-compressor ar))
-      (uncompress [_ ar]
-        (.uncompress sorted-int-compressor ar)))) )
-
-(defn- get-ints*
-  [compressor ^ByteBuffer bf]
-  (let [csize (.getInt bf)
-        comp? (neg? csize)
-        size  (if comp? (- csize) csize)
-        car   (int-array size)]
-    (dotimes [i size] (aset car i (.getInt bf)))
-    (if comp?
-      (uncompress ^ICompressor compressor car)
-      car)))
-
-(defn- put-ints*
-  [compressor ^ByteBuffer bf ^ints ar]
-  (let [osize     (alength ar)
-        comp?     (< 3 osize) ;; don't compress small array
-        ^ints car (if comp?
-                    (compress ^ICompressor compressor ar)
-                    ar)
-        size      (alength car)]
-    (.putInt bf (if comp? (- size) size))
-    (dotimes [i size] (.putInt bf (aget car i)))))
-
-(defn get-ints [bf] (get-ints* compressor bf))
-
-(defn put-ints [bf ar] (put-ints* compressor bf ar))
-
-(defn get-sorted-ints [bf] (get-ints* sorted-compressor bf))
-
-(defn put-sorted-ints [bf ar] (put-ints* sorted-compressor bf ar))
 
 (defprotocol ISparseIntArrayList
   (contains-index? [this index] "return true if containing index")
@@ -103,11 +49,11 @@
     (.get items nth))
 
   (serialize [_ bf]
-    (put-ints bf (.toArray items))
+    (c/put-ints bf (.toArray items))
     (.serialize indices ^ByteBuffer bf))
 
   (deserialize [_ bf]
-    (.addAll items (get-ints bf))
+    (.addAll items (c/get-ints bf))
     (.deserialize indices ^ByteBuffer bf))
 
   Object
@@ -128,7 +74,7 @@
         osize     (alength ar)
         comp?     (< 3 osize)
         ^ints car (if comp?
-                    (compress ^ICompressor compressor ar)
+                    (c/compress c/int-compressor ar)
                     ar)
         size      (alength car)]
     (.writeInt out (if comp? (- size) size))
@@ -154,7 +100,7 @@
     (dotimes [i size] (aset car i (.readInt in)))
     (.addAll items
              (if comp?
-               (uncompress ^ICompressor compressor car)
+               (c/uncompress c/int-compressor car)
                car))
     items))
 

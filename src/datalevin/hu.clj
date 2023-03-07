@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.hu
-  "Fast encoder and decoder for Hu-Tucker codes."
+  "Fast encoder and decoder for Hu-Tucker codes. Used for keys."
   (:require
    [datalevin.constants :as c]
    [datalevin.util :as u])
@@ -382,23 +382,22 @@
 
   (decode [_ src dst]
     (let [^ByteBuffer src src
-          ^ByteBuffer dst dst
           total           (.remaining src)
           decode-mask     (byte (u/n-bits-mask decode-bits))
           ^long n         (/ 8 decode-bits)]
       (loop [i 0 k (TableKey. 0 0)]
         (when (< i total)
-          (let [s (bit-and (.get src) 0x000000FF)]
+          (let [b (bit-and (.get src) 0x000000FF)]
             (recur (inc i)
                    (loop [j (dec n) k1 k]
                      (if (<= 0 j)
                        (let [c  (bit-and decode-mask
                                          (unsigned-bit-shift-right
-                                           s (* decode-bits j)))
+                                           b (* decode-bits j)))
                              es ^"[Ldatalevin.hu.TableEntry;" (.get tables k1)
                              e  ^TableEntry (aget es c)
                              w  (.-decoded e)]
-                         (when w (.putShort dst w))
+                         (when w (.putShort ^ByteBuffer dst w))
                          (recur (dec j) (.-link e)))
                        k1)))))))))
 
