@@ -374,10 +374,11 @@
                       (let [rr (- o)]
                         [(bit-or bf1 (bit-shift-left code1 rr)) rr])
                       :else
-                      (do (.put dst (unchecked-byte (bit-or bf1 code1)))
-                          [0 8]))))]
+                      (let [b (unchecked-byte (bit-or bf1 code1))]
+                        (.put dst b)
+                        [0 8]))))]
             (recur (+ i 2) (byte bf2) (byte r2)))
-          (when-not (zero? bf) (.put dst bf))))))
+          (.put dst bf)))))
 
   (decode [_ src dst]
     (let [^ByteBuffer src src
@@ -387,18 +388,19 @@
           ^long n         (/ 8 decode-bits)]
       (loop [i 0 k (TableKey. 0 0)]
         (when (< i total)
-          (let [s  (bit-and (.get src) 0x000000FF)
-                k2 (loop [j (dec n) k1 k]
+          (let [s (bit-and (.get src) 0x000000FF)]
+            (recur (inc i)
+                   (loop [j (dec n) k1 k]
                      (if (<= 0 j)
-                       (let [c  (bit-and decode-mask (unsigned-bit-shift-right
-                                                       s (* decode-bits j)))
+                       (let [c  (bit-and decode-mask
+                                         (unsigned-bit-shift-right
+                                           s (* decode-bits j)))
                              es ^"[Ldatalevin.hu.TableEntry;" (.get tables k1)
                              e  ^TableEntry (aget es c)
                              w  (.-decoded e)]
                          (when w (.putShort dst w))
                          (recur (dec j) (.-link e)))
-                       k1))]
-            (recur (inc i) k2)))))))
+                       k1)))))))))
 
 (defn new-hu-tucker
   ([freqs]

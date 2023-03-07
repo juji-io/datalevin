@@ -14,7 +14,7 @@
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [datalevin.hu TableKey TableEntry]))
 
-(deftest basic-ops-test
+(deftest encoding-test
   (let [^longs freqs0 (long-array [1 1 1 1 1 1 1 1])
         ^longs freqs1 (long-array [8 6 2 3 4 7 11 9 8 1 3])
         ^longs freqs2 (long-array [5 2 7 2 1 1 1 2 4 5])
@@ -80,52 +80,12 @@
                 [3 2] [[8 [0 1]] [8 [1 1]] [9 [0 1]] [9 [1 1]]],
                 [4 3] [[3 [0 1]] [3 [1 1]] [4 [0 0]] [5 [0 0]]],
                 [5 3] [[6 [0 1]] [6 [1 1]] [7 [0 1]] [7 [1 1]]],
-                [9 4] [[4 [0 1]] [4 [1 1]] [5 [0 1]] [5 [1 1]]]}))
-    (testing "encoding"
-      (are [freqs data bytes]
-          (let [^ByteBuffer src (b/allocate-buffer 64)
-                ^ByteBuffer dst (b/allocate-buffer 64)
-                ht (sut/new-hu-tucker freqs 2)
-                size (alength data)]
-            (dotimes [i size] (b/put-short src (aget data i)))
-            (.flip src)
-            (sut/encode ht src dst)
-            (.flip dst)
-            (let [^bytes results (b/get-bytes dst)]
-              (Arrays/equals results bytes)))
-        freqs0 data0 (byte-array [5 57 119])
-        freqs1 data1 (byte-array [5 9 87 46 239])
-        freqs2 data2 (byte-array [5 137 78 175 112])))
-    (testing "round trip"
-      (are [freqs data]
-          (let [^ByteBuffer src (b/allocate-buffer 64)
-                ^ByteBuffer src1 (b/allocate-buffer 64)
-                ^ByteBuffer dst (b/allocate-buffer 64)
-                ^ByteBuffer res (b/allocate-buffer 64)
-                ht (sut/new-hu-tucker freqs 2)
-                size (alength data)]
-            (dotimes [i size] (b/put-short src (aget data i)))
-            (.flip src)
-            (dotimes [i size] (b/put-short src1 (aget data i)))
-            (b/put-short src1 0)
-            (.flip src1)
-            (sut/encode ht src dst)
-            (.flip dst)
-            (sut/decode ht dst res)
-            (.flip res)
-            (.rewind dst)
-            (.rewind src)
-            (.rewind res)
-            (or (= 0 (b/compare-buffer src res))
-                (= 0 (b/compare-buffer src1 res))))
-        freqs0 data0
-        freqs1 data1
-        freqs2 data2))))
+                [9 4] [[4 [0 1]] [4 [1 1]] [5 [0 1]] [5 [1 1]]]}))))
 
 (let [freqs (repeatedly 65536 #(rand-int 1000000))
       ht    (sut/new-hu-tucker (long-array (map inc freqs)))]
-  (test/defspec preserve-order-test
-    100
+  (test/defspec order-preservation-test
+    1000
     (prop/for-all
       [bs1 (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
                           gen/bytes)
@@ -150,10 +110,10 @@
 
 (let [freqs (repeatedly 65536 #(rand-int 1000000))
       ht    (sut/new-hu-tucker (long-array (map inc freqs)))]
-  (test/defspec round-trip-generative-test
-    100
+  (test/defspec encode-decode-round-trip-test
+    1000
     (prop/for-all
-      [^bytes bs (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
+      [^bytes bs (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
                                 gen/bytes)]
       (let [^ByteBuffer src (b/allocate-buffer c/+max-key-size+)
             ^ByteBuffer dst (b/allocate-buffer c/+max-key-size+)
@@ -169,16 +129,5 @@
         (sut/decode ht dst res)
         (.flip res)
         (.rewind dst)
-        (let [^bytes bs1    (b/get-bytes res)
-              ^bytes bs-dst (b/get-bytes dst)
-              res           (or (Arrays/equals bs bs1)
-                                (Arrays/equals bs0 bs1))]
-          (if-not res
-            (let [s0 (bit-or (bit-shift-left (aget bs 0) 1) (aget bs 1))]
-              (println "s0 =>" (Integer/toHexString s0))
-              (println "code0 =>" (Integer/toHexString (aget (.-codes ht) s0)))
-              (println "bs =>" (b/hexify bs))
-              (println "bs-dst =>" (b/hexify bs-dst))
-              (println "bs1 =>" (b/hexify bs1))
-              (is res))
-            (is res)))))))
+        (let [^bytes bs1 (b/get-bytes res)]
+          (is (or (Arrays/equals bs bs1) (Arrays/equals bs0 bs1))))))))
