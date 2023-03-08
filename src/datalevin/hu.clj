@@ -347,8 +347,7 @@
     (let [^ByteBuffer src src
           ^ByteBuffer dst dst
           total           (.remaining src)
-          t-1             (dec total)
-          len             (short total)]
+          t-1             (dec total)]
       (loop [i 0 bf (unchecked-byte 0) r (byte 8)]
         (if (< i total)
           (let [cur  (if (= i t-1)
@@ -379,16 +378,12 @@
                         [0 8]))))]
             (recur (+ i 2) (byte bf2) (byte r2)))
           (.put dst bf)))
-      (.putShort dst len)))
+      (.putShort dst (short total))))
 
   (decode [_ src dst]
     (let [^ByteBuffer src src
           ^ByteBuffer dst dst
           total           (- (.remaining src) 2)
-          len             (let [res (do (.position src total)
-                                        (.getShort src))]
-                            (.rewind src)
-                            res)
           decode-mask     (byte (u/n-bits-mask decode-bits))
           ^long n         (/ 8 decode-bits)]
       (loop [i 0 k (TableKey. 0 0)]
@@ -406,7 +401,7 @@
                          (when w (.putShort dst w))
                          (recur (dec j) (.-link e)))
                        k1))))))
-      (.limit dst len))))
+      (.limit dst (.getShort src)))))
 
 (defn new-hu-tucker
   ([freqs]

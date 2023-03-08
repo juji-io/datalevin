@@ -43,10 +43,17 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (sut/put-bf bf k :data)
+                  (= k (sut/read-buffer bf :data)))))
+
+(test/defspec key-compressed-data-generative-test
+  100
+  (prop/for-all [k gen/any-equatable]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (sut/put-bf bf k :data kc)
                   (= k (sut/read-buffer bf :data kc)))))
 
-(test/defspec compressed-data-generative-test
+(test/defspec value-compressed-data-generative-test
   100
   (prop/for-all [k gen/any-equatable]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
@@ -962,8 +969,7 @@
     (.clear bf)
     (sut/put-buffer bf t4 [:uuid :keyword :long])
     (.flip bf)
-    (is (= t4 (sut/read-buffer bf [:uuid :keyword :long])))
-    ))
+    (is (= t4 (sut/read-buffer bf [:uuid :keyword :long])))))
 
 (def ts1 "datalevin")
 (def tk1 :rocks)
