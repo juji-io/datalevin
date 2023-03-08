@@ -74,8 +74,10 @@
     (reify
       ICompressor
       (bf-compress [_ src dst]
+        (.putInt dst (int (.limit ^ByteBuffer src)))
         (.compress compressor ^ByteBuffer src ^ByteBuffer dst))
       (bf-uncompress [_ src dst]
+        (.limit dst (.getInt src))
         (.decompress decompressor ^ByteBuffer src ^ByteBuffer dst)))))
 
 (defn key-compressor

@@ -128,6 +128,7 @@
   ([] +tmp+)
   ([dir] (str +tmp+ (s/escape dir char-escape-string))))
 
+(defn graal? [] (System/getProperty "org.graalvm.nativeimage.kind"))
 
 ;; ----------------------------------------------------------------------------
 ;; macros and funcs to support writing defrecords and updating
@@ -135,8 +136,6 @@
 ;; code taken from prismatic:
 ;;  https://github.com/Prismatic/schema/commit/e31c419c56555c83ef9ee834801e13ef3c112597
 ;;
-
-(defn graal? [] (System/getProperty "org.graalvm.nativeimage.kind"))
 
 (defn- get-sig
   [method]
@@ -287,3 +286,32 @@
       (+ x y (* x x)))))
 
 (defn n-bits-mask ^long [^long n] (dec (bit-shift-left 1 n)))
+
+(def hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
+
+(defn hexify-byte
+  "Convert a byte to a hex pair"
+  [b]
+  (let [v (bit-and ^byte b 0xFF)]
+    [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))
+
+(defn hexify
+  "Convert bytes to hex string"
+  [bs]
+  (apply str (mapcat hexify-byte bs)))
+
+(defn unhexify-2c
+  "Convert two hex characters to a byte"
+  [c1 c2]
+  (unchecked-byte
+    (+ (bit-shift-left (Character/digit ^char c1 16) 4)
+       (Character/digit ^char c2 16))))
+
+(defn unhexify
+  "Convert hex string to byte sequence"
+  [s]
+  (map #(apply unhexify-2c %) (partition 2 s)))
+
+(defn hexify-string [^String s] (hexify (.getBytes s)))
+
+(defn unhexify-string [s] (String. (byte-array (unhexify s))))

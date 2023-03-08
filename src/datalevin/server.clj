@@ -764,7 +764,7 @@
 (defn- db-dir
   "translate from db-name to server db path"
   [root db-name]
-  (str root u/+separator+ (b/hexify-string db-name)))
+  (str root u/+separator+ (u/hexify-string db-name)))
 
 (defn- db-exists?
   [^Server server db-name]
@@ -773,7 +773,7 @@
 
 (defn- dir->db-name
   [^Server server dir]
-  (b/unhexify-string
+  (u/unhexify-string
     (s/replace-first dir (str (.-root server) u/+separator+) "")))
 
 (defn- store->db-name

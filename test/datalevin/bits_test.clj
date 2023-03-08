@@ -4,6 +4,7 @@
    [datalevin.sparselist :as sl]
    [datalevin.datom :as d]
    [datalevin.constants :as c]
+   [datalevin.compress :as cp]
    [clojure.test :refer [deftest is]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
@@ -18,6 +19,9 @@
    [org.roaringbitmap RoaringBitmap]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.bits Indexable Retrieved]))
+
+(def freqs (repeatedly 65536 #(rand-int 1000000)))
+(def kc    (cp/key-compressor (long-array (map inc freqs))))
 
 ;; binary index preserves the order of values
 
@@ -56,8 +60,15 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
-                  (sut/put-bf bf k :data)
-                  (= k (sut/read-buffer bf :data)))))
+                  (sut/put-bf bf k :data kc)
+                  (= k (sut/read-buffer bf :data kc)))))
+
+(test/defspec compressed-data-generative-test
+  100
+  (prop/for-all [k gen/any-equatable]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
+                  (sut/put-bf bf k :data cp/value-compressor)
+                  (= k (sut/read-buffer bf :data cp/value-compressor)))))
 
 (test/defspec string-generative-test
   100
@@ -126,6 +137,13 @@
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (sut/put-bf bf k :long)
                   (= k (sut/read-buffer bf :long)))))
+
+(test/defspec compressed-long-generative-test
+  100
+  (prop/for-all [k gen/large-integer]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16)]
+                  (sut/put-bf bf k :long kc)
+                  (= k (sut/read-buffer bf :long kc)))))
 
 (test/defspec double-generative-test
   100
@@ -326,8 +344,8 @@
           (.rewind bf)
           (.rewind bf1)
           (str "v: " v
-               " d: " (sut/hexify (sut/get-bytes bf))
-               " dmin: " (sut/hexify (sut/get-bytes bf1)))))
+               " d: " (u/hexify (sut/get-bytes bf))
+               " dmin: " (u/hexify (sut/get-bytes bf1)))))
     (sut/put-bf bf1 dmax :avg)
     (.rewind bf)
     (is (<= (bf-compare bf bf1) 0))
@@ -339,8 +357,8 @@
             (.rewind bf)
             (.rewind bf1)
             (str "v: " v
-                 " d: " (sut/hexify (sut/get-bytes bf))
-                 " dmin: " (sut/hexify (sut/get-bytes bf1)))))
+                 " d: " (u/hexify (sut/get-bytes bf))
+                 " dmin: " (u/hexify (sut/get-bytes bf1)))))
     (sut/put-bf bf1 dmax :veg)
     (.rewind bf)
     (is (<= (bf-compare bf bf1) 0))))

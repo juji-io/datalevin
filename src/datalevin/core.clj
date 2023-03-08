@@ -1701,8 +1701,8 @@ one of the following scalar data types, a vector of these scalars to indicate a 
 
 (def ^{:arglists '([s])
        :doc      "Turn a string into a hexified string"}
-  hexify-string b/hexify-string)
+  hexify-string u/hexify-string)
 
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
-  unhexify-string b/unhexify-string)
+  unhexify-string u/unhexify-string)

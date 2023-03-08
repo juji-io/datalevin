@@ -19,7 +19,6 @@
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
    [datalevin.utl BitOps BufOps]))
 
-
 ;; base64
 
 (defonce base64-encoder (.withoutPadding (Base64/getEncoder)))
@@ -35,37 +34,6 @@
   "decode a base64 string to return the bytes"
   [^String s]
   (.decode ^Base64$Decoder base64-decoder s))
-
-;; bytes <-> text
-
-(def hex [\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \A \B \C \D \E \F])
-
-(defn hexify-byte
-  "Convert a byte to a hex pair"
-  [b]
-  (let [v (bit-and ^byte b 0xFF)]
-    [(hex (bit-shift-right v 4)) (hex (bit-and v 0x0F))]))
-
-(defn hexify
-  "Convert bytes to hex string"
-  [bs]
-  (apply str (mapcat hexify-byte bs)))
-
-(defn ^:no-doc unhexify-2c
-  "Convert two hex characters to a byte"
-  [c1 c2]
-  (unchecked-byte
-    (+ (bit-shift-left (Character/digit ^char c1 16) 4)
-       (Character/digit ^char c2 16))))
-
-(defn ^:no-doc unhexify
-  "Convert hex string to byte sequence"
-  [s]
-  (map #(apply unhexify-2c %) (partition 2 s)))
-
-(defn ^:no-doc hexify-string [^String s] (hexify (.getBytes s)))
-
-(defn ^:no-doc unhexify-string [s] (String. (byte-array (unhexify s))))
 
 (defn text-ba->str
   "Convert a byte array to string, the array is known to contain text data"
@@ -174,14 +142,13 @@
 (defn- get-buffer
   ([] (get-buffer c/+max-key-size+))
   (^ByteBuffer [^long size]
-   (if (.isEmpty buffers)
-     (allocate-array-buffer size)
-     (or (some #(let [^ByteBuffer bf (.peek buffers)]
-                  (when (<= size (.capacity bf))
-                    (.clear bf)
-                    (.poll buffers)))
-               buffers)
-         (allocate-array-buffer size)))))
+   (or (some (fn [^ByteBuffer bf]
+               (when (<= size (.capacity bf))
+                 (.remove buffers bf)
+                 (.clear bf)
+                 bf))
+             buffers)
+       (allocate-array-buffer size))))
 
 (defn- return-buffer [bf] (.offer buffers bf))
 
@@ -797,7 +764,7 @@
 (deftype Indexable [e a v f b g])
 
 (defn pr-indexable [^Indexable i]
-  [(.-e i) (.-a i) (.-v i) (.-f i) (hexify (.-b i)) (.-g i)])
+  [(.-e i) (.-a i) (.-v i) (.-f i) (u/hexify (.-b i)) (.-g i)])
 
 (defmethod print-method Indexable
   [^Indexable i, ^Writer w]
@@ -971,19 +938,22 @@
        (put-data bf x))))
   ([^ByteBuffer bf x x-type compressor]
    (if compressor
-     (let [bf1 (get-buffer (.capacity bf))]
+     (let [^ByteBuffer bf1 (get-buffer (.capacity bf))]
        (put-buffer bf1 x x-type)
+       (.flip bf1)
        (cp/bf-compress compressor bf1 bf)
        (return-buffer bf1))
      (put-buffer bf x x-type))))
 
 (defn put-bf
   "clear the buffer, put in the data, and prepare it for reading"
-  [^ByteBuffer bf data type]
-  (when-some [x data]
-    (.clear bf)
-    (put-buffer bf x type)
-    (.flip bf)))
+  ([^ByteBuffer bf data type compressor]
+   (when-some [x data]
+     (.clear bf)
+     (put-buffer bf x type compressor)
+     (.flip bf)))
+  ([bf data type]
+   (put-bf bf data type nil)))
 
 (defn read-buffer
   ([bf]
@@ -1031,6 +1001,7 @@
    (if compressor
      (let [bf1 (get-buffer (.capacity bf))
            _   (cp/bf-uncompress compressor bf bf1)
+           _   (.flip bf1)
            res (read-buffer bf1 v-type)]
        (return-buffer bf1)
        res)
