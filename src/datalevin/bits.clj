@@ -15,7 +15,7 @@
    [java.io Writer]
    [java.nio ByteBuffer]
    [java.nio.charset StandardCharsets]
-   [java.lang String Character]
+   [java.lang String]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
    [datalevin.utl BitOps BufOps]))
 
@@ -140,15 +140,16 @@
   (ByteBuffer/wrap (byte-array size)))
 
 (defn- get-buffer
-  ([] (get-buffer c/+max-key-size+))
+  ([] (get-buffer (+ c/+max-key-size+ Integer/BYTES)))
   (^ByteBuffer [^long size]
-   (or (some (fn [^ByteBuffer bf]
-               (when (<= size (.capacity bf))
-                 (.remove buffers bf)
-                 (.clear bf)
-                 bf))
-             buffers)
-       (allocate-array-buffer size))))
+   (let [cap (+ size Integer/BYTES)] ;; for storing length
+     (or (some (fn [^ByteBuffer bf]
+                 (when (<= cap (.capacity bf))
+                   (.remove buffers bf)
+                   (.clear bf)
+                   bf))
+               buffers)
+         (allocate-array-buffer cap)))))
 
 (defn- return-buffer [bf] (.offer buffers bf))
 
@@ -654,10 +655,6 @@
      (.position bf np)
      @tuple)))
 
-;; TODO remove this, use a lmdb specific buffer instead, due to concurrent
-;; writes
-(defonce ^ByteBuffer tuple-bf (ByteBuffer/wrap (byte-array c/+max-key-size+)))
-
 (defn- dl-type->raw
   [t]
   (get {:db.type/string  :string
@@ -678,12 +675,15 @@
   [v t]
   (wrap-extrema
     v c/min-bytes c/max-bytes
-    (let [t (into [] (map dl-type->raw) t)]
-      (.clear tuple-bf)
+    (let [t        (into [] (map dl-type->raw) t)
+          tuple-bf ^ByteBuffer (get-buffer)]
       (if (= 1 (count t))
         (put-homo-tuple tuple-bf v (nth t 0))
         (put-hete-tuple tuple-bf v t))
-      (Arrays/copyOfRange (.array tuple-bf) 0 (.position tuple-bf)))))
+      (let [res (Arrays/copyOfRange (.array tuple-bf)
+                                    0 (.position tuple-bf))]
+        (return-buffer tuple-bf)
+        res))))
 
 (defn- val-bytes
   "Turn datalog value into bytes according to :db/valueType"

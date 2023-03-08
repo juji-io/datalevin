@@ -116,11 +116,7 @@
                               gen/bytes)]
     (let [^ByteBuffer src (b/allocate-buffer c/+max-key-size+)
           ^ByteBuffer dst (b/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer res (b/allocate-buffer c/+max-key-size+)
-          n+1             (inc (alength bs))
-          ^bytes bs0      (byte-array n+1)]
-      (System/arraycopy bs 0 bs0 0 (alength bs))
-      (aset bs0 ^long (dec n+1) (byte 0))
+          ^ByteBuffer res (b/allocate-buffer c/+max-key-size+)]
       (b/put-bytes src bs)
       (.flip src)
       (sut/encode ht src dst)
@@ -128,5 +124,4 @@
       (sut/decode ht dst res)
       (.flip res)
       (.rewind dst)
-      (let [^bytes bs1 (b/get-bytes res)]
-        (is (or (Arrays/equals bs bs1) (Arrays/equals bs0 bs1)))))))
+      (is (Arrays/equals bs ^bytes (b/get-bytes res))))))

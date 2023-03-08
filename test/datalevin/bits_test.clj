@@ -29,23 +29,6 @@
 (def a 235)
 (def g 4792)
 
-(defn- bf-compare
-  "Jveg ByteBuffer compareTo is byte-wise signed comparison, not good"
-  [^ByteBuffer bf1 ^ByteBuffer bf2]
-  (loop []
-    (let [v1  (short (bit-and (.get bf1) (short 0xFF)))
-          v2  (short (bit-and (.get bf2) (short 0xFF)))
-          res (- v1 v2)]
-      (if (not (zero? res))
-        res
-        (let [r1 (.remaining bf1)
-              r2 (.remaining bf2)]
-          (cond
-            (= r1 r2 0)             0
-            (and (< 0 r1) (= 0 r2)) 1
-            (and (= 0 r1) (< 0 r2)) -1
-            :else                   (recur)))))))
-
 ;; buffer read/write
 
 (defn- bytes-size-less-than?
@@ -72,8 +55,9 @@
 
 (test/defspec string-generative-test
   100
-  (prop/for-all [k (gen/such-that (partial string-size-less-than? c/+val-bytes-wo-hdr+)
-                                  gen/string)]
+  (prop/for-all [k (gen/such-that
+                     (partial string-size-less-than? c/+val-bytes-wo-hdr+)
+                     gen/string)]
                 (let [^ByteBuffer bf (sut/allocate-buffer 16384)]
                   (sut/put-bf bf k :string)
                   (= k (sut/read-buffer bf :string)))))
@@ -177,10 +161,10 @@
     (sut/put-buffer bf1 n :bigint)
     (.flip bf1)
     (if (< (.compareTo m n) 0)
-      (is (< (bf-compare bf bf1) 0))
+      (is (< (sut/compare-buffer bf bf1) 0))
       (if (= (.compareTo m n) 0)
-        (is (= (bf-compare bf bf1) 0))
-        (is (> (bf-compare bf bf1) 0))))
+        (is (= (sut/compare-buffer bf bf1) 0))
+        (is (> (sut/compare-buffer bf bf1) 0))))
     (.rewind bf)
     (.rewind bf1)
     (let [^BigInteger m1 (sut/read-buffer bf :bigint)
@@ -214,10 +198,10 @@
     (sut/put-buffer bf1 n :bigdec)
     (.flip bf1)
     (if (< (.compareTo m n) 0)
-      (is (< (bf-compare bf bf1) 0))
+      (is (< (sut/compare-buffer bf bf1) 0))
       (if (= (.compareTo m n) 0)
-        (is (= (bf-compare bf bf1) 0))
-        (is (> (bf-compare bf bf1) 0))))
+        (is (= (sut/compare-buffer bf bf1) 0))
+        (is (> (sut/compare-buffer bf bf1) 0))))
     (.rewind bf)
     (.rewind bf1)
     (let [^BigDecimal m1 (sut/read-buffer bf :bigdec)
@@ -297,7 +281,7 @@
                   (sut/put-bf bf d :instant)
                   (sut/put-bf bf1 d1 :instant)
                   (= (sign (- ^long k ^long k1))
-                     (sign (bf-compare bf bf1))))))
+                     (sign (sut/compare-buffer bf bf1))))))
 
 (test/defspec uuid-generative-test
   100
@@ -324,6 +308,17 @@
                   (sut/put-bf bf d :datom)
                   (is (= d (sut/read-buffer bf :datom))))))
 
+(test/defspec compressed-datom-generative-test
+  100
+  (prop/for-all [e gen/large-integer
+                 a gen/keyword-ns
+                 v gen/any-equatable
+                 t gen/large-integer]
+                (let [^ByteBuffer bf (sut/allocate-buffer 16384)
+                      d              (d/datom e a v t)]
+                  (sut/put-bf bf d :datom cp/value-compressor)
+                  (is (= d (sut/read-buffer bf :datom cp/value-compressor))))))
+
 (test/defspec attr-generative-test
   100
   (prop/for-all [k gen/keyword-ns]
@@ -337,31 +332,31 @@
   [v d dmin dmax]
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)]
-    (sut/put-bf bf d :avg)
-    (sut/put-bf bf1 dmin :avg)
-    (is (>= (bf-compare bf bf1) 0)
+    (sut/put-bf bf d :avg kc)
+    (sut/put-bf bf1 dmin :avg kc)
+    (is (>= (sut/compare-buffer bf bf1) 0)
         (do
           (.rewind bf)
           (.rewind bf1)
           (str "v: " v
                " d: " (u/hexify (sut/get-bytes bf))
                " dmin: " (u/hexify (sut/get-bytes bf1)))))
-    (sut/put-bf bf1 dmax :avg)
+    (sut/put-bf bf1 dmax :avg kc)
     (.rewind bf)
-    (is (<= (bf-compare bf bf1) 0))
-    (sut/put-bf bf d :veg)
-    (sut/put-bf bf1 dmin :veg)
+    (is (<= (sut/compare-buffer bf bf1) 0))
+    (sut/put-bf bf d :veg kc)
+    (sut/put-bf bf1 dmin :veg kc)
     ;; TODO deal with occasional fail here, basically, empty character
-    #_(is (>=(bf-compare bf bf1) 0)
-          (do
-            (.rewind bf)
-            (.rewind bf1)
-            (str "v: " v
-                 " d: " (u/hexify (sut/get-bytes bf))
-                 " dmin: " (u/hexify (sut/get-bytes bf1)))))
-    (sut/put-bf bf1 dmax :veg)
+    (is (>=(sut/compare-buffer bf bf1) 0)
+        (do
+          (.rewind bf)
+          (.rewind bf1)
+          (str "v: " v
+               " d: " (u/hexify (sut/get-bytes bf))
+               " dmin: " (u/hexify (sut/get-bytes bf1)))))
+    (sut/put-bf bf1 dmax :veg kc)
     (.rewind bf)
-    (is (<= (bf-compare bf bf1) 0))))
+    (is (<= (sut/compare-buffer bf bf1) 0))))
 
 (test/defspec keyword-extrema-generative-test
   100
@@ -477,21 +472,21 @@
   (let [^ByteBuffer bf  (sut/allocate-buffer 16384)
         ^ByteBuffer bf1 (sut/allocate-buffer 16384)
         _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :veg)
+        _               (sut/put-buffer bf d :veg kc)
         _               (.flip ^ByteBuffer bf)
         _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :veg)
+        _               (sut/put-buffer bf1 d1 :veg kc)
         _               (.flip ^ByteBuffer bf1)
-        ^long res       (bf-compare bf bf1)
+        res             (sut/compare-buffer bf bf1)
         ]
     (is (u/same-sign? res (u/combine-cmp (compare v v1)
                                          (compare e e1))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :veg)]
+    (let [^Retrieved r (sut/read-buffer bf :veg kc)]
       (is (= e (.-e r)))
       (is (= v (.-v r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :veg)]
+    (let [^Retrieved r (sut/read-buffer bf1 :veg kc)]
       (is (= e1 (.-e r)))
       (is (= v1 (.-v r))))))
 
@@ -505,7 +500,7 @@
         _               (.clear ^ByteBuffer bf1)
         _               (sut/put-buffer bf1 d1 :avg)
         _               (.flip ^ByteBuffer bf1)
-        ^long  res      (bf-compare bf bf1)]
+        res             (sut/compare-buffer bf bf1)]
     (is (u/same-sign? res (u/combine-cmp (compare a a1)
                                          (compare v v1))))
     (.rewind ^ByteBuffer bf)
@@ -527,7 +522,7 @@
         _               (.clear ^ByteBuffer bf1)
         _               (sut/put-buffer bf1 d1 :eag)
         _               (.flip ^ByteBuffer bf1)
-        ^long  res      (bf-compare bf bf1)]
+        res             (sut/compare-buffer bf bf1)]
     (is (u/same-sign? res (u/combine-cmp (compare e e1)
                                          (compare a a1))))
     (.rewind ^ByteBuffer bf)
@@ -992,7 +987,7 @@
           _               (sut/put-buffer bf1 [ts1 tk1 tl1 tf1]
                                           [:string :keyword :long :float])
           _               (.flip ^ByteBuffer bf1)
-          ^long res       (bf-compare bf bf1)]
+          res             (sut/compare-buffer bf bf1)]
       (is (u/same-sign? res (u/combine-cmp (compare ts ts1)
                                            (compare tk tk1)
                                            (compare tl tl1)
