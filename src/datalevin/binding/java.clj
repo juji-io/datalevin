@@ -2,6 +2,7 @@
   "LMDB binding for Java"
   (:require
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.spill :as sp]
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
@@ -160,7 +161,7 @@
       (b/put-bf vb x t)
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
-          (set! vb (b/allocate-buffer size))
+          (set! vb (bf/allocate-buffer size))
           (b/put-bf vb x t)))
       (catch Exception e
         (raise "Error putting r/w value buffer of "
@@ -218,7 +219,7 @@
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start?
                       (continue?)
-                      (if (zero? (b/compare-buffer k sk))
+                      (if (zero? (bf/compare-buffer k sk))
                         (check SeekOp/MDB_NEXT_NODUP)
                         (continue?)))
                     false)
@@ -227,7 +228,7 @@
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start?
-                      (if (zero? (b/compare-buffer k sk))
+                      (if (zero? (bf/compare-buffer k sk))
                         (continue-back?)
                         (check-back SeekOp/MDB_PREV_NODUP))
                       (check-back SeekOp/MDB_PREV_NODUP))
@@ -235,14 +236,14 @@
                   (check-back SeekOp/MDB_LAST)))
               (continue? []
                 (if ek
-                  (let [r (b/compare-buffer k ek)]
+                  (let [r (bf/compare-buffer k ek)]
                     (if (= r 0)
                       include-stop?
                       (if (> r 0) false true)))
                   true))
               (continue-back? []
                 (if ek
-                  (let [r (b/compare-buffer k ek)]
+                  (let [r (bf/compare-buffer k ek)]
                     (if (= r 0)
                       include-stop?
                       (if (> r 0) true false)))
@@ -282,7 +283,7 @@
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start-key?
                       (key-continue?)
-                      (if (zero? (b/compare-buffer k sk))
+                      (if (zero? (bf/compare-buffer k sk))
                         (check-key SeekOp/MDB_NEXT_NODUP)
                         (key-continue?)))
                     false)
@@ -291,7 +292,7 @@
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
                     (if include-start-key?
-                      (if (zero? (b/compare-buffer k sk))
+                      (if (zero? (bf/compare-buffer k sk))
                         (key-continue-back?)
                         (check-key-back SeekOp/MDB_PREV_NODUP))
                       (check-key-back SeekOp/MDB_PREV_NODUP))
@@ -302,7 +303,7 @@
                   (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
                       (val-continue?)
-                      (if (zero? (b/compare-buffer v sv))
+                      (if (zero? (bf/compare-buffer v sv))
                         (check-val SeekOp/MDB_NEXT_DUP)
                         (val-continue?)))
                     false)
@@ -311,7 +312,7 @@
                 (if sv
                   (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
-                      (if (zero? (b/compare-buffer v sv))
+                      (if (zero? (bf/compare-buffer v sv))
                         (val-continue-back?)
                         (check-val-back SeekOp/MDB_PREV_DUP))
                       (check-val-back SeekOp/MDB_PREV_DUP))
@@ -321,14 +322,14 @@
               (val-end [] (if @key-ended? false (advance-key)))
               (key-continue? []
                 (if ek
-                  (let [r (b/compare-buffer k ek)]
+                  (let [r (bf/compare-buffer k ek)]
                     (if (= r 0)
                       (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) (key-end) true)))
                   true))
               (key-continue-back? []
                 (if ek
-                  (let [r (b/compare-buffer k ek)]
+                  (let [r (bf/compare-buffer k ek)]
                     (if (= r 0)
                       (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) true (key-end))))
@@ -350,14 +351,14 @@
                     (advance-key)))
               (val-continue? []
                 (if ev
-                  (let [r (b/compare-buffer v ev)]
+                  (let [r (bf/compare-buffer v ev)]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) (val-end) true)))
                   true))
               (val-continue-back? []
                 (if ev
-                  (let [r (b/compare-buffer v ev)]
+                  (let [r (bf/compare-buffer v ev)]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) true (val-end))))
@@ -532,8 +533,8 @@
                                 dupsort?       false
                                 validate-data? false}}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
-    (let [kb  (b/allocate-buffer key-size)
-          vb  (b/allocate-buffer val-size)
+    (let [kb  (bf/allocate-buffer key-size)
+          vb  (bf/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
                         ^"[Lorg.lmdbjava.DbiFlags;"
                         (kv-flags :dbi (if dupsort?
@@ -592,11 +593,11 @@
             (.renew rtx))
           (->Rtx this
                  (.txnRead env)
-                 (b/allocate-buffer c/+max-key-size+)
-                 (b/allocate-buffer c/+max-key-size+)
-                 (b/allocate-buffer c/+max-key-size+)
-                 (b/allocate-buffer c/+max-key-size+)
-                 (b/allocate-buffer c/+max-key-size+)
+                 (bf/allocate-buffer c/+max-key-size+)
+                 (bf/allocate-buffer c/+max-key-size+)
+                 (bf/allocate-buffer c/+max-key-size+)
+                 (bf/allocate-buffer c/+max-key-size+)
+                 (bf/allocate-buffer c/+max-key-size+)
                  (volatile! false)))
       (catch Txn$BadReaderLockException _
         (raise
@@ -887,11 +888,11 @@
                               opts
                               (ConcurrentLinkedQueue.)
                               (UnifiedMap.)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (b/allocate-buffer c/+max-key-size+)
+                              (bf/allocate-buffer c/+max-key-size+)
+                              (bf/allocate-buffer c/+max-key-size+)
+                              (bf/allocate-buffer c/+max-key-size+)
+                              (bf/allocate-buffer c/+max-key-size+)
+                              (bf/allocate-buffer c/+max-key-size+)
                               (volatile! nil)
                               false)]
        (when temp? (u/delete-on-exit file))

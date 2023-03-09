@@ -2,6 +2,7 @@
   "LMDB binding for GraalVM native image"
   (:require
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.spill :as sp]
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
@@ -228,7 +229,7 @@
                   (if (.get cur sk Lib$MDB_cursor_op/MDB_SET_RANGE)
                     (if include-start?
                       (continue?)
-                      (if (zero? (b/compare-buffer (.outBuf k) (.outBuf sk)))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (check Lib$MDB_cursor_op/MDB_NEXT_NODUP)
                         (continue?)))
                     false)
@@ -237,7 +238,7 @@
                 (if sk
                   (if (.get cur sk Lib$MDB_cursor_op/MDB_SET_RANGE)
                     (if include-start?
-                      (if (zero? (b/compare-buffer (.outBuf k) (.outBuf sk)))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (continue-back?)
                         (check-back Lib$MDB_cursor_op/MDB_PREV_NODUP))
                       (check-back Lib$MDB_cursor_op/MDB_PREV_NODUP))
@@ -245,14 +246,14 @@
                   (check-back Lib$MDB_cursor_op/MDB_LAST)))
               (continue? []
                 (if ek
-                  (let [r (b/compare-buffer (.outBuf k) (.outBuf ek))]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       include-stop?
                       (if (> r 0) false true)))
                   true))
               (continue-back? []
                 (if ek
-                  (let [r (b/compare-buffer (.outBuf k) (.outBuf ek))]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       include-stop?
                       (if (> r 0) true false)))
@@ -292,7 +293,7 @@
                   (if (.get cur sk Lib$MDB_cursor_op/MDB_SET_RANGE)
                     (if include-start-key?
                       (key-continue?)
-                      (if (zero? (b/compare-buffer (.outBuf k) (.outBuf sk)))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (check-key Lib$MDB_cursor_op/MDB_NEXT_NODUP)
                         (key-continue?)))
                     false)
@@ -301,7 +302,7 @@
                 (if sk
                   (if (.get cur sk Lib$MDB_cursor_op/MDB_SET_RANGE)
                     (if include-start-key?
-                      (if (zero? (b/compare-buffer (.outBuf k) (.outBuf sk)))
+                      (if (zero? (bf/compare-buffer (.outBuf k) (.outBuf sk)))
                         (key-continue-back?)
                         (check-key-back Lib$MDB_cursor_op/MDB_PREV_NODUP))
                       (check-key-back Lib$MDB_cursor_op/MDB_PREV_NODUP))
@@ -312,7 +313,7 @@
                   (if (.get cur k sv Lib$MDB_cursor_op/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
                       (val-continue?)
-                      (if (zero? (b/compare-buffer (.outBuf v) (.outBuf sv)))
+                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
                         (check-val Lib$MDB_cursor_op/MDB_NEXT_DUP)
                         (val-continue?)))
                     false)
@@ -321,7 +322,7 @@
                 (if sv
                   (if (.get cur k sv Lib$MDB_cursor_op/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
-                      (if (zero? (b/compare-buffer (.outBuf v) (.outBuf sv)))
+                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
                         (val-continue-back?)
                         (check-val-back Lib$MDB_cursor_op/MDB_PREV_DUP))
                       (check-val-back Lib$MDB_cursor_op/MDB_PREV_DUP))
@@ -331,14 +332,14 @@
               (val-end [] (if @key-ended? false (advance-key)))
               (key-continue? []
                 (if ek
-                  (let [r (b/compare-buffer (.outBuf k) (.outBuf ek))]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) (key-end) true)))
                   true))
               (key-continue-back? []
                 (if ek
-                  (let [r (b/compare-buffer (.outBuf k) (.outBuf ek))]
+                  (let [r (bf/compare-buffer (.outBuf k) (.outBuf ek))]
                     (if (= r 0)
                       (do (vreset! key-ended? true) include-stop-key?)
                       (if (> r 0) true (key-end))))
@@ -360,14 +361,14 @@
                     (advance-key)))
               (val-continue? []
                 (if ev
-                  (let [r (b/compare-buffer (.outBuf v) (.outBuf ev))]
+                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) (val-end) true)))
                   true))
               (val-continue-back? []
                 (if ev
-                  (let [r (b/compare-buffer (.outBuf v) (.outBuf ev))]
+                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
                     (if (= r 0)
                       (if include-stop-val? true (val-end))
                       (if (> r 0) true (val-end))))

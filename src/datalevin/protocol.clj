@@ -2,6 +2,7 @@
   "Shared code of client/server"
   (:require
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
    [datalevin.util :as u]
@@ -175,7 +176,7 @@
                                   (ByteBuffer/allocateDirect
                                     (* ^long c/+buffer-grow-factor+ length))]
                               (.rewind read-bf)
-                              (b/buffer-transfer read-bf bf)
+                              (bf/buffer-transfer read-bf bf)
                               bf)
                             read-bf)]
             (if (< available length)

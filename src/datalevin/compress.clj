@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.compress
   "Data compressors"
   (:require
+   [datalevin.buffer :as bf]
    [datalevin.hu :as hu])
   (:import
    [datalevin.hu HuTucker]
@@ -74,18 +75,27 @@
     (reify
       ICompressor
       (bf-compress [_ src dst]
-        (.putInt dst (int (.limit ^ByteBuffer src)))
-        (.compress compressor ^ByteBuffer src ^ByteBuffer dst))
+        (let [src   ^ByteBuffer src
+              dst   ^ByteBuffer dst
+              total (.remaining src)]
+          (if (< total 36)
+            (do (.putInt dst (int 0))
+                (bf/buffer-transfer src dst))
+            (do (.putInt dst (int (.limit src)))
+                (.compress compressor src dst)))))
       (bf-uncompress [_ src dst]
-        (.limit dst (.getInt src))
-        (.decompress decompressor ^ByteBuffer src ^ByteBuffer dst)))))
+        (let [src   ^ByteBuffer src
+              dst   ^ByteBuffer dst
+              total (.getInt src)]
+          (if (zero? total)
+            (bf/buffer-transfer src dst)
+            (do (.limit dst total)
+                (.decompress decompressor src dst))))))))
 
 (defn key-compressor
   [^longs freqs]
   (let [^HuTucker ht (hu/new-hu-tucker freqs)]
     (reify
       ICompressor
-      (bf-compress [_ src dst]
-        (.encode ht ^ByteBuffer src ^ByteBuffer dst))
-      (bf-uncompress [_ src dst]
-        (.decode ht ^ByteBuffer src ^ByteBuffer dst)))))
+      (bf-compress [_ src dst] (.encode ht src dst))
+      (bf-uncompress [_ src dst] (.decode ht src dst)))))

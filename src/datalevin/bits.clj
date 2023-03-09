@@ -1,8 +1,9 @@
 (ns ^:no-doc datalevin.bits
-  "Handle binary encoding, byte buffers, etc."
+  "Handle binary encoding of data, and read/write to buffers, etc."
   (:require
    [datalevin.constants :as c]
    [datalevin.compress :as cp]
+   [datalevin.buffer :as bf]
    [datalevin.util :as u]
    [datalevin.sparselist :as sl]
    [clojure.string :as s]
@@ -10,14 +11,13 @@
   (:import
    [java.util Arrays UUID Date Base64 Base64$Decoder Base64$Encoder]
    [java.util.regex Pattern]
-   [java.util.concurrent ConcurrentLinkedDeque]
    [java.math BigInteger BigDecimal]
    [java.io Writer]
    [java.nio ByteBuffer]
    [java.nio.charset StandardCharsets]
    [java.lang String]
    [org.roaringbitmap RoaringBitmap RoaringBitmapWriter]
-   [datalevin.utl BitOps BufOps]))
+   [datalevin.utl BitOps]))
 
 ;; base64
 
@@ -114,44 +114,6 @@
   (let [bm (RoaringBitmap.)] (.deserialize bm bf) bm))
 
 (defn- put-bitmap [^ByteBuffer bf ^RoaringBitmap x] (.serialize x bf))
-
-;; byte buffer ops
-
-(defn allocate-buffer
-  "Allocate JVM off-heap ByteBuffer in the Datalevin expected endian order"
-  ^ByteBuffer [size]
-  (ByteBuffer/allocateDirect size))
-
-(defn buffer-transfer
-  "Transfer content from one bytebuffer to another"
-  ([^ByteBuffer src ^ByteBuffer dst]
-   (.put dst src))
-  ([^ByteBuffer src ^ByteBuffer dst n]
-   (dotimes [_ n] (.put dst (.get src)))))
-
-(defn compare-buffer
-  ^long [^ByteBuffer b1 ^ByteBuffer b2]
-  (BufOps/compareByteBuf b1 b2))
-
-(defonce ^ConcurrentLinkedDeque buffers (ConcurrentLinkedDeque.))
-
-(defn- allocate-array-buffer
-  ^ByteBuffer [size]
-  (ByteBuffer/wrap (byte-array size)))
-
-(defn- get-buffer
-  ([] (get-buffer (+ c/+max-key-size+ Integer/BYTES)))
-  (^ByteBuffer [^long size]
-   (let [cap (+ size Integer/BYTES)] ;; for storing length
-     (or (some (fn [^ByteBuffer bf]
-                 (when (<= cap (.capacity bf))
-                   (.remove buffers bf)
-                   (.clear bf)
-                   bf))
-               buffers)
-         (allocate-array-buffer cap)))))
-
-(defn- return-buffer [bf] (.offer buffers bf))
 
 ;; data read/write from/to buffer
 
@@ -333,7 +295,6 @@
     (BigDecimal. value scale)))
 
 (defn- put-data [^ByteBuffer bb x] (put-bytes bb (serialize x)))
-
 
 (defn- put-uuid
   [bf ^UUID val]
@@ -676,13 +637,13 @@
   (wrap-extrema
     v c/min-bytes c/max-bytes
     (let [t        (into [] (map dl-type->raw) t)
-          tuple-bf ^ByteBuffer (get-buffer)]
+          tuple-bf ^ByteBuffer (bf/get-buffer)]
       (if (= 1 (count t))
         (put-homo-tuple tuple-bf v (nth t 0))
         (put-hete-tuple tuple-bf v t))
       (let [res (Arrays/copyOfRange (.array tuple-bf)
                                     0 (.position tuple-bf))]
-        (return-buffer tuple-bf)
+        (bf/return-buffer tuple-bf)
         res))))
 
 (defn- val-bytes
@@ -938,11 +899,11 @@
        (put-data bf x))))
   ([^ByteBuffer bf x x-type compressor]
    (if compressor
-     (let [^ByteBuffer bf1 (get-buffer (.capacity bf))]
+     (let [^ByteBuffer bf1 (bf/get-buffer (.capacity bf))]
        (put-buffer bf1 x x-type)
        (.flip bf1)
        (cp/bf-compress compressor bf1 bf)
-       (return-buffer bf1))
+       (bf/return-buffer bf1))
      (put-buffer bf x x-type))))
 
 (defn put-bf
@@ -999,11 +960,11 @@
        (get-data bf))))
   ([^ByteBuffer bf v-type compressor]
    (if compressor
-     (let [bf1 (get-buffer (.capacity bf))
+     (let [bf1 (bf/get-buffer (.capacity bf))
            _   (cp/bf-uncompress compressor bf bf1)
            _   (.flip bf1)
            res (read-buffer bf1 v-type)]
-       (return-buffer bf1)
+       (bf/return-buffer bf1)
        res)
      (read-buffer bf v-type))))
 

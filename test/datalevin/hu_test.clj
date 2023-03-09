@@ -3,6 +3,7 @@
    [datalevin.hu :as sut]
    [datalevin.util :as u]
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [clojure.test :refer [deftest testing is are]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
@@ -92,10 +93,10 @@
                         gen/bytes)
      bs2 (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
                         gen/bytes)]
-    (let [^ByteBuffer src1 (b/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer src2 (b/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer dst1 (b/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer dst2 (b/allocate-buffer c/+max-key-size+)]
+    (let [^ByteBuffer src1 (bf/allocate-buffer c/+max-key-size+)
+          ^ByteBuffer src2 (bf/allocate-buffer c/+max-key-size+)
+          ^ByteBuffer dst1 (bf/allocate-buffer c/+max-key-size+)
+          ^ByteBuffer dst2 (bf/allocate-buffer c/+max-key-size+)]
       (b/put-buffer src1 bs1 :bytes)
       (b/put-buffer src2 bs2 :bytes)
       (.flip src1)
@@ -106,17 +107,17 @@
       (.flip ^ByteBuffer src2)
       (.flip ^ByteBuffer dst1)
       (.flip ^ByteBuffer dst2)
-      (is (u/same-sign? (b/compare-buffer src1 src2)
-                        (b/compare-buffer dst1 dst2))))))
+      (is (u/same-sign? (bf/compare-buffer src1 src2)
+                        (bf/compare-buffer dst1 dst2))))))
 
 (test/defspec encode-decode-round-trip-test
   1000
   (prop/for-all
     [^bytes bs (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
                               gen/bytes)]
-    (let [^ByteBuffer src (b/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer dst (b/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer res (b/allocate-buffer c/+max-key-size+)]
+    (let [^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
+          ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
+          ^ByteBuffer res (bf/allocate-buffer c/+max-key-size+)]
       (b/put-bytes src bs)
       (.flip src)
       (sut/encode ht src dst)

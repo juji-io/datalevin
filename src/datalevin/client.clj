@@ -4,6 +4,7 @@
             [datalevin.constants :as c]
             [clojure.string :as s]
             [datalevin.bits :as b]
+            [datalevin.buffer :as bf]
             [datalevin.protocol :as p])
   (:import [java.nio ByteBuffer BufferOverflowException]
            [java.nio.channels SocketChannel]
@@ -31,7 +32,7 @@
           resp))
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ (.capacity bf))]
-          (set! bf (b/allocate-buffer size))
+          (set! bf (bf/allocate-buffer size))
           (send-n-receive this msg)))
       (catch Exception e
         (u/raise "Error sending message and receiving response: "
@@ -42,7 +43,7 @@
       (p/write-message-blocking ch bf msg)
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ (.capacity bf))]
-          (set! bf (b/allocate-buffer size))
+          (set! bf (bf/allocate-buffer size))
           (send-only this msg)))
       (catch Exception e
         (u/raise "Error sending message: " e {:msg msg}))))
@@ -73,7 +74,7 @@
 (defn- new-connection
   [host port]
   (->Connection (connect-socket host port)
-                (b/allocate-buffer c/+default-buffer-size+)))
+                (bf/allocate-buffer c/+default-buffer-size+)))
 
 (defn- set-client-id
   [conn client-id]

@@ -4,6 +4,7 @@
    [datalevin.util :as u]
    [datalevin.core :as d]
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.query :as q]
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
@@ -659,7 +660,7 @@
       (p/write-message-blocking ch write-bf msg)
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
-          (vswap! state assoc :write-bf (b/allocate-buffer size))
+          (vswap! state assoc :write-bf (bf/allocate-buffer size))
           (write-message skey msg))))))
 
 (defn- handle-accept
@@ -670,9 +671,9 @@
       (.register (.selector skey) SelectionKey/OP_READ
                  ;; attach a connection state
                  ;; { read-bf, write-bf, client-id }
-                 (volatile! {:read-bf  (ByteBuffer/allocateDirect
+                 (volatile! {:read-bf  (bf/allocate-buffer
                                          c/+default-buffer-size+)
-                             :write-bf (ByteBuffer/allocateDirect
+                             :write-bf (bf/allocate-buffer
                                          c/+default-buffer-size+)})))))
 
 (defn- copy-in
@@ -2131,9 +2132,9 @@
       (cond
         (> readn 0)  (if (= (.position read-bf) capacity)
                        (let [size (* ^long c/+buffer-grow-factor+ capacity)
-                             bf   (b/allocate-buffer size)]
+                             bf   (bf/allocate-buffer size)]
                          (.flip read-bf)
-                         (b/buffer-transfer read-bf bf)
+                         (bf/buffer-transfer read-bf bf)
                          (vswap! state assoc :read-bf bf))
                        (p/extract-message
                          read-bf

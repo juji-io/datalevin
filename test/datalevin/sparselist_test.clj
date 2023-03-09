@@ -1,6 +1,7 @@
 (ns datalevin.sparselist-test
   (:require [datalevin.sparselist :as sut]
             [datalevin.bits :as b]
+            [datalevin.buffer :as bf]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.clojure-test :as test]
             [clojure.test.check.properties :as prop]
@@ -42,7 +43,7 @@
   100
   (prop/for-all [ks (gen/vector gen/int)
                  vs (gen/vector gen/int)]
-                (let [^ByteBuffer bf          (b/allocate-buffer 16384)
+                (let [^ByteBuffer bf          (bf/allocate-buffer 16384)
                       ks                      (sort ks)
                       ^SparseIntArrayList ssl (sut/sparse-arraylist ks vs)]
                   (.clear bf)
