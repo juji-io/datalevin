@@ -119,7 +119,7 @@ attributes in planning, which speeds up plan enumeration as well.
 
 As mentioned, we take advantage of the opportunities to push selection
 predicates down to index scan in order to minimize unnecessary intermediate
-results.
+results. This is achieved during query rewrites using magic sets [11].
 
 ### Query graph simplification
 
@@ -244,3 +244,7 @@ estimation for RDF queries with multiple joins." ICDE. 2011.
 
 [10] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
+
+[11] Bancilhon, Francois, et al. "Magic sets and other strange ways to implement
+logic programs." Proceedings of the fifth ACM SIGACT-SIGMOD symposium on
+Principles of database systems. 1985.
