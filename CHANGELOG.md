@@ -2,7 +2,8 @@
 
 ## WIP
 ### Added
-- [KV] Expose LMDB dupsort functionality as the following list functions:
+- [KV & Datalog] Option `:compress?` to compress the data (default `true`). See [details](doc/compress.md). #14
+- [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
     * `del-list-items`
@@ -18,15 +19,18 @@
     * `list-range-filter-count`
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.
-- [KV] `datalevin/kv-meta` dbi to keep information, such as dbi flags, etc.
+- [KV] `datalevin/kv-meta` dbi to keep meta information, such as dbi flags, etc. #184
 
 ### Changed
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
   includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [KV] Store Spillable data in sub-dbs rather than in individual db, to prevent
-  file handle exhaustion
+  file handle exhaustion. #189
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
+- [Datalog] Results are spillable to disk. #166
+- [Server/Client] Network messages are compressed by default.
+- [Client] Option `:compress-message?`, set to `false` for older versions of server.
 
 ### Fixed
 - [KV] spillable results handle `false` value correctly

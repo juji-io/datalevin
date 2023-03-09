@@ -23,6 +23,7 @@
 
 (def freqs (repeatedly 65536 #(rand-int 1000000)))
 (def kc    (cp/key-compressor (long-array (map inc freqs))))
+(def vc-l    (cp/value-compressor))
 
 ;; binary index preserves the order of values
 
@@ -58,8 +59,8 @@
   100
   (prop/for-all [k gen/any-equatable]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                  (sut/put-bf bf k :data cp/value-compressor)
-                  (= k (sut/read-buffer bf :data cp/value-compressor)))))
+                  (sut/put-bf bf k :data vc-l)
+                  (= k (sut/read-buffer bf :data vc-l)))))
 
 (test/defspec string-generative-test
   100
@@ -67,8 +68,8 @@
                      (partial string-size-less-than? c/+val-bytes-wo-hdr+)
                      gen/string)]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                  (sut/put-bf bf k :string)
-                  (= k (sut/read-buffer bf :string)))))
+                  (sut/put-bf bf k :string vc-l)
+                  (= k (sut/read-buffer bf :string vc-l)))))
 
 (test/defspec int-generative-test
   100
@@ -81,8 +82,8 @@
   100
   (prop/for-all [k gen/int]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                  (sut/put-bf bf k :int cp/value-compressor)
-                  (= k (sut/read-buffer bf :int cp/value-compressor)))))
+                  (sut/put-bf bf k :int vc-l)
+                  (= k (sut/read-buffer bf :int vc-l)))))
 
 (test/defspec int-int-generative-test
   100
@@ -331,8 +332,8 @@
                  t gen/large-integer]
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)
                       d              (d/datom e a v t)]
-                  (sut/put-bf bf d :datom cp/value-compressor)
-                  (is (= d (sut/read-buffer bf :datom cp/value-compressor))))))
+                  (sut/put-bf bf d :datom vc-l)
+                  (is (= d (sut/read-buffer bf :datom vc-l))))))
 
 (test/defspec attr-generative-test
   100

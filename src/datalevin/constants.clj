@@ -146,6 +146,8 @@
 
 (def ^:const decoding-bits 4)
 
+(def value-compress-threshold 36)
+
 ;; search
 (def ^:const terms "terms")
 (def ^:const docs "docs")

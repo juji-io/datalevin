@@ -8,23 +8,30 @@ enough.
 
 ## Key-value Compression
 
-In Datalevin, compression/decompression process happens automatically in the key-value storage and is transparent to the users.
+In Datalevin, compression/decompression happens automatically in the key-value
+storage layer and is transparent to the users.
+
+Dictionary based compression algorithms are used, because compression has to
+contend with small data size as it is done on the individual value basis.
+Generational management of compression dictionaries is used to deal with data
+distribution shifts.
 
 ### Key Compression
 
-For keys, we use an order preserving compression method, so that point queries,
-range queries and some predicates can run directly on the compressed data
-without having to decompress data first.
+For keys, we use an order preserving compression method, so that range queries
+and some predicates can run directly on the compressed data without having to
+decompress data first.
 
 A complete and order preserving dictionary based encoding scheme is implemented,
 where a fixed length interval and variable length code are used [1]. The fixed
-length chosen is two bytes, which captures first order entropy in data, while
-imposes not too much of a memory and computation overhead, i.e. we consider
-fixed number of 64K symbols. The variable length code chosen is Hu-Tucker codes
-[2], which is optimal. We implement the Hu-Tucker algorithm using `n` mergeable
-priority queues to achieve the `O(nlogn)` theoretical bounds [3], so the
-computation of dictionary and building all necessary encoding and decoding
-tables can be done online, which takes less than one second on today's CPU.
+length chosen is two bytes, which captures some first order entropy in data,
+while imposes not too much of a memory and computation overhead, i.e. we
+consider fixed number of 64K symbols. The variable length code chosen is
+Hu-Tucker codes [2], which is optimal. We implement the Hu-Tucker algorithm
+using `n` mergeable priority queues to achieve the `O(nlogn)` theoretical bounds
+[3], so the computation of dictionary and building all necessary encoding and
+decoding tables can be done online, which takes less than one second on today's
+CPU.
 
 The resulting optimal binary alphabetic tree of each DBI is represented as an
 array of code length (byte) and an array of codes (32 bits integer). These two
@@ -54,7 +61,15 @@ improve compression ratio as data distribution may has shifted significantly.
 
 ### Value Compression
 
-LZ4 is used for compressing large values, as it has a good balance of speed and compression ratio.
+Zstd with dictionary compression is used to compress values, as it has a good
+balance of speed and compression ratio. Dictionary training follows the same
+generational scheme as described above.
+
+## Wire compression
+
+By default, lz4 compression is used for data sent between client and server. Set
+`:compress-message?` option to `false` on the client to disable compression,
+e.g. for working with versions of the server prior to `0.9.0`.
 
 ## Triple Compression
 
