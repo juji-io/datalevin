@@ -67,37 +67,36 @@
 
 (defn put-sorted-ints [bf ar] (put-ints* sorted-int-compressor bf ar))
 
+;; dictionary-less compressor
+
+(defonce dict-less-compressor
+  (let [^LZ4Factory factory               (LZ4Factory/fastestInstance)
+        ^LZ4Compressor compressor         (.fastCompressor factory)
+        ^LZ4FastDecompressor decompressor (.fastDecompressor factory)]
+    (reify
+      ICompressor
+      (bf-compress [_ src dst]
+        (let [src   ^ByteBuffer src
+              dst   ^ByteBuffer dst
+              total (.remaining src)]
+          (if (< total ^long c/value-compress-threshold)
+            (do (.putInt dst (int 0))
+                (bf/buffer-transfer src dst))
+            (do (.putInt dst (int (.limit src)))
+                (.compress compressor src dst)))))
+      (bf-uncompress [_ src dst]
+        (let [src   ^ByteBuffer src
+              dst   ^ByteBuffer dst
+              total (.getInt src)]
+          (if (zero? total)
+            (bf/buffer-transfer src dst)
+            (do (.limit dst total)
+                (.decompress decompressor src dst))))))))
+
 ;; key value compressors
 
 (defn value-compressor
-  "use lz4 for dictionary-less compression, use zstd if dictionary is
-  available"
-  ([^bytes dict]
-   ;; zstd
-   )
-  ([]
-   (let [^LZ4Factory factory               (LZ4Factory/fastestInstance)
-         ^LZ4Compressor compressor         (.fastCompressor factory)
-         ^LZ4FastDecompressor decompressor (.fastDecompressor factory)]
-     (reify
-       ICompressor
-       (bf-compress [_ src dst]
-         (let [src   ^ByteBuffer src
-               dst   ^ByteBuffer dst
-               total (.remaining src)]
-           (if (< total ^long c/value-compress-threshold)
-             (do (.putInt dst (int 0))
-                 (bf/buffer-transfer src dst))
-             (do (.putInt dst (int (.limit src)))
-                 (.compress compressor src dst)))))
-       (bf-uncompress [_ src dst]
-         (let [src   ^ByteBuffer src
-               dst   ^ByteBuffer dst
-               total (.getInt src)]
-           (if (zero? total)
-             (bf/buffer-transfer src dst)
-             (do (.limit dst total)
-                 (.decompress decompressor src dst)))))))))
+  [^bytes dict])
 
 (defn key-compressor
   [^longs freqs]
