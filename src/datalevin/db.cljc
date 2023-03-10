@@ -665,7 +665,10 @@
         a       (:a datom)
         report' (-> report
                     (assoc :db-after (with-datom db datom))
-                    (update :tx-data conj! datom))]
+                    (update :tx-data conj! datom))
+        txd     (persistent! (:tx-data report'))
+        report' (assoc report' :tx-data (transient txd))
+        ]
     (if (tuple-source? db a)
       (let [e      (:e datom)
             v      (if (datom-added datom) (:v datom) nil)
@@ -845,7 +848,8 @@
                            (or (sf (.subSet ^TreeSortedSet (:eavt db)
                                             (datom e a v tx0)
                                             (datom e a v txmax)))
-                               (first (s/fetch (:store db) (datom e a v))))
+                               (first (s/fetch (:store db) (datom e a v)))
+                               )
                            (or (sf (.subSet ^TreeSortedSet (:eavt db)
                                             (datom e a nil tx0)
                                             (datom e a nil txmax)))
@@ -856,7 +860,9 @@
       (transact-report report new-datom)
 
       (= (.-v old-datom) v)
-      (update report ::tx-redundant conjv new-datom)
+      (if (is-attr? db a :db/unique)
+        (update report ::tx-redundant conjv new-datom)
+        (transact-report report new-datom))
 
       :else
       (-> report

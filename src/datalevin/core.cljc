@@ -1004,11 +1004,11 @@ Only usable for debug output.
 ;; key value store API
 
 (def ^{:arglists '([kv])
-       :doc      "Key of a key value pair"}
+       :doc      "Key of a key value pair. A low level function, useful when writing key-value query predicates for functions such as `visit`, `range-filter` and so on. Return a `java.nio.ByteBuffer`. See also [[read-buffer]]."}
   k l/k)
 
 (def ^{:arglists '([kv])
-       :doc      "Value of a key value pair"}
+       :doc      "Value of a key value pair. A low level function, useful when writing key-value query predicates for functions such as `visit`, `range-filter` and so on. Return a `java.nio.ByteBuffer`. See also [[read-buffer]]."}
   v l/v)
 
 (defn open-kv
