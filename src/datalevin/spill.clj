@@ -315,12 +315,6 @@
 
   IPersistentMap
 
-  (assocEx [this k v]
-    (if (.containsKey ^Map this (int k))
-      (throw (RuntimeException. "Key already present"))
-      (.put this k v))
-    this)
-
   (assoc [this k v] (.put this k v) this)
 
   (without [this k] (.remove this k) this)
