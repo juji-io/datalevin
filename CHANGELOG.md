@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] correctly handle retracting then transacting the same datom in the
+  same transaction. #192
+- [Datalog] error deleting entities that were previously transacted as part of
+  some EDN data. #191.
+### Improved
+- [Lib] update deps.
+
 ## 0.8.5 (2023-02-13)
 ### Added
 - [KV] added tuple data type that accepts a vector of scalar values. This
