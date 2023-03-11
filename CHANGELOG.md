@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.6 (2023-03-10)
 ### Fixed
 - [Datalog] correctly handle retracting then transacting the same datom in the
   same transaction. #192
