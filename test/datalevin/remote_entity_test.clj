@@ -1,6 +1,7 @@
 (ns datalevin.remote-entity-test
   (:require
    [datalevin.core :as d]
+   [datalevin.db :as db]
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.interpret :as i]
@@ -12,12 +13,13 @@
 (use-fixtures :each server-fixture)
 
 (deftest test-transactable-entity-with-remote-store
-  (let [db  (-> (d/empty-db "dtlv://datalevin:datalevin@localhost/entity-test"
-                            {:user/handle  #:db {:valueType :db.type/string
-                                                 :unique    :db.unique/identity}
-                             :user/friends #:db{:valueType   :db.type/ref
-                                                :cardinality :db.cardinality/many}}
-                            {:auto-entity-time? true})
+  (let [db  (-> (d/empty-db
+                  "dtlv://datalevin:datalevin@localhost/entity-test"
+                  {:user/handle  #:db {:valueType :db.type/string
+                                       :unique    :db.unique/identity}
+                   :user/friends #:db{:valueType   :db.type/ref
+                                      :cardinality :db.cardinality/many}}
+                  {:auto-entity-time? true})
                 (d/db-with [{:user/handle  "ava"
                              :user/friends [{:user/handle "fred"}
                                             {:user/handle "jane"}]}]))
@@ -30,23 +32,32 @@
           (is (= 42 (:user/age ava-with-age)) "lookup works on tx stage")
           (is (nil? (:user/age ava)) "is immutable")
           (testing "and transact"
-            (let [db-ava-with-age        (d/db-with db [(-> ava-with-age
-                                                            (d/add :user/foo "bar"))])
-                  ava-db-entity-with-age (d/entity db-ava-with-age [:user/handle "ava"])]
-              (is (= 42 (:user/age ava-db-entity-with-age)) "value was transacted into db")
-              (is (= "bar" (:user/foo ava-db-entity-with-age)) "value was transacted into db")
+            (let [db-ava-with-age        (d/db-with
+                                           db
+                                           [(-> ava-with-age
+                                                (d/add :user/foo "bar"))])
+                  ava-db-entity-with-age (d/entity db-ava-with-age
+                                                   [:user/handle "ava"])]
+              (is (= 42 (:user/age ava-db-entity-with-age))
+                  "value was transacted into db")
+              (is (= "bar" (:user/foo ava-db-entity-with-age))
+                  "value was transacted into db")
               (testing "update attr"
                 (let [ava-with-age    (update ava-db-entity-with-age :user/age inc)
                       ava-with-points (-> ava-with-age
                                           (assoc :user/points 100)
                                           (update :user/points inc))]
-                  (is (= 43 (:user/age ava-with-age)) "update works on entity")
-                  (is (= 101 (:user/points ava-with-points)) "update works on stage")
+                  (is (= 43 (:user/age ava-with-age))
+                      "update works on entity")
+                  (is (= 101 (:user/points ava-with-points))
+                      "update works on stage")
                   (testing "and transact"
                     (let [db-ava-with-age (d/db-with db [ava-with-points])
                           ava-db-entity   (d/entity db-ava-with-age [:user/handle "ava"])]
-                      (is (= 43 (:user/age ava-db-entity)) "value was transacted into db")
-                      (is (= 101 (:user/points ava-db-entity)) "value was transacted into db")))))))))
+                      (is (= 43 (:user/age ava-db-entity))
+                          "value was transacted into db")
+                      (is (= 101 (:user/points ava-db-entity))
+                          "value was transacted into db")))))))))
       (testing "retract/dissoc attr"
         (let [ava        (d/entity db [:user/handle "ava"])
               dissoc-age (-> ava
@@ -56,9 +67,12 @@
           (is (nil? (:user/age dissoc-age)))
           (is (nil? (:user/foo dissoc-age)))
           (testing "and transact"
-            (let [db-ava-with-age      (d/db-with db [(dissoc ava :user/age)])
-                  ava-db-entity-no-age (d/entity db-ava-with-age [:user/handle "ava"])]
-              (is (nil? (:user/age ava-db-entity-no-age)) "attrs was retracted from db"))))))
+            (let [db-ava-with-age      (d/db-with db
+                                                  [(dissoc ava :user/age)])
+                  ava-db-entity-no-age (d/entity db-ava-with-age
+                                                 [:user/handle "ava"])]
+              (is (nil? (:user/age ava-db-entity-no-age))
+                  "attrs was retracted from db"))))))
 
     (testing "cardinality/many"
       (testing "add/retract"
@@ -71,13 +85,15 @@
               db-no-fred            (d/db-with db [ava-no-fred-friend])
               ava-db-no-fred-friend (d/entity db-no-fred [:user/handle "ava"])]
           (is (some? fred) "fred is a friend")
-          (is (nil? (find-fred ava-db-no-fred-friend)) "fred is not a friend anymore :(")
+          (is (nil? (find-fred ava-db-no-fred-friend))
+              "fred is not a friend anymore :(")
           ;; ava and fred make up
           (let [ava-friends-with-fred (d/add ava-db-no-fred-friend :user/friends fred)]
                                         ; tx-stage does not handle cardinality properly yet:
                                         ;(is (some? (find-fred ava-friends-with-fred))) ;; fails
             (let [db-with-friends (d/db-with db [ava-friends-with-fred])
-                  ava             (d/entity db-with-friends [:user/handle "ava"])]
+                  ava             (d/entity db-with-friends
+                                            [:user/handle "ava"])]
               (is (some? (find-fred ava)) "officially friends again"))))))
 
     (d/close-db db)))

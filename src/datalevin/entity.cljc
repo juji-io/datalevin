@@ -3,11 +3,13 @@
   (:require [#?(:cljs cljs.core :clj clojure.core) :as c]
             [datalevin.db :as db]
             [datalevin.storage :as st]
+            [datalevin.remote :as r]
             [datalevin.util :as u]
             [taoensso.nippy :as nippy]
             [clojure.set :as set])
   (:import [datalevin.db DB]
            [datalevin.storage IStore]
+           [datalevin.remote DatalogStore]
            [java.io DataInput DataOutput]))
 
 (declare entity ->Entity equiv-entity lookup-entity touch entity->txs
@@ -256,6 +258,7 @@
 (defn- equiv-entity [^Entity this that]
   (and
     (instance? Entity that)
+    ;; (= (st/db-name (.-store (.-db this))) (st/db-name (.-store (.-db that))))
     (identical? (.-db this) (.-db ^Entity that)) ; `=` and `hash` on db is expensive
     (= (.-eid this) (.-eid ^Entity that))))
 
@@ -325,7 +328,9 @@
 
 (defn- map->ent
   [{:keys [db-name touched cache db/id]}]
-  (let [e (entity (@db/dbs db-name) id)]
+  (let [db (let [^DB db (@db/dbs db-name)]
+             (when-not (instance? DatalogStore (.-store db)) db))
+        e  (entity db id)]
     (if touched
       (load-cache e cache)
       e)))

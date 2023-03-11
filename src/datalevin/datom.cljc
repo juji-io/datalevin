@@ -166,7 +166,8 @@
      (.write w (str "#datalevin/Datom "))
      (binding [*out* w]
        (pr [(.-e d) (.-a d) (.-v d)])
-       #_(pr [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)]))))
+       ;; (pr [(.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)])
+       )))
 
 ;; ----------------------------------------------------------------------------
 ;; datom cmp macros/funcs

@@ -209,8 +209,8 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest retract-then-add-test
-  (let [dir  (u/tmp-dir (str "many-ref-test-" (UUID/randomUUID)))
+(deftest retract-then-transact-again-test
+  (let [dir  (u/tmp-dir (str "retract-transact-test-" (UUID/randomUUID)))
         conn (d/create-conn dir
                             {:id       {:db/unique    :db.unique/identity
                                         :db/valueType :db.type/string}
@@ -228,5 +228,22 @@
     (is (= #{(d/entity @conn 2)}
            (:foo/refs (d/touch (d/entity @conn [:id "foo"])))))
 
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest entity-as-value-test
+  (let [dir  (u/tmp-dir (str "comparison-test-" (UUID/randomUUID)))
+        conn (d/create-conn dir
+                            {:id {:db/unique    :db.unique/identity
+                                  :db/valueType :db.type/string}})]
+
+    (d/transact! conn [{:id "ent-a"}])
+    (d/transact! conn
+                 [{:id       "ent-b"
+                   :some-edn {:entity (d/entity @conn [:id "ent-a"])}}])
+    (is (= 3 (count (d/datoms @conn :eav))))
+    (d/transact! conn [{:id "ent-b" :some-edn :replace}])
+    (is (= 3 (count (d/datoms @conn :eav))))
+    (is (= :replace (:some-edn (d/entity @conn [:id "ent-b"]))))
     (d/close conn)
     (u/delete-files dir)))
