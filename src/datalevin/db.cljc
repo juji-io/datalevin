@@ -662,10 +662,7 @@
         a       (:a datom)
         report' (-> report
                     (assoc :db-after (with-datom db datom))
-                    (update :tx-data conj! datom))
-        txd     (persistent! (:tx-data report'))
-        report' (assoc report' :tx-data (transient txd))
-        ]
+                    (update :tx-data conj! datom))]
     (if (tuple-source? db a)
       (let [e      (:e datom)
             v      (if (datom-added datom) (:v datom) nil)
