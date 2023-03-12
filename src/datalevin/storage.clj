@@ -9,7 +9,7 @@
    [datalevin.datom :as d]
    [clojure.string :as str])
   (:import
-   [java.util UUID Map$Entry]
+   [java.util UUID]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
@@ -215,7 +215,7 @@
 
 (defprotocol IStore
   (opts [this] "Return the opts map")
-  (db-name [this] "Return the db-name, if it is a remote or server store")
+  (db-name [this] "Return the db-name")
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
   (closed? [this] "Return true if the storage is closed")
@@ -697,14 +697,18 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?]
+  ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?
+                       db-name]
                 :or   {validate-data?    false
-                       auto-entity-time? false}
+                       auto-entity-time? false
+                       db-name           (str (UUID/randomUUID))}
                 :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
-     (transact-opts lmdb opts)
+     (transact-opts lmdb (merge opts {:validate-data?    validate-data?
+                                      :auto-entity-time? auto-entity-time?
+                                      :db-name           db-name}))
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
                 (s/new-search-engine lmdb (assoc search-opts

@@ -371,29 +371,25 @@
     ))
 
 (defn- open-store
-  [dir schema {:keys [db-name] :as opts}]
+  [dir schema opts]
   (if (r/dtlv-uri? dir)
-    (let [uri     (URI. dir)
-          db-name (cl/parse-db uri)
-          store   (r/open dir schema opts)]
-      (swap! dbs assoc db-name store)
-      store)
-    (let [store (s/open dir schema opts)]
-      (when db-name (swap! dbs assoc db-name store))
-      store)))
+    (r/open dir schema opts)
+    (s/open dir schema opts)))
 
 (defn new-db
   [^IStore store]
   (refresh-cache store)
-  (map->DB
-    {:store         store
-     :max-eid       (s/init-max-eid store)
-     :max-tx        (s/max-tx store)
-     :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
-     :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
-     :veat          (TreeSortedSet. ^Comparator d/cmp-datoms-veat)
-     :pull-patterns (lru/cache 32 :constant)
-     :pull-attrs    (lru/cache 32 :constant)}))
+  (let [db (map->DB
+             {:store         store
+              :max-eid       (s/init-max-eid store)
+              :max-tx        (s/max-tx store)
+              :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
+              :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
+              :veat          (TreeSortedSet. ^Comparator d/cmp-datoms-veat)
+              :pull-patterns (lru/cache 32 :constant)
+              :pull-attrs    (lru/cache 32 :constant)})]
+    (swap! dbs assoc (s/db-name store) db)
+    db))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))
@@ -421,6 +417,7 @@
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
     (.remove ^ConcurrentHashMap caches store)
+    (swap! dbs dissoc (s/db-name store))
     (s/close store)
     nil))
 
@@ -821,7 +818,9 @@
       (transact-report report new-datom)
 
       (= (.-v old-datom) v)
-      (update report ::tx-redundant conjv new-datom)
+      (if (is-attr? db a :db/unique)
+        (update report ::tx-redundant conjv new-datom)
+        (transact-report report new-datom))
 
       :else
       (-> report

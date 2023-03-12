@@ -4,12 +4,14 @@
    [clojure.core :as c]
    [datalevin.db :as db]
    [datalevin.storage :as st]
+   [datalevin.remote :as r]
    [datalevin.util :as u]
    [taoensso.nippy :as nippy]
    [clojure.set :as set])
   (:import
    [datalevin.db DB]
    [datalevin.storage IStore]
+   [datalevin.remote DatalogStore]
    [java.io DataInput DataOutput]))
 
 (declare entity ->Entity equiv-entity lookup-entity touch entity->txs
@@ -240,7 +242,9 @@
 
 (defn- map->ent
   [{:keys [db-name touched cache db/id]}]
-  (let [e (entity (@db/dbs db-name) id)]
+  (let [db (let [^DB db (@db/dbs db-name)]
+             (when-not (instance? DatalogStore (.-store db)) db))
+        e  (entity db id)]
     (if touched
       (load-cache e cache)
       e)))
