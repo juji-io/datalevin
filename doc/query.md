@@ -119,7 +119,8 @@ attributes in planning, which speeds up plan enumeration as well.
 
 As mentioned, we take advantage of the opportunities to push selection
 predicates down to index scan in order to minimize unnecessary intermediate
-results. This is achieved during query rewrites using magic sets [11].
+results. This is achieved by query rewrites using magic sets [11]. Magic rewrite
+is considered as part of the cost-based planning [12].
 
 ### Query graph simplification
 
@@ -248,3 +249,6 @@ database management system." SIGMOD. 1979.
 [11] Bancilhon, Francois, et al. "Magic sets and other strange ways to implement
 logic programs." Proceedings of the fifth ACM SIGACT-SIGMOD symposium on
 Principles of database systems. 1985.
+
+[12] Seshadri, Praveen, et al. "Cost-based optimization for magic: Algebra and
+implementation." SIGMOD 1996.
