@@ -3,6 +3,8 @@
 ## WIP
 ### Added
 - [KV & Datalog] Option `:compress?` to compress the data (default `true`). See [details](doc/compress.md). #14
+- [Main] `--sql` option for `load` command to load data from a SQL DB into a
+  Datalog database. #193
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
