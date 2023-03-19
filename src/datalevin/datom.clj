@@ -4,6 +4,7 @@
    [datalevin.constants :refer [tx0]]
    [datalevin.util :refer [combine-hashes combine-cmp]])
   (:import
+   [datalevin.utl BitOps]
    [clojure.lang IFn$OOL]
    [java.util Arrays]
    [java.io DataInput DataOutput]))
@@ -138,15 +139,20 @@
 
 (defn- compare-with-type [a b]
   (if (identical? (class a) (class b))
-    ;; using `compare` on colls throws when
-    ;; items at the same index of the coll
-    ;; are not of the same type, so we use `=`.
-    ;; since `a` and `b` are of identical type
-    ;; `coll?` check only one.
-    (cond
-      (coll? a)  (if (= a b) 0 1)
-      (bytes? a) (if (Arrays/equals ^bytes a ^bytes b) 0 1)
-      :else      (compare a b))
+    (try
+      (compare a b)
+      (catch ClassCastException e
+        (cond
+          ;; using `compare` on colls throws when items at the same index of
+          ;; the coll are not of the same type, so we use `=`. since `a` and
+          ;; `b` are of identical type
+          ;; TODO change this when needs arise
+          (coll? a)  (if (= a b) 0 1)
+          (bytes? a) (if (Arrays/equals ^bytes a ^bytes b)
+                       0
+                       (BitOps/compareBytes a b))
+          :else      (throw e))))
+    ;; TODO change this when needs arise
     -1))
 
 (def nil-cmp (nil-check-cmp-fn compare))

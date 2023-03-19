@@ -378,8 +378,21 @@
       (is (thrown-msg? "Nothing found for entity id [:name \"Valery\"]"
                        (d/q '[:find ?e
                               :where [[:name "Valery"] :friend ?e]]
-                            db)))
+                            db))))
+    (d/close-db db)
+    (u/delete-files dir)))
 
-      )
+(deftest data-lookup-refs-test
+  (let [dir (u/tmp-dir (str "issue-194-" (random-uuid)))
+        db  (d/db-with
+              (d/empty-db dir
+                          {:ref-id    {:db/valueType :db.type/ref}
+                           :lookup-id {:db/unique :db.unique/identity}})
+              [{:a 0, :lookup-id [0 0]}
+               {:a 0, :lookup-id [0 1]}
+               {:a 0, :lookup-id [1 0]}
+               {:a 0, :lookup-id [1 1]}
+               {:ref-id [:lookup-id [0 1]]}])]
+    (is (= 9 (count (d/datoms db :eav))))
     (d/close-db db)
     (u/delete-files dir)))
