@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Added
+- [Datalog] `datalog-index-cache-size` function to get/set the sizes of Datalog
+  index cache. #195
+### Fixed
+- [Datalog] error when Clojure collections are used as lookup refs. #194
+
 ## 0.8.6 (2023-03-10)
 ### Fixed
 - [Datalog] correctly handle retracting then transacting the same datom in the
