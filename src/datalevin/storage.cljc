@@ -197,6 +197,7 @@
 
 (defprotocol IStore
   (opts [this] "Return the opts map")
+  (assoc-opt [this k v] "Set an option")
   (db-name [this] "Return the db-name")
   (dir [this] "Return the data file directory")
   (close [this] "Close storage")
@@ -251,11 +252,11 @@
     that return true for (pred x), where x is the datom")
   )
 
-(declare insert-data delete-data fulltext-index check)
+(declare insert-data delete-data fulltext-index check transact-opts)
 
 (deftype Store [lmdb
                 search-engine
-                opts
+                ^:volatile-mutable opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
                 ^:volatile-mutable attrs    ; aid -> attr
@@ -271,6 +272,11 @@
   IStore
 
   (opts [_] opts)
+
+  (assoc-opt [_ k v]
+    (let [new-opts (assoc opts k v)]
+      (set! opts new-opts)
+      (transact-opts lmdb new-opts)))
 
   (db-name [_] (:db-name opts))
 
@@ -587,7 +593,7 @@
         aid   (:db/aid props)
         i     (b/indexable e aid v vt)
         ft?   (:db/fulltext props)]
-    (or (not (:validate-data? (.-opts store)))
+    (or (not (:validate-data? (opts store)))
         (b/valid-data? v vt)
         (u/raise "Invalid data, expecting " vt {:input v}))
     (if (b/giant? i)
@@ -631,10 +637,11 @@
 
 (defn- transact-opts
   [lmdb opts]
-  (lmdb/transact-kv lmdb (conj (for [[k v] opts]
-                                 [:put c/opts k v :attr :data])
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv lmdb
+                    (conj (for [[k v] opts]
+                            [:put c/opts k v :attr :data])
+                          [:put c/meta :last-modified
+                           (System/currentTimeMillis) :attr :long])))
 
 (defn- load-opts
   [lmdb]
@@ -659,18 +666,19 @@
   ([dir schema]
    (open dir schema nil))
   ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?
-                       db-name]
+                       db-name cache-limit]
                 :or   {validate-data?    false
                        auto-entity-time? false
-                       db-name           (str (UUID/randomUUID))}
+                       db-name           (str (UUID/randomUUID))
+                       cache-limit       100}
                 :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
      (transact-opts lmdb (merge opts {:validate-data?    validate-data?
                                       :auto-entity-time? auto-entity-time?
-                                      :db-name           db-name}))
-     ;; (println "store opts=>" (load-opts lmdb))
+                                      :db-name           db-name
+                                      :cache-limit       cache-limit}))
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
                 (s/new-search-engine lmdb (assoc search-opts
@@ -690,7 +698,7 @@
   [^Store old lmdb]
   (->Store lmdb
            (s/transfer (.-search-engine old) lmdb)
-           (.-opts old)
+           (opts old)
            (schema old)
            (rschema old)
            (attrs old)

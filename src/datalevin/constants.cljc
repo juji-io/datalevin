@@ -213,10 +213,6 @@
 
 (def +tx-datom-batch-size+ 100000)
 
-;; query
-
-(def +cache-limit+ 100)  ; per Datalog db
-
 ;; client/server
 
 (def +default-buffer-size+ 65536) ; in bytes

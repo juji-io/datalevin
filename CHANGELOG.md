@@ -2,8 +2,8 @@
 
 ## WIP
 ### Added
-- [Datalog] `datalog-index-cache-size` function to get/set the sizes of Datalog
-  index cache. #195
+- [Datalog] `datalog-index-cache-limit` function to get/set the limit of Datalog
+  index cache. It is helpful to disable cache when bulk transacting data. #195
 ### Fixed
 - [Datalog] error when Clojure collections are used as lookup refs. #194
 

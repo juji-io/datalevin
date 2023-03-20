@@ -73,7 +73,6 @@
 
 (deftype DatalogStore [^String uri
                        ^String db-name
-                       opts
                        ^Client client
                        write-txn
                        writing?]
@@ -83,11 +82,14 @@
   (write-txn [_] write-txn)
 
   (mark-write [_]
-    (->DatalogStore uri db-name opts client
+    (->DatalogStore uri db-name client
                     (volatile! :remote-dl-mutex) true))
 
   IStore
-  (opts [_] opts)
+  (opts [_] (cl/normal-request client :opts [db-name] writing?))
+
+  (assoc-opt [_ k v]
+    (cl/normal-request client :assoc-opt [db-name k v] writing?))
 
   (db-name [_] db-name)
 
@@ -229,7 +231,7 @@
        (let [store (or (get (cl/parse-query uri) "store")
                        c/db-store-datalog)]
          (cl/open-database client db-name store schema opts)
-         (->DatalogStore uri-str db-name opts client
+         (->DatalogStore uri-str db-name client
                          (volatile! :remote-dl-mutex) false))
        (u/raise "URI should contain a database name" {})))))
 

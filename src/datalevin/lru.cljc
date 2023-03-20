@@ -1,6 +1,6 @@
 (ns ^:no-doc datalevin.lru
-  (:import [clojure.lang IPersistentCollection Associative
-            IPersistentMap]))
+  (:import
+   [clojure.lang IPersistentCollection Associative IPersistentMap]))
 
 (declare assoc-lru dissoc-lru cleanup-lru)
 
@@ -36,22 +36,24 @@
         gen       (.-gen lru)
         limit     (.-limit lru)
         target    (.-target lru)]
-    (if-let [g (key-gen k nil)]
-      (LRU. key-value
-            (-> gen-key
-                (dissoc g)
-                (assoc gen k))
-            (assoc key-gen k gen)
-            (inc ^long gen)
-            limit
-            target)
-      (cleanup-lru
-        (LRU. (assoc key-value k v)
-              (assoc gen-key gen k)
+    (if (zero? ^long limit)
+      lru
+      (if-let [g (key-gen k nil)]
+        (LRU. key-value
+              (-> gen-key
+                  (dissoc g)
+                  (assoc gen k))
               (assoc key-gen k gen)
               (inc ^long gen)
               limit
-              target)))))
+              target)
+        (cleanup-lru
+          (LRU. (assoc key-value k v)
+                (assoc gen-key gen k)
+                (assoc key-gen k gen)
+                (inc ^long gen)
+                limit
+                target))))))
 
 (defn- cleanup-lru [^LRU lru]
   (if (> (count (.-key-value lru)) ^long (.-limit lru))
