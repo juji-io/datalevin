@@ -31,7 +31,7 @@ public abstract class LeftistHeap<T> {
 
     protected abstract boolean lessThan(T a, T b);
 
-    public LeftistHeap merge(LeftistHeap rhs) {
+    public LeftistHeap<T> merge(LeftistHeap<T> rhs) {
         if (this == rhs) return this;
         if (rhs == null) return this;
 
