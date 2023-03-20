@@ -13,7 +13,6 @@
    [datalevin.storage :as s]
    [datalevin.lmdb :as l]
    [datalevin.remote :as r]
-   [datalevin.client :as cl]
    [datalevin.inline :refer [update]])
   (:import
    [datalevin.datom Datom]
@@ -77,7 +76,7 @@
    (refresh-cache store (s/last-modified store)))
   ([store target]
    (.put ^ConcurrentHashMap caches store
-         (lru/lru c/+cache-limit+ target))))
+         (lru/lru (:cache-limit (s/opts store)) target))))
 
 (defmacro wrap-cache
   [store pattern body]

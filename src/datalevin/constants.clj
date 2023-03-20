@@ -217,10 +217,6 @@
 (def +init-db-size+     100)   ; in megabytes
 (def +default-val-size+ 16384) ; in bytes
 
-;; query
-
-(def +cache-limit+ 100)  ; per Datalog db
-
 ;; client/server
 
 (def +default-buffer-size+ 65536) ; in bytes

@@ -925,6 +925,16 @@ Only usable for debug output.
    {:pre [(conn? conn)]}
    (future-call #(transact! conn tx-data tx-meta))))
 
+(defn datalog-index-cache-limit
+  "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
+   disable the cache, useful when transacting bulk data as it saves memory."
+  ([^DB db]
+   (let [^Store store (.-store db)]
+     (:cache-limit (s/opts store))))
+  ([^DB db ^long n]
+   (let [^Store store (.-store db)]
+     (s/assoc-opt store :cache-limit n)
+     (db/refresh-cache store))))
 
 (defn- rand-bits [^long pow]
   (rand-int (bit-shift-left 1 pow)))

@@ -1043,6 +1043,8 @@
    'open
    'close
    'closed?
+   'opts
+   'assoc-opt
    'last-modified
    'schema
    'rschema
@@ -1470,6 +1472,14 @@
                     (st/closed? s)
                     true)]
       (write-message skey {:type :command-complete :result res}))))
+
+(defn- opts
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler opts)))
+
+(defn- assoc-opt
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-dt-store-handler assoc-opt)))
 
 (defn- last-modified
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
