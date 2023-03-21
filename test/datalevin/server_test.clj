@@ -178,3 +178,18 @@
       (is (= (cl/list-databases client) []))
       (sut/stop server2))
     (u/delete-files root)))
+
+(deftest idle-timeout-test
+  (let [root    (u/tmp-dir (str "idle-timeout-test-" (UUID/randomUUID)))
+        server  (sut/create {:port         c/default-port
+                             :root         root
+                             :idle-timeout 10})
+        _       (sut/start server)
+        client1 (cl/new-client "dtlv://datalevin:datalevin@localhost")
+        client2 (cl/new-client "dtlv://datalevin:datalevin@localhost")]
+
+    (log/set-min-level! :report)
+    (Thread/sleep 1000)
+    (is (= 1 (count (cl/show-clients client1))))
+    (sut/stop server)
+    (u/delete-files root)))

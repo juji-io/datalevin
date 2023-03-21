@@ -3,7 +3,9 @@
 ## WIP
 ### Added
 - [Datalog] `datalog-index-cache-limit` function to get/set the limit of Datalog
-  index cache. It is helpful to disable cache when bulk transacting data. #195
+  index cache. Helpful to disable cache when bulk transacting data. #195
+- [Server] `:idle-timeout` option when creating the server, in ms, default is 24
+  hours. #122
 ### Fixed
 - [Datalog] error when Clojure collections are used as lookup refs. #194
 

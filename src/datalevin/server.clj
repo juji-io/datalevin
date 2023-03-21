@@ -1,36 +1,36 @@
 (ns ^:no-doc datalevin.server
   "Non-blocking event-driven database server with role based access control"
-  (:require [datalevin.util :as u]
-            [datalevin.core :as d]
-            [datalevin.bits :as b]
-            [datalevin.query :as q]
-            [datalevin.db :as db]
-            [datalevin.lmdb :as l]
-            [datalevin.protocol :as p]
-            [datalevin.storage :as st]
-            [datalevin.search :as sc]
-            [datalevin.built-ins :as dbq]
-            [datalevin.constants :as c]
-            [taoensso.timbre :as log]
-            [clojure.stacktrace :as stt]
-            [clojure.string :as s])
-  (:import [java.nio.charset StandardCharsets]
-           [java.nio ByteBuffer BufferOverflowException]
-           [java.nio.file Files Paths]
-           [java.nio.channels Selector SelectionKey ServerSocketChannel
-            SocketChannel]
-           [java.net InetSocketAddress]
-           [java.security SecureRandom]
-           [java.util Iterator UUID Map]
-           [java.util.concurrent.atomic AtomicBoolean]
-           [java.util.concurrent Executors Executor ExecutorService
-            ConcurrentLinkedQueue ConcurrentHashMap Semaphore]
-           [datalevin.db DB]
-           [datalevin.storage IStore Store]
-           [datalevin.lmdb ILMDB]
-           [org.bouncycastle.crypto.generators Argon2BytesGenerator]
-           [org.bouncycastle.crypto.params Argon2Parameters
-            Argon2Parameters$Builder]))
+  (:require
+   [datalevin.util :as u]
+   [datalevin.core :as d]
+   [datalevin.bits :as b]
+   [datalevin.query :as q]
+   [datalevin.db :as db]
+   [datalevin.lmdb :as l]
+   [datalevin.protocol :as p]
+   [datalevin.storage :as st]
+   [datalevin.search :as sc]
+   [datalevin.built-ins :as dbq]
+   [datalevin.constants :as c]
+   [taoensso.timbre :as log]
+   [clojure.stacktrace :as stt]
+   [clojure.string :as s])
+  (:import
+   [java.nio.charset StandardCharsets]
+   [java.nio ByteBuffer BufferOverflowException]
+   [java.nio.file Files Paths]
+   [java.nio.channels Selector SelectionKey ServerSocketChannel SocketChannel]
+   [java.net InetSocketAddress]
+   [java.security SecureRandom]
+   [java.util Iterator UUID Map]
+   [java.util.concurrent.atomic AtomicBoolean]
+   [java.util.concurrent Executors Executor ExecutorService
+    ConcurrentLinkedQueue ConcurrentHashMap Semaphore]
+   [datalevin.db DB]
+   [datalevin.storage IStore Store]
+   [datalevin.lmdb ILMDB]
+   [org.bouncycastle.crypto.generators Argon2BytesGenerator]
+   [org.bouncycastle.crypto.params Argon2Parameters Argon2Parameters$Builder]))
 
 (defprotocol IServer
   (start [srv] "Start the server")
@@ -496,6 +496,7 @@
 (deftype Server [^AtomicBoolean running
                  ^int port
                  ^String root
+                 ^long idle-timeout
                  ^ServerSocketChannel server-socket
                  ^Selector selector
                  ^ConcurrentLinkedQueue register-queue
@@ -503,11 +504,12 @@
                  sys-conn
                  ;; client session data, a map of
                  ;; client-id -> { ip, uid, username, roles, permissions,
+                 ;;                last-active,
                  ;;                stores -> { db-name -> {datalog?
                  ;;                                        dbis -> #{dbi-name}}}
                  ;;                engines -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
-                 clients
+                 ^ConcurrentHashMap clients
                  ;; db state data, a map of
                  ;; db-name -> { store, search engine
                  ;;              datalog db, lock, write txn runner,
@@ -532,8 +534,6 @@
     (d/close sys-conn)
     (log/info "Datalevin server shuts down.")))
 
-(defn- get-clients [^Server server] (.-clients server))
-
 (defn- get-client [^Server server client-id]
   (get (.-clients server) client-id))
 
@@ -545,6 +545,7 @@
         session  {:ip          ip
                   :uid         (user-eid sys-conn username)
                   :username    username
+                  :last-active (System/currentTimeMillis)
                   :stores      {}
                   :engines     #{}
                   :dt-dbs      #{}
@@ -614,7 +615,7 @@
         permissions (user-permissions sys-conn target-username)]
     (doseq [cid (keep (fn [[client-id {:keys [username]}]]
                         (when (= target-username username) client-id))
-                      (get-clients server))]
+                      (.-clients server))]
       (update-client server cid
                      #(assoc % :roles roles :permissions permissions)))))
 
@@ -631,7 +632,7 @@
 
 (defn- disconnect-user
   [^Server server tgt-username]
-  (doseq [[client-id {:keys [username]}] (get-clients server)
+  (doseq [[client-id {:keys [username]}] (.-clients server)
           :when                          (= tgt-username username)]
     (disconnect-client* server client-id)))
 
@@ -641,7 +642,7 @@
     (doseq [[cid uname] (keep (fn [[client-id {:keys [username roles]}]]
                                 (when (some #(= % target-role) roles)
                                   [client-id username]))
-                              (get-clients server))]
+                              (.-clients server))]
       (update-client server cid
                      #(assoc % :permissions
                              (user-permissions sys-conn uname))))))
@@ -1258,7 +1259,7 @@
           (wrap-permission
             ::create ::database did
             "Don't have permission to close the database"
-            (doseq [[cid {:keys [stores]}] (get-clients server)
+            (doseq [[cid {:keys [stores]}] (.-clients server)
                     :when                  (stores db-name)]
               (when (not= client-id cid)
                 (disconnect-client* server cid)))
@@ -1427,7 +1428,7 @@
       "Don't have permission to show clients."
       (write-message skey
                      {:type   :command-complete
-                      :result (->> (get-clients server)
+                      :result (->> (.-clients server)
                                    (map (partial client-display server))
                                    (into {}))}))))
 
@@ -2013,19 +2014,27 @@
     (catch Exception e
       ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"
-                                (ex-message e))))))
+                                (ex-message e)) {}))))
+
+(defn- set-last-active
+  [^Server server ^SelectionKey skey]
+  (let [{:keys [client-id]} @(.attachment skey)]
+    (when client-id
+      (update-client server client-id
+                     #(assoc % :last-active (System/currentTimeMillis))))))
 
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]
   (try
     (let [{:keys [type writing?] :as message} (p/read-value fmt msg)]
       (log/debug "Message received:" (dissoc message :password :args))
+      (set-last-active server skey)
       (if writing?
         (handle-writing server skey message)
         (message-cases skey type)))
     (catch Exception e
       ;; (stt/print-stack-trace e)
-      (log/error "Error Handling message:" (ex-message e)))))
+      (log/error "Error Handling message:" e))))
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
@@ -2067,12 +2076,23 @@
         (log/debug "Registered client" (@state :client-id))
         (recur)))))
 
+(defn- remove-idle-sessions
+  [^Server server]
+  (let [timeout (.-idle-timeout server)
+        clients (.-clients server)]
+    (doseq [[client-id session] clients
+            :let                [{:keys [last-active]} session]]
+      (when (< ^long timeout
+               (- (System/currentTimeMillis) ^long last-active))
+        (disconnect-client* server client-id)))))
+
 (defn- event-loop
   [^Server server]
   (let [^Selector selector     (.-selector server)
         ^AtomicBoolean running (.-running server)]
     (loop []
       (when (.get running)
+        (remove-idle-sessions server)
         (handle-registration server)
         (.select selector)
         (when (.get running)
@@ -2089,8 +2109,11 @@
 
 (defn create
   "Create a Datalevin server. Initially not running, call `start` to run."
-  [{:keys [port root verbose]
-    :or   {port 8898 root "/var/lib/datalevin" verbose false}}]
+  [{:keys [port root idle-timeout verbose]
+    :or   {port         8898
+           root         "/var/lib/datalevin"
+           idle-timeout 86400000  ;; 24 hours
+           verbose      false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try
     (log/set-min-level! (if verbose :debug :info))
@@ -2105,6 +2128,7 @@
       (->Server running
                 port
                 root
+                idle-timeout
                 server-socket
                 selector
                 (ConcurrentLinkedQueue.)

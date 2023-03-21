@@ -16,6 +16,7 @@
    [com.taoensso/encore "3.50.0"]
    [com.taoensso/nippy "3.2.0"]
    [com.taoensso/timbre "6.1.0"]
+   ;; only for testing serializing joda-time, as some user data contain these
    [joda-time/joda-time "2.12.2"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
