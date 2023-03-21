@@ -243,6 +243,10 @@
    ["-f" "--file PATH" "Path to the specified file"]
    ["-g" "--datalog" "Dump/load as a Datalog database"]
    ["-h" "--help" "Show usage"]
+   ["-i" "--idle-timeout IDLE_TIMEOUT" "Server session idle timeout in ms"
+    :default c/default-idle-timeout
+    :parse-fn #(Long/parseLong %)
+    :validate [#(<= 0 %) "Must be a natural number"]]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
    ["-p" "--port PORT" "Server listening port number"
     :default c/default-port

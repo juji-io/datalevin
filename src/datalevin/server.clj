@@ -4,6 +4,7 @@
    [datalevin.util :as u]
    [datalevin.core :as d]
    [datalevin.bits :as b]
+   [datalevin.buffer :as bf]
    [datalevin.query :as q]
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
@@ -352,10 +353,10 @@
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (concat rp-txs p-txs
-                                  [[:db/retractEntity urid]
-                                   [:db/retractEntity rid]
-                                   [:db/retractEntity uid]]))))
+    (d/transact! sys-conn (u/concatv rp-txs p-txs
+                                     [[:db/retractEntity urid]
+                                      [:db/retractEntity rid]
+                                      [:db/retractEntity uid]]))))
 
 (defn- transact-new-role
   [sys-conn role-key]
@@ -457,7 +458,8 @@
                                 @sys-conn pid))
                          pids)
         rp-txs   (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (concat rp-txs pids-txs [[:db/retractEntity did]]))))
+    (d/transact! sys-conn (u/concatv rp-txs pids-txs
+                                     [[:db/retractEntity did]]))))
 
 (defn- close-store
   [store]
@@ -659,7 +661,7 @@
       (p/write-message-blocking ch write-bf msg)
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
-          (vswap! state assoc :write-bf (b/allocate-buffer size))
+          (vswap! state assoc :write-bf (bf/allocate-buffer size))
           (write-message skey msg))))))
 
 (defn- handle-accept
@@ -670,9 +672,9 @@
       (.register (.selector skey) SelectionKey/OP_READ
                  ;; attach a connection state
                  ;; { read-bf, write-bf, client-id }
-                 (volatile! {:read-bf  (ByteBuffer/allocateDirect
+                 (volatile! {:read-bf  (bf/allocate-buffer
                                          c/+default-buffer-size+)
-                             :write-bf (ByteBuffer/allocateDirect
+                             :write-bf (bf/allocate-buffer
                                          c/+default-buffer-size+)})))))
 
 (defn- copy-in
@@ -764,7 +766,7 @@
 (defn- db-dir
   "translate from db-name to server db path"
   [root db-name]
-  (str root u/+separator+ (b/hexify-string db-name)))
+  (str root u/+separator+ (u/hexify-string db-name)))
 
 (defn- db-exists?
   [^Server server db-name]
@@ -773,7 +775,7 @@
 
 (defn- dir->db-name
   [^Server server dir]
-  (b/unhexify-string
+  (u/unhexify-string
     (s/replace-first dir (str (.-root server) u/+separator+) "")))
 
 (defn- store->db-name
@@ -1087,12 +1089,24 @@
    'transact-kv
    'get-value
    'get-first
+   'key-range
    'get-range
    'range-count
    'get-some
    'range-filter
    'range-filter-count
    'visit
+   'get-list
+   'visit-list
+   'list-count
+   'in-list?
+   'list-range
+   'list-range-count
+   'list-range-first
+   'list-range-filter
+   'list-range-some
+   'list-range-filter-count
+   'visit-list-range
    'q
    'fulltext-datoms
    'new-search-engine
@@ -1880,6 +1894,17 @@
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
+(defn- key-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          data    (apply l/key-range
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler range-count)))
@@ -1917,6 +1942,85 @@
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler visit))))
+
+(defn- get-list
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          data    (apply l/get-list
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- visit-list
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler visit-list))))
+
+(defn- list-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-count)))
+
+(defn- in-list?
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler in-list?)))
+
+(defn- list-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          data    (apply l/list-range
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- list-range-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-range-count)))
+
+(defn- list-range-first
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler list-range-first)))
+
+(defn- list-range-filter
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen  (nth args 2)
+          args    (replace {frozen (b/deserialize frozen)} args)
+          db-name (nth args 0)
+          data    (apply l/list-range-filter
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- list-range-some
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler list-range-some))))
+
+(defn- list-range-filter-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler list-range-filter-count))))
+
+(defn- visit-list-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler visit-list-range))))
 
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
@@ -2047,9 +2151,9 @@
       (cond
         (> readn 0)  (if (= (.position read-bf) capacity)
                        (let [size (* ^long c/+buffer-grow-factor+ capacity)
-                             bf   (b/allocate-buffer size)]
+                             bf   (bf/allocate-buffer size)]
                          (.flip read-bf)
-                         (b/buffer-transfer read-bf bf)
+                         (bf/buffer-transfer read-bf bf)
                          (vswap! state assoc :read-bf bf))
                        (p/extract-message
                          read-bf
@@ -2112,7 +2216,7 @@
   [{:keys [port root idle-timeout verbose]
     :or   {port         8898
            root         "/var/lib/datalevin"
-           idle-timeout 86400000  ;; 24 hours
+           idle-timeout c/default-idle-timeout
            verbose      false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try

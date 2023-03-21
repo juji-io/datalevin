@@ -170,9 +170,9 @@
 ;; server / client
 
 (def ^:const default-port (int 8898))
+(def ^:const default-idle-timeout 86400000) ;; 24 hours
 
-(def ^:const
-  system-dir "system")
+(def ^:const system-dir "system")
 
 (def ^:const default-username "datalevin")
 (def ^:const default-password "datalevin")
