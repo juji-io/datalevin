@@ -2081,7 +2081,8 @@
   (let [timeout (.-idle-timeout server)
         clients (.-clients server)]
     (doseq [[client-id session] clients
-            :let                [{:keys [last-active]} session]]
+            :let                [{:keys [last-active]} session]
+            :when               last-active]
       (when (< ^long timeout
                (- (System/currentTimeMillis) ^long last-active))
         (disconnect-client* server client-id)))))
