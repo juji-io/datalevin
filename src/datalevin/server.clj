@@ -4,7 +4,6 @@
    [datalevin.util :as u]
    [datalevin.core :as d]
    [datalevin.bits :as b]
-   [datalevin.buffer :as bf]
    [datalevin.query :as q]
    [datalevin.db :as db]
    [datalevin.lmdb :as l]
@@ -353,10 +352,10 @@
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (u/concatv rp-txs p-txs
-                                     [[:db/retractEntity urid]
-                                      [:db/retractEntity rid]
-                                      [:db/retractEntity uid]]))))
+    (d/transact! sys-conn (concat rp-txs p-txs
+                                  [[:db/retractEntity urid]
+                                   [:db/retractEntity rid]
+                                   [:db/retractEntity uid]]))))
 
 (defn- transact-new-role
   [sys-conn role-key]
@@ -384,8 +383,8 @@
         p-txs  (mapv (fn [pid] [:db/retractEntity pid]) pids)
         rpids  (mapv (partial role-permission-eid sys-conn rid) pids)
         rp-txs (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (u/concatv rp-txs p-txs ur-txs
-                                     [[:db/retractEntity rid]]))))
+    (d/transact! sys-conn (concat rp-txs p-txs ur-txs
+                                  [[:db/retractEntity rid]]))))
 
 (defn- transact-user-role
   [sys-conn rid username]
@@ -458,8 +457,7 @@
                                 @sys-conn pid))
                          pids)
         rp-txs   (mapv (fn [rpid] [:db/retractEntity rpid]) rpids)]
-    (d/transact! sys-conn (u/concatv rp-txs pids-txs
-                                     [[:db/retractEntity did]]))))
+    (d/transact! sys-conn (concat rp-txs pids-txs [[:db/retractEntity did]]))))
 
 (defn- close-store
   [store]
@@ -498,6 +496,7 @@
 (deftype Server [^AtomicBoolean running
                  ^int port
                  ^String root
+                 ^long idle-timeout
                  ^ServerSocketChannel server-socket
                  ^Selector selector
                  ^ConcurrentLinkedQueue register-queue
@@ -505,11 +504,12 @@
                  sys-conn
                  ;; client session data, a map of
                  ;; client-id -> { ip, uid, username, roles, permissions,
+                 ;;                last-active,
                  ;;                stores -> { db-name -> {datalog?
                  ;;                                        dbis -> #{dbi-name}}}
                  ;;                engines -> #{ db-name }
                  ;;                dt-dbs -> #{ db-name } }
-                 clients
+                 ^ConcurrentHashMap clients
                  ;; db state data, a map of
                  ;; db-name -> { store, search engine
                  ;;              datalog db, lock, write txn runner,
@@ -534,8 +534,6 @@
     (d/close sys-conn)
     (log/info "Datalevin server shuts down.")))
 
-(defn- get-clients [^Server server] (.-clients server))
-
 (defn- get-client [^Server server client-id]
   (get (.-clients server) client-id))
 
@@ -547,6 +545,7 @@
         session  {:ip          ip
                   :uid         (user-eid sys-conn username)
                   :username    username
+                  :last-active (System/currentTimeMillis)
                   :stores      {}
                   :engines     #{}
                   :dt-dbs      #{}
@@ -616,7 +615,7 @@
         permissions (user-permissions sys-conn target-username)]
     (doseq [cid (keep (fn [[client-id {:keys [username]}]]
                         (when (= target-username username) client-id))
-                      (get-clients server))]
+                      (.-clients server))]
       (update-client server cid
                      #(assoc % :roles roles :permissions permissions)))))
 
@@ -633,7 +632,7 @@
 
 (defn- disconnect-user
   [^Server server tgt-username]
-  (doseq [[client-id {:keys [username]}] (get-clients server)
+  (doseq [[client-id {:keys [username]}] (.-clients server)
           :when                          (= tgt-username username)]
     (disconnect-client* server client-id)))
 
@@ -643,7 +642,7 @@
     (doseq [[cid uname] (keep (fn [[client-id {:keys [username roles]}]]
                                 (when (some #(= % target-role) roles)
                                   [client-id username]))
-                              (get-clients server))]
+                              (.-clients server))]
       (update-client server cid
                      #(assoc % :permissions
                              (user-permissions sys-conn uname))))))
@@ -660,7 +659,7 @@
       (p/write-message-blocking ch write-bf msg)
       (catch BufferOverflowException _
         (let [size (* ^long c/+buffer-grow-factor+ ^int (.capacity write-bf))]
-          (vswap! state assoc :write-bf (bf/allocate-buffer size))
+          (vswap! state assoc :write-bf (b/allocate-buffer size))
           (write-message skey msg))))))
 
 (defn- handle-accept
@@ -671,9 +670,9 @@
       (.register (.selector skey) SelectionKey/OP_READ
                  ;; attach a connection state
                  ;; { read-bf, write-bf, client-id }
-                 (volatile! {:read-bf  (bf/allocate-buffer
+                 (volatile! {:read-bf  (ByteBuffer/allocateDirect
                                          c/+default-buffer-size+)
-                             :write-bf (bf/allocate-buffer
+                             :write-bf (ByteBuffer/allocateDirect
                                          c/+default-buffer-size+)})))))
 
 (defn- copy-in
@@ -765,7 +764,7 @@
 (defn- db-dir
   "translate from db-name to server db path"
   [root db-name]
-  (str root u/+separator+ (u/hexify-string db-name)))
+  (str root u/+separator+ (b/hexify-string db-name)))
 
 (defn- db-exists?
   [^Server server db-name]
@@ -774,7 +773,7 @@
 
 (defn- dir->db-name
   [^Server server dir]
-  (u/unhexify-string
+  (b/unhexify-string
     (s/replace-first dir (str (.-root server) u/+separator+) "")))
 
 (defn- store->db-name
@@ -1088,24 +1087,12 @@
    'transact-kv
    'get-value
    'get-first
-   'key-range
    'get-range
    'range-count
    'get-some
    'range-filter
    'range-filter-count
    'visit
-   'get-list
-   'visit-list
-   'list-count
-   'in-list?
-   'list-range
-   'list-range-count
-   'list-range-first
-   'list-range-filter
-   'list-range-some
-   'list-range-filter-count
-   'visit-list-range
    'q
    'fulltext-datoms
    'new-search-engine
@@ -1272,7 +1259,7 @@
           (wrap-permission
             ::create ::database did
             "Don't have permission to close the database"
-            (doseq [[cid {:keys [stores]}] (get-clients server)
+            (doseq [[cid {:keys [stores]}] (.-clients server)
                     :when                  (stores db-name)]
               (when (not= client-id cid)
                 (disconnect-client* server cid)))
@@ -1441,7 +1428,7 @@
       "Don't have permission to show clients."
       (write-message skey
                      {:type   :command-complete
-                      :result (->> (get-clients server)
+                      :result (->> (.-clients server)
                                    (map (partial client-display server))
                                    (into {}))}))))
 
@@ -1893,17 +1880,6 @@
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
-(defn- key-range
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [db-name (nth args 0)
-          data    (apply l/key-range
-                         (lmdb server skey db-name writing?)
-                         (rest args))]
-      (if (< (count data) ^long c/+wire-datom-batch-size+)
-        (write-message skey {:type :command-complete :result data})
-        (copy-out skey data c/+wire-datom-batch-size+)))))
-
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler range-count)))
@@ -1941,85 +1917,6 @@
     (let [frozen (nth args 2)
           args   (replace {frozen (b/deserialize frozen)} args)]
       (normal-kv-store-handler visit))))
-
-(defn- get-list
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [db-name (nth args 0)
-          data    (apply l/get-list
-                         (lmdb server skey db-name writing?)
-                         (rest args))]
-      (if (< (count data) ^long c/+wire-datom-batch-size+)
-        (write-message skey {:type :command-complete :result data})
-        (copy-out skey data c/+wire-datom-batch-size+)))))
-
-(defn- visit-list
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [frozen (nth args 2)
-          args   (replace {frozen (b/deserialize frozen)} args)]
-      (normal-kv-store-handler visit-list))))
-
-(defn- list-count
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-kv-store-handler list-count)))
-
-(defn- in-list?
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-kv-store-handler in-list?)))
-
-(defn- list-range
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [db-name (nth args 0)
-          data    (apply l/list-range
-                         (lmdb server skey db-name writing?)
-                         (rest args))]
-      (if (< (count data) ^long c/+wire-datom-batch-size+)
-        (write-message skey {:type :command-complete :result data})
-        (copy-out skey data c/+wire-datom-batch-size+)))))
-
-(defn- list-range-count
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-kv-store-handler list-range-count)))
-
-(defn- list-range-first
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error (normal-kv-store-handler list-range-first)))
-
-(defn- list-range-filter
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [frozen  (nth args 2)
-          args    (replace {frozen (b/deserialize frozen)} args)
-          db-name (nth args 0)
-          data    (apply l/list-range-filter
-                         (lmdb server skey db-name writing?)
-                         (rest args))]
-      (if (< (count data) ^long c/+wire-datom-batch-size+)
-        (write-message skey {:type :command-complete :result data})
-        (copy-out skey data c/+wire-datom-batch-size+)))))
-
-(defn- list-range-some
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [frozen (nth args 2)
-          args   (replace {frozen (b/deserialize frozen)} args)]
-      (normal-kv-store-handler list-range-some))))
-
-(defn- list-range-filter-count
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [frozen (nth args 2)
-          args   (replace {frozen (b/deserialize frozen)} args)]
-      (normal-kv-store-handler list-range-filter-count))))
-
-(defn- visit-list-range
-  [^Server server ^SelectionKey skey {:keys [args writing?]}]
-  (wrap-error
-    (let [frozen (nth args 2)
-          args   (replace {frozen (b/deserialize frozen)} args)]
-      (normal-kv-store-handler visit-list-range))))
 
 (defn- q
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
@@ -2119,17 +2016,25 @@
       (error-response skey (str "Error Handling with-transaction message:"
                                 (ex-message e)) {}))))
 
+(defn- set-last-active
+  [^Server server ^SelectionKey skey]
+  (let [{:keys [client-id]} @(.attachment skey)]
+    (when client-id
+      (update-client server client-id
+                     #(assoc % :last-active (System/currentTimeMillis))))))
+
 (defn- handle-message
   [^Server server ^SelectionKey skey fmt msg ]
   (try
     (let [{:keys [type writing?] :as message} (p/read-value fmt msg)]
       (log/debug "Message received:" (dissoc message :password :args))
+      (set-last-active server skey)
       (if writing?
         (handle-writing server skey message)
         (message-cases skey type)))
     (catch Exception e
       ;; (stt/print-stack-trace e)
-      (log/error "Error Handling message:" (ex-message e)))))
+      (log/error "Error Handling message:" e))))
 
 (defn- handle-read
   [^Server server ^SelectionKey skey]
@@ -2142,9 +2047,9 @@
       (cond
         (> readn 0)  (if (= (.position read-bf) capacity)
                        (let [size (* ^long c/+buffer-grow-factor+ capacity)
-                             bf   (bf/allocate-buffer size)]
+                             bf   (b/allocate-buffer size)]
                          (.flip read-bf)
-                         (bf/buffer-transfer read-bf bf)
+                         (b/buffer-transfer read-bf bf)
                          (vswap! state assoc :read-bf bf))
                        (p/extract-message
                          read-bf
@@ -2171,12 +2076,23 @@
         (log/debug "Registered client" (@state :client-id))
         (recur)))))
 
+(defn- remove-idle-sessions
+  [^Server server]
+  (let [timeout (.-idle-timeout server)
+        clients (.-clients server)]
+    (doseq [[client-id session] clients
+            :let                [{:keys [last-active]} session]]
+      (when (< ^long timeout
+               (- (System/currentTimeMillis) ^long last-active))
+        (disconnect-client* server client-id)))))
+
 (defn- event-loop
   [^Server server]
   (let [^Selector selector     (.-selector server)
         ^AtomicBoolean running (.-running server)]
     (loop []
       (when (.get running)
+        (remove-idle-sessions server)
         (handle-registration server)
         (.select selector)
         (when (.get running)
@@ -2193,8 +2109,11 @@
 
 (defn create
   "Create a Datalevin server. Initially not running, call `start` to run."
-  [{:keys [port root verbose]
-    :or   {port 8898 root "/var/lib/datalevin" verbose false}}]
+  [{:keys [port root idle-timeout verbose]
+    :or   {port         8898
+           root         "/var/lib/datalevin"
+           idle-timeout 86400000  ;; 24 hours
+           verbose      false}}]
   {:pre [(int? port) (not (s/blank? root))]}
   (try
     (log/set-min-level! (if verbose :debug :info))
@@ -2209,6 +2128,7 @@
       (->Server running
                 port
                 root
+                idle-timeout
                 server-socket
                 selector
                 (ConcurrentLinkedQueue.)

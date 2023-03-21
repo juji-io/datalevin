@@ -42,6 +42,24 @@
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions
 
+## 0.8.7 (2023-03-21)
+### Added
+- [Datalog] `datalog-index-cache-limit` function to get/set the limit of Datalog
+  index cache. Helpful to disable cache when bulk transacting data. #195
+- [Server] `:idle-timeout` option when creating the server, in ms, default is 24
+  hours. #122
+### Fixed
+- [Datalog] error when Clojure collections are used as lookup refs. #194
+
+## 0.8.6 (2023-03-10)
+### Fixed
+- [Datalog] correctly handle retracting then transacting the same datom in the
+  same transaction. #192
+- [Datalog] error deleting entities that were previously transacted as part of
+  some EDN data. #191.
+### Improved
+- [Lib] update deps.
+
 ## 0.8.5 (2023-02-13)
 ### Added
 - [KV] added tuple data type that accepts a vector of scalar values. This
