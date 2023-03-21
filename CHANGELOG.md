@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.8 (2023-03-21)
 ### Improved
 - [Pod] serialize TxReport to regular map. #190
 ### Fixed

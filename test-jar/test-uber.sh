@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 if [[ "$jvm_version" -gt "8" ]]; then
 
     java --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --illegal-access=permit \
-         -jar ../target/datalevin-0.8.7-standalone.jar exec << EOF
+         -jar ../target/datalevin-0.8.8-standalone.jar exec << EOF
 (def conn (get-conn "/tmp/test-db"))
 (transact! conn [{:name "world"}])
 (q '[:find ?g :where [_ :name ?g]] @conn)
@@ -23,7 +23,7 @@ EOF
 
 else
 
-    java -jar ../target/datalevin-0.8.7-standalone.jar exec << EOF
+    java -jar ../target/datalevin-0.8.8-standalone.jar exec << EOF
 (def conn (get-conn "/tmp/test-db"))
 (transact! conn [{:name "world"}])
 (q '[:find ?g :where [_ :name ?g]] @conn)
