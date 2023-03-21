@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Improved
+- [Pod] serialize TxReport to regular map. #190
+### Fixed
+- [Server] migrate old sessions that do not have `:last-active`.
+
 ## 0.8.7 (2023-03-21)
 ### Added
 - [Datalog] `datalog-index-cache-limit` function to get/set the limit of Datalog
