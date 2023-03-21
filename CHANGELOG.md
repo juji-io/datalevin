@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.7 (2023-03-21)
 ### Added
 - [Datalog] `datalog-index-cache-limit` function to get/set the limit of Datalog
   index cache. Helpful to disable cache when bulk transacting data. #195
