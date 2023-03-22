@@ -88,7 +88,9 @@
     (is (= 3 (reduce + vs)))
     (is (= [1] (subvec vs 1 2)))
     (is (= [0 1 2] (into [] vs)))
-    (is (= [0 1] (pop vs)))))
+    (is (= [0 1] (pop vs)))
+
+    (is (= [1 2 5 6 7] (into vs (map inc) [4 5 6])))))
 
 (deftest vec-spill=in-middle-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
@@ -146,7 +148,10 @@
     (is (= 3 (reduce + vs)))
     (is (= [1] (subvec vs 1 2)))
     (is (= [0 1 2] (into [] vs)))
-    (is (= [0 1] (pop vs)))))
+    (is (= [0 1] (pop vs)))
+
+    (into vs [4 5 6])
+    (is (= [0 1 4 5 6] vs))))
 
 (deftest vec-spill=at-start-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
@@ -203,6 +208,10 @@
     (is (= [0 1] (pop vs)))
     (is (= (.length vs)
            (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))
+
+    (into vs [4 5 6])
+    (is (= [0 1 4 5 6] vs))
+
     (vreset! sp/memory-pressure 0)))
 
 (deftest intobj-map-before-spill-test
@@ -257,7 +266,9 @@
     (.remove m 1)
 
     (is (not (contains? m 1)))
-    (is (= {0 0} m))))
+    (is (= {0 0} m))
+
+    ))
 
 (deftest intobj-map-in-middle-spill-test
   (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
