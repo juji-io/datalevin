@@ -90,7 +90,7 @@
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))
 
-    (is (= [1 2 5 6 7] (into vs (map inc) [4 5 6])))))
+    (is (= [0 1 5 6 7] (into vs (map inc) [4 5 6])))))
 
 (deftest vec-spill=in-middle-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
@@ -150,8 +150,7 @@
     (is (= [0 1 2] (into [] vs)))
     (is (= [0 1] (pop vs)))
 
-    (into vs [4 5 6])
-    (is (= [0 1 4 5 6] vs))))
+    (is (= [0 1 5 6 7] (into vs (map inc) [4 5 6])))))
 
 (deftest vec-spill=at-start-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
@@ -209,8 +208,7 @@
     (is (= (.length vs)
            (+ ^long (sp/memory-count vs) ^long (sp/disk-count vs))))
 
-    (into vs [4 5 6])
-    (is (= [0 1 4 5 6] vs))
+    (is (= [0 1 5 6 7] (into vs (map inc) [4 5 6])))
 
     (vreset! sp/memory-pressure 0)))
 
@@ -268,6 +266,9 @@
     (is (not (contains? m 1)))
     (is (= {0 0} m))
 
+    (is (= {0 0 2 2 3 3}
+           (into m (map (fn [[k v]] [(u/long-inc k) (u/long-inc v)]))
+                 {1 1 2 2})))
     ))
 
 (deftest intobj-map-in-middle-spill-test
@@ -297,7 +298,11 @@
 
     (dissoc m 1)
     (is (= 2 (count m)))
-    (is (not (contains? m 1)))))
+    (is (not (contains? m 1)))
+
+    (is (= {0 0 2 2 3 3}
+           (into m (map (fn [[k v]] [(u/long-inc k) (u/long-inc v)]))
+                 {1 1 2 2})))))
 
 (deftest intobj-map-after-spill-test
   (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]

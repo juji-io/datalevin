@@ -326,8 +326,8 @@
 
   (without [this k] (.remove this k) this)
 
-  (count [_] (cond-> (.size memory)
-               @disk (+ ^long (l/entries @disk c/tmp-dbi))))
+  (count [_]
+    (cond-> (.size memory) @disk (+ ^long (l/entries @disk c/tmp-dbi))))
 
   (containsKey [_ k]
     (if (.containsKey memory (int k))
@@ -354,6 +354,10 @@
       nf))
   (valAt [this k]
     (.valAt this k nil))
+
+  (cons [this [k v]]
+    (.put this k v)
+    this)
 
   (empty [this]
     (.clear memory)
