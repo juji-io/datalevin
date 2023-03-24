@@ -30,13 +30,13 @@
 - [KV] Store Spillable data in sub-dbs rather than in individual db, to prevent
   file handle exhaustion. #189
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
-- [Datalog] Results are spillable to disk. #166
+- [Datalog] Query results are spillable to disk. #166
 - [Server/Client] Network messages are compressed by default.
 - [Client] Option `:compress-message?`, set to `false` for older versions of server.
 
 ### Fixed
 - [KV] spillable results handle `false` value correctly
-- [KV] spillable results work with transducers correctly
+- [KV] spillable maps work with transducers correctly
 
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections

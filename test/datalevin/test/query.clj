@@ -69,6 +69,7 @@
                             { :db/id 2, :name "Petr", :age 37 }
                             { :db/id 3, :name "Ivan", :age 37 }
                             { :db/id 4, :age 15 }]))]
+
     (is (= (d/q '[:find ?e
                   :where [?e :name]] db)
            #{[1] [2] [3]}))

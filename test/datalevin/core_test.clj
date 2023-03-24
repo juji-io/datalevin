@@ -157,7 +157,7 @@
                     [_ ?a ?v]]
                   @conn
                   :sales/country)
-           ["US" "Germany" "U.K."]))
+           ["US" "U.K." "Germany"]))
     (is (= (sut/q '[:find ?company ?total
                     :in $ ?year
                     :where

@@ -12,7 +12,7 @@
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]
-   [datalevin.spill SpillableIntObjMap]
+   [datalevin.spill SpillableMap]
    [java.util ArrayList Map$Entry Arrays]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
@@ -324,8 +324,8 @@
                        terms-dbi
                        docs-dbi
                        positions-dbi
-                       ^SpillableIntObjMap terms ; term-id -> term
-                       ^SpillableIntObjMap docs  ; doc-id -> doc-ref
+                       ^SpillableMap terms       ; term-id -> term
+                       ^SpillableMap docs        ; doc-id -> doc-ref
                        ^IntShortHashMap norms    ; doc-id -> norm
                        cache
                        ^AtomicInteger max-doc
@@ -463,7 +463,7 @@
               (lru/-del [:get-pos-info doc-id term-id]))))
       (.add txs [:del positions-dbi [doc-id term-id] :int-int]))
     (.add txs [:del (.-docs-dbi engine) doc-ref :data])
-    (.remove ^SpillableIntObjMap (.-docs engine) doc-id)
+    (.remove ^SpillableMap (.-docs engine) doc-id)
     (.remove norms doc-id)
     (l/transact-kv (.-lmdb engine) txs)
     (-> cache
@@ -481,10 +481,10 @@
         txs             (FastList.)
         terms-dbi       (.-terms-dbi engine)
         positions-dbi   (.-positions-dbi engine)
-        terms           ^SpillableIntObjMap (.-terms engine)
+        terms           ^SpillableMap (.-terms engine)
         max-term        (.-max-term engine)
         index-position? (.-index-position? engine)]
-    (.put ^SpillableIntObjMap (.-docs engine) doc-id doc-ref)
+    (.put ^SpillableMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
     (doseq [^Map$Entry kv (.entrySet new-terms)]
       (let [term                                            (.getKey kv)
@@ -582,20 +582,20 @@
 
 (defn- init-terms
   [lmdb terms-dbi]
-  (let [terms  (sp/new-spillable-intobj-map)
+  (let [terms  (sp/new-spillable-map)
         max-id (volatile! 0)
         load   (fn [kv]
                  (let [term (b/read-buffer (l/k kv) :string)
                        id   (b/read-buffer (l/v kv) :int)]
                    (when (< ^int @max-id ^int id) (vreset! max-id id))
-                   (.put ^SpillableIntObjMap terms id term)))]
+                   (.put ^SpillableMap terms id term)))]
     (l/visit lmdb terms-dbi load [:all-back])
     [@max-id terms]))
 
 (defn- init-docs
   [lmdb docs-dbi]
   (let [norms  (IntShortHashMap.)
-        docs   (sp/new-spillable-intobj-map)
+        docs   (sp/new-spillable-map)
         max-id (volatile! 0)
         load   (fn [kv]
                  (let [ref  (b/read-buffer (l/k kv) :data)
@@ -603,7 +603,7 @@
                        id   (b/read-buffer vb :int)
                        norm (b/read-buffer vb :short)]
                    (when (< ^int @max-id ^int id) (vreset! max-id id))
-                   (.put ^SpillableIntObjMap docs id ref)
+                   (.put ^SpillableMap docs id ref)
                    (.put norms id norm)))]
     (l/visit lmdb docs-dbi load [:all-back])
     [@max-id norms docs]))

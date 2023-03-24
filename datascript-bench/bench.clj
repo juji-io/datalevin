@@ -87,10 +87,10 @@
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.39\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
-                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.8.2\"}
-                  org.clojars.huahaiy/dtlvnative-windows-amd64-shared {:mvn/version \"0.8.2\"}
-                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.8.2\"}
-                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.8.2\"}
+                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.8.5\"}
+                  org.clojars.huahaiy/dtlvnative-windows-amd64-shared {:mvn/version \"0.8.5\"}
+                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.8.5\"}
+                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.8.5\"}
                   }}"
                   )
 
@@ -145,7 +145,7 @@
   [
    ;; ["latest" "datomic"]
    ;; ["latest" "datascript"]
-   ["0.8.5" "datalevin"]
+   ;; ["0.8.8" "datalevin"]
    ["latest" "datalevin"]])
 
 

@@ -8,7 +8,7 @@
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop])
   (:import
-   [datalevin.spill SpillableVector SpillableIntObjMap]))
+   [datalevin.spill SpillableVector SpillableMap SpillableSet]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
@@ -45,6 +45,7 @@
     (assoc vs 0 0)
     (is (= 0 (vs 0)))
     (is (= [0] vs))
+    (is (= vs [0]))
     (is (= 0 (get vs 0)))
     (is (= 0 (peek vs)))
     (is (= 0 (first vs)))
@@ -152,7 +153,7 @@
 
     (is (= [0 1 5 6 7] (into vs (map inc) [4 5 6])))))
 
-(deftest vec-spill=at-start-test
+(deftest vec-spill-at-start-test
   (let [^SpillableVector vs (sp/new-spillable-vector)]
     (vreset! sp/memory-pressure 99)
 
@@ -212,8 +213,8 @@
 
     (vreset! sp/memory-pressure 0)))
 
-(deftest intobj-map-before-spill-test
-  (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
+(deftest map-before-spill-test
+  (let [^SpillableMap m (sp/new-spillable-map)]
     (vreset! sp/memory-pressure 0)
 
     (is (map? m))
@@ -221,12 +222,10 @@
     (is (empty? m))
     (is (nil? (seq m)))
     (is (= "{}" (.toString m)))
-    (is (= {} m ))
+    (is (= {} m))
+    (is (= m {}))
     (is (not= {:a 1} m ))
     (is (nil? (get m 0)))
-    (is (nil? (first m)))
-    (is (nil? (second m)))
-    (is (nil? (last m)))
     (is (= 0 (count m)))
     (is (not (contains? m 0)))
     (is (thrown? Exception (nth m 0)))
@@ -238,11 +237,9 @@
 
     (is (not (empty? m)))
     (is (= {0 0} m))
+    (is (= m {0 0}))
     (is (= 0 (get m 0)))
     (is (= 0 (m 0)))
-    (is (= [0 0] (first m)))
-    (is (nil? (second m)))
-    (is (= [0 0] (last m)))
     (is (= 1 (count m)))
     (is (contains? m 0))
     (is (not= m {0 :end}))
@@ -251,11 +248,9 @@
     (.put m 1 1)
 
     (is (= {1 1 0 0} m))
+    (is (= m {1 1 0 0}))
     (is (= 1 (get m 1)))
     (is (= 1 (m 1)))
-    (is (= [0 0] (first m)))
-    (is (= [1 1] (second m)))
-    (is (= [1 1] (last m)))
     (is (= 2 (count m)))
     (is (contains? m 1))
     (is (not= m {1 :end}))
@@ -271,8 +266,8 @@
                  {1 1 2 2})))
     ))
 
-(deftest intobj-map-in-middle-spill-test
-  (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
+(deftest map-in-middle-spill-test
+  (let [^SpillableMap m (sp/new-spillable-map)]
     (vreset! sp/memory-pressure 0)
 
     (assoc m 0 0)
@@ -282,11 +277,9 @@
     (assoc m 1 1)
     (is (= #{0 1} (.keySet m) ))
     (is (= {1 1 0 0} m))
+    (is (= m {1 1 0 0}))
     (is (= 1 (get m 1)))
     (is (= 1 (m 1)))
-    (is (= [0 0] (first m)))
-    (is (= [1 1] (second m)))
-    (is (= [1 1] (last m)))
     (is (= 2 (count m)))
     (is (contains? m 1))
     (is (not= m {1 :end}))
@@ -304,8 +297,8 @@
            (into m (map (fn [[k v]] [(u/long-inc k) (u/long-inc v)]))
                  {1 1 2 2})))))
 
-(deftest intobj-map-after-spill-test
-  (let [^SpillableIntObjMap m (sp/new-spillable-intobj-map)]
+(deftest map-after-spill-test
+  (let [^SpillableMap m (sp/new-spillable-map)]
     (vreset! sp/memory-pressure 99)
 
     (is (map? m))
@@ -315,9 +308,6 @@
     (is (= {} m ))
     (is (not= {:a 1} m ))
     (is (nil? (get m 0)))
-    (is (nil? (first m)))
-    (is (nil? (second m)))
-    (is (nil? (last m)))
     (is (= 0 (count m)))
     (is (not (contains? m 0)))
     (is (thrown? Exception (nth m 0)))
@@ -330,9 +320,6 @@
     (is (= {0 0} m))
     (is (= 0 (get m 0)))
     (is (= 0 (m 0)))
-    (is (= [0 0] (first m)))
-    (is (nil? (second m)))
-    (is (= [0 0] (last m)))
     (is (= 1 (count m)))
     (is (contains? m 0))
     (is (not= m {0 :end}))
@@ -341,11 +328,9 @@
     (.put m 1 1)
 
     (is (= {1 1 0 0} m))
+    (is (= m {1 1 0 0}))
     (is (= 1 (get m 1)))
     (is (= 1 (m 1)))
-    (is (= [0 0] (first m)))
-    (is (= [1 1] (second m)))
-    (is (= [1 1] (last m)))
     (is (= 2 (count m)))
     (is (contains? m 1))
     (is (not= m {1 :end}))
@@ -355,6 +340,9 @@
     (is (= 1 (count m)))
     (is (not (contains? m 0)))
 
+    (is (= {1 1 2 2 3 3}
+           (into m (map (fn [[k v]] [(u/long-inc k) (u/long-inc v)]))
+                 {1 1 2 2})))
     (vreset! sp/memory-pressure 0)))
 
 (test/defspec spillable-vector-nippy-test
@@ -378,3 +366,37 @@
     (conj vs false)
     (is (= false (vs 0)))
     (= vs (nippy/fast-thaw (nippy/fast-freeze vs)))))
+
+(deftest set-in-middle-spill-test
+  (let [^SpillableSet s (sp/new-spillable-set)]
+    (vreset! sp/memory-pressure 0)
+
+    (is (set? s))
+    (is (empty? s))
+    (conj s 0 )
+    (is (= #{0} s))
+    (is (= s #{0}))
+
+    (vreset! sp/memory-pressure 99)
+
+    (conj s 1)
+    (is (set? s))
+    (is (= #{1 0} s))
+    (is (= s #{1 0}))
+    (is (= 1 (get s 1)))
+    (is (= 1 (s 1)))
+    (is (= 2 (count s)))
+    (is (contains? s 1))
+    (is (not= s #{1 :end}))
+    (is (= #{0 1} (into #{1} s)))
+
+    (conj s 2)
+    (is (= 3 (count s)))
+    (is (contains? s 2))
+
+    (disj s 1)
+    (is (= 2 (count s)))
+    (is (not (contains? s 1)))
+
+    (is (= #{0 2 3} (into s (map u/long-inc) #{1 2})))
+    (is (= #{0 2 3} (into #{} s)))))

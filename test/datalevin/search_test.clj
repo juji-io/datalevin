@@ -17,6 +17,7 @@
    [clojure.test :refer [deftest testing is use-fixtures]])
   (:import
    [java.util UUID ]
+   [datalevin.spill SpillableMap]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.search SearchEngine IndexWriter]))
 
@@ -395,7 +396,9 @@
     (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "red" :string :term-info true)]
       (is (= sl (sl/sparse-arraylist {1 2 2 1 4 1 5 1}))))
-    (is (= {1 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
+    (is (= {(int 1) :doc1 (int 2) :doc2 (int 3) :doc3 (int 4) :doc4
+            (int 5) :doc5}
+           (.-docs engine)))
     (is (= 5 (d/doc-count engine)))
 
     (is (= [:doc1 :doc4 :doc2 :doc5] (d/search engine "red fox")))
@@ -408,7 +411,9 @@
     (let [[_ _ sl]
           (l/get-value lmdb terms-dbi "red" :string :term-info true)]
       (is (= sl (sl/sparse-arraylist {2 1 4 1 5 1}))))
-    (is (= {6 :doc1 2 :doc2 3 :doc3 4 :doc4 5 :doc5} (.-docs engine)))
+    (is (= {(int 6) :doc1 (int 2) :doc2 (int 3) :doc3 (int 4) :doc4
+            (int 5) :doc5}
+           (.-docs engine)))
     (is (= 5 (d/doc-count engine)))
     (is (d/doc-indexed? engine :doc1))
 

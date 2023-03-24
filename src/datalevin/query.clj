@@ -8,6 +8,7 @@
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [raise cond+]]
    [datalevin.lru :as lru]
+   [datalevin.spill :as sp]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout])
@@ -17,6 +18,7 @@
     Constant Pull FindColl FindRel FindScalar FindTuple PlainSymbol
     RulesVar SrcVar Variable]
    [datalevin.db DB]
+   [datalevin.spill SpillableSet]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.set.mutable UnifiedSet]
    [org.eclipse.collections.impl.list.mutable FastList]
@@ -124,8 +126,9 @@
       (relation! attrs-a (into (vec tuples-a) tuples-b))
 
       (not (same-keys? attrs-a attrs-b))
-      (raise "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
-             {:error :query/where})
+      (raise
+        "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
+        {:error :query/where})
 
       (every? number? (vals attrs-a)) ;; can’t conj into BTSetIter
       (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
@@ -135,7 +138,8 @@
                          (reduce
                            (fn [acc tuple-b]
                              (let [tuple' (make-array Object tlen)
-                                   tg     (if (u/array? tuple-b) typed-aget get)]
+                                   tg     (if (u/array? tuple-b)
+                                            typed-aget get)]
                                (doseq [[idx-b idx-a] idxb->idxa]
                                  (aset ^objects tuple'
                                        idx-a (tg tuple-b idx-b)))
@@ -541,23 +545,25 @@
                              (dot-form f)
                              (when (nil? (rel-with-attr context f))
                                (raise "Unknown function '" f " in " clause
-                                      {:error :query/where, :form clause, :var f})))
+                                      {:error :query/where, :form clause,
+                                       :var   f})))
         fun              (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
                            (@pod-fns s)
                            fun)
 
         [context production] (rel-prod-by-attrs context (filter symbol? args))
-        new-rel              (if fun
-                               (let [tuple-fn (-call-fn context production fun args)
-                                     rels     (for [tuple (:tuples production)
-                                                    :let  [val (tuple-fn tuple)]
-                                                    :when (not (nil? val))]
-                                                (prod-rel (relation! (:attrs production) [tuple])
-                                                          (in->rel binding val)))]
-                                 (if (empty? rels)
-                                   (prod-rel production (empty-rel binding))
-                                   (reduce sum-rel rels)))
-                               (prod-rel (assoc production :tuples []) (empty-rel binding)))]
+        new-rel
+        (if fun
+          (let [tuple-fn (-call-fn context production fun args)
+                rels     (for [tuple (:tuples production)
+                               :let  [val (tuple-fn tuple)]
+                               :when (not (nil? val))]
+                           (prod-rel (relation! (:attrs production) [tuple])
+                                     (in->rel binding val)))]
+            (if (empty? rels)
+              (prod-rel production (empty-rel binding))
+              (reduce sum-rel rels)))
+          (prod-rel (assoc production :tuples []) (empty-rel binding)))]
     (update context :rels collapse-rels new-rel)))
 
 ;;; RULES
@@ -658,17 +664,20 @@
               (recur (next stack) (sum-rel rel new-rel)))
 
             ;; has rule -> add guards -> check if dead -> expand rule -> push to stack, recur
-            (let [[rule & call-args]     rule-clause
-                  guards                 (rule-gen-guards rule-clause (:used-args frame))
-                  [active-gs pending-gs] (split-guards (u/concatv (:prefix-clauses frame) clauses)
-                                                       (u/concatv guards (:pending-guards frame)))]
+            (let [[rule & call-args] rule-clause
+                  guards
+                  (rule-gen-guards rule-clause (:used-args frame))
+                  [active-gs pending-gs]
+                  (split-guards (u/concatv (:prefix-clauses frame) clauses)
+                                (u/concatv guards (:pending-guards frame)))]
               (if (some #(= % '[(-differ?)]) active-gs) ;; trivial always false case like [(not= [?a ?b] [?a ?b])]
 
                 ;; this branch has no data, just drop it from stack
                 (recur (next stack) rel)
 
                 (let [prefix-clauses (u/concatv clauses active-gs)
-                      prefix-context (solve (:prefix-context frame) prefix-clauses)]
+                      prefix-context (solve (:prefix-context frame)
+                                            prefix-clauses)]
                   (if (empty-rels? prefix-context)
 
                     ;; this branch has no data, just drop it from stack
@@ -676,7 +685,9 @@
 
                     ;; need to expand rule to branches
                     (let [used-args (assoc (:used-args frame) rule
-                                           (conj (get (:used-args frame) rule []) call-args))
+                                           (conj (get (:used-args frame)
+                                                      rule [])
+                                                 call-args))
                           branches  (expand-rule rule-clause context used-args)]
                       (recur (u/concatv
                                (for [branch branches]
@@ -727,33 +738,31 @@
                (keep #(limit-rel % vars)))))
 
 (defn bound-vars [context]
-  (into #{} (mapcat #(keys (:attrs %)) (:rels context))))
+  ;; (into #{} (mapcat #(keys (:attrs %)) (:rels context)))
+  (into (sp/new-spillable-set) (mapcat #(keys (:attrs %)) (:rels context))))
 
 (defn check-bound [bound vars form]
   (when-not (set/subset? vars bound)
     (let [missing (set/difference (set vars) bound)]
       (raise "Insufficient bindings: " missing " not bound in " form
-             {:error :query/where
-              :form  form
-              :vars  missing}))))
+             {:error :query/where :form form :vars missing}))))
 
 (defn check-free-same [bound branches form]
   (let [free (mapv #(set/difference (collect-vars %) bound) branches)]
     (when-not (apply = free)
-      (raise "All clauses in 'or' must use same set of free vars, had " free " in " form
-             {:error :query/where
-              :form  form
-              :vars  free}))))
+      (raise "All clauses in 'or' must use same set of free vars, had " free
+             " in " form
+             {:error :query/where :form form :vars free}))))
 
 (defn check-free-subset [bound vars branches]
   (let [free (set (remove bound vars))]
     (doseq [branch branches]
-      (when-some [missing (not-empty (set/difference free (collect-vars branch)))]
+      (when-some [missing (not-empty
+                            (set/difference free (collect-vars branch)))]
         (prn branch bound vars free)
-        (raise "All clauses in 'or' must use same set of free vars, had " missing " not bound in " branch
-          {:error :query/where
-           :form  branch
-           :vars  missing})))))
+        (raise "All clauses in 'or' must use same set of free vars, had "
+               missing " not bound in " branch
+               {:error :query/where :form branch :vars missing})))))
 
 (defn -resolve-clause
   ([context clause]
@@ -762,12 +771,14 @@
    (condp looks-like? clause
      [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
      (do
-       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause))
+                    clause)
        (filter-by-pred context clause))
 
      [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
      (do
-       (check-bound (bound-vars context) (filter free-var? (nfirst clause)) clause)
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause))
+                    clause)
        (bind-by-fn context clause))
 
      [source? '*] ;; source + anything
@@ -792,9 +803,12 @@
      '[or-join [*] *] ;; (or-join [vars] ...)
      (let [[_ vars & branches] clause
            vars                (set vars)
-           _                   (check-free-subset (bound-vars context) vars branches)
+           _                   (check-free-subset (bound-vars context) vars
+                                                  branches)
            join-context        (limit-context context vars)
-           contexts            (map #(-> join-context (resolve-clause %) (limit-context vars)) branches)
+           contexts            (map #(-> join-context (resolve-clause %)
+                                         (limit-context vars))
+                                    branches)
            rels                (map #(reduce hash-join (:rels %)) contexts)
            sum-rel             (reduce sum-rel rels)]
        (update context :rels collapse-rels sum-rel))
@@ -808,10 +822,11 @@
            bound            (bound-vars context)
            negation-vars    (collect-vars clauses)
            _                (when (empty? (set/intersection bound negation-vars))
-                              (raise "Insufficient bindings: none of " negation-vars " is bound in " orig-clause
-                                     {:error :query/where
-                                      :form  orig-clause}))
-           context'         (assoc context :rels [(reduce hash-join (:rels context))])
+                              (raise "Insufficient bindings: none of "
+                                     negation-vars " is bound in " orig-clause
+                                     {:error :query/where :form orig-clause}))
+           context'         (assoc context :rels
+                                   [(reduce hash-join (:rels context))])
            negation-context (reduce resolve-clause context' clauses)
            negation         (subtract-rel
                               (single (:rels context'))
@@ -822,7 +837,8 @@
      (let [[_ vars & clauses] clause
            bound              (bound-vars context)
            _                  (check-bound bound vars orig-clause)
-           context'           (assoc context :rels [(reduce hash-join (:rels context))])
+           context'           (assoc context :rels
+                                     [(reduce hash-join (:rels context))])
            join-context       (limit-context context' vars)
            negation-context   (-> (reduce resolve-clause join-context clauses)
                                   (limit-context vars))
@@ -935,7 +951,9 @@
      (recur (-collect-tuples acc rel len copy-map) (next rels) symbols))))
 
 (defn collect [context symbols]
-  (into #{} (map vec) (-collect context symbols)))
+  ;; (into #{} (map vec) (-collect context symbols))
+  (into (sp/new-spillable-set) (map vec) (-collect context symbols))
+  )
 
 (defprotocol IContextResolve
   (-context-resolve [var context]))
@@ -959,7 +977,8 @@
   (mapv (fn [element fixed-value i]
           (if (dp/aggregate? element)
             (let [f    (-context-resolve (:fn element) context)
-                  args (map #(-context-resolve % context) (butlast (:args element)))
+                  args (map #(-context-resolve % context)
+                            (butlast (:args element)))
                   vals (map #(nth % i) tuples)]
               (apply f (u/concatv args [vals])))
             fixed-value))
@@ -979,18 +998,16 @@
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
 
-(defn map* [f xs]
-  (reduce #(conj %1 (f %2)) (empty xs) xs))
+(defn map* [f xs] (reduce #(conj %1 (f %2)) (empty xs) xs))
 
 (defn tuples->return-map [return-map tuples]
   (let [symbols (:symbols return-map)
         idxs    (range 0 (count symbols))]
-    (map*
-      (fn [tuple]
-        (reduce
-          (fn [m i] (assoc m (nth symbols i) (nth tuple i)))
-          {} idxs))
-      tuples)))
+    (map* (fn [tuple]
+            (reduce
+              (fn [m i] (assoc m (nth symbols i) (nth tuple i)))
+              {} idxs))
+          tuples)))
 
 (defprotocol IPostProcess
   (-post-process [find return-map tuples]))
