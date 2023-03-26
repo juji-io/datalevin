@@ -9,7 +9,8 @@
             [clojure.test :refer [deftest testing is use-fixtures]]
             [clojure.test.check.generators :as gen]
             [clojure.string :as s]
-            [clojure.edn :as edn])
+            [clojure.edn :as edn]
+            [datalevin.constants :as c])
   (:import [java.util UUID Date Arrays]
            [java.io Writer]
            [java.net URL]))
@@ -77,13 +78,13 @@
               :branch-pages   0,
               :leaf-pages     1,
               :overflow-pages 0,
-              :entries        1}
+              :entries        2}
              {:psize          4096,
               :depth          1,
               :branch-pages   0,
               :leaf-pages     1,
               :overflow-pages 0,
-              :entries        1})))
+              :entries        2})))
     ;; TODO
     #_(doseq [i (l/list-dbis db)]
         (println i)
@@ -123,7 +124,7 @@
       (d/close-kv db-droped))
     (sut/drop dir [dbi] true)
     (let [db-droped (d/open-kv dir)]
-      (is (empty? (d/list-dbis db-droped)))
+      (is (= [c/kv-meta] (d/list-dbis db-droped)))
       (d/close-kv db-droped))
     (u/delete-files dir)))
 
@@ -136,7 +137,7 @@
     (d/open-dbi src-db dbi)
     (d/transact-kv src-db [[:put dbi "Hello" "Datalevin"]])
     (d/close-kv src-db)
-    (sut/dump src-dir raw-file nil false false true)
+    (sut/dump src-dir raw-file [dbi] false false false)
     (sut/load dest-dir raw-file "b" false)
     (let [db-load (d/open-kv dest-dir)]
       (d/open-dbi db-load "b")

@@ -366,7 +366,7 @@
      (condp = ~v
        c/v0   ~vmin
        c/vmax ~vmax
-       (u/raise "Expect other data types, got keyword instead" ~v {}))
+       (u/raise "Expect other data types, got keyword instead: " ~v {}))
      ~b))
 
 (defn- string-bytes
@@ -411,17 +411,11 @@
 
 (defn- bigint-bytes
   [v]
-  (condp = v
-    c/v0   c/min-bytes
-    c/vmax c/max-bytes
-    (encode-bigint v)))
+  (wrap-extrema v c/min-bytes c/max-bytes (encode-bigint v)))
 
 (defn- bigdec-bytes
   [v]
-  (condp = v
-    c/v0   c/min-bytes
-    c/vmax c/max-bytes
-    (encode-bigdec v)))
+  (wrap-extrema v c/min-bytes c/max-bytes (encode-bigdec v)))
 
 (defn- get-sparse-list
   [bf]
@@ -484,12 +478,20 @@
 (defn- put-varied
   [bf v hdr]
   (case (short hdr)
-    -2  (put-bytes bf (wrap-extrema v c/min-bytes c/max-bytes v))
-    -4  (put-bytes bf (symbol-bytes v))
-    -5  (put-bytes bf (keyword-bytes v))
-    -6  (put-bytes bf (string-bytes v))
-    -14 (put-bytes bf (bigdec-bytes v))
-    -15 (put-bytes bf (bigint-bytes v))))
+    -2  (put-bytes bf (wrap-extrema v c/min-bytes c/tuple-max-bytes v))
+    -4  (put-bytes bf (wrap-extrema v c/min-bytes c/tuple-max-bytes
+                                    (key-sym-bytes v)))
+    -5  (put-bytes bf (condp = v
+                        c/v0   c/min-bytes
+                        c/vmax c/tuple-max-bytes
+                        (key-sym-bytes v)))
+    -6  (put-bytes bf (wrap-extrema
+                        v c/min-bytes c/tuple-max-bytes
+                        (.getBytes ^String v StandardCharsets/UTF_8)))
+    -14 (put-bytes bf (wrap-extrema v c/min-bytes c/tuple-max-bytes
+                                    (encode-bigdec v)))
+    -15 (put-bytes bf (wrap-extrema v c/min-bytes c/tuple-max-bytes
+                                    (encode-bigint v)))))
 
 (defn put-homo-tuple
   "x-type is a single raw value type"
@@ -508,7 +510,7 @@
                         (put-varied bf v hdr)
                         (let [np   (.position bf)
                               size (- np cp)]
-                          (when (< 255 size)
+                          (when (< c/+tuple-max+ (- size 2))
                             (u/raise "The maximal tuple element size is
                               255 bytes" {:too-large v}))
                           (when (< i c-1) (put-byte bf c/separator))
@@ -535,7 +537,7 @@
                         (put-byte bf c/separator))
                       (let [np   (.position bf)
                             size (- np cp)]
-                        (when (< 255 size)
+                        (when (< c/+tuple-max+ (- size 2))
                           (u/raise "The maximal tuple element size is
                               255 bytes" {:too-large v}))
                         (recur (conj ss size) (inc i) np)))

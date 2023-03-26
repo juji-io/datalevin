@@ -7,7 +7,8 @@
             [datalevin.core :as dc]
             [datalevin.interpret :as i]
             [datalevin.test.core :refer [server-fixture]]
-            [clojure.test :refer [is testing deftest use-fixtures]])
+            [clojure.test :refer [is testing deftest use-fixtures]]
+            [datalevin.constants :as c])
   (:import [java.util UUID Arrays]))
 
 (use-fixtures :each server-fixture)
@@ -22,7 +23,7 @@
     (l/open-dbi store "d")
 
     (testing "list dbis"
-      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis store)))))
+      (is (= #{"a" "b" "c" "d" c/kv-meta} (set (l/list-dbis store)))))
 
     (testing "transact-kv"
       (l/transact-kv store
@@ -45,7 +46,7 @@
                       [:put "d" 3.14 :pi :double :keyword]]))
 
     (testing "entries"
-      (is (= 4 (:entries (l/stat store))))
+      (is (= 5 (:entries (l/stat store))))
       (is (= 6 (:entries (l/stat store "a"))))
       (is (= 6 (l/entries store "a")))
       (is (= 10 (l/entries store "b"))))

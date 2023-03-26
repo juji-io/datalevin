@@ -102,7 +102,12 @@
 (def max-bytes (let [ba (byte-array +val-bytes-wo-hdr+)]
                  (Arrays/fill ba (unchecked-byte 0xFF))
                  ba))
-(def min-bytes (byte-array 0))
+(def min-bytes (byte-array [0x00]))
+
+(def ^:const +tuple-max+ 255)
+(def tuple-max-bytes (let [ba (byte-array +tuple-max+)]
+                       (Arrays/fill ba (unchecked-byte 0xFF))
+                       ba))
 
 (defn- max-bigint-bs
   ^bytes []

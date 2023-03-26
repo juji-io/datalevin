@@ -160,6 +160,7 @@
     (try
       (b/put-bf vb x t)
       (catch BufferOverflowException _
+        ;; TODO reset the val-size in kv-meta
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (bf/allocate-buffer size))
           (b/put-bf vb x t)))
@@ -525,14 +526,20 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [_ dbi-name {:keys [key-size val-size flags validate-data?
-                                dupsort?]
-                         :or   {key-size       c/+max-key-size+
-                                val-size       c/+default-val-size+
-                                flags          c/default-dbi-flags
-                                dupsort?       false
-                                validate-data? false}}]
+  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?
+                                   dupsort?]
+                            :or   {key-size       c/+max-key-size+
+                                   val-size       c/+default-val-size+
+                                   flags          c/default-dbi-flags
+                                   dupsort?       false
+                                   validate-data? false}
+                            :as   opts}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
+    ;; TODO check dbi count
+    ;; (let [dbi-count (l/range-count this c/kv-meta
+    ;;                                [])])
+    ;; TODO check if the existence of this dbi and load its opts from kv-meta
+    ;; merge the new opts
     (let [kb  (bf/allocate-buffer key-size)
           vb  (bf/allocate-buffer val-size)
           db  (.openDbi env ^String dbi-name
@@ -542,6 +549,9 @@
                                          flags)))
           dbi (->DBI db (ConcurrentLinkedQueue.) kb vb dupsort?
                      validate-data?)]
+      (when (not= dbi-name c/kv-meta)
+        (l/transact-kv
+          this [[:put c/kv-meta [:dbis dbi-name] opts [:keyword :string]]]))
       (.put dbis dbi-name dbi)
       dbi))
 
@@ -896,13 +906,13 @@
                               (volatile! nil)
                               false)]
        (when temp? (u/delete-on-exit file))
-       ;; (l/open-dbi lmdb c/kv-meta {:key-size c/+max-key-size+})
-       ;; (l/transact-kv lmdb c/kv-meta
-       ;;                [[:put :dir dir]
-       ;;                 [:put :flags flags]
-       ;;                 [:put :temp? temp?]
-       ;;                 [:put :max-dbis c/+max-dbs+]]
-       ;;                :attr)
+       (l/open-dbi lmdb c/kv-meta {:key-size c/+max-key-size+})
+       (l/transact-kv
+         lmdb [[:put c/kv-meta :dir dir]
+               [:put c/kv-meta :flags flags]
+               [:put c/kv-meta :temp? temp?]
+               [:put c/kv-meta :max-dbis c/+max-dbs+]
+               [:put c/kv-meta [:dbis c/kv-meta] {} [:keyword :string]]])
        lmdb)
      (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 

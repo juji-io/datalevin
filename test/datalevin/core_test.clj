@@ -355,6 +355,20 @@
                 :branch-pages   0,
                 :leaf-pages     1,
                 :overflow-pages 0,
+                :entries        2}
+               {:psize          4096,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
+                :entries        2})))
+      (is (= (sut/stat db dbi)
+             (if (u/apple-silicon?)
+               {:psize          16384,
+                :depth          1,
+                :branch-pages   0,
+                :leaf-pages     1,
+                :overflow-pages 0,
                 :entries        1}
                {:psize          4096,
                 :depth          1,
@@ -362,21 +376,6 @@
                 :leaf-pages     1,
                 :overflow-pages 0,
                 :entries        1})))
-      (doseq [i (sut/list-dbis db)]
-        (is (= (sut/stat db i)
-               (if (u/apple-silicon?)
-                 {:psize          16384,
-                  :depth          1,
-                  :branch-pages   0,
-                  :leaf-pages     1,
-                  :overflow-pages 0,
-                  :entries        1}
-                 {:psize          4096,
-                  :depth          1,
-                  :branch-pages   0,
-                  :leaf-pages     1,
-                  :overflow-pages 0,
-                  :entries        1}))))
       (let [db-copied (sut/open-kv dst)]
         (sut/open-dbi db-copied dbi)
         (is (= (sut/get-value db-copied dbi "Hello") "Datalevin"))

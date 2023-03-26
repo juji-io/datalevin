@@ -35,7 +35,7 @@
     (l/open-dbi lmdb "d")
 
     (testing "list dbis"
-      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis lmdb)))))
+      (is (= #{"a" "b" "c" "d" c/kv-meta} (set (l/list-dbis lmdb)))))
 
     (testing "transact-kv"
       (l/transact-kv lmdb
@@ -62,11 +62,10 @@
                       [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
                        [:long :string :keyword]]
                       [:put "d"  [:ok -0.687 "nice"] [2 4]
-                       [:keyword :double :string] [:long]]
-                      ]))
+                       [:keyword :double :string] [:long]]]))
 
     (testing "entries"
-      (is (= 4 (:entries (l/stat lmdb))))
+      (is (= 5 (:entries (l/stat lmdb))))
       (is (= 6 (:entries (l/stat lmdb "a"))))
       (is (= 6 (l/entries lmdb "a")))
       (is (= 10 (l/entries lmdb "b"))))
@@ -555,5 +554,41 @@
         (is (= (set [4 5 6])
                (set (pcalls count-f count-f count-f))))))
 
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest tuple-range-query-test
+  (let [dir  (u/tmp-dir (str "tuple-range-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)]
+    (l/open-dbi lmdb "t")
+    (l/open-dbi lmdb "u")
+
+    (l/transact-kv lmdb "t" [[:put [:a "a"] 1]
+                             [:put [:a "b"] 2]]
+                   [:keyword :string])
+    (is (= [[[:a "a"] 1] [[:a "b"] 2]]
+           (l/get-range lmdb "t" [:closed [:a "a"] [:a "z"]]
+                        [:keyword :string])))
+    (is (= [[[:a "a"] 1] [[:a "b"] 2]]
+           (l/get-range lmdb "t"
+                        [:closed [:a :db.value/sysMin] [:a :db.value/sysMax]]
+                        [:keyword :string])))
+    (is (= [[[:a "a"] 1]]
+           (l/get-range lmdb "t"
+                        [:closed [:db.value/sysMin :db.value/sysMin]
+                         [:a "a"]]
+                        [:keyword :string])))
+
+    (l/transact-kv lmdb "u" [[:put [:a 1] 1] [:put [:a 2] 2] [:put [:b 2] 3]]
+                   [:keyword :long])
+    (is (= [[[:a 1] 1] [[:a 2] 2] [[:b 2] 3]]
+           (l/get-range lmdb "u"
+                        [:closed [:a :db.value/sysMin]
+                         [:db.value/sysMax :db.value/sysMax]]
+                        [:keyword :long])))
+    (is (= [[[:b 2] 3]]
+           (l/get-range lmdb "u"
+                        [:closed [:b :db.value/sysMin] [:b :db.value/sysMax]]
+                        [:keyword :long])))
     (l/close-kv lmdb)
     (u/delete-files dir)))
