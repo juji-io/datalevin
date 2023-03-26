@@ -21,7 +21,7 @@
     * `list-range-filter-count`
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.
-- [KV] `datalevin/kv-meta` dbi to keep meta information, such as dbi flags, etc. #184
+- [KV] `datalevin/kv-info` dbi to keep meta information, such as dbi flags, etc. #184
 - [Client] Option `:compress-message?`, set to `false` for older versions of
   server. Network messages are compressed by default.
 

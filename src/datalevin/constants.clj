@@ -136,7 +136,7 @@
 ;; dbi-names
 
 ;; kv
-(def ^:const kv-meta "datalevin/kv-meta")
+(def ^:const kv-info "datalevin/kv-info")
 
 ;; dl
 (def ^:const eav "datalevin/eav")

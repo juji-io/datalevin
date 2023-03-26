@@ -160,7 +160,7 @@
     (try
       (b/put-bf vb x t)
       (catch BufferOverflowException _
-        ;; TODO reset the val-size in kv-meta
+        ;; TODO reset the val-size in kv-info
         (let [size (* ^long c/+buffer-grow-factor+ ^long (b/measure-size x))]
           (set! vb (bf/allocate-buffer size))
           (b/put-bf vb x t)))
@@ -483,9 +483,7 @@
 (declare ->LMDB reset-write-txn)
 
 (deftype LMDB [^Env env
-               ^String dir
-               temp?
-               opts
+               info
                ^ConcurrentLinkedQueue pool
                ^UnifiedMap dbis
                ^ByteBuffer kb-w
@@ -502,7 +500,7 @@
 
   (mark-write [_]
     (->LMDB
-      env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w
+      env info pool dbis kb-w start-kb-w stop-kb-w
       start-vb-w stop-vb-w write-txn true))
 
   ILMDB
@@ -515,14 +513,14 @@
           (recur iter)))
       (.sync env true)
       (.close env))
-    (when temp? (u/delete-files dir))
+    (when (@info :temp?) (u/delete-files (@info :dir)))
     nil)
 
   (closed-kv? [_] (.isClosed env))
 
-  (dir [_] dir)
+  (dir [_] (@info :dir))
 
-  (opts [_] opts)
+  (opts [_] (@info :opts))
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
@@ -532,47 +530,47 @@
                                    val-size       c/+default-val-size+
                                    flags          c/default-dbi-flags
                                    dupsort?       false
-                                   validate-data? false}
-                            :as   opts}]
+                                   validate-data? false}}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
-    ;; TODO check dbi count
-    ;; (let [dbi-count (l/range-count this c/kv-meta
-    ;;                                [])])
-    ;; TODO check if the existence of this dbi and load its opts from kv-meta
-    ;; merge the new opts
-    (let [kb  (bf/allocate-buffer key-size)
-          vb  (bf/allocate-buffer val-size)
-          db  (.openDbi env ^String dbi-name
-                        ^"[Lorg.lmdbjava.DbiFlags;"
-                        (kv-flags :dbi (if dupsort?
-                                         (conj flags :dupsort)
-                                         flags)))
-          dbi (->DBI db (ConcurrentLinkedQueue.) kb vb dupsort?
-                     validate-data?)]
-      (when (not= dbi-name c/kv-meta)
-        (l/transact-kv
-          this [[:put c/kv-meta [:dbis dbi-name] opts [:keyword :string]]]))
-      (.put dbis dbi-name dbi)
-      dbi))
+    (let [info-dbis (@info :dbis)]
+      (if (< (count info-dbis) ^long c/+max-dbs+)
+        (let [opts (merge (info-dbis dbi-name)
+                          {:key-size       key-size
+                           :val-size       val-size
+                           :flags          flags
+                           :dupsort?       dupsort?
+                           :validate-data? validate-data?})
+              kb   (bf/allocate-buffer key-size)
+              vb   (bf/allocate-buffer val-size)
+              db   (.openDbi env ^String dbi-name
+                             ^"[Lorg.lmdbjava.DbiFlags;"
+                             (kv-flags :dbi (if dupsort?
+                                              (conj flags :dupsort)
+                                              flags)))
+              dbi  (->DBI db (ConcurrentLinkedQueue.) kb vb dupsort?
+                          validate-data?)]
+          (when (not= dbi-name c/kv-info)
+            (l/transact-kv this [[:put c/kv-info [:dbis dbi-name] opts
+                                  [:keyword :string]]]))
+          (.put dbis dbi-name dbi)
+          dbi)
+        (u/raise (str "Maximal number of DBI: " c/+max-dbs+) {}))))
 
   (get-dbi [this dbi-name]
-    (.get-dbi this dbi-name true))
-  (get-dbi [this dbi-name create?]
-    (or (.get dbis dbi-name)
-        (if create?
-          (.open-dbi this dbi-name)
-          (.open-dbi this dbi-name {:key-size c/+max-key-size+
-                                    :val-size c/+default-val-size+
-                                    :flags    c/read-dbi-flags}))))
+    (or (.get dbis dbi-name) (.open-dbi this dbi-name)))
 
   (clear-dbi [this dbi-name]
-    (try
-      (let [^DBI dbi (.get-dbi this dbi-name )]
+    (let [^DBI dbi (.get-dbi this dbi-name)]
+      (try
         (with-open [txn (.txnWrite env)]
           (.drop ^Dbi (.-db dbi) txn)
-          (.commit txn)))
-      (catch Exception e
-        (raise "Fail to clear DBI: " dbi-name " " e {}))))
+          (.commit txn))
+        (catch Env$MapFullException _
+          (.setMapSize env (* ^long c/+buffer-grow-factor+
+                              ^long (-> env .info .mapSize)))
+          (.clear-dbi this dbi-name))
+        (catch Exception e
+          (raise "Fail to clear DBI: " dbi-name " " e {})))))
 
   (drop-dbi [this dbi-name]
     (try
@@ -629,7 +627,7 @@
     (if dbi-name
       (let [^Rtx rtx (.get-rtx this)]
         (try
-          (let [^DBI dbi (.get-dbi this dbi-name false)
+          (let [^DBI dbi (.get-dbi this dbi-name)
                 ^Dbi db  (.-db dbi)
                 ^Txn txn (.-txn rtx)]
             (stat-map (.stat db txn)))
@@ -639,7 +637,7 @@
       (l/stat this)))
 
   (entries [this dbi-name]
-    (let [^DBI dbi (.get-dbi this dbi-name false)
+    (let [^DBI dbi (.get-dbi this dbi-name)
           ^Rtx rtx (.get-rtx this)]
       (try
         (.-entries ^Stat (.stat ^Dbi (.-db dbi) (.-txn rtx)))
@@ -877,14 +875,22 @@
                                        stop-vb-w
                                        (volatile! false)))))
 
+(defn- init-info
+  [lmdb {:keys [dir flags max-dbis temp?]}]
+  (l/transact-kv lmdb [[:put c/kv-info :dir dir]
+                       [:put c/kv-info :flags flags]
+                       [:put c/kv-info :max-dbis max-dbis]
+                       [:put c/kv-info :temp? temp?]])
+  (let []))
+
 (defmethod open-kv :java
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags temp?]
-         :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags
-                temp?   false}
-         :as   opts}]
+  ([dir {:keys [mapsize flags max-dbis temp?]
+         :or   {mapsize  c/+init-db-size+
+                flags    c/default-env-flags
+                max-dbis c/+max-dbs+
+                temp?    false}}]
    (try
      (let [^File file (u/file dir)
            builder    (doto (Env/create)
@@ -893,9 +899,7 @@
                         (.setMaxDbs c/+max-dbs+))
            ^Env env   (.open builder file (kv-flags :env flags))
            lmdb       (->LMDB env
-                              dir
-                              temp?
-                              opts
+                              (volatile! nil)
                               (ConcurrentLinkedQueue.)
                               (UnifiedMap.)
                               (bf/allocate-buffer c/+max-key-size+)
@@ -906,13 +910,9 @@
                               (volatile! nil)
                               false)]
        (when temp? (u/delete-on-exit file))
-       (l/open-dbi lmdb c/kv-meta {:key-size c/+max-key-size+})
-       (l/transact-kv
-         lmdb [[:put c/kv-meta :dir dir]
-               [:put c/kv-meta :flags flags]
-               [:put c/kv-meta :temp? temp?]
-               [:put c/kv-meta :max-dbis c/+max-dbs+]
-               [:put c/kv-meta [:dbis c/kv-meta] {} [:keyword :string]]])
+       (l/open-dbi lmdb c/kv-info)
+       (init-info lmdb {:dir   dir :flags flags :max-dbis max-dbis
+                        :temp? temp?})
        lmdb)
      (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 

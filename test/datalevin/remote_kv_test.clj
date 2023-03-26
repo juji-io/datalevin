@@ -23,7 +23,7 @@
     (l/open-dbi store "d")
 
     (testing "list dbis"
-      (is (= #{"a" "b" "c" "d" c/kv-meta} (set (l/list-dbis store)))))
+      (is (= #{"a" "b" "c" "d" c/kv-info} (set (l/list-dbis store)))))
 
     (testing "transact-kv"
       (l/transact-kv store

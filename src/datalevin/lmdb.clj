@@ -105,7 +105,7 @@
     "Clear data in the DBI (i.e sub-db), but leave it open")
   (drop-dbi [db dbi-name]
     "Clear data in the DBI (i.e. sub-db), then delete it")
-  (get-dbi [db dbi-name] [db dbi-name create?])
+  (get-dbi [db dbi-name])
   (list-dbis [db] "List the names of the sub-databases")
   (copy
     [db dest]
