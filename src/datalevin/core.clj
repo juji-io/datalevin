@@ -928,11 +928,11 @@ Only usable for debug output.
 (defn datalog-index-cache-limit
   "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
    disable the cache, useful when transacting bulk data as it saves memory."
-  ([^DB db]
-   (let [^Store store (.-store db)]
+  ([conn]
+   (let [^Store store (.-store ^DB @conn)]
      (:cache-limit (s/opts store))))
-  ([^DB db ^long n]
-   (let [^Store store (.-store db)]
+  ([conn ^long n]
+   (let [^Store store (.-store ^DB @conn)]
      (s/assoc-opt store :cache-limit n)
      (db/refresh-cache store))))
 

@@ -33,7 +33,8 @@
   file handle exhaustion. #189
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
 - [Datalog] Query results are spillable to disk. #166
-
+- [Datalog] `datalog-index-cache-limit` takes a connection instead of DB, as it
+  is more natural
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
