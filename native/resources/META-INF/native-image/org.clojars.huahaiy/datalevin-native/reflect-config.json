@@ -18,12 +18,13 @@
     },
     {
         "name":"byte[]",
+        "allPublicConstructors":true,
         "allDeclaredMethods":true,
         "allPublicMethods":true
     },
     {
         "name":"java.lang.Thread",
-        "methods":[{"name":"<init>","parameterTypes":["java.lang.ThreadGroup","java.lang.Runnable","java.lang.String","long","boolean"] }]
+        "methods":[{"name":"<init>", "parameterTypes":["java.lang.ThreadGroup","java.lang.Runnable","java.lang.String","long","boolean"] }]
     },
     {
         "name":"java.lang.reflect.Method",
@@ -152,6 +153,28 @@
         "methods":[{"name":"<init>","parameterTypes":[] }]
     },
     {
+        "name":"net.jpountz.util.Utils",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"net.jpountz.util.UnsafeUtils",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
         "name":"net.jpountz.lz4.LZ4JavaSafeCompressor",
         "allDeclaredConstructors" : true,
         "allPublicConstructors" : true,
@@ -197,6 +220,38 @@
     },
     {
         "name":"[Ljava.util.Date;",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"datalevin.hu.TableEntry",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"datalevin.hu.TreeNode",
+        "allDeclaredConstructors" : true,
+        "allPublicConstructors" : true,
+        "allDeclaredMethods" : true,
+        "allPublicMethods" : true,
+        "allDeclaredClasses" : true,
+        "allPublicFields" : true,
+        "allDeclaredFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ldatalevin.hu.TableEntry;",
+        "allPublicConstructors" : true,
+        "allPublicMethods" : true,
+        "allPublicFields" : true,
+        "allPublicClasses" : true
+    },
+    {
+        "name":"[Ldatalevin.hu.TreeNode;",
         "allPublicConstructors" : true,
         "allPublicMethods" : true,
         "allPublicFields" : true,

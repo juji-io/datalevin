@@ -83,46 +83,48 @@
                 [5 3] [[6 [0 1]] [6 [1 1]] [7 [0 1]] [7 [1 1]]],
                 [9 4] [[4 [0 1]] [4 [1 1]] [5 [0 1]] [5 [1 1]]]}))))
 
-(def freqs (repeatedly 65536 #(rand-int 1000000)))
-(def ht    (sut/new-hu-tucker (long-array (map inc freqs))))
-
 (test/defspec order-preservation-test
   1000
-  (prop/for-all
-    [bs1 (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
-                        gen/bytes)
-     bs2 (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
-                        gen/bytes)]
-    (let [^ByteBuffer src1 (bf/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer src2 (bf/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer dst1 (bf/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer dst2 (bf/allocate-buffer c/+max-key-size+)]
-      (b/put-buffer src1 bs1 :bytes)
-      (b/put-buffer src2 bs2 :bytes)
-      (.flip src1)
-      (.flip src2)
-      (sut/encode ht src1 dst1)
-      (sut/encode ht src2 dst2)
-      (.flip ^ByteBuffer src1)
-      (.flip ^ByteBuffer src2)
-      (.flip ^ByteBuffer dst1)
-      (.flip ^ByteBuffer dst2)
-      (is (u/same-sign? (bf/compare-buffer src1 src2)
-                        (bf/compare-buffer dst1 dst2))))))
+  (let [freqs (repeatedly 65536 #(rand-int 1000000))
+        ht    (sut/new-hu-tucker (long-array (map inc freqs)))]
+    (prop/for-all
+      [bs1 (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
+                          gen/bytes)
+       bs2 (gen/such-that #(< 1 (alength ^bytes %) c/+max-key-size+)
+                          gen/bytes)]
+      (let [^ByteBuffer src1 (bf/allocate-buffer c/+max-key-size+)
+            ^ByteBuffer src2 (bf/allocate-buffer c/+max-key-size+)
+            ^ByteBuffer dst1 (bf/allocate-buffer c/+max-key-size+)
+            ^ByteBuffer dst2 (bf/allocate-buffer c/+max-key-size+)
+            ]
+        (b/put-buffer src1 bs1 :bytes)
+        (b/put-buffer src2 bs2 :bytes)
+        (.flip src1)
+        (.flip src2)
+        (sut/encode ht src1 dst1)
+        (sut/encode ht src2 dst2)
+        (.flip ^ByteBuffer src1)
+        (.flip ^ByteBuffer src2)
+        (.flip ^ByteBuffer dst1)
+        (.flip ^ByteBuffer dst2)
+        (is (u/same-sign? (bf/compare-buffer src1 src2)
+                          (bf/compare-buffer dst1 dst2)))))))
 
 (test/defspec encode-decode-round-trip-test
   1000
-  (prop/for-all
-    [^bytes bs (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
-                              gen/bytes)]
-    (let [^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
-          ^ByteBuffer res (bf/allocate-buffer c/+max-key-size+)]
-      (b/put-bytes src bs)
-      (.flip src)
-      (sut/encode ht src dst)
-      (.flip dst)
-      (sut/decode ht dst res)
-      (.flip res)
-      (.rewind dst)
-      (is (Arrays/equals bs ^bytes (b/get-bytes res))))))
+  (let [freqs (repeatedly 65536 #(rand-int 1000000))
+        ht    (sut/new-hu-tucker (long-array (map inc freqs)))]
+    (prop/for-all
+      [^bytes bs (gen/such-that #(< 0 (alength ^bytes %) c/+max-key-size+)
+                                gen/bytes)]
+      (let [^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
+            ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
+            ^ByteBuffer res (bf/allocate-buffer c/+max-key-size+)]
+        (b/put-bytes src bs)
+        (.flip src)
+        (sut/encode ht src dst)
+        (.flip dst)
+        (sut/decode ht dst res)
+        (.flip res)
+        (.rewind dst)
+        (is (Arrays/equals bs ^bytes (b/get-bytes res)))))))

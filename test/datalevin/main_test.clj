@@ -124,7 +124,7 @@
       (d/close-kv db-droped))
     (sut/drop dir [dbi] true)
     (let [db-droped (d/open-kv dir)]
-      (is (= [c/kv-meta] (d/list-dbis db-droped)))
+      (is (nil? (seq (d/list-dbis db-droped))))
       (d/close-kv db-droped))
     (u/delete-files dir)))
 

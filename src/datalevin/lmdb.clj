@@ -89,7 +89,8 @@
   (close-kv [db] "Close this LMDB env")
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")
-  (opts [db] "Rturn the option map")
+  (opts [db] "Return the option map of LMDB env")
+  (dbi-opts [db dbi-name] "Return option map of a given DBI")
   (open-dbi
     [db dbi-name]
     [db dbi-name opts]
@@ -105,7 +106,7 @@
     "Clear data in the DBI (i.e sub-db), but leave it open")
   (drop-dbi [db dbi-name]
     "Clear data in the DBI (i.e. sub-db), then delete it")
-  (get-dbi [db dbi-name])
+  (get-dbi [db dbi-name] [db dbi-name create?])
   (list-dbis [db] "List the names of the sub-databases")
   (copy
     [db dest]

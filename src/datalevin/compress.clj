@@ -69,7 +69,8 @@
 
 ;; dictionary-less compressor
 
-(defonce dict-less-compressor
+(defn- create-dict-less-compressor
+  []
   (let [^LZ4Factory factory               (LZ4Factory/fastestInstance)
         ^LZ4Compressor compressor         (.fastCompressor factory)
         ^LZ4FastDecompressor decompressor (.fastDecompressor factory)]
@@ -92,6 +93,14 @@
             (bf/buffer-transfer src dst)
             (do (.limit dst total)
                 (.decompress decompressor src dst))))))))
+
+(defonce dict-less-compressor (atom nil))
+
+(defn get-dict-less-compressor
+  []
+  (or @dict-less-compressor
+      (do (reset! dict-less-compressor (create-dict-less-compressor))
+          @dict-less-compressor)))
 
 ;; key value compressors
 

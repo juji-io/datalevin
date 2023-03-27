@@ -23,7 +23,7 @@
     (l/open-dbi store "d")
 
     (testing "list dbis"
-      (is (= #{"a" "b" "c" "d" c/kv-info} (set (l/list-dbis store)))))
+      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis store)))))
 
     (testing "transact-kv"
       (l/transact-kv store
@@ -97,6 +97,7 @@
       (l/close-kv store)
       (is (l/closed-kv? store))
       (let [store (sut/open-kv dir)]
+        (l/open-dbi store "a")
         (is (= ["hello" "world"] (l/get-value store "a" :datalevin)))
         (l/clear-dbi store "a")
         (is (nil? (l/get-value store "a" :datalevin)))

@@ -22,6 +22,8 @@
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-info` dbi to keep meta information, such as dbi flags, etc. #184
+- [KV] `:max-dbis` option when `open-kv` to specify the maximal number of DBIs
+  that can be opened inside this file. Default is 128.
 - [Client] Option `:compress-message?`, set to `false` for older versions of
   server. Network messages are compressed by default.
 

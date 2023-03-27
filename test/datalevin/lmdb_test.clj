@@ -34,8 +34,9 @@
     (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (l/open-dbi lmdb "d")
 
-    (testing "list dbis"
-      (is (= #{"a" "b" "c" "d" c/kv-meta} (set (l/list-dbis lmdb)))))
+    (testing "dbis"
+      (is (= #{"a" "b" "c" "d"} (set (l/list-dbis lmdb))))
+      (is (= (inc Long/BYTES) (:key-size (l/dbi-opts lmdb "c")))))
 
     (testing "transact-kv"
       (l/transact-kv lmdb
