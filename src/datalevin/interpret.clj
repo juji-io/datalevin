@@ -1,29 +1,28 @@
 (ns datalevin.interpret
   "Code interpreter, including functions and macros useful for command line
   and query/transaction functions."
-  (:require [clojure.walk :as w]
-            [clojure.set :as set]
-            [clojure.pprint :as p]
-            [clojure.java.io :as io]
-            [sci.core :as sci]
-            [taoensso.nippy :as nippy]
-            [datalevin.query :as q]
-            [datalevin.util :as u]
-            [datalevin.core]
-            [datalevin.client]
-            [datalevin.constants]
-            [clojure.string :as s])
-  (:import [clojure.lang AFn]
-           [datalevin.datom Datom]
-           [java.text Normalizer Normalizer$Form]
-           [java.io DataInput DataOutput Writer]))
+  (:require
+   [clojure.walk :as w]
+   [clojure.set :as set]
+   [clojure.pprint :as p]
+   [clojure.java.io :as io]
+   [sci.core :as sci]
+   [taoensso.nippy :as nippy]
+   [datalevin.query :as q]
+   [datalevin.util :as u]
+   [datalevin.core]
+   [datalevin.client]
+   [datalevin.constants]
+   [clojure.string :as s])
+  (:import
+   [java.io DataInput DataOutput ]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
 (def ^:no-doc user-facing-ns
-  #{'datalevin.core 'datalevin.client 'datalevin.interpret 'datalevin.constants})
+  #{'datalevin.core 'datalevin.client 'datalevin.interpret})
 
 (defn- user-facing? [v]
   (let [m (meta v)
