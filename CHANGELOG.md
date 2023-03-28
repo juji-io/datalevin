@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.9 (2023-03-28)
 ### Fixed
 - [KV] transacting data more than one order of magnitude larger than the
   initial map size in one transaction. #196
