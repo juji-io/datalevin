@@ -199,8 +199,7 @@ values;")
 
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 
-(defmulti open-kv
-  (constantly (pick-binding)))
+(defmulti open-kv (constantly (pick-binding)))
 
 (defmacro with-transaction-kv
   [[db orig-db] & body]
@@ -208,12 +207,9 @@ values;")
      (let [writing# (writing? ~orig-db)]
        (try
          (let [~db (if writing# ~orig-db (open-transact-kv ~orig-db))]
-           (try
-             ~@body
-             (catch Exception ~'e
-               (if (and (:resized (ex-data ~'e)) (not writing#))
-                 (do ~@body)
-                 (throw ~'e)))))
+           (u/repeat-try-catch
+             6 ~'e (and (:resized (ex-data ~'e)) (not writing#))
+             ~@body))
          (finally
            (when-not writing# (close-transact-kv ~orig-db)))))))
 

@@ -15,14 +15,17 @@
    [datalevin.constants]
    [clojure.string :as s])
   (:import
-   [java.io DataInput DataOutput ]))
+   [clojure.lang AFn]
+   [datalevin.datom Datom]
+   [java.text Normalizer Normalizer$Form]
+   [java.io DataInput DataOutput Writer]))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
 (def ^:no-doc user-facing-ns
-  #{'datalevin.core 'datalevin.client 'datalevin.interpret})
+  #{'datalevin.core 'datalevin.client 'datalevin.interpret 'datalevin.constants})
 
 (defn- user-facing? [v]
   (let [m (meta v)
@@ -135,8 +138,7 @@
 (defn inter-fn?
   "Return true if `x` is an `inter-fn`"
   [x]
-  (and ;(instance? clojure.lang.AFn x)
-    (= (:type (meta x)) :datalevin/inter-fn)))
+  (= (:type (meta x)) :datalevin/inter-fn))
 
 (defmacro definterfn
   "Create a named `inter-fn`"
@@ -162,7 +164,7 @@
                    (let [src (nippy/thaw-from-in! in)]
                      (source->inter-fn src)))
 
-(defmethod print-method :datalevin/inter-fn [f, ^java.io.Writer w]
+(defmethod print-method :datalevin/inter-fn [f, ^Writer w]
   (.write w "#datalevin/inter-fn ")
   (binding [*out* w] (p/pprint (:source (meta f)))))
 

@@ -499,11 +499,11 @@
 (deftest with-txn-map-resize-test
   (let [dir  (u/tmp-dir (str "map-size-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:mapsize 1})
-        data {:description "this is going to be bigger than 1MB"
-              :numbers     (range 1000000)}]
+        data {:description "this is going to be bigger than 10 MB"
+              :numbers     (range 10000000)}]
     (l/open-dbi lmdb "a")
 
-    (dc/with-transaction-kv [db lmdb]
+    (l/with-transaction-kv [db lmdb]
       (l/transact-kv db [[:put "a" 0 :prior]])
       (is (= :prior (l/get-value db "a" 0)))
       (l/transact-kv db [[:put "a" 1 data]])

@@ -60,7 +60,6 @@
 
 (def ^:const tmp-dbi "t")
 
-
 ;; index storage
 
 (def ^:const +val-bytes-wo-hdr+ 493)  ; - hdr - eid - s - gid

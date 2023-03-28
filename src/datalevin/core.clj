@@ -304,12 +304,9 @@ Only usable for debug output.
      (let [writing# (l/writing? ~orig-db)]
        (try
          (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
-           (try
-             ~@body
-             (catch Exception ~'e
-               (if (and (:resized (ex-data ~'e)) (not writing#))
-                 (do ~@body)
-                 (throw ~'e)))))
+           (u/repeat-try-catch
+             4 ~'e (and (:resized (ex-data ~'e)) (not writing#))
+             ~@body))
          (finally
            (when-not writing# (l/close-transact-kv ~orig-db)))))))
 
@@ -317,7 +314,9 @@ Only usable for debug output.
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
 
-  `conn` is a new identifier of the Datalog database connection with a new read/write transaction attached, and `orig-conn` is the original database connection.
+  `conn` is a new identifier of the Datalog database connection with a new
+  read/write transaction attached, and `orig-conn` is the original database
+  connection.
 
   `body` should refer to `conn`.
 
@@ -342,11 +341,8 @@ Only usable for debug output.
                                                    :meta (meta ~orig-conn))]
                                    ~@body) ]
                         (try
-                          (w#)
-                          (catch Exception ~'e
-                            (if (:resized (ex-data ~'e))
-                              (w#)
-                              (throw ~'e)))
+                          (u/repeat-try-catch
+                            4 ~'e (:resized (ex-data ~'e)) (w#))
                           (finally (r/close-transact s#)))))]
            (reset! ~orig-conn (db/new-db s#))
            res#)
