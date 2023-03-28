@@ -75,7 +75,9 @@ export DTLV_COMPILE_NATIVE=true
 export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 ```
 
-Finally, look at our `script/compile`, or `script/compile-static` file as an example.
+Finally, take a look at our [example
+project](https://github.com/juji-io/datalevin/tree/master/native/test-jar) on
+how to do this.
 
 For CI/CD on various platforms, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)
