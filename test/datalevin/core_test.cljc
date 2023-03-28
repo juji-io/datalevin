@@ -467,6 +467,22 @@
     (sut/close conn)
     (u/delete-files dir)))
 
+(deftest map-resize-clear-test
+  (let [dir  (u/tmp-dir (str "clear-test-" (UUID/randomUUID)))
+        conn (sut/create-conn
+               dir {:buggy/key {:db/valueType :db.type/string
+                                :db/unique    :db.unique/identity}}
+               {:kv-opts {:mapsize 1}})]
+    (sut/transact! conn (for [i (range 100000)]
+                          {:buggy/key (format "%20d" i)
+                           :buggy/val (format "bubba-%d" i)}))
+    (sut/transact! conn [{:buggy/key (format "%20d" 100000)
+                          :buggy/val (format "bubba-%d" 99)}])
+    (sut/clear conn)
+    (is (sut/closed? conn))
+    (sut/close conn)
+    (u/delete-files dir)))
+
 (deftest with-txn-map-resize-test
   (let [dir   (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
         conn  (sut/create-conn dir nil {:kv-opts {:mapsize 1}})
@@ -474,13 +490,13 @@
                 :in $ ?d
                 :where [?e :content ?d]]
         prior "prior data"
-        big   "bigger than 1MB"]
+        big   "bigger than 10 MB"]
 
     (sut/with-transaction [cn conn]
       (sut/transact! cn [{:content prior :numbers [1 2]}])
       (is (= 1 (sut/q query @cn prior)))
       (sut/transact! cn [{:content big
-                          :numbers (range 1000000)}])
+                          :numbers (range 10000000)}])
       (is (= 2 (sut/q query @cn big))))
 
     (is (= 1 (sut/q query @conn prior)))

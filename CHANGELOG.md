@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Fixed
+- [KV] transacting data more than one order of magnitude larger than the
+  initial map size in one transaction. #196
+
 ## 0.8.8 (2023-03-21)
 ### Improved
 - [Pod] serialize TxReport to regular map. #190

@@ -305,12 +305,9 @@ Only usable for debug output.
      (let [writing# (l/writing? ~orig-db)]
        (try
          (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
-           (try
-             ~@body
-             (catch Exception ~'e
-               (if (and (:resized (ex-data ~'e)) (not writing#))
-                 (do ~@body)
-                 (throw ~'e)))))
+           (u/repeat-try-catch
+             4 ~'e (and (:resized (ex-data ~'e)) (not writing#))
+             ~@body))
          (finally
            (when-not writing# (l/close-transact-kv ~orig-db)))))))
 
@@ -343,11 +340,8 @@ Only usable for debug output.
                                                    :meta (meta ~orig-conn))]
                                    ~@body) ]
                         (try
-                          (w#)
-                          (catch Exception ~'e
-                            (if (:resized (ex-data ~'e))
-                              (w#)
-                              (throw ~'e)))
+                          (u/repeat-try-catch
+                            4 ~'e (:resized (ex-data ~'e)) (w#))
                           (finally (r/close-transact s#)))))]
            (reset! ~orig-conn (db/new-db s#))
            res#)

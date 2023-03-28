@@ -136,8 +136,7 @@
 (defn inter-fn?
   "Return true if `x` is an `inter-fn`"
   [x]
-  (and ;(instance? clojure.lang.AFn x)
-    (= (:type (meta x)) :datalevin/inter-fn)))
+  (= (:type (meta x)) :datalevin/inter-fn))
 
 (defmacro definterfn
   "Create a named `inter-fn`"
@@ -163,7 +162,7 @@
                    (let [src (nippy/thaw-from-in! in)]
                      (source->inter-fn src)))
 
-(defmethod print-method :datalevin/inter-fn [f, ^java.io.Writer w]
+(defmethod print-method :datalevin/inter-fn [f, ^Writer w]
   (.write w "#datalevin/inter-fn ")
   (binding [*out* w] (p/pprint (:source (meta f)))))
 

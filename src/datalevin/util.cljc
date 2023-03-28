@@ -224,6 +224,22 @@
 
 ;; ----------------------------------------------------------------------------
 
+(defmacro repeat-try-catch
+  "A nested try catch block that keeps executing body when an exception
+  is caught and the repeat condition is true, otherwise throw, until n
+  nesting level is reached."
+  [n ex repeat-condition & body]
+  (letfn [(generate [^long n]
+            (if (zero? n)
+              `(try ~@body)
+              `(try
+                 ~@body
+                 (catch Exception ~ex
+                   (if ~repeat-condition
+                     ~(generate (dec n))
+                     (throw ~ex))))))]
+    (generate n)))
+
 (defmacro combine-cmp [& comps]
   (loop [comps (reverse comps)
          res   (num 0)]
