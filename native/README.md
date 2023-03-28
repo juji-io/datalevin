@@ -47,8 +47,18 @@ dependencies for these platforms:
 * MacOS x86-64
 * Windows x86-64
 
-First build an uberjar of your application, then compile it with `native-image`
-command.
+You also need to have these environment variables set before building the uberjar:
+
+```
+export DTLV_COMPILE_NATIVE=true
+export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
+```
+In addition, you must use the [same version of
+GraalVM](https://github.com/juji-io/datalevin/blob/master/.cirrus.yml#L9) as
+that of ours, as Oracle changes their native library API in almost very version.
+
+First build an ahead-of-time (AOT) compiled uberjar of your application using
+GraalVM JVM, then compile it with `native-image` command.
 
 Like all Clojure applications, class initialization needs to be done at [native image
 build time](https://github.com/clj-easy/graal-docs#class-initialization), i.e.
@@ -66,14 +76,6 @@ permission for that directory, you can set an environment variable
 native libraries will then be put there instead. If so, you must also add
 `-H:CLibraryPath=${DTLV_LIB_EXTRACT_DIR}` option to `native-image` command. The
 directory referred to by the environment variable must exist and is writable.
-
-You also need to have these environment variables set before native image
-compilation:
-
-```
-export DTLV_COMPILE_NATIVE=true
-export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
-```
 
 Finally, take a look at our [example
 project](https://github.com/juji-io/datalevin/tree/master/native/test-jar) on
