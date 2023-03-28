@@ -79,7 +79,9 @@ directory referred to by the environment variable must exist and is writable.
 
 Finally, take a look at our [example
 project](https://github.com/juji-io/datalevin/tree/master/native/test-jar) on
-how to do this.
+how to do this, or see [another
+example](https://github.com/telekid/datalevin-issue-repro) that uses more
+up-to-date tooling.
 
 For CI/CD on various platforms, you may want to consult our [Github
 Action](https://github.com/juji-io/datalevin/blob/master/.github/workflows/release.binaries.yml)
