@@ -305,7 +305,8 @@ Only usable for debug output.
        (try
          (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
            (u/repeat-try-catch
-             4 ~'e (and (:resized (ex-data ~'e)) (not writing#))
+             ~c/+in-tx-overflow-times+
+             ~'e (and (:resized (ex-data ~'e)) (not writing#))
              ~@body))
          (finally
            (when-not writing# (l/close-transact-kv ~orig-db)))))))
@@ -342,7 +343,8 @@ Only usable for debug output.
                                    ~@body) ]
                         (try
                           (u/repeat-try-catch
-                            4 ~'e (:resized (ex-data ~'e)) (w#))
+                            ~c/+in-tx-overflow-times+
+                            ~'e (:resized (ex-data ~'e)) (w#))
                           (finally (r/close-transact s#)))))]
            (reset! ~orig-conn (db/new-db s#))
            res#)

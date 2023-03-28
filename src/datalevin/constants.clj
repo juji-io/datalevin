@@ -201,11 +201,6 @@
 
 ;; user configurable TODO: make it so
 
-
-;; general
-
-(def +buffer-grow-factor+ 10)
-
 ;; serialization
 
 (def ^{:dynamic true
@@ -215,11 +210,13 @@
 
 ;; lmdb
 
+(def +buffer-grow-factor+ 10)
 (def +max-dbs+          128)
 (def +max-readers+      126)
 (def +use-readers+      32)    ; leave the rest to others
 (def +init-db-size+     100)   ; in megabytes
 (def +default-val-size+ 16384) ; in bytes
+(def +in-tx-overflow-times+ 4) ; # of times db can be auto enlarged in a tx
 
 ;; client/server
 
