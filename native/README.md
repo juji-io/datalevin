@@ -53,8 +53,8 @@ You also need to have these environment variables set before building the uberja
 export DTLV_COMPILE_NATIVE=true
 export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 ```
-First build an uberjar of your application using GraalVM JVM, then compile it
-with `native-image` command.
+First build an ahead-of-time (AOT) compiled uberjar of your application using
+GraalVM JVM, then compile it with `native-image` command.
 
 Like all Clojure applications, class initialization needs to be done at [native image
 build time](https://github.com/clj-easy/graal-docs#class-initialization), i.e.
