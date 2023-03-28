@@ -53,6 +53,10 @@ You also need to have these environment variables set before building the uberja
 export DTLV_COMPILE_NATIVE=true
 export USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 ```
+In addition, you must use the [same version of
+GraalVM](https://github.com/juji-io/datalevin/blob/master/.cirrus.yml#L9) as
+that of ours, as Oracle changes their native library API in almost very version.
+
 First build an ahead-of-time (AOT) compiled uberjar of your application using
 GraalVM JVM, then compile it with `native-image` command.
 
