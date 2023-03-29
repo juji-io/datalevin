@@ -25,10 +25,10 @@ database. Here's what a Datalog query looks like:
 ```Clojure
 (d/q '[:find  ?name ?total
        :in    $ ?year
-       :where [?s :sales/year ?year]
-              [?s :sales/total ?total]
-              [?s :sales/customer ?c]
-              [?c :customers/name ?name]]
+       :where [?sales :sales/year ?year]
+              [?sales :sales/total ?total]
+              [?sales :sales/customer ?customer]
+              [?customer :customers/name ?name]]
       (d/db conn) 2023)
 ```
 
