@@ -59,6 +59,8 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ;; A search engine depends on a key-value store to store the indices.
 (def lmdb (d/open-kv "/tmp/search-db"))
+
+;; By default, term positions in the documents are not stored.
 (def engine (d/new-search-engine lmdb {:index-position? true}))
 
 ;; Here are the documents to be indxed, keyed by doc-id

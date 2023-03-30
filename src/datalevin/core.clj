@@ -1557,6 +1557,8 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
   `opts` is an option map that may contain these keys:
 
+   * `:index-position?` indicates whether to index term positions. Default is `false`.
+
    * `:domain` is an identifier string, indicates the domain of this search engine.
       This way, multiple independent search engines can reside in the same
       key-value database, each with its own domain identifier.
