@@ -59,7 +59,7 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ;; A search engine depends on a key-value store to store the indices.
 (def lmdb (d/open-kv "/tmp/search-db"))
-(def engine (d/new-search-engine lmdb))
+(def engine (d/new-search-engine lmdb {:index-position? true}))
 
 ;; Here are the documents to be indxed, keyed by doc-id
 (def docs
@@ -106,7 +106,7 @@ as `search`), and returns a sequence of matching datoms, ordered by relevance to
 the query.
 
 ```Clojure
-(let [db (-> (d/empty-db "/tmp/mydb" 
+(let [db (-> (d/empty-db "/tmp/mydb"
                {:text {:db/valueType :db.type/string
                        :db/fulltext  true}})
              (d/db-with
