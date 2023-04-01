@@ -31,6 +31,7 @@ lein with-profile native-uberjar uberjar
 
 "$GRAALVM_HOME/bin/native-image" \
   --verbose \
+  -H:DashboardDump=dashboard -H:+DashboardAll \
   -jar "$MAIN_JAR" ${app_name}
 
 lein clean
