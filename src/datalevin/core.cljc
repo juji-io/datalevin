@@ -306,7 +306,8 @@ Only usable for debug output.
        (try
          (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
            (u/repeat-try-catch
-             4 ~'e (and (:resized (ex-data ~'e)) (not writing#))
+             ~c/+in-tx-overflow-times+
+             ~'e (and (:resized (ex-data ~'e)) (not writing#))
              ~@body))
          (finally
            (when-not writing# (l/close-transact-kv ~orig-db)))))))
@@ -341,7 +342,8 @@ Only usable for debug output.
                                    ~@body) ]
                         (try
                           (u/repeat-try-catch
-                            4 ~'e (:resized (ex-data ~'e)) (w#))
+                            ~c/+in-tx-overflow-times+
+                            ~'e (:resized (ex-data ~'e)) (w#))
                           (finally (r/close-transact s#)))))]
            (reset! ~orig-conn (db/new-db s#))
            res#)
@@ -1440,9 +1442,12 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 (defn clear
   "Close the Datalog database, then clear all data, including schema."
   [conn]
-  (close conn)
-  (let [dir  (s/dir ^Store (.-store ^DB @conn))
-        lmdb (open-kv dir)]
+  (let [store (.-store ^DB @conn)
+        lmdb  (if (instance? DatalogStore store)
+                (let [dir (s/dir store)]
+                  (close conn)
+                  (open-kv dir))
+                (.-lmdb ^Store store))]
     (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))

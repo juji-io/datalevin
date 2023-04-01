@@ -353,7 +353,7 @@
           (.drop ^Dbi (.-db dbi) txn)
           (.commit txn)))
       (catch Exception e
-        (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
+        (raise "Fail to clear DBI: " dbi-name " " e {}))))
 
   (drop-dbi [this dbi-name]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -365,7 +365,7 @@
         (.remove dbis dbi-name)
         nil)
       (catch Exception e
-        (raise "Fail to drop DBI: " dbi-name (ex-message e) {}))))
+        (raise "Fail to drop DBI: " dbi-name " " e {}))))
 
   (list-dbis [this]
     (assert (not (.closed-kv? this)) "LMDB env is closed.")
@@ -719,11 +719,13 @@
                 temp?   false}
          :as   opts}]
    (try
-     (let [^File file (u/file dir)
-           builder    (doto (Env/create)
-                        (.setMapSize (* ^long mapsize 1024 1024))
+     (let [builder    (doto (Env/create)
                         (.setMaxReaders c/+max-readers+)
                         (.setMaxDbs c/+max-dbs+))
+           ^File file (u/file dir)
+           builder    (if (u/empty-dir? file)
+                        (.setMapSize builder(* ^long mapsize 1024 1024))
+                        builder)
            ^Env env   (.open builder file (kv-flags :env flags))
            lmdb       (->LMDB env
                               dir

@@ -208,6 +208,7 @@
 (def +use-readers+      32)    ; leave the rest to others
 (def +init-db-size+     100)   ; in megabytes
 (def +default-val-size+ 16384) ; in bytes
+(def +in-tx-overflow-times+ 6) ; # of times db can be auto enlarged in a tx
 
 ;; storage
 

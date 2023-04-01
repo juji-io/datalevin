@@ -1,6 +1,8 @@
 (ns ^:no-doc datalevin.lmdb
   "API for LMDB Key Value Store"
-  (:require [datalevin.util :as u]))
+  (:require
+   [datalevin.util :as u]
+   [datalevin.constants :as c]))
 
 (defprotocol IBuffer
   (put-key [this data k-type] "put data in key buffer")
@@ -168,7 +170,8 @@
        (try
          (let [~db (if writing# ~orig-db (open-transact-kv ~orig-db))]
            (u/repeat-try-catch
-             6 ~'e (and (:resized (ex-data ~'e)) (not writing#))
+             ~c/+in-tx-overflow-times+
+             ~'e (and (:resized (ex-data ~'e)) (not writing#))
              ~@body))
          (finally
            (when-not writing# (close-transact-kv ~orig-db)))))))

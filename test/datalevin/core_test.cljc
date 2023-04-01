@@ -480,7 +480,10 @@
                           :buggy/val (format "bubba-%d" 99)}])
     (sut/clear conn)
     (is (sut/closed? conn))
-    (sut/close conn)
+
+    (let [conn1 (sut/create-conn dir)]
+      (is (= 0 (count (sut/datoms (sut/db conn1) :eav))))
+      (sut/close conn1))
     (u/delete-files dir)))
 
 (deftest with-txn-map-resize-test
