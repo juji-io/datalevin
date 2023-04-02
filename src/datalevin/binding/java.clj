@@ -713,19 +713,20 @@
 (defmethod open-kv :java
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags temp?]
-         :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags
-                temp?   false}
+  ([dir {:keys [mapsize max-readers max-dbs flags temp?]
+         :or   {max-readers c/+max-readers+
+                max-dbs     c/+max-dbs+
+                flags       c/default-env-flags
+                temp?       false}
          :as   opts}]
    (try
-     (let [builder    (doto (Env/create)
-                        (.setMaxReaders c/+max-readers+)
-                        (.setMaxDbs c/+max-dbs+))
-           ^File file (u/file dir)
-           builder    (if (u/empty-dir? file)
-                        (.setMapSize builder(* ^long mapsize 1024 1024))
-                        builder)
+     (let [^File file (u/file dir)
+           mapsize    (* (long (or mapsize (c/pick-mapsize file)))
+                         1024 1024)
+           builder    (doto (Env/create)
+                        (.setMapSize mapsize)
+                        (.setMaxReaders max-readers)
+                        (.setMaxDbs max-dbs))
            ^Env env   (.open builder file (kv-flags :env flags))
            lmdb       (->LMDB env
                               dir

@@ -123,6 +123,17 @@
      ;;on windows...but it will work for now!
      :cljs "/"))
 
+(defn dir-size
+  "get the size of a directory or file, in bytes"
+  ([^File file]
+   (dir-size 0 file))
+  ([^long total ^File file]
+   (if (.isDirectory file)
+     (if-let [lst (seq (.listFiles file))]
+       (reduce dir-size total lst)
+       total)
+     (+ total (.length file)))))
+
 (def +tmp+
   (s/escape (let [path #?(:clj (System/getProperty "java.io.tmpdir")
                           :default "/tmp/")]

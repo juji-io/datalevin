@@ -1,5 +1,15 @@
 # Change Log
 
+## WIP
+### Added
+- [KV] `:max-readers` option to specify the maximal number of concurrent readers
+  allowed for the db file. Default is 126.
+- [KV] `max-dbs` option to specify the maximal number of sub-databases (DBI)
+  allowed for the db file. Default is 128. It may induce slowness if too big a
+  number of DBIs are created, as a linear scan is used to look up a DBI.
+### Fixed
+- [Datalog] `clear` after db is resized.
+
 ## 0.8.9 (2023-03-28)
 ### Fixed
 - [KV] transacting data more than one order of magnitude larger than the

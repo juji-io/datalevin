@@ -974,19 +974,18 @@
 (defmethod open-kv :graal
   ([dir]
    (open-kv dir {}))
-  ([dir {:keys [mapsize flags temp?]
-         :or   {mapsize c/+init-db-size+
-                flags   c/default-env-flags
-                temp?   false}
+  ([dir {:keys [mapsize max-readers max-dbs flags temp?]
+         :or   {max-readers c/+max-readers+
+                max-dbs     c/+max-dbs+
+                flags       c/default-env-flags
+                temp?       false}
          :as   opts}]
    (try
      (let [file     (u/file dir)
-           ^Env env (Env/create
-                      dir
-                      (* ^long mapsize 1024 1024)
-                      c/+max-readers+
-                      c/+max-dbs+
-                      (kv-flags flags))
+           mapsize  (* (long (or mapsize (c/pick-mapsize file)))
+                       1024 1024)
+           ^Env env (Env/create dir mapsize max-readers max-dbs
+                                (kv-flags flags))
            lmdb     (->LMDB env
                             dir
                             temp?

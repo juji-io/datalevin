@@ -51,6 +51,8 @@
 
 (def ^:const +max-key-size+     511)   ; in bytes
 
+
+
 ;; tmp lmdb
 
 (def ^:const +default-spill-threshold+ 80)   ; percentage of Xmx
@@ -208,7 +210,17 @@
 (def +use-readers+      32)    ; leave the rest to others
 (def +init-db-size+     100)   ; in megabytes
 (def +default-val-size+ 16384) ; in bytes
-(def +in-tx-overflow-times+ 6) ; # of times db can be auto enlarged in a tx
+(def +in-tx-overflow-times+ 5) ; # of times db can be auto enlarged in a tx
+
+(defn pick-mapsize
+  "pick a map size from the growing factor schedule that is larger than the
+  current size"
+  [file]
+  (if (u/empty-dir? file)
+    +init-db-size+
+    (let [cur-size (/ ^long (u/dir-size file) (* 1024 1024))]
+      (some #(when (< ^long cur-size ^long %)  %)
+            (iterate #(* ^long +buffer-grow-factor+ ^long %) 1)))))
 
 ;; storage
 

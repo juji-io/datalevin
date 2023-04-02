@@ -1012,7 +1012,11 @@ Only usable for debug output.
 
   `dir` is a directory path or a dtlv connection URI string.
   `opts` is an option map that may have the following keys:
-  * `:mapsize` is the initial size of the database. This will be expanded as needed
+  * `:mapsize` is the initial size of the database, in MiB. Default is 100. This will be automatically expanded as needed, albeit with some slow down when the expansion happens.
+  * `:max-readers` specifies the maximal number of concurrent readers
+  allowed for the db file. Default is 126.
+  * `:max-dbs` specifies the maximal number of sub-databases (DBIs) allowed for the db file. Default is 128. It may induce slowness if too big a
+  number of DBIs are created, as a linear scan is used to look up a DBI.
   * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
      `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
   * `:temp?` a boolean, indicating if this db is temporary, if so, the file will be deleted on JVM exit.
