@@ -497,8 +497,7 @@
   Will load raw data into the named sub-database `dbi` if given. "
   [dir src-file dbi datalog?]
   (let [f  (when src-file (PushbackReader. (io/reader src-file)))
-        in (or f (PushbackReader. *in*))
-        ]
+        in (or f (PushbackReader. *in*))]
     (cond
       datalog? (load-datalog dir in)
       dbi      (let [lmdb (l/open-kv dir)]
