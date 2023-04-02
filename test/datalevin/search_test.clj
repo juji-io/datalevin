@@ -243,15 +243,12 @@
 (deftest search-kv-test
   (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
-        engine (sut/new-search-engine lmdb {:index-position? true})]
-    (l/open-dbi lmdb "raw")
-    (l/transact-kv
-      lmdb
-      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
-       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
-       [:put "raw" 3 "Moby Dick is a story of a whale and a man obsessed."]])
-    (doseq [i [1 2 3]]
-      (sut/add-doc engine i (l/get-value lmdb "raw" i)))
+        engine (sut/new-search-engine lmdb {:index-position? true
+                                            :include-docs?   true})
+        texts  {1 "The quick red fox jumped over the lazy red dogs."
+                2 "Mary had a little lamb whose fleece was red as fire."
+                3 "Moby Dick is a story of a whale and a man obsessed."}]
+    (doseq [i [1 2 3]] (sut/add-doc engine i (texts i)))
 
     (is (not (sut/doc-indexed? engine 0)))
     (is (sut/doc-indexed? engine 1))
@@ -262,9 +259,11 @@
     (is (= (sut/search engine "red" ) [1 2]))
     (is (= (sut/search engine "red" {:display :offsets})
            [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
+
     (testing "update"
       (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")
       (is (= (sut/search engine "red" ) [2])))
+
     (testing "parallel update"
       (dorun (pmap #(sut/add-doc engine %1 %2)
                    [2 1 4]

@@ -2,8 +2,8 @@ macos_instance:
   image: ghcr.io/cirruslabs/macos-monterey-base:latest
 
 task:
-  # only_if: $CIRRUS_TAG != ''
-  only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
+  only_if: $CIRRUS_TAG != ''
+  # only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
   env:
     LEIN_ROOT: "true"
     GRAALVM_VERSION: "22.3.1"

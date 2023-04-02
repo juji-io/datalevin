@@ -267,6 +267,7 @@
                   (d/db conn) "brown fox") s))
       (d/close conn)
       (sut/dump src-dir dl-file nil false true false)
+      (Thread/sleep 100)
       (u/delete-files src-dir)
       (sut/load dest-dir dl-file nil true)
       (u/delete-files dl-file)
