@@ -433,8 +433,9 @@
             [opts schema] (read-maps)
             datoms        (->> (repeatedly read-form)
                                (take-while #(not= ::EOF %))
-                               (map #(apply d/datom %)))]
-        (d/init-db datoms dir schema opts)))
+                               (map #(apply d/datom %)))
+            db            (d/init-db datoms dir schema opts)]
+        (d/close-db db)))
     (catch IOException e
       (raise "IO error while loading Datalog data: " (ex-message e) {}))
     (catch RuntimeException e
@@ -495,14 +496,17 @@
 
   Will load raw data into the named sub-database `dbi` if given. "
   [dir src-file dbi datalog?]
-  (let [f    (when src-file (PushbackReader. (io/reader src-file)))
-        in   (or f (PushbackReader. *in*))
-        lmdb (l/open-kv dir)]
+  (let [f  (when src-file (PushbackReader. (io/reader src-file)))
+        in (or f (PushbackReader. *in*))
+        ]
     (cond
       datalog? (load-datalog dir in)
-      dbi      (load-dbi lmdb dbi in)
-      :else    (load-all lmdb in))
-    (l/close-kv lmdb)
+      dbi      (let [lmdb (l/open-kv dir)]
+                 (load-dbi lmdb dbi in)
+                 (l/close-kv lmdb))
+      :else    (let [lmdb (l/open-kv dir)]
+                 (load-all lmdb in)
+                 (l/close-kv lmdb)))
     (when f (.close f))))
 
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]

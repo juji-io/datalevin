@@ -7,7 +7,7 @@
 - [Search] `:texts` and `:texts+offsets` to `:display` option of `search`
   function, to return original text in search results.
 ### Improved
-- [Main] more robust `dump` of Datalog DB on Windows.
+- [Main] more robust `dump` and `load` of Datalog DB on Windows.
 
 ## 0.8.10 (2023-04-01)
 ### Added
