@@ -2,9 +2,8 @@
 
 ## WIP
 ### Added
-- [Search] `:include-docs?` option to search engine to store original text.
-  #178.
-- [Search] `:texts` and `:texts+offsets` to `:display` option of `search`
+- [Search] `:include-text?` option to store original text. #178.
+- [Search] `:texts` and `:texts+offsets` keys to `:display` option of `search`
   function, to return original text in search results.
 ### Improved
 - [Main] more robust `dump` and `load` of Datalog DB on Windows.

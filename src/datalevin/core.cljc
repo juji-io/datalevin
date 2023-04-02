@@ -1552,11 +1552,11 @@ words.
       is `true`. `term` and `offset` can be used to highlight the
       matched terms and their locations in the documents.
     - `:texts` returns a lazy sequence of `[doc-ref doc-text]` ordered
-      by relevance, if search engine option `:include-docs?` is `true`.
+      by relevance, if search engine option `:include-text?` is `true`.
     - `:texts+offsets` returns a lazy sequence of
       `[doc-ref doc-text [term1 [offset ...]] [term2 [...]] ...]`,
       ordered by relevance, if search engine option `:index-position?`
-      and `:include-docs?` are both `true`.
+      and `:include-text?` are both `true`.
   * `:top` is an integer (default 10), the number of results desired.
   * `:doc-filter` is a boolean function that takes a `doc-ref` and
     determines whether or not to include the corresponding document in the

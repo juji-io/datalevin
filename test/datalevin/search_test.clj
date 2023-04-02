@@ -244,7 +244,7 @@
   (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)
         engine (sut/new-search-engine lmdb {:index-position? true
-                                            :include-docs?   true})
+                                            :include-text?   true})
         texts  {1 "The quick red fox jumped over the lazy red dogs."
                 2 "Mary had a little lamb whose fleece was red as fire."
                 3 "Moby Dick is a story of a whale and a man obsessed."}]
@@ -259,6 +259,14 @@
     (is (= (sut/search engine "red" ) [1 2]))
     (is (= (sut/search engine "red" {:display :offsets})
            [[1 [["red" [10 39]]]] [2 [["red" [40]]]]]))
+    (is (= (sut/search engine "red" {:display :texts})
+           [[1 "The quick red fox jumped over the lazy red dogs."]
+            [2 "Mary had a little lamb whose fleece was red as fire."]]))
+    (is (= (sut/search engine "red" {:display :texts+offsets})
+           [[1  "The quick red fox jumped over the lazy red dogs."
+             [["red" [10 39]]]]
+            [2  "Mary had a little lamb whose fleece was red as fire."
+             [["red" [40]]]]]))
 
     (testing "update"
       (sut/add-doc engine 1 "The quick fox jumped over the lazy dogs.")

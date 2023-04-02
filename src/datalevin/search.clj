@@ -332,7 +332,7 @@
                        ^AtomicInteger max-doc
                        ^AtomicInteger max-term
                        index-position?
-                       include-docs?]
+                       include-text?]
   ISearchEngine
   (add-doc [this doc-ref doc-text check-exist?]
     (locking docs
@@ -489,8 +489,8 @@
         terms           ^SpillableIntObjMap (.-terms engine)
         max-term        (.-max-term engine)
         index-position? (.-index-position? engine)
-        include-docs?   (.-include-docs? engine)]
-    (when include-docs? (.add txs [:put rawtext-dbi doc-id doc-text
+        include-text?   (.-include-text? engine)]
+    (when include-text? (.add txs [:put rawtext-dbi doc-id doc-text
                                    :int :string]))
     (.put ^SpillableIntObjMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
@@ -564,16 +564,39 @@
        (comp (map (fn [tid]
                  (when-let [offsets (get-offsets engine doc-id tid)]
                    [(terms tid) (apply vector offsets)])))
-          (remove nil? ))
+          (remove nil?))
+       (keys terms))]))
+
+(defn- add-rawtext
+  [^SearchEngine engine doc-filter [_ doc-id :as result]]
+  (when-let [doc-ref (get-doc-ref engine doc-filter result)]
+    [doc-ref (l/get-value (.-lmdb engine) (.-rawtext-dbi engine)
+                          doc-id :int :string true)]))
+
+(defn- add-text+offset
+  [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
+  (when-let [doc-ref (get-doc-ref engine doc-filter result)]
+    [doc-ref
+     (l/get-value (.-lmdb engine) (.-rawtext-dbi engine)
+                  doc-id :int :string true)
+     (sequence
+       (comp (map (fn [tid]
+                 (when-let [offsets (get-offsets engine doc-id tid)]
+                   [(terms tid) (apply vector offsets)])))
+          (remove nil?))
        (keys terms))]))
 
 (defn- display-xf
   [^SearchEngine engine doc-filter display tms]
   (case display
-    :offsets (comp (map #(add-offsets engine doc-filter tms %))
-                (remove nil?))
-    :refs    (comp (map #(get-doc-ref engine doc-filter %))
-                (remove nil?))))
+    :texts+offsets (comp (map #(add-text+offset engine doc-filter tms %))
+                      (remove nil?))
+    :texts         (comp (map #(add-rawtext engine doc-filter %))
+                      (remove nil?))
+    :offsets       (comp (map #(add-offsets engine doc-filter tms %))
+                      (remove nil?))
+    :refs          (comp (map #(get-doc-ref engine doc-filter %))
+                      (remove nil?))))
 
 (defn- open-dbis
   [lmdb terms-dbi docs-dbi positions-dbi rawtext-dbi]
@@ -622,11 +645,11 @@
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
-  ([lmdb {:keys [domain analyzer query-analyzer index-position? include-docs?]
+  ([lmdb {:keys [domain analyzer query-analyzer index-position? include-text?]
           :or   {domain          "datalevin"
                  analyzer        en-analyzer
                  index-position? false
-                 include-docs?   false}}]
+                 include-text?   false}}]
    (let [terms-dbi     (str domain "/" c/terms)
          docs-dbi      (str domain "/" c/docs)
          positions-dbi (str domain "/" c/positions)
@@ -648,7 +671,7 @@
                        (AtomicInteger. max-doc)
                        (AtomicInteger. max-term)
                        index-position?
-                       include-docs?)))))
+                       include-text?)))))
 
 (defn transfer
   "transfer state of an existing engine to an new engine that has a
@@ -668,7 +691,7 @@
                   (.-max-doc old)
                   (.-max-term old)
                   (.-index-position? old)
-                  (.-include-docs? old)))
+                  (.-include-text? old)))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])
@@ -683,7 +706,7 @@
                       ^AtomicInteger max-doc
                       ^AtomicInteger max-term
                       index-position?
-                      include-docs?
+                      include-text?
                       ^FastList txs
                       ^UnifiedMap hit-terms]
   IIndexWriter
@@ -695,7 +718,7 @@
             doc-id    (.incrementAndGet ^AtomicInteger max-doc)
             term-set  (IntHashSet.)
             batch     (if index-position? 250000 500)]
-        (when include-docs?
+        (when include-text?
           (.add txs [:put rawtext-dbi doc-id doc-text :int :string]))
         (doseq [^Map$Entry kv (.entrySet new-terms)]
           (let [term                                            (.getKey kv)
@@ -745,11 +768,11 @@
 (defn search-index-writer
   ([lmdb]
    (search-index-writer lmdb nil))
-  ([lmdb {:keys [domain analyzer index-position? include-docs?]
+  ([lmdb {:keys [domain analyzer index-position? include-text?]
           :or   {domain          "datalevin"
                  analyzer        en-analyzer
                  index-position? false
-                 include-docs?   false}}]
+                 include-text?   false}}]
    (let [terms-dbi     (str domain "/" c/terms)
          docs-dbi      (str domain "/" c/docs)
          positions-dbi (str domain "/" c/positions)
@@ -764,7 +787,7 @@
                     (AtomicInteger. (init-max-id lmdb docs-dbi))
                     (AtomicInteger. (init-max-id lmdb terms-dbi))
                     index-position?
-                    include-docs?
+                    include-text?
                     (FastList.)
                     (UnifiedMap.)))))
 
