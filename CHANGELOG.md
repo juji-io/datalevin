@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.11 (2023-04-02)
 ### Added
 - [Search] `:include-text?` option to store original text. #178.
 - [Search] `:texts` and `:texts+offsets` keys to `:display` option of `search`
