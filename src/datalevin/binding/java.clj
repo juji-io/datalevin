@@ -534,7 +534,7 @@
                                    dupsort?       false
                                    validate-data? false}}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
-    (let [{info-dbis :dbis max-dbis :max-dbis} @info]
+    (let [{info-dbis :dbis max-dbis :max-dbs} @info]
       (if (< (count info-dbis) ^long max-dbis)
         (let [opts (merge (get info-dbis dbi-name)
                           {:key-size       key-size
@@ -902,23 +902,27 @@
     (vreset! (.-info lmdb) (assoc info :dbis dbis))))
 
 (defmethod open-kv :java
-  ([dir]
-   (open-kv dir {}))
-  ([dir {:keys [mapsize flags max-dbis temp?]
-         :or   {mapsize  c/+init-db-size+
-                flags    c/default-env-flags
-                max-dbis c/+max-dbs+
-                temp?    false}
+  ([dir] (open-kv dir {}))
+  ([dir {:keys [mapsize max-readers max-dbs flags temp?]
+         :or   {max-readers c/+max-readers+
+                max-dbs     c/+max-dbs+
+                flags       c/default-env-flags
+                temp?       false}
          :as   opts}]
    (try
      (let [^File file (u/file dir)
+           mapsize    (* (long (or mapsize (c/pick-mapsize file)))
+                         1024 1024)
            builder    (doto (Env/create)
-                        (.setMapSize (* ^long mapsize 1024 1024))
-                        (.setMaxReaders c/+max-readers+)
-                        (.setMaxDbs c/+max-dbs+))
+                        (.setMapSize mapsize)
+                        (.setMaxReaders max-readers)
+                        (.setMaxDbs max-dbs))
            ^Env env   (.open builder file (kv-flags :env flags))
-           info       (merge opts {:dir      dir      :flags flags
-                                   :max-dbis max-dbis :temp? temp?})
+           info       (merge opts {:dir         dir
+                                   :max-readers max-readers
+                                   :max-dbs     max-dbs
+                                   :flags       flags
+                                   :temp?       temp?})
            lmdb       (->LMDB env
                               (volatile! info)
                               (ConcurrentLinkedQueue.)

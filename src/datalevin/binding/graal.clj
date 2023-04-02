@@ -556,7 +556,7 @@
                                    dupsort?       false
                                    validate-data? false}}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
-    (let [{info-dbis :dbis max-dbis :max-dbis} @info]
+    (let [{info-dbis :dbis max-dbis :max-dbs} @info]
       (if (< (count info-dbis) ^long max-dbis)
         (let [opts (merge (get info-dbis dbi-name)
                           {:key-size       key-size
@@ -937,24 +937,24 @@
     (vreset! (.-info lmdb) (assoc info :dbis dbis))))
 
 (defmethod open-kv :graal
-  ([dir]
-   (open-kv dir {}))
-  ([dir {:keys [mapsize flags max-dbis temp?]
-         :or   {mapsize  c/+init-db-size+
-                flags    c/default-env-flags
-                max-dbis c/+max-dbs+
-                temp?    false}
+  ([dir] (open-kv dir {}))
+  ([dir {:keys [mapsize max-readers flags max-dbs temp?]
+         :or   {max-readers c/+max-readers+
+                max-dbs     c/+max-dbs+
+                flags       c/default-env-flags
+                temp?       false}
          :as   opts}]
    (try
      (let [file     (u/file dir)
-           ^Env env (Env/create
-                      dir
-                      (* ^long mapsize 1024 1024)
-                      c/+max-readers+
-                      c/+max-dbs+
-                      (kv-flags flags))
-           info     (merge opts {:dir      dir      :flags flags
-                                 :max-dbis max-dbis :temp? temp?})
+           mapsize  (* (long (or mapsize (c/pick-mapsize file)))
+                       1024 1024)
+           ^Env env (Env/create dir mapsize max-readers max-dbs
+                                (kv-flags flags))
+           info     (merge opts {:dir         dir
+                                 :flags       flags
+                                 :max-readers max-readers
+                                 :max-dbs     max-dbs
+                                 :temp?       temp?})
            lmdb     (->LMDB env
                             (volatile! info)
                             (ConcurrentLinkedQueue.)

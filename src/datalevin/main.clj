@@ -382,7 +382,8 @@
     (p/pprint (d/opts conn))
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))
+    (d/close conn)))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
@@ -399,19 +400,21 @@
 
   If `dbis` is not empty, will dump raw data of only the named sub-databases."
   [src-dir dest-file dbis list? datalog? all?]
-  (let [f    (when dest-file (io/writer dest-file))
-        lmdb (l/open-kv src-dir)]
+  (let [f (when dest-file (io/writer dest-file))]
     (binding [*out* (or f *out*)]
       (cond
-        list?      (p/pprint (set (l/list-dbis lmdb)))
+        list?      (let [lmdb (l/open-kv src-dir)]
+                     (p/pprint (set (l/list-dbis lmdb)))
+                     (l/close-kv lmdb))
         datalog?   (dump-datalog src-dir)
-        all?       (dump-all lmdb)
-        (seq dbis) (doseq [dbi dbis] (dump-dbi lmdb dbi))
+        all?       (let [lmdb (l/open-kv src-dir)]
+                     (dump-all lmdb)
+                     (l/close-kv lmdb))
+        (seq dbis) (let [lmdb (l/open-kv src-dir)]
+                     (doseq [dbi dbis] (dump-dbi lmdb dbi))
+                     (l/close-kv lmdb))
         :else      (println dump-help)))
-    (l/close-kv lmdb)
-    (when f
-      (.flush f)
-      (.close f))))
+    (when f (.flush f) (.close f))))
 
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))
@@ -434,8 +437,9 @@
             [opts schema] (read-maps)
             datoms        (->> (repeatedly read-form)
                                (take-while #(not= ::EOF %))
-                               (map #(apply d/datom %)))]
-        (d/init-db datoms dir schema opts)))
+                               (map #(apply d/datom %)))
+            db            (d/init-db datoms dir schema opts)]
+        (d/close-db db)))
     (catch IOException e
       (raise "IO error while loading Datalog data: " e {}))
     (catch RuntimeException e
@@ -496,14 +500,16 @@
 
   Will load raw data into the named sub-database `dbi` if given. "
   [dir src-file dbi datalog?]
-  (let [f    (when src-file (PushbackReader. (io/reader src-file)))
-        in   (or f (PushbackReader. *in*))
-        lmdb (l/open-kv dir)]
+  (let [f  (when src-file (PushbackReader. (io/reader src-file)))
+        in (or f (PushbackReader. *in*))]
     (cond
       datalog? (load-datalog dir in)
-      dbi      (load-dbi lmdb dbi in)
-      :else    (load-all lmdb in))
-    (l/close-kv lmdb)
+      dbi      (let [lmdb (l/open-kv dir)]
+                 (load-dbi lmdb dbi in)
+                 (l/close-kv lmdb))
+      :else    (let [lmdb (l/open-kv dir)]
+                 (load-all lmdb in)
+                 (l/close-kv lmdb)))
     (when f (.close f))))
 
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]

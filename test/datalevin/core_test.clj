@@ -474,9 +474,23 @@
     (sut/transact! conn (for [i (range 100000)]
                           {:buggy/key (format "%20d" i)
                            :buggy/val (format "bubba-%d" i)}))
-    (sut/clear conn)
-    (is (sut/closed? conn))
+    (is (= 200000 (count (sut/datoms (sut/db conn) :eav))))
+    (sut/transact! conn [{:buggy/key (format "%20d" 100000)
+                          :buggy/val (format "bubba-%d" 99)}])
     (sut/close conn)
+    (is (sut/closed? conn))
+
+    (let [conn1 (sut/create-conn dir)]
+      (sut/clear conn1)
+      (is (sut/closed? conn1)))
+
+    (let [conn2 (sut/create-conn dir)]
+      (is (= 0 (count (sut/datoms (sut/db conn2) :eav))))
+      (sut/transact! conn2 [{:buggy/key (format "%20d" 100001)
+                             :buggy/val (format "bubba-%d" 100)}])
+
+      (is (= 2 (count (sut/datoms (sut/db conn2) :eav))))
+      (sut/close conn2))
     (u/delete-files dir)))
 
 (deftest with-txn-map-resize-test

@@ -43,6 +43,35 @@
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions
 
+## 0.8.11 (2023-04-02)
+### Added
+- [Search] `:include-text?` option to store original text. #178.
+- [Search] `:texts` and `:texts+offsets` keys to `:display` option of `search`
+  function, to return original text in search results.
+### Improved
+- [Main] more robust `dump` and `load` of Datalog DB on Windows.
+
+## 0.8.10 (2023-04-01)
+### Added
+- [KV] `:max-readers` option to specify the maximal number of concurrent readers
+  allowed for the db file. Default is 126.
+- [KV] `max-dbs` option to specify the maximal number of sub-databases (DBI)
+  allowed for the db file. Default is 128. It may induce slowness if too big a
+  number of DBIs are created, as a linear scan is used to look up a DBI.
+### Fixed
+- [Datalog] `clear` after db is resized.
+
+## 0.8.9 (2023-03-28)
+### Fixed
+- [KV] transacting data more than one order of magnitude larger than the
+  initial map size in one transaction. #196
+
+## 0.8.8 (2023-03-21)
+### Improved
+- [Pod] serialize TxReport to regular map. #190
+### Fixed
+- [Server] migrate old sessions that do not have `:last-active`.
+
 ## 0.8.7 (2023-03-21)
 ### Added
 - [Datalog] `datalog-index-cache-limit` function to get/set the limit of Datalog

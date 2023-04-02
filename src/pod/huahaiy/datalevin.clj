@@ -225,7 +225,9 @@
                       (swap! (if writing? wdl-conns dl-conns)
                              assoc conn (atom d :meta (meta c)))))
                   (throw e)))]
-       {:datoms-transacted (count (:tx-data rp))}))))
+       {:tx-data (:tx-data rp)
+        :tempids (:tempids rp)
+        :tx-meta (:tx-meta rp)}))))
 
 (defn db [{:keys [::conn] :as cn}]
   (when-let [c (get-cn cn)]

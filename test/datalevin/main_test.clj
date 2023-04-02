@@ -112,20 +112,25 @@
 
 (deftest drop-test
   (let [dir (u/tmp-dir (str "datalevin-drop-test-" (UUID/randomUUID)))
-        db  (d/open-kv dir)
+        db  (d/open-kv dir {:mapsize 1})
         dbi "a"]
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
     (d/close-kv db)
+    (Thread/sleep 100)
     (sut/drop dir [dbi] false)
+    (Thread/sleep 100)
     (let [db-droped (d/open-kv dir)]
       (d/open-dbi db-droped dbi)
       (is (nil? (d/get-value db-droped dbi "Hello")))
       (d/close-kv db-droped))
+    (Thread/sleep 100)
     (sut/drop dir [dbi] true)
+    (Thread/sleep 100)
     (let [db-droped (d/open-kv dir)]
       (is (nil? (seq (d/list-dbis db-droped))))
       (d/close-kv db-droped))
+    (Thread/sleep 100)
     (u/delete-files dir)))
 
 (deftest dump-load-raw-test
@@ -223,7 +228,7 @@
           uuid     (UUID/randomUUID)
           bs       (.getBytes ^String s)
           vs       (repeatedly 10 #(gen/generate
-                                     gen/any-printable-equatable 1000))
+                                     gen/any-printable-equatable 100))
           bi       (BigInteger. "1234567891234567891234567890")
           bd       (BigDecimal.  "98765432124567890.0987654321")
           hm-t     [1 42 28 9 17 1]
@@ -262,8 +267,13 @@
                     :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                   (d/db conn) "brown fox") s))
       (d/close conn)
+      (Thread/sleep 100)
       (sut/dump src-dir dl-file nil false true false)
+      (Thread/sleep 100)
+      (u/delete-files src-dir)
       (sut/load dest-dir dl-file nil true)
+      (Thread/sleep 100)
+      (u/delete-files dl-file)
       (let [conn1 (d/create-conn dest-dir nil opts)]
         (is (= (d/q '[:find ?v .
                       :in $ ?q
@@ -297,4 +307,5 @@
                  (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
                (set vs)))
         (d/close conn1)
-        (u/delete-files (str (u/tmp-dir) "dl"))))))
+        (Thread/sleep 100)
+        (u/delete-files dest-dir)))))

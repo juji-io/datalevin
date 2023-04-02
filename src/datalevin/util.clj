@@ -57,8 +57,7 @@
   (and (= (System/getProperty "os.name") "Mac OS X")
        (= (System/getProperty "os.arch") "aarch64")))
 
-(defn concatv [& xs]
-  (into [] cat xs))
+(defn concatv [& xs] (into [] cat xs))
 
 (defn delete-files
   "Recursively delete file"
@@ -114,6 +113,17 @@
   (and (.isDirectory file) (-> file .list empty?)))
 
 (def +separator+ java.io.File/separator)
+
+(defn dir-size
+  "get the size of a directory or file, in bytes"
+  ([^File file]
+   (dir-size 0 file))
+  ([^long total ^File file]
+   (if (.isDirectory file)
+     (if-let [lst (seq (.listFiles file))]
+       (reduce dir-size total lst)
+       total)
+     (+ total (.length file)))))
 
 (def +tmp+
   (s/escape (let [path (System/getProperty "java.io.tmpdir")]

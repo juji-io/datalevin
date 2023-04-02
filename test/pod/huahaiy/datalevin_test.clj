@@ -134,10 +134,12 @@
         conn (pd/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
                                :name {:db/valueType :db.type/string
                                       :db/unique    :db.unique/identity}})]
-    (pd/transact! conn [{:name "Frege", :db/id -1, :nation "France",
-                         :aka  ["foo" "fred"]}
-                        {:name "Peirce", :db/id -2, :nation "france"}
-                        {:name "De Morgan", :db/id -3, :nation "English"}])
+    (let [rp (pd/transact! conn
+                           [{:name "Frege", :db/id -1, :nation "France",
+                             :aka  ["foo" "fred"]}
+                            {:name "Peirce", :db/id -2, :nation "france"}
+                            {:name "De Morgan", :db/id -3, :nation "English"}])]
+      (is (= 8 (count (:tx-data rp)))))
     (is (= #{["France"]}
            (pd/q '[:find ?nation
                    :in $ ?alias

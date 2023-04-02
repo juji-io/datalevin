@@ -389,9 +389,12 @@ Only usable for debug output.
 (defn clear
   "Close the Datalog database, then clear all data, including schema."
   [conn]
-  (close conn)
-  (let [dir  (s/dir ^Store (.-store ^DB @conn))
-        lmdb (open-kv dir)]
+  (let [store (.-store ^DB @conn)
+        lmdb  (if (instance? DatalogStore store)
+                (let [dir (s/dir store)]
+                  (close conn)
+                  (open-kv dir))
+                (.-lmdb ^Store store))]
     (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
@@ -975,16 +978,31 @@ Only usable for debug output.
   "Open a LMDB key-value database, return the connection.
 
   `dir` is a directory path or a dtlv connection URI string.
+
   `opts` is an option map that may have the following keys:
-  * `:mapsize` is the initial size of the database. This will be expanded as needed.
-  * `:flags` is a vector of keywords corresponding to LMDB environment flags, e.g.
-     `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
-  * `:temp?` a boolean, indicating if this db is temporary, if so, the file will be deleted on JVM exit.
-  * `:max-dbis` specifies the maximal number of named sub-databases (DBI) that can be opened inside this database. Default is 128. A very large number may induce slowness as DBI lookup is a linear scan.
-  * `:client-opts` is the option map passed to the client if `dir` is a remote server URI string.
-  * `:spill-opts` is the option map that controls the spill-to-disk behavior for `get-range` and `range-filter` functions, which may have the following keys:
-      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx` (default 80), above which spill-to-disk will be triggered.
-      - `:spill-root`, a file directory, in which the spilled data is written (default is the system temporary directory).
+
+  * `:mapsize` is the initial size of the database, in MiB. Default is 100.
+   This will be automatically expanded as needed, albeit with some slow down
+   when the expansion happens.
+  * `:max-readers` specifies the maximal number of concurrent readers
+   allowed for the db file. Default is 126.
+  * `:max-dbs` specifies the maximal number of sub-databases (DBIs) allowed
+   for the db file. Default is 128. It may induce slowness if too big a
+   number of DBIs are created, as a linear scan is used to look up a DBI.
+  * `:flags` is a vector of keywords corresponding to LMDB environment flags,
+   e.g. `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so
+   on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
+  * `:temp?` a boolean, indicating if this db is temporary, if so, the file
+   will be deleted on JVM exit.
+  * `:client-opts` is the option map passed to the client if `dir` is a
+   remote server URI string.
+  * `:spill-opts` is the option map that controls the spill-to-disk behavior
+   for `get-range` and `range-filter` functions, which may have the following
+   keys:
+      - `:spill-threshold`, memory pressure in percentage of JVM `-Xmx`
+        (default 80), above which spill-to-disk will be triggered.
+      - `:spill-root`, a file directory, in which the spilled data is written
+        (default is the system temporary directory).
 
 
   Please note:
@@ -1557,18 +1575,22 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
   `opts` is an option map that may contain these keys:
 
-   * `:index-position?` indicates whether to index term positions. Default is `false`.
+   * `:index-position?` indicates whether to index term positions. Default
+     is `false`.
 
-   * `:domain` is an identifier string, indicates the domain of this search engine.
-      This way, multiple independent search engines can reside in the same
-      key-value database, each with its own domain identifier.
+   * `:include-text?` indicates whether to store original text in the
+     search engine. Default is `false`.
+
+   * `:domain` is an identifier string, indicates the domain of this search
+     engine. This way, multiple independent search engines can reside in the
+     same key-value database, each with its own domain identifier.
 
    * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence
-     number of the term in the document, and offset is the character offset of
-     the term in the document. E.g. for a blank space analyzer and the document
-    \"The quick brown fox jumps over the lazy dog\", [\"quick\" 1 4] would be
-    the second entry of the resulting seq.
+     number of the term in the document, and offset is the character offset
+     of the term in the document. E.g. for a blank space analyzer and the
+     document \"The quick brown fox jumps over the lazy dog\",
+     [\"quick\" 1 4] would be the second entry of the resulting seq.
 
    * `:query-analyzer` is a similar function that overrides the analyzer at
     query time (and not indexing time). Mostly useful for autocomplete search in
@@ -1624,12 +1646,20 @@ words.
 
 `opts` map may have these keys:
 
-  * `:display` can be one of `:refs` (default), `:offsets`.
-    - `:refs` return a lazy sequence of `doc-ref` ordered by relevance.
-    - `:offsets` return a lazy sequence of
+  * `:display` can be one of `:refs` (default), `:offsets`, `texts`,
+    or `:texts+offsets`.
+    - `:refs` returns a lazy sequence of `doc-ref` ordered by relevance.
+    - `:offsets` returns a lazy sequence of
       `[doc-ref [term1 [offset ...]] [term2 [...]] ...]`,
-      ordered by relevance. `term` and `offset` can be used to
-      highlight the matched terms and their locations in the documents.
+      ordered by relevance, if search engine option `:index-position?`
+      is `true`. `term` and `offset` can be used to highlight the
+      matched terms and their locations in the documents.
+    - `:texts` returns a lazy sequence of `[doc-ref doc-text]` ordered
+      by relevance, if search engine option `:include-text?` is `true`.
+    - `:texts+offsets` returns a lazy sequence of
+      `[doc-ref doc-text [term1 [offset ...]] [term2 [...]] ...]`,
+      ordered by relevance, if search engine option `:index-position?`
+      and `:include-text?` are both `true`.
   * `:top` is an integer (default 10), the number of results desired.
   * `:doc-filter` is a boolean function that takes a `doc-ref` and
     determines whether or not to include the corresponding document in the
