@@ -22,7 +22,7 @@ identifier.
 wget https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2
 
 wikiextractor -o - --json --no-templates enwiki-latest-pages-articles.xml.bz2 |
-jq -s '.[] | select((.text | length) > 500) | {url, text}' > wiki.json
+jq -s '.[] | select((.text | length) > 500) | {url, text}' > data/wiki.json
 
 ```
 This may take a few of hours to run, depending on your hardware. It produces a JSON
