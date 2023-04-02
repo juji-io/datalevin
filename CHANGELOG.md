@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.10 (2023-04-01)
 ### Added
 - [KV] `:max-readers` option to specify the maximal number of concurrent readers
   allowed for the db file. Default is 126.

@@ -6,5 +6,5 @@
                            :main-class "test-jar.core" }}}
  :deps    {org.clojure/clojure {:mvn/version "1.11.1"}
            org.clojars.huahaiy/datalevin-native
-           {:local/root "./../target/datalevin-native-0.8.9.jar"}
+           {:local/root "./../target/datalevin-native-0.8.10.jar"}
            }}
