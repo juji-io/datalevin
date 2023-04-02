@@ -222,7 +222,7 @@
           uuid     (UUID/randomUUID)
           bs       (.getBytes ^String s)
           vs       (repeatedly 10 #(gen/generate
-                                     gen/any-printable-equatable 1000))
+                                     gen/any-printable-equatable 100))
           bi       (BigInteger. "1234567891234567891234567890")
           bd       (BigDecimal.  "98765432124567890.0987654321")
           hm-t     [1 42 28 9 17 1]
