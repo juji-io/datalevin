@@ -266,10 +266,12 @@
                     :where [(fulltext $ ?q) [[?e ?a ?v]]]]
                   (d/db conn) "brown fox") s))
       (d/close conn)
+      (Thread/sleep 100)
       (sut/dump src-dir dl-file nil false true false)
       (Thread/sleep 100)
       (u/delete-files src-dir)
       (sut/load dest-dir dl-file nil true)
+      (Thread/sleep 100)
       (u/delete-files dl-file)
       (let [conn1 (d/create-conn dest-dir nil opts)]
         (is (= (d/q '[:find ?v .
@@ -304,4 +306,5 @@
                  (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
                (set vs)))
         (d/close conn1)
+        (Thread/sleep 100)
         (u/delete-files dest-dir)))))

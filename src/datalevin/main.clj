@@ -378,7 +378,8 @@
     (p/pprint (d/opts conn))
     (p/pprint (d/schema conn))
     (doseq [^Datom datom (d/datoms @conn :eav)]
-      (prn [(.-e datom) (.-a datom) (.-v datom)]))))
+      (prn [(.-e datom) (.-a datom) (.-v datom)]))
+    (d/close conn)))
 
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
@@ -395,19 +396,21 @@
 
   If `dbis` is not empty, will dump raw data of only the named sub-databases."
   [src-dir dest-file dbis list? datalog? all?]
-  (let [f    (when dest-file (io/writer dest-file))
-        lmdb (l/open-kv src-dir)]
+  (let [f (when dest-file (io/writer dest-file))]
     (binding [*out* (or f *out*)]
       (cond
-        list?      (p/pprint (set (l/list-dbis lmdb)))
+        list?      (let [lmdb (l/open-kv src-dir)]
+                     (p/pprint (set (l/list-dbis lmdb)))
+                     (l/close-kv lmdb))
         datalog?   (dump-datalog src-dir)
-        all?       (dump-all lmdb)
-        (seq dbis) (doseq [dbi dbis] (dump-dbi lmdb dbi))
+        all?       (let [lmdb (l/open-kv src-dir)]
+                     (dump-all lmdb)
+                     (l/close-kv lmdb))
+        (seq dbis) (let [lmdb (l/open-kv src-dir)]
+                     (doseq [dbi dbis] (dump-dbi lmdb dbi))
+                     (l/close-kv lmdb))
         :else      (println dump-help)))
-    (l/close-kv lmdb)
-    (when f
-      (.flush f)
-      (.close f))))
+    (when f (.flush f) (.close f))))
 
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))

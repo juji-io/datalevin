@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+### Added
+- [Search] `:include-docs?` option to search engine to store original text.
+  #178.
+- [Search] `:texts` and `:texts+offsets` to `:display` option of `search`
+  function, to return original text in search results.
+### Improved
+- [Main] more robust `dump` of Datalog DB on Windows.
+
 ## 0.8.10 (2023-04-01)
 ### Added
 - [KV] `:max-readers` option to specify the maximal number of concurrent readers
