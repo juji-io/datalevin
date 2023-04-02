@@ -7,7 +7,7 @@
          com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.13.2"}
          com.taoensso/nippy                          {:mvn/version "3.2.0"}
          ;; datalevin/datalevin                         {:local/root ".."}
-         datalevin/datalevin                         {:mvn/version "0.8.9"}
+         datalevin/datalevin                         {:mvn/version "0.8.11"}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
          org.clojure/clojure                         {:mvn/version "1.11.1"}
          org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
