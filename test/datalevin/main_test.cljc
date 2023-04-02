@@ -111,20 +111,25 @@
 
 (deftest drop-test
   (let [dir (u/tmp-dir (str "datalevin-drop-test-" (UUID/randomUUID)))
-        db  (d/open-kv dir)
+        db  (d/open-kv dir {:mapsize 1})
         dbi "a"]
     (d/open-dbi db dbi)
     (d/transact-kv db [[:put dbi "Hello" "Datalevin"]])
     (d/close-kv db)
+    (Thread/sleep 100)
     (sut/drop dir [dbi] false)
+    (Thread/sleep 100)
     (let [db-droped (d/open-kv dir)]
       (d/open-dbi db-droped dbi)
       (is (nil? (d/get-value db-droped dbi "Hello")))
       (d/close-kv db-droped))
+    (Thread/sleep 100)
     (sut/drop dir [dbi] true)
+    (Thread/sleep 100)
     (let [db-droped (d/open-kv dir)]
       (is (empty? (d/list-dbis db-droped)))
       (d/close-kv db-droped))
+    (Thread/sleep 100)
     (u/delete-files dir)))
 
 (deftest dump-load-raw-test
@@ -262,7 +267,9 @@
                   (d/db conn) "brown fox") s))
       (d/close conn)
       (sut/dump src-dir dl-file nil false true false)
+      (u/delete-files src-dir)
       (sut/load dest-dir dl-file nil true)
+      (u/delete-files dl-file)
       (let [conn1 (d/create-conn dest-dir nil opts)]
         (is (= (d/q '[:find ?v .
                       :in $ ?q
@@ -296,4 +303,4 @@
                  (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
                (set vs)))
         (d/close conn1)
-        (u/delete-files (str (u/tmp-dir) "dl"))))))
+        (u/delete-files dest-dir)))))
