@@ -38,8 +38,8 @@ query text only:
 ```console
 wget https://trec.nist.gov/data/million.query/09/09.mq.topics.20001-60000.gz
 gzip -d 09.mq.topics.20001-60000.gz
-mv 09.mq.topics.20001-60000 queries40k.txt
-sed -i -e 's/\([0-9]\+\)\:[0-9]\://g' queries40k.txt
+mv 09.mq.topics.20001-60000 data/queries40k.txt
+sed -i -e 's/\([0-9]\+\)\:[0-9]\://g' data/queries40k.txt
 ```
 This produces a text file containing 40000 queries, totaling 685KB.
 
