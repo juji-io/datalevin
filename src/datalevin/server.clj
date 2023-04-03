@@ -746,20 +746,29 @@
 
 (defn- error-response
   [^SelectionKey skey error-msg error-data]
-  (let [{:keys [^ByteBuffer write-bf]}    @(.attachment skey)
-        ^SocketChannel                 ch (.channel skey)]
+  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
+        ^SocketChannel ch              (.channel skey)]
     (p/write-message-blocking ch write-bf
                               {:type     :error-response
                                :message  error-msg
                                :err-data error-data})))
+
+(defn- reopen-response
+  [^SelectionKey skey msg]
+  (let [{:keys [^ByteBuffer write-bf]} @(.attachment skey)
+        ^SocketChannel ch              (.channel skey)]
+    (p/write-message-blocking ch write-bf msg)))
 
 (defmacro wrap-error
   [& body]
   `(try
      ~@body
      (catch Exception ~'e
-       (log/error ~'e)
-       (error-response ~'skey (ex-message ~'e) (ex-data ~'e)))))
+       (let [data# (ex-data ~'e)]
+         (if (= (:type data#) :reopen)
+           (reopen-response ~'skey data#)
+           (do (log/error ~'e)
+               (error-response ~'skey (ex-message ~'e) (ex-data ~'e))))))))
 
 ;; db
 
@@ -789,8 +798,8 @@
 
 (defn- db-store
   [^Server server ^SelectionKey skey db-name]
-  (when (((get-client server (@(.attachment skey) :client-id)) :stores)
-         db-name)
+  (when (get (:stores (get-client server (:client-id @(.attachment skey))))
+             db-name)
     (get-store server db-name)))
 
 (defn- writing-lmdb
@@ -803,15 +812,19 @@
 
 (defn- store
   [^Server server ^SelectionKey skey db-name writing?]
-  (if writing?
-    (writing-store server db-name)
-    (db-store server skey db-name)))
+  (or (if writing?
+        (writing-store server db-name)
+        (db-store server skey db-name))
+      (u/raise "Store not found"
+               {:type :reopen :db-name db-name :db-type "datalog"})))
 
 (defn- lmdb
   [^Server server ^SelectionKey skey db-name writing?]
-  (if writing?
-    (writing-lmdb server db-name)
-    (db-store server skey db-name)))
+  (or (if writing?
+        (writing-lmdb server db-name)
+        (db-store server skey db-name))
+      (u/raise "LMDB store not found"
+               {:type :reopen :db-name db-name :db-type "kv"})))
 
 (defn- store-closed?
   [store]
@@ -820,7 +833,9 @@
     (instance? ILMDB store)  (l/closed-kv? store)
     :else                    (u/raise "Unknown store type" {})))
 
-(defn- store-in-use? [[db-name store]] (when-not (store-closed? store) db-name))
+(defn- store-in-use?
+  [[db-name store]]
+  (when-not (store-closed? store) db-name))
 
 (defn- db-in-use?
   [server db-name]
@@ -853,18 +868,23 @@
 
 (defn- search-engine
   [^Server server ^SelectionKey skey db-name]
-  (when (((get-client server (@(.attachment skey) :client-id)) :engines)
-         db-name)
+  (when (get (:engines (get-client server
+                                   (:client-id @(.attachment skey))))
+             db-name)
     (get-in (.-dbs server) [db-name :engine])))
 
 (defn- new-search-engine
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts]      args
-          store               (get-store server db-name)
           {:keys [client-id]} @(.attachment skey)
           engine              (or (search-engine server skey db-name)
-                                  (sc/new-search-engine store opts))]
+                                  (if-let [store (get-store server db-name)]
+                                    (sc/new-search-engine store opts)
+                                    (u/raise "engine store not found"
+                                             {::type   :reopen
+                                              :db-name db-name
+                                              :db-type "kv"})))]
       (update-client server client-id #(update % :engines conj db-name))
       (update-db server db-name #(assoc % :engine engine))
       (write-message skey {:type :command-complete}))))

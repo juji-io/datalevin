@@ -43,6 +43,14 @@
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions
 
+## 0.8.12 (2023-04-03)
+### Fixed
+- [KV] When `open-kv`, don't grow `:mapsize` when it is the same as the current
+  size.
+- [Server] automatically reopen DBs for a client that is previously removed from
+  the server.
+
+
 ## 0.8.11 (2023-04-02)
 ### Added
 - [Search] `:include-text?` option to store original text. #178.

@@ -220,13 +220,13 @@
 (def +in-tx-overflow-times+ 5) ; # of times db can be auto enlarged in a tx
 
 (defn pick-mapsize
-  "pick a map size from the growing factor schedule that is larger than the
-  current size"
+  "pick a map size from the growing factor schedule that is larger than
+   or equal to the current size"
   [file]
   (if (u/empty-dir? file)
     +init-db-size+
     (let [cur-size (/ ^long (u/dir-size file) (* 1024 1024))]
-      (some #(when (< ^long cur-size ^long %)  %)
+      (some #(when (<= ^long cur-size ^long %)  %)
             (iterate #(* ^long +buffer-grow-factor+ ^long %) 1)))))
 
 ;; client/server
