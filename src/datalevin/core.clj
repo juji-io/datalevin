@@ -35,7 +35,7 @@
 
   `db` is a Datalog database.
 
-  For `eid` pass entity id or lookup attr:
+  For `eid` pass entity id or lookup ref:
 
       (entity db 1)
       (entity db [:unique-attr :value])
@@ -143,9 +143,11 @@ Only usable for debug output.
 
    `:visitor` a fn of 4 arguments, will be called for every entity/attribute pull touches
 
-   (:db.pull/attr     e   a   nil) - when pulling a normal attribute, no matter if it has value or not
-   (:db.pull/wildcard e   nil nil) - when pulling every attribute on an entity
-   (:db.pull/reverse  nil a   v  ) - when pulling reverse attribute
+   `(:db.pull/attr e a nil)` when pulling a normal attribute, no matter if it has value or not
+
+   `(:db.pull/wildcard e nil nil)` when pulling every attribute on an entity
+
+   `(:db.pull/reverse nil a v)` when pulling reverse attribute
 
   Usage:
 
@@ -173,7 +175,7 @@ Only usable for debug output.
 (defn- only-remote-db
   "Return [remote-db [updated-inputs]] if the inputs contain only one db
   and its backing store is a remote one, where the remote-db in the inputs is
-  replaced by `:remote-db-placeholder, otherwise return nil"
+  replaced by `:remote-db-placeholder, otherwise return `nil`"
   [inputs]
   (let [dbs (filter db/db? inputs)]
     (when-let [rdb (first dbs)]
@@ -272,7 +274,7 @@ Only usable for debug output.
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
-             See also [[datom]], [[new-search-engine]]."}
+ See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
 
 (def ^{:arglists '([db])
@@ -402,7 +404,7 @@ Only usable for debug output.
 ;; Index lookups
 
 (defn datoms
-  "Index lookup in Datalog db. Returns a sequence of datoms (lazy iterator over actual DB index) which components (e, a, v) match passed arguments.
+  "Index lookup in Datalog db. Returns a sequence of datoms (lazy iterator over actual DB index) whose components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
 
@@ -451,7 +453,6 @@ Only usable for debug output.
    Gotchas:
 
    - Index lookup is usually more efficient than doing a query with a single clause.
-   - Resulting iterator is calculated in constant time and small constant memory overhead.
    "
   ([db index]             {:pre [(db/db? db)]} (db/-datoms db index []))
   ([db index c1]          {:pre [(db/db? db)]} (db/-datoms db index [c1]))
@@ -514,7 +515,7 @@ Only usable for debug output.
        (dbq/fulltext db query opts)))))
 
 (defn index-range
-  "Returns part of `:ave` index between `[_ attr start]` and `[_ attr end]` in AVET sort order.
+  "Returns part of `:ave` index between `[_ attr start]` and `[_ attr end]` in AVE sort order.
 
    Same properties as [[datoms]].
 
@@ -1180,7 +1181,7 @@ Only usable for debug output.
      If value is to be ignored, put `:ignore` as `v-type`
 
      If both key and value are ignored, return true if found an entry, otherwise
-     return nil.
+     return `nil`.
 
      Examples:
 
@@ -1412,11 +1413,11 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type])
-       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return nil. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`. `visitor` function can use [[read-buffer]] to read the buffer content.
+       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return `nil`. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`. `visitor` function can use [[read-buffer]] to read the buffer content.
 
       If `visitor` function returns a special value `:datalevin/terminate-visit`, the visit will stop immediately.
 
-      For client/server usage, [[interpret.inter-fn]] should be used to define the `visitor` function. For babashka pod usage, `defpodfn` should be used.
+      For client/server usage, [[datalevin.interpret/inter-fn]] should be used to define the `visitor` function. For babashka pod usage, `defpodfn` should be used.
 
     `k-type` indicates data type of `k` and the allowed data types are described
     in [[read-buffer]].
@@ -1612,9 +1613,10 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   `doc-ref` can be arbitrary Clojure data that uniquely refers to the document
 in the system.
 
-  `doc-text` is the content of the document as a string.  The search engine
-does not store the original text, and assumes that caller can retrieve them
-by `doc-ref`.
+  `doc-text` is the content of the document as a string.  By default, search
+   engine does not store the original text and assumes that caller can
+   retrieve them by `doc-ref`. Set search engine option `:include-text?` to
+   `true` to change that.
 
   `check-exist?` indicating whether to check the existence of this document in
 the search index. Default is `true` and search index will be updated with
@@ -1646,7 +1648,7 @@ words.
 
 `opts` map may have these keys:
 
-  * `:display` can be one of `:refs` (default), `:offsets`, `texts`,
+  * `:display` can be one of `:refs` (default), `:offsets`, `:texts`,
     or `:texts+offsets`.
     - `:refs` returns a lazy sequence of `doc-ref` ordered by relevance.
     - `:offsets` returns a lazy sequence of
@@ -1682,7 +1684,8 @@ words.
     [term, position, offset], where term is a word, position is the sequence
      number of the term, and offset is the character offset of this term.
   * `:index-position?` indicating whether to index positions of terms in the
-  documents. Default is `false`."}
+     documents. Default is `false`.
+  * `:include-text?` indicating whether to store original text in the search      engine. Default is `false`."}
   search-index-writer sc/search-index-writer)
 
 (def ^{:arglists '([writer doc-ref doc-text])
