@@ -226,6 +226,8 @@
       (u/raise "Unable to copy in:" (ex-message e)
                {:req req :count (count data)}))))
 
+(declare open-database)
+
 (deftype ^:no-doc Client [username password host port pool-size time-out
                           ^:volatile-mutable ^UUID id
                           ^:volatile-mutable ^ConnectionPool pool]
@@ -247,6 +249,10 @@
                        :copy-out-response (copy-out conn req)
                        :command-complete  result
                        :error-response    result
+                       :reopen
+                       (let [{:keys [db-name db-type]} result]
+                         (vreset! success? false)
+                         (open-database client db-name db-type))
                        :reconnect
                        (let [client-id
                              (authenticate host port username password)]

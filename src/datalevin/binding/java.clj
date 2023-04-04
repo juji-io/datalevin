@@ -716,12 +716,15 @@
   ([dir {:keys [mapsize max-readers max-dbs flags temp?]
          :or   {max-readers c/+max-readers+
                 max-dbs     c/+max-dbs+
+                mapsize     c/+init-db-size+
                 flags       c/default-env-flags
                 temp?       false}
          :as   opts}]
    (try
      (let [^File file (u/file dir)
-           mapsize    (* (long (or mapsize (c/pick-mapsize file)))
+           mapsize    (* (long (if (u/empty-dir? file)
+                                 mapsize
+                                 (c/pick-mapsize file)))
                          1024 1024)
            builder    (doto (Env/create)
                         (.setMapSize mapsize)

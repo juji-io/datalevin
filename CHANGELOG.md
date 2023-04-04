@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Fixed
+- [KV] When `open-kv`, don't grow `:mapsize` unnecessarily.
+- [Server] automatically reopen DBs for a client that is previously removed from
+  the server.
+
 ## 0.8.11 (2023-04-02)
 ### Added
 - [Search] `:include-text?` option to store original text. #178.

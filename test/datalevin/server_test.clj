@@ -2,6 +2,7 @@
   (:require [datalevin.server :as sut]
             [datalevin.client :as cl]
             [taoensso.timbre :as log]
+            [datalevin.remote :as r]
             [datalevin.core :as d]
             [datalevin.constants :as c]
             [datalevin.util :as u]
@@ -183,13 +184,19 @@
   (let [root    (u/tmp-dir (str "idle-timeout-test-" (UUID/randomUUID)))
         server  (sut/create {:port         c/default-port
                              :root         root
-                             :idle-timeout 10})
+                             :idle-timeout 100})
         _       (sut/start server)
         client1 (cl/new-client "dtlv://datalevin:datalevin@localhost")
-        client2 (cl/new-client "dtlv://datalevin:datalevin@localhost")]
-
-    (log/set-min-level! :report)
+        client2 (cl/new-client "dtlv://datalevin:datalevin@localhost")
+        db      (r/open-kv
+                  client2
+                  "dtlv://datalevin:datalevin@localhost/db?store=kv"
+                  {})]
+    ;; (log/set-min-level! :report)
+    (d/open-dbi db "a")
+    (d/transact-kv db [[:put "a" 1 1]])
     (Thread/sleep 1000)
     (is (= 1 (count (cl/show-clients client1))))
+    (is (= 1 (d/get-value db "a" 1)))
     (sut/stop server)
     (u/delete-files root)))
