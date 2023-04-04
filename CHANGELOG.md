@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.12 (2023-04-03)
 ### Fixed
 - [KV] When `open-kv`, don't grow `:mapsize` unnecessarily.
 - [Server] automatically reopen DBs for a client that is previously removed from
