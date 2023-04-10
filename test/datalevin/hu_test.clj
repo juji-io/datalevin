@@ -110,6 +110,13 @@
         (is (u/same-sign? (bf/compare-buffer src1 src2)
                           (bf/compare-buffer dst1 dst2)))))))
 
+;; (def freqs (repeatedly 65536 #(rand-int 1000000)))
+;; (def hu (sut/new-hu-tucker (long-array (map inc freqs))))
+;; (.size (.tables hu))
+;; (require '[clj-memory-meter.core :as mm])
+;; (mm/measure hu)
+
+
 (test/defspec encode-decode-round-trip-test
   1000
   (let [freqs (repeatedly 65536 #(rand-int 1000000))

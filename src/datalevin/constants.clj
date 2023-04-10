@@ -149,6 +149,8 @@
 
 ;; compression
 
+(def compress-sample-size 100000)
+
 (def ^:const decoding-bits 4)
 
 (def value-compress-threshold 36)

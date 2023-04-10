@@ -300,7 +300,8 @@
          (= decoded (.-decoded ^TableEntry that)))))
 
 (defn- create-entry
-  [tree ^DecodeNode node decoding-bits ^"[Ldatalevin.hu.TableEntry;" entries i]
+  [tree ^UnifiedMap ks ^DecodeNode node decoding-bits
+   ^"[Ldatalevin.hu.TableEntry;" entries i]
   (let [decoded   (volatile! nil)
         n         (+ ^long decoding-bits (.-len node))
         to-decode (bit-or (bit-shift-left (.-prefix node) ^long decoding-bits)
@@ -313,25 +314,30 @@
             (do (vreset! decoded (.-sym ^DecodeNode nn))
                 (recur (inc j) (unsigned-bit-shift-right mask 1) tree))
             (recur (inc j) (unsigned-bit-shift-right mask 1) nn)))
-        (aset entries i
-              (TableEntry. @decoded
-                           (TableKey. (.-len cur) (.-prefix cur))))))))
+        (aset entries i (TableEntry. @decoded (.get ks cur)))))))
 
 (defn create-decode-tables
   [^bytes lens ^ints codes ^long decoding-bits]
   (let [tree   (build-decode-tree lens codes)
-        n      (bit-shift-left 1 decoding-bits)
+        m      (bit-shift-left 1 decoding-bits)
+        ks     (UnifiedMap.)
         tables (UnifiedMap.)]
-    (letfn [(traverse [^DecodeNode node]
+    (letfn [(k [^DecodeNode node]
+              (let [len    (.-len node)
+                    prefix (.-prefix node)]
+                (.put ks node (TableKey. len prefix))))
+            (create [node]
+              (let [entries (make-array TableEntry m)]
+                (dotimes [i m]
+                  (create-entry tree ks node decoding-bits entries i))
+                (.put tables (.get ks node) entries)))
+            (traverse [^DecodeNode node f]
               (when-not (leaf? node)
-                (traverse (left-child node))
-                (traverse (right-child node))
-                (let [entries (make-array TableEntry n)]
-                  (dotimes [i n]
-                    (create-entry tree node decoding-bits entries i))
-                  (.put tables (TableKey. (.-len node) (.-prefix node))
-                        entries))))]
-      (traverse tree))
+                (f node)
+                (traverse (left-child node) f)
+                (traverse (right-child node) f)))]
+      (traverse tree k)
+      (traverse tree create))
     tables))
 
 (defprotocol IHuTucker

@@ -8,6 +8,7 @@
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
    [cheshire "5.11.0"]
+   [com.clojure-goes-fast/clj-memory-meter "0.2.2"]
    [com.cognitect/transit-clj "1.0.329"]
    [com.fasterxml.jackson.core/jackson-core "2.14.2"]
    [com.fasterxml.jackson.core/jackson-databind "2.14.2"]
@@ -83,7 +84,8 @@
                     ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                      "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
                      "--add-opens=java.base/java.lang=ALL-UNNAMED"
-                     "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"]
+                     "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
+                     "-Djdk.attach.allowAttachSelf"]
                     :dependencies
                     [[org.clojure/test.check]
                      [org.clojure/data.csv]
@@ -94,6 +96,7 @@
                      [nrepl/bencode]
                      [joda-time/joda-time]
                      [babashka/babashka.pods]
+                     [com.clojure-goes-fast/clj-memory-meter]
                      [org.graalvm.nativeimage/svm]]
                     :global-vars
                     {*print-namespace-maps* false
