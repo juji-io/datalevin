@@ -4,10 +4,11 @@
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
-   [java.util LinkedList]
+   [java.util LinkedList Arrays]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [datalevin.utl LeftistHeap]))
+   [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
+   [datalevin.utl LeftistHeap BitOps]))
 
 (defprotocol INode
   (leaf? [_])
@@ -286,22 +287,30 @@
                 (set-right-child node (new-decode-node i))))))))
     root))
 
-(deftype TableKey [^byte len ^int prefix]
-  Object
-  (hashCode [_] (u/szudzik len prefix))
-  (equals [_ that]
-    (and (= len (.-len ^TableKey that))
-         (= prefix (.-prefix ^TableKey that)))))
+(defn get-prefix [^long value] (bit-and value 0x00000000FFFFFFFF))
 
-(deftype TableEntry [decoded ^TableKey link]
-  Object
-  (equals [_ that]
-    (and (= link (.-link ^TableEntry that))
-         (= decoded (.-decoded ^TableEntry that)))))
+(defn get-len
+  [^long value]
+  (-> value (unsigned-bit-shift-right 32) (bit-and 0x00000000000000FF)))
+
+(defn get-link [^long value] (bit-and value 0x000000FFFFFFFFFF))
+
+(defn get-decoded
+  [^long value]
+  (when-not (neg? value) (unsigned-bit-shift-right value 40)))
+
+(defn- set-prefix [^long value prefix] (bit-or value ^int prefix))
+
+(defn- set-len [^long value len] (bit-or value (bit-shift-left ^byte len 32)))
+
+(defn- set-decoded
+  [^long value decoded]
+  (bit-or value (if decoded
+                  (bit-shift-left (BitOps/intAnd ^short decoded 0x0000FFFF) 40)
+                  -9223372036854775808)))
 
 (defn- create-entry
-  [tree ^UnifiedMap ks ^DecodeNode node decoding-bits
-   ^"[Ldatalevin.hu.TableEntry;" entries i]
+  [tree ^UnifiedMap ks ^DecodeNode node decoding-bits entries i]
   (let [decoded   (volatile! nil)
         n         (+ ^long decoding-bits (.-len node))
         to-decode (bit-or (bit-shift-left (.-prefix node) ^long decoding-bits)
@@ -314,20 +323,20 @@
             (do (vreset! decoded (.-sym ^DecodeNode nn))
                 (recur (inc j) (unsigned-bit-shift-right mask 1) tree))
             (recur (inc j) (unsigned-bit-shift-right mask 1) nn)))
-        (aset entries i (TableEntry. @decoded (.get ks cur)))))))
+        (aset ^longs entries i ^long (set-decoded (.get ks cur) @decoded))))))
 
 (defn create-decode-tables
   [^bytes lens ^ints codes ^long decoding-bits]
   (let [tree   (build-decode-tree lens codes)
         m      (bit-shift-left 1 decoding-bits)
         ks     (UnifiedMap.)
-        tables (UnifiedMap.)]
-    (letfn [(k [^DecodeNode node]
-              (let [len    (.-len node)
-                    prefix (.-prefix node)]
-                (.put ks node (TableKey. len prefix))))
-            (create [node]
-              (let [entries (make-array TableEntry m)]
+        tables (LongObjectHashMap.)]
+    (letfn [(create-key [^DecodeNode node]
+              (.put ks node (-> 0
+                                (set-prefix (.-prefix node))
+                                (set-len (.-len node)))))
+            (create-table [node]
+              (let [entries (long-array m)]
                 (dotimes [i m]
                   (create-entry tree ks node decoding-bits entries i))
                 (.put tables (.get ks node) entries)))
@@ -336,9 +345,14 @@
                 (f node)
                 (traverse (left-child node) f)
                 (traverse (right-child node) f)))]
-      (traverse tree k)
-      (traverse tree create))
+      (traverse tree create-key)
+      (traverse tree create-table))
     tables))
+
+(deftype EncodeBuf [^byte b      ;; bits buffer
+                    ^byte r])    ;; remaining space in buffer
+
+(defn- new-bf [] (EncodeBuf. (unchecked-byte 0) (unchecked-byte 8)))
 
 (defprotocol IHuTucker
   (encode [this src-bf dst-bf])
@@ -347,43 +361,43 @@
 (deftype HuTucker [^bytes lens         ;; array of code lengths
                    ^ints codes         ;; array of codes
                    ^long decode-bits   ;; number of bits decoded at a time
-                   ^UnifiedMap tables] ;; decoding tables
+                   ^LongObjectHashMap tables] ;; decoding tables
   IHuTucker
   (encode [_ src dst]
     (let [^ByteBuffer src src
           ^ByteBuffer dst dst
           total           (.remaining src)
           t-1             (dec total)]
-      (loop [i 0 bf (unchecked-byte 0) r (byte 8)]
+      (loop [i 0 ^EncodeBuf bf (new-bf)]
         (if (< i total)
           (let [cur  (if (= i t-1)
                        (-> (.get src)
-                           (bit-and 0x000000FF)
+                           (BitOps/intAnd 0x000000FF)
                            (bit-shift-left 8))
-                       (bit-and (.getShort src) 0x0000FFFF))
+                       (BitOps/intAnd (.getShort src) 0x0000FFFF))
                 len  (aget lens cur)
                 code (aget codes cur)
-                [bf2 r2]
-                (loop [len1 len code1 code bf1 bf r1 r]
-                  (let [o (- len1 r1)]
+                ^EncodeBuf bf2
+                (loop [len1 len code1 code bf1 (EncodeBuf. (.-b bf) (.-r bf))]
+                  (let [o  (- len1 (.-r bf1))
+                        b1 (.-b bf1)]
                     (cond
                       (< 0 o)
-                      (let [b (unchecked-byte
-                                (bit-or
-                                  bf1
-                                  (unsigned-bit-shift-right code1 o)))]
-                        (.put dst b)
+                      (do
+                        (.put dst (unchecked-byte
+                                    (bit-or
+                                      b1 (unsigned-bit-shift-right code1 o))))
                         (recur (byte o) (bit-and code1 (u/n-bits-mask o))
-                               (unchecked-byte 0) (byte 8)))
+                               (new-bf)))
                       (< o 0)
                       (let [rr (- o)]
-                        [(bit-or bf1 (bit-shift-left code1 rr)) rr])
+                        (EncodeBuf. (bit-or b1 (bit-shift-left code1 rr)) rr))
                       :else
-                      (let [b (unchecked-byte (bit-or bf1 code1))]
-                        (.put dst b)
-                        [0 8]))))]
-            (recur (+ i 2) (byte bf2) (byte r2)))
-          (.put dst bf)))
+                      (do
+                        (.put dst (unchecked-byte (bit-or b1 code1)))
+                        (new-bf)))))]
+            (recur (+ i 2) (EncodeBuf. (byte (.-b bf2)) (byte (.-r bf2)))))
+          (.put dst (.-b bf))))
       (.putShort dst (short total))))
 
   (decode [_ src dst]
@@ -392,21 +406,21 @@
           total           (- (.remaining src) 2)
           decode-mask     (byte (u/n-bits-mask decode-bits))
           ^long n         (/ 8 decode-bits)]
-      (loop [i 0 k (TableKey. 0 0)]
+      (loop [i 0 k 0]
         (when (< i total)
-          (let [b (bit-and (.get src) 0x000000FF)]
+          (let [b (BitOps/intAnd (.get src) 0x000000FF)]
             (recur (inc i)
-                   (loop [j (dec n) k1 k]
-                     (if (<= 0 j)
-                       (let [c  (bit-and decode-mask
-                                         (unsigned-bit-shift-right
-                                           b (* decode-bits j)))
-                             es ^"[Ldatalevin.hu.TableEntry;" (.get tables k1)
-                             e  ^TableEntry (aget es c)
-                             w  (.-decoded e)]
-                         (when w (.putShort dst w))
-                         (recur (dec j) (.-link e)))
-                       k1))))))
+                   (long (loop [j (dec n) k1 k]
+                           (if (<= 0 j)
+                             (let [c  (bit-and decode-mask
+                                               (unsigned-bit-shift-right
+                                                 b (* decode-bits j)))
+                                   es ^longs (.get tables k1)
+                                   e  ^long (aget es c)
+                                   w  (get-decoded e)]
+                               (when w (.putShort dst w))
+                               (recur (dec j) (long (get-link e))))
+                             k1)))))))
       (.limit dst (.getShort src)))))
 
 (defn new-hu-tucker

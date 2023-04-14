@@ -38,7 +38,7 @@ array of code length (byte) and an array of codes (32 bits integer). These two
 arrays are stored in meta data of the DBI in compressed from, and are also kept
 in memory, as they are used for encoding raw data. We also keep in memory
 pre-computed decoding tables [4] for decoding compressed data 4 bits at a time.
-4 bits are chosen as a good balance between memory usage (5 MiB per dictionary)
+4 bits are chosen as a good balance between memory usage (10 MiB per dictionary)
 and decoding performance. These tables are computed from the stored codes during
 DBI initialization.
 

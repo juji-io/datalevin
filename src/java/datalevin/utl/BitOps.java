@@ -9,6 +9,10 @@ public class BitOps {
         return x ^ (1 << n);
     }
 
+    public static int intAnd (int x, int y) {
+        return x & y;
+    }
+
     public static int compareBytes(byte[] left, byte[] right) {
         for (int i = 0, j = 0; i < left.length && j < right.length; i++, j++) {
             int a = (left[i] & 0xff);

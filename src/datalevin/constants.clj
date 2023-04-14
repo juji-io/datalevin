@@ -149,7 +149,7 @@
 
 ;; compression
 
-(def compress-sample-size 100000)
+(def compress-sample-size 65536)
 
 (def ^:const decoding-bits 4)
 

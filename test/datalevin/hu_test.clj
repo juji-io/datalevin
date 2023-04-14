@@ -12,10 +12,9 @@
   (:import
    [java.util Arrays]
    [java.nio ByteBuffer]
-   [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [datalevin.hu TableKey TableEntry]))
+   [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]))
 
-(deftest encoding-test
+(deftest encoding-decoding-test
   (let [^longs freqs0 (long-array [1 1 1 1 1 1 1 1])
         ^longs freqs1 (long-array [8 6 2 3 4 7 11 9 8 1 3])
         ^longs freqs2 (long-array [5 2 7 2 1 1 1 2 4 5])
@@ -44,15 +43,16 @@
                    lens (byte-array n)
                    codes (int-array n)
                    _ (sut/create-codes n lens codes freqs)
-                   ^UnifiedMap tables (sut/create-decode-tables lens codes 2)
-                   keys (.keySet tables)]
+                   ^LongObjectHashMap tables
+                   (sut/create-decode-tables lens codes 2)
+                   keys (.toArray (.keysView tables))]
                (into {}
-                     (mapv (fn [^TableKey k]
-                             [[(.-prefix k) (.-len k)]
-                              (mapv (fn [^TableEntry entry]
-                                      (let [^TableKey link (.-link entry)]
-                                        [(.-decoded entry)
-                                         [(.-prefix link) (.-len link)]]))
+                     (mapv (fn [^long k]
+                             [[(sut/get-prefix k) (sut/get-len k)]
+                              (mapv (fn [^long entry]
+                                      [(sut/get-decoded entry)
+                                       [(sut/get-prefix entry)
+                                        (sut/get-len entry)]])
                                     (.get tables k))])
                            keys)))
              results)
@@ -81,7 +81,26 @@
                 [3 2] [[8 [0 1]] [8 [1 1]] [9 [0 1]] [9 [1 1]]],
                 [4 3] [[3 [0 1]] [3 [1 1]] [4 [0 0]] [5 [0 0]]],
                 [5 3] [[6 [0 1]] [6 [1 1]] [7 [0 1]] [7 [1 1]]],
-                [9 4] [[4 [0 1]] [4 [1 1]] [5 [0 1]] [5 [1 1]]]}))))
+                [9 4] [[4 [0 1]] [4 [1 1]] [5 [0 1]] [5 [1 1]]]}))
+    (testing "round trip"
+      (are [freqs data]
+          (let [ht (sut/new-hu-tucker freqs 2)
+                ^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
+                ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
+                ^ByteBuffer res (bf/allocate-buffer c/+max-key-size+)
+                size (alength data)
+                final (short-array size)]
+            (dotimes [i size] (.putShort src (aget data i)))
+            (.flip src)
+            (sut/encode ht src dst)
+            (.flip dst)
+            (sut/decode ht dst res)
+            (.flip res)
+            (dotimes [i size] (aset final i (.getShort res)))
+            (Arrays/equals data final))
+        freqs0 data0
+        freqs1 data1
+        freqs2 data2))))
 
 (test/defspec order-preservation-test
   1000
@@ -95,8 +114,7 @@
       (let [^ByteBuffer src1 (bf/allocate-buffer c/+max-key-size+)
             ^ByteBuffer src2 (bf/allocate-buffer c/+max-key-size+)
             ^ByteBuffer dst1 (bf/allocate-buffer c/+max-key-size+)
-            ^ByteBuffer dst2 (bf/allocate-buffer c/+max-key-size+)
-            ]
+            ^ByteBuffer dst2 (bf/allocate-buffer c/+max-key-size+)]
         (b/put-buffer src1 bs1 :bytes)
         (b/put-buffer src2 bs2 :bytes)
         (.flip src1)
@@ -109,13 +127,6 @@
         (.flip ^ByteBuffer dst2)
         (is (u/same-sign? (bf/compare-buffer src1 src2)
                           (bf/compare-buffer dst1 dst2)))))))
-
-;; (def freqs (repeatedly 65536 #(rand-int 1000000)))
-;; (def hu (sut/new-hu-tucker (long-array (map inc freqs))))
-;; (.size (.tables hu))
-;; (require '[clj-memory-meter.core :as mm])
-;; (mm/measure hu)
-
 
 (test/defspec encode-decode-round-trip-test
   1000
@@ -133,5 +144,14 @@
         (.flip dst)
         (sut/decode ht dst res)
         (.flip res)
-        (.rewind dst)
         (is (Arrays/equals bs ^bytes (b/get-bytes res)))))))
+
+(comment
+
+  (def freqs (repeatedly 65536 #(rand-int 1000000)))
+  (def hu (sut/new-hu-tucker (long-array (map inc freqs))))
+  (require '[clj-memory-meter.core :as mm])
+  (mm/measure hu)
+  ;; => "10.8 MiB"
+
+  )
