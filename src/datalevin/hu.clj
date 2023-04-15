@@ -379,8 +379,8 @@
                            (bit-shift-left 8))
                        (BitOps/intAnd (.getShort ^ByteBuffer src)
                                       0x0000FFFF))
-                len  (aget lens cur)
-                code (aget codes cur)]
+                len  ^byte (aget lens cur)
+                code ^int (aget codes cur)]
             (loop [len1 len code1 code]
               (let [o  (- len1 ^byte (get-r bf))
                     b1 (get-b bf)]
@@ -393,10 +393,12 @@
                               ^byte b1
                               (unsigned-bit-shift-right code1 o))))
                     (set-br bf 0 8)
-                    (recur (byte o) (bit-and code1 (u/n-bits-mask o))))
+                    (recur (byte o)
+                           (BitOps/intAnd code1 (u/n-bits-mask o))))
                   (< o 0)
                   (let [rr (- o)]
-                    (set-br bf (bit-or ^byte b1 (bit-shift-left code1 rr))
+                    (set-br bf
+                            (bit-or ^byte b1 (bit-shift-left code1 rr))
                             rr))
                   :else
                   (do
@@ -418,7 +420,7 @@
                    (long (loop [j 1 k1 k]
                            (if (<= 0 j)
                              (let [e (aget ^longs (.get tables k1)
-                                           (bit-and 15
+                                           (bit-and (byte 15)
                                                     (unsigned-bit-shift-right
                                                       b (* 4 j))))
                                    w (get-decoded e)]
