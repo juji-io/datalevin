@@ -9,8 +9,8 @@
    [java.nio ByteBuffer]
    [me.lemire.integercompression IntCompressor]
    [me.lemire.integercompression.differential IntegratedIntCompressor]
-   [com.github.luben.zstd ZstdDictCompress ZstdDictDecompress
-    ZstdDictTrainer Zstd]
+   ;; [com.github.luben.zstd ZstdDictCompress ZstdDictDecompress
+   ;;  ZstdDictTrainer Zstd]
    [net.jpountz.lz4 LZ4Factory LZ4Compressor LZ4FastDecompressor]))
 
 (defprotocol ICompressor
@@ -104,26 +104,26 @@
       (do (reset! dict-less-compressor (create-dict-less-compressor))
           @dict-less-compressor)))
 
+;; TODO not used at the moment, as zstd-jni doesn't support graal yet
 ;; value compressor
+#_(defn- value-dictionary
+    ^bytes [sample-bas]
+    (let [trainer (ZstdDictTrainer. c/compress-sample-size (* 16 1024))]
+      (doseq [ba sample-bas] (.addSample trainer ^bytes ba))
+      (.trainSamples trainer)))
 
-(defn- value-dictionary
-  ^bytes [sample-bas]
-  (let [trainer (ZstdDictTrainer. c/compress-sample-size (* 16 1024))]
-    (doseq [ba sample-bas] (.addSample trainer ^bytes ba))
-    (.trainSamples trainer)))
-
-(defn value-compressor
-  "take a seq of byte array samples"
-  [sample-bas]
-  (let [dict  (value-dictionary sample-bas)
-        cmp   (ZstdDictCompress. dict (Zstd/defaultCompressionLevel))
-        decmp (ZstdDictDecompress. dict)]
-    (reify
-      ICompressor
-      (bf-compress [_ src dst]
-        (Zstd/compress ^ByteBuffer dst ^ByteBuffer src cmp))
-      (bf-uncompress [_ src dst]
-        (Zstd/decompress ^ByteBuffer dst ^ByteBuffer src decmp)))))
+#_(defn value-compressor
+    "take a seq of byte array samples"
+    [sample-bas]
+    (let [dict  (value-dictionary sample-bas)
+          cmp   (ZstdDictCompress. dict (Zstd/defaultCompressionLevel))
+          decmp (ZstdDictDecompress. dict)]
+      (reify
+        ICompressor
+        (bf-compress [_ src dst]
+          (Zstd/compress ^ByteBuffer dst ^ByteBuffer src cmp))
+        (bf-uncompress [_ src dst]
+          (Zstd/decompress ^ByteBuffer dst ^ByteBuffer src decmp)))))
 
 ;; key compressor
 

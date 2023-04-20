@@ -19,7 +19,7 @@
                  [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
                  [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
                  [nrepl/bencode]
-                 [com.github.luben/zstd-jni]
+                 ;; [com.github.luben/zstd-jni]
                  [com.taoensso/nippy]
                  [org.roaringbitmap/RoaringBitmap]
                  [org.eclipse.collections/eclipse-collections]

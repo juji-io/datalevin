@@ -61,9 +61,7 @@ improve compression ratio as data distribution may has shifted significantly.
 
 ### Value Compression
 
-Zstd with dictionary compression is used to compress values, as it has a good
-balance of speed and compression ratio. Dictionary training follows the same
-generational scheme as described above.
+LZ4 is used to compress values, as it has a good balance of speed and compression ratio.
 
 ## Wire compression
 
