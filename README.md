@@ -101,7 +101,7 @@ coherent and elegant manner.
 
 Using one data store for different use cases simplifies and reduces the cost of
 software development, deployment and maintenance. Therefore, we plan to
-implement necessary extensions to make Datalevin also a production rule engine,
+implement necessary extensions to make Datalevin also a vector database, a production rule engine,
 a graph database, and a document database, since the storage and index structure
 of Datalevin is already compatible with all of them.
 
@@ -370,7 +370,8 @@ adjust the priorities based on feedback.
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
-* 0.9.0 Store data in compressed form.
+* 0.9.0 Store data in compressed form, including order-preserving key
+  compression to allow range query on compressed data.
 * 0.10.0 As a vector DB: numeric vector indexing.
 * 0.11.0 A new Datalog query engine with improved performance.
 * 1.0.0 Transaction log storage and access API.
