@@ -639,13 +639,13 @@
   (wrap-extrema
     v c/min-bytes c/max-bytes
     (let [t        (into [] (map dl-type->raw) t)
-          tuple-bf ^ByteBuffer (bf/get-buffer)]
+          tuple-bf ^ByteBuffer (bf/get-array-buffer)]
       (if (= 1 (count t))
         (put-homo-tuple tuple-bf v (nth t 0))
         (put-hete-tuple tuple-bf v t))
       (let [res (Arrays/copyOfRange (.array tuple-bf)
                                     0 (.position tuple-bf))]
-        (bf/return-buffer tuple-bf)
+        (bf/return-array-buffer tuple-bf)
         res))))
 
 (defn- val-bytes
@@ -901,11 +901,11 @@
        (put-data bf x))))
   ([^ByteBuffer bf x x-type compressor]
    (if compressor
-     (let [^ByteBuffer bf1 (bf/get-buffer (.capacity bf))]
+     (let [^ByteBuffer bf1 (bf/get-direct-buffer (.capacity bf))]
        (put-buffer bf1 x x-type)
        (.flip bf1)
        (cp/bf-compress compressor bf1 bf)
-       (bf/return-buffer bf1))
+       (bf/return-direct-buffer bf1))
      (put-buffer bf x x-type))))
 
 (defn put-bf
@@ -962,11 +962,11 @@
        (get-data bf))))
   ([^ByteBuffer bf v-type compressor]
    (if compressor
-     (let [bf1 (bf/get-buffer (.capacity bf))
+     (let [bf1 (bf/get-direct-buffer (.capacity bf))
            _   (cp/bf-uncompress compressor bf bf1)
            _   (.flip bf1)
            res (read-buffer bf1 v-type)]
-       (bf/return-buffer bf1)
+       (bf/return-direct-buffer bf1)
        res)
      (read-buffer bf v-type))))
 

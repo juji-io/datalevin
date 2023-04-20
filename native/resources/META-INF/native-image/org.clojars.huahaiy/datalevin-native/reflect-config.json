@@ -226,13 +226,6 @@
         "allPublicClasses" : true
     },
     {
-        "name":"datalevin.hu.TableEntry",
-        "allPublicConstructors" : true,
-        "allPublicMethods" : true,
-        "allPublicFields" : true,
-        "allPublicClasses" : true
-    },
-    {
         "name":"datalevin.hu.TreeNode",
         "allDeclaredConstructors" : true,
         "allPublicConstructors" : true,
@@ -241,13 +234,6 @@
         "allDeclaredClasses" : true,
         "allPublicFields" : true,
         "allDeclaredFields" : true,
-        "allPublicClasses" : true
-    },
-    {
-        "name":"[Ldatalevin.hu.TableEntry;",
-        "allPublicConstructors" : true,
-        "allPublicMethods" : true,
-        "allPublicFields" : true,
         "allPublicClasses" : true
     },
     {

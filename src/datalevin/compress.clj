@@ -1,5 +1,5 @@
 (ns ^:no-doc datalevin.compress
-  "Data compressors"
+  "Various data compressors"
   (:require
    [datalevin.constants :as c]
    [datalevin.buffer :as bf]
@@ -9,6 +9,8 @@
    [java.nio ByteBuffer]
    [me.lemire.integercompression IntCompressor]
    [me.lemire.integercompression.differential IntegratedIntCompressor]
+   [com.github.luben.zstd ZstdDictCompress ZstdDictDecompress
+    ZstdDictTrainer Zstd]
    [net.jpountz.lz4 LZ4Factory LZ4Compressor LZ4FastDecompressor]))
 
 (defprotocol ICompressor
@@ -102,10 +104,30 @@
       (do (reset! dict-less-compressor (create-dict-less-compressor))
           @dict-less-compressor)))
 
-;; key value compressors
+;; value compressor
+
+(defn- value-dictionary
+  ^bytes [sample-bas]
+  (let [trainer (ZstdDictTrainer. c/compress-sample-size (* 16 1024))]
+    (doseq [ba sample-bas] (.addSample trainer ^bytes ba))
+    (.trainSamples trainer)))
 
 (defn value-compressor
-  [^bytes dict])
+  "take a seq of byte array samples"
+  [sample-bas]
+  (let [dict  (value-dictionary sample-bas)
+        cmp   (ZstdDictCompress. dict (Zstd/defaultCompressionLevel))
+        decmp (ZstdDictDecompress. dict)]
+    (reify
+      ICompressor
+      (bf-compress [_ src dst]
+        (Zstd/compress ^ByteBuffer dst ^ByteBuffer src cmp))
+      (bf-uncompress [_ src dst]
+        (Zstd/decompress ^ByteBuffer dst ^ByteBuffer src decmp)))))
+
+;; key compressor
+
+(defn init-key-freqs [] (long-array c/compress-sample-size (repeat 1)))
 
 (defn key-compressor
   [^longs freqs]

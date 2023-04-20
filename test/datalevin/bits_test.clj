@@ -24,6 +24,9 @@
 (def freqs (repeatedly 65536 #(rand-int 1000000)))
 (def kc    (cp/key-compressor (long-array (map inc freqs))))
 
+
+(def sample-bas (gen/sample gen/bytes c/compress-sample-size))
+
 ;; binary index preserves the order of values
 
 (def e 123456)
@@ -55,6 +58,14 @@
                   (= k (sut/read-buffer bf :data kc)))))
 
 (test/defspec value-compressed-data-generative-test
+  100
+  (let [compressor (cp/value-compressor sample-bas)]
+    (prop/for-all [k gen/any-equatable]
+                  (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
+                    (sut/put-bf bf k :data compressor)
+                    (= k (sut/read-buffer bf :data compressor))))))
+
+(test/defspec general-compressed-data-generative-test
   100
   (let [compressor (cp/get-dict-less-compressor)]
     (prop/for-all [k gen/any-equatable]

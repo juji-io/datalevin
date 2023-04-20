@@ -3,8 +3,6 @@
 ## WIP
 ### Added
 - [KV & Datalog] Option `:compress?` to compress the data (default `true`). See [details](doc/compress.md). #14
-- [Main] `--sql` option for `load` command to load data from a SQL DB into a
-  Datalog database. #193
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -23,8 +21,6 @@
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
-- [KV] `:max-dbis` option when `open-kv` to specify the maximal number of DBIs
-  that can be opened inside this file. Default is 128.
 - [Client] Option `:compress-message?`, set to `false` for older versions of
   server. Network messages are compressed by default.
 
@@ -32,12 +28,8 @@
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
   includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
-- [KV] Store Spillable data in sub-dbs rather than in individual db, to prevent
-  file handle exhaustion. #189
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
 - [Datalog] Query results are spillable to disk. #166
-- [Datalog] `datalog-index-cache-limit` takes a connection instead of DB, as it
-  is more natural
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
