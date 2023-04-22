@@ -59,8 +59,6 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ;; A search engine depends on a key-value store to store the indices.
 (def lmdb (d/open-kv "/tmp/search-db"))
-
-;; By default, term positions in the documents are not stored.
 (def engine (d/new-search-engine lmdb {:index-position? true}))
 
 ;; Here are the documents to be indxed, keyed by doc-id
@@ -74,15 +72,6 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 (d/add-doc engine 1 (docs 1))
 (d/add-doc engine 2 (docs 2))
 (d/add-doc engine 3 (docs 3))
-
-;; Search engine does not store the raw documents themselves.
-;; If we want to retrieve the found documents, we can optionally store them in
-;; a key-value sub-database
-(d/open-dbi lmdb "raw")
-(d/transact-kv lmdb
-      [[:put "raw" 1 (docs 1)]
-       [:put "raw" 2 (docs 2)]
-       [:put "raw" 3 (docs 3)]])
 
 ;; search by default return a list of `doc-ref` ordered by relevance to query
 (d/search engine "red")
@@ -150,15 +139,16 @@ and reduces the complexity of managing data.
 
 The search engine indices are stored in one inverted list and two key-value maps.
 In addition to information about each term and each document, the positions of term
-occurrences in the documents are also stored to support match highlighting,
-proximity query (planned), and phrase query (planned).
+occurrences in the documents are also stored to support match highlighting and
+proximity query.
 
 Specifically, the following LMDB sub-databases are created for search supposes:
 
-* `terms`: map of term -> `term-info`
-* `docs`: map of document id -> document reference and document norm
+* `terms`: map of term -> `term-info`.
+* `docs`: map of document id -> document reference and document norm.
 * `positions`: inverted lists of term id and document id -> positions and offsets
-  of the term in the document
+  of the term in the document. This storage is optional, where user set it with
+  `:index-position?` option.
 
 The inverted list implementation leverages the `DUPSORT` feature of LMDB, where
 multiple values (i.e. the list) of the same key are stored together in sorted
@@ -245,7 +235,8 @@ Critically, during this process, we remove a candidate as soon as one of the
 following two conditions is met:
 
 * this document is not going to appear in the required number of inverted lists,
-  based on the aforementioned mathematical property;
+  based on the aforementioned mathematical property. This is the main innovation
+  of the T-Wand algorithm.
 
 or,
 
@@ -293,6 +284,31 @@ The query result preparation are implemented as Clojure transducers, and the
 results are wrapped in the `sequence` function, which returns results
 incrementally and on demand.
 
+### Term Proximity Scoring
+
+When the user elects to enable term positions indexing, it is beneficial to
+utilize the positional information to enable term proximity scoring to enhance
+precision of top results. This reflects the intuition that the closer the query
+terms are placed together in a document, the more relevant the document
+might be. We enable term proximity scoring by default when `:index-position?` is
+set to `true`.
+
+Instead of replacing term frequency by proximity score [4], which is
+relatively expensive to calculate, or adding the proximity score to the tf-idf
+score [5], which faces the difficult problem of determining the relative weights
+of the two scores that may require machine learning, we decide to perform a two stage process: we search by tf-idf
+based scoring first as usual, then calculate proximity score only for the top
+results, and finally produce the top `k` results according to the proximity score.
+
+For the first tf-idf stage, instead of producing top `k` results only, we produce top
+`m * k` results, where `m` is user configurable as `:proximity-top-expansion`
+(default is 5) search option. This parameter reflects a search quality vs. time
+trade-off. The larger is `m`, the better is the search quality, while the search
+time would be longer.
+
+A span based proximity scoring algorithm is used to calculate the proximity
+contribution of individual terms, and they are then plugged into the Okapi ranking function [4] to arrive at the final score.
+
 ## Benchmark
 
 The details of benchmark comparison with Lucene is [here](https://github.com/juji-io/datalevin/tree/master/search-bench). The
@@ -303,7 +319,7 @@ summary is that Datalevin search engine beats Lucene in search speed, but lags i
 [1] Broder, A.Z., Carmel, D., Herscovici, M, Soffer,A., and Zien, J..  Efficient
 query evaluation using a two-level retrieval process. In Proceedings of the
 twelfth international conference on Information and knowledge management (CIKM
-'03). 2003. pp.426–434.
+'03). pp.426–434.
 
 [2] Manning, C.D., Raghavan, P. and Schütze, H. Introduction to Information
 Retrieval, Cambridge University Press. 2008.
@@ -311,3 +327,11 @@ Retrieval, Cambridge University Press. 2008.
 [3] Okazaki, N. and Tsujii, J., Simple and Efficient Algorithm for Approximate
 Dictionary Matching. Proceedings of the 23rd International Conference on
 Computational Linguistics (COLING '10), 2010, pp. 851-859.
+
+[4] Song, R., Taylor, M. J., Wen, J. R., Hon, H. W., & Yu, Y. Viewing term
+proximity from a different perspective. In Advances in Information Retrieval:
+30th European Conference on IR Research, (ECIR '08), pp. 346-357.
+
+[5] Rasolofo, Y., & Savoy, J.. Term proximity scoring for keyword-based
+retrieval systems. In Advances in Information Retrieval: 25th European
+Conference on IR Research, (ECIR '03), pp. 207-218.
