@@ -153,10 +153,11 @@ proximity query (planned), and phrase query (planned).
 
 Specifically, the following LMDB sub-databases are created for search supposes:
 
-* `terms`: map of term -> `term-info`
-* `docs`: map of document id -> document reference and document norm
+* `terms`: map of term -> `term-info`.
+* `docs`: map of document id -> document reference and document norm.
 * `positions`: inverted lists of term id and document id -> positions and offsets
-  of the term in the document
+  of the term in the document. This storage is optional, where user set it with
+  `:index-position?` option.
 
 The inverted list implementation leverages the `DUPSORT` feature of LMDB, where
 multiple values (i.e. the list) of the same key are stored together in sorted
@@ -291,6 +292,27 @@ The query result preparation are implemented as Clojure transducers, and the
 results are wrapped in the `sequence` function, which returns results
 incrementally and on demand.
 
+### Term Proximity Scoring
+
+When the user elects to enable term positions indexing, it is beneficial to
+utilize the positional information to enable term proximity scoring to enhance
+precision of top results. This reflects the intuition that the closer the query
+terms are placed together in a document, the more relevant the document
+might be. We enable term proximity scoring by default when `:index-position?` is
+set to `true`.
+
+Instead of replacing term frequency by proximity score [4], which is
+relatively expensive to calculate, or adding the proximity score to the tf-idf
+score [5], which faces the difficult problem of determining the relative weights
+of the two scores, we decide to perform a two stage process: we search by tf-idf
+based scoring first as usual, then calculate proximity score only for the top
+results, and finally produce the top `k` results according to the proximity score.
+
+For the first tf-idf stage, instead of producing top `k` results, we produce top `m * k` results, where `m` is user configurable as `:proximity-top-expansion` (default is 5) search option. This parameter reflects a search quality vs. time trade-off. The larger is `m`, the better is the search quality, while the search time would be longer.
+
+A span based proximity scoring algorithm is used to calculate the proximity
+contribution of individual terms, and they are then plugged into the Okapi ranking function [4] to arrive at the final score.
+
 ## Benchmark
 
 The details of benchmark comparison with Lucene is [here](https://github.com/juji-io/datalevin/tree/master/search-bench). The
@@ -301,7 +323,7 @@ summary is that Datalevin search engine beats Lucene in search speed, but lags i
 [1] Broder, A.Z., Carmel, D., Herscovici, M, Soffer,A., and Zien, J..  Efficient
 query evaluation using a two-level retrieval process. In Proceedings of the
 twelfth international conference on Information and knowledge management (CIKM
-'03). 2003. pp.426–434.
+'03). pp.426–434.
 
 [2] Manning, C.D., Raghavan, P. and Schütze, H. Introduction to Information
 Retrieval, Cambridge University Press. 2008.
@@ -309,3 +331,11 @@ Retrieval, Cambridge University Press. 2008.
 [3] Okazaki, N. and Tsujii, J., Simple and Efficient Algorithm for Approximate
 Dictionary Matching. Proceedings of the 23rd International Conference on
 Computational Linguistics (COLING '10), 2010, pp. 851-859.
+
+[4] Song, R., Taylor, M. J., Wen, J. R., Hon, H. W., & Yu, Y. Viewing term
+proximity from a different perspective. In Advances in Information Retrieval:
+30th European Conference on IR Research, (ECIR '08), pp. 346-357.
+
+[5] Rasolofo, Y., & Savoy, J. (2003). Term proximity scoring for keyword-based
+retrieval systems. In Advances in Information Retrieval: 25th European
+Conference on IR Research, (ECIR '03), pp. 207-218.

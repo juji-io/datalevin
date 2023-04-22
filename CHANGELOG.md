@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Added
+- [Search] Consider term proximity in relevance when `:index-position?` is true.
+
 ## 0.8.12 (2023-04-03)
 ### Fixed
 - [KV] When `open-kv`, don't grow `:mapsize` unnecessarily.
