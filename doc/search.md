@@ -73,15 +73,6 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 (d/add-doc engine 2 (docs 2))
 (d/add-doc engine 3 (docs 3))
 
-;; Search engine does not store the raw documents themselves.
-;; If we want to retrieve the found documents, we can optionally store them in
-;; a key-value sub-database
-(d/open-dbi lmdb "raw")
-(d/transact-kv lmdb
-      [[:put "raw" 1 (docs 1)]
-       [:put "raw" 2 (docs 2)]
-       [:put "raw" 3 (docs 3)]])
-
 ;; search by default return a list of `doc-ref` ordered by relevance to query
 (d/search engine "red")
 ;=> (1 2)
@@ -148,8 +139,8 @@ and reduces the complexity of managing data.
 
 The search engine indices are stored in one inverted list and two key-value maps.
 In addition to information about each term and each document, the positions of term
-occurrences in the documents are also stored to support match highlighting,
-proximity query (planned), and phrase query (planned).
+occurrences in the documents are also stored to support match highlighting and
+proximity query.
 
 Specifically, the following LMDB sub-databases are created for search supposes:
 
@@ -244,7 +235,8 @@ Critically, during this process, we remove a candidate as soon as one of the
 following two conditions is met:
 
 * this document is not going to appear in the required number of inverted lists,
-  based on the aforementioned mathematical property;
+  based on the aforementioned mathematical property. This is the main innovation
+  of the T-Wand algorithm.
 
 or,
 
@@ -304,11 +296,11 @@ set to `true`.
 Instead of replacing term frequency by proximity score [4], which is
 relatively expensive to calculate, or adding the proximity score to the tf-idf
 score [5], which faces the difficult problem of determining the relative weights
-of the two scores, we decide to perform a two stage process: we search by tf-idf
+of the two scores that may require machine learning, we decide to perform a two stage process: we search by tf-idf
 based scoring first as usual, then calculate proximity score only for the top
 results, and finally produce the top `k` results according to the proximity score.
 
-For the first tf-idf stage, instead of producing top `k` results, we produce top
+For the first tf-idf stage, instead of producing top `k` results only, we produce top
 `m * k` results, where `m` is user configurable as `:proximity-top-expansion`
 (default is 5) search option. This parameter reflects a search quality vs. time
 trade-off. The larger is `m`, the better is the search quality, while the search
