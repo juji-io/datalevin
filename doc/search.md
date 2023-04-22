@@ -308,7 +308,11 @@ of the two scores, we decide to perform a two stage process: we search by tf-idf
 based scoring first as usual, then calculate proximity score only for the top
 results, and finally produce the top `k` results according to the proximity score.
 
-For the first tf-idf stage, instead of producing top `k` results, we produce top `m * k` results, where `m` is user configurable as `:proximity-top-expansion` (default is 5) search option. This parameter reflects a search quality vs. time trade-off. The larger is `m`, the better is the search quality, while the search time would be longer.
+For the first tf-idf stage, instead of producing top `k` results, we produce top
+`m * k` results, where `m` is user configurable as `:proximity-top-expansion`
+(default is 5) search option. This parameter reflects a search quality vs. time
+trade-off. The larger is `m`, the better is the search quality, while the search
+time would be longer.
 
 A span based proximity scoring algorithm is used to calculate the proximity
 contribution of individual terms, and they are then plugged into the Okapi ranking function [4] to arrive at the final score.
@@ -336,6 +340,6 @@ Computational Linguistics (COLING '10), 2010, pp. 851-859.
 proximity from a different perspective. In Advances in Information Retrieval:
 30th European Conference on IR Research, (ECIR '08), pp. 346-357.
 
-[5] Rasolofo, Y., & Savoy, J. (2003). Term proximity scoring for keyword-based
+[5] Rasolofo, Y., & Savoy, J.. Term proximity scoring for keyword-based
 retrieval systems. In Advances in Information Retrieval: 25th European
 Conference on IR Research, (ECIR '03), pp. 207-218.
