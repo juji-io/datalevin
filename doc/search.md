@@ -290,24 +290,26 @@ When the user elects to enable term positions indexing, it is beneficial to
 utilize the positional information to enable term proximity scoring to enhance
 precision of top results. This reflects the intuition that the closer the query
 terms are placed together in a document, the more relevant the document
-might be. We enable term proximity scoring by default when `:index-position?` is
-set to `true`.
+might be. We enable term proximity scoring when `:index-position?` is set to
+`true`.
 
-Instead of replacing term frequency by proximity score [4], which is
-relatively expensive to calculate, or adding the proximity score to the tf-idf
-score [5], which faces the difficult problem of determining the relative weights
-of the two scores that may require machine learning, we decide to perform a two stage process: we search by tf-idf
-based scoring first as usual, then calculate proximity score only for the top
-results, and finally produce the top `k` results according to the proximity score.
+Instead of replacing term frequency by proximity score [5], which is
+relatively expensive to calculate, or combining the proximity score with the
+tf-idf score [4], which faces the difficult problem of determining the relative
+weights of the two scores that may require machine learning, we decide to
+perform a two stage procedure: we search by tf-idf based scoring first as usual,
+then calculate proximity score only for the top results, and finally produce the
+top `k` results according to the proximity score.
 
 For the first tf-idf stage, instead of producing top `k` results only, we produce top
-`m * k` results, where `m` is user configurable as `:proximity-top-expansion`
+`m * k` results, where `m` is user configurable as `:proximity-expansion`
 (default is 5) search option. This parameter reflects a search quality vs. time
 trade-off. The larger is `m`, the better is the search quality, while the search
 time would be longer.
 
 A span based proximity scoring algorithm is used to calculate the proximity
-contribution of individual terms, and they are then plugged into the Okapi ranking function [4] to arrive at the final score.
+contribution of individual terms, and they are then plugged into the Okapi
+ranking function to arrive at the final score [5].
 
 ## Benchmark
 
@@ -328,10 +330,10 @@ Retrieval, Cambridge University Press. 2008.
 Dictionary Matching. Proceedings of the 23rd International Conference on
 Computational Linguistics (COLING '10), 2010, pp. 851-859.
 
-[4] Song, R., Taylor, M. J., Wen, J. R., Hon, H. W., & Yu, Y. Viewing term
-proximity from a different perspective. In Advances in Information Retrieval:
-30th European Conference on IR Research, (ECIR '08), pp. 346-357.
-
-[5] Rasolofo, Y., & Savoy, J.. Term proximity scoring for keyword-based
+[4] Rasolofo, Y., & Savoy, J.. Term proximity scoring for keyword-based
 retrieval systems. In Advances in Information Retrieval: 25th European
 Conference on IR Research, (ECIR '03), pp. 207-218.
+
+[5] Song, R., Taylor, M. J., Wen, J. R., Hon, H. W., & Yu, Y. Viewing term
+proximity from a different perspective. In Advances in Information Retrieval:
+30th European Conference on IR Research, (ECIR '08), pp. 346-357.

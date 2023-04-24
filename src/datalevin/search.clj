@@ -284,29 +284,28 @@
         (when (has-next? (advance candidate))
           (recur (get-did candidate) (current-threshold pq)))))))
 
-(defn- score-docs
-  [n tids sls bms mxs wqs ^IntShortHashMap norms ^RoaringBitmap result]
-  (fn [^PriorityQueue pq ^long tao] ; target # of overlaps between query and doc
-    (loop [^"[Ldatalevin.search.Candidate;" candidates
-           (first-candidates sls bms tids result tao n)]
-      (let [nc            (alength candidates)
-            minimal-score ^double (current-threshold pq)]
-        (cond
-          (or (= nc 0) (< nc tao)) :finish
-          (= nc 1)
-          (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
-          :else
-          (let [_                   (Arrays/sort candidates candidate-comp)
-                [mxscore pivot did] (find-pivot mxs (dec tao)
-                                                minimal-score
-                                                candidates)]
-            (if (= ^int did ^int (get-did (aget candidates 0)))
-              (let [score (score-pivot wqs mxs norms did minimal-score
-                                       mxscore tao n candidates)]
-                (when-not (= score :prune)
-                  (.insertWithOverflow pq [score did]))
-                (recur (next-candidates did candidates)))
-              (recur (skip-candidates pivot did candidates)))))))))
+(defn- tf-idf-scoring
+  [sls bms tids result tao n pq mxs wqs norms]
+  (loop [^"[Ldatalevin.search.Candidate;" candidates
+         (first-candidates sls bms tids result tao n)]
+    (let [nc            (alength candidates)
+          minimal-score ^double (current-threshold pq)]
+      (cond
+        (or (= nc 0) (< nc ^long tao)) :finish
+        (= nc 1)
+        (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
+        :else
+        (let [_                   (Arrays/sort candidates candidate-comp)
+              [mxscore pivot did] (find-pivot mxs (dec ^long tao)
+                                              minimal-score
+                                              candidates)]
+          (if (= ^int did ^int (get-did (aget candidates 0)))
+            (let [score (score-pivot wqs mxs norms did minimal-score
+                                     mxscore tao n candidates)]
+              (when-not (= score :prune)
+                (.insertWithOverflow ^PriorityQueue pq [score did]))
+              (recur (next-candidates did candidates)))
+            (recur (skip-candidates pivot did candidates))))))))
 
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text] [this doc-ref doc-text check-exist?])
@@ -316,7 +315,7 @@
   (doc-count [this])
   (search [this query] [this query opts]))
 
-(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf)
+(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs)
 
 (deftype SearchEngine [lmdb
                        analyzer
@@ -362,10 +361,11 @@
 
   (search [this query]
     (.search this query {}))
-  (search [this query {:keys [display ^long top doc-filter]
-                       :or   {display    :refs
-                              top        10
-                              doc-filter (constantly true)}}]
+  (search [this query {:keys [display top proximity-expansion doc-filter]
+                       :or   {display             :refs
+                              top                 10
+                              proximity-expansion 5
+                              doc-filter          (constantly true)}}]
     (when-not (s/blank? query)
       (let [tokens (->> (query-analyzer query)
                         (mapv first)
@@ -391,15 +391,29 @@
               (persistent!
                 (reduce
                   (fn [coll tao]
-                    (let [so-far (count coll)
-                          to-get (- top so-far)]
+                    (let [to-get (- ^long top (count coll))]
                       (if (< 0 to-get)
                         (let [^PriorityQueue pq (priority-queue to-get)]
-                          (scoring pq tao)
+                          (scoring this pq tao to-get proximity-expansion)
                           (pouring coll pq result))
                         (reduced coll))))
                   (transient [])
                   (range n 0 -1))))))))))
+
+(defn- proximity-scoring
+  [engine tids ^PriorityQueue pq0 ^PriorityQueue pq]
+  (dotimes [_ (.size pq0)]
+    (.insertWithOverflow pq (.pop pq0))))
+
+(defn- score-docs
+  [n tids sls bms mxs wqs norms result]
+  (fn [^SearchEngine engine ^PriorityQueue pq tao to-get proximity-expansion]
+    (if (.-index-position? engine)
+      (let [^PriorityQueue pq0 (priority-queue
+                                 (* ^long to-get ^long proximity-expansion))]
+        (tf-idf-scoring sls bms tids result tao n pq0 mxs wqs norms)
+        (proximity-scoring engine tids pq0 pq))
+      (tf-idf-scoring sls bms tids result tao n pq mxs wqs norms))))
 
 (defn- get-term-info
   [^SearchEngine engine term]

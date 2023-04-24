@@ -2,7 +2,12 @@
 
 ## WIP
 ### Added
-- [Search] Consider term proximity in relevance when `:index-position?` is true.
+- [Search] Consider term proximity in relevance when `:index-position?` is true,
+  and a `:proximity-top-expansion` option (default 5) can be used to adjust the
+  search quality vs. time trade-off: the bigger the number, the higher is the
+  quality, but the longer is search time.
+### Improved
+- [Lib] update deps.
 
 ## 0.8.12 (2023-04-03)
 ### Fixed
