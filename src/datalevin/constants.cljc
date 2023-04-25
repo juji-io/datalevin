@@ -221,7 +221,8 @@
     +init-db-size+
     (let [cur-size (/ ^long (u/dir-size file) (* 1024 1024))]
       (some #(when (<= ^long cur-size ^long %)  %)
-            (iterate #(* ^long +buffer-grow-factor+ ^long %) 100)))))
+            (iterate #(* ^long +buffer-grow-factor+ ^long %)
+                     +init-db-size+)))))
 
 ;; storage
 
