@@ -1648,3 +1648,22 @@ one of the following scalar data types, a vector of these scalars to indicate a 
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
+
+(comment
+
+  (def test-conn (create-conn "/tmp/test"))
+  (datalog-index-cache-limit @test-conn 0)
+  (transact! test-conn [{:foo 0}])
+  (dotimes [i 10000]
+    (transact! test-conn [{:foo i}]))
+  (u/empty-dir? (u/file "/tmp/test"))
+  (c/pick-mapsize (u/file "/tmp/test"))
+  (<= (/ 12801 128) 100)
+  ;; run this many times while watching heap
+  ;; in VisualVM and running GC
+  (dotimes [i 1000000]
+    (transact! test-conn [{:foo i}]))
+
+  (close test-conn)
+
+  )

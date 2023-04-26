@@ -458,7 +458,7 @@
       (catch Exception e
         ;; (st/print-stack-trace e)
         (raise "Fail to commit read/write transaction in LMDB: "
-               (ex-message e) {}))))
+               e {}))))
 
   (abort-transact-kv [this]
     (when-let [^Rtx wtxn @write-txn]
@@ -724,7 +724,7 @@
      (let [^File file (u/file dir)
            mapsize    (* (long (if (u/empty-dir? file)
                                  mapsize
-                                 (c/pick-mapsize file)))
+                                 (c/pick-mapsize dir)))
                          1024 1024)
            builder    (doto (Env/create)
                         (.setMapSize mapsize)

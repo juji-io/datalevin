@@ -3,6 +3,7 @@
   (:require
    [datalevin.util :as u])
   (:import
+   [java.io File]
    [java.util UUID Arrays HashSet]
    [java.math BigInteger BigDecimal]))
 
@@ -216,13 +217,15 @@
 (defn pick-mapsize
   "pick a map size from the growing factor schedule that is larger than or
   equal to the current size"
-  [file]
-  (if (u/empty-dir? file)
-    +init-db-size+
-    (let [cur-size (/ ^long (u/dir-size file) (* 1024 1024))]
-      (some #(when (<= ^long cur-size ^long %)  %)
-            (iterate #(* ^long +buffer-grow-factor+ ^long %)
-                     +init-db-size+)))))
+  [dir]
+  (let [^File file (u/file (str dir u/+separator+ "data.mdb"))
+        cur-size   (.length file)]
+    ;; (println "cur-size =>" cur-size)
+    (some #(when (<= ^long cur-size (* ^long % 1024 1024))
+             ;; (println "pic-size =>" (* ^long % 1024 1024))
+             %)
+          (iterate #(* ^long +buffer-grow-factor+ ^long %)
+                   +init-db-size+))))
 
 ;; storage
 

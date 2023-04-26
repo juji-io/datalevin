@@ -6,6 +6,8 @@
   and a `:proximity-top-expansion` option (default 5) can be used to adjust the
   search quality vs. time trade-off: the bigger the number, the higher is the
   quality, but the longer is search time.
+### Fixed
+- [Datalog] Unexpected heap growth. #204
 ### Improved
 - [Lib] update deps.
 
