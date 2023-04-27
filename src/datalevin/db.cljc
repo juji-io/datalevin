@@ -84,20 +84,17 @@
   ([store]
    (refresh-cache store (s/last-modified store)))
   ([store target]
-   (locking caches
-     (.put ^ConcurrentHashMap caches (s/dir store)
-           (lru/lru (:cache-limit (s/opts store)) target)))))
+   (.put ^ConcurrentHashMap caches (s/dir store)
+         (lru/lru (:cache-limit (s/opts store)) target))))
 
 (defmacro wrap-cache
   [store pattern body]
-  `(let [cache# (locking caches
-                  (.get ^ConcurrentHashMap caches (s/dir ~store)))]
+  `(let [cache# (.get ^ConcurrentHashMap caches (s/dir ~store))]
      (if-some [cached# (get ^LRU cache# ~pattern nil)]
        cached#
        (let [res# ~body]
-         (locking caches
-           (.put ^ConcurrentHashMap caches (s/dir ~store)
-                 (assoc cache# ~pattern res#)))
+         (.put ^ConcurrentHashMap caches (s/dir ~store)
+               (assoc cache# ~pattern res#))
          res#))))
 
 (defn vpred
@@ -291,8 +288,7 @@
   (when (-searchable? x)
     (let [store  (.-store ^DB x)
           target (s/last-modified store)
-          cache  (locking caches
-                   (.get ^ConcurrentHashMap caches (s/dir store)))]
+          cache  (.get ^ConcurrentHashMap caches (s/dir store))]
       (when (< ^long (.-target ^LRU cache) ^long target)
         (refresh-cache store target)))
     true))
@@ -429,7 +425,7 @@
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
-    (locking caches (.remove ^ConcurrentHashMap caches (s/dir store)))
+    (.remove ^ConcurrentHashMap caches (s/dir store))
     (swap! dbs dissoc (s/db-name store))
     (s/close store)
     nil))
