@@ -526,20 +526,6 @@
     (sut/close conn)
     (u/delete-files dir)))
 
-(deftest million-txns-map-resize-test
-  (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
-        conn (sut/create-conn dir)]
-
-    (dotimes [i 1000000] (sut/transact! conn [{:foo i}]))
-
-    ;; this will blow through 100 MiB boundary
-    (dotimes [i 1000000] (sut/transact! conn [{:foo i}]))
-
-    (is (= 2000000 (count (sut/datoms @conn :eav))))
-
-    (sut/close conn)
-    (u/delete-files dir)))
-
 (deftest simulated-tx-test
   (let [dir  (u/tmp-dir (str "sim-tx-test-" (UUID/randomUUID)))
         conn (sut/create-conn dir

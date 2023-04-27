@@ -5,6 +5,8 @@
 - [Datalog] Unexpected heap growth due to caching error. #204
 - [Datalog] More cases of map size reached errors during transaction. #196
 ### Improved
+- [Datalog] Disable cache during transaction, save memory and avoid disrupting
+  concurrent write processes.
 - [Native] upgrade GraalVM to 22.3.2
 - [Lib] update deps.
 
