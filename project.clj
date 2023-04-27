@@ -61,7 +61,6 @@
   :profiles
   {:uberjar        {:main           datalevin.main
                     :aot            [datalevin.main]
-                    :javac-options  ["--release" "8"]
                     :jar-inclusions [#"graal" #"test"]}
    :native-uberjar {:aot            [pod.huahaiy.datalevin],
                     :jar-inclusions [#"test"]
