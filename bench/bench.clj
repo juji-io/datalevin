@@ -138,9 +138,9 @@
 
 
 (def default-versions
-  [;; ["latest" "datomic"]
-   ;["latest" "datascript"]
-   ;["0.8.5" "datalevin"]
+  [["latest" "datomic"]
+   ["latest" "datascript"]
+   ;["0.8.12" "datalevin"]
    ["latest" "datalevin"]])
 
 

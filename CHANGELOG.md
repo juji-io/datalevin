@@ -1,14 +1,11 @@
 # Change Log
 
 ## WIP
-### Added
-- [Search] Consider term proximity in relevance when `:index-position?` is true,
-  and a `:proximity-top-expansion` option (default 5) can be used to adjust the
-  search quality vs. time trade-off: the bigger the number, the higher is the
-  quality, but the longer is search time.
 ### Fixed
-- [Datalog] Unexpected heap growth. #204
+- [Datalog] Unexpected heap growth due to caching error. #204
+- [Datalog] More cases of map size reached errors during transaction. #196
 ### Improved
+- [Native] upgrade GraalVM to 22.3.2
 - [Lib] update deps.
 
 ## 0.8.12 (2023-04-03)

@@ -90,7 +90,8 @@
 
 (defmacro wrap-cache
   [store pattern body]
-  `(let [cache# (.get ^ConcurrentHashMap caches (s/dir ~store))]
+  `(let [cache# (locking caches
+                  (.get ^ConcurrentHashMap caches (s/dir ~store)))]
      (if-some [cached# (get ^LRU cache# ~pattern nil)]
        cached#
        (let [res# ~body]
@@ -290,8 +291,9 @@
   (when (-searchable? x)
     (let [store  (.-store ^DB x)
           target (s/last-modified store)
-          cache  ^LRU (.get ^ConcurrentHashMap caches (s/dir store))]
-      (when (< ^long (.-target cache) ^long target)
+          cache  (locking caches
+                   (.get ^ConcurrentHashMap caches (s/dir store)))]
+      (when (< ^long (.-target ^LRU cache) ^long target)
         (refresh-cache store target)))
     true))
 
@@ -427,7 +429,7 @@
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]
-    (locking caches (.remove ^ConcurrentHashMap caches store))
+    (locking caches (.remove ^ConcurrentHashMap caches (s/dir store)))
     (swap! dbs dissoc (s/db-name store))
     (s/close store)
     nil))

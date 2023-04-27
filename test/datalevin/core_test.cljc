@@ -443,6 +443,8 @@
 
     (testing "new value is invisible to outside readers"
       (sut/with-transaction [cn conn]
+        ;; turn off cache to see the effect
+        (sut/datalog-index-cache-limit @cn 0)
         (is (nil? (sut/q query @cn 1)))
         (sut/transact! cn [{:db/id 1 :counter 1}])
         (is (= 1 (sut/q query @cn 1)))
@@ -507,8 +509,9 @@
                 :where [?e :content ?d]]
         prior "prior data"
         big   "bigger than 10 MB"]
-
+    (sut/datalog-index-cache-limit @conn 0)
     (sut/with-transaction [cn conn]
+      (sut/datalog-index-cache-limit @cn 0)
       (sut/transact! cn [{:content prior :numbers [1 2]}])
       (is (= 1 (sut/q query @cn prior)))
       (sut/transact! cn [{:content big
@@ -519,6 +522,20 @@
     (is (= 2 (sut/q query @conn big)))
 
     (is (= 4 (count (sut/datoms @conn :eav))))
+
+    (sut/close conn)
+    (u/delete-files dir)))
+
+(deftest million-txns-map-resize-test
+  (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
+        conn (sut/create-conn dir)]
+
+    (dotimes [i 1000000] (sut/transact! conn [{:foo i}]))
+
+    ;; this will blow through 100 MiB boundary
+    (dotimes [i 1000000] (sut/transact! conn [{:foo i}]))
+
+    (is (= 2000000 (count (sut/datoms @conn :eav))))
 
     (sut/close conn)
     (u/delete-files dir)))

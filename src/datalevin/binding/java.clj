@@ -445,20 +445,25 @@
         (raise "Fail to open read/write transaction in LMDB: "
                (ex-message e) {}))))
 
-  (close-transact-kv [this]
-    (try
-      (if-let [^Rtx wtxn @write-txn]
-        (when-let [^Txn txn (.-txn wtxn)]
-          (let [aborted? @(.-aborted? wtxn)]
-            (when-not aborted? (.commit txn))
-            (vreset! write-txn nil)
-            (.close txn)
-            (if aborted? :aborted :committed)))
-        (raise "Calling `close-transact-kv` without opening" {}))
-      (catch Exception e
-        ;; (st/print-stack-trace e)
-        (raise "Fail to commit read/write transaction in LMDB: "
-               e {}))))
+  (close-transact-kv [_]
+    (if-let [^Rtx wtxn @write-txn]
+      (when-let [^Txn txn (.-txn wtxn)]
+        (let [aborted? @(.-aborted? wtxn)]
+          (when-not aborted?
+            (try
+              (.commit txn)
+              (catch Env$MapFullException _
+                (vreset! write-txn nil)
+                (.close txn)
+                (up-db-size env)
+                (raise "DB resized" {:resized true}))
+              (catch Exception e
+                (raise "Fail to commit read/write transaction in LMDB: "
+                       e {}))))
+          (vreset! write-txn nil)
+          (.close txn)
+          (if aborted? :aborted :committed)))
+      (raise "Calling `close-transact-kv` without opening" {})))
 
   (abort-transact-kv [this]
     (when-let [^Rtx wtxn @write-txn]

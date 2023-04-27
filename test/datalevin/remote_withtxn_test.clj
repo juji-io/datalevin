@@ -14,6 +14,7 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
         conn (d/create-conn dir)]
     (d/with-transaction [cn conn]
+      (d/datalog-index-cache-limit @cn 0)
       (is (nil? (d/q query @cn 1)))
       (d/transact! cn [{:db/id 1 :counter 1}])
       (is (= 1 (d/q query @cn 1)))

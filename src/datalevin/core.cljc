@@ -286,31 +286,7 @@ Only usable for debug output.
        :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
 
-(defmacro with-transaction-kv
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of key-value operations.
-
-  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
-
-  `body` should refer to `db`.
-
-  Example:
-
-          (with-transaction-kv [kv lmdb]
-            (let [^long now (get-value kv \"a\" :counter)]
-              (transact-kv kv [[:put \"a\" :counter (inc now)]])
-              (get-value kv \"a\" :counter)))"
-  [[db orig-db] & body]
-  `(locking (l/write-txn ~orig-db)
-     (let [writing# (l/writing? ~orig-db)]
-       (try
-         (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
-           (u/repeat-try-catch
-             ~c/+in-tx-overflow-times+
-             ~'e (and (:resized (ex-data ~'e)) (not writing#))
-             ~@body))
-         (finally
-           (when-not writing# (l/close-transact-kv ~orig-db)))))))
+(u/import-macro l/with-transaction-kv)
 
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
@@ -343,7 +319,7 @@ Only usable for debug output.
                         (try
                           (u/repeat-try-catch
                             ~c/+in-tx-overflow-times+
-                            ~'e (:resized (ex-data ~'e)) (w#))
+                            l/resized? (w#))
                           (finally (r/close-transact s#)))))]
            (reset! ~orig-conn (db/new-db s#))
            res#)
@@ -1648,22 +1624,3 @@ one of the following scalar data types, a vector of these scalars to indicate a 
 (def ^{:arglists '([s])
        :doc      "Turn a hexified string back into a normal string"}
   unhexify-string b/unhexify-string)
-
-(comment
-
-  (def test-conn (create-conn "/tmp/test"))
-  (datalog-index-cache-limit @test-conn 0)
-  (transact! test-conn [{:foo 0}])
-  (dotimes [i 10000]
-    (transact! test-conn [{:foo i}]))
-  (u/empty-dir? (u/file "/tmp/test"))
-  (c/pick-mapsize (u/file "/tmp/test"))
-  (<= (/ 12801 128) 100)
-  ;; run this many times while watching heap
-  ;; in VisualVM and running GC
-  (dotimes [i 1000000]
-    (transact! test-conn [{:foo i}]))
-
-  (close test-conn)
-
-  )
