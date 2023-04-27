@@ -36,7 +36,7 @@
              "--illegal-access=permit"
              "-Djdk.attach.allowAttachSelf"
              "-Dclojure.compiler.direct-linking=true"]
-  :javac-options ["--release" "11"]
+  :javac-options ["--release" "17"]
   :aot [#"^datalevin.*"]
   :source-paths ["../src" "../test"]
   :java-source-paths ["src/java" "../src/java"]

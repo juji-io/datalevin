@@ -630,19 +630,21 @@
     (if-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
         (let [aborted? @(.-aborted? wtxn)]
-          (when-not aborted?
+          (if aborted?
+            (.close txn)
             (try
               (.commit txn)
               (catch Lib$MapFullException _
-                (vreset! write-txn nil)
                 (.close txn)
+                (vreset! write-txn nil)
                 (up-db-size env)
                 (raise "DB resized" {:resized true}))
               (catch Exception e
+                (.close txn)
+                (vreset! write-txn nil)
                 (raise "Fail to commit read/write transaction in LMDB: "
                        e {}))))
           (vreset! write-txn nil)
-          (.close txn)
           (if aborted? :aborted :committed)))
       (raise "Calling `close-transact-kv` without opening" {})))
 
