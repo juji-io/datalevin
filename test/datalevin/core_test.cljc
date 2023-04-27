@@ -444,7 +444,7 @@
     (testing "new value is invisible to outside readers"
       (sut/with-transaction [cn conn]
         ;; turn off cache to see the effect
-        (sut/datalog-index-cache-limit @cn 0)
+        ;; (sut/datalog-index-cache-limit @cn 0)
         (is (nil? (sut/q query @cn 1)))
         (sut/transact! cn [{:db/id 1 :counter 1}])
         (is (= 1 (sut/q query @cn 1)))
@@ -509,9 +509,9 @@
                 :where [?e :content ?d]]
         prior "prior data"
         big   "bigger than 10 MB"]
-    (sut/datalog-index-cache-limit @conn 0)
+    ;; (sut/datalog-index-cache-limit @conn 0)
     (sut/with-transaction [cn conn]
-      (sut/datalog-index-cache-limit @cn 0)
+      ;; (sut/datalog-index-cache-limit @cn 0)
       (sut/transact! cn [{:content prior :numbers [1 2]}])
       (is (= 1 (sut/q query @cn prior)))
       (sut/transact! cn [{:content big

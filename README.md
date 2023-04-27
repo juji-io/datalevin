@@ -388,26 +388,23 @@ Both Datascript and LMDB are mature and stable libraries. Building on top of
 them, Datalevin is extensively tested with property-based testing. It is also used
 in production at [Juji](https://juji.io).
 
-Running the [benchmark suite adopted from
-Datascript](https://github.com/juji-io/datalevin/tree/master/bench) on a Ubuntu
-Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it
-looks.
+Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
 
 <p align="center">
 <img src="bench/datalevin-bench-query-04-27-2023.png" alt="query benchmark" height="300"></img>
 <img src="bench/datalevin-bench-write-04-27-2023.png" alt="write benchmark" height="300"></img>
 </p>
 
-In this benchmark, Datomic-free is running in in-memory mode. In all benchmarked
-queries, Datalevin is faster than Datascript and Datomic-free. Considering
-that we are comparing a disk store with memory stores, this result may be
-counter-intuitive. One possible reason is that Datalevin caches more
-aggressively, whereas Datascript chose not to do so (e.g. see [this
-issue](https://github.com/tonsky/datascript/issues/6)). In addition, we
-implemented more query optimizations.
+In this benchmark, Datomic is running in in-memory mode, as it requires another
+database for persistence. In all benchmarked queries, Datalevin is faster than
+Datascript and Datomic. Considering that we are comparing a disk store with
+memory stores, this result may be counter-intuitive. One possible reason is that
+Datalevin caches more aggressively, whereas Datascript chose not to do so (e.g.
+see [this issue](https://github.com/tonsky/datascript/issues/6)). In addition,
+we implemented more query optimizations.
 
 Writes are slower, as expected, as Datalevin is writing to disk
-while others are in memory. The bulk write speed is good, writing 100K datoms
+while others are in memory. The bulk loading speed is good, writing 100K datoms
 to disk in less than 0.2 seconds; the same data can also be transacted with all
 the integrity checks as a whole or five datoms at a time in less than 1.5
 seconds. Transacting one datom at a time, it takes longer time. Therefore, it is

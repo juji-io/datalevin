@@ -288,6 +288,17 @@ Only usable for debug output.
 
 (u/import-macro l/with-transaction-kv)
 
+(defn datalog-index-cache-limit
+  "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
+   disable the cache, useful when transacting bulk data as it saves memory."
+  ([^DB db]
+   (let [^Store store (.-store db)]
+     (:cache-limit (s/opts store))))
+  ([^DB db ^long n]
+   (let [^Store store (.-store db)]
+     (s/assoc-opt store :cache-limit n)
+     (db/refresh-cache store (System/currentTimeMillis)))))
+
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
@@ -306,8 +317,11 @@ Only usable for debug output.
               (transact! cn [{:db/id 1 :counter (inc now)}])
               (q query @cn 1))) "
   [[conn orig-conn] & body]
-  `(locking (l/write-txn (.-store ^DB (deref ~orig-conn)))
-     (let [s# (.-store ^DB (deref ~orig-conn))]
+  `(let [db#  ^DB (deref ~orig-conn)
+         s#   (.-store db#)
+         old# (datalog-index-cache-limit db#)]
+     (datalog-index-cache-limit db# 0)
+     (locking (l/write-txn s#)
        (if (instance? DatalogStore s#)
          (let [res# (if (l/writing? s#)
                       (let [~conn ~orig-conn]
@@ -322,6 +336,7 @@ Only usable for debug output.
                             l/resized? (w#))
                           (finally (r/close-transact s#)))))]
            (reset! ~orig-conn (db/new-db s#))
+           (datalog-index-cache-limit db# old#)
            res#)
          (let [kv#   (.-lmdb ^Store s#)
                s1#   (volatile! nil)
@@ -333,6 +348,7 @@ Only usable for debug output.
                          (vreset! s1# (.-store ^DB (deref conn1#)))
                          res#))]
            (reset! ~orig-conn (db/new-db (s/transfer (deref s1#) kv#)))
+           (datalog-index-cache-limit db# old#)
            res1#)))))
 
 (def ^{:arglists '([conn])
@@ -1431,17 +1447,6 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
     (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
-
-(defn datalog-index-cache-limit
-  "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
-   disable the cache, useful when transacting bulk data as it saves memory."
-  ([^DB db]
-   (let [^Store store (.-store db)]
-     (:cache-limit (s/opts store))))
-  ([^DB db ^long n]
-   (let [^Store store (.-store db)]
-     (s/assoc-opt store :cache-limit n)
-     (db/refresh-cache store))))
 
 ;; -------------------------------------
 ;; Search API

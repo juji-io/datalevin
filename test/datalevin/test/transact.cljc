@@ -44,7 +44,6 @@
                 #:db{:valueType   :db.type/long
                      :unique      :db.unique/identity
                      :cardinality :db.cardinality/one}})]
-    (d/datalog-index-cache-limit @conn 0)
     (dorun (pmap #(d/transact! conn [{:instance/id %}])
                  (range 100)))
     (is (= 100 (d/q '[:find (max ?e) . :where [?e :instance/id]] @conn)))
@@ -59,7 +58,6 @@
   (let [dir     (u/tmp-dir (str "multi-rw-" (random-uuid)))
         conn    (d/create-conn dir {} {:validate-data?    true
                                        :auto-entity-time? true})
-        _       (d/datalog-index-cache-limit @conn 0)
         q+      '[:find ?i+j .
                   :in $ ?i ?j
                   :where [?e :i+j ?i+j] [?e :i ?i] [?e :j ?j]]

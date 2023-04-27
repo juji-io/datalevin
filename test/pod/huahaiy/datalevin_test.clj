@@ -63,14 +63,13 @@
         query '[:find ?c .
                 :in $ ?e
                 :where [?e :counter ?c]]]
-    (pd/datalog-index-cache-limit (pd/db conn) 0)
     (is (nil? (pd/q query (pd/db conn) 1)))
     (testing "new value is invisible to outside readers"
       (pd/with-transaction [cn conn]
-        (pd/datalog-index-cache-limit (pd/db cn) 0)
         (is (nil? (pd/q query (pd/db cn) 1)))
         (pd/transact! cn [{:db/id 1 :counter 1}])
         (is (= 1 (pd/q query (pd/db cn) 1)))
+        ;; TODO maybe this shouldn't be nil?
         #_(is (nil? (pd/q query (pd/db conn) 1))))
       (is (= 1 (pd/q query (pd/db conn) 1))))
 
