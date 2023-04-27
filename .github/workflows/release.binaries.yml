@@ -23,7 +23,7 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '17'
 
       - name: Install Lein
         uses: knicknic/os-specific-run@v1.0.3
@@ -46,7 +46,7 @@ jobs:
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
         with:
-          graalvm-version: '22.3.1.java11'
+          graalvm-version: '22.3.2.java17'
 
       - name: Install Native Image
         run: |
