@@ -852,7 +852,7 @@
       (transact-report report new-datom)
 
       (= (.-v old-datom) v)
-      (if (some #(and (= % new-datom) (not (datom-added %)))
+      (if (some #(and (not (datom-added %)) (= % new-datom))
                 (:tx-data report))
         ;; special case: retract then transact the same datom
         (transact-report report new-datom)
