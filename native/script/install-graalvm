@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-GRAALVM_VERSION="${GRAALVM_VERSION:-22.3.2}"
+GRAALVM_VERSION="${GRAALVM_VERSION:-22.3.1}"
 
 case "$DTLV_PLATFORM" in
 	macos)
@@ -22,9 +22,9 @@ case "${DTLV_ARCH:-}" in
 		;;
 esac
 
-GRAALVM_FILENAME="graalvm-ce-java17-$GRAALVM_PLATFORM-$GRAALVM_ARCH-$GRAALVM_VERSION.tar.gz"
+GRAALVM_FILENAME="graalvm-ce-java11-$GRAALVM_PLATFORM-$GRAALVM_ARCH-$GRAALVM_VERSION.tar.gz"
 
-if ! [ -d "graalvm-ce-java17-$GRAALVM_VERSION" ]; then
+if ! [ -d "graalvm-ce-java11-$GRAALVM_VERSION" ]; then
 	echo "Downloading GraalVM $GRAALVM_PLATFORM-$GRAALVM_ARCH-$GRAALVM_VERSION on '$PWD'..."
 	wget -nv "https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-$GRAALVM_VERSION/$GRAALVM_FILENAME"
 	tar xzf "$GRAALVM_FILENAME"

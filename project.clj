@@ -32,9 +32,9 @@
    [org.clojars.huahaiy/dtlvnative-macos-aarch64 "0.7.12"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.7.12"]
    [org.eclipse.collections/eclipse-collections "12.0.0.M1"]
-   [org.graalvm.sdk/graal-sdk "22.3.2"]
-   [org.graalvm.nativeimage/svm "22.3.2"]
-   [org.graalvm.nativeimage/library-support "22.3.2"]
+   [org.graalvm.sdk/graal-sdk "22.3.1"]
+   [org.graalvm.nativeimage/svm "22.3.1"]
+   [org.graalvm.nativeimage/library-support "22.3.1"]
    [org.lmdbjava/lmdbjava "0.8.3"]
    [org.roaringbitmap/RoaringBitmap "0.9.40"]]
   :dependencies

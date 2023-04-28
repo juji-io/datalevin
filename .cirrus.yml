@@ -6,7 +6,7 @@ task:
   # only_if: "changesInclude('.cirrus.yml', 'src/*', 'native/script/*')"
   env:
     LEIN_ROOT: "true"
-    GRAALVM_VERSION: "22.3.2"
+    GRAALVM_VERSION: "22.3.1"
     DTLV_PLATFORM: macos
     DTLV_ARCH: aarch64
     GITHUB_TOKEN: ENCRYPTED[!41f1e85b6e586455cca18744e840eb478625b1e76bdf38741704b504929b3115f541f73101393835ca625e2e9db295a2!]
@@ -18,7 +18,7 @@ task:
     cd native
     script/install-graalvm
 
-    export GRAALVM_HOME=$(pwd)/graalvm-ce-java17-${GRAALVM_VERSION}/Contents/Home
+    export GRAALVM_HOME=$(pwd)/graalvm-ce-java11-${GRAALVM_VERSION}/Contents/Home
     export JAVA_HOME=$GRAALVM_HOME
     export PATH=$GRAALVM_HOME/bin:$PATH
 

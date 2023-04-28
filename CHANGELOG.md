@@ -1,10 +1,14 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Native] Rollback GraalVM to 22.3.1 as it is missing apple silicon
+
 ## 0.8.13 (2023-04-28)
 ### Fixed
 - [Datalog] Unexpected heap growth due to caching error. #204
 - [Datalog] More cases of map size reached errors during transaction. #196
-- [Datalog] Existing datoms do not appear in `:tx-data` when unchanged. #207
+- [Datalog] Existing datoms still appear in `:tx-data` when unchanged. #207
 
 ### Improved
 - [Datalog] Disable cache during transaction, save memory and avoid disrupting
