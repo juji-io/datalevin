@@ -220,10 +220,7 @@
   [dir]
   (let [^File file (u/file (str dir u/+separator+ "data.mdb"))
         cur-size   (.length file)]
-    ;; (println "cur-size =>" cur-size)
-    (some #(when (<= ^long cur-size (* ^long % 1024 1024))
-             ;; (println "pic-size =>" (* ^long % 1024 1024))
-             %)
+    (some #(when (<= cur-size (* ^long % 1024 1024)) %)
           (iterate #(* ^long +buffer-grow-factor+ ^long %)
                    +init-db-size+))))
 
