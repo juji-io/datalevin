@@ -396,19 +396,22 @@ Running the [benchmark suite adopted from Datascript](https://github.com/juji-io
 </p>
 
 In this benchmark, Datomic is running in in-memory mode, as it requires another
-database for persistence. In all benchmarked queries, Datalevin is faster than
-Datascript and Datomic. Considering that we are comparing a disk store with
-memory stores, this result may be counter-intuitive. One possible reason is that
-Datalevin caches more aggressively, whereas Datascript chose not to do so (e.g.
-see [this issue](https://github.com/tonsky/datascript/issues/6)). In addition,
-we implemented more query optimizations.
+database for persistence. Also, the `init` write condition, i.e. bulk loading
+prepared datoms, is not available.
 
-Writes are slower, as expected, as Datalevin is writing to disk
-while others are in memory. The bulk loading speed is good, writing 100K datoms
-to disk in less than 0.2 seconds; the same data can also be transacted with all
-the integrity checks as a whole or five datoms at a time in less than 1.5
-seconds. Transacting one datom at a time, it takes longer time. Therefore, it is
-preferable to have batch transactions.
+In all benchmarked queries, Datalevin is faster than Datascript and Datomic.
+Considering that we are comparing a disk store with memory stores, this result
+may be counter-intuitive. One possible reason is that Datalevin caches more
+aggressively, whereas Datascript chose not to do so (e.g. see [this
+issue](https://github.com/tonsky/datascript/issues/6)). In addition, we
+implemented more query optimizations.
+
+Writes are slower, as expected, as Datalevin is writing to disk while others are
+in memory. The bulk loading speed is good, writing 100K datoms to disk in less
+than 0.2 seconds; the same data can also be transacted with all the integrity
+checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
+one datom at a time, it takes longer time. Therefore, it is preferable to have
+batch transactions.
 
 In short, Datalevin is quite capable for small or medium projects right now.
 

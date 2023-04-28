@@ -320,35 +320,37 @@ Only usable for debug output.
   `(let [db#  ^DB (deref ~orig-conn)
          s#   (.-store db#)
          old# (datalog-index-cache-limit db#)]
-     (datalog-index-cache-limit db# 0)
      (locking (l/write-txn s#)
+       (datalog-index-cache-limit db# 0)
        (if (instance? DatalogStore s#)
-         (let [res# (if (l/writing? s#)
-                      (let [~conn ~orig-conn]
-                        ~@body)
-                      (let [s1# (r/open-transact s#)
-                            w#  #(let [~conn (atom (db/new-db s1#)
-                                                   :meta (meta ~orig-conn))]
-                                   ~@body) ]
-                        (try
-                          (u/repeat-try-catch
-                            ~c/+in-tx-overflow-times+
-                            l/resized? (w#))
-                          (finally (r/close-transact s#)))))]
-           (reset! ~orig-conn (db/new-db s#))
-           (datalog-index-cache-limit db# old#)
+         (let [res#    (if (l/writing? s#)
+                         (let [~conn ~orig-conn]
+                           ~@body)
+                         (let [s1# (r/open-transact s#)
+                               w#  #(let [~conn (atom (db/new-db s1#)
+                                                      :meta (meta ~orig-conn))]
+                                      ~@body) ]
+                           (try
+                             (u/repeat-try-catch
+                               ~c/+in-tx-overflow-times+
+                               l/resized? (w#))
+                             (finally (r/close-transact s#)))))
+               new-db# (db/new-db s#)]
+           (reset! ~orig-conn new-db#)
+           (datalog-index-cache-limit new-db# old#)
            res#)
-         (let [kv#   (.-lmdb ^Store s#)
-               s1#   (volatile! nil)
-               res1# (l/with-transaction-kv [kv1# kv#]
-                       (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
-                                          :meta (meta ~orig-conn))
-                             res#   (let [~conn conn1#]
-                                      ~@body)]
-                         (vreset! s1# (.-store ^DB (deref conn1#)))
-                         res#))]
-           (reset! ~orig-conn (db/new-db (s/transfer (deref s1#) kv#)))
-           (datalog-index-cache-limit db# old#)
+         (let [kv#     (.-lmdb ^Store s#)
+               s1#     (volatile! nil)
+               res1#   (l/with-transaction-kv [kv1# kv#]
+                         (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
+                                            :meta (meta ~orig-conn))
+                               res#   (let [~conn conn1#]
+                                        ~@body)]
+                           (vreset! s1# (.-store ^DB (deref conn1#)))
+                           res#))
+               new-db# (db/new-db (s/transfer (deref s1#) kv#))]
+           (reset! ~orig-conn new-db#)
+           (datalog-index-cache-limit new-db# old#)
            res1#)))))
 
 (def ^{:arglists '([conn])

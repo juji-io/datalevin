@@ -426,7 +426,7 @@
                opts
                ^ConcurrentLinkedQueue pool
                ^ConcurrentHashMap dbis
-               ^:volatile-mutable closed?
+               ;; ^:volatile-mutable closed?
                ^BufVal kp-w
                ^BufVal vp-w
                ^BufVal start-kp-w
@@ -441,12 +441,12 @@
 
   (mark-write [_]
     (->LMDB
-      env dir temp? opts pool dbis closed? kp-w vp-w start-kp-w stop-kp-w
+      env dir temp? opts pool dbis kp-w vp-w start-kp-w stop-kp-w
       write-txn true))
 
   ILMDB
   (close-kv [_]
-    (when-not closed?
+    (when-not (.isClosed env)
       (loop [^Iterator iter (.iterator pool)]
         (when (.hasNext iter)
           (.close-rtx ^Rtx (.next iter))
@@ -459,13 +459,12 @@
             (.remove iter)
             (recur iter)))
         (.close ^Dbi (.-db dbi)))
-      (when-not (.isClosed env) (.sync env))
+      (.sync env)
       (.close env)
-      (set! closed? true)
       (when temp? (u/delete-files dir))
       nil))
 
-  (closed-kv? [_] closed?)
+  (closed-kv? [_] (.isClosed env))
 
   (dir [_] dir)
 
@@ -473,12 +472,11 @@
 
   (open-dbi [this dbi-name]
     (.open-dbi this dbi-name nil))
-  (open-dbi [_ dbi-name {:keys [key-size val-size flags validate-data?]
-                         :or   {key-size       c/+max-key-size+
-                                val-size       c/+default-val-size+
-                                flags          c/default-dbi-flags
-                                validate-data? false}}]
-    (assert (not closed?) "LMDB env is closed.")
+  (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?]
+                            :or   {key-size       c/+max-key-size+
+                                   val-size       c/+default-val-size+
+                                   flags          c/default-dbi-flags
+                                   validate-data? false}}]
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kp  (BufVal/create key-size)
           vp  (BufVal/create val-size)
@@ -498,7 +496,6 @@
                                     :flags    c/read-dbi-flags}))))
 
   (clear-dbi [this dbi-name]
-    (assert (not closed?) "LMDB env is closed.")
     (try
       (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
@@ -508,7 +505,6 @@
         (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
-    (assert (not closed?) "LMDB env is closed.")
     (try
       (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
@@ -542,7 +538,6 @@
     (.add pool rtx))
 
   (list-dbis [this]
-    (assert (not closed?) "LMDB env is closed.")
     (let [^Dbi main (Dbi/create env 0)
           ^DBI dbi  (->DBI main
                            (ConcurrentLinkedQueue.)
@@ -570,13 +565,11 @@
   (copy [this dest]
     (.copy this dest false))
   (copy [this dest compact?]
-    (assert (not closed?) "LMDB env is closed.")
     (if (-> dest u/file u/empty-dir?)
       (.copy env dest (if compact? true false))
       (raise "Destination directory is not empty." {})))
 
   (stat [this]
-    (assert (not closed?) "LMDB env is closed.")
     (try
       (let [stat ^Stat (Stat/create env)
             m    (stat-map stat)]
@@ -585,7 +578,6 @@
       (catch Exception e
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
-    (assert (not closed?) "LMDB env is closed.")
     (if dbi-name
       (let [^Rtx rtx (.get-rtx this)]
         (try
@@ -603,7 +595,6 @@
       (l/stat this)))
 
   (entries [this dbi-name]
-    (assert (not closed?) "LMDB env is closed.")
     (let [^DBI dbi (.get-dbi this dbi-name false)
           ^Rtx rtx (.get-rtx this)]
       (try
@@ -618,7 +609,6 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
-    (assert (not closed?) "LMDB env is closed.")
     (try
       (reset-write-txn this)
       (.mark-write this)
@@ -626,7 +616,7 @@
         (raise "Fail to open read/write transaction in LMDB: "
                (ex-message e) {}))))
 
-  (close-transact-kv [_]
+  (close-transact-kv [this]
     (if-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
         (let [aborted? @(.-aborted? wtxn)]
@@ -636,8 +626,8 @@
               (.commit txn)
               (catch Lib$MapFullException _
                 (.close txn)
-                (vreset! write-txn nil)
                 (up-db-size env)
+                (vreset! write-txn nil)
                 (raise "DB resized" {:resized true}))
               (catch Exception e
                 (.close txn)
@@ -655,7 +645,6 @@
       nil))
 
   (transact-kv [this txs]
-    (assert (not closed?) "LMDB env is closed.")
     (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
@@ -666,10 +655,7 @@
           :transacted
           (catch Lib$MapFullException _
             (.close txn)
-            (let [^Info info (Info/create env)]
-              (.setMapSize env (* ^long c/+buffer-grow-factor+
-                                  (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-              (.close info))
+            (up-db-size env)
             (if one-shot?
               (.transact-kv this txs)
               (do (reset-write-txn this)
@@ -1009,7 +995,6 @@
                             opts
                             (ConcurrentLinkedQueue.)
                             (ConcurrentHashMap.)
-                            false
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create 1)
                             (BufVal/create c/+max-key-size+)

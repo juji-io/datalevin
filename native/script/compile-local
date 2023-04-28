@@ -24,25 +24,25 @@ MAIN_JAR="target/main.uberjar.jar"
 TEST0_JAR="target/test0.uberjar.jar"
 TEST1_JAR="target/test1.uberjar.jar"
 
-lein clean
-lein with-profile native-uberjar uberjar
+#lein clean
+#lein with-profile native-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image" \
-  --verbose \
-  --static \
-  --libc=musl \
-  -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
-  -jar "$MAIN_JAR" ${app_name}
+#"$GRAALVM_HOME/bin/native-image" \
+  #--verbose \
+  #--static \
+  #--libc=musl \
+  #-H:CCompilerOption=-Wl,-z,stack-size=2097152 \
+  #-jar "$MAIN_JAR" ${app_name}
 
-lein clean
-lein with-profile test0-uberjar uberjar
+#lein clean
+#lein with-profile test0-uberjar uberjar
 
-"$GRAALVM_HOME/bin/native-image" \
-     --verbose \
-     --static \
-     --libc=musl \
-     -H:CCompilerOption=-Wl,-z,stack-size=2097152 \
-     -jar "$TEST0_JAR" ${test0_name}
+#"$GRAALVM_HOME/bin/native-image" \
+     #--verbose \
+     #--static \
+     #--libc=musl \
+     #-H:CCompilerOption=-Wl,-z,stack-size=2097152 \
+     #-jar "$TEST0_JAR" ${test0_name}
 
 lein clean
 lein with-profile test1-uberjar uberjar

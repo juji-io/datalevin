@@ -774,11 +774,26 @@
         conn (d/create-conn dir)]
 
     (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
+    (is (= 1000000 (count (d/datoms @conn :eav))))
 
-    ;; this will blow through 100 MiB boundary
-    (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
+    ;; TODO this will segfault in native when close db in graalvm 17 22.3.2
+    (when-not (u/graal?)
+      ;; this will blow through 100 MiB boundary
+      (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
+      (is (= 2000000 (count (d/datoms @conn :eav)))))
 
-    (is (= 2000000 (count (d/datoms @conn :eav))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest unchanged-datoms-test
+  (let [dir  (u/tmp-dir (str "unchanged-datoms-" (UUID/randomUUID)))
+        conn (d/create-conn dir)
+        rp1  (d/transact! conn [{:foo "bar"}])]
+    (is (= [true] (map :added (:tx-data rp1))))
+
+    ;; tx-data is empty since datom is unchanged
+    (let [rp2 (d/transact! conn [{:db/id 1 :foo "bar"}])]
+      (is (= [] (:tx-data rp2))))
 
     (d/close conn)
     (u/delete-files dir)))

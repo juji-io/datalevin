@@ -4,6 +4,8 @@
 ### Fixed
 - [Datalog] Unexpected heap growth due to caching error. #204
 - [Datalog] More cases of map size reached errors during transaction. #196
+- [Datalog] Existing datoms do not appear in `:tx-data` when unchanged. #207
+
 ### Improved
 - [Datalog] Disable cache during transaction, save memory and avoid disrupting
   concurrent write processes.

@@ -59,9 +59,9 @@ public class Env {
         if (closed) {
             return;
         }
-        closed = true;
         Lib.mdb_env_close(get());
         UnmanagedMemory.free(ptr);
+        closed = true;
     }
 
     /**
