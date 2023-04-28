@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.14 (2023-04-28)
 ### Fixed
 - [Native] Rollback GraalVM to 22.3.1 as it is missing apple silicon
 
