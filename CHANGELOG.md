@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.13 (2023-04-28)
 ### Fixed
 - [Datalog] Unexpected heap growth due to caching error. #204
 - [Datalog] More cases of map size reached errors during transaction. #196
