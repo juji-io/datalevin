@@ -36,8 +36,11 @@
   "This token filter removes accents and diacritics from tokens."
   (i/inter-fn
     [t]
-    [(update t 0 (fn [s] (-> (Normalizer/normalize s Normalizer$Form/NFD)
-                            (str/replace #"[^\p{ASCII}]", ""))))]))
+    [(update t 0
+             (fn [s] (-> (java.text.Normalizer/normalize
+                          s
+                          java.text.Normalizer$Form/NFD)
+                        (str/replace #"[^\p{ASCII}]", ""))))]))
 
 (def en-stop-words-token-filter
   "This token filter removes \"empty\" tokens (for english language)."
