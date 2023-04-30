@@ -1,10 +1,12 @@
 (ns datalevin.search-utils
   "Some useful utility functions that can be passed as options to search
   engine to customize search"
-  (:require [clojure.string :as str]
-            [datalevin.interpret :as i]
-            [datalevin.constants :as c])
-  (:import [java.text Normalizer Normalizer$Form]))
+  (:require
+   [clojure.string :as str]
+   [datalevin.interpret :as i]
+   [datalevin.constants :as c])
+  (:import
+   [java.text Normalizer Normalizer$Form]))
 
 (defn create-analyzer
   "Creates an analyzer fn ready for use in search.
@@ -34,8 +36,7 @@
   "This token filter removes accents and diacritics from tokens."
   (i/inter-fn
     [t]
-    [(update t 0 (fn [s] (-> (java.text.Normalizer/normalize
-                              s java.text.Normalizer$Form/NFD)
+    [(update t 0 (fn [s] (-> (Normalizer/normalize s Normalizer$Form/NFD)
                             (str/replace #"[^\p{ASCII}]", ""))))]))
 
 (def en-stop-words-token-filter

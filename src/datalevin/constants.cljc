@@ -239,6 +239,8 @@
 
 ;;search engine
 
+(def proximity-max-distance 45)
+
 (def en-stop-words-set
   (let [s (HashSet.)]
     (doseq [w ["a",    "an",   "and",   "are",  "as",    "at",   "be",

@@ -144,16 +144,16 @@
     (doseq [tid tids] (.put m tid (max-score wqs mws tid)))
     m))
 
-(defprotocol ^:no-doc ICandidate
+(defprotocol ICandidate
   (skip-before [this limit] "move the iterator to just before the limit")
   (advance [this] "move the iterator to the next position")
   (has-next? [this] "return true if there's next in iterator")
   (get-did [this] "return the current did the iterator points to")
   (get-tf [this did] "return tf of the given did"))
 
-(deftype ^:no-doc Candidate [^int tid
-                             ^SparseIntArrayList sl
-                             ^PeekableIntIterator iter]
+(deftype Candidate [^int tid
+                    ^SparseIntArrayList sl
+                    ^PeekableIntIterator iter]
   ICandidate
   (skip-before [this limit] (.advanceIfNeeded iter limit) this)
 
@@ -361,10 +361,12 @@
 
   (search [this query]
     (.search this query {}))
-  (search [this query {:keys [display top proximity-expansion doc-filter]
+  (search [this query {:keys [display top proximity-expansion
+                              proximity-max-dist doc-filter]
                        :or   {display             :refs
                               top                 10
                               proximity-expansion 5
+                              proximity-max-dist  45
                               doc-filter          (constantly true)}}]
     (when-not (s/blank? query)
       (let [tokens (->> (query-analyzer query)
@@ -394,25 +396,40 @@
                     (let [to-get (- ^long top (count coll))]
                       (if (< 0 to-get)
                         (let [^PriorityQueue pq (priority-queue to-get)]
-                          (scoring this pq tao to-get proximity-expansion)
+                          (scoring this pq tao to-get proximity-expansion
+                                   proximity-max-dist)
                           (pouring coll pq result))
                         (reduced coll))))
                   (transient [])
                   (range n 0 -1))))))))))
 
+(defprotocol IProxiCandidate
+  (next-pos [this] "return the next position, otherwise nil")
+  (get-tid [this] "return the term id"))
+
+(deftype ProxiCandidate [^int tid
+                         ^ints positions
+                         ^:unsynchronized-mutable cur]
+  IProxiCandidate
+  (next-pos [_]
+    (let [pos (aget positions cur)]
+      (set! cur (u/long-inc cur))
+      pos))
+  (get-tid [_] tid))
+
 (defn- proximity-scoring
-  [engine tids ^PriorityQueue pq0 ^PriorityQueue pq]
+  [engine proximity-max-dist tids ^PriorityQueue pq0 ^PriorityQueue pq]
   (dotimes [_ (.size pq0)]
     (.insertWithOverflow pq (.pop pq0))))
 
 (defn- score-docs
   [n tids sls bms mxs wqs norms result]
-  (fn [^SearchEngine engine ^PriorityQueue pq tao to-get proximity-expansion]
-    (if (.-index-position? engine)
+  (fn [engine pq tao to-get proximity-expansion proximity-max-dist]
+    (if (.-index-position? ^SearchEngine engine)
       (let [^PriorityQueue pq0 (priority-queue
                                  (* ^long to-get ^long proximity-expansion))]
         (tf-idf-scoring sls bms tids result tao n pq0 mxs wqs norms)
-        (proximity-scoring engine tids pq0 pq))
+        (proximity-scoring engine proximity-max-dist tids pq0 pq))
       (tf-idf-scoring sls bms tids result tao n pq mxs wqs norms))))
 
 (defn- get-term-info
@@ -563,12 +580,20 @@
   (when-let [doc-ref ((.-docs engine) doc-id)]
     (when (doc-filter doc-ref) doc-ref)))
 
+(defn- get-pos-info
+  [^SearchEngine engine doc-id term-id]
+  (lru/-get
+    (.-cache engine) [:get-pos-info doc-id term-id]
+    #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
+                  [doc-id term-id] :int-int :pos-info true)))
+
 (defn- get-offsets
   [^SearchEngine engine doc-id term-id]
-  (peek (lru/-get
-          (.-cache engine) [:get-pos-info doc-id term-id]
-          #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
-                        [doc-id term-id] :int-int :pos-info true))))
+  (peek (get-pos-info engine doc-id term-id)))
+
+(defn- get-positions
+  [^SearchEngine engine doc-id term-id]
+  (first (get-pos-info engine doc-id term-id)))
 
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]

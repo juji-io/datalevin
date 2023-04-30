@@ -1,8 +1,16 @@
 # Change Log
 
+## WIP
+### Added
+- [Search] Consider term proximity in relevance when `:index-position?` search
+  engine option is `true`. #203
+- [Search] `:proximity-expansion` search option (default `5`) can be used to adjust the search quality vs. time trade-off: the bigger the number, the higher is the quality, but the longer is the search time.
+- [Search] `:proximity-max-dist` search option (default `45`) can be used to
+  control the maximal distance between terms that would be considered as in the same span.
+
 ## 0.8.14 (2023-04-28)
 ### Fixed
-- [Native] Rollback GraalVM to 22.3.1 as it is missing apple silicon
+- [Native] Rollback GraalVM to 22.3.1, as 22.3.2 is missing apple silicon.
 
 ## 0.8.13 (2023-04-28)
 ### Fixed

@@ -303,7 +303,7 @@ top `k` results according to the proximity score.
 
 For the first tf-idf stage, instead of producing top `k` results only, we produce top
 `m * k` results, where `m` is user configurable as `:proximity-expansion`
-(default is 5) search option. This parameter reflects a search quality vs. time
+(default is `5`) search option. This parameter reflects a search quality vs. time
 trade-off. The larger is `m`, the better is the search quality, while the search
 time would be longer.
 
