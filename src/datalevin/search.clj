@@ -453,18 +453,18 @@
 
 (defn- proximity-score
   [engine proximity-max-dist tids did wqs norms]
-  )
+  (let [spans (segment-span engine did tids)]))
 
 (defn- proximity-scoring
   [engine proximity-max-dist tids wqs norms ^PriorityQueue pq0
    ^PriorityQueue pq]
-  #_(dotimes [_ (.size pq0)]
-      (let [[_ did] (.pop pq0)
-            pscore  (proximity-score engine proximity-max-dist tids did
-                                     wqs norms)]
-        (.insertWithOverflow pq [pscore did])))
   (dotimes [_ (.size pq0)]
-    (.insertWithOverflow pq (.pop pq0))))
+    (let [[_ did] (.pop pq0)
+          pscore  (proximity-score engine proximity-max-dist tids did
+                                   wqs norms)]
+      (.insertWithOverflow pq [pscore did])))
+  #_(dotimes [_ (.size pq0)]
+      (.insertWithOverflow pq (.pop pq0))))
 
 (defn- score-docs
   [n tids sls bms mxs wqs norms result]
