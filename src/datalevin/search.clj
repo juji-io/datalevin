@@ -403,22 +403,66 @@
                   (transient [])
                   (range n 0 -1))))))))))
 
-(defprotocol IProxiCandidate
+(defn- get-pos-info
+  [^SearchEngine engine doc-id term-id]
+  (lru/-get
+    (.-cache engine) [:get-pos-info doc-id term-id]
+    #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
+                  [doc-id term-id] :int-int :pos-info true)))
+
+(defn- get-offsets
+  [^SearchEngine engine doc-id term-id]
+  (peek (get-pos-info engine doc-id term-id)))
+
+(defprotocol IPositions
+  (cur-pos [this] "return the current position")
   (next-pos [this] "return the next position, otherwise nil")
+  (go-next [this] "move cursor to the next position")
   (get-tid [this] "return the term id"))
 
-(deftype ProxiCandidate [^int tid
-                         ^ints positions
-                         ^:unsynchronized-mutable cur]
-  IProxiCandidate
-  (next-pos [_]
-    (let [pos (aget positions cur)]
-      (set! cur (u/long-inc cur))
-      pos))
+(deftype Positions [^int tid
+                    ^ints positions
+                    ^:unsynchronized-mutable cur]
+  IPositions
+  (cur-pos [_] (aget positions cur))
+  (next-pos [_] (aget positions (u/long-inc cur)))
+  (go-next [_] (set! cur (u/long-inc cur)))
   (get-tid [_] tid))
 
+(defn- get-positions
+  [^SearchEngine engine doc-id term-id]
+  (Positions. term-id (first (get-pos-info engine doc-id term-id)) 0))
+
+(defprotocol ISpan
+  (get-n [this] "return the number of terms in the span")
+  (get-width [this max-dist] "return the width of the span")
+  (add-term [this tid position] "add a term to the span"))
+
+(deftype Span [^FastList hits]
+  ISpan
+  (get-n [_] (.size hits))
+  (get-width [_ max-dist]
+    (let [pend   ^long (peek (.getLast hits))
+          pstart ^long (peek (.getFirst hits))]
+      (if (= pend pstart) max-dist (inc (- pend pstart)))))
+  (add-term [_ tid position] (.add hits [tid position])))
+
+(defn- proximity-score*
+  [tid did rc ^IntDoubleHashMap wqs ^IntShortHashMap norms]
+  (/ (* ^double (.get wqs tid) ^double rc) (double (.get norms did))))
+
+(defn- proximity-score
+  [engine proximity-max-dist tids did wqs norms]
+  )
+
 (defn- proximity-scoring
-  [engine proximity-max-dist tids ^PriorityQueue pq0 ^PriorityQueue pq]
+  [engine proximity-max-dist tids wqs norms ^PriorityQueue pq0
+   ^PriorityQueue pq]
+  #_(dotimes [_ (.size pq0)]
+      (let [[_ did] (.pop pq0)
+            pscore  (proximity-score engine proximity-max-dist tids did
+                                     wqs norms)]
+        (.insertWithOverflow pq [pscore did])))
   (dotimes [_ (.size pq0)]
     (.insertWithOverflow pq (.pop pq0))))
 
@@ -429,7 +473,7 @@
       (let [^PriorityQueue pq0 (priority-queue
                                  (* ^long to-get ^long proximity-expansion))]
         (tf-idf-scoring sls bms tids result tao n pq0 mxs wqs norms)
-        (proximity-scoring engine proximity-max-dist tids pq0 pq))
+        (proximity-scoring engine proximity-max-dist tids wqs norms pq0 pq))
       (tf-idf-scoring sls bms tids result tao n pq mxs wqs norms))))
 
 (defn- get-term-info
@@ -579,21 +623,6 @@
   [^SearchEngine engine doc-filter [_ doc-id]]
   (when-let [doc-ref ((.-docs engine) doc-id)]
     (when (doc-filter doc-ref) doc-ref)))
-
-(defn- get-pos-info
-  [^SearchEngine engine doc-id term-id]
-  (lru/-get
-    (.-cache engine) [:get-pos-info doc-id term-id]
-    #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
-                  [doc-id term-id] :int-int :pos-info true)))
-
-(defn- get-offsets
-  [^SearchEngine engine doc-id term-id]
-  (peek (get-pos-info engine doc-id term-id)))
-
-(defn- get-positions
-  [^SearchEngine engine doc-id term-id]
-  (first (get-pos-info engine doc-id term-id)))
 
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
