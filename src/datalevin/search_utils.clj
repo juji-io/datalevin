@@ -16,10 +16,10 @@
   * `:tokenizer` is a tokenizing fn that takes a string and returns a seq of
   [term, position, offset], where term is a word, position is the sequence
   number of the term, and offset is the character offset of this term.
-  `create-regexp-tokenizer` produces such fn.
+  e.g. `create-regexp-tokenizer` produces such fn.
 
   * `:token-filters` is an ordered list of token filters. A token filter
-  receives a token [term, position, offset] and returns a transformed list of
+  receives a [term, position, offset] and returns a transformed list of
   tokens to replace it with."
   [{:keys [tokenizer token-filters]}]
   (i/inter-fn
@@ -93,6 +93,12 @@
   (i/inter-fn
     [[^String word _ _ :as t]]
     (if (> (.length word) max-length) [] [t])))
+
+(defn create-stemming-token-filter
+  "Replace tokens with their stems.
+  The stemming algorithms are based on Snowball https://snowballstem.org/
+  Supported languages are: "
+  [language])
 
 (defn create-regexp-tokenizer
   "Creates a tokenizer that splits the given text on the pattern given as

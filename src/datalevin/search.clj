@@ -503,16 +503,16 @@
 
 (defn- proximity-score*
   [max-dist did spans ^IntDoubleHashMap wqs ^IntShortHashMap norms tid]
-  (let [^double rc (reduce (fn [^double score span]
-                             (if (find-term span tid)
-                               (+ score
-                                  (let [^long n (get-n span)
-                                        ^long w (get-width span max-dist)]
-                                    (* (Math/pow (/ n w) 0.25)
-                                       (Math/pow n 0.3))))
-                               score))
-                           0.0
-                           spans)]
+  (let [^double rc (reduce
+                     (fn [^double score span]
+                       (if (find-term span tid)
+                         (+ score
+                            (let [^long n (get-n span)
+                                  ^long w (get-width span max-dist)]
+                              (* (Math/pow (/ n w) 0.25)
+                                 (Math/pow n 0.3))))
+                         score))
+                     0.0 spans)]
     (/ (* ^double (.get wqs tid) rc) (double (.get norms did)))))
 
 (defn- proximity-score
