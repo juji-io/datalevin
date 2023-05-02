@@ -2,7 +2,7 @@
   "Full-text search engine"
   (:require
    [datalevin.lmdb :as l]
-   [datalevin.util :as u]
+   [datalevin.util :as u :refer [cond+]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [datalevin.constants :as c]
@@ -365,7 +365,7 @@
                               proximity-max-dist doc-filter]
                        :or   {display             :refs
                               top                 10
-                              proximity-expansion 5
+                              proximity-expansion 2
                               proximity-max-dist  45
                               doc-filter          (constantly true)}}]
     (when-not (s/blank? query)
@@ -429,72 +429,113 @@
 
 (defn- get-positions
   [engine doc-id term-id]
-  (Positions. term-id (first (get-pos-info engine doc-id term-id)) 0))
+  (when-let [pos-info (get-pos-info engine doc-id term-id)]
+    (Positions. term-id (first pos-info) 0)))
 
 (defprotocol ISpan
   (get-n [this] "return the number of terms in the span")
   (get-width [this max-dist] "return the width of the span")
-  (add-term [this tid position] "add a term to the span"))
+  (add-term [this tid position] "add a term to the span")
+  (find-term [this tid] "return the index of a term, or return nil")
+  (get-ith-pos [this i] "return the ith position")
+  (get-next-pos [this i] "return the i+1'th position")
+  (split [this i] "split span into two after ith term"))
 
 (deftype Span [^FastList hits]
   ISpan
   (get-n [_] (.size hits))
   (get-width [_ max-dist]
-    (let [pend   ^long (peek (.getLast hits))
-          pstart ^long (peek (.getFirst hits))]
-      (if (= pend pstart) max-dist (inc (- pend pstart)))))
-  (add-term [_ tid position] (.add hits [tid position])))
+    (if (= 1 (.size hits))
+      max-dist
+      (inc (- ^long (peek (.getLast hits)) ^long (peek (.getFirst hits))))))
+  (add-term [_ tid position] (.add hits [tid position]))
+  (find-term [_ tid] (u/index-of #(= tid (first %)) hits))
+  (get-ith-pos [_ i] (peek (.get hits i)))
+  (get-next-pos [_ i] (peek (.get hits (inc ^long i))))
+  (split [_ i] [(Span. (.take hits ^int i)) (Span. (.drop hits ^int i))]))
 
-(defn- proximity-score*
-  [tid did rc ^IntDoubleHashMap wqs ^IntShortHashMap norms]
-  (/ (* ^double (.get wqs tid) ^double rc) (double (.get norms did))))
+(defmethod print-method Span [^Span s, ^Writer w]
+  (.write w "[")
+  (.write w (str (with-out-str
+                   (let [^FastList hits (.-hits s)]
+                     (dotimes [i (.size hits)]
+                       (print (.get hits i))
+                       (print " "))))))
+  (.write w "]"))
 
-(defn- segment-span
+(defn- segment-doc
   [engine did tids ^long max-dist]
-  (let [pos-lst (FastList.)]
-    (doseq [tid tids] (.add pos-lst (get-positions engine did tid)) )
-    (loop [cur-poss (apply min-key cur-pos pos-lst)]
+  (let [pos-lst (FastList.)
+        spans   (FastList.)]
+    (doseq [tid tids]
+      (when-let [poss (get-positions engine did tid)]
+        (.add pos-lst poss)))
+    (loop [cur-poss (apply min-key cur-pos pos-lst)
+           cur-span (Span. (FastList.))]
       (let [^long cpos (cur-pos cur-poss)
             ctid       (get-tid cur-poss)]
+        (add-term cur-span ctid cpos)
         (go-next cur-poss)
         (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
-        (when-not (.isEmpty pos-lst)
+        (if (.isEmpty pos-lst)
+          (.add spans cur-span)
           (let [next-poss  (apply min-key cur-pos pos-lst)
                 ^long npos (cur-pos next-poss)
-                ntid       (get-tid next-poss)]
-            (cond
-              (or (< max-dist (- npos cpos)) (= ctid ntid))
-              ())
-            (recur next-poss)))))))
+                ntid       (get-tid next-poss)
+                ndist      (- npos cpos)]
+            (cond+
+              (or (< max-dist ndist) (= ctid ntid))
+              (let [next-span (Span. (FastList.))]
+                (.add spans cur-span)
+                (recur next-poss next-span))
+              :let [found (find-term cur-span ntid)]
+              found
+              (let [[cur-span next-span]
+                    (if (< ndist (- ^long (get-next-pos cur-span found)
+                                    ^long (get-ith-pos cur-span found)))
+                      (split cur-span found)
+                      [cur-span (Span. (FastList.))])]
+                (.add spans cur-span)
+                (recur next-poss next-span))
+              :else
+              (recur next-poss cur-span))))))
+    spans))
 
-(defn- compute-rc
-  [spans wqs norms tid]
-  )
+(defn- proximity-score*
+  [max-dist did spans ^IntDoubleHashMap wqs ^IntShortHashMap norms tid]
+  (let [^double rc (reduce (fn [^double score span]
+                             (if (find-term span tid)
+                               (+ score
+                                  (let [^long n (get-n span)
+                                        ^long w (get-width span max-dist)]
+                                    (* (Math/pow (/ n w) 0.25)
+                                       (Math/pow n 0.3))))
+                               score))
+                           0.0
+                           spans)]
+    (/ (* ^double (.get wqs tid) rc) (double (.get norms did)))))
 
 (defn- proximity-score
-  [engine proximity-max-dist tids did wqs norms]
-  (let [spans (segment-span engine did tids proximity-max-dist)]
-    (reduce + 0.0 (map #(compute-rc spans wqs norms %) tids))))
+  [engine max-dist tids did wqs norms]
+  (let [spans (segment-doc engine did tids max-dist)]
+    (->> tids
+         (map #(proximity-score* max-dist did spans wqs norms %))
+         (reduce + 0.0))))
 
 (defn- proximity-scoring
-  [engine proximity-max-dist tids wqs norms ^PriorityQueue pq0
-   ^PriorityQueue pq]
-  #_(dotimes [_ (.size pq0)]
-      (let [[_ did] (.pop pq0)
-            pscore  (proximity-score engine proximity-max-dist tids did
-                                     wqs norms)]
-        (.insertWithOverflow pq [pscore did])))
-  (dotimes [_ (.size pq0)]
-    (.insertWithOverflow pq (.pop pq0))))
+  [engine max-dist tids wqs norms pq0 pq]
+  (dotimes [_ (.size ^PriorityQueue pq0)]
+    (let [[_ did] (.pop ^PriorityQueue pq0)
+          pscore  (proximity-score engine max-dist tids did wqs norms)]
+      (.insertWithOverflow ^PriorityQueue pq [pscore did]))))
 
 (defn- score-docs
   [n tids sls bms mxs wqs norms result]
-  (fn [engine pq tao to-get proximity-expansion proximity-max-dist]
+  (fn [engine pq tao to-get expansion max-dist]
     (if (.-index-position? ^SearchEngine engine)
-      (let [^PriorityQueue pq0 (priority-queue
-                                 (* ^long to-get ^long proximity-expansion))]
+      (let [pq0 (priority-queue (* ^long to-get ^long expansion))]
         (tf-idf-scoring sls bms tids result tao n pq0 mxs wqs norms)
-        (proximity-scoring engine proximity-max-dist tids wqs norms pq0 pq))
+        (proximity-scoring engine max-dist tids wqs norms pq0 pq))
       (tf-idf-scoring sls bms tids result tao n pq mxs wqs norms))))
 
 (defn- get-term-info

@@ -4,7 +4,7 @@
 ### Added
 - [Search] Consider term proximity in relevance when `:index-position?` search
   engine option is `true`. #203
-- [Search] `:proximity-expansion` search option (default `5`) can be used to adjust the search quality vs. time trade-off: the bigger the number, the higher is the quality, but the longer is the search time.
+- [Search] `:proximity-expansion` search option (default `2`) can be used to adjust the search quality vs. time trade-off: the bigger the number, the higher is the quality, but the longer is the search time.
 - [Search] `:proximity-max-dist` search option (default `45`) can be used to
   control the maximal distance between terms that would be considered as in the same span.
 
