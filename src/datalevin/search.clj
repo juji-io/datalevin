@@ -415,8 +415,7 @@
   (peek (get-pos-info engine doc-id term-id)))
 
 (defprotocol IPositions
-  (cur-pos [this] "return the current position")
-  (next-pos [this] "return the next position, otherwise nil")
+  (cur-pos [this] "return the current position, or nil if there is no more")
   (go-next [this] "move cursor to the next position")
   (get-tid [this] "return the term id"))
 
@@ -424,13 +423,12 @@
                     ^ints positions
                     ^:unsynchronized-mutable cur]
   IPositions
-  (cur-pos [_] (aget positions cur))
-  (next-pos [_] (aget positions (u/long-inc cur)))
+  (cur-pos [_] (when (< ^long cur (alength positions)) (aget positions cur)))
   (go-next [_] (set! cur (u/long-inc cur)))
   (get-tid [_] tid))
 
 (defn- get-positions
-  [^SearchEngine engine doc-id term-id]
+  [engine doc-id term-id]
   (Positions. term-id (first (get-pos-info engine doc-id term-id)) 0))
 
 (defprotocol ISpan
@@ -451,20 +449,43 @@
   [tid did rc ^IntDoubleHashMap wqs ^IntShortHashMap norms]
   (/ (* ^double (.get wqs tid) ^double rc) (double (.get norms did))))
 
+(defn- segment-span
+  [engine did tids ^long max-dist]
+  (let [pos-lst (FastList.)]
+    (doseq [tid tids] (.add pos-lst (get-positions engine did tid)) )
+    (loop [cur-poss (apply min-key cur-pos pos-lst)]
+      (let [^long cpos (cur-pos cur-poss)
+            ctid       (get-tid cur-poss)]
+        (go-next cur-poss)
+        (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
+        (when-not (.isEmpty pos-lst)
+          (let [next-poss  (apply min-key cur-pos pos-lst)
+                ^long npos (cur-pos next-poss)
+                ntid       (get-tid next-poss)]
+            (cond
+              (or (< max-dist (- npos cpos)) (= ctid ntid))
+              ())
+            (recur next-poss)))))))
+
+(defn- compute-rc
+  [spans wqs norms tid]
+  )
+
 (defn- proximity-score
   [engine proximity-max-dist tids did wqs norms]
-  (let [spans (segment-span engine did tids)]))
+  (let [spans (segment-span engine did tids proximity-max-dist)]
+    (reduce + 0.0 (map #(compute-rc spans wqs norms %) tids))))
 
 (defn- proximity-scoring
   [engine proximity-max-dist tids wqs norms ^PriorityQueue pq0
    ^PriorityQueue pq]
-  (dotimes [_ (.size pq0)]
-    (let [[_ did] (.pop pq0)
-          pscore  (proximity-score engine proximity-max-dist tids did
-                                   wqs norms)]
-      (.insertWithOverflow pq [pscore did])))
   #_(dotimes [_ (.size pq0)]
-      (.insertWithOverflow pq (.pop pq0))))
+      (let [[_ did] (.pop pq0)
+            pscore  (proximity-score engine proximity-max-dist tids did
+                                     wqs norms)]
+        (.insertWithOverflow pq [pscore did])))
+  (dotimes [_ (.size pq0)]
+    (.insertWithOverflow pq (.pop pq0))))
 
 (defn- score-docs
   [n tids sls bms mxs wqs norms result]
