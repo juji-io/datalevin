@@ -6,7 +6,8 @@
    [datalevin.interpret :as i]
    [datalevin.constants :as c])
   (:import
-   [java.text Normalizer Normalizer$Form]))
+   [java.text Normalizer Normalizer$Form]
+   [org.tartarus.snowball SnowballStemmer]))
 
 (defn create-analyzer
   "Creates an analyzer fn ready for use in search.
@@ -38,8 +39,7 @@
     [t]
     [(update t 0
              (fn [s] (-> (java.text.Normalizer/normalize
-                          s
-                          java.text.Normalizer$Form/NFD)
+                          s java.text.Normalizer$Form/NFD)
                         (str/replace #"[^\p{ASCII}]", ""))))]))
 
 (def en-stop-words-token-filter
@@ -53,9 +53,10 @@
 
   This is useful for producing efficient autocomplete engines, provided this
   filter is NOT applied at query time."
-  (i/inter-fn [[^String word pos start]]
-              (for [idx (range 1 (inc (.length word)))]
-                [(subs word 0 idx) pos start])))
+  (i/inter-fn
+    [[^String word pos start]]
+    (for [idx (range 1 (inc (.length word)))]
+      [(subs word 0 idx) pos start])))
 
 (defn create-ngram-token-filter
   "Produces character ngrams between min and max size from the token and returns
@@ -94,11 +95,38 @@
     [[^String word _ _ :as t]]
     (if (> (.length word) max-length) [] [t])))
 
+(defonce stemmers (atom {}))
+
+(defn ^:no-doc get-stemmer
+  [^String language]
+  (or (@stemmers language)
+      (let [stemmer (.newInstance
+                      (Class/forName (str "org.tartarus.snowball.ext."
+                                          (str/lower-case language)
+                                          "Stemmer")))]
+        (swap! stemmers assoc language stemmer)
+        stemmer)))
+
 (defn create-stemming-token-filter
-  "Replace tokens with their stems.
+  "Create a token filter that replaces tokens with their stems.
+
   The stemming algorithms are based on Snowball https://snowballstem.org/
-  Supported languages are: "
-  [language])
+
+  `language` is a string, its value can be one of the following:
+
+  arabic dutch greek italian portuguese swedish armenian english hindi
+  lithuanian romanian tamil basque finnish hungarian nepali russian
+  turkish catalan french indonesian norwegian serbian yiddish danish german
+  irish spanish porter"
+  [^String language]
+  (i/inter-fn
+    [t]
+    (let [^org.tartarus.snowball.SnowballStemmer stemmer
+          (get-stemmer language)]
+      (update t 0 (fn [s]
+                    (.setCurrent stemmer s)
+                    (.stem stemmer)
+                    (.getCurrent stemmer))))))
 
 (defn create-regexp-tokenizer
   "Creates a tokenizer that splits the given text on the pattern given as
