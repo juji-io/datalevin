@@ -32,3 +32,30 @@
     (is (= [[3 [["dogs" [29]]]] [1 [["dogs" [43]]]]]
            (d/search engine "dogs" {:display :offsets})))
     (d/close-kv lmdb)))
+
+(deftest stemming-test
+  (let [dir      "dtlv://datalevin:datalevin@localhost/stem-test"
+        analyzer (sut/create-analyzer
+                   {:token-filters [(sut/create-stemming-token-filter
+                                      "english")]})
+        db       (-> (d/empty-db
+                       dir
+                       {:text {:db/valueType :db.type/string
+                               :db/fulltext  true}}
+                       {:search-opts
+                        {:query-analyzer analyzer
+                         :analyzer       analyzer}})
+                     (d/db-with
+                       [{:db/id 1,
+                         :text  "The quick red fox jumped over the lazy red dogs."}
+                        {:db/id 2,
+                         :text  "Mary had a little lamb whose fleece was red as fire."}
+                        {:db/id 3,
+                         :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (is (= 1 (count (d/fulltext-datoms db "jump dog"))))
+    (is (= 3 (d/q '[:find ?e .
+                    :in $ ?q
+                    :where
+                    [(fulltext $ ?q) [[?e _ _]]]]
+                  db "obsess")))
+    (d/close-db db)))

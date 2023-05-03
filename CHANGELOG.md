@@ -10,7 +10,8 @@
 - [Search] `:proximity-max-dist` search option (default `45`) can be used to
   control the maximal distance between terms that would be considered as in the
   same span.
-- [Search] `create-stemming-token-filter` function to create snowball stemmers.
+- [Search] `create-stemming-token-filter` function to create stemmers, which
+  uses Snowball stemming library that supports many languages.
 
 ## 0.8.14 (2023-04-28)
 ### Fixed

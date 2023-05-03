@@ -34,11 +34,15 @@
   (or (Character/isWhitespace c) (c/en-punctuations? c)))
 
 (defn en-analyzer
-  "English analyzer does the following:
+  "English analyzer (tokenizer) does the following:
+
   - split on white space and punctuation, remove them
   - lower-case all characters
   - remove stop words
-  Return a list of [term, position, offset]"
+
+  Return a list of [term, position, offset].
+
+  This is the default analyzer of search engine when none is provided."
   [^String x]
   (let [len   (.length x)
         len-1 (dec len)

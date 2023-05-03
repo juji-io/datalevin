@@ -66,3 +66,31 @@
                   db "Mo")))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest stemming-test
+  (let [dir      (u/tmp-dir (str "stemming-test-" (UUID/randomUUID)))
+        analyzer (sut/create-analyzer
+                   {:token-filters [(sut/create-stemming-token-filter
+                                      "english")]})
+        db       (-> (d/empty-db
+                       dir
+                       {:text {:db/valueType :db.type/string
+                               :db/fulltext  true}}
+                       {:search-opts
+                        {:query-analyzer analyzer
+                         :analyzer       analyzer}})
+                     (d/db-with
+                       [{:db/id 1,
+                         :text  "The quick red fox jumped over the lazy red dogs."}
+                        {:db/id 2,
+                         :text  "Mary had a little lamb whose fleece was red as fire."}
+                        {:db/id 3,
+                         :text  "Moby Dick is a story of a whale and a man obsessed."}]))]
+    (is (= 1 (count (d/fulltext-datoms db "jump dog"))))
+    (is (= 3 (d/q '[:find ?e .
+                    :in $ ?q
+                    :where
+                    [(fulltext $ ?q) [[?e _ _]]]]
+                  db "obsess")))
+    (d/close-db db)
+    (u/delete-files dir)))

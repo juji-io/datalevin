@@ -1,13 +1,17 @@
 (ns datalevin.search-utils
   "Some useful utility functions that can be passed as options to search
-  engine to customize search"
+  engine to customize search."
   (:require
    [clojure.string :as str]
-   [datalevin.interpret :as i]
+   [datalevin.interpret :as i :refer [inter-fn definterfn]]
+   [datalevin.stem :as s]
    [datalevin.constants :as c])
   (:import
    [java.text Normalizer Normalizer$Form]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [org.tartarus.snowball SnowballStemmer]))
+
+(definterfn default-tokenizer [s] (datalevin.search/en-analyzer s))
 
 (defn create-analyzer
   "Creates an analyzer fn ready for use in search.
@@ -22,8 +26,10 @@
   * `:token-filters` is an ordered list of token filters. A token filter
   receives a [term, position, offset] and returns a transformed list of
   tokens to replace it with."
-  [{:keys [tokenizer token-filters]}]
-  (i/inter-fn
+  [{:keys [tokenizer token-filters]
+    :or   {tokenizer     default-tokenizer
+           token-filters []}}]
+  (inter-fn
     [s]
     (let [tokens     (tokenizer s)
           filters-tx (apply comp (map #(mapcat %) token-filters))]
@@ -31,20 +37,25 @@
 
 (def lower-case-token-filter
   "This token filter converts tokens to lower case."
-  (i/inter-fn [t] [(update t 0 (fn [s] (str/lower-case s)))]))
+  (inter-fn
+    [t]
+    [(update t 0 (fn [s] (clojure.string/lower-case s)))]))
 
 (def unaccent-token-filter
   "This token filter removes accents and diacritics from tokens."
-  (i/inter-fn
+  (inter-fn
     [t]
     [(update t 0
-             (fn [s] (-> (java.text.Normalizer/normalize
-                          s java.text.Normalizer$Form/NFD)
-                        (str/replace #"[^\p{ASCII}]", ""))))]))
+             (fn [s]
+               (-> (java.text.Normalizer/normalize
+                     s java.text.Normalizer$Form/NFD)
+                   (clojure.string/replace #"[^\p{ASCII}]", ""))))]))
 
 (def en-stop-words-token-filter
   "This token filter removes \"empty\" tokens (for english language)."
-  (i/inter-fn [t] (if (c/en-stop-words? (first t)) [] [t])))
+  (inter-fn
+    [t]
+    (if (datalevin.constants/en-stop-words? (first t)) [] [t])))
 
 (def prefix-token-filter
   "Produces a series of every possible prefixes in a token and replace it with them.
@@ -53,7 +64,7 @@
 
   This is useful for producing efficient autocomplete engines, provided this
   filter is NOT applied at query time."
-  (i/inter-fn
+  (inter-fn
     [[^String word pos start]]
     (for [idx (range 1 (inc (.length word)))]
       [(subs word 0 idx) pos start])))
@@ -62,7 +73,7 @@
   "Produces character ngrams between min and max size from the token and returns
   everything as tokens. This is useful for producing efficient fuzzy search."
   ([^long min-gram-size ^long max-gram-size]
-   (i/inter-fn
+   (inter-fn
      [[^String word pos start]]
      (let [length (.length word)]
        (loop [idx       0
@@ -84,55 +95,43 @@
 (defn create-min-length-token-filter
   "Filters tokens that are strictly shorter than `min-length`."
   [^long min-length]
-  (i/inter-fn
+  (inter-fn
     [[^String word _ _ :as t]]
     (if (< (.length word) min-length) [] [t])))
 
 (defn create-max-length-token-filter
   "Filters tokens that are strictly longer than `max-length`."
   [^long max-length]
-  (i/inter-fn
+  (inter-fn
     [[^String word _ _ :as t]]
     (if (> (.length word) max-length) [] [t])))
-
-(defonce stemmers (atom {}))
-
-(defn ^:no-doc get-stemmer
-  [^String language]
-  (or (@stemmers language)
-      (let [stemmer (.newInstance
-                      (Class/forName (str "org.tartarus.snowball.ext."
-                                          (str/lower-case language)
-                                          "Stemmer")))]
-        (swap! stemmers assoc language stemmer)
-        stemmer)))
 
 (defn create-stemming-token-filter
   "Create a token filter that replaces tokens with their stems.
 
-  The stemming algorithms are based on Snowball https://snowballstem.org/
+  The stemming algorithm is Snowball https://snowballstem.org/
 
   `language` is a string, its value can be one of the following:
 
-  arabic dutch greek italian portuguese swedish armenian english hindi
-  lithuanian romanian tamil basque finnish hungarian nepali russian
-  turkish catalan french indonesian norwegian serbian yiddish danish german
-  irish spanish porter"
+  arabic, armenian, basque, catalan, danish, dutch, english, french,
+  finnish, german, greek, hindi, hungarian, indonesian, irish, italian,
+  lithuanian, nepali, norwegian, portuguese, romanian, russian, serbian,
+  swedish, tamil, turkish, spanish, yiddish, and porter"
   [^String language]
-  (i/inter-fn
+  (inter-fn
     [t]
     (let [^org.tartarus.snowball.SnowballStemmer stemmer
-          (get-stemmer language)]
-      (update t 0 (fn [s]
-                    (.setCurrent stemmer s)
-                    (.stem stemmer)
-                    (.getCurrent stemmer))))))
+          (datalevin.stem/get-stemmer language)]
+      [(update t 0 (fn [s]
+                     (.setCurrent stemmer s)
+                     (.stem stemmer)
+                     (.getCurrent stemmer)))])))
 
 (defn create-regexp-tokenizer
   "Creates a tokenizer that splits the given text on the pattern given as
   argument, and returns valid tokens."
   [pat]
-  (i/inter-fn
+  (inter-fn
     [^String s]
     (let [matcher    (re-matcher pat s)
           res        (volatile! [])
