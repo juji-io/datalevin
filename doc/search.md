@@ -127,6 +127,26 @@ a `doc-filter` function can be supplied in the search option, that takes the
 only return datoms that have attribute `:text`. Or one can opt to put this
 constraint in the Datalog where clause instead.
 
+### Custom Search
+
+The search feature can be customized at indexing time and at query time.
+
+### Custom analyzer
+
+When creating the search engine, an `:analyzer` option can be used to supply
+an analyzer function that takes a document as string, and output a list of `[term
+position offset]`. `:query-analyzer` option is for analyzing query.
+
+Some common utility functions for creating analyzers are also provided in
+`datalevin.search-utils`  namespace: stemming, stop words, regular expression,
+ngrams, prefix, and so on.
+
+### Search options
+
+See documentation for `search` function to see available options that can be
+passed at run time to customize search: top-k, proximity expansion factor,
+results display, and so on.
+
 ## Implementation
 
 As mentioned, the search engine is implemented from scratch, see [blog](https://yyhh.org/blog/2021/11/t-wand-beat-lucene-in-less-than-600-lines-of-code/). Instead of
@@ -303,7 +323,7 @@ top `k` results according to the proximity score.
 
 For the first tf-idf stage, instead of producing top `k` results only, we produce top
 `m * k` results, where `m` is user configurable as `:proximity-expansion`
-(default is `5`) search option. This parameter reflects a search quality vs. time
+(default is `2`) search option. This parameter reflects a search quality vs. time
 trade-off. The larger is `m`, the better is the search quality, while the search
 time would be longer.
 

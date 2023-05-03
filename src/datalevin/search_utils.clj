@@ -51,6 +51,14 @@
                      s java.text.Normalizer$Form/NFD)
                    (clojure.string/replace #"[^\p{ASCII}]", ""))))]))
 
+(defn create-stop-words-token-filter
+  "Takes a stop words predicate that returns `true` when the given token is
+  a stop word"
+  [stop-word-pred]
+  (inter-fn
+    [t]
+    (if (stop-word-pred (first t)) [] [t])))
+
 (def en-stop-words-token-filter
   "This token filter removes \"empty\" tokens (for english language)."
   (inter-fn
@@ -128,8 +136,8 @@
                      (.getCurrent stemmer)))])))
 
 (defn create-regexp-tokenizer
-  "Creates a tokenizer that splits the given text on the pattern given as
-  argument, and returns valid tokens."
+  "Creates a tokenizer that splits text on the given regular expression
+  pattern `pat`."
   [pat]
   (inter-fn
     [^String s]

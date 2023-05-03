@@ -59,3 +59,30 @@
                     [(fulltext $ ?q) [[?e _ _]]]]
                   db "obsess")))
     (d/close-db db)))
+
+(deftest stop-words-test
+  (let [dir    "dtlv://datalevin:datalevin@localhost/custom-stop-test"
+        lmdb   (d/open-kv dir)
+        engine (d/new-search-engine
+                 lmdb
+                 {:analyzer
+                  (sut/create-analyzer
+                    {:tokenizer
+                     (sut/create-regexp-tokenizer
+                       #"[\s:/\.;,!=?\"'()\[\]{}|<>&@#^*\\~`]+")
+                     :token-filters [sut/lower-case-token-filter
+                                     sut/unaccent-token-filter
+                                     (sut/create-stop-words-token-filter
+                                       #{"over" "red" "the" "lazy"})]})
+                  :index-position? true})]
+    (d/open-dbi lmdb "raw")
+    (d/transact-kv
+      lmdb
+      [[:put "raw" 1 "The quick red fox jumped over the lazy red dogs."]
+       [:put "raw" 2 "Mary had a little lamb whose fleece was red as fire."]
+       [:put "raw" 3 "Moby Dick is a story of some dogs' and a whale."]])
+    (doseq [i [1 2 3]]
+      (d/add-doc engine i (d/get-value lmdb "raw" i)))
+    (is (= [[1 [["dogs" [43]]]] [3 [["dogs" [29]]]]]
+           (d/search engine "dogs" {:display :offsets})))
+    (d/close-kv lmdb)))

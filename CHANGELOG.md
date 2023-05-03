@@ -11,7 +11,10 @@
   control the maximal distance between terms that would be considered as in the
   same span.
 - [Search] `create-stemming-token-filter` function to create stemmers, which
-  uses Snowball stemming library that supports many languages.
+  uses Snowball stemming library that supports many languages. #209
+- [Search] `create-stop-words-token-filter` function to take a customized stop
+  words predicate.
+- [All] `re-index` function. #179
 
 ## 0.8.14 (2023-04-28)
 ### Fixed

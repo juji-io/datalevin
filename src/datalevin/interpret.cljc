@@ -186,7 +186,10 @@
                     {'en-analyzer #'datalevin.search/en-analyzer})
    'datalevin.stem
    (user-facing-map 'datalevin.stem
-                    {'get-stemmer #'datalevin.stem/get-stemmer})})
+                    {'get-stemmer #'datalevin.stem/get-stemmer})
+   'datalevin.constants
+   (user-facing-map 'datalevin.constants
+                    {'en-stop-words? #'datalevin.constants/en-stop-words?})})
 
 (def ^:no-doc sci-opts
   {:namespaces (merge (user-facing-vars) (additional-vars))
