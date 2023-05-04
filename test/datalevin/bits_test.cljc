@@ -954,6 +954,7 @@
           bs1 (sut/serialize d1)]
       (is (instance? org.joda.time.DateTime (sut/deserialize bs1))))
     (is (thrown? Exception (sut/serialize (type :a))))
+    (is (thrown? Exception (sut/serialize {:bar (defn bar [] :bar)})))
     (let [d (Semaphore. 1)]
       (is (thrown? Exception (sut/serialize d)))
       (binding [c/*data-serializable-classes*

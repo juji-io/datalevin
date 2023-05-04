@@ -14,9 +14,9 @@
   uses Snowball stemming library that supports many languages. #209
 - [Search] `create-stop-words-token-filter` function to take a customized stop
   words predicate.
-- [All] `re-index` function. #179
+- `re-index` function. #179
 ### Fixed
-- [KV] More strict type check for transaction, throw when transacting n-thawable
+- [KV] More strict type check for transaction, throw when transacting un-thawable
   data. #208
 
 

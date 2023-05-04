@@ -796,3 +796,12 @@
 
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest unthawable-datoms-test
+  (let [dir  (u/tmp-dir (str "unthawable-datoms-" (UUID/randomUUID)))
+        conn (d/create-conn dir)]
+
+    (is (thrown? Exception (d/transact! conn [{:bar (defn bar [] :bar)}])))
+
+    (d/close conn)
+    (u/delete-files dir)))
