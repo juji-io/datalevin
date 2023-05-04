@@ -796,19 +796,3 @@
 
     (d/close conn)
     (u/delete-files dir)))
-
-(deftest unthawable-values-test
-  (let [dir  (u/tmp-dir (str "unthawable-values-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
-    ;; (type []) is not thawable
-    (d/transact! conn [{:foo (type [])}])
-
-    (is (:nippy/unthawable (:foo (d/touch (d/entity @conn 1)))))
-
-    ;; it can be retracted
-    (d/transact! conn [[:db/retract 1 :foo (type [])]])
-
-    (is (zero? (count (d/datoms @conn :eav))))
-
-    (d/close conn)
-    (u/delete-files dir)))

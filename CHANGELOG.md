@@ -15,6 +15,10 @@
 - [Search] `create-stop-words-token-filter` function to take a customized stop
   words predicate.
 - [All] `re-index` function. #179
+### Fixed
+- [KV] More strict type check for transaction, throw when transacting n-thawable
+  data. #208
+
 
 ## 0.8.14 (2023-04-28)
 ### Fixed
