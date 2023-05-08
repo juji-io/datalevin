@@ -743,27 +743,27 @@
          :as   opts}]
    (assert (string? dir) "directory should be a string.")
    (try
-     (let [^File file (u/file dir)
-           mapsize    (* (long (if (u/empty-dir? file)
-                                 mapsize
-                                 (c/pick-mapsize dir)))
-                         1024 1024)
-           builder    (doto (Env/create)
-                        (.setMapSize mapsize)
-                        (.setMaxReaders max-readers)
-                        (.setMaxDbs max-dbs))
-           ^Env env   (.open builder file (kv-flags :env flags))
-           lmdb       (->LMDB env
-                              dir
-                              temp?
-                              opts
-                              (ConcurrentLinkedQueue.)
-                              (UnifiedMap.)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (b/allocate-buffer c/+max-key-size+)
-                              (volatile! nil)
-                              false)]
+     (let [file     (u/file dir)
+           mapsize  (* (long (if (u/empty-dir? file)
+                               mapsize
+                               (c/pick-mapsize dir)))
+                       1024 1024)
+           builder  (doto (Env/create)
+                      (.setMapSize mapsize)
+                      (.setMaxReaders max-readers)
+                      (.setMaxDbs max-dbs))
+           ^Env env (.open builder file (kv-flags :env flags))
+           lmdb     (->LMDB env
+                            dir
+                            temp?
+                            opts
+                            (ConcurrentLinkedQueue.)
+                            (UnifiedMap.)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (b/allocate-buffer c/+max-key-size+)
+                            (volatile! nil)
+                            false)]
        (when temp? (u/delete-on-exit file))
        lmdb)
      (catch Exception e

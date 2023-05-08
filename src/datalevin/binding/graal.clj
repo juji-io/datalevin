@@ -5,7 +5,7 @@
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.lmdb :as l :refer [open-kv open-list-dbi IBuffer IRange
+   [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IAdmin
                                  IRtx IDB IKV IList ILMDB IWriting]]
    [clojure.stacktrace :as st])
   (:import
@@ -466,6 +466,8 @@
 
   (closed-kv? [_] (.isClosed env))
 
+  (check-ready [this] (assert (not (.closed-kv? this)) "LMDB env is closed."))
+
   (dir [_] dir)
 
   (opts [_] opts)
@@ -496,6 +498,7 @@
                                     :flags    c/read-dbi-flags}))))
 
   (clear-dbi [this dbi-name]
+    (.check-ready this)
     (try
       (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
@@ -505,6 +508,7 @@
         (raise "Fail to clear DBI: " dbi-name " " (ex-message e) {}))))
 
   (drop-dbi [this dbi-name]
+    (.check-ready this)
     (try
       (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
@@ -538,6 +542,7 @@
     (.add pool rtx))
 
   (list-dbis [this]
+    (.check-ready this)
     (let [^Dbi main (Dbi/create env 0)
           ^DBI dbi  (->DBI main
                            (ConcurrentLinkedQueue.)
@@ -565,11 +570,13 @@
   (copy [this dest]
     (.copy this dest false))
   (copy [this dest compact?]
+    (.check-ready this)
     (if (-> dest u/file u/empty-dir?)
       (.copy env dest (if compact? true false))
       (raise "Destination directory is not empty." {})))
 
   (stat [this]
+    (.check-ready this)
     (try
       (let [stat ^Stat (Stat/create env)
             m    (stat-map stat)]
@@ -578,6 +585,7 @@
       (catch Exception e
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
+    (.check-ready this)
     (if dbi-name
       (let [^Rtx rtx (.get-rtx this)]
         (try
@@ -595,6 +603,7 @@
       (l/stat this)))
 
   (entries [this dbi-name]
+    (.check-ready this)
     (let [^DBI dbi (.get-dbi this dbi-name false)
           ^Rtx rtx (.get-rtx this)]
       (try
@@ -609,6 +618,7 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
+    (.check-ready this)
     (try
       (reset-write-txn this)
       (.mark-write this)
@@ -645,6 +655,7 @@
       nil))
 
   (transact-kv [this txs]
+    (.check-ready this)
     (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
@@ -738,6 +749,7 @@
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
                                  :or   {key-size c/+max-key-size+
                                         val-size c/+max-key-size+}}]
+    (.check-ready this)
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
@@ -748,6 +760,7 @@
 
   IList
   (put-list-items [this dbi-name k vs kt vt]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)
             ^Txn txn (Txn/create env)]
@@ -761,6 +774,7 @@
         (raise "Fail to put an inverted list: " (ex-message e) {}))))
 
   (del-list-items [this dbi-name k kt]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)
             ^Txn txn (Txn/create env)]
@@ -771,6 +785,7 @@
       (catch Exception e
         (raise "Fail to delete an inverted list: " (ex-message e) {}))))
   (del-list-items [this dbi-name k vs kt vt]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)
             ^Txn txn (Txn/create env)]
@@ -785,6 +800,7 @@
                (ex-message e) {}))))
 
   (get-list [this dbi-name k kt vt]
+    (.check-ready this)
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -816,6 +832,7 @@
                    (.return-cursor dbi cur))))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.check-ready this)
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -845,6 +862,7 @@
                    (.return-cursor dbi cur))))))
 
   (list-count [this dbi-name k kt]
+    (.check-ready this)
     (if k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -868,6 +886,7 @@
       0))
 
   (filter-list [this dbi-name k pred kt vt]
+    (.check-ready this)
     (let [^DBI dbi    (.get-dbi this dbi-name false)
           ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
@@ -902,6 +921,7 @@
                  (.return-cursor dbi cur)))))
 
   (filter-list-count [this dbi-name k pred kt]
+    (.check-ready this)
     (let [^DBI dbi    (.get-dbi this dbi-name false)
           ^Rtx rtx    (.get-rtx this)
           txn         (.-txn rtx)
@@ -935,6 +955,7 @@
                  (.return-cursor dbi cur)))))
 
   (in-list? [this dbi-name k v kt vt]
+    (.check-ready this)
     (if (and k v)
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -953,7 +974,10 @@
                    (ex-message e) {:dbi dbi-name}))
           (finally (.return-rtx this rtx)
                    (.return-cursor dbi cur))))
-      false)))
+      false))
+
+  IAdmin
+  (re-index [this opts] (l/re-index* this opts)))
 
 (defn- reset-write-txn
   [^LMDB lmdb]
@@ -981,11 +1005,12 @@
                 flags       c/default-env-flags
                 temp?       false}
          :as   opts}]
+   (assert (string? dir) "directory should be a string.")
    (try
      (let [file     (u/file dir)
            mapsize  (* (long (if (u/empty-dir? file)
                                mapsize
-                               (c/pick-mapsize file)))
+                               (c/pick-mapsize dir)))
                        1024 1024)
            ^Env env (Env/create dir mapsize max-readers max-dbs
                                 (kv-flags flags))
@@ -1005,5 +1030,4 @@
        lmdb)
      (catch Exception e
        (raise
-         "Fail to open database: " (ex-message e)
-         {:dir dir})))))
+         "Fail to open database: " e {:dir dir})))))
