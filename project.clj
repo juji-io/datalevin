@@ -41,6 +41,7 @@
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
    [com.github.jnr/jnr-ffi]
+   [com.taoensso/timbre]
    [org.lmdbjava/lmdbjava]
    [com.taoensso/encore]
    [com.taoensso/nippy]
@@ -49,8 +50,8 @@
    [org.clojure/tools.cli]
    [org.clojure/data.csv]
    [org.bouncycastle/bcprov-jdk15on]
+   [babashka/babashka.pods]
    [cheshire]
-   [com.taoensso/timbre]
    [com.fasterxml.jackson.core/jackson-core]
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
@@ -79,14 +80,7 @@
                      "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"]
                     :dependencies
                     [[org.clojure/test.check]
-                     [org.clojure/data.csv]
-                     [cheshire]
-                     [org.clojure/tools.cli]
-                     [org.bouncycastle/bcprov-jdk15on]
-                     [com.taoensso/timbre]
-                     [nrepl/bencode]
                      [joda-time/joda-time]
-                     [babashka/babashka.pods]
                      [org.graalvm.nativeimage/svm]]
                     :global-vars
                     {*print-namespace-maps* false

@@ -374,9 +374,7 @@
           (when-not (and (sequential? attrs) (< 1 (count attrs))
                          (every? c/datalog-value-types attrs)
                          (not (some #(= :db.type/tuple %) attrs)))
-            (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data)))))
-
-    ))
+            (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data)))))))
 
 (defn- open-store
   [dir schema opts]

@@ -8,11 +8,13 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.lru :as lru]
+   [clojure.java.io :as io]
    [clojure.string :as s])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.spill SpillableIntObjMap]
+   [datalevin.lmdb IAdmin]
    [java.util ArrayList Map$Entry Arrays]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
@@ -319,7 +321,8 @@
   (doc-count [this])
   (search [this query] [this query opts]))
 
-(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs)
+(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
+         get-rawtext new-search-engine)
 
 (deftype SearchEngine [lmdb
                        analyzer
@@ -355,9 +358,11 @@
   (clear-docs [_]
     (.empty docs)
     (.empty terms)
+    (.clear norms)
     (l/clear-dbi lmdb terms-dbi)
     (l/clear-dbi lmdb docs-dbi)
-    (l/clear-dbi lmdb positions-dbi))
+    (l/clear-dbi lmdb positions-dbi)
+    (l/clear-dbi lmdb rawtext-dbi))
 
   (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref))
 
@@ -405,7 +410,25 @@
                           (pouring coll pq result))
                         (reduced coll))))
                   (transient [])
-                  (range n 0 -1))))))))))
+                  (range n 0 -1)))))))))
+
+  IAdmin
+  (re-index [this opts]
+    (if include-text?
+      (try
+        (let [d    (l/dir lmdb)
+              coll (UnifiedMap.)]
+          (doseq [[doc-id doc-ref] docs
+                  :let             [doc-text (get-rawtext this doc-id)]]
+            (.put coll doc-ref doc-text))
+          (.clear-docs this)
+          (let [^SearchEngine engine (new-search-engine lmdb opts)]
+            (doseq [^Map$Entry kv (.entrySet coll)]
+              (.add-doc engine (.getKey kv) (.getValue kv) false))
+            engine))
+        (catch Exception e
+          (u/raise "Unable to re-index search. " e {:dir (l/dir lmdb)})))
+      (u/raise "Can only re-index search when :include-text? is true" {}))))
 
 (defn- get-pos-info
   [^SearchEngine engine doc-id term-id]
@@ -701,11 +724,15 @@
           (remove nil?))
        (keys terms))]))
 
+(defn- get-rawtext
+  [^SearchEngine engine doc-id]
+  (l/get-value (.-lmdb engine) (.-rawtext-dbi engine) doc-id
+               :int :string true))
+
 (defn- add-rawtext
   [^SearchEngine engine doc-filter [_ doc-id :as result]]
   (when-let [doc-ref (get-doc-ref engine doc-filter result)]
-    [doc-ref (l/get-value (.-lmdb engine) (.-rawtext-dbi engine)
-                          doc-id :int :string true)]))
+    [doc-ref (get-rawtext engine doc-id)]))
 
 (defn- add-text+offset
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
@@ -798,9 +825,9 @@
                        docs-dbi
                        positions-dbi
                        rawtext-dbi
-                       terms
-                       docs
-                       norms
+                       terms     ;; term-id -> term
+                       docs      ;; doc-id -> doc-ref
+                       norms     ;; doc-id -> norm
                        (lru/cache 100000 :constant)
                        (AtomicInteger. max-doc)
                        (AtomicInteger. max-term)

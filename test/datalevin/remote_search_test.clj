@@ -1,9 +1,11 @@
 (ns datalevin.remote-search-test
-  (:require [datalevin.interpret :as i]
-            [datalevin.core :as d]
-            [clojure.string :as s]
-            [datalevin.test.core :refer [server-fixture]]
-            [clojure.test :refer [is testing deftest use-fixtures]]))
+  (:require
+   [datalevin.interpret :as i]
+   [datalevin.search-utils :as su]
+   [datalevin.core :as d]
+   [clojure.string :as s]
+   [datalevin.test.core :refer [server-fixture]]
+   [clojure.test :refer [is testing deftest use-fixtures]]))
 
 (use-fixtures :each server-fixture)
 
@@ -100,3 +102,35 @@
              (first (d/fulltext-datoms db "red fox")))
            "The quick red fox jumped over the lazy red dogs."))
     (d/close-db db)))
+
+(defn- add-docs
+  [f engine]
+  (f engine :doc0 "")
+  (f engine :doc1 "The quick red fox jumped over the lazy red dogs.")
+  (f engine :doc2 "Mary had a little lamb whose fleece was red as fire.")
+  (f engine :doc3 "Moby Dick is a story of a whale and a man obsessed.")
+  (f engine :doc4 "The robber wore a red fleece jacket and a baseball cap.")
+  (f engine :doc5
+     "The English Springer Spaniel is the best of all red dogs I know.")
+  )
+
+(deftest re-index-search-test
+  (let [dir    "dtlv://datalevin:datalevin@localhost/blank-analyzer-test"
+        lmdb   (d/open-kv dir)
+        opts   {:index-position? true
+                :include-text?   true}
+        engine (d/new-search-engine lmdb opts)]
+
+    (add-docs d/add-doc engine)
+
+    (is (empty? (d/search engine "dog")))
+
+    (let [engine1 (d/re-index
+                    engine (merge opts {:analyzer
+                                        (su/create-analyzer
+                                          {:token-filters
+                                           [(su/create-stemming-token-filter
+                                              "english")]})}))]
+      (is (= [:doc1 :doc5] (d/search engine1 "dog"))))
+
+    (d/close-kv lmdb)))

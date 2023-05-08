@@ -1121,6 +1121,7 @@
    'doc-indexed?
    'doc-count
    'search
+   'search-re-index
    ])
 
 (defmacro message-cases
@@ -1984,6 +1985,14 @@
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (search-handler search)))
 
+(defn- search-re-index
+  [^Server server ^SelectionKey skey {:keys [args]}]
+  (wrap-error
+    (let [[db-name opts] args
+          engine         (l/re-index (search-engine server skey db-name) opts)]
+      (update-db server db-name #(assoc % :engine engine))
+      (write-message skey {:type :command-complete}))))
+
 ;; END message handlers
 
 (defprotocol IRunner
@@ -2029,7 +2038,7 @@
           kv-store (get-kv-store server db-name)
           runner   (get-in (.-dbs server) [db-name :runner])]
       (new-message runner skey message)
-      (locking kv-store (.notify kv-store)))
+      (locking kv-store (.notifyAll kv-store)))
     (catch Exception e
       ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"

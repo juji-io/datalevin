@@ -1,15 +1,17 @@
 (ns datalevin.client
   "Datalevin client to Datalevin server, blocking API, with a connection pool"
-  (:require [datalevin.util :as u]
-            [datalevin.constants :as c]
-            [clojure.string :as s]
-            [datalevin.bits :as b]
-            [datalevin.protocol :as p])
-  (:import [java.nio ByteBuffer BufferOverflowException]
-           [java.nio.channels SocketChannel]
-           [java.util UUID]
-           [java.util.concurrent ConcurrentLinkedQueue]
-           [java.net InetSocketAddress StandardSocketOptions URI]))
+  (:require
+   [datalevin.util :as u]
+   [datalevin.constants :as c]
+   [clojure.string :as s]
+   [datalevin.bits :as b]
+   [datalevin.protocol :as p])
+  (:import
+   [java.nio ByteBuffer BufferOverflowException]
+   [java.nio.channels SocketChannel]
+   [java.util UUID]
+   [java.util.concurrent ConcurrentLinkedQueue]
+   [java.net InetSocketAddress StandardSocketOptions URI]))
 
 (defprotocol ^:no-doc IConnection
   (send-n-receive [conn msg]

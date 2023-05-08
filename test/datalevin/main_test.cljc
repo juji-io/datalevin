@@ -1,18 +1,20 @@
 (ns datalevin.main-test
-  (:require [datalevin.main :as sut]
-            [datalevin.util :as u]
-            [datalevin.core :as d]
-            [datalevin.interpret :as i]
-            [datalevin.lmdb :as l]
-            [datalevin.test.core :as tdc :refer [db-fixture]]
-            [taoensso.nippy :as nippy]
-            [clojure.test :refer [deftest testing is use-fixtures]]
-            [clojure.test.check.generators :as gen]
-            [clojure.string :as s]
-            [clojure.edn :as edn])
-  (:import [java.util UUID Date Arrays]
-           [java.io Writer]
-           [java.net URL]))
+  (:require
+   [datalevin.main :as sut]
+   [datalevin.util :as u]
+   [datalevin.core :as d]
+   [datalevin.interpret :as i]
+   [datalevin.lmdb :as l]
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [taoensso.nippy :as nippy]
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [clojure.test.check.generators :as gen]
+   [clojure.string :as s]
+   [clojure.edn :as edn])
+  (:import
+   [java.util UUID Date Arrays]
+   [java.io Writer]
+   [java.net URL]))
 
 (use-fixtures :each db-fixture)
 
@@ -185,11 +187,9 @@
   (.readUTF data-input)))
 
 (deftest dump-load-datalog-test
-  ;; rebinding *datalevin-data-readers* to ensure support for
-  ;; reading in custom tagged literals works
   ;; (removing the custom ->url reader will cause the tests to fail)
-  (binding [sut/*datalevin-data-readers*
-            (merge sut/datalevin-data-readers
+  (binding [*data-readers*
+            (merge *data-readers*
                    {'url datalevin.main-test/->url})]
 
     (let [analyzer (i/inter-fn [^String text]

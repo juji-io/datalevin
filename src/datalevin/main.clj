@@ -44,22 +44,6 @@
      (Integer/parseInt minor)
      (Integer/parseInt non-breaking)]))
 
-;; Data Readers
-
-(def datalevin-data-readers
-  "Built-in data readers."
-  {'datalevin/Datom    dd/datom-from-reader
-   'datalevin/DB       db/db-from-reader
-   'datalevin/bytes    b/bytes-from-reader
-   'datalevin/regex    b/regex-from-reader
-   'datalevin/bigint   b/bigint-from-reader
-   'datalevin/inter-fn i/inter-fn-from-reader
-   })
-
-(def ^:dynamic *datalevin-data-readers*
-  "Can be bound to support reading custom tag literals."
-  datalevin-data-readers)
-
 (def ^:private commands
   #{"copy" "drop" "dump" "exec" "help" "load" "repl" "serv" "stat"})
 
@@ -365,22 +349,6 @@
       (exit 1 (str "Drop error: " (.getMessage e)))))
   (exit 0))
 
-(defn- dump-dbi [lmdb dbi]
-  (p/pprint {:dbi dbi :entries (l/entries lmdb dbi) :ver version})
-  (doseq [[k v] (l/get-range lmdb dbi [:all] :raw :raw)]
-    (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
-
-(defn- dump-all [lmdb]
-  (doseq [dbi (set (l/list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
-
-(defn- dump-datalog [dir]
-  (let [conn (d/create-conn dir)]
-    (p/pprint (d/opts conn))
-    (p/pprint (d/schema conn))
-    (doseq [^Datom datom (d/datoms @conn :eav)]
-      (prn [(.-e datom) (.-a datom) (.-v datom)]))
-    (d/close conn)))
-
 (defn dump
   "Dump database content. `src-dir` is the database directory path.
 
@@ -402,12 +370,14 @@
         list?      (let [lmdb (l/open-kv src-dir)]
                      (p/pprint (set (l/list-dbis lmdb)))
                      (l/close-kv lmdb))
-        datalog?   (dump-datalog src-dir)
+        datalog?   (let [conn (d/create-conn src-dir)]
+                     (d/dump-datalog conn)
+                     (d/close conn))
         all?       (let [lmdb (l/open-kv src-dir)]
-                     (dump-all lmdb)
+                     (l/dump-all lmdb)
                      (l/close-kv lmdb))
         (seq dbis) (let [lmdb (l/open-kv src-dir)]
-                     (doseq [dbi dbis] (dump-dbi lmdb dbi))
+                     (doseq [dbi dbis] (l/dump-dbi lmdb dbi))
                      (l/close-kv lmdb))
         :else      (println dump-help)))
     (when f (.flush f) (.close f))))
@@ -421,72 +391,6 @@
       (exit 1 (str "Dump error: " (.getMessage e)))))
   (exit 0))
 
-(defn- load-datalog [dir in]
-  (try
-    (with-open [^PushbackReader r in]
-      (let [read-form     #(edn/read {:eof     ::EOF
-                                      :readers *datalevin-data-readers*} r)
-            read-maps     #(let [m1 (read-form)]
-                             (if (:db/ident m1)
-                               [nil m1]
-                               [m1 (read-form)]))
-            [opts schema] (read-maps)
-            datoms        (->> (repeatedly read-form)
-                               (take-while #(not= ::EOF %))
-                               (map #(apply d/datom %)))
-            db            (d/init-db datoms dir schema opts)]
-        (d/close-db db)))
-    (catch IOException e
-      (raise "IO error while loading Datalog data: " (ex-message e) {}))
-    (catch RuntimeException e
-      (raise "Parse error while loading Datalog data: " (ex-message e) {}))
-    (catch Exception e
-      (raise "Error loading Datalog data: " (ex-message e) {}))))
-
-(defn- load-kv [dbi [k v]]
-  [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
-
-(defn- load-dbi [lmdb dbi in]
-  (try
-    (with-open [^PushbackReader r in]
-      (let [read-form         #(edn/read {:eof ::EOF} r)
-            {:keys [entries]} (read-form)]
-        (l/open-dbi lmdb dbi)
-        (l/transact-kv lmdb (->> (repeatedly read-form)
-                                 (take-while #(not= ::EOF %))
-                                 (take entries)
-                                 (map (partial load-kv dbi))))))
-    (catch IOException e
-      (raise "IO error while loading raw data: " (ex-message e) {}))
-    (catch RuntimeException e
-      (raise "Parse error while loading raw data: " (ex-message e) {}))
-    (catch Exception e
-      (raise "Error loading raw data: " (ex-message e) {}))))
-
-(defn- load-all [lmdb in]
-  (try
-    (with-open [^PushbackReader r in]
-      (let [read-form #(edn/read {:eof ::EOF} r)
-            load-dbi  (fn [[ms vs]]
-                        (doseq [{:keys [dbi]} (butlast ms)]
-                          (l/open-dbi lmdb dbi))
-                        (let [{:keys [dbi entries]} (last ms)]
-                          (l/open-dbi lmdb dbi)
-                          (->> vs
-                               (take entries)
-                               (map (partial load-kv dbi)))))]
-        (l/transact-kv lmdb (->> (repeatedly read-form)
-                                 (take-while #(not= ::EOF %))
-                                 (partition-by map?)
-                                 (partition 2 2 nil)
-                                 (mapcat load-dbi)))))
-    (catch IOException e
-      (raise "IO error while loading raw data: " (ex-message e) {}))
-    (catch RuntimeException e
-      (raise "Parse error while loading raw data: " (ex-message e) {}))
-    (catch Exception e
-      (raise "Error loading raw data: " (ex-message e) {}))))
-
 (defn load
   "Load content into the database at data directory path `dir`,
   from `src-file` if given, or from stdin.
@@ -499,12 +403,12 @@
   (let [f  (when src-file (PushbackReader. (io/reader src-file)))
         in (or f (PushbackReader. *in*))]
     (cond
-      datalog? (load-datalog dir in)
+      datalog? (d/load-datalog dir in {} {})
       dbi      (let [lmdb (l/open-kv dir)]
-                 (load-dbi lmdb dbi in)
+                 (l/load-dbi lmdb dbi in)
                  (l/close-kv lmdb))
       :else    (let [lmdb (l/open-kv dir)]
-                 (load-all lmdb in)
+                 (l/load-all lmdb in)
                  (l/close-kv lmdb)))
     (when f (.close f))))
 

@@ -205,7 +205,7 @@
    `(scan ~call ~error false))
   ([call error keep-rtx?]
    `(do
-      (assert (not (l/closed-kv? ~'lmdb)) "LMDB env is closed.")
+      (l/check-ready ~'lmdb)
       (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
             ~'rtx (if (l/writing? ~'lmdb)
                     @(l/write-txn ~'lmdb)
@@ -218,25 +218,6 @@
           (finally
             (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
               (l/return-rtx ~'lmdb ~'rtx))))))))
-
-(defmacro cursor-scan
-  [call error]
-  `(let [~'dbi (l/get-dbi ~'this ~'dbi-name false)
-         ~'rtx (if ~'writing?
-                 @(l/write-txn ~'this)
-                 (l/get-rtx ~'this))
-         ~'txn (l/get-txn ~'rtx)
-         ~'cur (l/get-cursor ~'dbi ~'txn)]
-     (try
-       ~call
-       (catch Exception ~'e
-         ;; (st/print-stack-trace ~'e)
-         ~error)
-       (finally
-         (if (l/read-only? ~'rtx)
-           (l/return-cursor ~'dbi ~'cur)
-           (l/close-cursor ~'dbi ~'cur))
-         (l/return-rtx ~'this ~'rtx)))))
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]

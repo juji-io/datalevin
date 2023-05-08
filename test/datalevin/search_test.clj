@@ -621,6 +621,28 @@ A love that's never spent.
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest re-index-search-test
+  (let [dir    (u/tmp-dir (str "re-index-search-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
+        opts   {:index-position? true
+                :include-text?   true}
+        engine (sut/new-search-engine lmdb opts)]
+
+    (add-docs sut/add-doc engine)
+
+    (is (empty? (sut/search engine "dog")))
+
+    (let [engine1 (l/re-index
+                    engine (merge opts {:analyzer
+                                        (su/create-analyzer
+                                          {:token-filters
+                                           [(su/create-stemming-token-filter
+                                              "english")]})}))]
+      (is (= [:doc1 :doc5] (sut/search engine1 "dog"))))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
 ;; TODO double compares are not really reliable
 ;; (def tokens ["b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n"
 ;;              "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"])

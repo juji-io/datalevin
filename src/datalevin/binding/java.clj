@@ -5,7 +5,7 @@
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.lmdb :as l :refer [open-kv open-list-dbi IBuffer IRange
+   [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IAdmin
                                  IRtx IDB IKV IList ILMDB IWriting]]
    [clojure.stacktrace :as st]
    [clojure.java.io :as io]
@@ -296,8 +296,8 @@
   (write-txn [_] write-txn)
 
   (mark-write [_]
-    (->LMDB
-      env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w write-txn true))
+    (->LMDB env dir temp? opts pool dbis kb-w start-kb-w stop-kb-w
+            write-txn true))
 
   ILMDB
   (close-kv [_]
@@ -314,6 +314,9 @@
 
   (closed-kv? [_] (.isClosed env))
 
+  (check-ready [this]
+    (assert (not (.closed-kv? this)) "LMDB env is closed."))
+
   (dir [_] dir)
 
   (opts [_] opts)
@@ -325,7 +328,7 @@
                                    val-size       c/+default-val-size+
                                    flags          c/default-dbi-flags
                                    validate-data? false}}]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [kb  (b/allocate-buffer key-size)
           vb  (b/allocate-buffer val-size)
@@ -346,7 +349,7 @@
                                     :flags    c/read-dbi-flags}))))
 
   (clear-dbi [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name )]
         (with-open [txn (.txnWrite env)]
@@ -356,7 +359,7 @@
         (raise "Fail to clear DBI: " dbi-name " " e {}))))
 
   (drop-dbi [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name)]
         (with-open [txn (.txnWrite env)]
@@ -368,7 +371,7 @@
         (raise "Fail to drop DBI: " dbi-name " " e {}))))
 
   (list-dbis [this]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (try
       (mapv b/text-ba->str (.getDbiNames env))
       (catch Exception e
@@ -377,7 +380,7 @@
   (copy [this dest]
     (.copy this dest false))
   (copy [this dest compact?]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
         (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
@@ -405,13 +408,13 @@
     (.add pool rtx))
 
   (stat [this]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (try
       (stat-map (.stat env))
       (catch Exception e
         (raise "Fail to get statistics: " (ex-message e) {}))))
   (stat [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (if dbi-name
       (let [^Rtx rtx (.get-rtx this)]
         (try
@@ -425,7 +428,7 @@
       (l/stat this)))
 
   (entries [this dbi-name]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (let [^DBI dbi (.get-dbi this dbi-name false)
           ^Rtx rtx (.get-rtx this)]
       (try
@@ -436,7 +439,7 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (try
       (reset-write-txn this)
       (.mark-write this)
@@ -472,7 +475,7 @@
       nil))
 
   (transact-kv [this txs]
-    (assert (not (.closed-kv? this)) "LMDB env is closed.")
+    (.check-ready this)
     (locking  write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)]
@@ -568,6 +571,7 @@
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
                                  :or   {key-size c/+max-key-size+
                                         val-size c/+max-key-size+}}]
+    (.check-ready this)
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
@@ -578,6 +582,7 @@
 
   IList
   (put-list-items [this dbi-name k vs kt vt]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)]
         (with-open [txn (.txnWrite env)]
@@ -591,6 +596,7 @@
         (raise "Fail to put an inverted list: " (ex-message e) {}))))
 
   (del-list-items [this dbi-name k kt]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)]
         (with-open [txn (.txnWrite env)]
@@ -601,6 +607,7 @@
       (catch Exception e
         (raise "Fail to delete an inverted list: " (ex-message e) {}))))
   (del-list-items [this dbi-name k vs kt vt]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name false)]
         (with-open [txn (.txnWrite env)]
@@ -615,6 +622,7 @@
                (ex-message e) {}))))
 
   (get-list [this dbi-name k kt vt]
+    (.check-ready this)
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -637,6 +645,7 @@
                    (.return-cursor dbi cur))))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.check-ready this)
     (when k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -660,6 +669,7 @@
                    (.return-cursor dbi cur))))))
 
   (list-count [this dbi-name k kt]
+    (.check-ready this)
     (if k
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -678,12 +688,15 @@
       0))
 
   (filter-list [this dbi-name k pred k-type v-type]
+    (.check-ready this)
     (.range-filter this dbi-name pred [:closed k k] k-type v-type true))
 
   (filter-list-count [this dbi-name k pred k-type]
+    (.check-ready this)
     (.range-filter-count this dbi-name pred [:closed k k] k-type))
 
   (in-list? [this dbi-name k v kt vt]
+    (.check-ready this)
     (if (and k v)
       (let [^DBI dbi    (.get-dbi this dbi-name false)
             ^Rtx rtx    (.get-rtx this)
@@ -698,7 +711,10 @@
                    (ex-message e) {:dbi dbi-name}))
           (finally (.return-rtx this rtx)
                    (.return-cursor dbi cur))))
-      false)))
+      false))
+
+  IAdmin
+  (re-index [this opts] (l/re-index* this opts)))
 
 (defn- reset-write-txn
   [^LMDB lmdb]
@@ -725,6 +741,7 @@
                 flags       c/default-env-flags
                 temp?       false}
          :as   opts}]
+   (assert (string? dir) "directory should be a string.")
    (try
      (let [^File file (u/file dir)
            mapsize    (* (long (if (u/empty-dir? file)
@@ -750,8 +767,7 @@
        (when temp? (u/delete-on-exit file))
        lmdb)
      (catch Exception e
-       ;; (st/print-stack-trace e)
-       (raise "Fail to open database: " (ex-message e) {:dir dir})))))
+       (raise "Fail to open database: " e {:dir dir})))))
 
 ;; TODO remove after LMDBJava supports apple silicon
 (defn apple-silicon-lmdb []

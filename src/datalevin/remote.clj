@@ -12,7 +12,7 @@
   (:import
    [datalevin.client Client]
    [datalevin.storage IStore]
-   [datalevin.lmdb ILMDB]
+   [datalevin.lmdb ILMDB IAdmin]
    [datalevin.search ISearchEngine]
    [java.nio.file Files Paths StandardOpenOption LinkOption]
    [java.net URI]))
@@ -441,6 +441,8 @@
 
 ;; remote search
 
+(declare ->SearchEngine)
+
 (deftype SearchEngine [^KVStore store]
   ISearchEngine
   (add-doc [this doc-ref doc-text]
@@ -466,7 +468,13 @@
     (sc/search this query {}))
   (search [this query opts]
     (cl/normal-request (.-client store) :search
-                       [(.-db-name store) query opts])))
+                       [(.-db-name store) query opts]))
+
+  IAdmin
+  (re-index [this opts]
+    (cl/normal-request (.-client store) :search-re-index
+                       [(.-db-name store) opts])
+    (->SearchEngine store)))
 
 (defn new-search-engine
   ([store]

@@ -8,17 +8,21 @@
   adjust the search quality vs. time trade-off: the bigger the number, the
   higher is the quality, but the longer is the search time.
 - [Search] `:proximity-max-dist` search option (default `45`) can be used to
-  control the maximal distance between terms that would be considered as in the
-  same span.
+  control the maximal distance between terms that would still be considered as
+  belonging to the same span.
 - [Search] `create-stemming-token-filter` function to create stemmers, which
   uses Snowball stemming library that supports many languages. #209
 - [Search] `create-stop-words-token-filter` function to take a customized stop
   words predicate.
-- `re-index` function. #179
+- [KV, Datalog, Search] `re-index` function that dump and load data with new
+  settings. Should only be called when no other threads or programs are
+  accessing. #179
 ### Fixed
-- [KV] More strict type check for transaction, throw when transacting un-thawable
-  data. #208
-
+- [KV] More strict type check for transaction data, throw when transacting
+  un-thawable data. #208
+### Changed
+- [Main] Remove `*datalevin-data-readers*` dynamic var, use Clojure's
+  `*data-readers*` instead.
 
 ## 0.8.14 (2023-04-28)
 ### Fixed
