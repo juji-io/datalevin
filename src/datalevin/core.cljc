@@ -1495,7 +1495,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
     (catch Exception e
       (u/raise "Error loading Datalog data: " e {}))))
 
-(defn- re-index-datalog
+(defn ^:no-doc re-index-datalog
   [conn schema opts]
   (let [d (s/dir (.-store ^DB @conn))]
     (try
@@ -1530,7 +1530,10 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
    (re-index db {} opts))
   ([db schema opts]
    (if (conn? db)
-     (re-index-datalog db schema opts)
+     (let [store (.-store ^DB @db)]
+       (if (instance? DatalogStore store)
+         (do (l/re-index store schema opts) db)
+         (re-index-datalog db schema opts)))
      (l/re-index db opts))))
 
 ;; -------------------------------------

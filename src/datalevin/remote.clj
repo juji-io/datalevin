@@ -215,7 +215,11 @@
     (cl/normal-request client :abort-transact [db-name] true))
 
   (close-transact [_]
-    (cl/normal-request client :close-transact [db-name] true)))
+    (cl/normal-request client :close-transact [db-name] true))
+
+  IAdmin
+  (re-index [_ schema opts]
+    (cl/normal-request client :datalog-re-index [db-name schema opts])))
 
 (defn open
   "Open a remote Datalog store"
@@ -420,7 +424,12 @@
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request
         client :visit
-        [db-name dbi-name frozen-visitor k-range k-type] writing?))))
+        [db-name dbi-name frozen-visitor k-range k-type] writing?)))
+
+  IAdmin
+  (re-index [db opts]
+    (cl/normal-request client :kv-re-index [db-name opts])
+    db))
 
 (defn open-kv
   "Open a remote kv store."
@@ -474,7 +483,7 @@
   (re-index [this opts]
     (cl/normal-request (.-client store) :search-re-index
                        [(.-db-name store) opts])
-    (->SearchEngine store)))
+    this))
 
 (defn new-search-engine
   ([store]

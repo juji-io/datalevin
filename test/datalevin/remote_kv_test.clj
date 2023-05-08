@@ -1,13 +1,15 @@
 (ns datalevin.remote-kv-test
-  (:require [datalevin.remote :as sut]
-            [datalevin.lmdb :as l]
-            [datalevin.util :as u]
-            [datalevin.datom :as d]
-            [datalevin.core :as dc]
-            [datalevin.interpret :as i]
-            [datalevin.test.core :refer [server-fixture]]
-            [clojure.test :refer [is testing deftest use-fixtures]])
-  (:import [java.util UUID Arrays]))
+  (:require
+   [datalevin.remote :as sut]
+   [datalevin.lmdb :as l]
+   [datalevin.util :as u]
+   [datalevin.datom :as d]
+   [datalevin.core :as dc]
+   [datalevin.interpret :as i]
+   [datalevin.test.core :refer [server-fixture]]
+   [clojure.test :refer [is testing deftest use-fixtures]])
+  (:import
+   [java.util UUID Arrays]))
 
 (use-fixtures :each server-fixture)
 
@@ -17,7 +19,8 @@
     (is (instance? datalevin.remote.KVStore store))
     (l/open-dbi store "a")
     (l/open-dbi store "b")
-    (l/open-dbi store "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+    (l/open-dbi store "c" {:key-size (inc Long/BYTES)
+                           :val-size (inc Long/BYTES)})
     (l/open-dbi store "d")
 
     (testing "list dbis"
@@ -104,13 +107,15 @@
 
     (testing "range and filter queries"
       (let [store (sut/open-kv dir)]
-        (l/open-dbi store "r" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
+        (l/open-dbi store "r" {:key-size (inc Long/BYTES)
+                               :val-size (inc Long/BYTES)})
         (let [ks   (shuffle (range 0 10000))
               vs   (map inc ks)
               txs  (map (fn [k v] [:put "r" k v :long :long]) ks vs)
-              pred (i/inter-fn [kv]
-                               (let [^long k (dc/read-buffer (dc/k kv) :long)]
-                                 (< 10 k 20)))
+              pred (i/inter-fn
+                     [kv]
+                     (let [^long k (dc/read-buffer (dc/k kv) :long)]
+                       (< 10 k 20)))
               fks  (range 11 20)
               fvs  (map inc fks)
               res  (map (fn [k v] [k v]) fks fvs)
@@ -143,3 +148,36 @@
       (l/close-kv cstore))
     (l/close-kv rstore)
     (u/delete-files dst)))
+
+(deftest re-index-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/re-index"
+        lmdb (sut/open-kv dir)]
+    (l/open-dbi lmdb "misc")
+
+    (l/transact-kv
+      lmdb
+      [[:put "misc" :datalevin "Hello, world!"]
+       [:put "misc" 42 {:saying "So Long, and thanks for all the fish"
+                        :source "The Hitchhiker's Guide to the Galaxy"}]])
+    (let [lmdb1 (l/re-index lmdb {})]
+      (is (= [[42
+               {:saying "So Long, and thanks for all the fish",
+                :source "The Hitchhiker's Guide to the Galaxy"}]
+              [:datalevin "Hello, world!"]]
+             (l/get-range lmdb1 "misc" [:all])))
+
+      ;; TODO https://github.com/juji-io/datalevin/issues/212
+      #_(l/visit
+          lmdb1 "misc"
+          (i/inter-fn
+            [kv]
+            (let [k (dc/read-buffer (dc/k kv) :data)]
+              (when (= k 42)
+                (l/transact-kv
+                  lmdb1
+                  [[:put "misc" 42 "Don't panic"]]))))
+
+          [:all])
+      #_(is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
+               (l/get-range lmdb1 "misc" [:all])))
+      (l/close-kv lmdb1))))
