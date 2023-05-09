@@ -236,10 +236,6 @@
     (.flush f)
     (.close f)))
 
-(defn load
-  [db dumpfile]
-  (load-all db (PushbackReader. (io/reader dumpfile))))
-
 (defprotocol IAdmin
   "Some administrative functions"
   (re-index [db opts] [db schema opts] "dump and reload the data"))
@@ -253,7 +249,7 @@
       (clear db)
       (close-kv db)
       (let [db (open-kv d opts)]
-        (load db dumpfile)
+        (load-all db (PushbackReader. (io/reader dumpfile)))
         db))
     (catch Exception e
       (u/raise "Unable to re-index" e {:dir (dir db)}))))
