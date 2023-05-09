@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.15 (2023-05-08)
 ### Added
 - [Search] Consider term proximity in relevance when `:index-position?` search
   engine option is `true`. #203
