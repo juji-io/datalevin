@@ -1029,5 +1029,4 @@
        (when temp? (u/delete-on-exit file))
        lmdb)
      (catch Exception e
-       (raise
-         "Fail to open database: " e {:dir dir})))))
+       (raise "Fail to open database: " e {:dir dir})))))

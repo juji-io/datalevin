@@ -16,7 +16,7 @@
   words predicate.
 - [KV, Datalog, Search] `re-index` function that dump and load data with new
   settings. Should only be called when no other threads or programs are
-  accessing. #179
+  accessing the database. #179
 ### Fixed
 - [KV] More strict type check for transaction data, throw when transacting
   un-thawable data. #208
