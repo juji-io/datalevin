@@ -371,8 +371,8 @@ adjust the priorities based on feedback.
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
 * 0.9.0 Store data in compressed form.
-* 0.10.0 A new Datalog query engine with improved performance.
-* 0.11.0 As a vector DB: numeric vector indexing.
+* 0.10.0 As a vector DB: dense numeric vector indexing.
+* 0.11.0 A new Datalog query engine with improved performance.
 * 1.0.0 Transaction log storage and access API.
 * 1.1.0 Read-only replicas for server.
 * 1.2.0 As a document store: automatic indexing and incremental updates.
