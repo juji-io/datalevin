@@ -23,7 +23,7 @@
    [org.babashka/sci "0.7.39"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
    [org.clojure/clojure "1.10.3"]
-   [org.clojure/tools.cli "1.0.214"]
+   [org.clojure/tools.cli "1.0.219"]
    [org.clojure/test.check "1.1.1"]
    [org.clojure/data.csv "1.0.1"]
    [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.7.12"]
@@ -36,7 +36,7 @@
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
    [org.lmdbjava/lmdbjava "0.8.3"]
-   [org.roaringbitmap/RoaringBitmap "0.9.40"]]
+   [org.roaringbitmap/RoaringBitmap "0.9.44"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
