@@ -3,7 +3,9 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.util :as u]))
+   [datalevin.util :as u])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -178,7 +180,7 @@
 
 ;; https://github.com/tonsky/datascript/issues/218
 (deftest test-false-arguments
-  (let [dir   (u/tmp-dir (str "rule-test-" (random-uuid)))
+  (let [dir   (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
         db    (d/db-with (d/empty-db dir)
                          [[:db/add 1 :attr true]
                           [:db/add 2 :attr false]])

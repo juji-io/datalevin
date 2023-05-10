@@ -6,16 +6,18 @@
    [datalevin.db :as db]
    [datalevin.util :as u]
    [datalevin.test.core :as tdc])
-  (:import #?(:clj [clojure.lang ExceptionInfo])))
+  (:import
+   [clojure.lang ExceptionInfo]
+   [java.util UUID]))
 
 (deftest test-schema
-  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
-        dir1 (u/tmp-dir (str "tuples-" (random-uuid)))
-        dir2 (u/tmp-dir (str "tuples-" (random-uuid)))
-        dir3 (u/tmp-dir (str "tuples-" (random-uuid)))
-        dir4 (u/tmp-dir (str "tuples-" (random-uuid)))
-        dir5 (u/tmp-dir (str "tuples-" (random-uuid)))
-        dir6 (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        dir1 (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        dir2 (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        dir3 (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        dir4 (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        dir5 (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
+        dir6 (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         db   (d/empty-db
                dir
                {:year+session    {:db/tupleAttrs [:year :session]}
@@ -63,7 +65,7 @@
     (u/delete-files dir)))
 
 (deftest test-tx
-  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {:a+b   {:db/tupleAttrs [:a :b]}
                     :a+c+d {:db/tupleAttrs [:a :c :d]}})]
@@ -133,7 +135,7 @@
     (u/delete-files dir)))
 
 (deftest test-ignore-correct
-  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         conn (d/create-conn dir {:a+b {:db/tupleAttrs [:a :b]}})]
     (testing "insert"
       (d/transact! conn [{:db/id 1 :a "a" :b "b" :a+b ["a" "b"]}])
@@ -164,7 +166,7 @@
     (u/delete-files dir)))
 
 (deftest test-unique
-  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {:a+b {:db/tupleAttrs [:a :b]
                           :db/unique     :db.unique/identity}})]
@@ -210,7 +212,7 @@
     (u/delete-files dir)))
 
 (deftest test-upsert
-  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {:a+b {:db/tupleAttrs [:a :b]
                           :db/unique     :db.unique/identity}
@@ -254,7 +256,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs
-  (let [dir  (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {:a+b {:db/tupleAttrs [:a :b]
                           :db/unique     :db.unique/identity}
@@ -308,7 +310,7 @@
     (u/delete-files dir)))
 
 (deftest test-validation
-  (let [dir (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         db  (d/empty-db dir {:a+b {:db/tupleAttrs [:a :b]}})
         db1 (d/db-with db [[:db/add 1 :a "a"]])]
     (is (thrown-msg? "Can’t modify tuple attrs directly: [:db/add 1 :a+b [nil nil]]"
@@ -324,7 +326,7 @@
     (u/delete-files dir)))
 
 (deftest test-indexes
-  (let [dir (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:a+b+c {:db/tupleAttrs [:a :b :c]}})
                 (d/db-with
                   [{:db/id 1 :a "a" :b "b" :c "c"}
@@ -347,7 +349,7 @@
     (u/delete-files dir)))
 
 (deftest test-queries
-  (let [dir (u/tmp-dir (str "tuples-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "tuples-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:a+b {:db/tupleAttrs [:a :b]
                                        :db/unique     :db.unique/identity}})
                 (d/db-with [{:db/id 1 :a "A" :b "B"}
@@ -376,7 +378,7 @@
     (u/delete-files dir)))
 
 (deftest test-homogeneous-and-heterogeneous-tuple
-  (let [dir (u/tmp-dir (str "homo-tuples-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "homo-tuples-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:a {:db/valueType :db.type/tuple
                                  :db/tupleType :db.type/string

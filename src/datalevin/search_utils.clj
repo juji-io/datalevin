@@ -80,7 +80,7 @@
 (defn create-ngram-token-filter
   "Produces character ngrams between min and max size from the token and returns
   everything as tokens. This is useful for producing efficient fuzzy search."
-  ([^long min-gram-size ^long max-gram-size]
+  ([min-gram-size max-gram-size]
    (inter-fn
      [[^String word pos start]]
      (let [length (.length word)]
@@ -102,14 +102,14 @@
 
 (defn create-min-length-token-filter
   "Filters tokens that are strictly shorter than `min-length`."
-  [^long min-length]
+  [min-length]
   (inter-fn
     [[^String word _ _ :as t]]
     (if (< (.length word) min-length) [] [t])))
 
 (defn create-max-length-token-filter
   "Filters tokens that are strictly longer than `max-length`."
-  [^long max-length]
+  [max-length]
   (inter-fn
     [[^String word _ _ :as t]]
     (if (> (.length word) max-length) [] [t])))

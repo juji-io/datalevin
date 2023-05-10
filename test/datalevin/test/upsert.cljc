@@ -4,7 +4,9 @@
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.util :as u]
-   [datalevin.constants :refer [tx0]]))
+   [datalevin.constants :refer [tx0]])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -14,7 +16,7 @@
 ;; break up the tests due to mutable nature of db
 
 (deftest test-upsert-1
-  (let [dir     (u/tmp-dir (str "upsert-test-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "upsert-test-" (UUID/randomUUID)))
         db      (d/db-with (d/empty-db
                              dir {:name  { :db/unique :db.unique/identity }
                                   :email { :db/unique :db.unique/identity }
@@ -75,7 +77,7 @@
     (u/delete-files dir)))
 
 (deftest test-upsert-2
-  (let [dir     (u/tmp-dir (str "upsert-2-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "upsert-2-" (UUID/randomUUID)))
         db      (d/db-with (d/empty-db
                              dir {:name  { :db/unique :db.unique/identity }
                                   :email { :db/unique :db.unique/identity }
@@ -138,7 +140,7 @@
     (u/delete-files dir)))
 
 (deftest test-upsert-3
-  (let [dir     (u/tmp-dir (str "upsert-3-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "upsert-3-" (UUID/randomUUID)))
         db      (d/db-with
                   (d/empty-db
                     dir {:name  { :db/unique :db.unique/identity }
@@ -161,7 +163,7 @@
     (u/delete-files dir)))
 
 (deftest test-upsert-4
-  (let [dir     (u/tmp-dir (str "upsert-4-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "upsert-4-" (UUID/randomUUID)))
         db      (d/db-with
                   (d/empty-db
                     dir {:name  { :db/unique :db.unique/identity }
@@ -200,7 +202,7 @@
     (u/delete-files dir)))
 
 (deftest test-redefining-ids
-  (let [dir (u/tmp-dir (str "redefinning-ids-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "redefinning-ids-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name { :db/unique :db.unique/identity }})
                 (d/db-with [{:db/id -1 :name "Ivan"}]))
         tx  (d/with db [{:db/id -1 :age 35}
@@ -212,7 +214,7 @@
     (d/close-db db)
     (u/delete-files dir))
 
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name { :db/unique :db.unique/identity }})
                 (d/db-with [{:db/id -1 :name "Ivan"}
                             {:db/id -2 :name "Oleg"}]))]
@@ -224,7 +226,7 @@
 
 ;; https://github.com/tonsky/datascript/issues/285
 (deftest test-retries-order
-  (let [dir (u/tmp-dir (str "retries-order-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "retries-order-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
                 (d/db-with [[:db/add -1 :age 42]
                             [:db/add -2 :likes "Pizza"]
@@ -235,7 +237,7 @@
     (d/close-db db)
     (u/delete-files dir))
 
-  (let [dir (u/tmp-dir (str "retry-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "retry-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
                 (d/db-with [[:db/add -1 :age 42]
                             [:db/add -2 :likes "Pizza"]
@@ -248,7 +250,7 @@
 
 ;; https://github.com/tonsky/datascript/issues/403
 (deftest test-upsert-string-tempid-ref
-  (let [dir      (u/tmp-dir (str "retry-or-" (random-uuid)))
+  (let [dir      (u/tmp-dir (str "retry-or-" (UUID/randomUUID)))
         db       (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}
                                       :ref  {:db/valueType :db.type/ref}})
                      (d/db-with [{:name "Alice"}]))
@@ -271,7 +273,7 @@
     (u/delete-files dir)))
 
 (deftest test-vector-upsert
-  (let [dir (u/tmp-dir (str "vector-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "vector-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
                 (d/db-with [{:db/id -1, :name "Ivan"}]))]
     (are [tx res] (= res (tdc/all-datoms (d/db-with db tx)))
@@ -285,7 +287,7 @@
     (d/close-db db)
     (u/delete-files dir))
 
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name { :db/unique :db.unique/identity }})
                 (d/db-with [[:db/add -1 :name "Ivan"]
                             [:db/add -2 :name "Oleg"]]))]

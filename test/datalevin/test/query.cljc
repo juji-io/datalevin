@@ -29,10 +29,10 @@
   (let [data (->> (range 1000)
                   (map (fn [^long i]
                          {:db/id i
-                          :a     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
-                          :b     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
-                          :c     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
-                          :d     (str #?(:clj (UUID/randomUUID) :cljs (random-uuid)))
+                          :a     (str #?(:clj (UUID/randomUUID) :cljs (UUID/randomUUID)))
+                          :b     (str #?(:clj (UUID/randomUUID) :cljs (UUID/randomUUID)))
+                          :c     (str #?(:clj (UUID/randomUUID) :cljs (UUID/randomUUID)))
+                          :d     (str #?(:clj (UUID/randomUUID) :cljs (UUID/randomUUID)))
                           :e     (rand-int 3)
                           :f     (rand-int 3)
                           :g     (rand-int 3)

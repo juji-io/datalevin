@@ -6,7 +6,9 @@
    [datalevin.util :as u]
    [datalevin.core :as d]
    [clojure.core.protocols :as cp]
-   [datalevin.entity :as e]))
+   [datalevin.entity :as e])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -26,7 +28,7 @@
                 :namespace/ref {:db/valueType :db.type/ref}
                 :many/ref      {:db/valueType   :db.type/ref
                                 :db/cardinality :db.cardinality/many}}
-        dir    (u/tmp-dir (str "db-test-" (random-uuid)))
+        dir    (u/tmp-dir (str "db-test-" (UUID/randomUUID)))
         db     (-> (d/empty-db dir schema)
                    (d/db-with [{:db/id 1 :name "Parent1"}
                                {:db/id 2 :name "Child1" :ref 1 :namespace/ref 1}

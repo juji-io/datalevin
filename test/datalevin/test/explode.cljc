@@ -3,7 +3,9 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures are]]
    [datalevin.core :as d]
-   [datalevin.util :as u]))
+   [datalevin.util :as u])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -19,7 +21,7 @@
                 ;; (to-array ["Devil" "Tupen"])
                 ]]
     (testing coll
-      (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+      (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
             conn (d/create-conn dir
                                 { :aka {:db/cardinality :db.cardinality/many
                                         :db/valueType   :db.type/string}
@@ -44,7 +46,7 @@
         (u/delete-files dir)))))
 
 (deftest test-explode-ref
-  (let [dir (u/tmp-dir (str "test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db0 (d/empty-db dir { :children { :db/valueType  :db.type/ref
                                          :db/cardinality :db.cardinality/many } })]
@@ -71,7 +73,7 @@
 
 (deftest test-explode-nested-maps-1
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db (d/empty-db dir schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -84,7 +86,7 @@
 
 (deftest test-explode-nested-maps-2
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db (d/empty-db dir schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -98,7 +100,7 @@
 
 (deftest test-explode-nested-maps-3
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db (d/empty-db dir schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -112,7 +114,7 @@
 
 (deftest test-explode-nested-maps-4
   (let [schema { :profile { :db/valueType :db.type/ref }}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db (d/empty-db dir schema)]
     (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -128,7 +130,7 @@
   (testing "multi-valued"
     (let [schema { :profile { :db/valueType  :db.type/ref
                              :db/cardinality :db.cardinality/many }}
-          dir    (u/tmp-dir (str "test-" (random-uuid)))
+          dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
           db (d/empty-db dir schema)]
       (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -146,7 +148,7 @@
   (testing "multi-valued"
     (let [schema { :profile { :db/valueType  :db.type/ref
                              :db/cardinality :db.cardinality/many }}
-          dir    (u/tmp-dir (str "test-" (random-uuid)))
+          dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
           db (d/empty-db dir schema)]
       (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -165,7 +167,7 @@
   (testing "multi-valued"
     (let [schema { :profile { :db/valueType  :db.type/ref
                              :db/cardinality :db.cardinality/many }}
-          dir    (u/tmp-dir (str "test-" (random-uuid)))
+          dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
           db (d/empty-db dir schema)]
       (are [tx res] (= (d/q '[:find ?e ?a ?v
@@ -184,7 +186,7 @@
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many
                        :db/isComponent true}}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db (d/db-with (d/empty-db dir schema)
                       [{:db/id 1, :comp [{:name "C"}]}])]
@@ -196,7 +198,7 @@
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/cardinality :db.cardinality/many}}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
         db (d/db-with (d/empty-db dir schema)
                       [{:db/id 1, :comp [{:name "C"}]}])]
@@ -208,7 +210,7 @@
 
   (let [schema {:comp {:db/valueType   :db.type/ref
                        :db/isComponent true}}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1, :comp {:name "C"}}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
@@ -218,7 +220,7 @@
     (u/delete-files dir))
 
   (let [schema {:comp {:db/valueType :db.type/ref}}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1, :comp {:name "C"}}])]
     (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))

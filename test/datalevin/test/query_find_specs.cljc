@@ -3,12 +3,14 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.core :as d]
-   [datalevin.util :as u]))
+   [datalevin.util :as u])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-find-specs
-  (let [dir     (u/tmp-dir (str "find-test-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "find-test-" (UUID/randomUUID)))
         test-db (d/db-with
                   (d/empty-db dir)
                   [[:db/add 1 :name "Petr"]

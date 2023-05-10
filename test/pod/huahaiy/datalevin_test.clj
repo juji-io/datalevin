@@ -235,7 +235,7 @@
                 :spec { :db/valueType  :db.type/ref
                        :db/isComponent true
                        :db/cardinality :db.cardinality/one }}
-        dir     (u/tmp-dir (str "pod-pull-" (random-uuid)))
+        dir     (u/tmp-dir (str "pod-pull-" (UUID/randomUUID)))
         test-db (pd/init-db datoms dir schema)]
     (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
            (pd/pull test-db '[:name :aka] 1)))
@@ -253,7 +253,7 @@
   (let [datoms (set [[1 :name "Oleg"]
                      [1 :age 17]
                      [1 :aka "x"]])
-        dir    (u/tmp-dir (str "query-or-" (random-uuid)))
+        dir    (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db     (pd/init-db datoms dir)
         res    (set (pd/datoms db :eavt))]
     (is (= datoms res))

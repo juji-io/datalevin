@@ -3,13 +3,15 @@
    [datalevin.core :as d]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
-   [datalevin.util :as u]))
+   [datalevin.util :as u])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest ^{:doc "CLJS `apply` + `vector` will hold onto mutable array of arguments directly"}
   issue-262
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with (d/empty-db dir)
                        [{:attr "A"} {:attr "B"}])]
     (is (= (d/q '[:find ?a ?b

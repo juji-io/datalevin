@@ -9,6 +9,7 @@
    [datalevin.lru :as lru])
   #?(:clj
      (:import
+      [java.util UUID]
       [datalevin.db DB]
       [datalevin.datom Datom]
       [datalevin.pull_parser PullAttr PullPattern])))

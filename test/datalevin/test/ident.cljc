@@ -3,12 +3,14 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.util :as u]
-   [datalevin.core :as d]))
+   [datalevin.core :as d])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-q
-  (let [dir (u/tmp-dir (str "q-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "q-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:ref {:db/valueType :db.type/ref}})
                 (d/db-with [[:db/add 1 :db/ident :ent1]
                             [:db/add 2 :db/ident :ent2]
@@ -21,7 +23,7 @@
     (u/delete-files dir)))
 
 (deftest test-transact!
-  (let [dir (u/tmp-dir (str "tx-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "tx-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:ref {:db/valueType :db.type/ref}})
                 (d/db-with [[:db/add 1 :db/ident :ent1]
                             [:db/add 2 :db/ident :ent2]
@@ -32,7 +34,7 @@
     (u/delete-files dir)))
 
 (deftest test-entity
-  (let [dir (u/tmp-dir (str "ent-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "ent-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:ref {:db/valueType :db.type/ref}})
                 (d/db-with [[:db/add 1 :db/ident :ent1]
                             [:db/add 2 :db/ident :ent2]
@@ -43,7 +45,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull
-  (let [dir (u/tmp-dir (str "pull-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "pull-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:ref {:db/valueType :db.type/ref}})
                 (d/db-with [[:db/add 1 :db/ident :ent1]
                             [:db/add 2 :db/ident :ent2]

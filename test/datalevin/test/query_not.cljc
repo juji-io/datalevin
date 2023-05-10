@@ -5,7 +5,8 @@
    [datalevin.core :as d]
    [datalevin.util :as u])
   #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+     (:import [clojure.lang ExceptionInfo]
+              [java.util UUID])))
 
 (use-fixtures :each db-fixture)
 
@@ -18,7 +19,7 @@
    {:db/id 6 :name "Ivan" :age 20} ])
 
 (deftest test-not
-  (let [dir     (u/tmp-dir (str "query-not-test-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-not-test-" (UUID/randomUUID)))
         test-db (d/db-with (d/empty-db dir) test-data)]
     (testing "not"
       (are [q res] (= (set (d/q (concat '[:find [?e ...] :where] (quote q)) test-db))
@@ -149,11 +150,11 @@
     (u/delete-files dir)))
 
 (deftest test-default-source
-  (let [dir1 (u/tmp-dir (str "or-test-" (random-uuid)))
+  (let [dir1 (u/tmp-dir (str "or-test-" (UUID/randomUUID)))
         db1  (d/db-with (d/empty-db dir1)
                         [ [:db/add 1 :name "Ivan" ]
                          [:db/add 2 :name "Oleg"] ])
-        dir2 (u/tmp-dir (str "or-test-" (random-uuid)))
+        dir2 (u/tmp-dir (str "or-test-" (UUID/randomUUID)))
         db2  (d/db-with (d/empty-db dir2)
                         [ [:db/add 1 :age 10 ]
                          [:db/add 2 :age 20] ])]

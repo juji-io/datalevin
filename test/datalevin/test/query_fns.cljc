@@ -5,12 +5,13 @@
    [datalevin.util :as u]
    [datalevin.core :as d])
   #?(:clj
-     (:import [clojure.lang ExceptionInfo])))
+     (:import [clojure.lang ExceptionInfo]
+              [java.util UUID])))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-string-fn
-  (let [dir (u/tmp-dir (str "fns-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
                 (d/db-with
                   [{:db/id 1,
@@ -42,7 +43,7 @@
     (u/delete-files dir)))
 
 (deftest test-fulltext-fns
-  (let [dir (u/tmp-dir (str "fns-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string
                                         :db/fulltext  true}})
                 (d/db-with
@@ -68,7 +69,7 @@
                   :where [(> 2 1)]] [:a :b :c])
            #{[:a] [:b] [:c]})))
 
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:parent {:db/valueType :db.type/ref}})
                 (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
                             { :db/id 2, :name "Petr", :age 22, :height 240, :parent 1}
@@ -273,7 +274,7 @@
                   {:db/id 2 :name "Ivan" :age 20}
                   {:db/id 3 :name "Oleg" :age 10}
                   {:db/id 4 :name "Oleg" :age 20}]
-        dir      (u/tmp-dir (str "query-or-" (random-uuid)))
+        dir      (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db       (d/db-with (d/empty-db dir) entities)]
     (are [q res] (= (d/q (quote q) db) res)
       ;; plain predicate
@@ -365,7 +366,7 @@
                                :where [$2 ?x] [(zero? $ ?x)]]))))
 
 (deftest test-issue-180
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/empty-db dir)]
     (is (= #{}
            (d/q '[:find ?e ?a

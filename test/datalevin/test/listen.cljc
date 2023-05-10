@@ -5,12 +5,14 @@
    [datalevin.core :as d]
    [datalevin.datom :as dd]
    [datalevin.util :as u]
-   [datalevin.constants :refer [tx0]]))
+   [datalevin.constants :refer [tx0]])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-listen!
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         conn    (d/create-conn dir)
         reports (atom [])]
     (d/transact! conn [[:db/add -1 :name "Alex"]
