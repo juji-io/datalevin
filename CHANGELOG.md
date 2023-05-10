@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.16 (2023-05-10)
 ### Improved
 - Remove Clojure 1.11 features to accommodate older Clojure
 
