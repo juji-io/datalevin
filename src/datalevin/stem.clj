@@ -1,4 +1,4 @@
-(ns datalevin.stem
+(ns ^:no-doc datalevin.stem
   "Snowball stemmers"
   (:require
    [clojure.string :as str]))
