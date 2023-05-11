@@ -16,21 +16,23 @@
   ([call error]
    `(scan ~call ~error false))
   ([call error keep-rtx?]
-   `(let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
-          ~'rtx (if (l/writing? ~'lmdb)
-                  @(l/write-txn ~'lmdb)
-                  (l/get-rtx ~'lmdb))
-          ~'cur (l/get-cursor ~'dbi ~'rtx)]
-      (try
-        ~call
-        (catch Exception ~'e
-          ~error)
-        (finally
-          (if (l/read-only? ~'rtx)
-            (l/return-cursor ~'dbi ~'cur)
-            (l/close-cursor ~'dbi ~'cur))
-          (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
-            (l/return-rtx ~'lmdb ~'rtx)))))))
+   `(do
+      (l/check-ready ~'lmdb)
+      (let [~'dbi (l/get-dbi ~'lmdb ~'dbi-name false)
+            ~'rtx (if (l/writing? ~'lmdb)
+                    @(l/write-txn ~'lmdb)
+                    (l/get-rtx ~'lmdb))
+            ~'cur (l/get-cursor ~'dbi ~'rtx)]
+        (try
+          ~call
+          (catch Exception ~'e
+            ~error)
+          (finally
+            (if (l/read-only? ~'rtx)
+              (l/return-cursor ~'dbi ~'cur)
+              (l/close-cursor ~'dbi ~'cur))
+            (when-not (or (l/writing? ~'lmdb) ~keep-rtx?)
+              (l/return-rtx ~'lmdb ~'rtx))))))))
 
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]

@@ -35,6 +35,50 @@
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions
 
+## 0.8.16 (2023-05-10)
+### Improved
+- Remove Clojure 1.11 features to accommodate older Clojure
+
+## 0.8.15 (2023-05-08)
+### Added
+- [Search] Consider term proximity in relevance when `:index-position?` search
+  engine option is `true`. #203
+- [Search] `:proximity-expansion` search option (default `2`) can be used to
+  adjust the search quality vs. time trade-off: the bigger the number, the
+  higher is the quality, but the longer is the search time.
+- [Search] `:proximity-max-dist` search option (default `45`) can be used to
+  control the maximal distance between terms that would still be considered as
+  belonging to the same span.
+- [Search] `create-stemming-token-filter` function to create stemmers, which
+  uses Snowball stemming library that supports many languages. #209
+- [Search] `create-stop-words-token-filter` function to take a customized stop
+  words predicate.
+- [KV, Datalog, Search] `re-index` function that dump and load data with new
+  settings. Should only be called when no other threads or programs are
+  accessing the database. #179
+### Fixed
+- [KV] More strict type check for transaction data, throw when transacting
+  un-thawable data. #208
+### Changed
+- [Main] Remove `*datalevin-data-readers*` dynamic var, use Clojure's
+  `*data-readers*` instead.
+
+## 0.8.14 (2023-04-28)
+### Fixed
+- [Native] Rollback GraalVM to 22.3.1, as 22.3.2 is missing apple silicon.
+
+## 0.8.13 (2023-04-28)
+### Fixed
+- [Datalog] Unexpected heap growth due to caching error. #204
+- [Datalog] More cases of map size reached errors during transaction. #196
+- [Datalog] Existing datoms still appear in `:tx-data` when unchanged. #207
+
+### Improved
+- [Datalog] Disable cache during transaction, save memory and avoid disrupting
+  concurrent write processes.
+- [Native] upgrade GraalVM to 22.3.2
+- [Lib] update deps.
+
 ## 0.8.12 (2023-04-03)
 ### Fixed
 - [KV] When `open-kv`, don't grow `:mapsize` when it is the same as the current

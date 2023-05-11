@@ -379,6 +379,11 @@
               (if forward-val? (advance-val) (advance-val-back))))
           (next [_] (MapEntry. k v)))))))
 
+
+(defn- up-db-size [^Env env]
+  (.setMapSize env
+               (* ^long c/+buffer-grow-factor+ ^long (-> env .info .mapSize))))
+
 (defn- transact1*
   [txs ^DBI dbi txn kt vt]
   (doseq [^IPersistentVector tx txs]
@@ -518,6 +523,8 @@
 
   (closed-kv? [_] (.isClosed env))
 
+  (check-ready [this] (assert (not (.closed-kv? this)) "LMDB env is closed."))
+
   (dir [_] (@info :dir))
 
   (opts [_] (dissoc @info :dbis))
@@ -533,6 +540,7 @@
                                    flags          c/default-dbi-flags
                                    dupsort?       false
                                    validate-data? false}}]
+    (.check-ready this)
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [{info-dbis :dbis max-dbis :max-dbs} @info]
       (if (< (count info-dbis) ^long max-dbis)
@@ -568,6 +576,7 @@
           (u/raise (str "DBI " dbi-name " is not open") {}))))
 
   (clear-dbi [this dbi-name]
+    (.check-ready this)
     (let [^DBI dbi (.get-dbi this dbi-name)]
       (try
         (with-open [txn (.txnWrite env)]
@@ -581,6 +590,7 @@
           (raise "Fail to clear DBI: " dbi-name " " e {})))))
 
   (drop-dbi [this dbi-name]
+    (.check-ready this)
     (try
       (let [^DBI dbi (.get-dbi this dbi-name)]
         (with-open [txn (.txnWrite env)]
@@ -654,6 +664,7 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
+    (.check-ready this)
     (try
       (reset-write-txn this)
       (.mark-write this)
@@ -692,6 +703,7 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [this dbi-name txs k-type v-type]
+    (.check-ready this)
     (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
@@ -712,8 +724,7 @@
           :transacted
           (catch Env$MapFullException _
             (when-not one-shot? (.close ^Txn (.-txn rtx)))
-            (.setMapSize env (* ^long c/+buffer-grow-factor+
-                                ^long (-> env .info .mapSize)))
+            (up-db-size env)
             (if one-shot?
               (.transact-kv this dbi-name txs k-type v-type)
               (do (reset-write-txn this)
@@ -799,6 +810,7 @@
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
                                  :or   {key-size c/+max-key-size+
                                         val-size c/+max-key-size+}}]
+    (.check-ready this)
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")

@@ -574,7 +574,7 @@
        (update :tempids assoc eid eid)
 
        (and (:auto-entity-time? (s/opts (.-store ^DB db))) new?)
-       (update :tx-data conj! (d/datom eid :db/created-at tx-time))
+       (update :tx-data conj (d/datom eid :db/created-at tx-time))
 
        true
        (update :db-after advance-max-eid eid)))))
@@ -627,7 +627,7 @@
         a       (:a datom)
         report' (-> report
                     (assoc :db-after (with-datom db datom))
-                    (update :tx-data conj! datom))]
+                    (update :tx-data conj datom))]
     (if (tuple-source? db a)
       (let [e      (:e datom)
             v      (if (datom-added datom) (:v datom) nil)
@@ -797,30 +797,33 @@
 (defn- transact-add [report [_ e a v tx :as ent]]
   (validate-attr a ent)
   (validate-val  v ent)
-  (let [tx               (or tx (current-tx report))
-        db               (:db-after report)
-        e                (entid-strict db e)
-        v                (if (ref? db a) (entid-strict db v) v)
-        new-datom        (datom e a v tx)
-        multival?        (multival? db a)
-        ^Datom old-datom (if multival?
-                           (or (sf (.subSet ^TreeSortedSet (:eavt db)
-                                            (datom e a v tx0)
-                                            (datom e a v txmax)))
-                               (first (s/fetch (:store db) (datom e a v))))
-                           (or (sf (.subSet ^TreeSortedSet (:eavt db)
-                                            (datom e a nil tx0)
-                                            (datom e a nil txmax)))
-                               (s/head (:store db) :eav
-                                       (datom e a c/v0) (datom e a c/vmax))))]
+  (let [tx        (or tx (current-tx report))
+        db        (:db-after report)
+        e         (entid-strict db e)
+        v         (if (ref? db a) (entid-strict db v) v)
+        new-datom (datom e a v tx)
+        multival? (multival? db a)
+        ^Datom old-datom
+        (if multival?
+          (or (sf (.subSet ^TreeSortedSet (:eavt db)
+                           (datom e a v tx0)
+                           (datom e a v txmax)))
+              (first (s/fetch (:store db) (datom e a v))))
+          (or (sf (.subSet ^TreeSortedSet (:eavt db)
+                           (datom e a nil tx0)
+                           (datom e a nil txmax)))
+              (s/head (:store db) :eav
+                      (datom e a c/v0) (datom e a c/vmax))))]
     (cond
       (nil? old-datom)
       (transact-report report new-datom)
 
       (= (.-v old-datom) v)
-      (if (is-attr? db a :db/unique)
-        (update report ::tx-redundant conjv new-datom)
-        (transact-report report new-datom))
+      (if (some #(and (not (datom-added %)) (= % new-datom))
+                (:tx-data report))
+        ;; special case: retract then transact the same datom
+        (transact-report report new-datom)
+        (update report ::tx-redundant conjv new-datom))
 
       :else
       (-> report
@@ -837,7 +840,7 @@
               (map (fn [^Datom d] [:db.fn/retractEntity (.-v d)]))) datoms))
 
 (defn check-value-tempids [report]
-  (let [tx-data (persistent! (:tx-data report))]
+  (let [tx-data (:tx-data report)]
     (if-let [tempids (::value-tempids report)]
       (let [all-tempids (transient tempids)
             reduce-fn   (fn [tempids datom]
@@ -947,8 +950,7 @@
   ([initial-report initial-es simulated?]
    (let [tx-time         (System/currentTimeMillis)
          initial-report' (-> initial-report
-                             (update :db-after -clear-tx-cache)
-                             (update :tx-data transient))
+                             (update :db-after -clear-tx-cache))
          has-tuples?     (not (empty? (-attrs-by (:db-after initial-report)
                                                  :db.type/tuple)))
          initial-es'     (cond-> initial-es

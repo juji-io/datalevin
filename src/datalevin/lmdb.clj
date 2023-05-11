@@ -88,6 +88,7 @@
     "visit a list range, presumably for side effects"))
 
 (defprotocol ILMDB
+  (check-ready [db] "check if db is ready to be operated on")
   (close-kv [db] "Close this LMDB env")
   (closed-kv? [db] "Return true if this LMDB env is closed")
   (dir [db] "Return the directory path of LMDB env")

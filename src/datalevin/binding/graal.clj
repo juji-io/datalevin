@@ -503,7 +503,6 @@
                info
                ^ConcurrentLinkedQueue pool
                ^UnifiedMap dbis
-               ^:volatile-mutable closed?
                ^BufVal kp-w
                ^BufVal vp-w
                ^BufVal start-kp-w
@@ -520,12 +519,12 @@
 
   (mark-write [_]
     (->LMDB
-      env info pool dbis closed? kp-w vp-w start-kp-w
+      env info pool dbis kp-w vp-w start-kp-w
       stop-kp-w start-vp-w stop-vp-w write-txn true))
 
   ILMDB
   (close-kv [_]
-    (when-not closed?
+    (when-not (.isClosed env)
       (loop [^Iterator iter (.iterator pool)]
         (when (.hasNext iter)
           (.close-rtx ^Rtx (.next iter))
@@ -538,13 +537,14 @@
             (.remove iter)
             (recur iter)))
         (.close ^Dbi (.-db dbi)))
-      (when-not (.isClosed env) (.sync env))
+      (.sync env)
       (.close env)
-      (set! closed? true)
       (when (@info :temp?) (u/delete-files (@info :dir)))
       nil))
 
-  (closed-kv? [_] closed?)
+  (closed-kv? [_] (.isClosed env))
+
+  (check-ready [this] (assert (not (.closed-kv? this)) "LMDB env is closed."))
 
   (dir [_] (@info :dir))
 
@@ -973,7 +973,6 @@
                             (volatile! info)
                             (ConcurrentLinkedQueue.)
                             (UnifiedMap.)
-                            false
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create 0)
                             (BufVal/create c/+max-key-size+)
