@@ -911,24 +911,12 @@ Only usable for debug output.
        clojure.lang.IPending
        (isRealized [_] true)))))
 
-
 (defn transact-async
   "Calls [[transact!]] on a future thread pool, returning immediately."
   ([conn tx-data] (transact-async conn tx-data nil))
   ([conn tx-data tx-meta]
    {:pre [(conn? conn)]}
    (future-call #(transact! conn tx-data tx-meta))))
-
-(defn datalog-index-cache-limit
-  "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
-   disable the cache, useful when transacting bulk data as it saves memory."
-  ([conn]
-   (let [^Store store (.-store ^DB @conn)]
-     (:cache-limit (s/opts store))))
-  ([conn ^long n]
-   (let [^Store store (.-store ^DB @conn)]
-     (s/assoc-opt store :cache-limit n)
-     (db/refresh-cache store))))
 
 (defn- rand-bits [^long pow]
   (rand-int (bit-shift-left 1 pow)))

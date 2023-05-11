@@ -75,7 +75,7 @@
   ([store]
    (refresh-cache store (s/last-modified store)))
   ([store target]
-   (.put ^ConcurrentHashMap caches store
+   (.put ^ConcurrentHashMap caches (s/dir store)
          (lru/lru (:cache-limit (s/opts store)) target))))
 
 (defmacro wrap-cache
@@ -279,8 +279,8 @@
   (when (-searchable? x)
     (let [store  (.-store ^DB x)
           target (s/last-modified store)
-          cache  ^LRU (.get ^ConcurrentHashMap caches (s/dir store))]
-      (when (< ^long (.-target cache) ^long target)
+          cache  (.get ^ConcurrentHashMap caches (s/dir store))]
+      (when (< ^long (.-target ^LRU cache) ^long target)
         (refresh-cache store target)))
     true))
 
