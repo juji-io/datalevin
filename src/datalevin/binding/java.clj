@@ -661,17 +661,24 @@
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
   (close-transact-kv [_]
-    (try
-      (if-let [^Rtx wtxn @write-txn]
-        (when-let [^Txn txn (.-txn wtxn)]
-          (let [aborted? @(.-aborted? wtxn)]
-            (when-not aborted? (.commit txn))
-            (vreset! write-txn nil)
-            (.close txn)
-            (if aborted? :aborted :committed)))
-        (raise "Calling `close-transact-kv` without opening" {}))
-      (catch Exception e
-        (raise "Fail to commit read/write transaction in LMDB: " e {}))))
+    (if-let [^Rtx wtxn @write-txn]
+      (when-let [^Txn txn (.-txn wtxn)]
+        (let [aborted? @(.-aborted? wtxn)]
+          (when-not aborted?
+            (try
+              (.commit txn)
+              (catch Env$MapFullException _
+                (vreset! write-txn nil)
+                (.close txn)
+                (up-db-size env)
+                (raise "DB resized" {:resized true}))
+              (catch Exception e
+                (raise "Fail to commit read/write transaction in LMDB: "
+                       e {}))))
+          (vreset! write-txn nil)
+          (.close txn)
+          (if aborted? :aborted :committed)))
+      (raise "Calling `close-transact-kv` without opening" {})))
 
   (abort-transact-kv [_]
     (when-let [^Rtx wtxn @write-txn]
@@ -914,7 +921,7 @@
      (let [^File file (u/file dir)
            mapsize    (* (long (if (u/empty-dir? file)
                                  mapsize
-                                 (c/pick-mapsize file)))
+                                 (c/pick-mapsize dir)))
                          1024 1024)
            builder    (doto (Env/create)
                         (.setMapSize mapsize)

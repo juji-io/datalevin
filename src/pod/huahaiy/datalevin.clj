@@ -209,6 +209,10 @@
 
 (defn closed? [cn] (when-let [c (get-cn cn)] (d/closed? c)))
 
+(defn datalog-index-cache-limit
+  ([cn] (when-let [c (get-cn cn)] (d/datalog-index-cache-limit c)))
+  ([cn n] (when-let [c (get-cn cn)] (d/datalog-index-cache-limit c n))))
+
 (defn transact!
   ([cn tx-data]
    (transact! cn tx-data nil))
@@ -512,73 +516,74 @@
 ;; pods
 
 (def ^:private exposed-vars
-  {'pod-fn                  pod-fn
-   'entid                   entid
-   'entity                  entity
-   'touch                   touch
-   'pull                    pull
-   'pull-many               pull-many
-   'empty-db                empty-db
-   'db?                     db?
-   'init-db                 init-db
-   'close-db                close-db
-   'datoms                  datoms
-   'seek-datoms             seek-datoms
-   'fulltext-datoms         fulltext-datoms
-   'rseek-datoms            rseek-datoms
-   'index-range             index-range
-   'conn?                   conn?
-   'conn-from-db            conn-from-db
-   'create-conn             create-conn
-   'close                   close
-   'closed?                 closed?
-   'transact!               transact!
-   'db                      db
-   'schema                  schema
-   'update-schema           update-schema
-   'get-conn                get-conn
-   'q                       q
-   'open-kv                 open-kv
-   'close-kv                close-kv
-   'closed-kv?              closed-kv?
-   'dir                     dir
-   'open-dbi                open-dbi
-   'clear-dbi               clear-dbi
-   'drop-dbi                drop-dbi
-   'list-dbis               list-dbis
-   'copy                    copy
-   'stat                    stat
-   'entries                 entries
-   'open-transact-kv        open-transact-kv
-   'close-transact-kv       close-transact-kv
-   'abort-transact-kv       abort-transact-kv
-   'open-transact           open-transact
-   'close-transact          close-transact
-   'abort-transact          abort-transact
-   'transact-kv             transact-kv
-   'get-value               get-value
-   'get-first               get-first
-   'get-range               get-range
-   'key-range               key-range
-   'range-count             range-count
-   'get-some                get-some
-   'range-filter            range-filter
-   'range-filter-count      range-filter-count
-   'visit                   visit
-   'open-list-dbi           open-list-dbi
-   'put-list-items          put-list-items
-   'del-list-items          del-list-items
-   'get-list                get-list
-   'visit-list              visit-list
-   'list-count              list-count
-   'in-list?                in-list?
-   'list-range              list-range
-   'list-range-count        list-range-count
-   'list-range-first        list-range-first
-   'list-range-filter       list-range-filter
-   'list-range-some         list-range-some
-   'list-range-filter-count list-range-filter-count
-   'visit-list-range        visit-list-range
+  {'pod-fn                    pod-fn
+   'entid                     entid
+   'entity                    entity
+   'touch                     touch
+   'pull                      pull
+   'pull-many                 pull-many
+   'empty-db                  empty-db
+   'db?                       db?
+   'init-db                   init-db
+   'close-db                  close-db
+   'datoms                    datoms
+   'seek-datoms               seek-datoms
+   'fulltext-datoms           fulltext-datoms
+   'rseek-datoms              rseek-datoms
+   'index-range               index-range
+   'conn?                     conn?
+   'conn-from-db              conn-from-db
+   'create-conn               create-conn
+   'close                     close
+   'datalog-index-cache-limit datalog-index-cache-limit
+   'closed?                   closed?
+   'transact!                 transact!
+   'db                        db
+   'schema                    schema
+   'update-schema             update-schema
+   'get-conn                  get-conn
+   'q                         q
+   'open-kv                   open-kv
+   'close-kv                  close-kv
+   'closed-kv?                closed-kv?
+   'dir                       dir
+   'open-dbi                  open-dbi
+   'clear-dbi                 clear-dbi
+   'drop-dbi                  drop-dbi
+   'list-dbis                 list-dbis
+   'copy                      copy
+   'stat                      stat
+   'entries                   entries
+   'open-transact-kv          open-transact-kv
+   'close-transact-kv         close-transact-kv
+   'abort-transact-kv         abort-transact-kv
+   'open-transact             open-transact
+   'close-transact            close-transact
+   'abort-transact            abort-transact
+   'transact-kv               transact-kv
+   'get-value                 get-value
+   'get-first                 get-first
+   'get-range                 get-range
+   'key-range                 key-range
+   'range-count               range-count
+   'get-some                  get-some
+   'range-filter              range-filter
+   'range-filter-count        range-filter-count
+   'visit                     visit
+   'open-list-dbi             open-list-dbi
+   'put-list-items            put-list-items
+   'del-list-items            del-list-items
+   'get-list                  get-list
+   'visit-list                visit-list
+   'list-count                list-count
+   'in-list?                  in-list?
+   'list-range                list-range
+   'list-range-count          list-range-count
+   'list-range-first          list-range-first
+   'list-range-filter         list-range-filter
+   'list-range-some           list-range-some
+   'list-range-filter-count   list-range-filter-count
+   'visit-list-range          visit-list-range
    })
 
 (defmacro defpodfn

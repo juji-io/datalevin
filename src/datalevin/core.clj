@@ -287,39 +287,24 @@ Only usable for debug output.
        :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
 
-(defmacro with-transaction-kv
-  "Evaluate body within the context of a single new read/write transaction,
-  ensuring atomicity of key-value operations.
+(u/import-macro l/with-transaction-kv)
 
-  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
-
-  `body` should refer to `db`.
-
-  Example:
-
-          (with-transaction-kv [kv lmdb]
-            (let [^long now (get-value kv \"a\" :counter)]
-              (transact-kv kv [[:put \"a\" :counter (inc now)]])
-              (get-value kv \"a\" :counter)))"
-  [[db orig-db] & body]
-  `(locking (l/write-txn ~orig-db)
-     (let [writing# (l/writing? ~orig-db)]
-       (try
-         (let [~db (if writing# ~orig-db (l/open-transact-kv ~orig-db))]
-           (u/repeat-try-catch
-             ~c/+in-tx-overflow-times+
-             ~'e (and (:resized (ex-data ~'e)) (not writing#))
-             ~@body))
-         (finally
-           (when-not writing# (l/close-transact-kv ~orig-db)))))))
+(defn datalog-index-cache-limit
+  "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
+   disable the cache, useful when transacting bulk data as it saves memory."
+  ([^DB db]
+   (let [^Store store (.-store db)]
+     (:cache-limit (s/opts store))))
+  ([^DB db ^long n]
+   (let [^Store store (.-store db)]
+     (s/assoc-opt store :cache-limit n)
+     (db/refresh-cache store (System/currentTimeMillis)))))
 
 (defmacro with-transaction
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
 
-  `conn` is a new identifier of the Datalog database connection with a new
-  read/write transaction attached, and `orig-conn` is the original database
-  connection.
+  `conn` is a new identifier of the Datalog database connection with a new read/write transaction attached, and `orig-conn` is the original database connection.
 
   `body` should refer to `conn`.
 
@@ -333,33 +318,40 @@ Only usable for debug output.
               (transact! cn [{:db/id 1 :counter (inc now)}])
               (q query @cn 1))) "
   [[conn orig-conn] & body]
-  `(locking (l/write-txn (.-store ^DB (deref ~orig-conn)))
-     (let [s# (.-store ^DB (deref ~orig-conn))]
+  `(let [db#  ^DB (deref ~orig-conn)
+         s#   (.-store db#)
+         old# (datalog-index-cache-limit db#)]
+     (locking (l/write-txn s#)
+       (datalog-index-cache-limit db# 0)
        (if (instance? DatalogStore s#)
-         (let [res# (if (l/writing? s#)
-                      (let [~conn ~orig-conn]
-                        ~@body)
-                      (let [s1# (r/open-transact s#)
-                            w#  #(let [~conn (atom (db/new-db s1#)
-                                                   :meta (meta ~orig-conn))]
-                                   ~@body) ]
-                        (try
-                          (u/repeat-try-catch
-                            ~c/+in-tx-overflow-times+
-                            ~'e (:resized (ex-data ~'e)) (w#))
-                          (finally (r/close-transact s#)))))]
-           (reset! ~orig-conn (db/new-db s#))
+         (let [res#    (if (l/writing? s#)
+                         (let [~conn ~orig-conn]
+                           ~@body)
+                         (let [s1# (r/open-transact s#)
+                               w#  #(let [~conn (atom (db/new-db s1#)
+                                                      :meta (meta ~orig-conn))]
+                                      ~@body) ]
+                           (try
+                             (u/repeat-try-catch
+                               ~c/+in-tx-overflow-times+
+                               l/resized? (w#))
+                             (finally (r/close-transact s#)))))
+               new-db# (db/new-db s#)]
+           (reset! ~orig-conn new-db#)
+           (datalog-index-cache-limit new-db# old#)
            res#)
-         (let [kv#   (.-lmdb ^Store s#)
-               s1#   (volatile! nil)
-               res1# (l/with-transaction-kv [kv1# kv#]
-                       (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
-                                          :meta (meta ~orig-conn))
-                             res#   (let [~conn conn1#]
-                                      ~@body)]
-                         (vreset! s1# (.-store ^DB (deref conn1#)))
-                         res#))]
-           (reset! ~orig-conn (db/new-db (s/transfer (deref s1#) kv#)))
+         (let [kv#     (.-lmdb ^Store s#)
+               s1#     (volatile! nil)
+               res1#   (l/with-transaction-kv [kv1# kv#]
+                         (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
+                                            :meta (meta ~orig-conn))
+                               res#   (let [~conn conn1#]
+                                        ~@body)]
+                           (vreset! s1# (.-store ^DB (deref conn1#)))
+                           res#))
+               new-db# (db/new-db (s/transfer (deref s1#) kv#))]
+           (reset! ~orig-conn new-db#)
+           (datalog-index-cache-limit new-db# old#)
            res1#)))))
 
 (def ^{:arglists '([conn])

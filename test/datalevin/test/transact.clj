@@ -737,6 +737,44 @@
     (d/close-db db)
     (u/delete-files dir)))
 
+(deftest million-txns-map-resize-test
+  (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
+        conn (d/create-conn dir)]
+
+    (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
+    (is (= 1000000 (count (d/datoms @conn :eav))))
+
+    ;; TODO this will segfault in native when close db in graalvm 17 22.3.2
+    (when-not (u/graal?)
+      ;; this will blow through 100 MiB boundary
+      (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
+      (is (= 2000000 (count (d/datoms @conn :eav)))))
+
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest unchanged-datoms-test
+  (let [dir  (u/tmp-dir (str "unchanged-datoms-" (UUID/randomUUID)))
+        conn (d/create-conn dir)
+        rp1  (d/transact! conn [{:foo "bar"}])]
+    (is (= [true] (map :added (:tx-data rp1))))
+
+    ;; tx-data is empty since datom is unchanged
+    (let [rp2 (d/transact! conn [{:db/id 1 :foo "bar"}])]
+      (is (= [] (:tx-data rp2))))
+
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest unthawable-datoms-test
+  (let [dir  (u/tmp-dir (str "unthawable-datoms-" (UUID/randomUUID)))
+        conn (d/create-conn dir)]
+
+    (is (thrown? Exception (d/transact! conn [{:bar (defn bar [] :bar)}])))
+
+    (d/close conn)
+    (u/delete-files dir)))
+
 ;; TODO
 #_(deftest test-transitive-type-compare-386
     (let [txs    [[{:block/uid "2LB4tlJGy"}]

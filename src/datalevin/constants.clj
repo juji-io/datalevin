@@ -3,6 +3,7 @@
   (:require
    [datalevin.util :as u])
   (:import
+   [java.io File]
    [java.util UUID Arrays HashSet]
    [java.math BigInteger BigDecimal]))
 
@@ -222,15 +223,14 @@
 (def +in-tx-overflow-times+ 5) ; # of times db can be auto enlarged in a tx
 
 (defn pick-mapsize
-  "pick a map size from the growing factor schedule that is larger than
-   or equal to the current size"
-  [file]
-  (if (u/empty-dir? file)
-    +init-db-size+
-    (let [cur-size (/ ^long (u/dir-size file) (* 1024 1024))]
-      (some #(when (<= ^long cur-size ^long %)  %)
-            (iterate #(* ^long +buffer-grow-factor+ ^long %)
-                     +init-db-size+)))))
+  "pick a map size from the growing factor schedule that is larger than or
+  equal to the current size"
+  [dir]
+  (let [^File file (u/file (str dir u/+separator+ "data.mdb"))
+        cur-size   (.length file)]
+    (some #(when (<= cur-size (* ^long % 1024 1024)) %)
+          (iterate #(* ^long +buffer-grow-factor+ ^long %)
+                   +init-db-size+))))
 
 ;; client/server
 

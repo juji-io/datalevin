@@ -2,7 +2,7 @@
   "Full-text search engine"
   (:require
    [datalevin.lmdb :as l]
-   [datalevin.util :as u]
+   [datalevin.util :as u :refer [cond+]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
    [datalevin.constants :as c]
@@ -13,6 +13,7 @@
    [datalevin.utl PriorityQueue GrowingIntArray]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.spill SpillableMap]
+   [datalevin.lmdb IAdmin]
    [java.util ArrayList Map$Entry Arrays]
    [java.util.concurrent.atomic AtomicInteger]
    [java.io Writer]
@@ -34,11 +35,15 @@
   (or (Character/isWhitespace c) (c/en-punctuations? c)))
 
 (defn en-analyzer
-  "English analyzer does the following:
+  "English analyzer (tokenizer) does the following:
+
   - split on white space and punctuation, remove them
   - lower-case all characters
   - remove stop words
-  Return a list of [term, position, offset]"
+
+  Return a list of [term, position, offset].
+
+  This is the default analyzer of search engine when none is provided."
   [^String x]
   (let [len   (.length x)
         len-1 (dec len)
@@ -144,16 +149,16 @@
     (doseq [tid tids] (.put m tid (max-score wqs mws tid)))
     m))
 
-(defprotocol ^:no-doc ICandidate
+(defprotocol ICandidate
   (skip-before [this limit] "move the iterator to just before the limit")
   (advance [this] "move the iterator to the next position")
   (has-next? [this] "return true if there's next in iterator")
   (get-did [this] "return the current did the iterator points to")
   (get-tf [this did] "return tf of the given did"))
 
-(deftype ^:no-doc Candidate [^int tid
-                             ^SparseIntArrayList sl
-                             ^PeekableIntIterator iter]
+(deftype Candidate [^int tid
+                    ^SparseIntArrayList sl
+                    ^PeekableIntIterator iter]
   ICandidate
   (skip-before [this limit] (.advanceIfNeeded iter limit) this)
 
@@ -284,29 +289,28 @@
         (when (has-next? (advance candidate))
           (recur (get-did candidate) (current-threshold pq)))))))
 
-(defn- score-docs
-  [n tids sls bms mxs wqs ^IntShortHashMap norms ^RoaringBitmap result]
-  (fn [^PriorityQueue pq ^long tao] ; target # of overlaps between query and doc
-    (loop [^"[Ldatalevin.search.Candidate;" candidates
-           (first-candidates sls bms tids result tao n)]
-      (let [nc            (alength candidates)
-            minimal-score ^double (current-threshold pq)]
-        (cond
-          (or (= nc 0) (< nc tao)) :finish
-          (= nc 1)
-          (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
-          :else
-          (let [_                   (Arrays/sort candidates candidate-comp)
-                [mxscore pivot did] (find-pivot mxs (dec tao)
-                                                minimal-score
-                                                candidates)]
-            (if (= ^int did ^int (get-did (aget candidates 0)))
-              (let [score (score-pivot wqs mxs norms did minimal-score
-                                       mxscore tao n candidates)]
-                (when-not (= score :prune)
-                  (.insertWithOverflow pq [score did]))
-                (recur (next-candidates did candidates)))
-              (recur (skip-candidates pivot did candidates)))))))))
+(defn- tf-idf-scoring
+  [sls bms tids result tao n pq mxs wqs norms]
+  (loop [^"[Ldatalevin.search.Candidate;" candidates
+         (first-candidates sls bms tids result tao n)]
+    (let [nc            (alength candidates)
+          minimal-score ^double (current-threshold pq)]
+      (cond
+        (or (= nc 0) (< nc ^long tao)) :finish
+        (= nc 1)
+        (score-term (aget candidates 0) mxs wqs norms minimal-score pq)
+        :else
+        (let [_                   (Arrays/sort candidates candidate-comp)
+              [mxscore pivot did] (find-pivot mxs (dec ^long tao)
+                                              minimal-score
+                                              candidates)]
+          (if (= ^int did ^int (get-did (aget candidates 0)))
+            (let [score (score-pivot wqs mxs norms did minimal-score
+                                     mxscore tao n candidates)]
+              (when-not (= score :prune)
+                (.insertWithOverflow ^PriorityQueue pq [score did]))
+              (recur (next-candidates did candidates)))
+            (recur (skip-candidates pivot did candidates))))))))
 
 (defprotocol ISearchEngine
   (add-doc [this doc-ref doc-text] [this doc-ref doc-text check-exist?])
@@ -316,7 +320,8 @@
   (doc-count [this])
   (search [this query] [this query opts]))
 
-(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf)
+(declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
+         get-rawtext new-search-engine)
 
 (deftype SearchEngine [lmdb
                        analyzer
@@ -352,9 +357,11 @@
   (clear-docs [_]
     (.empty docs)
     (.empty terms)
+    (.clear norms)
     (l/clear-dbi lmdb terms-dbi)
     (l/clear-dbi lmdb docs-dbi)
-    (l/clear-dbi lmdb positions-dbi))
+    (l/clear-dbi lmdb positions-dbi)
+    (l/clear-dbi lmdb rawtext-dbi))
 
   (doc-indexed? [this doc-ref] (doc-ref->id this doc-ref))
 
@@ -362,10 +369,13 @@
 
   (search [this query]
     (.search this query {}))
-  (search [this query {:keys [display ^long top doc-filter]
-                       :or   {display    :refs
-                              top        10
-                              doc-filter (constantly true)}}]
+  (search [this query {:keys [display top proximity-expansion
+                              proximity-max-dist doc-filter]
+                       :or   {display             :refs
+                              top                 10
+                              proximity-expansion 2
+                              proximity-max-dist  45
+                              doc-filter          (constantly true)}}]
     (when-not (s/blank? query)
       (let [tokens (->> (query-analyzer query)
                         (mapv first)
@@ -391,15 +401,168 @@
               (persistent!
                 (reduce
                   (fn [coll tao]
-                    (let [so-far (count coll)
-                          to-get (- top so-far)]
+                    (let [to-get (- ^long top (count coll))]
                       (if (< 0 to-get)
                         (let [^PriorityQueue pq (priority-queue to-get)]
-                          (scoring pq tao)
+                          (scoring this pq tao to-get proximity-expansion
+                                   proximity-max-dist)
                           (pouring coll pq result))
                         (reduced coll))))
                   (transient [])
-                  (range n 0 -1))))))))))
+                  (range n 0 -1)))))))))
+
+  IAdmin
+  (re-index [this opts]
+    (if include-text?
+      (try
+        (let [d    (l/dir lmdb)
+              coll (UnifiedMap.)]
+          (doseq [[doc-id doc-ref] docs
+                  :let             [doc-text (get-rawtext this doc-id)]]
+            (.put coll doc-ref doc-text))
+          (.clear-docs this)
+          (let [^SearchEngine engine (new-search-engine lmdb opts)]
+            (doseq [^Map$Entry kv (.entrySet coll)]
+              (.add-doc engine (.getKey kv) (.getValue kv) false))
+            engine))
+        (catch Exception e
+          (u/raise "Unable to re-index search. " e {:dir (l/dir lmdb)})))
+      (u/raise "Can only re-index search when :include-text? is true" {}))))
+
+(defn- get-pos-info
+  [^SearchEngine engine doc-id term-id]
+  (lru/-get
+    (.-cache engine) [:get-pos-info doc-id term-id]
+    #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
+                  [doc-id term-id] :int-int :pos-info true)))
+
+(defn- get-offsets
+  [^SearchEngine engine doc-id term-id]
+  (peek (get-pos-info engine doc-id term-id)))
+
+(defprotocol IPositions
+  (cur-pos [this] "return the current position, or nil if there is no more")
+  (go-next [this] "move cursor to the next position")
+  (get-tid [this] "return the term id"))
+
+(deftype Positions [^int tid
+                    ^ints positions
+                    ^:unsynchronized-mutable cur]
+  IPositions
+  (cur-pos [_] (when (< ^long cur (alength positions)) (aget positions cur)))
+  (go-next [_] (set! cur (u/long-inc cur)))
+  (get-tid [_] tid))
+
+(defn- get-positions
+  [engine doc-id term-id]
+  (when-let [pos-info (get-pos-info engine doc-id term-id)]
+    (Positions. term-id (first pos-info) 0)))
+
+(defprotocol ISpan
+  (get-n [this] "return the number of terms in the span")
+  (get-width [this max-dist] "return the width of the span")
+  (add-term [this tid position] "add a term to the span")
+  (find-term [this tid] "return the index of a term, or return nil")
+  (get-ith-pos [this i] "return the ith position")
+  (get-next-pos [this i] "return the i+1'th position")
+  (split [this i] "split span into two after ith term"))
+
+(deftype Span [^FastList hits]
+  ISpan
+  (get-n [_] (.size hits))
+  (get-width [_ max-dist]
+    (if (= 1 (.size hits))
+      max-dist
+      (inc (- ^long (peek (.getLast hits)) ^long (peek (.getFirst hits))))))
+  (add-term [_ tid position] (.add hits [tid position]))
+  (find-term [_ tid] (u/index-of #(= tid (first %)) hits))
+  (get-ith-pos [_ i] (peek (.get hits i)))
+  (get-next-pos [_ i] (peek (.get hits (inc ^long i))))
+  (split [_ i] [(Span. (.take hits ^int i)) (Span. (.drop hits ^int i))]))
+
+(defmethod print-method Span [^Span s, ^Writer w]
+  (.write w "[")
+  (.write w (str (with-out-str
+                   (let [^FastList hits (.-hits s)]
+                     (dotimes [i (.size hits)]
+                       (print (.get hits i))
+                       (print " "))))))
+  (.write w "]"))
+
+(defn- segment-doc
+  [engine did tids ^long max-dist]
+  (let [pos-lst (FastList.)
+        spans   (FastList.)]
+    (doseq [tid tids]
+      (when-let [poss (get-positions engine did tid)]
+        (.add pos-lst poss)))
+    (loop [cur-poss (apply min-key cur-pos pos-lst)
+           cur-span (Span. (FastList.))]
+      (let [^long cpos (cur-pos cur-poss)
+            ctid       (get-tid cur-poss)]
+        (add-term cur-span ctid cpos)
+        (go-next cur-poss)
+        (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
+        (if (.isEmpty pos-lst)
+          (.add spans cur-span)
+          (let [next-poss  (apply min-key cur-pos pos-lst)
+                ^long npos (cur-pos next-poss)
+                ntid       (get-tid next-poss)
+                ndist      (- npos cpos)]
+            (cond+
+              (or (< max-dist ndist) (= ctid ntid))
+              (let [next-span (Span. (FastList.))]
+                (.add spans cur-span)
+                (recur next-poss next-span))
+              :let [found (find-term cur-span ntid)]
+              found
+              (let [[cur-span next-span]
+                    (if (< ndist (- ^long (get-next-pos cur-span found)
+                                    ^long (get-ith-pos cur-span found)))
+                      (split cur-span found)
+                      [cur-span (Span. (FastList.))])]
+                (.add spans cur-span)
+                (recur next-poss next-span))
+              :else
+              (recur next-poss cur-span))))))
+    spans))
+
+(defn- proximity-score*
+  [max-dist did spans ^IntDoubleHashMap wqs ^IntShortHashMap norms tid]
+  (let [^double rc (reduce
+                     (fn [^double score span]
+                       (if (find-term span tid)
+                         (+ score
+                            (let [^long n (get-n span)
+                                  ^long w (get-width span max-dist)]
+                              (* (Math/pow (/ n w) 0.25)
+                                 (Math/pow n 0.3))))
+                         score))
+                     0.0 spans)]
+    (/ (* ^double (.get wqs tid) rc) (double (.get norms did)))))
+
+(defn- proximity-score
+  [engine max-dist tids did wqs norms]
+  (let [spans (segment-doc engine did tids max-dist)]
+    (->> tids
+         (map #(proximity-score* max-dist did spans wqs norms %))
+         (reduce + 0.0))))
+
+(defn- proximity-scoring
+  [engine max-dist tids wqs norms pq0 pq]
+  (dotimes [_ (.size ^PriorityQueue pq0)]
+    (let [[_ did] (.pop ^PriorityQueue pq0)
+          pscore  (proximity-score engine max-dist tids did wqs norms)]
+      (.insertWithOverflow ^PriorityQueue pq [pscore did]))))
+
+(defn- score-docs
+  [n tids sls bms mxs wqs norms result]
+  (fn [engine pq tao to-get expansion max-dist]
+    (if (.-index-position? ^SearchEngine engine)
+      (let [pq0 (priority-queue (* ^long to-get ^long expansion))]
+        (tf-idf-scoring sls bms tids result tao n pq0 mxs wqs norms)
+        (proximity-scoring engine max-dist tids wqs norms pq0 pq))
+      (tf-idf-scoring sls bms tids result tao n pq mxs wqs norms))))
 
 (defn- get-term-info
   [^SearchEngine engine term]
@@ -549,29 +712,26 @@
   (when-let [doc-ref ((.-docs engine) doc-id)]
     (when (doc-filter doc-ref) doc-ref)))
 
-(defn- get-offsets
-  [^SearchEngine engine doc-id term-id]
-  (peek (lru/-get
-          (.-cache engine) [:get-pos-info doc-id term-id]
-          #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
-                        [doc-id term-id] :int-int :pos-info true))))
-
 (defn- add-offsets
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
   (when-let [doc-ref (get-doc-ref engine doc-filter result)]
     [doc-ref
      (sequence
        (comp (map (fn [tid]
-                 (when-let [offsets (get-offsets engine doc-id tid)]
-                   [(terms tid) (apply vector offsets)])))
-          (remove nil? ))
+                    (when-let [offsets (get-offsets engine doc-id tid)]
+                      [(terms tid) (apply vector offsets)])))
+             (remove nil?))
        (keys terms))]))
+
+(defn- get-rawtext
+  [^SearchEngine engine doc-id]
+  (l/get-value (.-lmdb engine) (.-rawtext-dbi engine) doc-id
+               :int :string true))
 
 (defn- add-rawtext
   [^SearchEngine engine doc-filter [_ doc-id :as result]]
   (when-let [doc-ref (get-doc-ref engine doc-filter result)]
-    [doc-ref (l/get-value (.-lmdb engine) (.-rawtext-dbi engine)
-                          doc-id :int :string true)]))
+    [doc-ref (get-rawtext engine doc-id)]))
 
 (defn- add-text+offset
   [^SearchEngine engine doc-filter terms [_ doc-id :as result]]
@@ -581,22 +741,22 @@
                   doc-id :int :string true)
      (sequence
        (comp (map (fn [tid]
-                 (when-let [offsets (get-offsets engine doc-id tid)]
-                   [(terms tid) (apply vector offsets)])))
-          (remove nil?))
+                    (when-let [offsets (get-offsets engine doc-id tid)]
+                      [(terms tid) (apply vector offsets)])))
+             (remove nil?))
        (keys terms))]))
 
 (defn- display-xf
   [^SearchEngine engine doc-filter display tms]
   (case display
     :texts+offsets (comp (map #(add-text+offset engine doc-filter tms %))
-                      (remove nil?))
+                         (remove nil?))
     :texts         (comp (map #(add-rawtext engine doc-filter %))
-                      (remove nil?))
+                         (remove nil?))
     :offsets       (comp (map #(add-offsets engine doc-filter tms %))
-                      (remove nil?))
+                         (remove nil?))
     :refs          (comp (map #(get-doc-ref engine doc-filter %))
-                      (remove nil?))))
+                         (remove nil?))))
 
 (defn- open-dbis
   [lmdb terms-dbi docs-dbi positions-dbi rawtext-dbi]
@@ -643,7 +803,8 @@
     [@max-id norms docs]))
 
 (defn new-search-engine
-  ([lmdb] (new-search-engine lmdb nil))
+  ([lmdb]
+   (new-search-engine lmdb nil))
   ([lmdb {:keys [domain analyzer query-analyzer index-position? include-text?]
           :or   {domain          "datalevin"
                  analyzer        en-analyzer
@@ -663,9 +824,9 @@
                        docs-dbi
                        positions-dbi
                        rawtext-dbi
-                       terms
-                       docs
-                       norms
+                       terms     ;; term-id -> term
+                       docs      ;; doc-id -> doc-ref
+                       norms     ;; doc-id -> norm
                        (lru/cache 100000 :constant)
                        (AtomicInteger. max-doc)
                        (AtomicInteger. max-term)
@@ -794,6 +955,6 @@
   (def lmdb (time (l/open-kv "search-bench/data/wiki-datalevin-all")))
   (def engine (time (new-search-engine lmdb)))
   (doc-count engine)
-  (search engine "linux debian")
+  (search engine "debian linux")
 
   )

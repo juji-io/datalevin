@@ -199,22 +199,13 @@ values;")
     "return deref'able object that is the write-txn or a mutex for locking")
   (mark-write [db] "return a new db what uses write-txn"))
 
+(defprotocol IAdmin
+  "Some administrative functions"
+  (re-index [db opts] [db schema opts] "dump and reload the data"))
+
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 
 (defmulti open-kv (constantly (pick-binding)))
-
-(defmacro with-transaction-kv
-  [[db orig-db] & body]
-  `(locking (write-txn ~orig-db)
-     (let [writing# (writing? ~orig-db)]
-       (try
-         (let [~db (if writing# ~orig-db (open-transact-kv ~orig-db))]
-           (u/repeat-try-catch
-             ~c/+in-tx-overflow-times+
-             ~'e (and (:resized (ex-data ~'e)) (not writing#))
-             ~@body))
-         (finally
-           (when-not writing# (close-transact-kv ~orig-db)))))))
 
 (defn range-table
   "Produce the following context values for iterator control logic:
@@ -250,3 +241,34 @@ values;")
       :open-closed       (chk2 [true false true b1 b2] :open-closed)
       :open-closed-back  (chk2 [false false true b1 b2] :open-closed-back)
       (u/raise "Unknown range type" range-type {}))))
+
+(defn resized? [e] (:resized (ex-data e)))
+
+(defmacro with-transaction-kv
+  "Evaluate body within the context of a single new read/write transaction,
+  ensuring atomicity of key-value operations.
+
+  `db` is a new identifier of the kv database with a new read/write transaction attached, and `orig-db` is the original kv database.
+
+  `body` should refer to `db`.
+
+  Example:
+
+          (with-transaction-kv [kv lmdb]
+            (let [^long now (get-value kv \"a\" :counter)]
+              (transact-kv kv [[:put \"a\" :counter (inc now)]])
+              (get-value kv \"a\" :counter)))"
+  [[db orig-db] & body]
+  `(locking (write-txn ~orig-db)
+     (let [writing#   (writing? ~orig-db)
+           condition# (fn [~'e] (and (resized? ~'e) (not writing#)))]
+       (u/repeat-try-catch
+         ~c/+in-tx-overflow-times+
+         condition#
+         (try
+           (let [~db (if writing# ~orig-db (open-transact-kv ~orig-db))]
+             (u/repeat-try-catch
+               ~c/+in-tx-overflow-times+
+               condition#
+               ~@body))
+           (finally (when-not writing# (close-transact-kv ~orig-db))))))))

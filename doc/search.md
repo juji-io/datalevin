@@ -127,6 +127,26 @@ a `doc-filter` function can be supplied in the search option, that takes the
 only return datoms that have attribute `:text`. Or one can opt to put this
 constraint in the Datalog where clause instead.
 
+### Custom Search
+
+The search feature can be customized at indexing time and at query time.
+
+### Custom analyzer
+
+When creating the search engine, an `:analyzer` option can be used to supply
+an analyzer function that takes a document as string, and output a list of `[term
+position offset]`. `:query-analyzer` option is for analyzing query.
+
+Some common utility functions for creating analyzers are also provided in
+`datalevin.search-utils`  namespace: stemming, stop words, regular expression,
+ngrams, prefix, and so on.
+
+### Search options
+
+See documentation for `search` function to see available options that can be
+passed at run time to customize search: top-k, proximity expansion factor,
+results display, and so on.
+
 ## Implementation
 
 As mentioned, the search engine is implemented from scratch, see [blog](https://yyhh.org/blog/2021/11/t-wand-beat-lucene-in-less-than-600-lines-of-code/). Instead of
@@ -290,24 +310,26 @@ When the user elects to enable term positions indexing, it is beneficial to
 utilize the positional information to enable term proximity scoring to enhance
 precision of top results. This reflects the intuition that the closer the query
 terms are placed together in a document, the more relevant the document
-might be. We enable term proximity scoring by default when `:index-position?` is
-set to `true`.
+might be. We enable term proximity scoring when `:index-position?` is set to
+`true`.
 
-Instead of replacing term frequency by proximity score [4], which is
-relatively expensive to calculate, or adding the proximity score to the tf-idf
-score [5], which faces the difficult problem of determining the relative weights
-of the two scores that may require machine learning, we decide to perform a two stage process: we search by tf-idf
-based scoring first as usual, then calculate proximity score only for the top
-results, and finally produce the top `k` results according to the proximity score.
+Instead of replacing term frequency by proximity score [5], which is
+relatively expensive to calculate, or combining the proximity score with the
+tf-idf score [4], which faces the difficult problem of determining the relative
+weights of the two scores that may require machine learning, we decide to
+perform a two stage procedure: we search by tf-idf based scoring first as usual,
+then calculate proximity score only for the top results, and finally produce the
+top `k` results according to the proximity score.
 
 For the first tf-idf stage, instead of producing top `k` results only, we produce top
-`m * k` results, where `m` is user configurable as `:proximity-top-expansion`
-(default is 5) search option. This parameter reflects a search quality vs. time
+`m * k` results, where `m` is user configurable as `:proximity-expansion`
+(default is `2`) search option. This parameter reflects a search quality vs. time
 trade-off. The larger is `m`, the better is the search quality, while the search
 time would be longer.
 
 A span based proximity scoring algorithm is used to calculate the proximity
-contribution of individual terms, and they are then plugged into the Okapi ranking function [4] to arrive at the final score.
+contribution of individual terms, and they are then plugged into the Okapi
+ranking function to arrive at the final score [5].
 
 ## Benchmark
 
@@ -328,10 +350,10 @@ Retrieval, Cambridge University Press. 2008.
 Dictionary Matching. Proceedings of the 23rd International Conference on
 Computational Linguistics (COLING '10), 2010, pp. 851-859.
 
-[4] Song, R., Taylor, M. J., Wen, J. R., Hon, H. W., & Yu, Y. Viewing term
-proximity from a different perspective. In Advances in Information Retrieval:
-30th European Conference on IR Research, (ECIR '08), pp. 346-357.
-
-[5] Rasolofo, Y., & Savoy, J.. Term proximity scoring for keyword-based
+[4] Rasolofo, Y., & Savoy, J.. Term proximity scoring for keyword-based
 retrieval systems. In Advances in Information Retrieval: 25th European
 Conference on IR Research, (ECIR '03), pp. 207-218.
+
+[5] Song, R., Taylor, M. J., Wen, J. R., Hon, H. W., & Yu, Y. Viewing term
+proximity from a different perspective. In Advances in Information Retrieval:
+30th European Conference on IR Research, (ECIR '08), pp. 346-357.

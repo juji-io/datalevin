@@ -493,6 +493,12 @@
 
 (declare reset-write-txn ->LMDB)
 
+(defn- up-db-size [^Env env]
+  (let [^Info info (Info/create env)]
+    (.setMapSize env (* ^long c/+buffer-grow-factor+
+                        (.me_mapsize ^Lib$MDB_envinfo (.get info))))
+    (.close info)))
+
 (deftype LMDB [^Env env
                info
                ^ConcurrentLinkedQueue pool
@@ -692,18 +698,26 @@
       (catch Exception e
         (raise "Fail to open read/write transaction in LMDB: " e {}))))
 
-  (close-transact-kv [_]
+  (close-transact-kv [this]
     (if-let [^Rtx wtxn @write-txn]
       (when-let [^Txn txn (.-txn wtxn)]
-        (try
-          (let [aborted? @(.-aborted? wtxn)]
-            (if aborted? (.close txn) (.commit txn))
-            (vreset! write-txn nil)
-            (if aborted? :aborted :committed))
-          (catch Exception e
+        (let [aborted? @(.-aborted? wtxn)]
+          (if aborted?
             (.close txn)
-            (vreset! write-txn nil)
-            (raise "Fail to commit read/write transaction in LMDB: " e {}))))
+            (try
+              (.commit txn)
+              (catch Lib$MapFullException _
+                (.close txn)
+                (up-db-size env)
+                (vreset! write-txn nil)
+                (raise "DB resized" {:resized true}))
+              (catch Exception e
+                (.close txn)
+                (vreset! write-txn nil)
+                (raise "Fail to commit read/write transaction in LMDB: "
+                       e {}))))
+          (vreset! write-txn nil)
+          (if aborted? :aborted :committed)))
       (raise "Calling `close-transact-kv` without opening" {})))
 
   (abort-transact-kv [_]
@@ -733,10 +747,7 @@
           :transacted
           (catch Lib$MapFullException _
             (.close txn)
-            (let [^Info info (Info/create env)]
-              (.setMapSize env (* ^long c/+buffer-grow-factor+
-                                  (.me_mapsize ^Lib$MDB_envinfo (.get info))))
-              (.close info))
+            (up-db-size env)
             (if one-shot?
               (.transact-kv this dbi-name txs k-type v-type)
               (do (reset-write-txn this)

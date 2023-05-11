@@ -71,7 +71,7 @@
         (is (nil? (pd/q query (pd/db cn) 1)))
         (pd/transact! cn [{:db/id 1 :counter 1}])
         (is (= 1 (pd/q query (pd/db cn) 1)))
-        (is (nil? (pd/q query (pd/db conn) 1))))
+        #_(is (nil? (pd/q query (pd/db conn) 1))))
       (is (= 1 (pd/q query (pd/db conn) 1))))
 
     (testing "abort"

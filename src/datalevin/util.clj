@@ -192,20 +192,21 @@
 ;; ----------------------------------------------------------------------------
 
 (defmacro repeat-try-catch
-  "A nested try catch block that keeps executing body when an exception
-  is caught and the repeat condition is true, otherwise throw, until n
-  nesting level is reached."
-  [n ex repeat-condition & body]
-  (letfn [(generate [^long n]
-            (if (zero? n)
-              `(try ~@body)
-              `(try
-                 ~@body
-                 (catch Exception ~ex
-                   (if ~repeat-condition
-                     ~(generate (dec n))
-                     (throw ~ex))))))]
-    (generate n)))
+  "Keeps executing body up to n times when an exception is caught and
+  the repeat condition function that takes the exception is true,
+  otherwise throw."
+  [n condition-fn & body]
+  (let [helper-fn (gensym "helper")]
+    `(letfn [(~helper-fn [^long attempts#]
+              (if (pos? attempts#)
+                (try
+                  ~@body
+                  (catch Exception e#
+                    (if (and (> attempts# 1) (~condition-fn e#))
+                      (~helper-fn (dec attempts#))
+                      (throw e#))))
+                (raise "Invalid number of attempts" {:num ~n})))]
+       (~helper-fn ~n))))
 
 (defmacro combine-cmp
   "Combine multiple comparisons"
@@ -343,3 +344,35 @@
 (defn hexify-string [^String s] (hexify (.getBytes s)))
 
 (defn unhexify-string [s] (String. (byte-array (unhexify s))))
+
+(defn link-vars
+  "Makes sure that all changes to `src` are reflected in `dst`."
+  [src dst]
+  (add-watch src dst
+             (fn [_ src old new]
+               (alter-var-root dst (constantly @src))
+               (alter-meta! dst merge (dissoc (meta src) :name)))))
+
+;; lifted from https://github.com/clj-commons/potemkin
+(defmacro import-macro
+  "Given a macro in another namespace, defines a macro with the same
+   name in the current namespace.  Argument lists, doc-strings, and
+   original line-numbers are preserved."
+  ([sym]
+   `(import-macro ~sym nil))
+  ([sym name]
+   (let [vr       (resolve sym)
+         m        (meta vr)
+         n        (or name (with-meta (:name m) {}))
+         arglists (:arglists m)]
+     (when-not vr
+       (throw (IllegalArgumentException. (str "Don't recognize " sym))))
+     (when-not (:macro m)
+       (throw (IllegalArgumentException.
+                (str "Calling import-macro on a non-macro: " sym))))
+     `(do
+        (def ~n ~(resolve sym))
+        (alter-meta! (var ~n) merge (dissoc (meta ~vr) :name))
+        (.setMacro (var ~n))
+        (link-vars ~vr (var ~n))
+        ~vr))))
