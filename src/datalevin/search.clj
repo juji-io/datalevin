@@ -371,11 +371,11 @@
     (.search this query {}))
   (search [this query {:keys [display top proximity-expansion
                               proximity-max-dist doc-filter]
-                       :or   {display             :refs
-                              top                 10
-                              proximity-expansion 2
-                              proximity-max-dist  45
-                              doc-filter          (constantly true)}}]
+                       :or   {display             c/default-display
+                              top                 c/default-top
+                              proximity-expansion c/default-proximity-expansion
+                              proximity-max-dist  c/default-proximity-max-dist
+                              doc-filter          c/default-doc-filter}}]
     (when-not (s/blank? query)
       (let [tokens (->> (query-analyzer query)
                         (mapv first)

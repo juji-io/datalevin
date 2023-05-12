@@ -1,6 +1,7 @@
 (ns datalevin.search-test
   (:require
    [datalevin.search :as sut]
+   [datalevin.search-utils :as su]
    [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
    [datalevin.core :as d]
@@ -17,7 +18,6 @@
    [clojure.test :refer [deftest testing is use-fixtures]])
   (:import
    [java.util UUID ]
-   [datalevin.spill SpillableMap]
    [datalevin.sparselist SparseIntArrayList]
    [datalevin.search SearchEngine IndexWriter]))
 
@@ -472,6 +472,179 @@
     (let [engine (sut/new-search-engine lmdb)]
       (is (= (sut/search engine "cap" {:display :offsets})
              [[:doc4 [["cap" [51]]]]])))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest proximity-span-test
+  (let [dir      (u/tmp-dir (str "proximity-span-test-" (UUID/randomUUID)))
+        lmdb     (d/open-kv dir)
+        analyzer (su/create-analyzer
+                   {:tokenizer
+                    (su/create-regexp-tokenizer #"[\s:\.,'\-()]+")
+                    :token-filters [su/lower-case-token-filter
+                                    su/unaccent-token-filter]})
+        engine   ^SearchEngine (d/new-search-engine
+                                 lmdb {:index-position? true
+                                       :analyzer        analyzer})]
+    (d/add-doc engine "Erosion"
+               "Erosion
+It took the sea a thousand years,
+A thousand years to trace
+The Granite features of this cliff,
+In crag and scarp and base.
+
+It took the sea an hour one night,
+An hour of storm to place
+The sculpture of these granite seams,
+Upon a woman's face.
+
+- E. J. Pratt (1882 - 1964)")
+    (d/add-doc engine "Sea-Gulls"
+               "Sea-Guals
+For one carved instant as they flew,
+The language had no simile—
+Silver, crystal, ivory
+Were tarnished. Etched upon the horizon blue,
+The frieze must go unchallenged, for the lift
+And carriage of the wings would stain the drift
+Of stars against a tropic indigo
+Or dull the parable of snow.
+Now settling one by one
+Within green hollows or where curled
+Crests caught the spectrum from the sun,
+A thousand wings are furled.
+No clay-born lilies of the world
+Could blow as free
+As those wild orchids of the sea.
+- E. J. Pratt (1882 - 1964)")
+    (d/add-doc engine "Horizons"
+               "Horizons
+You would not come when you were near,
+And when the lamp was lit,
+And though you always knew I'd hear
+Your call and answer it.
+Now you would speed across the sea,
+To find the door ajar...
+The lamp is out, and as for me,
+I could not call so far.
+- E. J. Pratt (1882 - 1964)
+")
+    (d/add-doc engine "GPT4-1"
+               "sea, cliff, thousand years
+Upon the ancient cliffs I stand,
+A thousand years and more have passed,
+Gazing out upon the sea,
+A realm of time forever vast.
+
+Mighty waves with roaring sound,
+Caress the shores in rhythmic dance,
+As secrets of the deep reveal,
+A story born of fate and chance.
+
+The sea, a cradle of life's embrace,
+Where countless tales remain untold,
+Its surface glistens like a gem,
+A treasure chest of dreams and gold.
+
+Beside the cliff, I feel the breeze,
+It whispers softly in my ear,
+A lullaby from long ago,
+Of sailors brave who ventured near.
+
+For centuries, these cliffs have stood,
+And watched the tides of time unfold,
+Their rugged faces carved by wind,
+A testament to days of old.
+
+A thousand years, it seems, have passed,
+Yet still, the sea and cliffs remain,
+A symbol of eternity,
+In this world of joy and pain.
+
+So, as I stand upon this edge,
+And marvel at the endless waves,
+I find solace in the thought,
+That love and hope, like sea and cliffs, will stay.
+
+- ChatGPT (2023 -)")
+    (d/add-doc engine "GPT4-2"
+               "In style of Erosion
+In quiet contemplation, I descended,
+To where the ocean meets the land,
+And there, upon the rugged shore,
+I saw the work of time's own hand.
+
+The waves, they surged with primal force,
+Against the rocks they crashed and broke,
+In rhythmic dance, they sang a tale,
+Of war and love, in whispers spoke.
+
+The rocks, they stood, a bulwark strong,
+Defiant 'gainst the ceaseless tide,
+With every splash and every spray,
+A story etched in their weathered hide.
+
+In cycles past, the land did yield,
+To ocean's will and its desire,
+Yet, even as it ebbed away,
+The shore retained its spirit's fire.
+
+The wind, it howled in cold embrace,
+A sculptor's touch, with fingers fine,
+It carved its mark upon the shore,
+A testament to strength divine.
+
+In moonlit glow, the sea revealed,
+A beauty rare, a sight to see,
+Its silver sheen, like molten glass,
+A mirror to infinity.
+
+The sea, it roared with ancient rage,
+Yet, in its heart, a love did dwell,
+For every touch, it kissed the shore,
+In passion's grip, the two did meld.
+
+And there, I stood, betwixt the two,
+A witness to their endless dance,
+The sea and shore, in harmony,
+A story old, of earth's romance.
+
+Eroded, yet enduring still,
+The shore stood tall, a testament,
+To time's own hand and nature's will,
+A love that's never spent.
+
+- ChatGPT (2023 -)")
+    (is (= ["Erosion" "GPT4-1" "Sea-Gulls" "GPT4-2" "Horizons"]
+           (sut/search engine "sea thousand years" {:proximity-max-dist 10})))
+    (is (= ["Erosion" "GPT4-1" "Sea-Gulls"]
+           (sut/search engine "thousand years")))
+    (is (= ["Erosion" "GPT4-1" "GPT4-2" "Horizons" "Sea-Gulls"]
+           (sut/search engine "sea cliff")))
+    (is (= ["Erosion" "Horizons" "Sea-Gulls" ]
+           (sut/search engine "e j pratt")))
+    (d/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest re-index-search-test
+  (let [dir    (u/tmp-dir (str "re-index-search-" (UUID/randomUUID)))
+        lmdb   (l/open-kv dir)
+        opts   {:index-position? true
+                :include-text?   true}
+        engine (sut/new-search-engine lmdb opts)]
+
+    (add-docs sut/add-doc engine)
+
+    (is (empty? (sut/search engine "dog")))
+
+    (let [engine1 (l/re-index
+                    engine (merge opts {:analyzer
+                                        (su/create-analyzer
+                                          {:token-filters
+                                           [(su/create-stemming-token-filter
+                                              "english")]})}))]
+      (is (= [:doc1 :doc5] (sut/search engine1 "dog"))))
+
     (l/close-kv lmdb)
     (u/delete-files dir)))
 

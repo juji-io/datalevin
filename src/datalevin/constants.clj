@@ -243,6 +243,12 @@
 
 ;;search engine
 
+(def default-display :refs)
+(def default-top 10)
+(def default-proximity-expansion 2)
+(def default-proximity-max-dist 45)
+(def default-doc-filter (constantly true))
+
 (def en-stop-words-set
   (let [s (HashSet.)]
     (doseq [w ["a",    "an",   "and",   "are",  "as",    "at",   "be",
