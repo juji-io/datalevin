@@ -436,23 +436,6 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest custom-data-test
-  (let [dir  (u/tmp-dir (str "custom-data-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)
-        lst  (doto (FastList.) (.add 1))
-        data {:lst lst}]
-    (l/open-dbi lmdb "a")
-    (l/transact-kv lmdb [[:put "a" 1 data]])
-    (is (not= data (l/get-value lmdb "a" 1)))
-    ;; TODO somehow this doesn't work in graal
-    (when-not (u/graal?)
-      (is (= data
-             (binding [c/*data-serializable-classes*
-                       #{"org.eclipse.collections.impl.list.mutable.FastList"}]
-               (l/get-value lmdb "a" 1)))))
-    (l/close-kv lmdb)
-    (u/delete-files dir)))
-
 (deftest read-during-transaction-test
   (let [dir   (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
         lmdb  (l/open-kv dir)

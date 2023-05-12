@@ -11,7 +11,7 @@
 (use-fixtures :each db-fixture)
 
 (deftest test-close
-  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (is (not (d/closed? conn)))
     (d/close conn)
@@ -19,8 +19,8 @@
     (u/delete-files dir)))
 
 (deftest test-update-schema
-  (let [dir1  (u/tmp-dir (str "test-" (random-uuid)))
-        dir2  (u/tmp-dir (str "test-" (random-uuid)))
+  (let [dir1  (u/tmp-dir (str "test-" (UUID/randomUUID)))
+        dir2  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn1 (d/create-conn dir1)
         s     {:a/b {:db/valueType :db.type/string}}
         s1    {:c/d {:db/valueType :db.type/string}}
@@ -53,7 +53,7 @@
     (u/delete-files dir2)))
 
 (deftest test-update-schema-1
-  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (d/update-schema conn {:things {}})
     (is (= (d/schema conn) (-> c/implicit-schema
@@ -73,7 +73,7 @@
     (u/delete-files dir)))
 
 (deftest test-update-schema-ensure-no-duplicate-aids
-  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (d/update-schema conn {:up/a {}})
     (d/transact! conn [{:foo 1}])
@@ -83,7 +83,7 @@
       (u/delete-files dir))))
 
 (deftest test-ways-to-create-conn-1
-  (let [dir  (u/tmp-dir (str "test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= c/implicit-schema (db/-schema @conn)))
@@ -92,7 +92,7 @@
 
 (deftest test-ways-to-create-conn-2
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 3}}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/create-conn dir schema)]
     (is (= #{} (set (d/datoms @conn :eavt))))
     (is (= (db/-schema @conn) (merge schema c/implicit-schema)))
@@ -102,7 +102,7 @@
 (deftest test-ways-to-create-conn-3
   (let [datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-datoms datoms dir)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
@@ -112,7 +112,7 @@
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
         datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-datoms datoms dir schema)]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))
@@ -121,7 +121,7 @@
 
   (let [datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-db (d/init-db datoms dir))]
     (is (thrown-with-msg? Exception
                           #"init-db expects list of Datoms, got "
@@ -135,7 +135,7 @@
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
         datoms #{(d/datom 1 :age  17)
                  (d/datom 1 :name "Ivan")}
-        dir    (u/tmp-dir (str "test-" (random-uuid)))
+        dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-db (d/init-db datoms dir schema))]
     (is (= datoms (set (d/datoms @conn :eavt))))
     (is (= (d/schema conn) (db/-schema @conn)))

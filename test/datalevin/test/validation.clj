@@ -3,12 +3,14 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.util :as u]
-   [datalevin.core :as d]))
+   [datalevin.core :as d])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-with-validation
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/empty-db dir {:profile { :db/valueType :db.type/ref }
                              :id      {:db/unique :db.unique/identity}})]
     (are [tx] (thrown-with-msg? Throwable #"Expected number, string or lookup ref for :db/id" (d/db-with db tx))
@@ -40,7 +42,7 @@
     (u/delete-files dir)))
 
 (deftest test-unique
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name { :db/unique :db.unique/value }})
               [[:db/add 1 :name "Ivan"]

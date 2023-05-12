@@ -3,12 +3,14 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.util :as u]
-   [datalevin.core :as d]))
+   [datalevin.core :as d])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-datoms
-  (let [dir  (u/tmp-dir (str "reset-test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "reset-test-" (UUID/randomUUID)))
         dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
@@ -54,7 +56,7 @@
 ;; should not expect attribute in lexicographic order
 ;; attributes are in order of creation
 (deftest test-seek-datoms
-  (let [dir  (u/tmp-dir (str "seek-test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "seek-test-" (UUID/randomUUID)))
         dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
@@ -86,7 +88,7 @@
 
 ;; should not expect attributes in lexicographic order
 (deftest test-rseek-datoms
-  (let [dir  (u/tmp-dir (str "rseek-test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "rseek-test-" (UUID/randomUUID)))
         dvec #(vector (:e %) (:a %) (:v %))
         db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
                                   :age  {:db/valueType :db.type/long}})
@@ -116,7 +118,7 @@
     (u/delete-files dir)))
 
 (deftest test-index-range
-  (let [dir  (u/tmp-dir (str "range-test-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "range-test-" (UUID/randomUUID)))
         dvec #(vector (:e %) (:a %) (:v %))
         db   (d/db-with
                (d/empty-db dir {:name {:db/valueType :db.type/string}

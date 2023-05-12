@@ -87,16 +87,16 @@
        (loop [idx       0
               gram-size min-gram-size
               ngrams    (transient [])]
-         (if (or (= idx length) (< length (+ idx gram-size)))
+         (if (or (= idx length) (< length (+ idx ^long gram-size)))
            (persistent! ngrams)
-           (if-not (< gram-size max-gram-size)
+           (if-not (< ^long gram-size ^long max-gram-size)
              (recur (inc idx) min-gram-size
                     (conj! ngrams
-                           [(subs word idx (min (+ idx gram-size) length))
+                           [(subs word idx (min (+ idx ^long gram-size) length))
                             pos start]))
-             (recur idx (inc gram-size)
+             (recur idx (inc ^long gram-size)
                     (conj! ngrams
-                           [(subs word idx (min (+ idx gram-size) length))
+                           [(subs word idx (min (+ idx ^long gram-size) length))
                             pos start]))))))))
   ([gram-size] (create-ngram-token-filter gram-size gram-size)))
 
@@ -105,14 +105,14 @@
   [min-length]
   (inter-fn
     [[^String word _ _ :as t]]
-    (if (< (.length word) min-length) [] [t])))
+    (if (< (.length word) ^long min-length) [] [t])))
 
 (defn create-max-length-token-filter
   "Filters tokens that are strictly longer than `max-length`."
   [max-length]
   (inter-fn
     [[^String word _ _ :as t]]
-    (if (> (.length word) max-length) [] [t])))
+    (if (> (.length word) ^long max-length) [] [t])))
 
 (defn create-stemming-token-filter
   "Create a token filter that replaces tokens with their stems.

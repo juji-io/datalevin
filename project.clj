@@ -1,4 +1,4 @@
-(def version "0.8.5")
+(def version "0.8.16")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -24,7 +24,7 @@
    [nrepl/bencode "1.1.0"]
    [org.babashka/sci "0.7.39"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
-   [org.clojure/clojure "1.11.1"]
+   [org.clojure/clojure "1.10.3"]
    [org.clojure/tools.cli "1.0.214"]
    [org.clojure/test.check "1.1.1"]
    [org.clojure/data.csv "1.0.1"]

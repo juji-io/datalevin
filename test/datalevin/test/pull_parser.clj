@@ -5,15 +5,16 @@
    [datalevin.db :as db]
    [datalevin.datom :as dd]
    [datalevin.util :as u]
-   [datalevin.pull-parser :as dpp]
-   [datalevin.test.core :as tdc]))
+   [datalevin.pull-parser :as dpp])
+  (:import
+   [java.util UUID]))
 
 (defn pattern [& {:as args}]
   (let [attrs (filter #(not= :db/id (:name %)) (:attrs args))]
     (dpp/map->PullPattern (merge {:first-attr (first attrs) :last-attr (last attrs)} args))))
 
 (deftest test-parse-pattern
-  (let [dir  (u/tmp-dir (str "pull-parser-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "pull-parser-" (UUID/randomUUID)))
         db   (d/empty-db
                dir
                {:ref            {:db/valueType :db.type/ref}

@@ -4,12 +4,13 @@
    [clojure.test :refer [deftest testing is are use-fixtures]]
    [datalevin.core :as d]
    [datalevin.util :as u])
-  (:import [clojure.lang ExceptionInfo]))
+  (:import [clojure.lang ExceptionInfo]
+           [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-lookup-refs
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name  { :db/unique :db.unique/identity }
                                :email { :db/unique :db.unique/value }})
@@ -30,7 +31,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-1
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -54,7 +55,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-2
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -77,7 +78,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-3
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -92,7 +93,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-4
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -106,7 +107,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-5
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -121,7 +122,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-6
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -136,7 +137,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-7
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -156,7 +157,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-8
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name   { :db/unique :db.unique/identity }
                                :friend { :db/valueType :db.type/ref }})
@@ -174,7 +175,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-multi-1
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name    { :db/unique :db.unique/identity }
                                :friends { :db/valueType  :db.type/ref
@@ -195,7 +196,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-multi-2
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name    { :db/unique :db.unique/identity }
                                :friends { :db/valueType  :db.type/ref
@@ -225,7 +226,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-refs-transact-multi-3
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name    { :db/unique :db.unique/identity }
                                :friends { :db/valueType  :db.type/ref
@@ -249,7 +250,7 @@
     (u/delete-files dir)))
 
 (deftest lookup-refs-index-access
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir {:name    { :db/unique :db.unique/identity }
                                :friends { :db/valueType  :db.type/ref
@@ -301,7 +302,7 @@
 (deftest test-lookup-refs-query
   (let [schema {:name   { :db/unique :db.unique/identity }
                 :friend { :db/valueType :db.type/ref }}
-        dir    (u/tmp-dir (str "query-or-" (random-uuid)))
+        dir    (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1 :id 1 :name "Ivan" :age 11 :friend 2}
                            {:db/id 2 :id 2 :name "Petr" :age 22 :friend 3}
@@ -383,7 +384,7 @@
     (u/delete-files dir)))
 
 (deftest data-lookup-refs-test
-  (let [dir (u/tmp-dir (str "issue-194-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "issue-194-" (UUID/randomUUID)))
         db  (d/db-with
               (d/empty-db dir
                           {:ref-id    {:db/valueType :db.type/ref}

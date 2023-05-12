@@ -11,12 +11,15 @@
    [datalevin.query :as q]
    [datalevin.util :as u]
    [datalevin.core]
+   [datalevin.search]
+   [datalevin.stem]
    [datalevin.client]
    [datalevin.constants]
    [clojure.string :as s])
   (:import
    [clojure.lang AFn]
    [datalevin.datom Datom]
+   [org.tartarus.snowball SnowballStemmer]
    [java.text Normalizer Normalizer$Form]
    [java.io DataInput DataOutput Writer]))
 
@@ -126,9 +129,14 @@
 (defmacro inter-fn
   "Same signature as `fn`. Create a function that can be used as an input in
   Datalevin queries or transactions, e.g. as a filtering predicate or as a
-  transaction function. This function will be sent over the wire if the database
-  is on a remote server. It runs in a sandboxed interpreter whether the database
-  is remote or local."
+  transaction function.
+
+  This function will be sent over the wire if the database
+  is on a remote server. It runs in a sandboxed interpreter whether the
+  database is remote or local.
+
+  The symbols used in the inter-fn definition needs to be fully-qualified
+  to be resolved correctly."
   [args & body]
   `(with-meta
      (sci/eval-form ctx (fn ~args (do ~@body)))
@@ -173,10 +181,24 @@
   [x]
   (source->inter-fn x))
 
+(defn ^:no-doc additional-vars
+  []
+  {'datalevin.search
+   (user-facing-map 'datalevin.search
+                    {'en-analyzer #'datalevin.search/en-analyzer})
+   'datalevin.stem
+   (user-facing-map 'datalevin.stem
+                    {'get-stemmer #'datalevin.stem/get-stemmer})
+   'datalevin.constants
+   (user-facing-map 'datalevin.constants
+                    {'en-stop-words? #'datalevin.constants/en-stop-words?})})
+
 (def ^:no-doc sci-opts
-  {:namespaces (user-facing-vars)
+  {:namespaces (merge (user-facing-vars) (additional-vars))
    :classes    {:allow                     :all
                 'java.text.Normalizer      java.text.Normalizer
-                'java.text.Normalizer$Form java.text.Normalizer$Form}})
+                'java.text.Normalizer$Form java.text.Normalizer$Form
+                'org.tartarus.snowball.SnowballStemmer
+                org.tartarus.snowball.SnowballStemmer}})
 
 (def ^:no-doc ctx (sci/init sci-opts))

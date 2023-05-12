@@ -2207,8 +2207,7 @@
     (doseq [[client-id session] clients
             :let                [{:keys [last-active]} session]]
       (if last-active
-        (when (< ^long timeout
-                 (- (System/currentTimeMillis) ^long last-active))
+        (when (< timeout (- (System/currentTimeMillis) ^long last-active))
           (disconnect-client* server client-id))
         ;; migrate old sessions that don't have last-active
         (update-client server client-id

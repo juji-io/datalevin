@@ -10,7 +10,7 @@
 (t/use-fixtures :once tdc/no-namespace-maps)
 
 (deftest test-entity
-  (let [dir (u/tmp-dir (str "entity-test-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "entity-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})
                 (d/db-with [{:db/id 1, :name "Ivan", :age 19, :aka ["X" "Y"]}
                             {:db/id 2, :name "Ivan", :sex "male", :aka ["Z"]}
@@ -43,7 +43,7 @@
     (u/delete-files dir)))
 
 (deftest test-transactable-entity
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db
                   dir {:user/handle  #:db {:valueType :db.type/string
                                            :unique    :db.unique/identity}
@@ -116,7 +116,7 @@
     (u/delete-files dir)))
 
 (deftest test-entity-refs
-  (let [dir (u/tmp-dir (str "entity-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "entity-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:father   {:db/valueType :db.type/ref}
                                  :children {:db/valueType   :db.type/ref
                                             :db/cardinality :db.cardinality/many}})
@@ -158,7 +158,7 @@
     (u/delete-files dir)))
 
 (deftest test-entity-misses
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
                 (d/db-with [{:db/id 1, :name "Ivan"}
                             {:db/id 2, :name "Oleg"}]))]
@@ -173,7 +173,7 @@
     (u/delete-files dir)))
 
 (deftest test-entity-equality
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db1 (-> (d/empty-db dir)
                 (d/db-with [{:db/id 1, :name "Ivan"}]))
         e1  (d/entity db1 1)

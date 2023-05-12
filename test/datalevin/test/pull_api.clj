@@ -3,7 +3,9 @@
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [datalevin.util :as u]
-   [datalevin.core :as d]))
+   [datalevin.core :as d])
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
@@ -63,7 +65,7 @@
     (map #(apply d/datom %))))
 
 (deftest test-pull-attr-spec
-  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
            (d/pull test-db '[:name :aka] 1)))
@@ -78,7 +80,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-reverse-attr-spec
-  (let [dir     (u/tmp-dir (str "pull-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-or-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "David" :_child [{:db/id 1}]}
            (d/pull test-db '[:name :_child] 2)))
@@ -107,7 +109,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-component-attr
-  (let [dir1    (u/tmp-dir (str "pull-or-" (random-uuid)))
+  (let [dir1    (u/tmp-dir (str "pull-or-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir1 test-schema)
         parts   {:name "Part A",
                  :part
@@ -139,7 +141,7 @@
                                               {:name "Part A.B.A.B", :db/id 18}],
                                       :db/id 16}],
                              :db/id 15}]}] %))
-        dir2    (u/tmp-dir (str "pull-or-" (random-uuid)))
+        dir2    (u/tmp-dir (str "pull-or-" (UUID/randomUUID)))
         recdb   (d/init-db
                   (concat test-datoms [(d/datom 12 :part 10)])
                   dir2
@@ -173,7 +175,7 @@
     (u/delete-files dir2)))
 
 (deftest test-pull-wildcard
-  (let [dir     (u/tmp-dir (str "pull-wild-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-wild-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"]
             :child [{:db/id 2} {:db/id 3}]}
@@ -211,7 +213,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-limit
-  (let [dir (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db  (d/init-db
               (concat
                 test-datoms
@@ -245,7 +247,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-default
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (testing "Empty results return nil"
       (is (nil? (d/pull test-db '[:foo] 1))))
@@ -281,7 +283,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-as
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {"Name" "Petr", :alias ["Devil" "Tupen"]}
            (d/pull test-db '[[:name :as "Name"] [:aka :as :alias]] 1)))
@@ -289,7 +291,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-attr-with-opts
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {"Name" "Nothing"}
            (d/pull test-db '[[:x :as "Name" :default "Nothing"]] 1)))
@@ -297,7 +299,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-map
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (testing "Single attrs yield a map"
       (is (= {:name "Matthew" :father {:name "Thomas"}}
@@ -328,7 +330,7 @@
     (u/delete-files dir)))
 
 (deftest test-pull-recursion-1
-  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)
         db      (-> test-db
                     (d/db-with [[:db/add 4 :friend 5]
@@ -420,7 +422,7 @@
 
 (deftest test-dual-recursion-1
   (testing "Seen ids are tracked independently for different branches"
-    (let [dir (u/tmp-dir (str "pull-" (random-uuid)))
+    (let [dir (u/tmp-dir (str "pull-" (UUID/randomUUID)))
           db  (-> (d/empty-db dir {:friend {:db/valueType :db.type/ref}
                                    :enemy  {:db/valueType :db.type/ref}})
                   (d/db-with [{:db/id 1 :name "1" :friend 2 :enemy 2}
@@ -431,7 +433,7 @@
       (u/delete-files dir))))
 
 (deftest test-dual-recursion-2
-  (let [dir (u/tmp-dir (str "pull-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "pull-" (UUID/randomUUID)))
         recursion-db
         (-> (d/empty-db dir {:friend {:db/valueType :db.type/ref}
                              :enemy  {:db/valueType :db.type/ref}})
@@ -455,7 +457,7 @@
     (u/delete-files dir)))
 
 (deftest test-dual-recursion-3
-  (let [dir   (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir   (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         empty (d/empty-db dir {:part { :db/valueType :db.type/ref }
                                :spec { :db/valueType :db.type/ref }})
         db    (d/db-with empty [[:db/add 1 :part 2]
@@ -490,7 +492,7 @@
                    [(d/datom idx :name (str "Person-" idx))
                     (d/datom (dec idx) :friend idx)])
                  (range (inc start) depth))
-        dir    (u/tmp-dir (str "query-or-" (random-uuid)))
+        dir    (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db     (d/init-db (concat
                             test-datoms
                             [(d/datom start :name (str "Person-" start))]
@@ -509,7 +511,7 @@
 (deftest test-component-reverse
   (let [schema {:ref {:db/valueType   :db.type/ref
                       :db/isComponent true}}
-        dir    (u/tmp-dir (str "pull-lookup-" (random-uuid)))
+        dir    (u/tmp-dir (str "pull-lookup-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:name "1"
                             :ref  {:name "2"
@@ -522,7 +524,7 @@
     (u/delete-files dir)))
 
 (deftest test-lookup-ref-pull
-  (let [dir     (u/tmp-dir (str "pull-lookup-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-lookup-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:name "Petr" :aka ["Devil" "Tupen"]}
            (d/pull test-db '[:name :aka] [:name "Petr"])))
@@ -540,7 +542,7 @@
     (u/delete-files dir)))
 
 (deftest test-xform
-  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)]
     (is (= {:db/id [1]
             :name  ["Petr"]
@@ -570,7 +572,7 @@
     (u/delete-files dir)))
 
 (deftest test-visitor
-  (let [dir     (u/tmp-dir (str "pull-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "pull-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)
         *trace  (volatile! nil)
         opts    {:visitor (fn [k e a v] (vswap! *trace conj [k e a v]))}

@@ -74,7 +74,14 @@
 
 ;; nippy
 
-(defn serialize ^bytes [x] (nippy/fast-freeze x))
+(defn serialize ^bytes
+  [x]
+  (binding [nippy/*freeze-serializable-allowlist*
+            (into nippy/*thaw-serializable-allowlist*
+                  c/*data-serializable-classes*)]
+    (if (instance? java.lang.Class x)
+      (u/raise "Unfreezable type: java.lang.Class" {})
+      (nippy/fast-freeze x))))
 
 (defn deserialize
   "Deserialize from bytes. "

@@ -4,7 +4,9 @@
    [clojure.test :as t :refer        [is deftest testing]]
    [datalevin.core :as d]
    [datalevin.util :as u]
-   [datalevin.test.core :as tdc]))
+   [datalevin.test.core :as tdc])
+  (:import
+   [java.util UUID]))
 
 (t/use-fixtures :once tdc/no-namespace-maps)
 
@@ -14,7 +16,7 @@
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
                    (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db      (d/db-with
                   (d/empty-db dir {:profile {:db/valueType   :db.type/ref
                                              :db/isComponent true}})
@@ -58,7 +60,7 @@
   (is (thrown-msg? "Bad attribute specification for {:profile {:db/isComponent \"aaa\"}}, expected one of #{true false}"
                    (d/empty-db nil {:profile {:db/isComponent "aaa" :db/valueType :db.type/ref}})))
 
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db      (d/db-with
                   (d/empty-db dir {:profile {:db/valueType   :db.type/ref
                                              :db/isComponent true}})
@@ -75,7 +77,7 @@
     (u/delete-files dir)))
 
 (deftest test-components-multival-1
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db      (d/db-with
                   (d/empty-db
                     dir {:profile {:db/valueType   :db.type/ref
@@ -107,7 +109,7 @@
     (u/delete-files dir)))
 
 (deftest test-components-multival-2
-  (let [dir     (u/tmp-dir (str "query-or-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
         db      (d/db-with
                   (d/empty-db
                     dir {:profile {:db/valueType   :db.type/ref

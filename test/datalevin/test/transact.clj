@@ -4,16 +4,16 @@
    [clojure.test :refer [deftest testing are is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.datom :as dd]
-   [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
    [datalevin.util :as u]
    [datalevin.constants :as c :refer [tx0]])
-  (:import [java.util UUID]))
+  (:import
+   [java.util UUID]))
 
 (use-fixtures :each db-fixture)
 
 (deftest test-auto-update-entity-time
-  (let [dir  (u/tmp-dir (str "auto-entity-time-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "auto-entity-time-" (UUID/randomUUID)))
         conn (d/create-conn dir
                             {:value {:db/valueType :db.type/long}
                              :no    {:db/valueType :db.type/long
@@ -37,7 +37,7 @@
 
 (deftest test-multi-threads-transact
   ;; we serialize writes, so as not to violate uniqueness constraint
-  (let [dir  (u/tmp-dir (str "multi-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "multi-" (UUID/randomUUID)))
         conn (d/create-conn
                dir
                {:instance/id
@@ -55,7 +55,7 @@
     (u/delete-files dir)))
 
 (deftest test-multi-threads-reads-writes
-  (let [dir     (u/tmp-dir (str "multi-rw-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "multi-rw-" (UUID/randomUUID)))
         conn    (d/create-conn dir {} {:validate-data?    true
                                        :auto-entity-time? true})
         q+      '[:find ?i+j .
@@ -86,7 +86,7 @@
     (u/delete-files dir)))
 
 (deftest test-with-1
-  (let [dir (u/tmp-dir (str "with-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "with-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})
                 (d/db-with [[:db/add 1 :name "Ivan"]])
                 (d/db-with [[:db/add 1 :name "Petr"]])
@@ -118,7 +118,7 @@
     (u/delete-files dir))
 
   (testing "skipping-nils-in-tx"
-    (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+    (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           db  (-> (d/empty-db dir)
                   (d/db-with [[:db/add 1 :attr 2]
                               nil
@@ -129,7 +129,7 @@
       (u/delete-files dir))))
 
 (deftest test-with-2
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})
                 (d/db-with [[:db/add 1 :name "Ivan"]])
                 (d/db-with [[:db/add 1 :name "Petr"]])
@@ -147,7 +147,7 @@
 
 (deftest test-with-datoms-1
   (testing "add"
-    (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+    (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           db  (-> (d/empty-db dir)
                   (d/db-with [(d/datom 1 :name "Oleg")
                               (d/datom 1 :age 17)
@@ -161,7 +161,7 @@
 
 (deftest test-with-datoms-2
   (testing "retraction"
-    (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+    (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           db  (-> (d/empty-db dir)
                   (d/db-with [(d/datom 1 :name "Oleg")
                               (d/datom 1 :age 17)
@@ -173,7 +173,7 @@
       (u/delete-files dir))))
 
 (deftest test-retract-fns-1
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka    {:db/cardinality :db.cardinality/many}
                                  :friend {:db/valueType :db.type/ref}})
                 (d/db-with [{:db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2}
@@ -192,7 +192,7 @@
     (u/delete-files dir)))
 
 (deftest test-retract-fns-2
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka    {:db/cardinality :db.cardinality/many}
                                  :friend {:db/valueType :db.type/ref}})
                 (d/db-with [{:db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2}
@@ -209,7 +209,7 @@
     (u/delete-files dir)))
 
 (deftest test-retract-fns-3
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka    {:db/cardinality :db.cardinality/many}
                                  :friend {:db/valueType :db.type/ref}})
                 (d/db-with [{:db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2}
@@ -226,7 +226,7 @@
     (u/delete-files dir)))
 
 (deftest test-retract-fns-4
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka    {:db/cardinality :db.cardinality/many}
                                  :friend {:db/valueType :db.type/ref}})
                 (d/db-with [{:db/id 1, :name "Ivan", :age 15, :aka ["X" "Y" "Z"], :friend 2}
@@ -243,7 +243,7 @@
     (u/delete-files dir)))
 
 (deftest test-retract-without-value-339-1
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:aka    {:db/cardinality :db.cardinality/many}
                              :friend {:db/valueType :db.type/ref}})
@@ -261,7 +261,7 @@
     (u/delete-files dir)))
 
 (deftest test-retract-without-value-339-2
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:aka    {:db/cardinality :db.cardinality/many}
                              :friend {:db/valueType :db.type/ref}})
@@ -276,7 +276,7 @@
     (u/delete-files dir)))
 
 (deftest test-retract-fns-not-found
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
                 (d/db-with [[:db/add 1 :name "Ivan"]]))
         all #(vec (d/datoms % :eavt))]
@@ -304,7 +304,7 @@
     (u/delete-files dir)))
 
 (deftest test-transact!
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn dir {:aka {:db/cardinality :db.cardinality/many}})]
     (d/transact! conn [[:db/add 1 :name "Ivan"]])
     (d/transact! conn [[:db/add 1 :name "Petr"]])
@@ -322,7 +322,7 @@
 
 (deftest test-transact-compare-different-types
   (testing "different scalars"
-    (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+    (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           conn (d/create-conn dir)]
       (d/transact! conn [{:foo 1}
                          {:foo "1"}
@@ -340,7 +340,7 @@
       (u/delete-files dir)))
 
   (testing "different colls"
-    (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+    (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           conn (d/create-conn dir)]
       (d/transact! conn [{:foo [1 2]}
                          {:foo [1 "2"]}
@@ -363,7 +363,7 @@
       (u/delete-files dir))))
 
 (deftest test-transact!-1
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (d/transact! conn [{:db/id -1 :a 1}])
     (is (= (d/q '[:find ?v
@@ -378,7 +378,7 @@
     (u/delete-files dir)))
 
 (deftest test-db-fn-cas
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (d/transact! conn [[:db/add 1 :weight 200]])
     (d/transact! conn [[:db.fn/cas 1 :weight 200 300]])
@@ -389,7 +389,7 @@
                      (d/transact! conn [[:db.fn/cas 1 :weight 200 210]])))
     (d/close conn))
 
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn dir {:label {:db/cardinality :db.cardinality/many}})]
     (d/transact! conn [[:db/add 1 :label :x]])
     (d/transact! conn [[:db/add 1 :label :y]])
@@ -400,7 +400,7 @@
     (d/close conn)
     (u/delete-files dir))
 
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (d/transact! conn [[:db/add 1 :name "Ivan"]])
     (d/transact! conn [[:db.fn/cas 1 :age nil 42]])
@@ -410,7 +410,7 @@
     (d/close conn)
     (u/delete-files dir))
 
-  (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (is (thrown-msg? "Can't use tempid in '[:db.fn/cas -1 :attr nil :val]'. Tempids are allowed in :db/add only"
                      (d/transact! conn [[:db/add -1 :name "Ivan"]
@@ -419,7 +419,7 @@
     (u/delete-files dir)))
 
 (deftest test-db-fn
-  (let [dir     (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn    (d/create-conn dir {:aka {:db/cardinality :db.cardinality/many}})
         inc-age (fn [db name]
                   (if-let [[eid age] (first (d/q '{:find  [?e ?age]
@@ -450,7 +450,7 @@
     (u/delete-files dir)))
 
 (deftest test-db-ident-fn
-  (let [dir     (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn    (d/create-conn dir {:name {:db/unique :db.unique/identity}})
         inc-age (i/inter-fn [db name]
                             (if-some [ent (d/entity db [:name name])]
@@ -478,7 +478,7 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-1
-  (let [dir    (u/tmp-dir (str "eid-" (random-uuid)))
+  (let [dir    (u/tmp-dir (str "eid-" (UUID/randomUUID)))
         db     (d/empty-db
                  dir {:name {:db/unique :db.unique/identity}
                       :aka  {:db/unique      :db.unique/identity
@@ -506,7 +506,7 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-2
-  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "eid-" (UUID/randomUUID)))
         db  (-> (d/empty-db
                   dir {:name {:db/unique :db.unique/identity}
                        :aka  {:db/unique      :db.unique/identity
@@ -520,7 +520,7 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-3
-  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "eid-" (UUID/randomUUID)))
         db  (-> (d/empty-db
                   dir {:name {:db/unique :db.unique/identity}
                        :aka  {:db/unique      :db.unique/identity
@@ -534,7 +534,7 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-4
-  (let [dir (u/tmp-dir (str "eid-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "eid-" (UUID/randomUUID)))
         db  (-> (d/empty-db
                   dir {:name {:db/unique :db.unique/identity}
                        :aka  {:db/unique      :db.unique/identity
@@ -548,7 +548,7 @@
     (u/delete-files dir)))
 
 (deftest test-tempid-ref-295
-  (let [dir (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:ref {:db/unique    :db.unique/identity
                                        :db/valueType :db.type/ref}})
                 (d/db-with [[:db/add -1 :name "Ivan"]
@@ -562,7 +562,7 @@
     (u/delete-files dir)))
 
 (deftest test-resolve-eid-refs
-  (let [dir  (u/tmp-dir (str "resolve-" (random-uuid)))
+  (let [dir  (u/tmp-dir (str "resolve-" (UUID/randomUUID)))
         conn (d/create-conn
                dir
                {:friend {:db/valueType   :db.type/ref
@@ -589,7 +589,7 @@
     (u/delete-files dir)))
 
 (deftest test-tempid
-  (let [dir (u/tmp-dir (str "tempid-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "tempid-" (UUID/randomUUID)))
         db  (d/empty-db
               dir
               {:friend {:db/valueType :db.type/ref}
@@ -611,7 +611,7 @@
 
 (deftest test-transient-294
   "db.fn/retractEntity retracts attributes of adjacent entities https://github.com/tonsky/datalevin/issues/294"
-  (let [dir    (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir    (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db     (reduce #(d/db-with %1 [{:db/id %2 :a1 1 :a2 2 :a3 3}])
                        (d/empty-db dir)
                        (range 1 10))
@@ -629,8 +629,8 @@
 
 (deftest test-transact-same
   "same data, transacted twice"
-  (let [dir1 (u/tmp-dir (str "skip-" (random-uuid)))
-        dir2 (u/tmp-dir (str "skip-" (random-uuid)))
+  (let [dir1 (u/tmp-dir (str "skip-" (UUID/randomUUID)))
+        dir2 (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         es   [{:db/id -1 :company "IBM" :country "US"}
               {:db/id -2 :company "PwC" :country "Germany"}]
         db1  (d/db-with (d/empty-db dir1) es)
@@ -649,7 +649,7 @@
              :id      {:db/valueType :db.type/uuid}}
         es  [{:db/id -1 :company "IBM" :id "ibm"}
              {:db/id -2 :company "PwC" :id "pwc"}]
-        dir (u/tmp-dir (str "skip-" (random-uuid)))
+        dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (d/empty-db dir sc {:validate-data? true})]
     (is (thrown? Exception (d/db-with db es)))
     (d/close-db db)
@@ -660,7 +660,7 @@
   (let [schema      {:bytes {:db/valueType :db.type/bytes}}
         byte-arrays (mapv #(.getBytes ^String %) ["foo" "bar" "foo"])]
     (testing "equal bytes"
-      (let [dir  (u/tmp-dir (str "skip-" (random-uuid)))
+      (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
             db   (d/empty-db dir schema)
             ents (mapv (fn [ba] {:bytes ba}) byte-arrays)]
         (is (every? true?
@@ -676,7 +676,7 @@
                             :db/cardinality :db.cardinality/one
                             :db/unique      :db.unique/identity}
                 :foo/stats {:db/doc "Blob of additional stats"}}
-        dir    (u/tmp-dir (str "issue-127-" (random-uuid)))
+        dir    (u/tmp-dir (str "issue-127-" (UUID/randomUUID)))
         conn   (d/create-conn dir schema)]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
     (dotimes [n 10000]
@@ -686,7 +686,7 @@
     (u/delete-files dir)))
 
 (deftest test-uncomparable-356-1
-  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "issue-356-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:multi {:db/cardinality :db.cardinality/many}
                              :index {:db/index true}})
@@ -704,7 +704,7 @@
     (u/delete-files dir)))
 
 (deftest test-uncomparable-356-2
-  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "issue-356-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:multi {:db/cardinality :db.cardinality/many}
                              :index {:db/index true}})
@@ -721,7 +721,7 @@
     (u/delete-files dir)))
 
 (deftest test-uncomparable-356-3
-  (let [dir (u/tmp-dir (str "issue-356-" (random-uuid)))
+  (let [dir (u/tmp-dir (str "issue-356-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:multi {:db/cardinality :db.cardinality/many}})
                 (d/db-with [[:db/add     1 :index {:map 1}]])
@@ -794,7 +794,7 @@
                   [{:block/uid "tya6s422-"}]
                   [{:block/uid 45619}]]
           schema {:block/uid {:db/unique :db.unique/identity}}
-          dir    (u/tmp-dir (str "issue-386-" (random-uuid)))
+          dir    (u/tmp-dir (str "issue-386-" (UUID/randomUUID)))
           conn   (d/create-conn dir schema)
           _      (doseq [tx txs] (d/transact! conn tx))
           db     @conn]

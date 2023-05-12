@@ -936,11 +936,15 @@
     (let [d1  (DateTime.)
           bs1 (sut/serialize d1)]
       (is (instance? org.joda.time.DateTime (sut/deserialize bs1))))
-    (let [d  (Semaphore. 1)
-          bs (sut/serialize d)]
-      (is (not (instance? java.util.concurrent.Semaphore (sut/deserialize bs))))
-      (binding [c/*data-serializable-classes* #{"java.util.concurrent.Semaphore"}]
-        (is (instance? java.util.concurrent.Semaphore (sut/deserialize bs)))))))
+    (is (thrown? Exception (sut/serialize (type :a))))
+    (is (thrown? Exception (sut/serialize {:bar (defn bar [] :bar)})))
+    (let [d (Semaphore. 1)]
+      (is (thrown? Exception (sut/serialize d)))
+      (binding [c/*data-serializable-classes*
+                #{"java.util.concurrent.Semaphore"}]
+        (let [bs (sut/serialize d)]
+          (is (instance? java.util.concurrent.Semaphore
+                         (sut/deserialize bs))))))))
 
 (test/defspec base64-test
   100
