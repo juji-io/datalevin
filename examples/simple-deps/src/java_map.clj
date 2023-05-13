@@ -3,6 +3,52 @@
             [datalevin.interpret :as i]))
 
 
+(defn entry-set-iterator
+  "Implemnts ^java.util.Iterator for use in entrySet implementation.
+   
+   https://docs.oracle.com/javase/8/docs/api/java/util/Iterator.html"
+  [db dbi & _opts]
+  (let [state (atom {})]
+    (reify java.util.Iterator
+      (hasNext [_this]
+        (throw (UnsupportedOperationException. "Not implemented")))
+      (next [_this]
+        (throw (UnsupportedOperationException. "Not implemented")))
+      (remove [_this]
+        (throw (UnsupportedOperationException. "Not implemented"))))))
+
+
+(defn entry-set-view
+  [db dbi & opts]
+  (reify java.util.Set
+    (add [_this _e]
+      ;; TODO: we could implement this but we wil break the Map contract
+      ;; https://docs.oracle.com/javase/8/docs/api/java/util/HashMap.html#entrySet--
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (addAll [_this _c]
+      ;; TODO: we could implement this but we wil break the Map contract
+      ;; https://docs.oracle.com/javase/8/docs/api/java/util/HashMap.html#entrySet--
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (clear [_this]
+      (d/clear-dbi db dbi))
+    (contains [_this _o]
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (containsAll [_this _c]
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (isEmpty [_this]
+      (= 0 (d/entries db dbi)))
+    (iterator [_this]
+      (entry-set-iterator db dbi opts))
+    (remove [_this _o]
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (removeAll [_this _c]
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (retainAll [_this _c]
+      (throw (UnsupportedOperationException. "Not implemented")))
+    (size [_this]
+      (d/entries db dbi))))
+
+
 (defn ->map
   "Provide an implementation of java.util.Map interface backed by datalevin / LMDB.
    
@@ -20,60 +66,75 @@
    `opts` is an options map that can have the following keys
    * `db-opts` - datalevin options for opening LMDB database - pass to open-kv
    "
-  [db-or-path ^:String dbi & {:keys [db-opts]
-                                :as _opts}]
-  (let [is-datalevin? (instance? datalevin.lmdb.ILMDB db-or-path)
-        db (if is-datalevin? db-or-path (d/open-kv db-or-path db-opts))
+  (^java.util.Map [db-or-path ^:String dbi & {:keys [db-opts put-all-batch-size]
+                                              :or {put-all-batch-size 1000}
+                                              :as _opts}]
+   (let [is-datalevin? (instance? datalevin.lmdb.ILMDB db-or-path)
+         db (if is-datalevin? db-or-path (d/open-kv db-or-path db-opts))
         ;; do not close db when it's opened by client
-        auto-close-db (if is-datalevin? false true)]
-    (d/open-dbi db dbi)
-    (reify
-      java.lang.AutoCloseable
-      (close [_this]
-        (when auto-close-db
-          (d/close-kv db)))
+         auto-close-db (if is-datalevin? false true)]
+     (d/open-dbi db dbi)
+     (reify
+       java.lang.AutoCloseable
+       (close [_this]
+         (when auto-close-db
+           (d/close-kv db)))
 
-      java.util.Map
-      
-      (clear [_this]
-        (d/clear-dbi db dbi))
-      
-      (containsKey [_this key]
-        (let [kv (d/get-value db dbi key :data :data false)]
-          (some? kv)))
-      
-      (containsValue [_this value]
-        (let [pred (i/inter-fn [kv]
-                               (let [v (d/read-buffer (d/v kv))]
-                                 (= v value)))]
-          (some? (d/get-some db dbi pred [:all]))))
-      
-      (entrySet [_this]
-        (throw (ex-info "Unimplemented" {})))
-      
-      (get [_this key]
-        (d/get-value db dbi key))
-      
-      (isEmpty [_this]
-        (= 0 (d/entries db dbi)))
-      
-      (keySet [_this]
-        (throw (ex-info "Unimplemented" {})))
-      
-      (put [_this key value]
-        (d/transact-kv db [[:put dbi key value]]))
-      
-      (remove [_this key]
-        (let [kv (d/get-value db dbi key :data :data false)]
-          (when (some? kv)
-            (d/transact-kv db [[:del dbi key :data]])
-            (nth kv 1))))
-      
-      (size [_this]
-        (d/entries db dbi))
-      
-      (values [_this]
-        (throw (ex-info "Unimplemented" {}))))))
+       java.util.Map
+
+       (clear [_this]
+         (d/clear-dbi db dbi))
+
+       (containsKey [_this key]
+         (let [kv (d/get-value db dbi key :data :data false)]
+           (some? kv)))
+
+       (containsValue [_this value]
+         (let [pred (i/inter-fn [kv]
+                                (let [v (d/read-buffer (d/v kv))]
+                                  (= v value)))]
+           (some? (d/get-some db dbi pred [:all]))))
+
+       ;; https://docs.oracle.com/javase/8/docs/api/java/util/HashMap.html#entrySet--
+       (entrySet [_this]
+         (entry-set-view db dbi _opts))
+
+       (get [_this key]
+         (d/get-value db dbi key))
+
+       (isEmpty [_this]
+         (= 0 (d/entries db dbi)))
+
+       (keySet [_this]
+         (throw (UnsupportedOperationException. "Not implemented")))
+
+       (put [_this key value]
+         (d/transact-kv db [[:put dbi key value]]))
+
+       (putAll [_this m]
+         (when (nil? m)
+           (throw (NullPointerException. "Collection is null.")))
+         (let [entries (.entrySet m)
+               parts (partition-all put-all-batch-size entries)
+               entry->txn (fn entry->txn [e]
+                            [:put dbi (.getKey e) (.getValue e)])]
+           (doseq [p parts]
+             ;; convert entries from p into transactions
+             (let [txns (into [] (map entry->txn p))]
+               ;; transact batch
+               (d/transact-kv db txns)))))
+
+       (remove [_this key]
+         (let [kv (d/get-value db dbi key :data :data false)]
+           (when (some? kv)
+             (d/transact-kv db [[:del dbi key :data]])
+             (nth kv 1))))
+
+       (size [_this]
+         (d/entries db dbi))
+
+       (values [_this]
+         (throw (UnsupportedOperationException. "Not implemented")))))))
 
 (comment
 
