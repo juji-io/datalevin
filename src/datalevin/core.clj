@@ -1,6 +1,9 @@
 (ns datalevin.core
   "User facing API for Datalevin library features"
   (:require
+   [clojure.java.io :as io]
+   [clojure.pprint :as p]
+   [clojure.edn :as edn]
    [datalevin.util :as u]
    [datalevin.remote :as r]
    [datalevin.search :as sc]
@@ -17,10 +20,12 @@
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
-   [datalevin.storage Store]
+   [datalevin.storage Store IStore]
    [datalevin.db DB]
+   [datalevin.lmdb ILMDB]
    [datalevin.datom Datom]
    [datalevin.remote DatalogStore KVStore]
+   [java.io PushbackReader IOException]
    [java.util UUID]))
 
 (if (u/graal?)
@@ -205,19 +210,26 @@ Only usable for debug output.
 (def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
        :doc      "Open a Datalog database at the given location.
 
-`dir` could be a local directory path or a dtlv connection URI string. Creates an empty database there if it does not exist yet. Update the schema if one is given. Return reference to the database.
+ `dir` could be a local directory path or a dtlv connection URI string.
+  Creates an empty database there if it does not exist yet. Update the
+  schema if one is given. Return reference to the database.
 
  `opts` map has keys:
 
-   * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+   * `:validate-data?`, a boolean, instructing the system to validate data
+ type during transaction. Default is `false`.
 
-   * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
+   * `:auto-entity-time?`, a boolean indicating whether to maintain
+ `:db/created-at` and `:db/updated-at` values for each entity. Default
+ is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+   * `:search-opts`, an option map that will be passed to the built-in
+ full-text search engine
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
-   * `:client-opts` is the option map passed to the client if `dir` is a remote URI string.
+   * `:client-opts` is the option map passed to the client if `dir` is a
+ remote URI string.
 
 
   Usage:
@@ -231,11 +243,11 @@ Only usable for debug output.
              (empty-db \"dtlv://datalevin:secret@example.host/mydb\" {} {:auto-entity-time? true :search-engine {:analyzer blank-space-analyzer}})"}
   empty-db db/empty-db)
 
-
 (def ^{:arglists '([x])
-       :doc      "Returns `true` if the given value is a Datalog database. Has the side effect of updating the cache of the db to the most recent. Return `false` otherwise. "}
+       :doc      "Returns `true` if the given value is a Datalog database.
+  Has the side effect of updating the cache of the db to the most recent.
+  Return `false` otherwise. "}
   db? db/db?)
-
 
 (def ^{:arglists '([e a v] [e a v tx] [e a v tx added])
        :doc      "Low-level fn to create raw datoms in a Datalog db.
@@ -284,7 +296,8 @@ Only usable for debug output.
 ;; Changing DB
 
 (def ^{:arglists '([db])
-       :doc      "Rollback writes of the transaction from inside [[with-transaction-kv]]."}
+       :doc      "Rollback writes of the transaction from inside
+  [[with-transaction-kv]]."}
   abort-transact-kv l/abort-transact-kv)
 
 (u/import-macro l/with-transaction-kv)
@@ -304,7 +317,9 @@ Only usable for debug output.
   "Evaluate body within the context of a single new read/write transaction,
   ensuring atomicity of Datalog database operations.
 
-  `conn` is a new identifier of the Datalog database connection with a new read/write transaction attached, and `orig-conn` is the original database connection.
+  `conn` is a new identifier of the Datalog database connection with a new
+  read/write transaction attached, and `orig-conn` is the original database
+  connection.
 
   `body` should refer to `conn`.
 
@@ -1546,6 +1561,86 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
   visit-list-range l/visit-list-range)
+
+(defn ^:no-doc dump-datalog
+  [conn]
+  (p/pprint (opts conn))
+  (p/pprint (schema conn))
+  (doseq [^Datom datom (datoms @conn :eav)]
+    (prn [(.-e datom) (.-a datom) (.-v datom)])))
+
+(defn- dump
+  [conn dumpfile]
+  (let [f (io/writer dumpfile)]
+    (binding [*out* f] (dump-datalog conn))
+    (.flush f)
+    (.close f)))
+
+(defn ^:no-doc load-datalog
+  [dir in schema opts]
+  (try
+    (with-open [^PushbackReader r in]
+      (let [read-form             #(edn/read {:eof     ::EOF
+                                              :readers *data-readers*} r)
+            read-maps             #(let [m1 (read-form)]
+                                     (if (:db/ident m1)
+                                       [nil m1]
+                                       [m1 (read-form)]))
+            [old-opts old-schema] (read-maps)
+            new-opts              (merge old-opts opts)
+            new-schema            (merge old-schema schema)
+            datoms                (->> (repeatedly read-form)
+                                       (take-while #(not= ::EOF %))
+                                       (map #(apply dd/datom %)))
+            db                    (db/init-db datoms dir new-schema new-opts)]
+        (db/close-db db)))
+    (catch IOException e
+      (u/raise "IO error while loading Datalog data: " e {}))
+    (catch RuntimeException e
+      (u/raise "Parse error while loading Datalog data: " e {}))
+    (catch Exception e
+      (u/raise "Error loading Datalog data: " e {}))))
+
+(defn ^:no-doc re-index-datalog
+  [conn schema opts]
+  (let [d (s/dir (.-store ^DB @conn))]
+    (try
+      (let [dumpfile (str d u/+separator+ "dl-dump")]
+        (dump conn dumpfile)
+        (clear conn)
+        (load-datalog d (PushbackReader. (io/reader dumpfile))
+                      schema opts)
+        (create-conn d))
+      (catch Exception e
+        (u/raise "Unable to re-index Datalog database" e {:dir d})))))
+
+(defn re-index
+  "Close the `db`, dump the data, clear the `db`, then
+  reload the data and re-index using the given option. Return a new
+  re-indexed `db`.
+
+  The `db` can be a Datalog connection, a key-value database, or a
+  search engine.
+
+  The `opts` is the corresponding option map.
+
+  If `db` is a search engine, its `:include-text?` option must be
+  `true` or an exception will be thrown.
+
+  If `db` is a Datalog connection, `schema` can be used to supply a
+  new schema.
+
+  This function is only safe to call when other threads or programs are
+  not accessing the same `db`."
+  ([db opts]
+   (re-index db {} opts))
+  ([db schema opts]
+   (if (conn? db)
+     (let [store (.-store ^DB @db)]
+       (if (instance? DatalogStore store)
+         (do (l/re-index store schema opts) db)
+         (re-index-datalog db schema opts)))
+     (l/re-index db opts))))
 
 ;; -------------------------------------
 ;; Search API

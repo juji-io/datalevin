@@ -8,7 +8,7 @@
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
-                                 IList ILMDB IWriting]]
+                                 IList ILMDB IWriting IAdmin]]
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
@@ -829,6 +829,7 @@
     (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
 
   (get-list [this dbi-name k kt vt]
+    (.check-ready this)
     (when k
       (let [lmdb this]
         (scan/scan
@@ -836,6 +837,7 @@
           (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.check-ready this)
     (when k
       (let [lmdb this]
         (scan/scan
@@ -843,6 +845,7 @@
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
+    (.check-ready this)
     (if k
       (let [lmdb this]
         (scan/scan
@@ -851,6 +854,7 @@
       0))
 
   (in-list? [this dbi-name k v kt vt]
+    (.check-ready this)
     (if (and k v)
       (let [lmdb this]
         (scan/scan
@@ -879,7 +883,9 @@
 
   (visit-list-range [this dbi-name visitor k-range kt v-range vt]
     (scan/visit-list-range this dbi-name visitor k-range kt v-range vt))
-  )
+
+  IAdmin
+  (re-index [this opts] (l/re-index* this opts)))
 
 (defn- reset-write-txn
   [^LMDB lmdb]
@@ -929,6 +935,7 @@
                 flags       c/default-env-flags
                 temp?       false}
          :as   opts}]
+   (assert (string? dir) "directory should be a string.")
    (try
      (let [^File file (u/file dir)
            mapsize    (* (long (if (u/empty-dir? file)

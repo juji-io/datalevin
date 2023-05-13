@@ -8,7 +8,7 @@
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
-                                 IList ILMDB IWriting]])
+                                 IList ILMDB IWriting IAdmin]])
   (:import
    [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
@@ -561,6 +561,7 @@
                                    flags          c/default-dbi-flags
                                    dupsort?       false
                                    validate-data? false}}]
+    (.check-ready this)
     (assert (< ^long key-size 512) "Key size cannot be greater than 511 bytes")
     (let [{info-dbis :dbis max-dbis :max-dbs} @info]
       (if (< (count info-dbis) ^long max-dbis)
@@ -593,6 +594,7 @@
           (u/raise (str "DBI " dbi-name " is not open") {}))))
 
   (clear-dbi [this dbi-name]
+    (.check-ready this)
     (try
       (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
@@ -608,6 +610,7 @@
         (raise "Fail to clear DBI: " dbi-name " " e {}))))
 
   (drop-dbi [this dbi-name]
+    (.check-ready this)
     (try
       (let [^Dbi dbi (.-db ^DBI (.get-dbi this dbi-name))
             ^Txn txn (Txn/create env)]
@@ -692,6 +695,7 @@
         (finally (.return-rtx this rtx)))))
 
   (open-transact-kv [this]
+    (.check-ready this)
     (try
       (reset-write-txn this)
       (.mark-write this)
@@ -732,6 +736,7 @@
   (transact-kv [this dbi-name txs k-type]
     (.transact-kv this dbi-name txs k-type :data))
   (transact-kv [this dbi-name txs k-type v-type]
+    (.check-ready this)
     (locking write-txn
       (let [^Rtx rtx  @write-txn
             one-shot? (nil? rtx)
@@ -835,6 +840,7 @@
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
                                  :or   {key-size c/+max-key-size+
                                         val-size c/+max-key-size+}}]
+    (.check-ready this)
     (assert (and (>= c/+max-key-size+ ^long key-size)
                  (>= c/+max-key-size+ ^long val-size))
             "Data size cannot be larger than 511 bytes")
@@ -853,6 +859,7 @@
     (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
 
   (get-list [this dbi-name k kt vt]
+    (.check-ready this)
     (when k
       (let [lmdb this]
         (scan/scan
@@ -860,6 +867,7 @@
           (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.check-ready this)
     (when k
       (let [lmdb this]
         (scan/scan
@@ -867,6 +875,7 @@
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
+    (.check-ready this)
     (if k
       (let [lmdb this]
         (scan/scan
@@ -875,6 +884,7 @@
       0))
 
   (in-list? [this dbi-name k v kt vt]
+    (.check-ready this)
     (if (and k v)
       (let [lmdb this]
         (scan/scan
@@ -903,7 +913,9 @@
 
   (visit-list-range [this dbi-name visitor k-range kt v-range vt]
     (scan/visit-list-range this dbi-name visitor k-range kt v-range vt))
-  )
+
+  IAdmin
+  (re-index [this opts] (l/re-index* this opts)))
 
 (defn- reset-write-txn
   [^LMDB lmdb]
@@ -956,6 +968,7 @@
                 flags       c/default-env-flags
                 temp?       false}
          :as   opts}]
+   (assert (string? dir) "directory should be a string.")
    (try
      (let [file     (u/file dir)
            mapsize  (* (long (if (u/empty-dir? file)

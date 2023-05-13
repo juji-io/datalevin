@@ -560,3 +560,72 @@
 
     (sut/close conn)
     (u/delete-files dir)))
+
+(deftest re-index-lmdb-test
+  (let [dir  (u/tmp-dir (str "re-index-lmdb-" (UUID/randomUUID)))
+        lmdb (sut/open-kv dir)]
+    (sut/open-dbi lmdb "misc")
+
+    (sut/transact-kv
+      lmdb
+      [[:put "misc" :datalevin "Hello, world!"]
+       [:put "misc" 42 {:saying "So Long, and thanks for all the fish"
+                        :source "The Hitchhiker's Guide to the Galaxy"}]])
+    (let [lmdb1 (sut/re-index lmdb {})]
+      (is (= [[42
+               {:saying "So Long, and thanks for all the fish",
+                :source "The Hitchhiker's Guide to the Galaxy"}]
+              [:datalevin "Hello, world!"]]
+             (sut/get-range lmdb1 "misc" [:all])))
+
+      (sut/visit
+        lmdb1 "misc"
+        (fn [kv]
+          (let [k (sut/read-buffer (sut/k kv) :data)]
+            (when (= k 42)
+              (sut/transact-kv
+                lmdb1
+                [[:put "misc" 42 "Don't panic"]]))))
+
+        [:all])
+      (is (= [[42 "Don't panic"] [:datalevin "Hello, world!"]]
+             (sut/get-range lmdb1 "misc" [:all])))
+      (sut/close-kv lmdb1))
+    (u/delete-files dir)))
+
+(deftest re-index-datalog-test
+  (let [dir  (u/tmp-dir (str "datalog-re-index-" (UUID/randomUUID)))
+        conn (sut/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
+                                :name {:db/valueType :db.type/string
+                                       :db/unique    :db.unique/identity}})]
+    (let [rp (sut/transact!
+               conn
+               [{:name "Frege", :db/id -1, :nation "France",
+                 :aka  ["foo" "fred"]}
+                {:name "Peirce", :db/id -2, :nation "france"}
+                {:name "De Morgan", :db/id -3, :nation "English"}])]
+      (is (= 8 (count (:tx-data rp))))
+      (is (zero? (count (sut/fulltext-datoms @conn "peirce")))))
+    (let [conn1 (sut/re-index
+                  conn {:name {:db/valueType :db.type/string
+                               :db/unique    :db.unique/identity
+                               :db/fulltext  true}} {})]
+      (is (= #{["France"]}
+             (sut/q '[:find ?nation
+                      :in $ ?alias
+                      :where
+                      [?e :aka ?alias]
+                      [?e :nation ?nation]]
+                    (sut/db conn1)
+                    "fred")))
+      (sut/transact! conn1 [[:db/retract 1 :name "Frege"]])
+      (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
+             (sut/q '[:find (pull ?e [*])
+                      :in $ ?alias
+                      :where
+                      [?e :aka ?alias]]
+                    (sut/db conn1)
+                    "fred")))
+      (is (= 1 (count (sut/fulltext-datoms @conn1 "peirce"))))
+      (sut/close conn1))
+    (u/delete-files dir)))

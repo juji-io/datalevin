@@ -1,8 +1,15 @@
 (ns ^:no-doc datalevin.lmdb
   "API for LMDB Key Value Store"
   (:require
+   [clojure.edn :as edn]
+   [clojure.pprint :as p]
+   [clojure.java.io :as io]
+   [datalevin.bits :as b]
    [datalevin.util :as u]
-   [datalevin.constants :as c]))
+   [datalevin.constants :as c])
+  (:import
+   [java.io PushbackReader IOException]
+   [java.lang RuntimeException]))
 
 (defprotocol IBuffer
   (put-key [this data k-type] "put data in key buffer")
@@ -200,10 +207,6 @@ values;")
     "return deref'able object that is the write-txn or a mutex for locking")
   (mark-write [db] "return a new db what uses write-txn"))
 
-(defprotocol IAdmin
-  "Some administrative functions"
-  (re-index [db opts] [db schema opts] "dump and reload the data"))
-
 (defn- pick-binding [] (if (u/graal?) :graal :java))
 
 (defmulti open-kv (constantly (pick-binding)))
@@ -242,6 +245,86 @@ values;")
       :open-closed       (chk2 [true false true b1 b2] :open-closed)
       :open-closed-back  (chk2 [false false true b1 b2] :open-closed-back)
       (u/raise "Unknown range type" range-type {}))))
+
+(defn dump-dbi [lmdb dbi]
+  (p/pprint {:dbi dbi :entries (entries lmdb dbi)})
+  (doseq [[k v] (get-range lmdb dbi [:all] :raw :raw)]
+    (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
+
+(defn dump-all [lmdb]
+  (doseq [dbi (set (list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
+
+(defn- load-kv [dbi [k v]]
+  [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
+
+(defn load-dbi [lmdb dbi in]
+  (try
+    (with-open [^PushbackReader r in]
+      (let [read-form         #(edn/read {:eof ::EOF} r)
+            {:keys [entries]} (read-form)]
+        (open-dbi lmdb dbi)
+        (transact-kv lmdb (->> (repeatedly read-form)
+                               (take-while #(not= ::EOF %))
+                               (take entries)
+                               (map (partial load-kv dbi))))))
+    (catch IOException e
+      (u/raise "IO error while loading raw data: " (ex-message e) {}))
+    (catch RuntimeException e
+      (u/raise "Parse error while loading raw data: " (ex-message e) {}))
+    (catch Exception e
+      (u/raise "Error loading raw data: " (ex-message e) {}))))
+
+(defn load-all [lmdb in]
+  (try
+    (with-open [^PushbackReader r in]
+      (let [read-form #(edn/read {:eof ::EOF} r)
+            load-dbi  (fn [[ms vs]]
+                        (doseq [{:keys [dbi]} (butlast ms)]
+                          (open-dbi lmdb dbi))
+                        (let [{:keys [dbi entries]} (last ms)]
+                          (open-dbi lmdb dbi)
+                          (->> vs
+                               (take entries)
+                               (map (partial load-kv dbi)))))]
+        (transact-kv lmdb (->> (repeatedly read-form)
+                               (take-while #(not= ::EOF %))
+                               (partition-by map?)
+                               (partition 2 2 nil)
+                               (mapcat load-dbi)))))
+    (catch IOException e
+      (u/raise "IO error while loading raw data: " (ex-message e) {}))
+    (catch RuntimeException e
+      (u/raise "Parse error while loading raw data: " (ex-message e) {}))
+    (catch Exception e
+      (u/raise "Error loading raw data: " (ex-message e) {}))))
+
+(defn clear [lmdb]
+  (doseq [dbi (set (list-dbis lmdb)) ] (clear-dbi lmdb dbi)))
+
+(defn dump
+  [db dumpfile]
+  (let [f (io/writer dumpfile)]
+    (binding [*out* f] (dump-all db))
+    (.flush f)
+    (.close f)))
+
+(defprotocol IAdmin
+  "Some administrative functions"
+  (re-index [db opts] [db schema opts] "dump and reload the data"))
+
+(defn re-index*
+  [db opts]
+  (try
+    (let [d        (dir db)
+          dumpfile (str d u/+separator+ "kv-dump")]
+      (dump db dumpfile)
+      (clear db)
+      (close-kv db)
+      (let [db (open-kv d opts)]
+        (load-all db (PushbackReader. (io/reader dumpfile)))
+        db))
+    (catch Exception e
+      (u/raise "Unable to re-index" e {:dir (dir db)}))))
 
 (defn resized? [e] (:resized (ex-data e)))
 
