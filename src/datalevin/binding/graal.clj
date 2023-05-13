@@ -973,7 +973,7 @@
      (let [file     (u/file dir)
            mapsize  (* (long (if (u/empty-dir? file)
                                mapsize
-                               (c/pick-mapsize file)))
+                               (c/pick-mapsize dir)))
                        1024 1024)
            ^Env env (Env/create dir mapsize max-readers max-dbs
                                 (kv-flags flags))

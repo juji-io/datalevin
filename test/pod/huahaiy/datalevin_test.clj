@@ -388,3 +388,40 @@
 
     (pd/close-kv lmdb)
     (u/delete-files dir)))
+
+(deftest re-index-datalog-test
+  (let [dir  (u/tmp-dir (str "pod-datalog-re-index-" (UUID/randomUUID)))
+        conn (pd/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
+                               :name {:db/valueType :db.type/string
+                                      :db/unique    :db.unique/identity}})]
+    (let [rp (pd/transact!
+               conn
+               [{:name "Frege", :db/id -1, :nation "France",
+                 :aka  ["foo" "fred"]}
+                {:name "Peirce", :db/id -2, :nation "france"}
+                {:name "De Morgan", :db/id -3, :nation "English"}])]
+      (is (= 8 (count (:tx-data rp))))
+      (is (zero? (count (pd/fulltext-datoms (pd/db conn) "peirce")))))
+    (let [conn1 (pd/re-index
+                  conn {:name {:db/valueType :db.type/string
+                               :db/unique    :db.unique/identity
+                               :db/fulltext  true}} {})]
+      (is (= #{["France"]}
+             (pd/q '[:find ?nation
+                     :in $ ?alias
+                     :where
+                     [?e :aka ?alias]
+                     [?e :nation ?nation]]
+                   (pd/db conn1)
+                   "fred")))
+      (pd/transact! conn1 [[:db/retract 1 :name "Frege"]])
+      (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
+             (pd/q '[:find (pull ?e [*])
+                     :in $ ?alias
+                     :where
+                     [?e :aka ?alias]]
+                   (pd/db conn1)
+                   "fred")))
+      (is (= 1 (count (pd/fulltext-datoms (pd/db conn1) "peirce"))))
+      (pd/close conn1))
+    (u/delete-files dir)))

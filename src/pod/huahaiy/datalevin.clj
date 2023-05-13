@@ -18,6 +18,7 @@
    [datalevin.storage Store]
    [datalevin.entity Entity]
    [datalevin.db DB]
+   [datalevin.search SearchEngine]
    [java.util UUID])
   (:gen-class))
 
@@ -63,6 +64,9 @@
 ;; uuid -> writing kv db
 (defonce ^:private wkv-dbs (atom {}))
 
+;; uuid -> search engine
+(defonce ^:private engines (atom {}))
+
 ;; exposed functions
 
 (defn pod-fn [fn-name args & body]
@@ -78,6 +82,8 @@
 
 (defn- get-kv [{:keys [::kv-db writing?]}]
   (if writing? (get @wkv-dbs kv-db) (get @kv-dbs kv-db)))
+
+(defn- get-engine [{:keys [::engine]}] (get @engines engine))
 
 (defn entid [dl eid] (when-let [d (get-db dl)] (d/entid d eid)))
 
@@ -513,6 +519,61 @@
   (when-let [d (get-kv db)]
     (d/visit-list-range d dbi-name visitor k-range kt v-range vt)))
 
+(defn new-search-engine
+  ([db]
+   (new-search-engine db nil))
+  ([db opts]
+   (when-let [d (get-kv db)]
+     (let [db (d/open-kv dir opts)
+           id (UUID/randomUUID)]
+       (swap! kv-dbs assoc id db)
+       {::kv-db id})
+     (let [engine (d/new-search-engine d opts)
+           id     (UUID/randomUUID)]
+       (swap! engines assoc id engine)
+       {::engine id}))))
+
+(defn add-doc
+  ([engine doc-ref doc-text]
+   (add-doc engine doc-ref doc-text true))
+  ([engine doc-ref doc-text check-exist?]
+   (when-let [e (get-engine engine)]
+     (d/add-doc e doc-ref doc-text check-exist?))))
+
+(defn remove-doc
+  [engine doc-ref]
+  (when-let [e (get-engine engine)] (d/remove-doc e doc-ref)))
+
+(defn clear-docs
+  [engine]
+  (when-let [e (get-engine engine)] (d/clear-docs e)))
+
+(defn doc-indexed?
+  [engine doc-ref]
+  (when-let [e (get-engine engine)] (d/doc-indexed? e doc-ref)))
+
+(defn doc-count
+  [engine]
+  (when-let [e (get-engine engine)] (d/doc-count e)))
+
+(defn search
+  ([engine query] (search engine query))
+  ([engine query opts]
+   (when-let [e (get-engine engine)] (d/search e query opts))))
+
+(defn re-index
+  ([db opts] (re-index db {} opts))
+  ([db schema opts]
+   (when-let [e (or (get-cn db) (get-kv db) (get-engine db))]
+     (let [e1 (d/re-index e schema opts)]
+       (cond
+         (d/conn? e1)                (do (swap! dl-conns assoc db e1)
+                                         {::conn db})
+         (instance? SearchEngine e1) (do (swap! engines assoc db e1)
+                                         {::engine db})
+         :else                       (do (swap! kv-dbs assoc db e1)
+                                         {::kv-db db}))))))
+
 ;; pods
 
 (def ^:private exposed-vars
@@ -584,6 +645,14 @@
    'list-range-some           list-range-some
    'list-range-filter-count   list-range-filter-count
    'visit-list-range          visit-list-range
+   'new-search-engine         new-search-engine
+   'add-doc                   add-doc
+   'remove-doc                remove-doc
+   'clear-docs                clear-docs
+   'doc-indexed?              doc-indexed?
+   'doc-count                 doc-count
+   'search                    search
+   're-index                  re-index
    })
 
 (defmacro defpodfn

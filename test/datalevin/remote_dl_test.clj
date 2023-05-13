@@ -482,3 +482,40 @@
     (dc/datalog-index-cache-limit @conn 0)
     (is (= 0 (dc/datalog-index-cache-limit @conn)))
     (dc/close conn)))
+
+(deftest re-index-test
+  (let [dir  "dtlv://datalevin:datalevin@localhost/re-index-dl"
+        conn (dc/get-conn
+               dir {:aka  {:db/cardinality :db.cardinality/many}
+                    :name {:db/valueType :db.type/string
+                           :db/unique    :db.unique/identity}})]
+    (let [rp (dc/transact!
+               conn
+               [{:name "Frege", :db/id -1, :nation "France",
+                 :aka  ["foo" "fred"]}
+                {:name "Peirce", :db/id -2, :nation "france"}
+                {:name "De Morgan", :db/id -3, :nation "English"}])]
+      (is (= 8 (count (:tx-data rp))))
+      (is (zero? (count (dc/fulltext-datoms @conn "peirce")))))
+    (let [conn1 (dc/re-index
+                  conn {:name {:db/valueType :db.type/string
+                               :db/unique    :db.unique/identity
+                               :db/fulltext  true}} {})]
+      (is (= #{["France"]}
+             (dc/q '[:find ?nation
+                     :in $ ?alias
+                     :where
+                     [?e :aka ?alias]
+                     [?e :nation ?nation]]
+                   (dc/db conn1)
+                   "fred")))
+      (dc/transact! conn1 [[:db/retract 1 :name "Frege"]])
+      (is (= [[{:db/id 1, :aka ["foo" "fred"], :nation "France"}]]
+             (dc/q '[:find (pull ?e [*])
+                     :in $ ?alias
+                     :where
+                     [?e :aka ?alias]]
+                   (dc/db conn1)
+                   "fred")))
+      (is (= 1 (count (dc/fulltext-datoms @conn1 "peirce"))))
+      (dc/close conn1))))

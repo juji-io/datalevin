@@ -224,7 +224,7 @@ Only usable for debug output.
  is `false`.
 
    * `:search-opts`, an option map that will be passed to the built-in
- full-text search engine
+ full-text search engine. See [[search]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -282,7 +282,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+   * `:search-opts`, an option map that will be passed to the built-in full-text search engine. See [[search]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -1740,7 +1740,9 @@ words.
   * `:top` is an integer (default 10), the number of results desired.
   * `:doc-filter` is a boolean function that takes a `doc-ref` and
     determines whether or not to include the corresponding document in the
-    results (default is `(constantly true)`)"}
+    results (default is `(constantly true)`)
+  * `proximity-expansion` can be used to adjust the search quality vs. time trade-off: the bigger the number, the higher is the quality, but the longer is the search time. Default value is `2`. It is only applicable when `index-position?` is `true`.
+  * `proximity-max-dist`  can be used to control the maximal distance between terms that would still be considered as belonging to the same span. Default value is `45`. It is only applicable when `index-position?` is `true`"}
   search sc/search)
 
 (def ^{:arglists '([writer doc-ref doc-text] [writer doc-ref doc-text opts])
