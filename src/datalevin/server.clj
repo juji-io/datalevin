@@ -2165,7 +2165,7 @@
           kv-store (get-kv-store server db-name)
           runner   (get-in (.-dbs server) [db-name :runner])]
       (new-message runner skey message)
-      (locking kv-store (.notifyAll kv-store)))
+      (locking kv-store (.notify kv-store)))
     (catch Exception e
       ;; (stt/print-stack-trace e)
       (error-response skey (str "Error Handling with-transaction message:"
