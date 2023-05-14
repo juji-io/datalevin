@@ -132,6 +132,91 @@
                  (l/get-range store "r" [:all] :long :long true))))
         (l/close-kv store)))))
 
+(deftest list-basic-ops-test
+  (let [dir     (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
+        lmdb    (l/open-kv dir)
+        sum     (volatile! 0)
+        visitor (i/inter-fn
+                  [kv]
+                  (let [^long v (b/read-buffer (l/v kv) :long)]
+                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
+    (l/open-list-dbi lmdb "l")
+
+    (l/put-list-items lmdb "l" "a" [1 2 3 4] :string :long)
+    (l/put-list-items lmdb "l" "b" [5 6 7] :string :long)
+    (l/put-list-items lmdb "l" "c" [3 6 9] :string :long)
+
+    (is (= (l/entries lmdb "l") 10))
+
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
+            ["c" 3] ["c" 6] ["c" 9]]
+           (l/get-range lmdb "l" [:all] :string :long)))
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "l" [:closed "a" "b"] :string :long)))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "l" [:closed "b" "b"] :string :long)))
+    (is (= [["b" 5] ["b" 6] ["b" 7]]
+           (l/get-range lmdb "l" [:open-closed "a" "b"] :string :long)))
+    (is (= [["c" 3] ["c" 6] ["c" 9] ["b" 5] ["b" 6] ["b" 7]
+            ["a" 1] ["a" 2] ["a" 3] ["a" 4]]
+           (l/get-range lmdb "l" [:all-back] :string :long)))
+
+    (is (= ["a" 1]
+           (l/get-first lmdb "l" [:closed "a" "a"] :string :long)))
+
+    (is (= [3 6 9]
+           (l/get-list lmdb "l" "c" :string :long)))
+
+    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
+            ["c" 3] ["c" 6] ["c" 9]]
+           (l/list-range lmdb "l" [:all] :string [:all] :long)))
+    (is (= [["a" 2] ["a" 3] ["a" 4] ["c" 3]]
+           (l/list-range lmdb "l" [:closed "a" "c"] :string
+                         [:closed 2 4] :long)))
+    (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
+            ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
+           (l/list-range lmdb "l" [:all-back] :string [:all-back] :long)))
+    (is (= [["c" 3]]
+           (l/list-range lmdb "l" [:at-least "b"] :string
+                         [:at-most-back 4] :long)))
+
+    (is (= [["b" 5]]
+           (l/list-range lmdb "l" [:open "a" "c"] :string
+                         [:less-than 6] :long)))
+
+    (is (= (l/list-count lmdb "l" "a" :string) 4))
+    (is (= (l/list-count lmdb "l" "b" :string) 3))
+
+    (is (not (l/in-list? lmdb "l" "a" 7 :string :long)))
+    (is (l/in-list? lmdb "l" "b" 7 :string :long))
+
+    (is (= (l/get-list lmdb "l" "a" :string :long) [1 2 3 4]))
+    (is (= (l/get-list lmdb "l" "a" :string :long) [1 2 3 4]))
+
+    (l/visit-list lmdb "l" visitor "a" :string)
+    (is (= @sum 10))
+
+    (l/del-list-items lmdb "l" "a" :string)
+
+    (is (= (l/list-count lmdb "l" "a" :string) 0))
+    (is (not (l/in-list? lmdb "l" "a" 1 :string :long)))
+    (is (nil? (l/get-list lmdb "l" "a" :string :long)))
+
+    (l/put-list-items lmdb "l" "b" [1 2 3 4] :string :long)
+
+    (is (= [1 2 3 4 5 6 7]
+           (l/get-list lmdb "l" "b" :string :long)))
+    (is (= (l/list-count lmdb "l" "b" :string) 7))
+    (is (l/in-list? lmdb "l" "b" 1 :string :long))
+
+    (l/del-list-items lmdb "l" "b" [1 2] :string :long)
+
+    (is (= (l/list-count lmdb "l" "b" :string) 5))
+    (is (not (l/in-list? lmdb "l" "b" 1 :string :long)))
+    (is (= [3 4 5 6 7]
+           (l/get-list lmdb "l" "b" :string :long)))
+    (l/close-kv lmdb)))
+
 (deftest copy-test
   (let [src    "dtlv://datalevin:datalevin@localhost/copytest"
         rstore (sut/open-kv src)
@@ -150,90 +235,7 @@
     (l/close-kv rstore)
     (u/delete-files dst)))
 
-(deftest list-basic-ops-test
-  (let [dir     "dtlv://datalevin:datalevin@localhost/testlist"
-        lmdb    (l/open-kv dir)
-        sum     (volatile! 0)
-        visitor (i/inter-fn
-                  [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :long)]
-                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
-    (l/open-list-dbi lmdb "list")
 
-    (l/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
-    (l/put-list-items lmdb "list" "b" [5 6 7] :string :long)
-    (l/put-list-items lmdb "list" "c" [3 6 9] :string :long)
-
-    (is (= (l/entries lmdb "list") 10))
-
-    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
-            ["c" 3] ["c" 6] ["c" 9]]
-           (l/get-range lmdb "list" [:all] :string :long)))
-    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "list" [:closed "a" "b"] :string :long)))
-    (is (= [["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "list" [:closed "b" "b"] :string :long)))
-    (is (= [["b" 5] ["b" 6] ["b" 7]]
-           (l/get-range lmdb "list" [:open-closed "a" "b"] :string :long)))
-    (is (= [["c" 3] ["c" 6] ["c" 9] ["b" 5] ["b" 6] ["b" 7]
-            ["a" 1] ["a" 2] ["a" 3] ["a" 4]]
-           (l/get-range lmdb "list" [:all-back] :string :long)))
-
-    (is (= ["a" 1]
-           (l/get-first lmdb "list" [:closed "a" "a"] :string :long)))
-
-    (is (= [3 6 9]
-           (l/get-list lmdb "list" "c" :string :long)))
-
-    (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
-            ["c" 3] ["c" 6] ["c" 9]]
-           (l/list-range lmdb "list" [:all] :string [:all] :long)))
-    (is (= [["a" 2] ["a" 3] ["a" 4] ["c" 3]]
-           (l/list-range lmdb "list" [:closed "a" "c"] :string
-                         [:closed 2 4] :long)))
-    (is (= [["c" 9] ["c" 6] ["c" 3] ["b" 7] ["b" 6] ["b" 5]
-            ["a" 4] ["a" 3] ["a" 2] ["a" 1]]
-           (l/list-range lmdb "list" [:all-back] :string [:all-back] :long)))
-    (is (= [["c" 3]]
-           (l/list-range lmdb "list" [:at-least "b"] :string
-                         [:at-most-back 4] :long)))
-
-    (is (= [["b" 5]]
-           (l/list-range lmdb "list" [:open "a" "c"] :string
-                         [:less-than 6] :long)))
-
-    (is (= (l/list-count lmdb "list" "a" :string) 4))
-    (is (= (l/list-count lmdb "list" "b" :string) 3))
-
-    (is (not (l/in-list? lmdb "list" "a" 7 :string :long)))
-    (is (l/in-list? lmdb "list" "b" 7 :string :long))
-
-    (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
-    (is (= (l/get-list lmdb "list" "a" :string :long) [1 2 3 4]))
-
-    (l/visit-list lmdb "list" visitor "a" :string)
-    (is (= @sum 10))
-
-    (l/del-list-items lmdb "list" "a" :string)
-
-    (is (= (l/list-count lmdb "list" "a" :string) 0))
-    (is (not (l/in-list? lmdb "list" "a" 1 :string :long)))
-    (is (nil? (l/get-list lmdb "list" "a" :string :long)))
-
-    (l/put-list-items lmdb "list" "b" [1 2 3 4] :string :long)
-
-    (is (= [1 2 3 4 5 6 7]
-           (l/get-list lmdb "list" "b" :string :long)))
-    (is (= (l/list-count lmdb "list" "b" :string) 7))
-    (is (l/in-list? lmdb "list" "b" 1 :string :long))
-
-    (l/del-list-items lmdb "list" "b" [1 2] :string :long)
-
-    (is (= (l/list-count lmdb "list" "b" :string) 5))
-    (is (not (l/in-list? lmdb "list" "b" 1 :string :long)))
-    (is (= [3 4 5 6 7]
-           (l/get-list lmdb "list" "b" :string :long)))
-    (l/close-kv lmdb)))
 
 (deftest re-index-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/re-index"
