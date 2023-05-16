@@ -89,11 +89,16 @@
                  (.addListener (logging-test-listener))) 
         counter (atom 0)
         db (d/open-kv "/tmp/collection-size-any")
+        _ (d/clear-dbi db "test-dbi")
         my-supplier (reify Supplier (get [_this]
                                       (swap! counter inc)
                                       (d/clear-dbi db "test-dbi")
-                                      (jm/->map db "test-dbi")))
-        features [CollectionSize/ANY]
+                                      (jm/hashMap db "test-dbi")))
+        features [CollectionSize/ANY
+                  ;; MapFeature/GENERAL_PURPOSE
+                  MapFeature/SUPPORTS_PUT
+                  MapFeature/ALLOWS_NULL_VALUES
+                  ]
         suite (generate-map-test-suite "collection-size-any-str" my-supplier features)
         _ (.run suite result)
         r (test-result-info result)
@@ -104,16 +109,21 @@
                                      :failure-count])]
     (testing "Map is a collection - collection-size-any"
       (is (= {:was-successful false,
-              :run-count 661,
-              :fail+error 563,
-              :error-count 508,
-              :failure-count 55} small-result))
+              :run-count 745,
+              :fail+error 292,
+              :error-count 204,
+              :failure-count 88} small-result))
       (is (= true (:was-successful small-result))))))
 
 
 (comment
 
   (run-test test-collection-size-any)
+
+  (type (make-array java.util.Map$Entry 0))
+
+  (.componentType
+   (.getClass (make-array java.util.Map$Entry 0)))
 
   ;; reset db
   (d/clear (d/open-kv "/tmp/map-test"))
@@ -123,7 +133,7 @@
         db (d/open-kv "/tmp/map-test")
         my-supplier (reify Supplier (get [_this]
                                       (swap! counter inc)
-                                      (jm/->map db (str "m-" @counter))))
+                                      (jm/hashMap db (str "m-" @counter))))
 
         suite (generate-map-test-suite "hash-map" my-supplier default-features)
         _ (.run suite result)
