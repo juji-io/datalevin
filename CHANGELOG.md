@@ -2,7 +2,9 @@
 
 ## WIP
 ### Added
-- [KV & Datalog] Option `:compress?` to compress the data (default `true`). See [details](doc/compress.md). #14
+- [All] Option `:compress?` to compress the data (default `true`). See [details](doc/compress.md). #14
+- [Client] Option `:compress-message?`, set to `false` for older versions of
+  server. Network messages are compressed by default.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -21,8 +23,6 @@
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
-- [Client] Option `:compress-message?`, set to `false` for older versions of
-  server. Network messages are compressed by default.
 
 ### Changed
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
@@ -33,7 +33,9 @@
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
-- [Datalog] More robust handling of multiple threads concurrent transactions
+- [Datalog] More robust handling of multiple threads concurrent transactions.
+- [All] `re-index` creates a backup DB, and locks the DB to prevent access
+  before completion. #213
 
 ## 0.8.16 (2023-05-10)
 ### Improved

@@ -6,17 +6,7 @@ better cache locality and reduced workload in general, provided that the
 computational overhead of compression and decompression is comparatively low
 enough.
 
-## Key-value Compression
-
-In Datalevin, compression/decompression happens automatically in the key-value
-storage layer and is transparent to the users.
-
-Dictionary based compression algorithms are used, because compression has to
-contend with small data size as it is done on the individual value basis.
-Generational management of compression dictionaries is used to deal with data
-distribution shifts.
-
-### Key Compression
+## Key Compression
 
 For keys, we use an order preserving compression method, so that range queries
 and some predicates can run directly on the compressed data without having to
@@ -42,22 +32,11 @@ pre-computed decoding tables [4] for decoding compressed data 4 bits at a time.
 and decoding performance. These tables are computed from the stored codes during
 DBI initialization.
 
-When a sub-database is initialized, it is generation zero. We first transact the
-data uncompressed in generation zero sub-database, where we collect statistics
-of the keys. When every 100k keys are stored, the system checks to see if a new
-compression dictionary is needed, if so, compute a new dictionary.
-
-System decides to compute new dictionary based on the Kullback-Leibler
-divergence of the current 2-bytes distribution against the previous distribution
-using a Dirichlet prior. We will empirically determine the threshold of number
-of bits increment that would significantly impact system performance.
-
-After a new dictionary is available, the system compresses the keys of all
-current data using the new dictionary and store them in generation one
-sub-database. The system atomically switches to the new generation of
-sub-databases when no write is in progress. Optionally, the same process can
-happen when calling `optimize` function on a DBI, in order to
-improve compression ratio as data distribution may has shifted significantly.
+In order to obtain a good compression ratio, the key compression dictionary
+should only be created after at least 64K keys have been stored to get good
+samples. Therefore keys are initially not compressed. User can run `re-index`
+function with `:compress?` option enabled to create the dictionary and store the
+keys in compressed form.
 
 ### Value Compression
 
@@ -67,7 +46,7 @@ LZ4 is used to compress values, as it has a good balance of speed and compressio
 
 By default, lz4 compression is used for data sent between client and server. Set
 `:compress-message?` option to `false` on the client to disable compression,
-e.g. for working with versions of the server prior to `0.9.0`.
+e.g. to work with versions of the server prior to `0.9.0`.
 
 ## Triple Compression
 
@@ -90,6 +69,10 @@ same key compression method described above.
 ### Compression ratio
 
 ### Run time performance
+
+#### Write
+
+#### Query
 
 ## References
 
