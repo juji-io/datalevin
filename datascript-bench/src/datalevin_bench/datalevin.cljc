@@ -57,7 +57,7 @@
 
 
 (defn ^:export add-1 []
-  (core/bench-10
+  (core/bench-once
     (reduce
       (fn [db p]
         (-> db
@@ -72,7 +72,7 @@
 
 
 (defn ^:export add-5 []
-  (core/bench-10
+  (core/bench-once
     (reduce (fn [db p] (d/db-with db [p]))
             (d/empty-db (u/tmp-dir (str "datalevin-bench-add-5"
                                         (UUID/randomUUID)))
@@ -81,7 +81,7 @@
 
 
 (defn ^:export add-all []
-  (core/bench-10
+  (core/bench-once
     (d/db-with
       (d/empty-db (u/tmp-dir (str "datalevin-bench-add-all"
                                   (UUID/randomUUID)))
@@ -109,7 +109,7 @@
                            schema)
                core/people20k)
         eids (->> (d/datoms db :ave :name) (map :e) (shuffle))]
-    (core/bench-10
+    (core/bench-once
       (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
 
 

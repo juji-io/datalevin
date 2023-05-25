@@ -1,10 +1,8 @@
 # Change Log
 
 ## WIP
+
 ### Added
-- [All] Option `:compress?` to compress the data (default `true`). See [details](doc/compress.md). #14
-- [Client] Option `:compress-message?`, set to `false` for older versions of
-  server. Network messages are compressed by default.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -23,8 +21,14 @@
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
-
+- [All] Option `:compress?` to compress the data (default `true`). See
+  [details](doc/compress.md). #14
+- [Client] Option `:compress-message?`, set to `false` for older versions of
+  server. Network messages are compressed by default.
 ### Changed
+- [KV] Change default write setting to be synchronous, so that it is crash
+  resilient, but is slower. To get back the old default setting that is faster,
+  add `:mapasync` to `:flags`.
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
   includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723

@@ -120,10 +120,10 @@
 
 #?(:clj
    (defmacro bench-10 [& body]
-     `(let [_#       (dotime 5 ~@body)
+     `(let [_#       (dotime 2 ~@body)
             results# (into []
                            (for [_# (range *repeats*)]
-                             (dotime 10 ~@body)))
+                             (dotime 5 ~@body)))
                                         ; min#     (reduce min results#)
             med#     (percentile results# 0.5)
                                         ; max#     (reduce max results#)
