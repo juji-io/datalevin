@@ -14,6 +14,7 @@
    [java.util.concurrent Semaphore]
    [java.nio ByteBuffer]
    [java.nio.charset StandardCharsets]
+   [java.math BigInteger]
    [org.joda.time DateTime]
    [org.roaringbitmap RoaringBitmap]
    [datalevin.sparselist SparseIntArrayList]
@@ -1045,3 +1046,7 @@
                                          (compare tk tk1)
                                          (compare tl tl1)
                                          (compare tf tf1)))))))
+
+(deftest bigint-roundtrip-test
+  (let [x (BigInteger. "123456789123456789")]
+    (is (= x (sut/decode-bigint (sut/encode-bigint x))))))
