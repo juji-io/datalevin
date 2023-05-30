@@ -914,6 +914,10 @@
       (is (= e (.-e r)))
       (is (= v (.-v r))))))
 
+(deftest bigint-roundtrip-test
+  (let [x (BigInteger. "123456789123456789")]
+    (is (= x (sut/decode-bigint (sut/encode-bigint x))))))
+
 (deftest bitmap-roundtrip-test
   (let [rr  (RoaringBitmap/bitmapOf (int-array [1 2 3 1000]))
         rr1 (sut/bitmap [1 2 3 1000])
