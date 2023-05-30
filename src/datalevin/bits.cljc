@@ -296,9 +296,9 @@
     (assert (< n 128)
             "Does not support integer beyond the range of [-2^1015, 2^1015-1]")
     (let [bs1 (byte-array (inc n))]
-      (aset bs1 0 (byte (if (= (.signum x) -1)
-                          (- 127 n)
-                          (bit-flip n 7))))
+      (aset bs1 0 (unchecked-byte (if (= (.signum x) -1)
+                                    (- 127 n)
+                                    (bit-flip n 7))))
       (System/arraycopy bs 0 bs1 1 n)
       bs1)))
 
