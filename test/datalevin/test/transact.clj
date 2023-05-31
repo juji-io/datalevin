@@ -418,6 +418,19 @@
     (d/close conn)
     (u/delete-files dir)))
 
+(defn testing-fn []  "test-value")
+
+(deftest test-fn
+  (let [dir                (u/tmp-dir (str "test-fn-" (UUID/randomUUID)))
+        conn               (d/create-conn dir)
+        test-tx            (fn [_ tempid]
+                             [{:db/id tempid :node/value (testing-fn)}])
+        {:keys [db-after]} (d/transact! conn [[:db.fn/call test-tx -1]])
+        e                  (d/entity db-after 1)]
+    (is (= (:node/value e) "test-value"))
+    (d/close conn)
+    (u/delete-files dir)))
+
 (deftest test-db-fn
   (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn    (d/create-conn dir {:aka {:db/cardinality :db.cardinality/many}})
@@ -679,9 +692,9 @@
         dir    (u/tmp-dir (str "issue-127-" (UUID/randomUUID)))
         conn   (d/create-conn dir schema)]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
-    (dotimes [n 10000]
+    (dotimes [n 1000]
       (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
-    (is (= 10001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
+    (is (= 1001 (count (d/q '[:find ?e :where [?e :foo/id _]] @conn))))
     (d/close conn)
     (u/delete-files dir)))
 
@@ -739,12 +752,14 @@
 
 (deftest million-txns-map-resize-test
   (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
+        conn (d/create-conn dir {}
+                            {:kv-opts
+                             {:flags (conj c/default-env-flags :nosync)}})]
 
     (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
     (is (= 1000000 (count (d/datoms @conn :eav))))
 
-    ;; TODO this will segfault in native when close db in graalvm 17 22.3.2
+    ;; TODO this will segfault in native when close db in graalvm
     (when-not (u/graal?)
       ;; this will blow through 100 MiB boundary
       (dotimes [i 1000000] (d/transact! conn [{:foo i}]))

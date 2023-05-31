@@ -35,6 +35,7 @@
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
 - [Datalog] Query results are spillable to disk. #166
 ### Improved
+- [KV] Improve bigint encoding.
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
