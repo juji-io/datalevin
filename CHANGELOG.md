@@ -26,16 +26,16 @@
 - [Client] Option `:compress-message?`, set to `false` for older versions of
   server. Network messages are compressed by default.
 ### Changed
-- [KV] Change default write setting to be synchronous, so that it is crash
-  resilient, but is slower. To get back the old default setting that is faster,
-  add `:mapasync` to `:flags`.
+- [KV] Change default write setting to be synchronously flushing to disk, so
+  that it is crash resilient, but is slower. To get back the old default setting
+  that is faster but less safe, conj `:mapasync` to `:flags` option.
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
   includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
 - [Datalog] Query results are spillable to disk. #166
 ### Improved
-- [KV] Improve bigint encoding.
+- [KV] More robust bigint encoding.
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
