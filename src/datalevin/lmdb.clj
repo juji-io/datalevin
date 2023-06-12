@@ -6,8 +6,10 @@
    [clojure.java.io :as io]
    [datalevin.bits :as b]
    [datalevin.util :as u]
-   [datalevin.constants :as c])
+   [datalevin.constants :as c]
+   [datalevin.lmdb :as l])
   (:import
+   [java.nio ByteBuffer]
    [java.io PushbackReader IOException]
    [java.lang RuntimeException]))
 
@@ -356,3 +358,15 @@ values;")
                condition#
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
+
+(defn sample-key-freqs
+  [db dbi-name n]
+  (let [m (range-count db dbi-name [:all])]
+    (if (< m n)
+      (u/raise "Not enough data for the samples" {:count m})
+      (let [p (double (/ n m))
+            f (long-array (repeat c/key-compress-num-symbols 1))
+            v (fn [kv]
+                (let [^ByteBuffer bf (k kv)
+                      total          (.remaining bf)]
+                  ))]))))

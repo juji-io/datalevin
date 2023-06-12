@@ -150,6 +150,7 @@
 
 ;; compression
 
+(def key-compress-num-symbols 65536)
 (def compress-sample-size 65536)
 
 (def ^:const decoding-bits 4)

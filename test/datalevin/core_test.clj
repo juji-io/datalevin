@@ -158,6 +158,17 @@
                   @conn
                   :sales/country)
            ["US" "U.K." "Germany"]))
+    (is (= (sut/q '[:find [?a ...]
+                    :in $
+                    :where
+                    [?e ?a]
+                    [?e :sales/country]]
+                  @conn)
+           [:sales/year
+            :sales/top-product-use
+            :sales/total
+            :sales/country
+            :sales/company]))
     (is (= (sut/q '[:find ?company ?total
                     :in $ ?year
                     :where

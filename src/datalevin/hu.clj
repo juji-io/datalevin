@@ -1,10 +1,12 @@
 (ns ^:no-doc datalevin.hu
   "Fast encoder and decoder for Hu-Tucker codes. Used for keys."
   (:require
+   [taoensso.nippy :as nippy]
    [datalevin.util :as u])
   (:import
    [java.util LinkedList]
    [java.nio ByteBuffer]
+   [java.io DataInput DataOutput]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [datalevin.utl LeftistHeap BitOps]))
@@ -436,3 +438,18 @@
         codes (int-array n)]
     (create-codes n lens codes freqs)
     (HuTucker. lens codes (create-decode-tables lens codes))))
+
+(defn codes->hu-tucker
+  [^bytes lens ^ints codes]
+  (HuTucker. lens codes (create-decode-tables lens codes)))
+
+;; (nippy/extend-freeze HuTucker :datalevin/hu
+;;                      [^HuTucker x ^DataOutput out]
+;;                      (nippy/freeze-to-out! out (.-lens x))
+;;                      (nippy/freeze-to-out! out (.-codes x)))
+
+;; (nippy/extend-thaw :datalevin/hu
+;;                    [^DataInput in]
+;;                    (let [lens  (nippy/thaw-from-in! in)
+;;                          codes (nippy/thaw-from-in! in)]
+;;                      (codes->hu-tucker lens codes)))

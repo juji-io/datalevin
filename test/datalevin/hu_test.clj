@@ -4,11 +4,12 @@
    [datalevin.util :as u]
    [datalevin.bits :as b]
    [datalevin.buffer :as bf]
+   [datalevin.constants :as c]
    [clojure.test :refer [deftest testing is are]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
-   [datalevin.constants :as c])
+   [taoensso.nippy :as nippy])
   (:import
    [java.util Arrays]
    [java.nio ByteBuffer]))
@@ -66,8 +67,10 @@
 
 (test/defspec encode-decode-round-trip-test
   1000
-  (let [freqs           (repeatedly 65536 #(rand-int 1000000))
-        ht              (sut/new-hu-tucker (long-array (map inc freqs)))
+  (let [freqs (repeatedly 65536 #(rand-int 1000000))
+        ht    (sut/new-hu-tucker (long-array (map inc freqs)))
+        ;; ht      (nippy/fast-thaw (nippy/fast-freeze ht-orig))
+
         ^ByteBuffer src (bf/allocate-buffer c/+max-key-size+)
         ^ByteBuffer dst (bf/allocate-buffer c/+max-key-size+)
         ^ByteBuffer res (bf/allocate-buffer c/+max-key-size+)]

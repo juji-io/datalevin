@@ -2,6 +2,7 @@
   "LMDB binding for Java"
   (:require
    [datalevin.bits :as b]
+   [datalevin.compress :as cp]
    [datalevin.buffer :as bf]
    [datalevin.spill :as sp]
    [datalevin.util :refer [raise] :as u]
@@ -22,7 +23,8 @@
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
    [clojure.lang IPersistentVector MapEntry]
-   [datalevin.spill SpillableVector]))
+   [datalevin.spill SpillableVector]
+   [datalevin.compress ICompressor]))
 
 (extend-protocol IKV
   CursorIterable$KeyVal
@@ -139,6 +141,8 @@
               ^ConcurrentLinkedQueue curs
               ^ByteBuffer kb
               ^:unsynchronized-mutable ^ByteBuffer vb
+              ^ICompressor kc
+              ^ICompressor vc
               ^boolean dupsort?
               ^boolean validate-data?]
   IBuffer
@@ -527,7 +531,7 @@
 
   (dir [_] (@info :dir))
 
-  (opts [_] (dissoc @info :dbis))
+  (opts [_] @info)
 
   (dbi-opts [_ dbi-name] (get-in @info [:dbis dbi-name]))
 
@@ -557,8 +561,11 @@
                              (kv-flags :dbi (if dupsort?
                                               (conj flags :dupsort)
                                               flags)))
-              dbi  (DBI. db (ConcurrentLinkedQueue.) kb vb dupsort?
-                         validate-data?)]
+              kc   (:key-compress opts)
+              dbi  (DBI. db (ConcurrentLinkedQueue.) kb vb
+                         (when kc (cp/key-compressor (:lens kc) (:codes kc)))
+                         (cp/get-dict-less-compressor)
+                         dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
             (l/transact-kv this [[:put c/kv-info [:dbis dbi-name] opts
@@ -928,12 +935,13 @@
 
 (defmethod open-kv :java
   ([dir] (open-kv dir {}))
-  ([dir {:keys [mapsize max-readers max-dbs flags temp?]
+  ([dir {:keys [mapsize max-readers max-dbs flags temp? compress?]
          :or   {max-readers c/+max-readers+
                 max-dbs     c/+max-dbs+
                 mapsize     c/+init-db-size+
                 flags       c/default-env-flags
-                temp?       false}
+                temp?       false
+                compress?   true}
          :as   opts}]
    (assert (string? dir) "directory should be a string.")
    (try
@@ -951,7 +959,8 @@
                                    :max-readers max-readers
                                    :max-dbs     max-dbs
                                    :flags       flags
-                                   :temp?       temp?})
+                                   :temp?       temp?
+                                   :compress?   compress?})
            lmdb       (->LMDB env
                               (volatile! info)
                               (ConcurrentLinkedQueue.)

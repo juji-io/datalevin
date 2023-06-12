@@ -130,9 +130,15 @@
 (defn init-key-freqs [] (long-array c/compress-sample-size (repeat 1)))
 
 (defn key-compressor
-  [^longs freqs]
-  (let [^HuTucker ht (hu/new-hu-tucker freqs)]
-    (reify
-      ICompressor
-      (bf-compress [_ src dst] (.encode ht src dst))
-      (bf-uncompress [_ src dst] (.decode ht src dst)))))
+  ([^longs freqs]
+   (let [^HuTucker ht (hu/new-hu-tucker freqs)]
+     (reify
+       ICompressor
+       (bf-compress [_ src dst] (.encode ht src dst))
+       (bf-uncompress [_ src dst] (.decode ht src dst)))))
+  ([^bytes lens ^ints codes]
+   (let [^HuTucker ht (hu/codes->hu-tucker lens codes)]
+     (reify
+       ICompressor
+       (bf-compress [_ src dst] (.encode ht src dst))
+       (bf-uncompress [_ src dst] (.decode ht src dst))))))
