@@ -36,7 +36,7 @@
 
 (defn entity
   "Retrieves an entity by its id from a Datalog database. Entities
-  are lazy map-like structures to navigate Datalevin database content.
+  are map-like structures to navigate Datalevin database content.
 
   `db` is a Datalog database.
 
@@ -411,7 +411,7 @@ Only usable for debug output.
 ;; Index lookups
 
 (defn datoms
-  "Index lookup in Datalog db. Returns a sequence of datoms (lazy iterator over actual DB index) whose components (e, a, v) match passed arguments.
+  "Index lookup in Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
 
