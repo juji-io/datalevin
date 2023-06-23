@@ -3,6 +3,7 @@
   (:require
    [clojure.java.io :as io]
    [clojure.pprint :as p]
+   [taoensso.nippy :as nippy]
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
    [datalevin.util :as u]
    [datalevin.remote :as r]
@@ -1457,11 +1458,20 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
     (close-kv lmdb)))
 
 (defn ^:no-doc dump-datalog
-  [conn]
-  (p/pprint (opts conn))
-  (p/pprint (schema conn))
-  (doseq [^Datom datom (datoms @conn :eav)]
-    (prn [(.-e datom) (.-a datom) (.-v datom)])))
+  ([conn]
+   (p/pprint (opts conn))
+   (p/pprint (schema conn))
+   (doseq [^Datom datom (datoms @conn :eav)]
+     (prn [(.-e datom) (.-a datom) (.-v datom)])))
+  ([conn data-output]
+   (if data-output
+     (nippy/freeze-to-out!
+       data-output
+       [(opts conn)
+        (schema conn)
+        (map (fn [^Datom datom] [(.-e datom)] (.-a datom) (.-v datom))
+             (datoms @conn :eav))])
+     (dump-datalog conn))))
 
 (defn- dump
   [conn dumpfile]

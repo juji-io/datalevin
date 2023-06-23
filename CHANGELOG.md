@@ -1,5 +1,16 @@
 # Change Log
 
+## WIP
+
+### Added
+- [Datalog] Added an `--nippy` mode to dump/load database in nippy binary
+  format, which can handle data anomalies such as keywords with space in them,
+  is incompatible with existing dump format, but maybe smaller in size, #216
+### Fixed
+- [Search] Arity error in proximity scoring
+### Improved
+- [KV] More robust bigdec data type encoding on more platforms
+
 ## 0.8.16 (2023-05-10)
 ### Improved
 - Remove Clojure 1.11 features to accommodate older Clojure

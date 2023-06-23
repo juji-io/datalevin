@@ -4,6 +4,7 @@
    [clojure.edn :as edn]
    [clojure.pprint :as p]
    [clojure.java.io :as io]
+   [taoensso.nippy :as nippy]
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.constants :as c])
@@ -174,13 +175,35 @@
 
 (defmulti open-kv (constantly (pick-binding)))
 
-(defn dump-dbi [lmdb dbi]
-  (p/pprint {:dbi dbi :entries (entries lmdb dbi)})
-  (doseq [[k v] (get-range lmdb dbi [:all] :raw :raw)]
-    (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
+(defn dump-dbis-list
+  ([lmdb]
+   (p/pprint (set (list-dbis lmdb))))
+  ([lmdb data-output]
+   (if data-output
+     (nippy/freeze-to-out!
+       data-output
+       (set (list-dbis lmdb)))
+     (dump-dbis-list lmdb))))
 
-(defn dump-all [lmdb]
-  (doseq [dbi (set (list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
+(defn dump-dbi
+  ([lmdb dbi]
+   (p/pprint {:dbi dbi :entries (entries lmdb dbi)})
+   (doseq [[k v] (get-range lmdb dbi [:all] :raw :raw)]
+     (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
+  ([lmdb dbi data-output]
+   (if data-output
+     (nippy/freeze-to-out!
+       data-output
+       [{:dbi dbi :entries (entries lmdb dbi)}
+        (for [[k v] (get-range lmdb dbi [:all] :raw :raw)]
+          [(b/encode-base64 k) (b/encode-base64 v)])])
+     (dump-dbi lmdb dbi))))
+
+(defn dump-all
+  ([lmdb]
+   (dump-all lmdb nil))
+  ([lmdb data-output]
+   (doseq [dbi (set (list-dbis lmdb))] (dump-dbi lmdb dbi data-output))))
 
 (defn- load-kv [dbi [k v]]
   [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
