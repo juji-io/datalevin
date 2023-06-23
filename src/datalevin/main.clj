@@ -367,12 +367,13 @@
 
   If `all?` is true, will dump raw data of all the sub-databases.
 
-  If `nippy?` is true, will dump in nippy binary format.
+  If `nippy?` is true, dump in nippy binary format, `dest-file` must be given
 
   If `dbis` is not empty, will dump raw data of only the named sub-databases."
   ([src-dir dest-file dbis list? datalog? all?]
    (dump src-dir dest-file dbis list? datalog? all? false))
   ([src-dir dest-file dbis list? datalog? all? nippy?]
+   (assert (if nippy? dest-file true) "dest-file must be given for nippy")
    (let [f (when dest-file (FileOutputStream. ^String dest-file))
          w (when (and f (not nippy?))
              (BufferedWriter. (OutputStreamWriter. f)))
@@ -412,21 +413,25 @@
   If `datalog?` is true, the content are schema and datoms, otherwise they are
   raw data.
 
-  If `nippy?` is true, will dump in nippy binary format.
+  If `nippy?` is true, load a nippy binary file, `src-file` must be given.
 
   Will load raw data into the named sub-database `dbi` if given. "
   ([dir src-file dbi datalog?]
    (load dir src-file dbi datalog? false))
   ([dir src-file dbi datalog? nippy?]
-   (let [f  (when src-file (PushbackReader. (io/reader src-file)))
-         in (or f (PushbackReader. *in*))]
+   (assert (if nippy? src-file true) "src-file must be given for nippy")
+   (let [f  (when src-file (FileInputStream. ^String src-file))
+         r  (when (and f (not nippy?)) (InputStreamReader. f))
+         in (if (and f nippy?)
+              (DataInputStream. f)
+              (PushbackReader. (or r *in*)))]
      (cond
-       datalog? (d/load-datalog dir in {} {})
+       datalog? (d/load-datalog dir in {} {} nippy?)
        dbi      (let [lmdb (l/open-kv dir)]
-                  (l/load-dbi lmdb dbi in)
+                  (l/load-dbi lmdb dbi in nippy?)
                   (l/close-kv lmdb))
        :else    (let [lmdb (l/open-kv dir)]
-                  (l/load-all lmdb in)
+                  (l/load-all lmdb in nippy?)
                   (l/close-kv lmdb)))
      (when f (.close f)))))
 
