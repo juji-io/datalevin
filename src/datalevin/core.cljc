@@ -26,7 +26,9 @@
    [datalevin.lmdb ILMDB]
    [datalevin.datom Datom]
    [datalevin.remote DatalogStore KVStore]
-   [java.io PushbackReader IOException]
+   [java.io BufferedReader BufferedWriter PushbackReader FileOutputStream
+    FileInputStream DataOutputStream DataInputStream OutputStreamWriter
+    InputStreamReader IOException]
    [java.util UUID]))
 
 (if (u/graal?)
@@ -1469,16 +1471,16 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
        data-output
        [(opts conn)
         (schema conn)
-        (map (fn [^Datom datom] [(.-e datom)] (.-a datom) (.-v datom))
+        (map (fn [^Datom datom] [(.-e datom) (.-a datom) (.-v datom)])
              (datoms @conn :eav))])
      (dump-datalog conn))))
 
 (defn- dump
-  [conn dumpfile]
-  (let [f (io/writer dumpfile)]
-    (binding [*out* f] (dump-datalog conn))
-    (.flush f)
-    (.close f)))
+  [conn ^String dumpfile]
+  (let [d (DataOutputStream. (FileOutputStream. dumpfile))]
+    (dump-datalog conn d)
+    (.flush d)
+    (.close d)))
 
 (defn ^:no-doc load-datalog
   ([dir in schema opts nippy?]
@@ -1487,6 +1489,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
        (let [[old-opts old-schema datoms] (nippy/thaw-from-in! in)
              new-opts                     (merge old-opts opts)
              new-schema                   (merge old-schema schema)]
+
          (db/init-db
            (for [d datoms] (apply dd/datom d))
            dir new-schema new-opts))
@@ -1517,6 +1520,13 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      (catch Exception e
        (u/raise "Error loading Datalog data: " e {})))))
 
+(defn- load
+  [dir schema opts ^String dumpfile]
+  (let [f  (FileInputStream. dumpfile)
+        in (DataInputStream. f)]
+    (load-datalog dir in schema opts true)
+    (.close f)))
+
 (defn ^:no-doc re-index-datalog
   [conn schema opts]
   (let [d (s/dir (.-store ^DB @conn))]
@@ -1524,8 +1534,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
       (let [dumpfile (str d u/+separator+ "dl-dump")]
         (dump conn dumpfile)
         (clear conn)
-        (load-datalog d (PushbackReader. (io/reader dumpfile))
-                      schema opts)
+        (load d schema opts dumpfile)
         (create-conn d))
       (catch Exception e
         (u/raise "Unable to re-index Datalog database" e {:dir d})))))

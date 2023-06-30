@@ -3,9 +3,9 @@
 ## WIP
 
 ### Added
-- [KV, Datalog] Added an `--nippy` mode to dump/load database in nippy binary
-  format, which can handle data anomalies, e.g. keywords with space in them,
-  non-printable data, etc., and may produce smaller dump file, #216
+- [main] Added an `--nippy` option to dump/load database in nippy binary
+  format, which handles some data anomalies, e.g. keywords with space in
+  them, non-printable data, etc., and produces smaller dump file, #216
 ### Fixed
 - [Search] Arity error in proximity scoring
 ### Improved

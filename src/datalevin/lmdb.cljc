@@ -10,9 +10,10 @@
    [datalevin.constants :as c])
   (:import
    [java.lang AutoCloseable]
-   [java.io PushbackReader IOException]
    [java.lang RuntimeException]
-   [java.io File]
+   [java.io BufferedReader BufferedWriter PushbackReader FileOutputStream
+    FileInputStream DataOutputStream DataInputStream OutputStreamWriter
+    InputStreamReader IOException]
    [java.nio.channels FileChannel FileLock OverlappingFileLockException]
    [java.nio.file StandardOpenOption]))
 
@@ -216,7 +217,7 @@
 (defn load-dbi
   ([lmdb dbi in nippy?]
    (if nippy?
-     (let [[_ kvs] (nippy/thaw-from-in! in)]
+     (let [[_ kvs] (first (nippy/thaw-from-in! in))]
        (open-dbi lmdb dbi)
        (transact-kv lmdb (map (partial load-kv dbi) kvs)))
      (load-dbi lmdb dbi in)))
@@ -272,10 +273,17 @@
   (doseq [dbi (set (list-dbis lmdb)) ] (clear-dbi lmdb dbi)))
 
 (defn dump
-  [db dumpfile]
-  (let [f (io/writer dumpfile)]
-    (binding [*out* f] (dump-all db))
-    (.flush f)
+  [db ^String dumpfile]
+  (let [d (DataOutputStream. (FileOutputStream. dumpfile))]
+    (dump-all db d)
+    (.flush d)
+    (.close d)))
+
+(defn- load
+  [db ^String dumpfile]
+  (let [f  (FileInputStream. dumpfile)
+        in (DataInputStream. f)]
+    (load-all db in true)
     (.close f)))
 
 (defprotocol IAdmin
@@ -291,7 +299,7 @@
       (clear db)
       (close-kv db)
       (let [db (open-kv d opts)]
-        (load-all db (PushbackReader. (io/reader dumpfile)))
+        (load db dumpfile)
         db))
     (catch Exception e
       (u/raise "Unable to re-index" e {:dir (dir db)}))))
