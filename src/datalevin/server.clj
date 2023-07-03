@@ -775,15 +775,10 @@
   [root db-name]
   (str root u/+separator+ (b/hexify-string db-name)))
 
-(b/hexify-string "search-hello-")
-
-
-
 (defn- db-exists?
   [^Server server db-name]
   (u/file-exists
     (str (db-dir (.-root server) db-name) u/+separator+ "data.mdb")))
-;; => #'datalevin.server/db-exists?
 
 (defn- dir->db-name
   [^Server server dir]

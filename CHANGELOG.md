@@ -1,13 +1,14 @@
 # Change Log
 
 ## WIP
-
 ### Added
 - [main] Added an `--nippy` option to dump/load database in nippy binary
   format, which handles some data anomalies, e.g. keywords with space in
   them, non-printable data, etc., and produces smaller dump file, #216
 ### Improved
 - [KV] More robust bigdec data type encoding on more platforms
+- [All] Create a backup db directory `dtlv-re-index-<unix-timestamp>` inside the
+  system temp directory when `re-index`, #213
 - [Search] Graceful avoidance of proximity scoring when positions are not indexed
 
 ## 0.8.16 (2023-05-10)

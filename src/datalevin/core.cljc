@@ -1557,12 +1557,15 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   ([db opts]
    (re-index db {} opts))
   ([db schema opts]
-   (if (conn? db)
-     (let [store (.-store ^DB @db)]
-       (if (instance? DatalogStore store)
-         (do (l/re-index store schema opts) db)
-         (re-index-datalog db schema opts)))
-     (l/re-index db opts))))
+   (let [bk (u/tmp-dir (str "dtlv-re-index-" (System/currentTimeMillis)))]
+     (if (conn? db)
+       (let [store (.-store ^DB @db)]
+         (if (instance? DatalogStore store)
+           (do (l/re-index store schema opts) db)
+           (do (copy @db bk true)
+               (re-index-datalog db schema opts))))
+       (do (when (instance? KVStore db) (copy db bk true))
+           (l/re-index db opts))))))
 
 ;; -------------------------------------
 ;; Search API
