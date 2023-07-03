@@ -3,19 +3,14 @@
   (:require
    [clojure.edn :as edn]
    [clojure.pprint :as p]
-   [clojure.java.io :as io]
    [taoensso.nippy :as nippy]
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.constants :as c])
   (:import
-   [java.lang AutoCloseable]
    [java.lang RuntimeException]
-   [java.io BufferedReader BufferedWriter PushbackReader FileOutputStream
-    FileInputStream DataOutputStream DataInputStream OutputStreamWriter
-    InputStreamReader IOException]
-   [java.nio.channels FileChannel FileLock OverlappingFileLockException]
-   [java.nio.file StandardOpenOption]))
+   [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
+    DataInputStream IOException]))
 
 (defprotocol IBuffer
   (put-key [this data k-type] "put data in key buffer")

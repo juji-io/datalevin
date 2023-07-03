@@ -5,26 +5,19 @@
    [clojure.tools.cli :refer [parse-opts]]
    [clojure.string :as s]
    [clojure.pprint :as p]
-   [clojure.java.io :as io]
-   [clojure.edn :as edn]
    [clojure.stacktrace :as st]
    [sci.core :as sci]
    [datalevin.core :as d]
-   [datalevin.datom :as dd]
-   [datalevin.util :as u :refer [raise]]
+   [datalevin.util :as u]
    [datalevin.interpret :as i]
    [datalevin.lmdb :as l]
-   [datalevin.db :as db]
-   [datalevin.bits :as b]
    [datalevin.server :as srv]
    [pod.huahaiy.datalevin :as pod]
    [datalevin.constants :as c])
   (:import
    [java.io BufferedReader BufferedWriter PushbackReader FileOutputStream
     FileInputStream DataOutputStream DataInputStream OutputStreamWriter
-    InputStreamReader]
-   [java.lang RuntimeException]
-   [datalevin.datom Datom])
+    InputStreamReader])
   (:gen-class))
 
 (if (u/graal?)

@@ -610,14 +610,31 @@ To time's own hand and nature's will,
 A love that's never spent.
 
 - ChatGPT (2023 -)")
+
     (is (= ["Erosion" "GPT4-1" "Sea-Gulls" "GPT4-2" "Horizons"]
            (sut/search engine "sea thousand years" {:proximity-max-dist 10})))
     (is (= ["Erosion" "GPT4-1" "Sea-Gulls"]
            (sut/search engine "thousand years")))
     (is (= ["Erosion" "GPT4-1" "GPT4-2" "Horizons" "Sea-Gulls"]
            (sut/search engine "sea cliff")))
-    (is (= ["Erosion" "Horizons" "Sea-Gulls" ]
+    (is (= ["Erosion" "Horizons" "Sea-Gulls"]
            (sut/search engine "e j pratt")))
+    (is (= ["Erosion" "Horizons" "Sea-Gulls"]
+           (sut/search engine "e j pratt")))
+
+    (d/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest proximity-search-test
+  (let [dir    (u/tmp-dir (str "proximity-search-test-" (UUID/randomUUID)))
+        lmdb   (d/open-kv dir)
+        engine ^SearchEngine (d/new-search-engine
+                               lmdb {:index-position? true})]
+    (sut/add-doc engine "bug1"
+                 "How would we use this for a membership association.")
+    (is (= ["bug1"]
+           (sut/search engine "membership association")))
+    (is (nil? (sut/search engine "bug")))
     (d/close-kv lmdb)
     (u/delete-files dir)))
 

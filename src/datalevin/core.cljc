@@ -1,7 +1,6 @@
 (ns datalevin.core
   "User facing API for Datalevin library features"
   (:require
-   [clojure.java.io :as io]
    [clojure.pprint :as p]
    [taoensso.nippy :as nippy]
    [#?(:cljs cljs.reader :clj clojure.edn) :as edn]
@@ -21,14 +20,12 @@
    [datalevin.bits :as b])
   (:import
    [datalevin.entity Entity]
-   [datalevin.storage Store IStore]
+   [datalevin.storage Store]
    [datalevin.db DB]
-   [datalevin.lmdb ILMDB]
    [datalevin.datom Datom]
    [datalevin.remote DatalogStore KVStore]
-   [java.io BufferedReader BufferedWriter PushbackReader FileOutputStream
-    FileInputStream DataOutputStream DataInputStream OutputStreamWriter
-    InputStreamReader IOException]
+   [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
+    DataInputStream IOException]
    [java.util UUID]))
 
 (if (u/graal?)
