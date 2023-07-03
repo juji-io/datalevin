@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.18 (2023-07-02)
 ### Improved
 - [Test] Fix windows tests.
 
