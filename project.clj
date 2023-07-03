@@ -1,4 +1,4 @@
-(def version "0.8.16")
+(def version "0.8.17")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -9,21 +9,21 @@
   [[babashka/babashka.pods "0.2.0"]
    [cheshire "5.11.0"]
    [com.cognitect/transit-clj "1.0.333"]
-   [com.fasterxml.jackson.core/jackson-core "2.15.0"]
-   [com.fasterxml.jackson.core/jackson-databind "2.15.0"]
+   [com.fasterxml.jackson.core/jackson-core "2.15.2"]
+   [com.fasterxml.jackson.core/jackson-databind "2.15.2"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
-   [com.github.jnr/jnr-ffi "2.2.13"]
-   [com.taoensso/encore "3.59.0"]
+   [com.github.jnr/jnr-ffi "2.2.14"]
+   [com.taoensso/encore "3.60.0"]
    [com.taoensso/nippy "3.2.0"]
-   [com.taoensso/timbre "6.1.0"]
+   [com.taoensso/timbre "6.2.0"]
    ;; only for testing serializing joda-time, as some user data contain these
    [joda-time/joda-time "2.12.5"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
-   [org.babashka/sci "0.7.39"]
+   [org.babashka/sci "0.8.40"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
-   [org.clojure/clojure "1.10.3"]
-   ;; [org.clojure/clojure "1.11.1"]
+   ;; [org.clojure/clojure "1.10.3"]
+   [org.clojure/clojure "1.11.1"]
    [org.clojure/tools.cli "1.0.219"]
    [org.clojure/test.check "1.1.1"]
    [org.clojure/data.csv "1.0.1"]
@@ -37,7 +37,7 @@
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
    [org.lmdbjava/lmdbjava "0.8.3"]
-   [org.roaringbitmap/RoaringBitmap "0.9.44"]]
+   [org.roaringbitmap/RoaringBitmap "0.9.45"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]

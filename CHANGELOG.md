@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.17 (2023-07-02)
 ### Added
 - [main] Added an `--nippy` option to dump/load database in nippy binary
   format, which handles some data anomalies, e.g. keywords with space in
