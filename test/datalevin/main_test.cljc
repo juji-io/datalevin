@@ -445,6 +445,4 @@
         (is (= (set
                  (d/q '[:find [?v ...] :where [_ :large/random ?v]] @conn1))
                (set vs)))
-        (d/close conn1)
-        (Thread/sleep 100)
-        (u/delete-files dest-dir)))))
+        (d/close conn1)))))

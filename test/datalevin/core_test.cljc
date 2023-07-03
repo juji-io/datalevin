@@ -631,5 +631,4 @@
                     (sut/db conn1)
                     "fred")))
       (is (= 1 (count (sut/fulltext-datoms @conn1 "peirce"))))
-      (sut/close conn1))
-    (u/delete-files dir)))
+      (sut/close conn1))))
