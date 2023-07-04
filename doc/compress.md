@@ -36,11 +36,13 @@ In order to obtain a good compression ratio, the key compression dictionary
 should only be created after at least 64K keys have been stored to get good
 samples. Therefore keys are initially not compressed. User can run `re-index`
 function with `:compress?` option enabled to create the dictionary and store the
-keys in compressed form.
+keys in compressed form when enough keys are seen. This re-index is also automatically done when the DB is
+closed and re-opened while `:compress?` is true and enough keys are seen.
 
 ### Value Compression
 
-LZ4 is used to compress values, as it has a good balance of speed and compression ratio.
+LZ4 is used to compress values, as it has a good balance of speed and
+compression ratio. It is enabled when `:compress?` is set to true.
 
 ## Wire compression
 

@@ -4,13 +4,15 @@
    [clojure.edn :as edn]
    [clojure.pprint :as p]
    [clojure.java.io :as io]
+   [taoensso.nippy :as nippy]
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.lmdb :as l])
   (:import
    [java.nio ByteBuffer]
-   [java.io PushbackReader IOException]
+   [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
+    DataInputStream IOException]
    [java.lang RuntimeException]))
 
 (defprotocol IBuffer
@@ -248,66 +250,114 @@ values;")
       :open-closed-back  (chk2 [false false true b1 b2] :open-closed-back)
       (u/raise "Unknown range type" range-type {}))))
 
-(defn dump-dbi [lmdb dbi]
-  (p/pprint {:dbi dbi :entries (entries lmdb dbi)})
-  (doseq [[k v] (get-range lmdb dbi [:all] :raw :raw)]
-    (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
+(defn dump-dbis-list
+  ([lmdb]
+   (p/pprint (set (list-dbis lmdb))))
+  ([lmdb data-output]
+   (if data-output
+     (nippy/freeze-to-out!
+       data-output
+       (set (list-dbis lmdb)))
+     (dump-dbis-list lmdb))))
 
-(defn dump-all [lmdb]
-  (doseq [dbi (set (list-dbis lmdb)) ] (dump-dbi lmdb dbi)))
+(defn- nippy-dbi [lmdb dbi]
+  [{:dbi dbi :entries (entries lmdb dbi)}
+   (for [[k v] (get-range lmdb dbi [:all] :raw :raw)]
+     [(b/encode-base64 k) (b/encode-base64 v)])])
+
+(defn dump-dbi
+  ([lmdb dbi]
+   (p/pprint {:dbi dbi :entries (entries lmdb dbi)})
+   (doseq [[k v] (get-range lmdb dbi [:all] :raw :raw)]
+     (p/pprint [(b/encode-base64 k) (b/encode-base64 v)])))
+  ([lmdb dbi data-output]
+   (if data-output
+     (nippy/freeze-to-out! data-output (nippy-dbi lmdb dbi))
+     (dump-dbi lmdb dbi))))
+
+(defn dump-all
+  ([lmdb]
+   (doseq [dbi (set (list-dbis lmdb))] (dump-dbi lmdb dbi)))
+  ([lmdb data-output]
+   (if data-output
+     (nippy/freeze-to-out!
+       data-output
+       (for [dbi (set (list-dbis lmdb))] (nippy-dbi lmdb dbi)))
+     (dump-all lmdb))))
 
 (defn- load-kv [dbi [k v]]
   [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
 
-(defn load-dbi [lmdb dbi in]
-  (try
-    (with-open [^PushbackReader r in]
-      (let [read-form         #(edn/read {:eof ::EOF} r)
-            {:keys [entries]} (read-form)]
-        (open-dbi lmdb dbi)
-        (transact-kv lmdb (->> (repeatedly read-form)
-                               (take-while #(not= ::EOF %))
-                               (take entries)
-                               (map (partial load-kv dbi))))))
-    (catch IOException e
-      (u/raise "IO error while loading raw data: " (ex-message e) {}))
-    (catch RuntimeException e
-      (u/raise "Parse error while loading raw data: " (ex-message e) {}))
-    (catch Exception e
-      (u/raise "Error loading raw data: " (ex-message e) {}))))
+(defn load-dbi
+  ([lmdb dbi in nippy?]
+   (if nippy?
+     (let [[_ kvs] (first (nippy/thaw-from-in! in))]
+       (open-dbi lmdb dbi)
+       (transact-kv lmdb (map (partial load-kv dbi) kvs)))
+     (load-dbi lmdb dbi in)))
+  ([lmdb dbi in]
+   (try
+     (with-open [^PushbackReader r in]
+       (let [read-form         #(edn/read {:eof ::EOF} r)
+             {:keys [entries]} (read-form)]
+         (open-dbi lmdb dbi)
+         (transact-kv lmdb (->> (repeatedly read-form)
+                                (take-while #(not= ::EOF %))
+                                (take entries)
+                                (map (partial load-kv dbi))))))
+     (catch IOException e
+       (u/raise "IO error while loading raw data: " (ex-message e) {}))
+     (catch RuntimeException e
+       (u/raise "Parse error while loading raw data: " (ex-message e) {}))
+     (catch Exception e
+       (u/raise "Error loading raw data: " (ex-message e) {})))))
 
-(defn load-all [lmdb in]
-  (try
-    (with-open [^PushbackReader r in]
-      (let [read-form #(edn/read {:eof ::EOF} r)
-            load-dbi  (fn [[ms vs]]
-                        (doseq [{:keys [dbi]} (butlast ms)]
-                          (open-dbi lmdb dbi))
-                        (let [{:keys [dbi entries]} (last ms)]
-                          (open-dbi lmdb dbi)
-                          (->> vs
-                               (take entries)
-                               (map (partial load-kv dbi)))))]
-        (transact-kv lmdb (->> (repeatedly read-form)
-                               (take-while #(not= ::EOF %))
-                               (partition-by map?)
-                               (partition 2 2 nil)
-                               (mapcat load-dbi)))))
-    (catch IOException e
-      (u/raise "IO error while loading raw data: " (ex-message e) {}))
-    (catch RuntimeException e
-      (u/raise "Parse error while loading raw data: " (ex-message e) {}))
-    (catch Exception e
-      (u/raise "Error loading raw data: " (ex-message e) {}))))
+(defn load-all
+  ([lmdb in nippy?]
+   (if nippy?
+     (doseq [[{:keys [dbi]} kvs] (nippy/thaw-from-in! in)]
+       (open-dbi lmdb dbi)
+       (transact-kv lmdb (map (partial load-kv dbi) kvs)))
+     (load-all lmdb in)))
+  ([lmdb in]
+   (try
+     (with-open [^PushbackReader r in]
+       (let [read-form #(edn/read {:eof ::EOF} r)
+             load-dbi  (fn [[ms vs]]
+                         (doseq [{:keys [dbi]} (butlast ms)]
+                           (open-dbi lmdb dbi))
+                         (let [{:keys [dbi entries]} (last ms)]
+                           (open-dbi lmdb dbi)
+                           (->> vs
+                                (take entries)
+                                (map (partial load-kv dbi)))))]
+         (transact-kv lmdb (->> (repeatedly read-form)
+                                (take-while #(not= ::EOF %))
+                                (partition-by map?)
+                                (partition 2 2 nil)
+                                (mapcat load-dbi)))))
+     (catch IOException e
+       (u/raise "IO error while loading raw data: " (ex-message e) {}))
+     (catch RuntimeException e
+       (u/raise "Parse error while loading raw data: " (ex-message e) {}))
+     (catch Exception e
+       (u/raise "Error loading raw data: " (ex-message e) {})))))
 
 (defn clear [lmdb]
   (doseq [dbi (set (list-dbis lmdb)) ] (clear-dbi lmdb dbi)))
 
 (defn dump
-  [db dumpfile]
-  (let [f (io/writer dumpfile)]
-    (binding [*out* f] (dump-all db))
-    (.flush f)
+  [db ^String dumpfile]
+  (let [d (DataOutputStream. (FileOutputStream. dumpfile))]
+    (dump-all db d)
+    (.flush d)
+    (.close d)))
+
+(defn- load
+  [db ^String dumpfile]
+  (let [f  (FileInputStream. dumpfile)
+        in (DataInputStream. f)]
+    (load-all db in true)
     (.close f)))
 
 (defprotocol IAdmin
@@ -323,7 +373,7 @@ values;")
       (clear db)
       (close-kv db)
       (let [db (open-kv d opts)]
-        (load-all db (PushbackReader. (io/reader dumpfile)))
+        (load db dumpfile)
         db))
     (catch Exception e
       (u/raise "Unable to re-index" e {:dir (dir db)}))))
@@ -360,8 +410,8 @@ values;")
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
 
 (defn sample-key-freqs
-  [db dbi-name n]
-  (let [m (range-count db dbi-name [:all])]
+  [db dbi-name ^long n]
+  (let [^long m (range-count db dbi-name [:all])]
     (if (< m n)
       (u/raise "Not enough data for the samples" {:count m})
       (let [p (double (/ n m))

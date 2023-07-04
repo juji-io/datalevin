@@ -626,6 +626,19 @@ A love that's never spent.
     (d/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest proximity-search-test
+  (let [dir    (u/tmp-dir (str "proximity-search-test-" (UUID/randomUUID)))
+        lmdb   (d/open-kv dir)
+        engine ^SearchEngine (d/new-search-engine
+                               lmdb {:index-position? true})]
+    (sut/add-doc engine "bug1"
+                 "How would we use this for a membership association.")
+    (is (= ["bug1"]
+           (sut/search engine "membership association")))
+    (is (nil? (sut/search engine "bug")))
+    (d/close-kv lmdb)
+    (u/delete-files dir)))
+
 (deftest re-index-search-test
   (let [dir    (u/tmp-dir (str "re-index-search-" (UUID/randomUUID)))
         lmdb   (l/open-kv dir)

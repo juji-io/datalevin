@@ -5,31 +5,26 @@
    [clojure.tools.cli :refer [parse-opts]]
    [clojure.string :as s]
    [clojure.pprint :as p]
-   [clojure.java.io :as io]
-   [clojure.edn :as edn]
    [clojure.stacktrace :as st]
    [sci.core :as sci]
    [datalevin.core :as d]
-   [datalevin.datom :as dd]
-   [datalevin.util :as u :refer [raise]]
+   [datalevin.util :as u]
    [datalevin.interpret :as i]
    [datalevin.lmdb :as l]
-   [datalevin.db :as db]
-   [datalevin.bits :as b]
    [datalevin.server :as srv]
    [pod.huahaiy.datalevin :as pod]
    [datalevin.constants :as c])
   (:import
-   [java.io BufferedReader PushbackReader IOException]
-   [java.lang RuntimeException]
-   [datalevin.datom Datom])
+   [java.io BufferedReader BufferedWriter PushbackReader FileOutputStream
+    FileInputStream DataOutputStream DataInputStream OutputStreamWriter
+    InputStreamReader])
   (:gen-class))
 
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
 
-(def ^:private version "0.8.16")
+(def ^:private version "0.8.18")
 
 (def ^:private version-str
   (str
@@ -86,6 +81,7 @@
       -a --all        All of the sub-databases
       -f --file PATH  Write to the specified target file instead of stdout
       -g --datalog    Dump as a Datalog database
+      -n --nippy      Dump database in nippy binary format
       -l --list       List the names of sub-databases instead of the content
   Optional arguments:
       Name(s) of sub-database(s)
@@ -105,6 +101,7 @@
   Optional option:
       -f --file PATH  Load from the specified source file instead of stdin
       -g --datalog    Load a Datalog database
+      -n --nippy      Load a database in nippy binary format
   Optional argument:
       Name of the single sub-database to load the data into, useful when loading
       data into a sub-database with a name different from the original name
@@ -232,6 +229,7 @@
     :parse-fn #(Long/parseLong %)
     :validate [#(<= 0 ^long %) "Must be a natural number"]]
    ["-l" "--list" "List the names of sub-databases instead of the content"]
+   ["-n" "--nippy" "Dump/load database in nippy binary format"]
    ["-p" "--port PORT" "Server listening port number"
     :default c/default-port
     :parse-fn #(Integer/parseInt %)
@@ -366,25 +364,35 @@
 
   If `all?` is true, will dump raw data of all the sub-databases.
 
+  If `nippy?` is true, dump in nippy binary format, `dest-file` must be given
+
   If `dbis` is not empty, will dump raw data of only the named sub-databases."
-  [src-dir dest-file dbis list? datalog? all?]
-  (let [f (when dest-file (io/writer dest-file))]
-    (binding [*out* (or f *out*)]
-      (cond
-        list?      (let [lmdb (l/open-kv src-dir)]
-                     (p/pprint (set (l/list-dbis lmdb)))
-                     (l/close-kv lmdb))
-        datalog?   (let [conn (d/create-conn src-dir)]
-                     (d/dump-datalog conn)
-                     (d/close conn))
-        all?       (let [lmdb (l/open-kv src-dir)]
-                     (l/dump-all lmdb)
-                     (l/close-kv lmdb))
-        (seq dbis) (let [lmdb (l/open-kv src-dir)]
-                     (doseq [dbi dbis] (l/dump-dbi lmdb dbi))
-                     (l/close-kv lmdb))
-        :else      (println dump-help)))
-    (when f (.flush f) (.close f))))
+  ([src-dir dest-file dbis list? datalog? all?]
+   (dump src-dir dest-file dbis list? datalog? all? false))
+  ([src-dir dest-file dbis list? datalog? all? nippy?]
+   (assert (if nippy? dest-file true) "dest-file must be given for nippy")
+   (let [f (when dest-file (FileOutputStream. ^String dest-file))
+         w (when (and f (not nippy?))
+             (BufferedWriter. (OutputStreamWriter. f)))
+         d (when (and f nippy?) (DataOutputStream. f))
+         o *out*]
+     (binding [*out* (or w o)]
+       (cond
+         list?      (let [lmdb (l/open-kv src-dir)]
+                      (l/dump-dbis-list lmdb d)
+                      (l/close-kv lmdb))
+         datalog?   (let [conn (d/create-conn src-dir)]
+                      (d/dump-datalog conn d)
+                      (d/close conn))
+         all?       (let [lmdb (l/open-kv src-dir)]
+                      (l/dump-all lmdb d)
+                      (l/close-kv lmdb))
+         (seq dbis) (let [lmdb (l/open-kv src-dir)]
+                      (doseq [dbi dbis] (l/dump-dbi lmdb dbi d))
+                      (l/close-kv lmdb))
+         :else      (binding [*out* o] (println dump-help))))
+     (when w (.flush w) (.close w))
+     (when d (.flush d) (.close d)))))
 
 (defn- dtlv-dump [{:keys [dir all file datalog list]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." dump-help]))
@@ -402,19 +410,27 @@
   If `datalog?` is true, the content are schema and datoms, otherwise they are
   raw data.
 
+  If `nippy?` is true, load a nippy binary file, `src-file` must be given.
+
   Will load raw data into the named sub-database `dbi` if given. "
-  [dir src-file dbi datalog?]
-  (let [f  (when src-file (PushbackReader. (io/reader src-file)))
-        in (or f (PushbackReader. *in*))]
-    (cond
-      datalog? (d/load-datalog dir in {} {})
-      dbi      (let [lmdb (l/open-kv dir)]
-                 (l/load-dbi lmdb dbi in)
-                 (l/close-kv lmdb))
-      :else    (let [lmdb (l/open-kv dir)]
-                 (l/load-all lmdb in)
-                 (l/close-kv lmdb)))
-    (when f (.close f))))
+  ([dir src-file dbi datalog?]
+   (load dir src-file dbi datalog? false))
+  ([dir src-file dbi datalog? nippy?]
+   (assert (if nippy? src-file true) "src-file must be given for nippy")
+   (let [f  (when src-file (FileInputStream. ^String src-file))
+         r  (when (and f (not nippy?)) (InputStreamReader. f))
+         in (if (and f nippy?)
+              (DataInputStream. f)
+              (PushbackReader. (or r *in*)))]
+     (cond
+       datalog? (d/load-datalog dir in {} {} nippy?)
+       dbi      (let [lmdb (l/open-kv dir)]
+                  (l/load-dbi lmdb dbi in nippy?)
+                  (l/close-kv lmdb))
+       :else    (let [lmdb (l/open-kv dir)]
+                  (l/load-all lmdb in nippy?)
+                  (l/close-kv lmdb)))
+     (when f (.close f)))))
 
 (defn- dtlv-load [{:keys [dir file datalog]} arguments]
   (assert dir (s/join \newline ["Missing data directory path." load-help]))

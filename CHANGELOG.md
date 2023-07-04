@@ -1,8 +1,11 @@
 # Change Log
 
 ## WIP
-
 ### Added
+- [All] **Breaking** Option `:compress?` to compress the data (default `true`).
+  See [details](doc/compress.md). #14
+- [Client] **Breaking** Option `:compress-message?` (default `true`) to compress
+  network messages, set to `false` for older versions of server.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -21,26 +24,36 @@
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
-- [All] Option `:compress?` to compress the data (default `true`). See
-  [details](doc/compress.md). #14
-- [Client] Option `:compress-message?`, set to `false` for older versions of
-  server. Network messages are compressed by default.
 ### Changed
 - [KV] Change default write setting to be synchronously flushing to disk, so
   that it is crash resilient, but is slower. To get back the old default setting
   that is faster but less safe, conj `:mapasync` to `:flags` option.
-- [KV] Upgrade LMDB to the latest, now tracking mdb.master branch, as it
+- [KV] **Breaking** Upgrade LMDB to the latest, now tracking mdb.master branch, as it
   includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
-- [Datalog] Store triples in list dbis, to avoid repeating first element of triple.
+- [KV] Increase default spill threshold from 80 to 95 percent, so it is less
+  prone to happen.
+- [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first element of triple.
 - [Datalog] Query results are spillable to disk. #166
 ### Improved
-- [KV] More robust bigint encoding.
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
-- [All] `re-index` creates a backup DB, and locks the DB to prevent access
-  before completion. #213
+
+## 0.8.18 (2023-07-02)
+### Improved
+- [Test] Fix windows tests.
+
+## 0.8.17 (2023-07-02)
+### Added
+- [main] Added an `--nippy` option to dump/load database in nippy binary
+  format, which handles some data anomalies, e.g. keywords with space in
+  them, non-printable data, etc., and produces smaller dump file, #216
+### Improved
+- [KV] More robust bigdec data type encoding on more platforms
+- [All] Create a backup db directory `dtlv-re-index-<unix-timestamp>` inside the
+  system temp directory when `re-index`, #213
+- [Search] Graceful avoidance of proximity scoring when positions are not indexed
 
 ## 0.8.16 (2023-05-10)
 ### Improved

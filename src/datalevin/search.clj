@@ -496,35 +496,36 @@
     (doseq [tid tids]
       (when-let [poss (get-positions engine did tid)]
         (.add pos-lst poss)))
-    (loop [cur-poss (apply min-key cur-pos pos-lst)
-           cur-span (Span. (FastList.))]
-      (let [^long cpos (cur-pos cur-poss)
-            ctid       (get-tid cur-poss)]
-        (add-term cur-span ctid cpos)
-        (go-next cur-poss)
-        (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
-        (if (.isEmpty pos-lst)
-          (.add spans cur-span)
-          (let [next-poss  (apply min-key cur-pos pos-lst)
-                ^long npos (cur-pos next-poss)
-                ntid       (get-tid next-poss)
-                ndist      (- npos cpos)]
-            (cond+
-              (or (< max-dist ndist) (= ctid ntid))
-              (let [next-span (Span. (FastList.))]
-                (.add spans cur-span)
-                (recur next-poss next-span))
-              :let [found (find-term cur-span ntid)]
-              found
-              (let [[cur-span next-span]
-                    (if (< ndist (- ^long (get-next-pos cur-span found)
-                                    ^long (get-ith-pos cur-span found)))
-                      (split cur-span found)
-                      [cur-span (Span. (FastList.))])]
-                (.add spans cur-span)
-                (recur next-poss next-span))
-              :else
-              (recur next-poss cur-span))))))
+    (when (seq pos-lst)
+      (loop [cur-poss (apply min-key cur-pos pos-lst)
+             cur-span (Span. (FastList.))]
+        (let [^long cpos (cur-pos cur-poss)
+              ctid       (get-tid cur-poss)]
+          (add-term cur-span ctid cpos)
+          (go-next cur-poss)
+          (when-not (cur-pos cur-poss) (.remove pos-lst cur-poss))
+          (if (.isEmpty pos-lst)
+            (.add spans cur-span)
+            (let [next-poss  (apply min-key cur-pos pos-lst)
+                  ^long npos (cur-pos next-poss)
+                  ntid       (get-tid next-poss)
+                  ndist      (- npos cpos)]
+              (cond+
+                (or (< max-dist ndist) (= ctid ntid))
+                (let [next-span (Span. (FastList.))]
+                  (.add spans cur-span)
+                  (recur next-poss next-span))
+                :let [found (find-term cur-span ntid)]
+                found
+                (let [[cur-span next-span]
+                      (if (< ndist (- ^long (get-next-pos cur-span found)
+                                      ^long (get-ith-pos cur-span found)))
+                        (split cur-span found)
+                        [cur-span (Span. (FastList.))])]
+                  (.add spans cur-span)
+                  (recur next-poss next-span))
+                :else
+                (recur next-poss cur-span)))))))
     spans))
 
 (defn- proximity-score*
@@ -543,7 +544,7 @@
 
 (defn- proximity-score
   [engine max-dist tids did wqs norms]
-  (let [spans (segment-doc engine did tids max-dist)]
+  (when-let [spans (segment-doc engine did tids max-dist)]
     (->> tids
          (map #(proximity-score* max-dist did spans wqs norms %))
          (reduce + 0.0))))
@@ -551,9 +552,10 @@
 (defn- proximity-scoring
   [engine max-dist tids wqs norms pq0 pq]
   (dotimes [_ (.size ^PriorityQueue pq0)]
-    (let [[_ did] (.pop ^PriorityQueue pq0)
-          pscore  (proximity-score engine max-dist tids did wqs norms)]
-      (.insertWithOverflow ^PriorityQueue pq [pscore did]))))
+    (let [[tscore did] (.pop ^PriorityQueue pq0)]
+      (if-let [pscore (proximity-score engine max-dist tids did wqs norms)]
+        (.insertWithOverflow ^PriorityQueue pq [pscore did])
+        (.insertWithOverflow ^PriorityQueue pq [tscore did])))))
 
 (defn- score-docs
   [n tids sls bms mxs wqs norms result]
