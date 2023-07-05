@@ -19,9 +19,8 @@ while imposes not too much of a memory and computation overhead, i.e. we
 consider fixed number of 64K symbols. The variable length code chosen is
 Hu-Tucker codes [2], which is optimal. We implement the Hu-Tucker algorithm
 using `n` mergeable priority queues to achieve the `O(nlogn)` theoretical bounds
-[3], so the computation of dictionary and building all necessary encoding and
-decoding tables can be done online, which takes less than one second on today's
-CPU.
+[3]. The symbol frequencies are estimated from sampling a fixed number (64K) of
+keys using an optimal reservior sampling algorithm [5].
 
 The resulting optimal binary alphabetic tree of each DBI is represented as an
 array of code length (byte) and an array of codes (32 bits integer). These two
@@ -34,10 +33,13 @@ DBI initialization.
 
 In order to obtain a good compression ratio, the key compression dictionary
 should only be created after at least 64K keys have been stored to get good
-samples. Therefore keys are initially not compressed. User can run `re-index`
+samples. Therefore keys are initially not compressed when DB is created. User can run `re-index`
 function with `:compress?` option enabled to create the dictionary and store the
 keys in compressed form when enough keys are seen. This re-index is also automatically done when the DB is
 closed and re-opened while `:compress?` is true and enough keys are seen.
+The computation of dictionary and building all necessary encoding and
+decoding tables can be done online, which takes less than one second on today's
+CPU.
 
 ### Value Compression
 
@@ -86,3 +88,6 @@ same key compression method described above.
 search trees" (1998). Master Thesis. Rochester Institute of Technology.
 
 [4] Bergman, Eyal, and Shmuel T. Klein. "Fast decoding of prefix encoded texts." IEEE Data Compression Conference 2005.
+
+[5] Li, Kim-Hung. "Reservoir-Sampling Algorithms of Time Complexity
+O(n(1+log(N/n)))". ACM Transactions on Mathematical Software. 20.4 (1994): 481–493.

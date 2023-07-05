@@ -3,13 +3,13 @@
   (:require
    [clojure.edn :as edn]
    [clojure.pprint :as p]
-   [clojure.java.io :as io]
    [taoensso.nippy :as nippy]
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.constants :as c]
    [datalevin.lmdb :as l])
   (:import
+   [datalevin.utl BitOps]
    [java.nio ByteBuffer]
    [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
     DataInputStream IOException]
@@ -409,14 +409,43 @@ values;")
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
 
+(defn list-dbi? [db dbi-name] (:dupsort? (dbi-opts db dbi-name)))
+
 (defn sample-key-freqs
-  [db dbi-name ^long n]
-  (let [^long m (range-count db dbi-name [:all])]
-    (if (< m n)
-      (u/raise "Not enough data for the samples" {:count m})
-      (let [p (double (/ n m))
-            f (long-array (repeat c/key-compress-num-symbols 1))
-            v (fn [kv]
-                (let [^ByteBuffer bf (k kv)
-                      total          (.remaining bf)]
-                  ))]))))
+  "return a long array of frequencies of 2 bytes symbols if there are enough
+  keys, otherwise return nil"
+  ([db dbi-name]
+   (sample-key-freqs db dbi-name c/compress-sample-size))
+  ([db dbi-name ^long size]
+   (let [list?   (list-dbi? db dbi-name)
+         ^long n (if list?
+                   (list-range-count db dbi-name [:all] :raw [:all] :raw)
+                   (range-count db dbi-name [:all]))]
+     (when-let [ia (u/reservoir-sampling n size)]
+       (let [f (long-array (repeat c/key-compress-num-symbols 1))
+             i (volatile! 0)
+             j (volatile! 0)
+             v (fn [kv]
+                 (if (= @j size)
+                   :datalevin/terminate-visit
+                   (do (when (= @i (aget ^longs ia @j))
+                         (vswap! j u/long-inc)
+                         (let [^ByteBuffer bf (if list? (v kv) (k kv))
+                               total          (.remaining bf)
+                               t-1            (dec total)]
+                           (loop [i 0]
+                             (when (<= i total)
+                               (let [idx (if (= i t-1)
+                                           (-> (.get bf)
+                                               (BitOps/intAnd 0x000000FF)
+                                               (bit-shift-left 8))
+                                           (BitOps/intAnd (.getShort bf)
+                                                          0x0000FFFF))
+                                     cur (aget f idx)]
+                                 (aset f idx (inc cur))
+                                 (recur (+ i 2)))))))
+                       (vswap! i u/long-inc))))]
+         (if list?
+           (visit-list-range db dbi-name v [:all] :raw [:all] :raw)
+           (visit db dbi-name v [:all]))
+         f)))))

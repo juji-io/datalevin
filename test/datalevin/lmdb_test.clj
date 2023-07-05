@@ -30,6 +30,8 @@
     (is (= 50 (-> lmdb l/opts :spill-opts :spill-threshold)))
 
     (l/open-dbi lmdb "a")
+    (is (not (l/list-dbi? lmdb "a")))
+
     (l/open-dbi lmdb "b")
     (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (l/open-dbi lmdb "d")
@@ -273,6 +275,7 @@
                   (let [^long v (b/read-buffer (l/v kv) :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))]
     (l/open-list-dbi lmdb "list")
+    (is (l/list-dbi? lmdb "list"))
 
     (l/put-list-items lmdb "list" "a" [1 2 3 4] :string :long)
     (l/put-list-items lmdb "list" "b" [5 6 7] :string :long)
@@ -359,6 +362,7 @@
                (let [^String v (b/read-buffer (l/v kv) :string)]
                  (< (count v) 5)))]
     (l/open-list-dbi lmdb "str")
+    (is (l/list-dbi? lmdb "str"))
 
     (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
     (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
@@ -574,5 +578,53 @@
            (l/get-range lmdb "u"
                         [:closed [:b :db.value/sysMin] [:b :db.value/sysMax]]
                         [:keyword :long])))
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest sample-key-freqs-test
+  (let [dir  (u/tmp-dir (str "sample-keys-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        m    100000
+        ks   (shuffle (range 0 m))
+        txs  #(map (fn [k v] [:put % k v :long :long]) ks ks)]
+
+    (l/open-dbi lmdb "u")
+    (l/transact-kv lmdb (txs "u"))
+    (let [^longs freqs (l/sample-key-freqs lmdb "u")]
+      (is (= (alength freqs) c/key-compress-num-symbols))
+      (is (< (* 2 ^long c/compress-sample-size) (aget freqs 0))))
+
+    (l/open-dbi lmdb "v")
+    (l/transact-kv lmdb (txs "v"))
+    (let [^longs freqs (l/sample-key-freqs lmdb "v" 2)]
+      (is (= (alength freqs) c/key-compress-num-symbols))
+      (is (< 1 (aget freqs 0)))
+      (is (<= (count (filter #(< 1 ^long %) (seq freqs))) 8)))
+
+    (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest list-sample-freqs-test
+  (let [dir  (u/tmp-dir (str "sample-list-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir)
+        m    100
+        n    1000
+        ks   (shuffle (range 0 m))
+        vs   (shuffle (range 0 n))
+        txs  #(for [k ks v vs] [:put % k v :long :long])]
+
+    (l/open-list-dbi lmdb "u")
+    (l/transact-kv lmdb (txs "u"))
+    (let [^longs freqs (l/sample-key-freqs lmdb "u")]
+      (is (= (alength freqs) c/key-compress-num-symbols))
+      (is (< (* 2 ^long c/compress-sample-size) (aget freqs 0))))
+
+    (l/open-dbi lmdb "v")
+    (l/transact-kv lmdb (txs "v"))
+    (let [^longs freqs (l/sample-key-freqs lmdb "v" 2)]
+      (is (= (alength freqs) c/key-compress-num-symbols))
+      (is (< 1 (aget freqs 0)))
+      (is (<= (count (filter #(< 1 ^long %) (seq freqs))) 8)))
+
     (l/close-kv lmdb)
     (u/delete-files dir)))

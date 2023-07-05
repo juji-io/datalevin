@@ -5,6 +5,7 @@
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
+   [java.util Random Arrays]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
@@ -376,3 +377,18 @@
         (.setMacro (var ~n))
         (link-vars ~vr (var ~n))
         ~vr))))
+
+(defn reservoir-sampling
+  "optimized reservoir sampling, random sample n out of m items, returns a
+  sorted array of sampled indices, or returns nil if n >= m"
+  [^long m ^long n]
+  (when (< n m)
+    (let [indices (long-array (range n))
+          r       (Random.)
+          p       (Math/log (- 1.0 (double (/ n m))))]
+      (loop [i n]
+        (when (< i m)
+          (aset indices (.nextInt r n) i)
+          (recur (+ i (long (/ (Math/log (- 1.0 (.nextDouble r))) p)) 1))))
+      (Arrays/sort indices)
+      indices)))
