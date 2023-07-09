@@ -1653,6 +1653,10 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
   The `opts` is the corresponding option map.
 
+  If an additional option `:backup?` is true in the option map,
+  a backup DB `dtlv-re-index-<timestamp>` will be created in system temporary
+  directory.
+
   If `db` is a search engine, its `:include-text?` option must be
   `true` or an exception will be thrown.
 
@@ -1664,14 +1668,15 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   ([db opts]
    (re-index db {} opts))
   ([db schema opts]
-   (let [bk (u/tmp-dir (str "dtlv-re-index-" (System/currentTimeMillis)))]
+   (let [bk (when (:backup? opts)
+              (u/tmp-dir (str "dtlv-re-index-" (System/currentTimeMillis))))]
      (if (conn? db)
        (let [store (.-store ^DB @db)]
          (if (instance? DatalogStore store)
            (do (l/re-index store schema opts) db)
-           (do (copy @db bk true)
+           (do (when bk (copy @db bk true))
                (re-index-datalog db schema opts))))
-       (do (when (instance? KVStore db) (copy db bk true))
+       (do (when (and bk (instance? KVStore db)) (copy db bk true))
            (l/re-index db opts))))))
 
 ;; -------------------------------------
