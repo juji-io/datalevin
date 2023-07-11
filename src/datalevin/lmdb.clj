@@ -6,6 +6,8 @@
    [taoensso.nippy :as nippy]
    [datalevin.bits :as b]
    [datalevin.util :as u]
+   [datalevin.compress :as cp]
+   [datalevin.buffer :as bf]
    [datalevin.constants :as c]
    [datalevin.lmdb :as l])
   (:import
@@ -416,35 +418,48 @@ values;")
   keys, otherwise return nil"
   ([db dbi-name]
    (sample-key-freqs db dbi-name c/compress-sample-size))
-  ([db dbi-name ^long size]
+  ([db dbi-name size]
+   (sample-key-freqs db dbi-name size nil))
+  ([db dbi-name ^long size compressor]
    (let [list?   (list-dbi? db dbi-name)
          ^long n (if list?
                    (list-range-count db dbi-name [:all] :raw [:all] :raw)
                    (range-count db dbi-name [:all]))]
      (when-let [ia (u/reservoir-sampling n size)]
-       (let [f (long-array (repeat c/key-compress-num-symbols 1))
+       (let [b (when compressor
+                 (bf/get-direct-buffer c/+max-key-size+))
+             f (long-array (repeat c/key-compress-num-symbols 1))
              i (volatile! 0)
              j (volatile! 0)
              v (fn [kv]
                  (if (= @j size)
                    :datalevin/terminate-visit
-                   (do (when (= @i (aget ^longs ia @j))
-                         (vswap! j u/long-inc)
-                         (let [^ByteBuffer bf (if list? (v kv) (k kv))
-                               total          (.remaining bf)
-                               t-1            (dec total)]
-                           (loop [i 0]
-                             (when (<= i total)
-                               (let [idx (if (= i t-1)
-                                           (-> (.get bf)
-                                               (BitOps/intAnd 0x000000FF)
-                                               (bit-shift-left 8))
-                                           (BitOps/intAnd (.getShort bf)
-                                                          0x0000FFFF))
-                                     cur (aget f idx)]
-                                 (aset f idx (inc cur))
-                                 (recur (+ i 2)))))))
-                       (vswap! i u/long-inc))))]
+                   (do
+                     (when (= @i (aget ^longs ia @j))
+                       (vswap! j u/long-inc)
+                       (let [bf             (if list? (v kv) (k kv))
+                             ^ByteBuffer bf (if b
+                                              (do
+                                                (.clear ^ByteBuffer b)
+                                                (cp/bf-uncompress
+                                                  compressor
+                                                  bf b)
+                                                b)
+                                              bf)
+                             total          (.remaining bf)
+                             t-1            (dec total)]
+                         (loop [i 0]
+                           (when (<= i total)
+                             (let [idx (if (= i t-1)
+                                         (-> (.get bf)
+                                             (BitOps/intAnd 0x000000FF)
+                                             (bit-shift-left 8))
+                                         (BitOps/intAnd (.getShort bf)
+                                                        0x0000FFFF))
+                                   cur (aget f idx)]
+                               (aset f idx (inc cur))
+                               (recur (+ i 2)))))))
+                     (vswap! i u/long-inc))))]
          (if list?
            (visit-list-range db dbi-name v [:all] :raw [:all] :raw)
            (visit db dbi-name v [:all]))
