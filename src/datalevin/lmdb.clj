@@ -444,6 +444,7 @@ values;")
                                                 (cp/bf-uncompress
                                                   compressor
                                                   bf b)
+                                                (.flip b)
                                                 b)
                                               bf)
                              total          (.remaining bf)
