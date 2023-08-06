@@ -405,3 +405,34 @@
                   [(< 2 ?l)]] db)))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest test-homogeneous-and-heterogeneous-tuple-with-ref
+  (let [dir (u/tmp-dir (str "homo-tuples-with-ref-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir
+                            {:a {:db/valueType :db.type/tuple
+                                 :db/tupleType :db.type/ref
+                                 :db/unique    :db.unique/identity}
+                             :b {:db/valueType  :db.type/tuple
+                                 :db/tupleTypes [:db.type/ref
+                                                 :db.type/string]}
+                             :c {:db/unique :db.unique/identity}})
+                (d/db-with [{:db/id -1 :a [-2] :c "A"}
+                            {:db/id -2 :b [-1 "B"] :c "B"}]))]
+    (is (= #{["A"]}
+           (d/q '[:find ?c
+                  :where
+                  [?e1 :c ?c]
+                  [?e1 :a ?a]
+                  [(untuple ?a) [?e2 ...]]
+                  [?e2 :c "B"]]
+                db)))
+    (is (= #{["B"]}
+           (d/q '[:find ?c
+                  :where
+                  [?e1 :c ?c]
+                  [?e1 :b ?b]
+                  [(untuple ?b) [?e2 _]]
+                  [?e2 :c "A"]]
+                db)))
+    (d/close-db db)
+    (u/delete-files dir)))
