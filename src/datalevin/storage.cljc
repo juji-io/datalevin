@@ -20,11 +20,13 @@
     :db.unique/identity  [:db/unique :db.unique/identity]
     :db.unique/value     [:db/unique :db.unique/value]
     :db.cardinality/many [:db.cardinality/many]
-    :db.type/ref         [:db.type/ref]
     (cond
-      (and (= :db/isComponent k) (true? v)) [:db/isComponent]
-      (= :db/tupleAttrs k)                  [:db.type/tuple]
-      :else                                 [])))
+      (and (= :db/valueType k) (= :db.type/ref v)) [:db.type/ref]
+      (and (= :db/isComponent k) (true? v))        [:db/isComponent]
+      (= :db/tupleAttrs k)                         [:db/tupleAttrs]
+      (= :db/tupleType k)                          [:db/tupleType]
+      (= :db/tupleTypes k)                         [:db/tupleTypes]
+      :else                                        [])))
 
 (def conjs (fnil conj #{}))
 
@@ -48,7 +50,9 @@
    :db.cardinality/many => #{attr ...}
    :db.type/ref         => #{attr ...}
    :db/isComponent      => #{attr ...}
-   :db.type/tuple       => #{attr ...}
+   :db/tupleAttr        => #{attr ...}
+   :db/tupleType        => #{attr ...}
+   :db/tupleTypes       => #{attr ...}
    :db/attrTuples       => {attr => {tuple-attr => idx}}"
   [schema]
   (let [rschema (reduce-kv

@@ -471,9 +471,17 @@
           :cljs [^boolean component?]) [db attr]
   (is-attr? db attr :db/isComponent))
 
-(defn #?@(:clj  [^Boolean tuple?]
-          :cljs [^boolean tuple?]) [db attr]
-  (is-attr? db attr :db.type/tuple))
+(defn #?@(:clj  [^Boolean tuple-attr?]
+          :cljs [^boolean tuple-attr?]) [db attr]
+  (is-attr? db attr :db/tupleAttrs))
+
+(defn #?@(:clj  [^Boolean tuple-type?]
+          :cljs [^boolean tuple-type?]) [db attr]
+  (is-attr? db attr :db/tupleType))
+
+(defn #?@(:clj  [^Boolean tuple-types?]
+          :cljs [^boolean tuple-types?]) [db attr]
+  (is-attr? db attr :db/tupleTypes))
 
 (defn #?@(:clj  [^Boolean tuple-source?]
           :cljs [^boolean tuple-source?]) [db attr]
@@ -807,7 +815,7 @@
         a+vs (apply concat
                     (reduce
                       (fn [acc [a vs]]
-                        (update acc (if (tuple? db a) 1 0) conj [a vs]))
+                        (update acc (if (tuple-attr? db a) 1 0) conj [a vs]))
                       [[] []] entity))]
     (for [[a vs] a+vs
           :when  (not= a :db/id)
@@ -1155,7 +1163,7 @@
                        (recur (allocate-eid tx-time report e eid) (cons [op eid a v] entities)))))
 
                  (and (not (::internal (meta entity)))
-                      (tuple? db a))
+                      (tuple-attr? db a))
                  ;; allow transacting in tuples if they fully match already existing values
                  (let [tuple-attrs (get-in (s/schema (.-store db))
                                            [a :db/tupleAttrs])]
@@ -1176,6 +1184,34 @@
                      (recur report entities)
                      (raise "Can’t modify tuple attrs directly: " entity
                             {:error :transact/syntax, :tx-data entity})))
+
+                 (and (not (::internal (meta entity)))
+                      (or (tuple-type? db a) (tuple-types? db a))
+                      (let [schema      (s/schema (.-store db))
+                            tuple-types (or (get-in schema [a :db/tupleTypes])
+                                            (repeat (get-in schema [a :db/tupleType])))]
+                        (some #(and (identical? (first %) :db.type/ref)
+                                    (tempid? (second %)))
+                              (partition 2 (interleave tuple-types v)))))
+                 (let [schema       (s/schema (.-store db))
+                       tuple-types  (or (get-in schema [a :db/tupleTypes])
+                                        (repeat (get-in schema [a :db/tupleType])))
+                       [report' v'] (loop [report' report
+                                           vs      (partition 2 (interleave tuple-types v))
+                                           v'      []]
+                                      (if-let [[[tuple-type v] & vs] vs]
+                                        (if (and (identical? tuple-type :db.type/ref)
+                                                 (tempid? v))
+                                          (if-some [resolved (get tempids v)]
+                                            (recur report' vs (conj v' resolved))
+                                            (let [resolved (next-eid db)
+                                                  report'  (-> (allocate-eid tx-time report' v resolved)
+                                                               (update ::value-tempids assoc resolved v))]
+                                              (recur report' vs (conj v' resolved))))
+                                          (recur report' vs (conj v' v)))
+                                        [report' v']))]
+                   (recur report' (cons [op e a v'] entities)))
+
 
                  (= op :db/add)
                  (recur (transact-add report entity) entities)
