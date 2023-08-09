@@ -33,7 +33,7 @@
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [KV] Increase default spill threshold from 80 to 95 percent, so it is less
   prone to happen.
-- [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first element of triple.
+- [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first element of triples.
 - [Datalog] Query results are spillable to disk. #166
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections

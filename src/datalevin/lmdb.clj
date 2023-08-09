@@ -442,8 +442,7 @@ values;")
                                               (do
                                                 (.clear ^ByteBuffer b)
                                                 (cp/bf-uncompress
-                                                  compressor
-                                                  bf b)
+                                                  compressor bf b)
                                                 (.flip b)
                                                 b)
                                               bf)
