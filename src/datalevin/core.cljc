@@ -18,6 +18,7 @@
    [datalevin.built-ins :as dbq]
    [datalevin.entity :as de]
    [datalevin.bits :as b])
+  (:refer-clojure :exclude [load])
   (:import
    [datalevin.entity Entity]
    [datalevin.storage Store]
