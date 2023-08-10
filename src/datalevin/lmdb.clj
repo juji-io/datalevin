@@ -1,5 +1,6 @@
 (ns ^:no-doc datalevin.lmdb
   "API for LMDB Key Value Store"
+  (:refer-clojure :exclude [load])
   (:require
    [clojure.edn :as edn]
    [clojure.pprint :as p]
