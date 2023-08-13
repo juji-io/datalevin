@@ -7,6 +7,7 @@
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.constants :as c])
+  (:refer-clojure :exclude [load])
   (:import
    [java.lang RuntimeException]
    [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
