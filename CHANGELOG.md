@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Improved
+- [Datalog] Handle refs in heterogeneous and homogeneous tuples, #218. [Thx @garret-hopper]
+- [All] Remove some clojure.core redefinition warnings. [Thx @vxe]
+
 ## 0.8.18 (2023-07-02)
 ### Improved
 - [Test] Fix windows tests.

@@ -23,9 +23,12 @@
     (cond
       (and (= :db/valueType k) (= :db.type/ref v)) [:db.type/ref]
       (and (= :db/isComponent k) (true? v))        [:db/isComponent]
-      (= :db/tupleAttrs k)                         [:db/tupleAttrs]
-      (= :db/tupleType k)                          [:db/tupleType]
-      (= :db/tupleTypes k)                         [:db/tupleTypes]
+      (= :db/tupleAttrs k)                         [:db.type/tuple
+                                                    :db/tupleAttrs]
+      (= :db/tupleType k)                          [:db.type/tuple
+                                                    :db/tupleType]
+      (= :db/tupleTypes k)                         [:db.type/tuple
+                                                    :db/tupleTypes]
       :else                                        [])))
 
 (def conjs (fnil conj #{}))
@@ -41,7 +44,7 @@
         m
         (-> schema tuple-attr :db/tupleAttrs)))
     {}
-    (:db.type/tuple rschema)))
+    (:db/tupleAttrs rschema)))
 
 (defn schema->rschema
   ":db/unique           => #{attr ...}
@@ -50,6 +53,7 @@
    :db.cardinality/many => #{attr ...}
    :db.type/ref         => #{attr ...}
    :db/isComponent      => #{attr ...}
+   :db.type/tuple       => #{attr ...}
    :db/tupleAttr        => #{attr ...}
    :db/tupleType        => #{attr ...}
    :db/tupleTypes       => #{attr ...}

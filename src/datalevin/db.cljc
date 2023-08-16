@@ -471,6 +471,10 @@
           :cljs [^boolean component?]) [db attr]
   (is-attr? db attr :db/isComponent))
 
+(defn #?@(:clj  [^Boolean tuple?]
+          :cljs [^boolean tuple?]) [db attr]
+  (is-attr? db attr :db.type/tuple))
+
 (defn #?@(:clj  [^Boolean tuple-attr?]
           :cljs [^boolean tuple-attr?]) [db attr]
   (is-attr? db attr :db/tupleAttrs))
