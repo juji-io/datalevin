@@ -1,6 +1,7 @@
 (ns datalevin.test.query-aggregates
   (:require
    [clojure.test :as t :refer        [is are deftest testing]]
+   [datalevin.interpret :as i]
    [datalevin.core :as d]))
 
 
@@ -22,7 +23,7 @@
              [[1] [1] [1]])))
 
     (testing "Wrong grouping without :with"
-      (is (= (d/q '[ :find (sum ?heads)
+      (is (= (d/q '[:find (sum ?heads)
                     :in   [[?monster ?heads]] ]
                   monsters)
              [[4]])))
@@ -51,7 +52,7 @@
              [[[:a/b :a/c] [:a/c :a-/b]]])))
 
     (testing "Grouping and parameter passing"
-      (is (= (set (d/q '[ :find ?color (max ?amount ?x) (min ?amount ?x)
+      (is (= (set (d/q '[:find ?color (max ?amount ?x) (min ?amount ?x)
                          :in   [[?color ?x]] ?amount ]
                        [[:red 1]  [:red 2] [:red 3] [:red 4] [:red 5]
                         [:blue 7] [:blue 8]]
@@ -94,8 +95,32 @@
                          sort-reverse))
                result))
 
+<<<<<<< HEAD:test/datalevin/test/query_aggregates.clj
         (is (= (set
                  (d/q '[ :find ?color (datalevin.test.query-aggregates/sort-reverse ?x)
                         :in   [[?color ?x]]]
                       data))
                result))))))
+=======
+        #?(:clj
+           (is (= (set
+                    (d/q '[ :find ?color (datalevin.test.query-aggregates/sort-reverse ?x)
+                           :in   [[?color ?x]]]
+                         data))
+                  result)))))))
+
+(deftest inter-fn-test
+  (let [monsters       [ ["Cerberus" 3]
+                        ["Medusa" 1]
+                        ["Cyclops" 1]
+                        ["Chimera" 1] ]
+        query-fn       #(d/q '[:find (max ?heads) .
+                               :in   [[?monster ?heads]] ]
+                             monsters)
+        inter-query-fn (i/inter-fn []
+                                   (d/q '[:find (max ?heads) .
+                                          :in   [[?monster ?heads]] ]
+                                        monsters))]
+    (is (= 3 (query-fn)))
+    (is (= 3 (inter-query-fn)))))
+>>>>>>> 030291d3 (try to replicate #217):test/datalevin/test/query_aggregates.cljc
