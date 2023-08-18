@@ -95,19 +95,11 @@
                          sort-reverse))
                result))
 
-<<<<<<< HEAD:test/datalevin/test/query_aggregates.clj
         (is (= (set
                  (d/q '[ :find ?color (datalevin.test.query-aggregates/sort-reverse ?x)
                         :in   [[?color ?x]]]
                       data))
                result))))))
-=======
-        #?(:clj
-           (is (= (set
-                    (d/q '[ :find ?color (datalevin.test.query-aggregates/sort-reverse ?x)
-                           :in   [[?color ?x]]]
-                         data))
-                  result)))))))
 
 (deftest inter-fn-test
   (let [monsters       [ ["Cerberus" 3]
@@ -123,4 +115,3 @@
                                         monsters))]
     (is (= 3 (query-fn)))
     (is (= 3 (inter-query-fn)))))
->>>>>>> 030291d3 (try to replicate #217):test/datalevin/test/query_aggregates.cljc

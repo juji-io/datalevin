@@ -263,6 +263,60 @@ values;")
        (set (list-dbis lmdb)))
      (dump-dbis-list lmdb))))
 
+(defn list-dbi? [db dbi-name] (:dupsort? (dbi-opts db dbi-name)))
+
+(defn sample-key-freqs
+  "return a long array of frequencies of 2 bytes symbols if there are enough
+  keys, otherwise return nil"
+  (^longs [db dbi-name]
+   (sample-key-freqs db dbi-name c/compress-sample-size))
+  (^longs [db dbi-name size]
+   (sample-key-freqs db dbi-name size nil))
+  (^longs [db dbi-name ^long size compressor]
+   (let [list?   (list-dbi? db dbi-name)
+         ^long n (if list?
+                   (list-range-count db dbi-name [:all] :raw [:all] :raw)
+                   (range-count db dbi-name [:all]))]
+     (when-let [ia (u/reservoir-sampling n size)]
+       (let [b (when compressor
+                 (bf/get-direct-buffer c/+max-key-size+))
+             f (cp/init-key-freqs)
+             i (volatile! 0)
+             j (volatile! 0)
+             v (fn [kv]
+                 (if (= @j size)
+                   :datalevin/terminate-visit
+                   (do
+                     (when (= @i (aget ^longs ia @j))
+                       (vswap! j u/long-inc)
+                       (let [bf             (if list? (v kv) (k kv))
+                             ^ByteBuffer bf (if b
+                                              (do
+                                                (.clear ^ByteBuffer b)
+                                                (cp/bf-uncompress
+                                                  compressor bf b)
+                                                (.flip b)
+                                                b)
+                                              bf)
+                             total          (.remaining bf)
+                             t-1            (dec total)]
+                         (loop [i 0]
+                           (when (<= i total)
+                             (let [idx (if (= i t-1)
+                                         (-> (.get bf)
+                                             (BitOps/intAnd 0x000000FF)
+                                             (bit-shift-left 8))
+                                         (BitOps/intAnd (.getShort bf)
+                                                        0x0000FFFF))
+                                   cur (aget f idx)]
+                               (aset f idx (inc cur))
+                               (recur (+ i 2)))))))
+                     (vswap! i u/long-inc))))]
+         (if list?
+           (visit-list-range db dbi-name v [:all] :raw [:all] :raw)
+           (visit db dbi-name v [:all]))
+         f)))))
+
 (defn- nippy-dbi [lmdb dbi]
   [{:dbi dbi :entries (entries lmdb dbi)}
    (for [[k v] (get-range lmdb dbi [:all] :raw :raw)]
@@ -280,12 +334,14 @@ values;")
 
 (defn dump-all
   ([lmdb]
+   (dump-dbi lmdb c/kv-info)
    (doseq [dbi (set (list-dbis lmdb))] (dump-dbi lmdb dbi)))
   ([lmdb data-output]
    (if data-output
      (nippy/freeze-to-out!
        data-output
-       (for [dbi (set (list-dbis lmdb))] (nippy-dbi lmdb dbi)))
+       (conj (for [dbi (set (list-dbis lmdb))] (nippy-dbi lmdb dbi))
+             (nippy-dbi lmdb c/kv-info)))
      (dump-all lmdb))))
 
 (defn- load-kv [dbi [k v]]
@@ -294,7 +350,7 @@ values;")
 (defn load-dbi
   ([lmdb dbi in nippy?]
    (if nippy?
-     (let [[_ kvs] (first (nippy/thaw-from-in! in))]
+     (let [[_ kvs] (nippy/thaw-from-in! in)]
        (open-dbi lmdb dbi)
        (transact-kv lmdb (map (partial load-kv dbi) kvs)))
      (load-dbi lmdb dbi in)))
@@ -411,57 +467,3 @@ values;")
                condition#
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
-
-(defn list-dbi? [db dbi-name] (:dupsort? (dbi-opts db dbi-name)))
-
-(defn sample-key-freqs
-  "return a long array of frequencies of 2 bytes symbols if there are enough
-  keys, otherwise return nil"
-  ([db dbi-name]
-   (sample-key-freqs db dbi-name c/compress-sample-size))
-  ([db dbi-name size]
-   (sample-key-freqs db dbi-name size nil))
-  ([db dbi-name ^long size compressor]
-   (let [list?   (list-dbi? db dbi-name)
-         ^long n (if list?
-                   (list-range-count db dbi-name [:all] :raw [:all] :raw)
-                   (range-count db dbi-name [:all]))]
-     (when-let [ia (u/reservoir-sampling n size)]
-       (let [b (when compressor
-                 (bf/get-direct-buffer c/+max-key-size+))
-             f (long-array (repeat c/key-compress-num-symbols 1))
-             i (volatile! 0)
-             j (volatile! 0)
-             v (fn [kv]
-                 (if (= @j size)
-                   :datalevin/terminate-visit
-                   (do
-                     (when (= @i (aget ^longs ia @j))
-                       (vswap! j u/long-inc)
-                       (let [bf             (if list? (v kv) (k kv))
-                             ^ByteBuffer bf (if b
-                                              (do
-                                                (.clear ^ByteBuffer b)
-                                                (cp/bf-uncompress
-                                                  compressor bf b)
-                                                (.flip b)
-                                                b)
-                                              bf)
-                             total          (.remaining bf)
-                             t-1            (dec total)]
-                         (loop [i 0]
-                           (when (<= i total)
-                             (let [idx (if (= i t-1)
-                                         (-> (.get bf)
-                                             (BitOps/intAnd 0x000000FF)
-                                             (bit-shift-left 8))
-                                         (BitOps/intAnd (.getShort bf)
-                                                        0x0000FFFF))
-                                   cur (aget f idx)]
-                               (aset f idx (inc cur))
-                               (recur (+ i 2)))))))
-                     (vswap! i u/long-inc))))]
-         (if list?
-           (visit-list-range db dbi-name v [:all] :raw [:all] :raw)
-           (visit db dbi-name v [:all]))
-         f)))))

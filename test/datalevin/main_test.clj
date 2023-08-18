@@ -161,7 +161,7 @@
     (d/open-dbi src-db dbi)
     (d/transact-kv src-db [[:put dbi "Hello" "Datalevin"]])
     (d/close-kv src-db)
-    (sut/dump src-dir raw-file nil false false true true)
+    (sut/dump src-dir raw-file [dbi] false false false true)
     (sut/load dest-dir raw-file "b" false true)
     (let [db-load (d/open-kv dest-dir)]
       (d/open-dbi db-load "b")

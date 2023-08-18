@@ -381,7 +381,7 @@
 (defn reservoir-sampling
   "optimized reservoir sampling, random sample n out of m items, returns a
   sorted array of sampled indices, or returns nil if n >= m"
-  [^long m ^long n]
+  ^longs [^long m ^long n]
   (when (< n m)
     (let [indices (long-array (range n))
           r       (Random.)

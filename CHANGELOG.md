@@ -25,7 +25,7 @@
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
 ### Changed
-- [KV] Change default write setting to be synchronously flushing to disk, so
+- [KV] **Breaking** Change default write setting to be synchronously flushing to disk, so
   that it is crash resilient, but is slower. To get back the old default setting
   that is faster but less safe, conj `:mapasync` to `:flags` option.
 - [KV] **Breaking** Upgrade LMDB to the latest, now tracking mdb.master branch, as it

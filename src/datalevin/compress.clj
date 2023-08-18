@@ -127,7 +127,8 @@
 
 ;; key compressor
 
-(defn init-key-freqs [] (long-array c/compress-sample-size (repeat 1)))
+(defn init-key-freqs ^longs []
+  (long-array c/key-compress-num-symbols (repeat 1)))
 
 (defn key-compressor
   ([^longs freqs]
