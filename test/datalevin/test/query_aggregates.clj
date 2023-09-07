@@ -4,9 +4,7 @@
    [datalevin.interpret :as i]
    [datalevin.core :as d]))
 
-
-(defn sort-reverse [xs]
-  (reverse (sort xs)))
+(defn sort-reverse [xs] (reverse (sort xs)))
 
 (deftest test-aggregates
   (let [monsters [ ["Cerberus" 3]
