@@ -67,10 +67,10 @@
 
 (defrecord TxReport [db-before db-after tx-data tempids tx-meta])
 
-#?(:clj
-   (defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
-     (binding [*out* w]
-       (pr {:datoms-transacted (count (:tx-data rp))}))))
+;; #?(:clj
+;;    (defmethod print-method TxReport [^TxReport rp, ^java.io.Writer w]
+;;      (binding [*out* w]
+;;        (pr {:datoms-transacted (count (:tx-data rp))}))))
 
 (defn- sf [^SortedSet s] (when-not (.isEmpty s) (.first s)))
 
@@ -271,14 +271,14 @@
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
 
-(defmethod print-method DB [^DB db, ^java.io.Writer w]
-  (binding [*out* w]
-    (let [{:keys [store eavt max-eid max-tx]} db]
-      (pr {:db-name       (s/db-name store)
-           :last-modified (s/last-modified store)
-           :datom-count   (count eavt)
-           :max-eid       max-eid
-           :max-tx        max-tx}))))
+;; (defmethod print-method DB [^DB db, ^java.io.Writer w]
+;;   (binding [*out* w]
+;;     (let [{:keys [store eavt max-eid max-tx]} db]
+;;       (pr {:db-name       (s/db-name store)
+;;            :last-modified (s/last-modified store)
+;;            :datom-count   (count eavt)
+;;            :max-eid       max-eid
+;;            :max-tx        max-tx}))))
 
 (defn db?
   "Check if x is an instance of DB, also refresh its cache if it's stale.

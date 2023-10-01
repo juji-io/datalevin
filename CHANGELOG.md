@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] `:xform` in pull expression not called for `:cardinality/one` ref
+  attributes, #224. [Thx @dvingo]
+### Improved
+- [Datalog] TxReport prints differently from the actual value, #223.
+
 ## 0.8.19 (2023-08-16)
 ### Improved
 - [Datalog] Handle refs in heterogeneous and homogeneous tuples, #218. [Thx @garret-hopper]
