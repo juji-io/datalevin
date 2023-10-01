@@ -76,25 +76,25 @@
   (sh "git" "push" "origin" "master"))
 
 (defn run-tests []
-  (println "\n\n[ Running tests ]\n")
-  (sh "./lein-test" :dir "script")
+  ;(println "\n\n[ Running tests ]\n")
+  ;(sh "./lein-test" :dir "script")
 
   (println "\n\n[ Testing jar ]\n")
   (sh "./jar" :dir "script")
   (sh "test-jar/test.sh")
 
-  (println "\n\n[ Testing uberjar ]\n")
-  (sh "./uberjar" :dir "script")
-  (sh "test-jar/test-uber.sh")
+  ;(println "\n\n[ Testing uberjar ]\n")
+  ;(sh "./uberjar" :dir "script")
+  ;(sh "test-jar/test-uber.sh")
 
-  (println "\n\n[ Testing native jar ]\n")
-  (sh "script/jar" :dir "native")
-  (sh "./test.sh" :dir "native/test-jar")
+  ;(println "\n\n[ Testing native jar ]\n")
+  ;(sh "script/jar" :dir "native")
+  ;(sh "./test.sh" :dir "native/test-jar")
 
-  (println "\n\n[ Running native tests ]\n")
-  (sh "script/compile-local" :dir "native")
-  (sh "native/dtlv-test0")
-  (sh "native/dtlv-test1")
+  ;(println "\n\n[ Running native tests ]\n")
+  ;(sh "script/compile-local" :dir "native")
+  ;(sh "native/dtlv-test0")
+  ;(sh "native/dtlv-test1")
   )
 
 (defn- str->json [s]
@@ -131,11 +131,11 @@
 
 (defn -main []
   (run-tests)
-  (update-version)
-  (make-commit)
-  (github-release)
-  (sh "./deploy" :dir "script")
-  (sh "script/deploy" :dir "native")
+                                        ;(update-version)
+                                        ;(make-commit)
+                                        ;(github-release)
+                                        ;(sh "./deploy" :dir "script")
+                                        ;(sh "script/deploy" :dir "native")
   (System/exit 0)
   )
 

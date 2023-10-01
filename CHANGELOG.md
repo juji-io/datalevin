@@ -4,6 +4,7 @@
 ### Fixed
 - [Datalog] `:xform` in pull expression not called for `:cardinality/one` ref
   attributes, #224. [Thx @dvingo]
+- [All] BigDec decoding out of range for some values in JVM 8. #225
 ### Improved
 - [Datalog] TxReport prints differently from the actual value, #223.
 
