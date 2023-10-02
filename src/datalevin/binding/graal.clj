@@ -1026,7 +1026,10 @@
                             (BufVal/create c/+max-key-size+)
                             (volatile! nil)
                             false)]
-       (when temp? (u/delete-on-exit file))
+       (if temp?
+         (u/delete-on-exit file)
+         (.addShutdownHook (Runtime/getRuntime)
+                           (Thread. #(l/close-kv lmdb))))
        lmdb)
      (catch Exception e
        (raise "Fail to open database: " e {:dir dir})))))

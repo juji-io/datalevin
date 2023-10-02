@@ -4,11 +4,13 @@
 ### Fixed
 - [Datalog] `:xform` in pull expression not called for `:cardinality/one` ref
   attributes, #224. [Thx @dvingo]
-- [All] BigDec decoding out of range for some values in JVM 8. #225.
 - [Datalog] `:validate-data?` does not recognize homogeneous tuple data type, #227.
+- [All] BigDec decoding out of range error for some values in JVM 8. #225.
 ### Improved
+- [KV] Add JVM shutdown hook to close DB. per #228
 - [Datalog] TxReport prints differently from the actual value, #223.
 - [Server] re-open server search engine automatically, #229
+
 
 ## 0.8.19 (2023-08-16)
 ### Improved
