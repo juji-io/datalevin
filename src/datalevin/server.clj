@@ -862,22 +862,27 @@
                 (lmdb ~'server ~'skey (nth ~'args 0) ~'writing?)
                 (rest ~'args))}))
 
-(defn- search-engine
+(defn- search-engine*
   [^Server server ^SelectionKey skey db-name]
   (when (get (:engines (get-client server
                                    (:client-id @(.attachment skey))))
              db-name)
     (get-in (.-dbs server) [db-name :engine])))
 
+(defn- search-engine
+  [^Server server ^SelectionKey skey db-name]
+  (or (search-engine* server skey db-name)
+      (u/raise "Search engine not found"
+               {:type :reopen :db-name db-name :db-type "engine"})))
+
 (defn- new-search-engine
   [^Server server ^SelectionKey skey {:keys [args]}]
   (wrap-error
     (let [[db-name opts]      args
           {:keys [client-id]} @(.attachment skey)
-          engine              (or (search-engine server skey db-name)
+          engine              (or (search-engine* server skey db-name)
                                   (if-let [store (get-store server db-name)]
                                     (sc/new-search-engine store opts)
-
                                     (u/raise "engine store not found"
                                              {:type    :reopen
                                               :db-name db-name
