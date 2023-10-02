@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.20 (2023-10-02)
 ### Fixed
 - [Datalog] `:xform` in pull expression not called for `:cardinality/one` ref
   attributes, #224. [Thx @dvingo]
