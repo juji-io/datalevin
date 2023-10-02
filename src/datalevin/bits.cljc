@@ -1023,7 +1023,8 @@
          (not (some #(= % :data) t))
          (let [ct (count t)]
            (if (= 1 ct)
-             (every? #(valid-data* % t) x)
+             (let [t' (first t)]
+               (every? #(valid-data* % t') x))
              (and (= ct (count x))
                   (every? true? (map #(valid-data* %1 %2) x t))))))
     (valid-data* x t)))
