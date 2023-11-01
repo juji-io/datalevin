@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.21 (2023-10-31)
 ### Fixed
 - [All] Do not interfere with the default print-methods of regular expression, byte
   array and big integer. #230
