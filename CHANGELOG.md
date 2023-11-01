@@ -1,5 +1,11 @@
 # Change Log
 
+## WIP
+### Fixed
+- [All] Do not interfere with the default print-methods of regular expression, byte
+  array and big integer. #230
+
+
 ## 0.8.20 (2023-10-02)
 ### Fixed
 - [Datalog] `:xform` in pull expression not called for `:cardinality/one` ref

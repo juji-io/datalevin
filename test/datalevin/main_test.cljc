@@ -210,9 +210,9 @@
                    {'url datalevin.main-test/->url})]
 
     (let [analyzer (i/inter-fn [^String text]
-                               (map-indexed (fn [i ^String t]
-                                              [t i (.indexOf text t)])
-                                            (s/split text #"\s")))
+                     (map-indexed (fn [i ^String t]
+                                    [t i (.indexOf text t)])
+                                  (s/split text #"\s")))
           schema   {:a/string   {:db/valueType :db.type/string
                                  :db/fulltext  true}
                     :a/keyword  {:db/valueType :db.type/keyword}
@@ -246,13 +246,15 @@
           vs       (repeatedly 10 #(gen/generate
                                      gen/any-printable-equatable 100))
           bi       (BigInteger. "1234567891234567891234567890")
+          regex    #"abc"
           bd       (BigDecimal.  "98765432124567890.0987654321")
           hm-t     [1 42 28 9 17 1]
           ht-t     [72 "cool" :kw]
           txs      (into [{:db/id -1
                            :hello "Datalevin"}
                           {:a/bigint   bi
-                           :a/hm-tuple hm-t}
+                           :a/hm-tuple hm-t
+                           :a/regex    regex}
                           {:a/bigdec   bd
                            :a/ht-tuple ht-t}
                           {:a/keyword :something/nice
@@ -297,6 +299,10 @@
                     (d/db conn1) "brown fox") s))
         (is (= (d/q '[:find ?v . :where [_ :a/bigdec ?v]] @conn1) bd))
         (is (= (d/q '[:find ?v . :where [_ :a/bigint ?v]] @conn1) bi))
+
+        (is (let [r (d/q '[:find ?v . :where [_ :a/regex ?v]] @conn1)]
+              (= "abc" (re-find r "abcd"))))
+
         (is (= (d/q '[:find ?v . :where [_ :a/hm-tuple ?v]] @conn1) hm-t))
         (is (= (d/q '[:find ?v . :where [_ :a/ht-tuple ?v]] @conn1) ht-t))
         (is (= (d/q '[:find ?v . :where [_ :a/keyword ?v]] @conn1)
@@ -333,9 +339,9 @@
                    {'url datalevin.main-test/->url})]
 
     (let [analyzer (i/inter-fn [^String text]
-                               (map-indexed (fn [i ^String t]
-                                              [t i (.indexOf text t)])
-                                            (s/split text #"\s")))
+                     (map-indexed (fn [i ^String t]
+                                    [t i (.indexOf text t)])
+                                  (s/split text #"\s")))
           schema   {:a/string   {:db/valueType :db.type/string
                                  :db/fulltext  true}
                     :a/keyword  {:db/valueType :db.type/keyword}

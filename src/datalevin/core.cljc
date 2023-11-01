@@ -1459,10 +1459,11 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
 (defn ^:no-doc dump-datalog
   ([conn]
-   (p/pprint (opts conn))
-   (p/pprint (schema conn))
-   (doseq [^Datom datom (datoms @conn :eav)]
-     (prn [(.-e datom) (.-a datom) (.-v datom)])))
+   (binding [u/*datalevin-print* true]
+     (p/pprint (opts conn))
+     (p/pprint (schema conn))
+     (doseq [^Datom datom (datoms @conn :eav)]
+       (prn [(.-e datom) (.-a datom) (.-v datom)]))))
   ([conn data-output]
    (if data-output
      (nippy/freeze-to-out!
