@@ -311,8 +311,8 @@
                     :else
                     {:type :new-search-engine :db-name db-name :opts opts}))]
      (when (= type :error-response)
-       (u/raise "Unable to open database:" db-name
-                {:message message})))))
+       (u/raise "Unable to open database: " db-name " " message
+                {:db-type db-type})))))
 
 (defn new-client
   "Create a new client that maintains pooled connections to a remote
