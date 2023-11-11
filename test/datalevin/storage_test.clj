@@ -240,7 +240,9 @@
      e (gen/large-integer* {:min 0})]
     (let [d     (d/datom e a v)
           dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-          store (sut/open dir)
+          store (sut/open dir {}
+                          {:kv-opts
+                           {:flags (conj c/default-env-flags :mapasync)}})
           _     (sut/load-datoms store [d])
           r     (sut/fetch store d)]
       (sut/close store)

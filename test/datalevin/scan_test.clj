@@ -8,7 +8,8 @@
    [clojure.test :refer [deftest testing is use-fixtures]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
-   [clojure.test.check.properties :as prop])
+   [clojure.test.check.properties :as prop]
+   [datalevin.constants :as c])
   (:import
    [java.util UUID HashMap]
    [java.lang Long AutoCloseable]))
@@ -564,7 +565,7 @@
      knoise gen/small-integer
      vnoise gen/small-integer]
     (let [dir  (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
-          lmdb (l/open-kv dir)
+          lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
           _    (l/open-list-dbi lmdb "a")
           top  20
           _    (dotimes [i top]

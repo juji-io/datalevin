@@ -199,7 +199,7 @@
      a gen/keyword-ns
      v gen/any-equatable]
     (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-          lmdb   (l/open-kv dir)
+          lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
           _      (l/open-dbi lmdb "a")
           d      (d/datom e a v e)
           _      (l/transact-kv lmdb [[:put "a" k d :long :datom]])
@@ -222,7 +222,7 @@
      v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
                       gen/any-equatable)]
     (let [dir    (u/tmp-dir (str "data-test-" (UUID/randomUUID)))
-          lmdb   (l/open-kv dir)
+          lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
           _      (l/open-dbi lmdb "a")
           _      (l/transact-kv lmdb [[:put "a" k v]])
           put-ok (= v (l/get-value lmdb "a" k))
@@ -238,7 +238,7 @@
     [^bytes k (gen/not-empty gen/bytes)
      ^bytes v (gen/not-empty gen/bytes)]
     (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-          lmdb   (l/open-kv dir)
+          lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
           _      (l/open-dbi lmdb "a")
           _      (l/transact-kv lmdb [[:put "a" k v :bytes :bytes]])
           put-ok (Arrays/equals v
@@ -256,7 +256,8 @@
   (prop/for-all [^long k gen/large-integer
                  ^long v gen/large-integer]
                 (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-                      lmdb   (l/open-kv dir)
+                      lmdb   (l/open-kv
+                               dir {:flags (conj c/default-env-flags :mapasync)})
                       _      (l/open-dbi lmdb "a")
                       _      (l/transact-kv lmdb [[:put "a" k v :long :long]])
                       put-ok (= v ^long (l/get-value lmdb "a" k :long :long))

@@ -3,6 +3,7 @@
    [datalevin.core :as sut]
    [datalevin.datom :as dd]
    [datalevin.util :as u]
+   [datalevin.constants :as c]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :as t :refer [is deftest testing use-fixtures]])
   (:import
@@ -482,7 +483,8 @@
       (let [conn (sut/create-conn
                    dir {:buggy/key {:db/valueType :db.type/string
                                     :db/unique    :db.unique/identity}}
-                   {:kv-opts {:mapsize 1}})]
+                   {:kv-opts {:mapsize 1
+                              :flags   (conj c/default-env-flags :mapasync)}})]
         (sut/transact! conn (for [i (range 100000)]
                               {:buggy/key  (format "%20d" i)
                                :buggy/val  (format "bubba-%d" i)

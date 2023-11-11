@@ -57,7 +57,10 @@
 (deftest test-multi-threads-reads-writes
   (let [dir     (u/tmp-dir (str "multi-rw-" (UUID/randomUUID)))
         conn    (d/create-conn dir {} {:validate-data?    true
-                                       :auto-entity-time? true})
+                                       :auto-entity-time? true
+                                       :kv-opts
+                                       {:flags
+                                        (conj c/default-env-flags :mapasync)}})
         q+      '[:find ?i+j .
                   :in $ ?i ?j
                   :where [?e :i+j ?i+j] [?e :i ?i] [?e :j ?j]]
@@ -690,7 +693,10 @@
                             :db/unique      :db.unique/identity}
                 :foo/stats {:db/doc "Blob of additional stats"}}
         dir    (u/tmp-dir (str "issue-127-" (UUID/randomUUID)))
-        conn   (d/create-conn dir schema)]
+        conn   (d/create-conn dir schema
+                              {:kv-opts
+                               {:flags
+                                (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
     (dotimes [n 1000]
       (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
