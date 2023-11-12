@@ -10,6 +10,9 @@
    [java.nio.file Files Paths LinkOption AccessDeniedException]
    [java.nio.file.attribute PosixFilePermissions FileAttribute]))
 
+;; For when we need to use datalevin specific print method
+(def ^:dynamic *datalevin-print* false)
+
 (defn seqable?
   ^Boolean [x]
   (and (not (string? x))

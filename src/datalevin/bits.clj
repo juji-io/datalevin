@@ -42,33 +42,45 @@
 
 ;; writer/reader
 
+(defonce std-print-bytes (get-method print-method (Class/forName "[B")))
+
 (defmethod print-method (Class/forName "[B")
   [^bytes bs, ^Writer w]
-  (doto w
-    (.write "#datalevin/bytes ")
-    (.write "\"")
-    (.write ^String (encode-base64 bs))
-    (.write "\"")))
+  (if u/*datalevin-print*
+    (doto w
+      (.write "#datalevin/bytes ")
+      (.write "\"")
+      (.write ^String (encode-base64 bs))
+      (.write "\""))
+    (std-print-bytes bs w)))
 
 (defn bytes-from-reader ^bytes [s] (decode-base64 s))
 
+(defonce std-print-pattern (get-method print-method Pattern))
+
 (defmethod print-method Pattern
   [^Pattern p, ^Writer w]
-  (doto w
-    (.write "#datalevin/regex ")
-    (.write "\"")
-    (.write ^String (s/escape (.toString p) {\\ "\\\\"}))
-    (.write "\"")))
+  (if u/*datalevin-print*
+    (doto w
+      (.write "#datalevin/regex ")
+      (.write "\"")
+      (.write ^String (s/escape (.toString p) {\\ "\\\\"}))
+      (.write "\""))
+    (std-print-pattern p w)))
 
 (defn regex-from-reader ^Pattern [s] (Pattern/compile s))
 
+(defonce std-print-big-integer (get-method print-method BigInteger))
+
 (defmethod print-method BigInteger
   [^BigInteger bi, ^Writer w]
-  (doto w
-    (.write "#datalevin/bigint ")
-    (.write "\"")
-    (.write ^String (.toString bi))
-    (.write "\"")))
+  (if u/*datalevin-print*
+    (doto w
+      (.write "#datalevin/bigint ")
+      (.write "\"")
+      (.write ^String (.toString bi))
+      (.write "\""))
+    (std-print-big-integer bi w)))
 
 (defn bigint-from-reader ^BigInteger [^String s] (BigInteger. s))
 
