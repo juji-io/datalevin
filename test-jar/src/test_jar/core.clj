@@ -11,6 +11,7 @@
              :name   {:db/valueType :db.type/string
                       :db/unique    :db.unique/identity}
              :height {:db/valueType :db.type/float}
+             :weight {:db/valueType :db.type/bigdec}
              })
 
 ;; Create DB on disk and connect to it, assume write permission to create given dir
@@ -22,11 +23,14 @@
 (defn run [opts]
   (d/transact! conn
                [{:name   "Frege", :db/id -1, :nation "France", :aka ["foo" "fred"]
-                 :height 1.73 }
+                 :height 1.73
+                 :weight 12M}
                 {:name   "Peirce", :db/id -2, :nation "france"
-                 :height 1.82 }
+                 :height 1.82
+                 :weight 140M}
                 {:name   "De Morgan", :db/id -3, :nation "English"
-                 :height 1.76 }])
+                 :height 1.76
+                 :weight 130M}])
 
   ;; Query the data
   (d/q '[:find ?nation

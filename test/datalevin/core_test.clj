@@ -339,15 +339,15 @@
     (sut/close-db db)
     (u/delete-files dir)))
 
-(deftest float-transact-test
+(deftest number-transact-test
   (let [schema {:name   {:db/valueType :db.type/string}
                 :height {:db/valueType :db.type/float}}
-        dir    (u/tmp-dir (str "datalevin-float-test-" (UUID/randomUUID)))
+        dir    (u/tmp-dir (str "datalevin-number-test-" (UUID/randomUUID)))
         conn   (sut/get-conn dir schema)]
-    (sut/transact! conn [{:name "John" :height 1.73}
-                         {:name "Peter" :height 1.92}])
+    (sut/transact! conn [{:name "John" :height 1.73 :weight 12M}
+                         {:name "Peter" :height 1.92 :weight 150M}])
     (is (= (sut/pull (sut/db conn) '[*] 1)
-           {:name "John" :height (float 1.73) :db/id 1}))
+           {:name "John" :height (float 1.73) :weight 12M :db/id 1}))
     (sut/close conn)
     (u/delete-files dir)))
 

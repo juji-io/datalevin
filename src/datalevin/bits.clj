@@ -270,7 +270,9 @@
 (defn- get-bigint
   [^ByteBuffer bb]
   (let [^byte b   (get-byte bb)
-        n         (if (bit-test b 7) (byte (bit-flip b 7)) (byte (- 127 b)))
+        n         (if (bit-test b 7)
+                    (unchecked-byte (bit-flip b 7))
+                    (unchecked-byte (- 127 b)))
         ^bytes bs (get-bytes bb n)]
     (BigInteger. bs)))
 
