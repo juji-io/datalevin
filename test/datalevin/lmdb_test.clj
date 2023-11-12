@@ -25,7 +25,9 @@
 
 (deftest basic-ops-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:spill-opts {:spill-threshold 50}})]
+        lmdb (l/open-kv dir
+                        {:spill-opts {:spill-threshold 50}
+                         :flags      (conj c/default-env-flags :mapasync)})]
 
     (is (= 50 (-> lmdb l/opts :spill-opts :spill-threshold)))
 
@@ -129,7 +131,8 @@
       (let [dir (l/dir lmdb)]
         (l/close-kv lmdb)
         (is (l/closed-kv? lmdb))
-        (let [lmdb  (l/open-kv dir)
+        (let [lmdb  (l/open-kv dir
+                               {:flags (conj c/default-env-flags :mapasync)})
               dbi-a (l/open-dbi lmdb "a")]
           (is (= "a" (l/dbi-name dbi-a)))
           (is (= ["hello" "world"] (l/get-value lmdb "a" :datalevin)))
@@ -142,12 +145,14 @@
 
 (deftest reentry-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (l/open-dbi lmdb "a")
     (l/transact-kv lmdb [[:put "a" :old 1]])
     (is (= 1 (l/get-value lmdb "a" :old)))
     (let [res (future
-                (let [lmdb2 (l/open-kv dir)]
+                (let [lmdb2 (l/open-kv
+                              dir
+                              {:flags (conj c/default-env-flags :mapasync)})]
                   (l/open-dbi lmdb2 "a")
                   (is (= 1 (l/get-value lmdb2 "a" :old)))
                   (l/transact-kv lmdb2 [[:put "a" :something 1]])
@@ -165,7 +170,7 @@
 
 (deftest multi-threads-get-value-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (l/open-dbi lmdb "a")
     (let [ks  (shuffle (range 0 100000))
           vs  (map inc ks)
@@ -178,7 +183,7 @@
 
 (deftest multi-threads-put-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (l/open-dbi lmdb "a")
     (let [ks  (shuffle (range 0 10000))
           vs  (map inc ks)
@@ -257,7 +262,8 @@
                  ^long v gen/large-integer]
                 (let [dir    (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
                       lmdb   (l/open-kv
-                               dir {:flags (conj c/default-env-flags :mapasync)})
+                               dir
+                               {:flags (conj c/default-env-flags :mapasync)})
                       _      (l/open-dbi lmdb "a")
                       _      (l/transact-kv lmdb [[:put "a" k v :long :long]])
                       put-ok (= v ^long (l/get-value lmdb "a" k :long :long))
@@ -269,7 +275,7 @@
 
 (deftest list-basic-ops-test
   (let [dir     (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
-        lmdb    (l/open-kv dir)
+        lmdb    (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
         sum     (volatile! 0)
         visitor (i/inter-fn
                   [kv]
@@ -357,7 +363,7 @@
 
 (deftest list-string-test
   (let [dir  (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
         pred (i/inter-fn
                [kv]
                (let [^String v (b/read-buffer (l/v kv) :string)]
@@ -416,7 +422,7 @@
 
 (deftest validate-data-test
   (let [dir  (u/tmp-dir (str "valid-data-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (l/open-dbi lmdb "a" {:validate-data? true})
     (is (thrown-with-msg? Exception #"Invalid data"
                           (l/transact-kv lmdb [[:put "a" 1 2 :string]])))
@@ -443,7 +449,7 @@
 
 (deftest read-during-transaction-test
   (let [dir   (u/tmp-dir (str "lmdb-ctx-test-" (UUID/randomUUID)))
-        lmdb  (l/open-kv dir)
+        lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
         lmdb1 (l/mark-write lmdb)]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "d")
@@ -486,7 +492,8 @@
 
 (deftest with-txn-map-resize-test
   (let [dir  (u/tmp-dir (str "map-size-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:mapsize 1})
+        lmdb (l/open-kv dir {:mapsize 1
+                             :flags   (conj c/default-env-flags :mapasync)})
         data {:description "this is going to be bigger than 10 MB"
               :numbers     (range 10000000)}]
     (l/open-dbi lmdb "a")
@@ -505,7 +512,7 @@
 
 (deftest with-transaction-kv-test
   (let [dir  (u/tmp-dir (str "with-tx-kv-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (l/open-dbi lmdb "a")
 
     (testing "new value is invisible to outside readers"
@@ -548,7 +555,7 @@
 
 (deftest tuple-range-query-test
   (let [dir  (u/tmp-dir (str "tuple-range-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (l/open-dbi lmdb "t")
     (l/open-dbi lmdb "u")
 
@@ -584,7 +591,7 @@
 
 (deftest sample-key-freqs-test
   (let [dir  (u/tmp-dir (str "sample-keys-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
         m    100000
         ks   (shuffle (range 0 m))
         txs  #(map (fn [k v] [:put % k v :long :long]) ks ks)]
@@ -608,7 +615,7 @@
 
 (deftest list-sample-freqs-test
   (let [dir  (u/tmp-dir (str "sample-list-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
         m    100
         n    1000
         ks   (shuffle (range 0 m))

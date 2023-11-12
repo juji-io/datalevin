@@ -18,7 +18,9 @@
                             {:value {:db/valueType :db.type/long}
                              :no    {:db/valueType :db.type/long
                                      :db/unique    :db.unique/identity}}
-                            {:auto-entity-time? true})]
+                            {:auto-entity-time? true
+                             :kv-opts
+                             {:flags (conj c/default-env-flags :mapasync)}})]
     (doseq [n (range 10)]
       (d/transact! conn [{:no n :value n}]))
     (d/transact! conn [{:no 0 :value 10}])
@@ -43,7 +45,8 @@
                {:instance/id
                 #:db{:valueType   :db.type/long
                      :unique      :db.unique/identity
-                     :cardinality :db.cardinality/one}})]
+                     :cardinality :db.cardinality/one}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (dorun (pmap #(d/transact! conn [{:instance/id %}])
                  (range 100)))
     (is (= 100 (d/q '[:find (max ?e) . :where [?e :instance/id]] @conn)))
@@ -308,7 +311,10 @@
 
 (deftest test-transact!
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn (d/create-conn dir {:aka {:db/cardinality :db.cardinality/many}})]
+        conn (d/create-conn
+               dir
+               {:aka {:db/cardinality :db.cardinality/many}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [[:db/add 1 :name "Ivan"]])
     (d/transact! conn [[:db/add 1 :name "Petr"]])
     (d/transact! conn [[:db/add 1 :aka "Devil"]])
@@ -326,7 +332,9 @@
 (deftest test-transact-compare-different-types
   (testing "different scalars"
     (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-          conn (d/create-conn dir)]
+          conn (d/create-conn
+                 dir {}
+                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
       (d/transact! conn [{:foo 1}
                          {:foo "1"}
                          {:foo :bar}])
@@ -344,7 +352,9 @@
 
   (testing "different colls"
     (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-          conn (d/create-conn dir)]
+          conn (d/create-conn
+                 dir {}
+                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
       (d/transact! conn [{:foo [1 2]}
                          {:foo [1 "2"]}
                          {:foo [1 :2]}])
@@ -367,7 +377,8 @@
 
 (deftest test-transact!-1
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
+        conn (d/create-conn
+               dir {} {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [{:db/id -1 :a 1}])
     (is (= (d/q '[:find ?v
                   :where [_ :a ?v]] @conn)
@@ -382,7 +393,9 @@
 
 (deftest test-db-fn-cas
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
+        conn (d/create-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [[:db/add 1 :weight 200]])
     (d/transact! conn [[:db.fn/cas 1 :weight 200 300]])
     (is (= (:weight (d/entity @conn 1)) 300))
@@ -393,7 +406,9 @@
     (d/close conn))
 
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn (d/create-conn dir {:label {:db/cardinality :db.cardinality/many}})]
+        conn (d/create-conn
+               dir {:label {:db/cardinality :db.cardinality/many}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [[:db/add 1 :label :x]])
     (d/transact! conn [[:db/add 1 :label :y]])
     (d/transact! conn [[:db.fn/cas 1 :label :y :z]])
@@ -404,7 +419,9 @@
     (u/delete-files dir))
 
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
+        conn (d/create-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [[:db/add 1 :name "Ivan"]])
     (d/transact! conn [[:db.fn/cas 1 :age nil 42]])
     (is (= (:age (d/entity @conn 1)) 42))
@@ -414,7 +431,9 @@
     (u/delete-files dir))
 
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
+        conn (d/create-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (is (thrown-msg? "Can't use tempid in '[:db.fn/cas -1 :attr nil :val]'. Tempids are allowed in :db/add only"
                      (d/transact! conn [[:db/add -1 :name "Ivan"]
                                         [:db.fn/cas -1 :attr nil :val]])))
@@ -425,7 +444,9 @@
 
 (deftest test-fn
   (let [dir                (u/tmp-dir (str "test-fn-" (UUID/randomUUID)))
-        conn               (d/create-conn dir)
+        conn               (d/create-conn
+                             dir {}
+                             {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         test-tx            (fn [_ tempid]
                              [{:db/id tempid :node/value (testing-fn)}])
         {:keys [db-after]} (d/transact! conn [[:db.fn/call test-tx -1]])
@@ -436,7 +457,9 @@
 
 (deftest test-db-fn
   (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn    (d/create-conn dir {:aka {:db/cardinality :db.cardinality/many}})
+        conn    (d/create-conn
+                  dir {:aka {:db/cardinality :db.cardinality/many}}
+                  {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         inc-age (fn [db name]
                   (if-let [[eid age] (first (d/q '{:find  [?e ?age]
                                                    :in    [$ ?name]
@@ -467,7 +490,9 @@
 
 (deftest test-db-ident-fn
   (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
-        conn    (d/create-conn dir {:name {:db/unique :db.unique/identity}})
+        conn    (d/create-conn
+                  dir {:name {:db/unique :db.unique/identity}}
+                  {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         inc-age (i/inter-fn [db name]
                             (if-some [ent (d/entity db [:name name])]
                               [{:db/id (:db/id ent)
@@ -580,9 +605,9 @@
 (deftest test-resolve-eid-refs
   (let [dir  (u/tmp-dir (str "resolve-" (UUID/randomUUID)))
         conn (d/create-conn
-               dir
-               {:friend {:db/valueType   :db.type/ref
-                         :db/cardinality :db.cardinality/many}})
+               dir {:friend {:db/valueType   :db.type/ref
+                             :db/cardinality :db.cardinality/many}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         tx   (d/transact! conn [{:name   "Sergey"
                                  :friend [-1 -2]}
                                 [:db/add -1 :name "Ivan"]
@@ -693,10 +718,9 @@
                             :db/unique      :db.unique/identity}
                 :foo/stats {:db/doc "Blob of additional stats"}}
         dir    (u/tmp-dir (str "issue-127-" (UUID/randomUUID)))
-        conn   (d/create-conn dir schema
-                              {:kv-opts
-                               {:flags
-                                (conj c/default-env-flags :mapasync)}})]
+        conn   (d/create-conn
+                 dir schema
+                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
     (dotimes [n 1000]
       (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
@@ -758,9 +782,9 @@
 
 (deftest million-txns-map-resize-test
   (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
-        conn (d/create-conn dir {}
-                            {:kv-opts
-                             {:flags (conj c/default-env-flags :nosync)}})]
+        conn (d/create-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
 
     (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
     (is (= 1000000 (count (d/datoms @conn :eav))))
@@ -776,7 +800,9 @@
 
 (deftest unchanged-datoms-test
   (let [dir  (u/tmp-dir (str "unchanged-datoms-" (UUID/randomUUID)))
-        conn (d/create-conn dir)
+        conn (d/create-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         rp1  (d/transact! conn [{:foo "bar"}])]
     (is (= [true] (map :added (:tx-data rp1))))
 
@@ -789,7 +815,9 @@
 
 (deftest unthawable-datoms-test
   (let [dir  (u/tmp-dir (str "unthawable-datoms-" (UUID/randomUUID)))
-        conn (d/create-conn dir)]
+        conn (d/create-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
 
     (is (thrown? Exception (d/transact! conn [{:bar (defn bar [] :bar)}])))
 
