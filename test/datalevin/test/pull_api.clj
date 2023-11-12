@@ -571,6 +571,55 @@
     (d/close-db test-db)
     (u/delete-files dir)))
 
+(deftest test-xform-cardinality-one
+  (let [dir     (u/tmp-dir (str "pull-xform-cardinality-one"
+                                (UUID/randomUUID)))
+        test-db (d/db-with
+                  (d/empty-db
+                    dir
+                    {:statement/effect
+                     {:db/valueType   :db.type/ref,
+                      :db/cardinality :db.cardinality/one}
+
+                     :statement2/effect
+                     {:db/valueType :db.type/ref}})
+                  [{:statement/effect {:effect :allow}}
+                   {:statement2/effect {:effect :deny}}])
+        tracker_ (atom 0)]
+
+    (testing "xform is called for cardinality/one ref type"
+      (is (= {:statement/effect :allow}
+             (d/pull test-db [{[:statement/effect
+                                :xform (fn [x]
+                                         (swap! tracker_ inc)
+                                         (:effect x))]
+                               [:effect]}]
+                     1)))
+      (is (= 1 @tracker_)))
+
+    (testing "xform is called for the leaf before the parent"
+      (reset! tracker_ 0)
+      (is (= {:statement/effect {:effect :leaf :new :prop}}
+             (d/pull test-db
+                     [{[:statement/effect
+                        :xform (fn [x]
+                                 (swap! tracker_ inc)
+                                 (assoc x :new :prop))]
+                       [[:effect :xform (fn [v]
+                                          (swap! tracker_ inc)
+                                          :leaf)]]}]
+                     1)))
+      (is (= 2 @tracker_)))
+
+    (testing "xform is called for ref with no cardinality"
+      (is (= {:statement2/effect :deny}
+             (d/pull test-db [{[:statement2/effect
+                                :xform (fn [x]
+                                         (:effect x))] [:effect]}] 3))))
+
+    (d/close-db test-db)
+    (u/delete-files dir)))
+
 (deftest test-visitor
   (let [dir     (u/tmp-dir (str "pull-" (UUID/randomUUID)))
         test-db (d/init-db test-datoms dir test-schema)
