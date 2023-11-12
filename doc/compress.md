@@ -35,11 +35,9 @@ In order to obtain a good compression ratio, the key compression dictionary
 should only be created after at least 64K keys have been stored to get good
 samples. Therefore keys are initially not compressed when DB is created. User can run `re-index`
 function with `:compress?` option enabled to create the dictionary and store the
-keys in compressed form when enough keys are seen. This re-index is also automatically done when the DB is
-closed and re-opened while `:compress?` is true and enough keys are seen.
+keys in compressed form when enough keys are seen.
 The computation of dictionary and building all necessary encoding and
-decoding tables can be done online, which takes less than one second on today's
-CPU.
+decoding tables takes less than one second on today's CPU.
 
 ### Value Compression
 
@@ -54,7 +52,7 @@ e.g. to work with versions of the server prior to `0.9.0`.
 
 ## Triple Compression
 
-Literal representation of triples in an index introduces significant redundant
+Literal representation of triples in an index incurs significant redundant
 storage. For example, in `:eav` index, there are many repeated values of `e`,
 and in `:ave` index, there are many repeated values of `a`. These repetitions of
 head elements not just increase the storage size, but also add processing

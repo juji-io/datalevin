@@ -17,7 +17,7 @@
    ;; [com.github.luben/zstd-jni "1.5.5-1"]
    ;; [com.github.seancorfield/next.jdbc "1.3.883"]
    [com.taoensso/encore "3.74.0"]
-   [com.taoensso/nippy "3.3.0"]
+   [com.taoensso/nippy "3.4.0-beta1"]
    [com.taoensso/timbre "6.3.1"]
    [joda-time/joda-time "2.12.5"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]

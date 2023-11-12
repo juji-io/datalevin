@@ -9,15 +9,14 @@
    [java.nio ByteBuffer]
    [me.lemire.integercompression IntCompressor]
    [me.lemire.integercompression.differential IntegratedIntCompressor]
-   ;; [com.github.luben.zstd ZstdDictCompress ZstdDictDecompress
-   ;;  ZstdDictTrainer Zstd]
-   [net.jpountz.lz4 LZ4Factory LZ4Compressor LZ4FastDecompressor]))
+   [io.airlift.compress.lz4 Lz4Compressor Lz4Decompressor]))
 
 (defprotocol ICompressor
-  (compress [this obj])
-  (uncompress [this obj])
-  (bf-compress [this src-bf dst-bf])
-  (bf-uncompress [this src-bf dst-bf]))
+  (method [this] "compression method, a keyword")
+  (compress [this obj] "compress into byte array")
+  (uncompress [this obj] "takes a byte array")
+  (bf-compress [this src-bf dst-bf] "compress between byte buffers")
+  (bf-uncompress [this src-bf dst-bf] "decompress between byte buffers"))
 
 ;; int compressors
 
@@ -25,6 +24,7 @@
   (let [^IntCompressor compressor (IntCompressor.)]
     (reify
       ICompressor
+      (method [_] :int)
       (compress [_ ar]
         (.compress compressor ar))
       (uncompress [_ ar]
@@ -34,6 +34,7 @@
   (let [^IntegratedIntCompressor sorted-compressor (IntegratedIntCompressor.)]
     (reify
       ICompressor
+      (method [_] :sorted-int)
       (compress [_ ar]
         (.compress sorted-compressor ar))
       (uncompress [_ ar]
@@ -70,14 +71,15 @@
 (defn put-sorted-ints [bf ar] (put-ints* sorted-int-compressor bf ar))
 
 ;; dictionary-less compressor
+;; using lz4
 
 (defn- create-dict-less-compressor
   []
-  (let [^LZ4Factory factory               (LZ4Factory/fastestInstance)
-        ^LZ4Compressor compressor         (.fastCompressor factory)
-        ^LZ4FastDecompressor decompressor (.fastDecompressor factory)]
+  (let [^Lz4Compressor compressor     (Lz4Compressor.)
+        ^Lz4Decompressor decompressor (Lz4Decompressor.)]
     (reify
       ICompressor
+      (method [_] :lz4)
       (bf-compress [_ src dst]
         (let [src   ^ByteBuffer src
               dst   ^ByteBuffer dst
@@ -103,27 +105,6 @@
   (or @dict-less-compressor
       (do (reset! dict-less-compressor (create-dict-less-compressor))
           @dict-less-compressor)))
-
-;; TODO not used at the moment, as zstd-jni doesn't support graal yet
-;; value compressor
-#_(defn- value-dictionary
-    ^bytes [sample-bas]
-    (let [trainer (ZstdDictTrainer. c/compress-sample-size (* 16 1024))]
-      (doseq [ba sample-bas] (.addSample trainer ^bytes ba))
-      (.trainSamples trainer)))
-
-#_(defn value-compressor
-    "take a seq of byte array samples"
-    [sample-bas]
-    (let [dict  (value-dictionary sample-bas)
-          cmp   (ZstdDictCompress. dict (Zstd/defaultCompressionLevel))
-          decmp (ZstdDictDecompress. dict)]
-      (reify
-        ICompressor
-        (bf-compress [_ src dst]
-          (Zstd/compress ^ByteBuffer dst ^ByteBuffer src cmp))
-        (bf-uncompress [_ src dst]
-          (Zstd/decompress ^ByteBuffer dst ^ByteBuffer src decmp)))))
 
 ;; key compressor
 
