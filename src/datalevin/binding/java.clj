@@ -978,7 +978,9 @@
        (l/open-dbi lmdb c/kv-info)
        (if temp?
          (u/delete-on-exit file)
-         (init-info lmdb info))
+         (do (init-info lmdb info)
+             (.addShutdownHook (Runtime/getRuntime)
+                               (Thread. #(l/close-kv lmdb)))))
        lmdb)
      (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 
