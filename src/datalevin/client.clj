@@ -292,18 +292,24 @@
   (get-id [client] id))
 
 (defn open-database
-  "Open a database on server. `db-type` can be \"datalog\" or \"kv\""
+  "Open a database on server. `db-type` can be \"datalog\", \"kv\",
+  or \"engine\""
   ([client db-name db-type]
    (open-database client db-name db-type nil nil))
   ([client db-name db-type opts]
    (open-database client db-name db-type nil opts))
   ([client db-name db-type schema opts]
    (let [{:keys [type message]}
-         (request client (if (= db-type c/db-store-kv)
-                           {:type :open-kv :db-name db-name :opts opts}
-                           (cond-> {:type :open :db-name db-name}
-                             schema (assoc :schema schema)
-                             opts   (assoc :opts (assoc opts :db-name db-name)))))]
+         (request client
+                  (cond
+                    (= db-type c/db-store-kv)
+                    {:type :open-kv :db-name db-name :opts opts}
+                    (= db-type c/db-store-datalog)
+                    (cond-> {:type :open :db-name db-name}
+                      schema (assoc :schema schema)
+                      opts   (assoc :opts (assoc opts :db-name db-name)))
+                    :else
+                    {:type :new-search-engine :db-name db-name :opts opts}))]
      (when (= type :error-response)
        (u/raise "Unable to open database:" db-name
                 {:message message})))))
