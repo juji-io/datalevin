@@ -384,7 +384,8 @@
                              :b {:db/valueType  :db.type/tuple
                                  :db/tupleTypes [:db.type/keyword
                                                  :db.type/long
-                                                 :db.type/string]}})
+                                                 :db.type/string]}}
+                            {:validate-data? true})
                 (d/db-with [{:db/id 1 :a ["A" "B"] :b [:id 1 "AB"]}
                             {:db/id 2 :a ["A" "b"] :b [:id 2 "Ab"]}
                             {:db/id 3 :a ["a" "B"] :b [:id 3 "aB"]}
