@@ -954,6 +954,9 @@
                         (.setMapSize mapsize)
                         (.setMaxReaders max-readers)
                         (.setMaxDbs max-dbs))
+           flags      (if temp?
+                        (set (conj flags :mapasync))
+                        flags)
            ^Env env   (.open builder file (kv-flags :env flags))
            info       (merge opts {:dir         dir
                                    :max-readers max-readers

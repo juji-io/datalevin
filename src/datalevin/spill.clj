@@ -76,9 +76,7 @@
   (spill [this]
     (let [dir (str spill-root "dtlv-spill-vec-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
-      (vreset! disk (l/open-kv dir
-                               {:temp? true
-                                :flags (conj c/default-env-flags :mapasync)}))
+      (vreset! disk (l/open-kv dir {:temp? true}))
       (l/open-dbi @disk c/tmp-dbi {:key-size Long/BYTES}))
     this)
 
@@ -320,9 +318,7 @@
   (spill [this]
     (let [dir (str spill-root "dtlv-spill-map-" (UUID/randomUUID))]
       (vreset! spill-dir dir)
-      (vreset! disk (l/open-kv dir
-                               {:temp? true
-                                :flags (conj c/default-env-flags :mapasync)}))
+      (vreset! disk (l/open-kv dir {:temp? true}))
       (l/open-dbi @disk c/tmp-dbi {:key-size Integer/BYTES}))
     this)
 
