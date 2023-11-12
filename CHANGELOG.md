@@ -1,6 +1,7 @@
 # Change Log
 
 ## WIP
+
 ### Added
 - [All] **Breaking** Option `:compress?` to compress the data (default `true`).
   See [details](doc/compress.md). #14
@@ -24,6 +25,7 @@
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
+
 ### Changed
 - [KV] **Breaking** Change default write setting to be synchronously flushing to disk, so
   that it is crash resilient, but is slower. To get back the old default setting
@@ -35,10 +37,29 @@
   prone to happen.
 - [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first element of triples.
 - [Datalog] Query results are spillable to disk. #166
+
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
+
+## 0.8.21 (2023-10-31)
+### Fixed
+- [All] Do not interfere with the default print-methods of regular expression, byte
+  array and big integer. #230
+
+
+## 0.8.20 (2023-10-02)
+### Fixed
+- [Datalog] `:xform` in pull expression not called for `:cardinality/one` ref
+  attributes, #224. [Thx @dvingo]
+- [Datalog] `:validate-data?` does not recognize homogeneous tuple data type, #227.
+- [All] BigDec decoding out of range error for some values in JVM 8. #225.
+### Improved
+- [KV] Add JVM shutdown hook to close DB. per #228
+- [Datalog] TxReport prints differently from the actual value, #223.
+- [Server] re-open server search engine automatically, #229
+
 
 ## 0.8.19 (2023-08-16)
 ### Improved
