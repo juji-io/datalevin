@@ -1,4 +1,4 @@
-(def version "0.8.18")
+(def version "0.8.21")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -14,8 +14,6 @@
    [com.fasterxml.jackson.core/jackson-databind "2.15.3"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.15"]
-   ;; [com.github.luben/zstd-jni "1.5.5-1"]
-   ;; [com.github.seancorfield/next.jdbc "1.3.883"]
    [com.taoensso/encore "3.74.0"]
    [com.taoensso/nippy "3.4.0-beta1"]
    [com.taoensso/timbre "6.3.1"]
