@@ -30,18 +30,21 @@
 - [KV] **Breaking** Change default write setting to be synchronously flushing to disk, so
   that it is crash resilient, but is slower. To get back the old default setting
   that is faster but less safe, conj `:mapasync` to `:flags` option.
-- [KV] **Breaking** Upgrade LMDB to the latest, now tracking mdb.master branch, as it
-  includes important fixes, such as
+- [KV] **Breaking** Upgrade LMDB to the latest, now tracking mdb.master branch,
+  as it includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [KV] Increase default spill threshold from 80 to 95 percent, so it is less
   prone to happen.
-- [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first element of triples.
+- [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first
+  element of triples.
 - [Datalog] Query results are spillable to disk. #166
 
 ### Improved
 - [Datalog] Query performance improvement by using mutable collections
   whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
+- [Search] `search-utils` functions are now compiled instead of being
+  interpreted to improve performance.
 
 ## 0.8.21 (2023-10-31)
 ### Fixed

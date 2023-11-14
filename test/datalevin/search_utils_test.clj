@@ -1,7 +1,7 @@
 (ns datalevin.search-utils-test
   (:require
    [datalevin.search-utils :as sut]
-   [datalevin.search :as sc]
+   [datalevin.analyzer :as a]
    [datalevin.util :as u]
    [datalevin.core :as d]
    [clojure.test :refer [is deftest testing]])
@@ -18,7 +18,7 @@
                             :token-filters [sut/lower-case-token-filter
                                             sut/en-stop-words-token-filter]})]
     (is (fn? cust-analyzer-en))
-    (is (= (sc/en-analyzer s1)
+    (is (= (a/en-analyzer s1)
            (cust-analyzer-en s1)
            (cust-analyzer-en s2)
            [["datalevin-analyzers" 3 10] ["test" 4 30]]))))

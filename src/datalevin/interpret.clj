@@ -11,7 +11,7 @@
    [datalevin.query :as q]
    [datalevin.util :as u]
    [datalevin.core]
-   ;; [datalevin.search-utils]
+   [datalevin.analyzer]
    [datalevin.stem]
    [datalevin.client]
    [datalevin.constants]
@@ -28,7 +28,11 @@
   (require 'datalevin.binding.java))
 
 (def ^:no-doc user-facing-ns
-  #{'datalevin.core 'datalevin.client 'datalevin.interpret 'datalevin.constants})
+  #{'datalevin.core 'datalevin.client 'datalevin.interpret
+    'datalevin.constants})
+
+(def ^:no-doc additional-ns
+  #{'datalevin.analyzer})
 
 (defn- user-facing? [v]
   (let [m (meta v)
@@ -40,7 +44,7 @@
            (not (:no-doc m)))
          (not (s/starts-with? d "Positional factory function for class")))))
 
-(defn ^:no-doc user-facing-map [ns var-map]
+(defn ^:no-doc available-map [ns var-map pred]
   (let [sci-ns (sci/create-ns ns)]
     (reduce
       (fn [m [k v]]
@@ -48,8 +52,13 @@
                                                     :sci.impl/built-in true
                                                     :ns sci-ns))))
       {}
-      (select-keys var-map
-                   (keep (fn [[k v]] (when (user-facing? v) k)) var-map)))))
+      (select-keys var-map (keep (fn [[k v]] (when (pred v) k)) var-map)))))
+
+(defn ^:no-doc user-facing-map [ns var-map]
+  (available-map ns var-map user-facing?))
+
+(defn ^:no-doc additional-map [ns var-map]
+  (available-map ns var-map (constantly true)))
 
 (defn- user-facing-vars []
   (reduce
@@ -57,6 +66,13 @@
       (assoc m ns (user-facing-map ns (ns-publics ns))))
     {}
     user-facing-ns))
+
+(defn- additional-vars []
+  (reduce
+    (fn [m ns]
+      (assoc m ns (additional-map ns (ns-publics ns))))
+    {}
+    additional-ns))
 
 (defn ^:no-doc resolve-var [s]
   (when (symbol? s)
@@ -180,20 +196,6 @@
   "Read a printed `inter-fn` back in."
   [x]
   (source->inter-fn x))
-
-(defn ^:no-doc additional-vars
-  []
-  {
-   'datalevin.search
-   (user-facing-map 'datalevin.search
-                    {'en-analyzer #'datalevin.search/en-analyzer})
-   'datalevin.stem
-   (user-facing-map 'datalevin.stem
-                    {'get-stemmer #'datalevin.stem/get-stemmer})
-   'datalevin.constants
-   (user-facing-map 'datalevin.constants
-                    {'en-stop-words? #'datalevin.constants/en-stop-words?})
-   })
 
 (def ^:no-doc sci-opts
   {:namespaces (merge (user-facing-vars) (additional-vars))

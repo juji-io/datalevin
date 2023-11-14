@@ -369,12 +369,3 @@ Used in English analyzer."}
                \| \< \> \& \@ \# \^ \* \\ \~ \`]]
       (.add s c))
     s))
-
-(defn ^:no-doc en-stop-words?
-  "return true if the given word is an English stop words"
-  [w]
-  (.contains ^HashSet *en-stop-words-set* w))
-
-(defn ^:no-doc en-punctuations?
-  [c]
-  (.contains ^HashSet *en-punctuations-set* c))

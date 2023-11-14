@@ -5,6 +5,7 @@
    [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
    [datalevin.core :as d]
+   [datalevin.analyzer :as a]
    [datalevin.sparselist :as sl]
    [datalevin.util :as u]
    [clojure.data.csv :as csv]
@@ -26,8 +27,8 @@
 (deftest english-analyzer-test
   (let [s1 "This is a Datalevin-Analyzers test"
         s2 "This is a Datalevin-Analyzers test. "]
-    (is (= (sut/en-analyzer s1)
-           (sut/en-analyzer s2)
+    (is (= (a/en-analyzer s1)
+           (a/en-analyzer s2)
            [["datalevin-analyzers" 3 10] ["test" 4 30]]))
     (is (= (subs s1 10 (+ 10 (.length "datalevin-analyzers")))
            "Datalevin-Analyzers" ))))

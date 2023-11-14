@@ -5,6 +5,7 @@
    [datalevin.util :as u :refer [cond+]]
    [datalevin.spill :as sp]
    [datalevin.sparselist :as sl]
+   [datalevin.analyzer :as a]
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.lru :as lru]
@@ -29,48 +30,6 @@
 (if (u/graal?)
   (require 'datalevin.binding.graal)
   (require 'datalevin.binding.java))
-
-(defn- non-token-char?
-  [^Character c]
-  (or (Character/isWhitespace c) (c/en-punctuations? c)))
-
-(defn en-analyzer
-  "English analyzer (tokenizer) does the following:
-
-  - split on white space and punctuation, remove them
-  - lower-case all characters
-  - remove stop words
-
-  Return a list of [term, position, offset].
-
-  This is the default analyzer of search engine when none is provided."
-  [^String x]
-  (let [len   (.length x)
-        len-1 (dec len)
-        res   (FastList.)]
-    (loop [i     0
-           pos   0
-           in?   false
-           start 0
-           sb    (StringBuilder.)]
-      (if (< i len)
-        (let [c (.charAt x i)]
-          (if (non-token-char? c)
-            (if in?
-              (let [word (.toString sb)]
-                (when-not (c/en-stop-words? word)
-                  (.add res [word pos start]))
-                (recur (inc i) (inc pos) false i (StringBuilder.)))
-              (recur (inc i) pos false i sb))
-            (recur (inc i) pos true (if in? start i)
-                   (.append sb (Character/toLowerCase c)))))
-        (let [c (.charAt x len-1)]
-          (if (non-token-char? c)
-            res
-            (let [word (.toString sb)]
-              (when-not (c/en-stop-words? word)
-                (.add res [word pos start]))
-              res)))))))
 
 (defn- collect-terms
   [result]
@@ -809,7 +768,7 @@
    (new-search-engine lmdb nil))
   ([lmdb {:keys [domain analyzer query-analyzer index-position? include-text?]
           :or   {domain          "datalevin"
-                 analyzer        en-analyzer
+                 analyzer        a/en-analyzer
                  index-position? false
                  include-text?   false}}]
    (let [terms-dbi     (str domain "/" c/terms)
@@ -932,7 +891,7 @@
    (search-index-writer lmdb nil))
   ([lmdb {:keys [domain analyzer index-position? include-text?]
           :or   {domain          "datalevin"
-                 analyzer        en-analyzer
+                 analyzer        a/en-analyzer
                  index-position? false
                  include-text?   false}}]
    (let [terms-dbi     (str domain "/" c/terms)
