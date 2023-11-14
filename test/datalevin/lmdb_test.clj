@@ -224,7 +224,7 @@
   (prop/for-all
     [k (gen/such-that (partial data-size-less-than? c/+max-key-size+)
                       gen/any-equatable)
-     v (gen/such-that (partial data-size-less-than? c/+default-val-size+)
+     v (gen/such-that (partial data-size-less-than? c/*init-val-size*)
                       gen/any-equatable)]
     (let [dir    (u/tmp-dir (str "data-test-" (UUID/randomUUID)))
           lmdb   (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
@@ -599,14 +599,14 @@
     (l/open-dbi lmdb "u")
     (l/transact-kv lmdb (txs "u"))
     (let [^longs freqs (l/sample-key-freqs lmdb "u")]
-      (is (= (alength freqs) c/key-compress-num-symbols))
-      (is (< (* 2 ^long c/compress-sample-size) (aget freqs 0)))
+      (is (= (alength freqs) c/+key-compress-num-symbols+))
+      (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
       (is (< (aget freqs 1) (aget freqs 0))))
 
     (l/open-dbi lmdb "v")
     (l/transact-kv lmdb (txs "v"))
     (let [^longs freqs (l/sample-key-freqs lmdb "v" 2)]
-      (is (= (alength freqs) c/key-compress-num-symbols))
+      (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< 1 (aget freqs 0)))
       (is (<= (count (filter #(< 1 ^long %) (seq freqs))) 8)))
 
@@ -625,14 +625,14 @@
     (l/open-list-dbi lmdb "u")
     (l/transact-kv lmdb (txs "u"))
     (let [^longs freqs (l/sample-key-freqs lmdb "u")]
-      (is (= (alength freqs) c/key-compress-num-symbols))
-      (is (< (* 2 ^long c/compress-sample-size) (aget freqs 0)))
+      (is (= (alength freqs) c/+key-compress-num-symbols+))
+      (is (< (* 2 ^long c/*compress-sample-size*) (aget freqs 0)))
       (is (< (aget freqs 1) (aget freqs 0))))
 
     (l/open-dbi lmdb "v")
     (l/transact-kv lmdb (txs "v"))
     (let [^longs freqs (l/sample-key-freqs lmdb "v" 2)]
-      (is (= (alength freqs) c/key-compress-num-symbols))
+      (is (= (alength freqs) c/+key-compress-num-symbols+))
       (is (< 1 (aget freqs 0)))
       (is (<= (count (filter #(< 1 ^long %) (seq freqs))) 8)))
 

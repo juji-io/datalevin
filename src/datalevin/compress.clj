@@ -25,20 +25,16 @@
     (reify
       ICompressor
       (method [_] :int)
-      (compress [_ ar]
-        (.compress compressor ar))
-      (uncompress [_ ar]
-        (.uncompress compressor ar)))) )
+      (compress [_ ar] (.compress compressor ar))
+      (uncompress [_ ar] (.uncompress compressor ar)))) )
 
 (defonce sorted-int-compressor
   (let [^IntegratedIntCompressor sorted-compressor (IntegratedIntCompressor.)]
     (reify
       ICompressor
       (method [_] :sorted-int)
-      (compress [_ ar]
-        (.compress sorted-compressor ar))
-      (uncompress [_ ar]
-        (.uncompress sorted-compressor ar)))) )
+      (compress [_ ar] (.compress sorted-compressor ar))
+      (uncompress [_ ar] (.uncompress sorted-compressor ar)))) )
 
 (defn- get-ints*
   [compressor ^ByteBuffer bf]
@@ -84,7 +80,7 @@
         (let [src   ^ByteBuffer src
               dst   ^ByteBuffer dst
               total (.remaining src)]
-          (if (< total ^long c/value-compress-threshold)
+          (if (< total ^long c/+value-compress-threshold+)
             (do (.putInt dst (int 0))
                 (bf/buffer-transfer src dst))
             (do (.putInt dst (int (.limit src)))
@@ -109,18 +105,18 @@
 ;; key compressor
 
 (defn init-key-freqs ^longs []
-  (long-array c/key-compress-num-symbols (repeat 1)))
+  (long-array c/+key-compress-num-symbols+ (repeat 1)))
+
+(defn- hu-compressor
+  [^HuTucker ht]
+  (reify
+    ICompressor
+    (method [_] :hu)
+    (bf-compress [_ src dst] (.encode ht src dst))
+    (bf-uncompress [_ src dst] (.decode ht src dst))))
 
 (defn key-compressor
   ([^longs freqs]
-   (let [^HuTucker ht (hu/new-hu-tucker freqs)]
-     (reify
-       ICompressor
-       (bf-compress [_ src dst] (.encode ht src dst))
-       (bf-uncompress [_ src dst] (.decode ht src dst)))))
+   (hu-compressor (hu/new-hu-tucker freqs)))
   ([^bytes lens ^ints codes]
-   (let [^HuTucker ht (hu/codes->hu-tucker lens codes)]
-     (reify
-       ICompressor
-       (bf-compress [_ src dst] (.encode ht src dst))
-       (bf-uncompress [_ src dst] (.decode ht src dst))))))
+   (hu-compressor (hu/codes->hu-tucker lens codes))))

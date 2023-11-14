@@ -27,7 +27,7 @@
 (test/defspec transit-bf-test
   100
   (prop/for-all [k gen/any-equatable]
-                (let [bf (bf/allocate-buffer c/+default-buffer-size+)]
+                (let [bf (bf/allocate-buffer c/+buffer-size+)]
                   (sut/write-transit-bf bf k)
                   (.flip bf)
                   (= k (sut/read-transit-bf bf)))))

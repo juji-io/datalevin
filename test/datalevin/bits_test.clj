@@ -25,7 +25,7 @@
 (def kc    (cp/key-compressor (long-array (map inc freqs))))
 
 
-(def sample-bas (gen/sample gen/bytes c/compress-sample-size))
+(def sample-bas (gen/sample gen/bytes c/*compress-sample-size*))
 
 ;; binary index preserves the order of values
 
@@ -56,16 +56,6 @@
                 (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
                   (sut/put-bf bf k :data kc)
                   (= k (sut/read-buffer bf :data kc)))))
-
-;; TODO zstd-jni does not support graal at the moment
-;; https://github.com/luben/zstd-jni/issues/115
-#_(test/defspec value-compressed-data-generative-test
-   100
-   (let [compressor (cp/value-compressor sample-bas)]
-     (prop/for-all [k gen/any-equatable]
-                   (let [^ByteBuffer bf (bf/allocate-buffer 16384)]
-                     (sut/put-bf bf k :data compressor)
-                     (= k (sut/read-buffer bf :data compressor))))))
 
 (test/defspec general-compressed-data-generative-test
   100

@@ -275,8 +275,8 @@
   ([] (new-spillable-vector nil nil))
   ([vs] (new-spillable-vector vs nil))
   ([vs {:keys [spill-threshold spill-root]
-        :or   {spill-threshold c/+default-spill-threshold+
-               spill-root      c/+default-spill-root+}}]
+        :or   {spill-threshold c/default-spill-threshold
+               spill-root      c/default-spill-root}}]
    (when (empty? @listeners) (memory-updater))
    (let [^SpillableVector svec (SpillableVector. spill-threshold
                                                  spill-root
@@ -461,8 +461,8 @@
   ([] (new-spillable-map nil nil))
   ([m] (new-spillable-map m nil))
   ([m {:keys [spill-threshold spill-root]
-       :or   {spill-threshold c/+default-spill-threshold+
-              spill-root      c/+default-spill-root+}}]
+       :or   {spill-threshold c/default-spill-threshold
+              spill-root      c/default-spill-root}}]
    (when (empty? @listeners) (memory-updater))
    (let [smap (SpillableMap. spill-threshold
                              spill-root
@@ -559,8 +559,8 @@
   ([] (new-spillable-set nil nil))
   ([s] (new-spillable-set s nil))
   ([s {:keys [spill-threshold spill-root]
-       :or   {spill-threshold c/+default-spill-threshold+
-              spill-root      c/+default-spill-root+}}]
+       :or   {spill-threshold c/default-spill-threshold
+              spill-root      c/default-spill-root}}]
    (when (empty? @listeners) (memory-updater))
    (let [impl (SpillableMap. spill-threshold
                              spill-root

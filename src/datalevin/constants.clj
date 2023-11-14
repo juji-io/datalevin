@@ -1,4 +1,5 @@
-(ns ^:no-doc datalevin.constants
+(ns datalevin.constants
+  "System vars. Some can be dynamically rebound to change system behavior."
   (:refer-clojure :exclude [meta])
   (:require
    [datalevin.util :as u])
@@ -9,23 +10,24 @@
 
 ;;---------------------------------------------
 ;; system constants, fixed
+;;---------------------------------------------
 
 ;; datom
 
-(def ^:const e0    0)
-(def ^:const emax  0x7FFFFFFFFFFFFFFF)
-(def ^:const tx0   1)
-(def ^:const txmax 0x7FFFFFFFFFFFFFFF)
-(def ^:const v0    :db.value/sysMin)
-(def ^:const vmax  :db.value/sysMax)
-(def ^:const g0    1)
-(def ^:const gmax  0x7FFFFFFFFFFFFFFF)
-(def ^:const a0    0)
-(def ^:const amax  0x7FFFFFFF)
+(def ^:no-doc ^:const e0    0)
+(def ^:no-doc ^:const emax  0x7FFFFFFFFFFFFFFF)
+(def ^:no-doc ^:const tx0   1)
+(def ^:no-doc ^:const txmax 0x7FFFFFFFFFFFFFFF)
+(def ^:no-doc ^:const g0    1)
+(def ^:no-doc ^:const gmax  0x7FFFFFFFFFFFFFFF)
+(def ^:no-doc ^:const a0    0)
+(def ^:no-doc ^:const amax  0x7FFFFFFF)
+(def ^:no-doc v0    :db.value/sysMin)
+(def ^:no-doc vmax  :db.value/sysMax)
 
 ;; schema
 
-(def ^:const implicit-schema
+(def ^:no-doc implicit-schema
   {:db/ident      {:db/unique    :db.unique/identity
                    :db/valueType :db.type/keyword
                    :db/aid       0}
@@ -36,7 +38,7 @@
                    :db/cardinality :db.cardinality/one
                    :db/aid         2}})
 
-(def ^:const entity-time-schema
+(def ^:no-doc entity-time-schema
   {:db/created-at {:db/valueType   :db.type/long
                    :db/cardinality :db.cardinality/one}
    :db/updated-at {:db/valueType   :db.type/long
@@ -44,70 +46,99 @@
 
 ;; lmdb
 
-(def default-env-flags [:nordahead :writemap :notls])
+(def default-env-flags
+  "Default LMDB env flag is `[:nordahead :writemap :notls]`. See
+  http://www.lmdb.tech/doc/group__mdb__env.html for full list of flags.
 
-(def default-dbi-flags [:create])
+  Passed as `:flags` option value to `open-kv` function. For example,
+  `(open-kv \"/tmp/mydb\" {:flags (conj default-env-flags :mapasync)})`
+  can be used to enable asynchronous writes to improve write speed, in
+  expense of safety."
+  [:nordahead :writemap :notls])
 
-(def read-dbi-flags [])
+(def default-dbi-flags
+  "Default LMDB dbi flag is `[:create]`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for full list of flags"
+  [:create])
 
-(def default-put-flags [])
+(def default-put-flags
+  "Default LMDB put flag is `[]`. See http://www.lmdb.tech/doc/group__mdb__put.html for full list of flags"
+  [])
 
-(def ^:const +max-key-size+     511)   ; in bytes
+(def ^:const +max-key-size+
+  "Maximum LMDB key size is 511 bytes"
+  511)
+
+(def ^:no-doc ^:const +buffer-grow-factor+ 10)
+
+;; # of times db can be auto enlarged in a tx
+(def ^:no-doc ^:const +in-tx-overflow-times+ 5)
 
 ;; tmp lmdb
 
-(def ^:const +default-spill-threshold+ 95)   ; percentage of Xmx
-(def ^:const +default-spill-root+ (u/tmp-dir))
+(def ^:const default-spill-threshold
+  "Default percentage of heap memory (Xmx) is 95, over which spill-to-disk
+  will be triggered"
+  95)
 
-(def ^:const tmp-dbi "t")
+(def default-spill-root
+  "Default root directory of spilled files is platform dependent. the same as
+  the value of Java property `java.io.tmpdir`"
+  (u/tmp-dir))
+
+(def ^:const tmp-dbi
+  "Default dbi name of the spilled db is `t`"
+  "t")
 
 ;; index storage
 
-(def ^:const +val-bytes-wo-hdr+ 493)  ; - hdr - eid - s - gid
-(def ^:const +val-bytes-trunc+  492)  ; - tr
+(def ^:no-doc ^:const +val-bytes-wo-hdr+ 493)  ; - hdr - eid - s - gid
+(def ^:no-doc ^:const +val-bytes-trunc+  492)  ; - tr
 
-(def ^:const +id-bytes+ Long/BYTES)
-(def ^:const +short-id-bytes+ Integer/BYTES)
+(def ^:no-doc ^:const +id-bytes+ Long/BYTES)
+(def ^:no-doc ^:const +short-id-bytes+ Integer/BYTES)
 
 ;; value headers
-(def ^:const type-long-neg   (unchecked-byte 0xC0))
-(def ^:const type-long-pos   (unchecked-byte 0xC1))
-(def ^:const type-bigint     (unchecked-byte 0xF1))
-(def ^:const type-bigdec     (unchecked-byte 0xF2))
-(def ^:const type-homo-tuple (unchecked-byte 0xF3))
-(def ^:const type-hete-tuple (unchecked-byte 0xF4))
-(def ^:const type-float      (unchecked-byte 0xF5))
-(def ^:const type-double     (unchecked-byte 0xF6))
-(def ^:const type-instant    (unchecked-byte 0xF7))
-(def ^:const type-ref        (unchecked-byte 0xF8))
-(def ^:const type-uuid       (unchecked-byte 0xF9))
-(def ^:const type-string     (unchecked-byte 0xFA))
-(def ^:const type-keyword    (unchecked-byte 0xFB))
-(def ^:const type-symbol     (unchecked-byte 0xFC))
-(def ^:const type-boolean    (unchecked-byte 0xFD))
-(def ^:const type-bytes      (unchecked-byte 0xFE))
+(def ^:no-doc ^:const type-long-neg   (unchecked-byte 0xC0))
+(def ^:no-doc ^:const type-long-pos   (unchecked-byte 0xC1))
+(def ^:no-doc ^:const type-bigint     (unchecked-byte 0xF1))
+(def ^:no-doc ^:const type-bigdec     (unchecked-byte 0xF2))
+(def ^:no-doc ^:const type-homo-tuple (unchecked-byte 0xF3))
+(def ^:no-doc ^:const type-hete-tuple (unchecked-byte 0xF4))
+(def ^:no-doc ^:const type-float      (unchecked-byte 0xF5))
+(def ^:no-doc ^:const type-double     (unchecked-byte 0xF6))
+(def ^:no-doc ^:const type-instant    (unchecked-byte 0xF7))
+(def ^:no-doc ^:const type-ref        (unchecked-byte 0xF8))
+(def ^:no-doc ^:const type-uuid       (unchecked-byte 0xF9))
+(def ^:no-doc ^:const type-string     (unchecked-byte 0xFA))
+(def ^:no-doc ^:const type-keyword    (unchecked-byte 0xFB))
+(def ^:no-doc ^:const type-symbol     (unchecked-byte 0xFC))
+(def ^:no-doc ^:const type-boolean    (unchecked-byte 0xFD))
+(def ^:no-doc ^:const type-bytes      (unchecked-byte 0xFE))
 
-(def ^:const false-value     (unchecked-byte 0x01))
-(def ^:const true-value      (unchecked-byte 0x02))
+(def ^:no-doc ^:const false-value     (unchecked-byte 0x01))
+(def ^:no-doc ^:const true-value      (unchecked-byte 0x02))
 
-(def ^:const separator       (unchecked-byte 0x00))
-(def ^:const truncator       (unchecked-byte 0xFF))
-(def ^:const slash           (unchecked-byte 0x2F))
+(def ^:no-doc ^:const separator       (unchecked-byte 0x00))
+(def ^:no-doc ^:const truncator       (unchecked-byte 0xFF))
+(def ^:no-doc ^:const slash           (unchecked-byte 0x2F))
 
-(def separator-ba (byte-array [(unchecked-byte 0x00)]))
+(def ^:no-doc separator-ba (byte-array [(unchecked-byte 0x00)]))
 
-(def max-uuid (UUID. -1 -1))
-(def min-uuid (UUID. 0 0))
+(def ^:no-doc max-uuid (UUID. -1 -1))
+(def ^:no-doc min-uuid (UUID. 0 0))
 
-(def max-bytes (let [ba (byte-array +val-bytes-wo-hdr+)]
-                 (Arrays/fill ba (unchecked-byte 0xFF))
-                 ba))
-(def min-bytes (byte-array [0x00]))
+(def ^:no-doc max-bytes (let [ba (byte-array +val-bytes-wo-hdr+)]
+                          (Arrays/fill ba (unchecked-byte 0xFF))
+                          ba))
+(def ^:no-doc min-bytes (byte-array [0x00]))
 
-(def ^:const +tuple-max+ 255)
-(def tuple-max-bytes (let [ba (byte-array +tuple-max+)]
-                       (Arrays/fill ba (unchecked-byte 0xFF))
-                       ba))
+(def ^:const +tuple-max+
+  "Maximum length of a tuple is 255 bytes"
+  255)
+
+(def ^:no-doc tuple-max-bytes (let [ba (byte-array +tuple-max+)]
+                                (Arrays/fill ba (unchecked-byte 0xFF))
+                                ba))
 
 (defn- max-bigint-bs
   ^bytes []
@@ -116,7 +147,9 @@
     (dotimes [i 126] (aset bs (inc i) (unchecked-byte 0xff)))
     bs))
 
-(def max-bigint (BigInteger. (max-bigint-bs)))
+(def max-bigint
+  "Maximum big integer is `2^1015-1`"
+  (BigInteger. (max-bigint-bs)))
 
 (defn- min-bigint-bs
   ^bytes []
@@ -125,86 +158,153 @@
     (dotimes [i 126] (aset bs (inc i) (unchecked-byte 0x00)))
     bs))
 
-(def min-bigint (BigInteger. (min-bigint-bs)))
+(def min-bigint
+  "Minimum big integer is `-2^1015`"
+  (BigInteger. (min-bigint-bs)))
 
-(def max-bigdec (BigDecimal. ^BigInteger max-bigint Integer/MIN_VALUE))
+(def max-bigdec
+  "Maximum big decimal has value of `(2^1015-1) x 10^2147483648`"
+  (BigDecimal. ^BigInteger max-bigint Integer/MIN_VALUE))
 
-(def min-bigdec (BigDecimal. ^BigInteger min-bigint Integer/MIN_VALUE))
+(def min-bigdec
+  "Minimum big decimal has value of `-2^1015 x 10^2147483648`"
+  (BigDecimal. ^BigInteger min-bigint Integer/MIN_VALUE))
 
-(def ^:const normal 0)  ; non-giant datom
+(def ^:no-doc ^:const normal 0)  ; non-giant datom
 
 ;; dbi-names
 
 ;; kv
-(def ^:const kv-info "datalevin/kv-info")
+(def ^:const kv-info
+  "dbi name for kv store system information is `datalevin/kv-info"
+  "datalevin/kv-info")
 
 ;; dl
-(def ^:const eav "datalevin/eav")
-(def ^:const ave "datalevin/ave")
-(def ^:const vea "datalevin/vea")
-(def ^:const giants "datalevin/giants")
-(def ^:const schema "datalevin/schema")
-(def ^:const meta "datalevin/meta")
-(def ^:const opts "datalevin/opts")
-(def ^:const rawtext "rawtext")
+(def ^:const eav
+  "dbi name for Datalog EAV index is `datalevin/eav"
+  "datalevin/eav")
+(def ^:const ave
+  "dbi name for Datalog AVE index is `datalevin/ave"
+  "datalevin/ave")
+(def ^:const vea
+  "dbi name for Datalog VEA index is `datalevin/vea"
+  "datalevin/vea")
+(def ^:const giants
+  "dbi name for Datalog large datoms is `datalevin/giants"
+  "datalevin/giants")
+(def ^:const schema
+  "dbi name for Datalog schema is `datalevin/schema"
+  "datalevin/schema")
+(def ^:const meta
+  "dbi name for Datalog meta information is `datalevin/meta"
+  "datalevin/meta")
+(def ^:const opts
+  "dbi name for Datalog options is `datalevin/opts"
+  "datalevin/opts")
 
 ;; compression
 
-(def key-compress-num-symbols 65536)
-(def compress-sample-size 65536)
+(def ^:no-doc ^:const +key-compress-num-symbols+ 65536)
 
-(def ^:const decoding-bits 4)
-
-(def value-compress-threshold 36)
+(def ^:no-doc ^:const +value-compress-threshold+ 36)
 
 ;; search
-(def ^:const terms "terms")
-(def ^:const docs "docs")
-(def ^:const positions "positions")
 
-(def ^:const datalog-value-types
+(def default-display
+  "default `search` function `:display` option value is `:refs`"
+  :refs)
+
+(def ^:const default-top
+  "default `search` function `:top` option value is `10`"
+  10)
+
+(def ^:const default-proximity-expansion
+  "default `search` function `:proximity-expansion` option value is `2`"
+  2)
+
+(def ^:const default-proximity-max-dist
+  "default `search` function `:proximity-max-dist` option value is `45`"
+  45)
+
+(def default-doc-filter (constantly true))
+
+
+(def ^:const terms
+  "dbi name suffix for search engine terms index is `terms`"
+  "terms")
+(def ^:const docs
+  "dbi name suffix for search engine documents index is `docs`"
+  "docs")
+(def ^:const positions
+  "dbi name suffix for search engine positions index is `positions`"
+  "positions")
+(def ^:const rawtext
+  "dbi name suffix for search engine raw text is `rawtext`"
+  "rawtext")
+
+(def ^:const +max-term-length+
+  "The full text search engine ignores exceedingly long strings. The maximal
+  allowed term length is 128 characters"
+  128)
+
+;; data types
+
+(def ^:no-doc datalog-value-types
   #{:db.type/keyword :db.type/symbol :db.type/string :db.type/boolean
     :db.type/long :db.type/double :db.type/float :db.type/ref
     :db.type/bigint :db.type/bigdec :db.type/instant :db.type/uuid
     :db.type/bytes :db.type/tuple})
 
-(def ^:const kv-value-types
+(def ^:no-doc kv-value-types
   #{:keyword :symbol :string :boolean :long :double :float :instant :uuid
     :bytes :bigint :bigdec :data})
 
-;; search engine
-
-(def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
-
 ;; server / client
 
-(def ^:const default-port (int 8898))
-(def ^:const default-idle-timeout 86400000) ;; 24 hours
+(def ^:no-doc ^:const +buffer-size+ 65536)
 
-(def ^:const system-dir "system")
+(def ^:no-doc ^:const +wire-datom-batch-size+ 1000)
 
-(def ^:const default-username "datalevin")
-(def ^:const default-password "datalevin")
+(def ^:const default-port
+  "The server default port number is 8898"
+  (int 8898))
 
-(def ^:const db-store-datalog "datalog")
-(def ^:const db-store-kv "kv")
+(def ^:const default-idle-timeout
+  "The server session default idle timeout is 172800000ms (48 hours)"
+  172800000)
 
-(def ^:const dl-type :datalog)
-(def ^:const kv-type :key-value)
+(def ^:const default-connection-pool-size
+  "The default client connection pool size is 3"
+  3)
 
-(def ^:const message-header-size 5) ; bytes, 1 type + 4 length
+(def ^:const default-connection-timeout
+  "The default connection timeout is 60000ms (1 minute)"
+  60000)
 
-(def ^:const message-format-transit (unchecked-byte 0x01))
-(def ^:const message-format-nippy (unchecked-byte 0x02))
+(def ^:no-doc ^:const system-dir "system")
+
+(def ^:const default-username
+  "The server default username is `datalevin`"
+  "datalevin")
+
+(def ^:const default-password
+  "The server default password is `datalevin`"
+  "datalevin")
+
+(def ^:no-doc ^:const db-store-datalog "datalog")
+(def ^:no-doc ^:const db-store-kv "kv")
+
+(def ^:no-doc dl-type :datalog)
+(def ^:no-doc kv-type :key-value)
+
+(def ^:no-doc ^:const message-header-size 5) ; bytes, 1 type + 4 length
+
+(def ^:no-doc ^:const message-format-transit (unchecked-byte 0x01))
+(def ^:no-doc ^:const message-format-nippy (unchecked-byte 0x02))
 
 ;;-------------------------------------------------------------
-
-;; dynamic
-
-
+;; user configurable
 ;;-------------------------------------------------------------
-
-;; user configurable TODO: make it so
 
 ;; serialization
 
@@ -215,15 +315,23 @@
 
 ;; lmdb
 
-(def +buffer-grow-factor+ 10)
-(def +max-dbs+          128)
-(def +max-readers+      126)
-(def +use-readers+      32)    ; leave the rest to others
-(def +init-db-size+     100)   ; in megabytes
-(def +default-val-size+ 16384) ; in bytes
-(def +in-tx-overflow-times+ 5) ; # of times db can be auto enlarged in a tx
+(def ^{:dynamic true
+       :doc     "Maximum number of sub-databases allowed in a db file"}
+  *max-dbs* 128)
 
-(defn pick-mapsize
+(def ^{:dynamic true
+       :doc     "Maximum number of readers allowed for a db file"}
+  *max-readers* 126)
+
+(def ^{:dynamic true
+       :doc     "Initial db file size is 100 megabytes, automatically grown"}
+  *init-db-size* 100)
+
+(def ^{:dynamic true
+       :doc     "Initial maximal value size is 16384 bytes, automatically grown"}
+  *init-val-size* 16384)
+
+(defn ^:no-doc pick-mapsize
   "pick a map size from the growing factor schedule that is larger than or
   equal to the current size"
   [dir]
@@ -231,26 +339,18 @@
         cur-size   (.length file)]
     (some #(when (<= cur-size (* ^long % 1024 1024)) %)
           (iterate #(* ^long +buffer-grow-factor+ ^long %)
-                   +init-db-size+))))
+                   *init-db-size*))))
 
-;; client/server
-
-(def +default-buffer-size+ 65536) ; in bytes
-
-(def +wire-datom-batch-size+ 1000)
-
-(def connection-pool-size 3)
-(def connection-timeout 60000) ; in milliseconds
+(def ^{:dynamic true
+       :doc     "The number of samples considered when build the key compression dictionary is 65536"}
+  *compress-sample-size* 65536)
 
 ;;search engine
 
-(def default-display :refs)
-(def default-top 10)
-(def default-proximity-expansion 2)
-(def default-proximity-max-dist 45)
-(def default-doc-filter (constantly true))
-
-(def en-stop-words-set
+(def ^{:dynamic true
+       :doc     "The set of English stop words, a Java HashSet, contains
+the same words as that of Lucene. Used in English analyzer."}
+  *en-stop-words-set*
   (let [s (HashSet.)]
     (doseq [w ["a",    "an",   "and",   "are",  "as",    "at",   "be",
                "but",  "by",   "for",   "if",   "in",    "into", "is",
@@ -260,16 +360,21 @@
       (.add s w))
     s))
 
-(defn en-stop-words?
-  "return true if the given word is an English stop words"
-  [w]
-  (.contains ^HashSet en-stop-words-set w))
-
-(def en-punctuations-set
+(def ^{:dynamic true
+       :doc     "The set of English punctuation characters, a Java HashSet.
+Used in English analyzer."}
+  *en-punctuations-set*
   (let [s (HashSet.)]
     (doseq [c [\: \/ \. \; \, \! \= \? \" \' \( \) \[ \] \{ \}
                \| \< \> \& \@ \# \^ \* \\ \~ \`]]
       (.add s c))
     s))
 
-(defn en-punctuations? [c] (.contains ^HashSet en-punctuations-set c))
+(defn ^:no-doc en-stop-words?
+  "return true if the given word is an English stop words"
+  [w]
+  (.contains ^HashSet *en-stop-words-set* w))
+
+(defn ^:no-doc en-punctuations?
+  [c]
+  (.contains ^HashSet *en-punctuations-set* c))

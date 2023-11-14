@@ -674,9 +674,9 @@
                  ;; attach a connection state
                  ;; { read-bf, write-bf, client-id }
                  (volatile! {:read-bf  (bf/allocate-buffer
-                                         c/+default-buffer-size+)
+                                         c/+buffer-size+)
                              :write-bf (bf/allocate-buffer
-                                         c/+default-buffer-size+)})))))
+                                         c/+buffer-size+)})))))
 
 (defn- copy-in
   "Continuously read batched data from the client"

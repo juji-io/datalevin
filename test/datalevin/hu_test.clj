@@ -90,7 +90,7 @@
 
 (comment
 
-  (def freqs (repeatedly c/compress-sample-size #(rand-int 1000000)))
+  (def freqs (repeatedly c/*compress-sample-size* #(rand-int 1000000)))
   (def hu (sut/new-hu-tucker (long-array (map inc freqs))))
   (require '[clj-memory-meter.core :as mm])
   (mm/measure hu)

@@ -75,7 +75,7 @@
 (defn- new-connection
   [host port]
   (->Connection (connect-socket host port)
-                (bf/allocate-buffer c/+default-buffer-size+)))
+                (bf/allocate-buffer c/+buffer-size+)))
 
 (defn- set-client-id
   [conn client-id]
@@ -328,11 +328,11 @@
   * `:time-out` specifies the time (milliseconds) before an exception is thrown
   when obtaining an open network connection, default is 60000."
   ([uri-str]
-   (new-client uri-str {:pool-size c/connection-pool-size
-                        :time-out  c/connection-timeout}))
+   (new-client uri-str {:pool-size c/default-connection-pool-size
+                        :time-out  c/default-connection-timeout}))
   ([uri-str {:keys [pool-size time-out]
-             :or   {pool-size c/connection-pool-size
-                    time-out  c/connection-timeout}}]
+             :or   {pool-size c/default-connection-pool-size
+                    time-out  c/default-connection-timeout}}]
    (let [uri                         (URI. uri-str)
          {:keys [username password]} (parse-user-info uri)
 

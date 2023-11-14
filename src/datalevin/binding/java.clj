@@ -540,7 +540,7 @@
   (open-dbi [this dbi-name {:keys [key-size val-size flags validate-data?
                                    dupsort?]
                             :or   {key-size       c/+max-key-size+
-                                   val-size       c/+default-val-size+
+                                   val-size       c/*init-val-size*
                                    flags          c/default-dbi-flags
                                    dupsort?       false
                                    validate-data? false}}]
@@ -936,9 +936,9 @@
 (defmethod open-kv :java
   ([dir] (open-kv dir {}))
   ([dir {:keys [mapsize max-readers max-dbs flags temp? compress?]
-         :or   {max-readers c/+max-readers+
-                max-dbs     c/+max-dbs+
-                mapsize     c/+init-db-size+
+         :or   {max-readers c/*max-readers*
+                max-dbs     c/*max-dbs*
+                mapsize     c/*init-db-size*
                 flags       c/default-env-flags
                 temp?       false
                 compress?   true}

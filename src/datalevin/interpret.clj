@@ -11,7 +11,7 @@
    [datalevin.query :as q]
    [datalevin.util :as u]
    [datalevin.core]
-   [datalevin.search]
+   ;; [datalevin.search-utils]
    [datalevin.stem]
    [datalevin.client]
    [datalevin.constants]
@@ -162,15 +162,15 @@
      :source src}))
 
 (nippy/extend-freeze AFn :datalevin/inter-fn
-                     [^AFn x ^DataOutput out]
-                     (if (inter-fn? x)
-                       (nippy/freeze-to-out! out (:source (meta x)))
-                       (u/raise "Can only freeze an inter-fn" {:x x})))
+    [^AFn x ^DataOutput out]
+  (if (inter-fn? x)
+    (nippy/freeze-to-out! out (:source (meta x)))
+    (u/raise "Can only freeze an inter-fn" {:x x})))
 
 (nippy/extend-thaw :datalevin/inter-fn
-                   [^DataInput in]
-                   (let [src (nippy/thaw-from-in! in)]
-                     (source->inter-fn src)))
+    [^DataInput in]
+  (let [src (nippy/thaw-from-in! in)]
+    (source->inter-fn src)))
 
 (defmethod print-method :datalevin/inter-fn [f, ^Writer w]
   (.write w "#datalevin/inter-fn ")
@@ -183,7 +183,8 @@
 
 (defn ^:no-doc additional-vars
   []
-  {'datalevin.search
+  {
+   'datalevin.search
    (user-facing-map 'datalevin.search
                     {'en-analyzer #'datalevin.search/en-analyzer})
    'datalevin.stem
@@ -191,7 +192,8 @@
                     {'get-stemmer #'datalevin.stem/get-stemmer})
    'datalevin.constants
    (user-facing-map 'datalevin.constants
-                    {'en-stop-words? #'datalevin.constants/en-stop-words?})})
+                    {'en-stop-words? #'datalevin.constants/en-stop-words?})
+   })
 
 (def ^:no-doc sci-opts
   {:namespaces (merge (user-facing-vars) (additional-vars))

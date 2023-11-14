@@ -9,8 +9,7 @@
    [datalevin.util :as u]
    [datalevin.compress :as cp]
    [datalevin.buffer :as bf]
-   [datalevin.constants :as c]
-   [datalevin.lmdb :as l])
+   [datalevin.constants :as c])
   (:import
    [datalevin.utl BitOps]
    [java.nio ByteBuffer]
@@ -269,7 +268,7 @@ values;")
   "return a long array of frequencies of 2 bytes symbols if there are enough
   keys, otherwise return nil"
   (^longs [db dbi-name]
-   (sample-key-freqs db dbi-name c/compress-sample-size))
+   (sample-key-freqs db dbi-name c/*compress-sample-size*))
   (^longs [db dbi-name size]
    (sample-key-freqs db dbi-name size nil))
   (^longs [db dbi-name ^long size compressor]
@@ -278,8 +277,7 @@ values;")
                    (list-range-count db dbi-name [:all] :raw [:all] :raw)
                    (range-count db dbi-name [:all]))]
      (when-let [ia (u/reservoir-sampling n size)]
-       (let [b (when compressor
-                 (bf/get-direct-buffer c/+max-key-size+))
+       (let [b (when compressor (bf/get-direct-buffer c/+max-key-size+))
              f (cp/init-key-freqs)
              i (volatile! 0)
              j (volatile! 0)
