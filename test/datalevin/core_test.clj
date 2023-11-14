@@ -32,7 +32,9 @@
          :regions/country {:db/valueType :db.type/string}}
 
         dir  (u/tmp-dir (str "datalevin-core-test-" (UUID/randomUUID)))
-        conn (sut/create-conn dir schema)
+        conn (sut/create-conn
+               dir schema
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         txs
         [{:juji.data/synonyms      ["company" "customer"],
           :juji.data/display?      true,
@@ -208,9 +210,12 @@
 
 (deftest instant-update-test
   (let [dir   (u/tmp-dir (str "datalevin-instant-update-test-" (UUID/randomUUID)))
-        conn  (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity
-                                               :db/valueType :db.type/string}
-                                    :foo/date {:db/valueType :db.type/instant}})
+        conn  (sut/create-conn
+                dir
+                {:foo/id   {:db/unique    :db.unique/identity
+                            :db/valueType :db.type/string}
+                 :foo/date {:db/valueType :db.type/instant}}
+                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         query '[:find ?d .
                 :where
                 [?e :foo/id "foo"]
@@ -227,10 +232,13 @@
 
 (deftest instant-compare-test
   (let [dir  (u/tmp-dir (str "datalevin-instant-compare-test-" (UUID/randomUUID)))
-        conn (sut/create-conn dir {:foo/id   {:db/unique    :db.unique/identity
-                                              :db/valueType :db.type/string}
-                                   :foo/num  {:db/valueType :db.type/long}
-                                   :foo/date {:db/valueType :db.type/instant}})
+        conn (sut/create-conn
+               dir
+               {:foo/id   {:db/unique    :db.unique/identity
+                           :db/valueType :db.type/string}
+                :foo/num  {:db/valueType :db.type/long}
+                :foo/date {:db/valueType :db.type/instant}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         now  (java.util.Date.)
         t42  (java.util.Date. 42)
         t50  (java.util.Date. 50)
@@ -267,7 +275,9 @@
 
 (deftest other-language-test
   (let [dir  (u/tmp-dir (str "datalevin-other-lang-test-" (UUID/randomUUID)))
-        conn (sut/get-conn dir)]
+        conn (sut/get-conn
+               dir {}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (sut/transact! conn [{:german "Ümläüt"}])
     (is (= '([{:db/id 1 :german "Ümläüt"}])
            (sut/q '[:find (pull ?e [*])
@@ -289,7 +299,8 @@
                      dir
                      {:entity-things {:db/valueType   :db.type/ref
                                       :db/cardinality :db.cardinality/many}
-                      :foo-bytes     {:db/valueType :db.type/bytes}})
+                      :foo-bytes     {:db/valueType :db.type/bytes}}
+                     {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         ^bytes bs  (.getBytes "foooo")
         ^bytes bs1 (.getBytes "foooo")
         ^bytes bs2 (.getBytes ^String (apply str (range 50000)))]
@@ -343,7 +354,9 @@
   (let [schema {:name   {:db/valueType :db.type/string}
                 :height {:db/valueType :db.type/float}}
         dir    (u/tmp-dir (str "datalevin-number-test-" (UUID/randomUUID)))
-        conn   (sut/get-conn dir schema)]
+        conn   (sut/get-conn
+                 dir schema
+                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (sut/transact! conn [{:name "John" :height 1.73 :weight 12M}
                          {:name "Peter" :height 1.92 :weight 150M}])
     (is (= (sut/pull (sut/db conn) '[*] 1)
@@ -398,7 +411,9 @@
   (testing "dl db copy"
     (let [src  (u/tmp-dir (str "dl-copy-test-" (UUID/randomUUID)))
           dst  (u/tmp-dir (str "dl-copy-test-" (UUID/randomUUID)))
-          conn (sut/create-conn src)]
+          conn (sut/create-conn
+                 src {}
+                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
       (sut/transact! conn [{:name "datalevin"}])
       (sut/copy (sut/db conn) dst true)
       (let [conn-copied (sut/create-conn dst)]
@@ -445,7 +460,9 @@
 
 (deftest with-transaction-test
   (let [dir   (u/tmp-dir (str "with-tx-test-" (UUID/randomUUID)))
-        conn  (sut/create-conn dir)
+        conn  (sut/create-conn
+                dir {}
+                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         query '[:find ?c .
                 :in $ ?e
                 :where [?e :counter ?c]]]
@@ -513,7 +530,10 @@
 
 (deftest with-txn-map-resize-test
   (let [dir   (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
-        conn  (sut/create-conn dir nil {:kv-opts {:mapsize 1}})
+        conn  (sut/create-conn
+                dir nil
+                {:kv-opts {:mapsize 1
+                           :flags   (conj c/default-env-flags :mapasync)}})
         query '[:find ?e .
                 :in $ ?d
                 :where [?e :content ?d]]
@@ -537,9 +557,11 @@
 
 (deftest simulated-tx-test
   (let [dir  (u/tmp-dir (str "sim-tx-test-" (UUID/randomUUID)))
-        conn (sut/create-conn dir
-                              {:id {:db/unique    :db.unique/identity
-                                    :db/valueType :db.type/long}})]
+        conn (sut/create-conn
+               dir
+               {:id {:db/unique    :db.unique/identity
+                     :db/valueType :db.type/long}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (let [rp (sut/transact! conn [{:id 1}])]
       (is (= (:tx-data rp) [(sut/datom 1 :id 1)]))
       (is (= (dd/datom-tx (first (:tx-data rp))) 2)))
@@ -576,7 +598,7 @@
 
 (deftest re-index-lmdb-test
   (let [dir  (u/tmp-dir (str "re-index-lmdb-" (UUID/randomUUID)))
-        lmdb (sut/open-kv dir)]
+        lmdb (sut/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
     (sut/open-dbi lmdb "misc")
 
     (sut/transact-kv
@@ -608,9 +630,12 @@
 
 (deftest re-index-datalog-test
   (let [dir  (u/tmp-dir (str "datalog-re-index-" (UUID/randomUUID)))
-        conn (sut/get-conn dir {:aka  {:db/cardinality :db.cardinality/many}
-                                :name {:db/valueType :db.type/string
-                                       :db/unique    :db.unique/identity}})]
+        conn (sut/get-conn
+               dir
+               {:aka  {:db/cardinality :db.cardinality/many}
+                :name {:db/valueType :db.type/string
+                       :db/unique    :db.unique/identity}}
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (let [rp (sut/transact!
                conn
                [{:name "Frege", :db/id -1, :nation "France",

@@ -19,7 +19,9 @@
 
 (deftest basic-ops-test
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-        store (sut/open dir)]
+        store (sut/open
+                dir {}
+                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (is (= c/g0 (sut/max-gt store)))
     (is (= 3 (sut/max-aid store)))
     (is (= (merge c/entity-time-schema c/implicit-schema)
@@ -147,7 +149,9 @@
   (let [s     {:a {:db/valueType :db.type/string}
                :b {:db/valueType :db.type/long}}
         dir   (u/tmp-dir (str "datalevin-schema-test-" (UUID/randomUUID)))
-        store (sut/open dir s)
+        store (sut/open
+                dir s
+                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         s1    (sut/schema store)]
     (sut/close store)
     (is (sut/closed? store))
@@ -159,7 +163,9 @@
 (deftest giants-string-test
   (let [schema {:a {:db/valueType :db.type/string}}
         dir    (u/tmp-dir (str "datalevin-giants-str-test-" (UUID/randomUUID)))
-        store  (sut/open dir schema)
+        store  (sut/open
+                 dir schema
+                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         v      (apply str (repeat 100 (UUID/randomUUID)))
         d      (d/datom c/e0 :a v)]
     (sut/load-datoms store [d])
@@ -172,7 +178,9 @@
 
 (deftest giants-data-test
   (let [dir   (u/tmp-dir (str "datalevin-giants-data-test-" (UUID/randomUUID)))
-        store (sut/open dir)
+        store (sut/open
+                dir nil
+                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         v     (apply str (repeat 100 (UUID/randomUUID)))
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
@@ -198,7 +206,9 @@
 
 (deftest normal-data-test
   (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
-        store (sut/open dir)
+        store (sut/open
+                dir nil
+                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
         v     (UUID/randomUUID)
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]

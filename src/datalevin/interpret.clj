@@ -143,16 +143,16 @@
       quoted-form)))
 
 (defmacro inter-fn
-  "Same signature as `fn`. Create a function that can be used as an input in
-  Datalevin queries or transactions, e.g. as a filtering predicate or as a
-  transaction function.
+  "Same signature as `fn`. Create a function that can be serialized in
+  source code form.
 
-  This function will be sent over the wire if the database
-  is on a remote server. It runs in a sandboxed interpreter whether the
-  database is remote or local.
+  Such a function can be used as an input in Datalevin queries or
+  transactions, e.g. as a filtering predicate or as a transaction
+  function, and be stored in the database. This function can also be
+  sent over the wire if the database is on a remote server or as a
+  babashka pod. It runs in an interpreter.
 
-  The symbols used in the inter-fn definition needs to be fully-qualified
-  to be resolved correctly."
+  Symbols referred in inter-fn needs to be fully-qualified."
   [args & body]
   `(with-meta
      (sci/eval-form ctx (fn ~args (do ~@body)))
