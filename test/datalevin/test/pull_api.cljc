@@ -1,9 +1,10 @@
 (ns datalevin.test.pull-api
   (:require
-   [datalevin.test.core :as tdc :refer [db-fixture]]
-   [clojure.test :refer [deftest testing is use-fixtures]]
-   [datalevin.util :as u]
-   [datalevin.core :as d])
+    [clojure.string :as str]
+    [datalevin.test.core :as tdc :refer [db-fixture]]
+    [clojure.test :refer [deftest testing is use-fixtures]]
+    [datalevin.util :as u]
+    [datalevin.core :as d])
   (:import
    [java.util UUID]))
 
@@ -568,8 +569,23 @@
       (is (= {:unknown "[unknown]"}
              (d/pull test-db
                      '[[:unknown :default "[unknown]" :xform vector]] 1))))
+
+    (testing ":xform on cardinality/one"
+      (is (= {:name "David" :father "Petr"}
+            (d/pull test-db [:name {[:father :xform #(:name %)] ['*]}] 2))))
+
+    (testing ":xform on reverse ref"
+      (is (= {:name "Petr" :_father ["David" "Thomas"]}
+            (d/pull test-db [:name {[:_father :xform #(mapv :name %)] [:name]}] 1))))
+
+    (testing ":xform on reverse component ref"
+      (is (= {:name "Part A.A" :_part "Part A"}
+            (d/pull test-db [:name {[:_part :xform #(:name %)] [:name]}] 11))))
+
     (d/close-db test-db)
     (u/delete-files dir)))
+
+(clojure.test/run-test-var (var test-xform))
 
 (deftest test-xform-cardinality-one
   (let [dir      (u/tmp-dir (str "pull-xform-cardinality-one" (UUID/randomUUID)))
