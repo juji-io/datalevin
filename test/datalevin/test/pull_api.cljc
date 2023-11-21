@@ -1,10 +1,9 @@
 (ns datalevin.test.pull-api
   (:require
-    [clojure.string :as str]
-    [datalevin.test.core :as tdc :refer [db-fixture]]
-    [clojure.test :refer [deftest testing is use-fixtures]]
-    [datalevin.util :as u]
-    [datalevin.core :as d])
+   [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.test :refer [deftest testing is use-fixtures]]
+   [datalevin.util :as u]
+   [datalevin.core :as d])
   (:import
    [java.util UUID]))
 
@@ -584,8 +583,6 @@
 
     (d/close-db test-db)
     (u/delete-files dir)))
-
-(clojure.test/run-test-var (var test-xform))
 
 (deftest test-xform-cardinality-one
   (let [dir      (u/tmp-dir (str "pull-xform-cardinality-one" (UUID/randomUUID)))
