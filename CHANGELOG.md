@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.23 (2023-12-06)
 ### Fixed
 - deps conflict
 
