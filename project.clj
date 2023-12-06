@@ -13,7 +13,7 @@
    [com.fasterxml.jackson.core/jackson-databind "2.16.0"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.15"]
-   [com.taoensso/encore "3.74.0"]
+   ;; [com.taoensso/encore "3.68.0"]
    [com.taoensso/nippy "3.3.0"]
    [com.taoensso/timbre "6.3.1"]
    ;; only for testing serializing joda-time, as some user data contain these
@@ -44,7 +44,7 @@
    [com.github.jnr/jnr-ffi]
    [com.taoensso/timbre]
    [org.lmdbjava/lmdbjava]
-   [com.taoensso/encore]
+   ;; [com.taoensso/encore]
    [com.taoensso/nippy]
    [org.babashka/sci]
    [nrepl/bencode]

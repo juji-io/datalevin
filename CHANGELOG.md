@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- deps conflict
+
 ## 0.8.22 (2023-12-06)
 ### Improved
 - [Datalog] `<`, `>`, `<=`, `>=` built-in functions handle any comparable data, not just numbers.
