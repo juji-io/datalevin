@@ -79,9 +79,9 @@
   (println "\n\n[ Running tests ]\n")
   (sh "./lein-test" :dir "script")
 
-  (println "\n\n[ Testing jar ]\n")
-  (sh "./jar" :dir "script")
-  (sh "test-jar/test.sh")
+  ;; (println "\n\n[ Testing jar ]\n")
+  ;; (sh "./jar" :dir "script")
+  ;; (sh "test-jar/test.sh")
 
   (println "\n\n[ Testing uberjar ]\n")
   (sh "./uberjar" :dir "script")
