@@ -32,7 +32,7 @@
    [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.7.12"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64 "0.7.12"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.7.12"]
-   [org.eclipse.collections/eclipse-collections "12.0.0.M1"]
+   [org.eclipse.collections/eclipse-collections "11.1.0"]
    [org.graalvm.sdk/graal-sdk "22.3.1"]
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
