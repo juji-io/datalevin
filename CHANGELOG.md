@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.22 (2023-12-06)
 ### Improved
 - [Datalog] `<`, `>`, `<=`, `>=` built-in functions handle any comparable data, not just numbers.
 - [Datalog] Better fix for #224 [Thx @dvingo]
