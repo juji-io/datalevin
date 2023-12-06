@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Improved
+- [Datalog] `<`, `>`, `<=`, `>=` built-in functions handle any comparable data, not just numbers.
+- [Datalog] Better fix for #224 [Thx @dvingo]
+
 ## 0.8.21 (2023-10-31)
 ### Fixed
 - [All] Do not interfere with the default print-methods of regular expression, byte

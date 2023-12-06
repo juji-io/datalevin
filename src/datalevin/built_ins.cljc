@@ -59,14 +59,55 @@
                 (st/e-aid-v->datom store d))))
        (s/search engine query opts)))))
 
+(defn- less
+  ([x] true)
+  ([x y] (neg? ^long (dd/compare-with-type x y)))
+  ([x y & more]
+   (if (less x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (less y (first more)))
+     false)))
+
+(defn- greater
+  ([x] true)
+  ([x y] (pos? ^long (dd/compare-with-type x y)))
+  ([x y & more]
+   (if (greater x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (greater y (first more)))
+     false)))
+
+(defn- less-equal
+  ([x] true)
+  ([x y] (not (pos? ^long (dd/compare-with-type x y))))
+  ([x y & more]
+   (if (less-equal x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (less-equal y (first more)))
+     false)))
+
+(defn- greater-equal
+  ([x] true)
+  ([x y] (not (neg? ^long (dd/compare-with-type x y))))
+  ([x y & more]
+   (if (greater-equal x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (greater-equal y (first more)))
+     false)))
+
+
 (def query-fns {'=                           =,
                 '==                          ==,
                 'not=                        not=,
                 '!=                          not=,
-                '<                           <,
-                '>                           >,
-                '<=                          <=,
-                '>=                          >=,
+                '<                           less
+                '>                           greater
+                '<=                          less-equal
+                '>=                          greater-equal
                 '+                           +,
                 '-                           -,
                 '*                           *,

@@ -7,7 +7,7 @@
    #?(:cljs [cljs.test :as t :refer-macros [is are deftest testing]]
       :clj  [clojure.test :as t :refer [is deftest testing use-fixtures]]))
   (:import
-   [java.util UUID Arrays]
+   [java.util UUID Arrays Date]
    [java.lang Thread]))
 
 (use-fixtures :each db-fixture)
@@ -251,6 +251,13 @@
              @conn
              t50)
            #{[t100] [now]}))
+    (is (= 30 (sut/q '[:find ?n .
+                       :in $ ?t2
+                       :where
+                       [?e :foo/num ?n]
+                       [?e :foo/date ?t1]
+                       [(< ?t1 ?t2)]]
+                     @conn t50)))
     (sut/close conn)
     (u/delete-files dir)))
 
