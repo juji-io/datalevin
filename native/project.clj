@@ -19,6 +19,8 @@
                  [org.roaringbitmap/RoaringBitmap]
                  [org.eclipse.collections/eclipse-collections]
                  [me.lemire.integercompression/JavaFastPFOR]
+                 [clojure.java-time]
+                 [org.threeten/threeten-extra]
                  [com.taoensso/timbre]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]

@@ -2,11 +2,12 @@
   (:require
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing are is use-fixtures]]
+   [java-time.api :as t]
    [datalevin.util :as u]
    [datalevin.core :as d])
   #?(:clj
      (:import [clojure.lang ExceptionInfo]
-              [java.util UUID])))
+              [java.util UUID Date])))
 
 (use-fixtures :each db-fixture)
 
@@ -383,3 +384,16 @@
    (deftest test-symbol-resolution
      (is (= 42 (d/q '[:find ?x .
                       :where [(datalevin.test.query-fns/sample-query-fn) ?x]])))))
+
+(deftest test-time-fns
+  (is (< (compare (Date. 1000)
+                  (d/q '[:find ?x .
+                         :where [(now) ?x]]))
+         0))
+  (is (= 42 (d/q '[:find ?x .
+                   :where [(+ 40 2) ?x]])))
+  (is (= #inst "1970-01-02T00:00:00.000-00:00"
+         (d/q '[:find ?x .
+                :in ?d0 ?day1
+                :where [(+ ?d0 ?day1) ?x]]
+              (Date. 0) (t/days 1)))))

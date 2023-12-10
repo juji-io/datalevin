@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as str]
    [java-time.api :as t]
+   [java-time.core :as tc :refer [Plusable]]
    [datalevin.db :as db]
    [datalevin.storage :as st]
    [datalevin.constants :as c]
@@ -11,11 +12,26 @@
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]])
   #?(:clj
      (:import
+      [java.util Date]
+      [java.time Instant]
       [datalevin.storage Store]
       [datalevin.search SearchEngine]
       [datalevin.db DB])))
 
-(defn- -differ? [& xs]
+;; time
+
+(defn- -now
+  ([] (-now "UTC"))
+  ([zone-id] (t/java-date (t/with-zone (t/zoned-date-time) zone-id))))
+
+(extend-type Date
+  Plusable
+  (seq-plus [d xs]
+    (Date/from ^Instant (tc/seq-plus (t/instant d) xs))))
+
+
+(defn- -differ?
+  [& xs]
   (let [l (count xs)]
     (not= (take (/ l 2) xs) (drop (/ l 2) xs))))
 
@@ -101,7 +117,6 @@
        (greater-equal y (first more)))
      false)))
 
-
 (def query-fns {'=                           =,
                 '==                          ==,
                 'not=                        not=,
@@ -110,8 +125,10 @@
                 '>                           greater
                 '<=                          less-equal
                 '>=                          greater-equal
-                '+                           +,
-                '-                           -,
+                '+                           t/plus
+                '-                           t/minus
+                ;; '+                           +,
+                ;; '-                           -,
                 '*                           *,
                 '/                           /,
                 'quot                        quot,
@@ -176,7 +193,9 @@
                 'clojure.string/blank?       str/blank?,
                 'clojure.string/includes?    str/includes?,
                 'clojure.string/starts-with? str/starts-with?,
-                'clojure.string/ends-with?   str/ends-with?})
+                'clojure.string/ends-with?   str/ends-with?
+                'now                         -now
+                'local-date-time             t/local-date-time})
 
 ;; Aggregates
 

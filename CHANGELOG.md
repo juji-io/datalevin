@@ -2,7 +2,8 @@
 
 ## WIP
 ### Added
-- [Datalog] Add many functions from clojure.java-time as build-in functions.
+- [Datalog] Add many functions from clojure.java-time library as build-in
+  functions to deal with some common time calculations.
 - [Datalog] Added `:order-by` clause
 ### Fixed
 - [Datalog] Removed problematic caching in pull api implementation
