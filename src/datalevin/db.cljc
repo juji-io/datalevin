@@ -392,8 +392,7 @@
               :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
               :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
               :veat          (TreeSortedSet. ^Comparator d/cmp-datoms-veat)
-              :pull-patterns (lru/cache 32 :constant)
-              :pull-attrs    (lru/cache 32 :constant)})]
+              :pull-patterns (lru/cache 32 :constant)})]
     (swap! dbs assoc (s/db-name store) db)
     db))
 

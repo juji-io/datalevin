@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.built-ins
   (:require
    [clojure.string :as str]
+   [java-time.api :as t]
    [datalevin.db :as db]
    [datalevin.storage :as st]
    [datalevin.constants :as c]
@@ -8,10 +9,11 @@
    [datalevin.search :as s]
    [datalevin.entity :as de]
    [datalevin.util :as u #?(:cljs :refer-macros :clj :refer) [raise]])
-  #?(:clj (:import
-           [datalevin.storage Store]
-           [datalevin.search SearchEngine]
-           [datalevin.db DB])))
+  #?(:clj
+     (:import
+      [datalevin.storage Store]
+      [datalevin.search SearchEngine]
+      [datalevin.db DB])))
 
 (defn- -differ? [& xs]
   (let [l (count xs)]

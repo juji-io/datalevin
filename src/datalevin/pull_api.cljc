@@ -136,10 +136,8 @@
 
         ;; wildcard
         (and (.-wildcard? pattern) (some? datom) attr-ahead?)
-        (let [datom-attr (lru/-get
-                           (.-pull-attrs ^DB (.-db ^Context context))
-                           (.-a datom)
-                           #(dpp/parse-attr-name (.-db ^Context context) (.-a datom)))  ]
+        (let [datom-attr (dpp/parse-attr-name (.-db ^Context context)
+                                              (.-a datom))]
           (recur acc datom-attr (when attr (conj-seq attrs attr)) datoms))
 
         ;; advance datom

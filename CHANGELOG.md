@@ -1,5 +1,12 @@
 # Change Log
 
+## WIP
+### Added
+- [Datalog] Add many functions from clojure.java-time as build-in functions.
+- [Datalog] Added `:order-by` clause
+### Fixed
+- [Datalog] Removed problematic caching in pull api implementation
+
 ## 0.8.23 (2023-12-06)
 ### Fixed
 - deps conflict
