@@ -392,8 +392,31 @@
          0))
   (is (= 42 (d/q '[:find ?x .
                    :where [(+ 40 2) ?x]])))
-  (is (= #inst "1970-01-02T00:00:00.000-00:00"
-         (d/q '[:find ?x .
-                :in ?d0 ?day1
-                :where [(+ ?d0 ?day1) ?x]]
-              (Date. 0) (t/days 1)))))
+  ;; TODO recursive evaluation of functions
+  #_(is (= #inst "1970-01-02T00:00:00.000-00:00"
+           (d/q '[:find ?x .
+                  :in ?d0
+                  :where [(+ ?d0 (days 1)) ?x]]
+                (Date. 0))))
+  #_(is (= #inst "1970-01-02T00:00:00.000-00:00"
+           (d/q '[:find ?x .
+                  :in ?d0
+                  :where [(days 1) ?d1][(+ ?d0 ?d1) ?x]]
+                (Date. 0))))
+  (is (= (Date. 0) (d/q '[:find ?d0 .
+                          :where
+                          [(ground #inst "1970-01-01T00:00:00.000-00:00") ?d0]
+                          [(< ?d0 (now))]])))
+  (is (= 2022 (d/q '[:find ?y .
+                     :where
+                     [(as #inst "2022-01-01T00:00:00.000-00:00" :year) ?y]])))
+  (is (= 2 (d/q '[:find ?y .
+                  :where
+                  [(time-between #inst "2022-01-01T00:00:00.000-00:00"
+                                 #inst "2022-01-03T02:00:00.000-00:00"
+                                 :days) ?y]])))
+  ;; TODO implement HasProperties
+  #_(is (d/q '[:find ?t .
+               :where
+               [(tuesday? #inst "2022-01-01T00:00:00.000-00:00") ?t]]))
+  )

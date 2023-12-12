@@ -8,7 +8,6 @@
    [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.lru :as lru]
-   [clojure.java.io :as io]
    [clojure.string :as s])
   (:import
    [datalevin.utl PriorityQueue GrowingIntArray]
@@ -809,7 +808,7 @@
   ([lmdb]
    (new-search-engine lmdb nil))
   ([lmdb {:keys [domain analyzer query-analyzer index-position? include-text?]
-          :or   {domain          "datalevin"
+          :or   {domain          c/default-domain
                  analyzer        en-analyzer
                  index-position? false
                  include-text?   false}}]
@@ -932,7 +931,7 @@
   ([lmdb]
    (search-index-writer lmdb nil))
   ([lmdb {:keys [domain analyzer index-position? include-text?]
-          :or   {domain          "datalevin"
+          :or   {domain          c/default-domain
                  analyzer        en-analyzer
                  index-position? false
                  include-text?   false}}]

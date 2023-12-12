@@ -689,8 +689,7 @@
                                       :cache-limit       cache-limit}))
      (let [schema (init-schema lmdb schema)]
        (->Store lmdb
-                (s/new-search-engine lmdb (assoc search-opts
-                                                 :index-position? false))
+                (s/new-search-engine lmdb search-opts)
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)

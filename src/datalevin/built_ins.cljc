@@ -2,7 +2,8 @@
   (:require
    [clojure.string :as str]
    [java-time.api :as t]
-   [java-time.core :as tc :refer [Plusable]]
+   [java-time.core :as tc
+    :refer [Plusable Minusable Convert As KnowsTimeBetween]]
    [datalevin.db :as db]
    [datalevin.storage :as st]
    [datalevin.constants :as c]
@@ -20,15 +21,32 @@
 
 ;; time
 
-(defn- -now
-  ([] (-now "UTC"))
-  ([zone-id] (t/java-date (t/with-zone (t/zoned-date-time) zone-id))))
+(defn- -now [] (t/java-date (t/instant )))
+
+(defn- utc-date-time [d] (t/local-date-time (t/instant d) "UTC"))
 
 (extend-type Date
   Plusable
   (seq-plus [d xs]
-    (Date/from ^Instant (tc/seq-plus (t/instant d) xs))))
+    (Date/from ^Instant (tc/seq-plus (t/instant d) xs)))
 
+  Minusable
+  (seq-minus [d xs]
+    (Date/from ^Instant (tc/seq-minus (t/instant d) xs)))
+
+  Convert
+  (-convert [x y]
+    (if (instance? Date y)
+      y
+      (Date/from ^Instant (t/instant y))))
+
+  As
+  (as* [o k]
+    (t/as (utc-date-time o) k))
+
+  KnowsTimeBetween
+  (time-between [o e u]
+    (t/time-between (utc-date-time o) (utc-date-time e) u)))
 
 (defn- -differ?
   [& xs]
@@ -77,9 +95,20 @@
                 (st/e-aid-v->datom store d))))
        (s/search engine query opts)))))
 
+(defn- typed-compare
+  [x y]
+  (try
+    (dd/compare-with-type x y)
+    (catch ClassCastException e
+      (cond
+        (t/= x y) 0
+        (t/< x y) -1
+        :else     1))
+    (catch Exception e (throw e))))
+
 (defn- less
   ([x] true)
-  ([x y] (neg? ^long (dd/compare-with-type x y)))
+  ([x y] (neg? ^long (typed-compare x y)))
   ([x y & more]
    (if (less x y)
      (if (next more)
@@ -89,7 +118,7 @@
 
 (defn- greater
   ([x] true)
-  ([x y] (pos? ^long (dd/compare-with-type x y)))
+  ([x y] (pos? ^long (typed-compare x y)))
   ([x y & more]
    (if (greater x y)
      (if (next more)
@@ -99,7 +128,7 @@
 
 (defn- less-equal
   ([x] true)
-  ([x y] (not (pos? ^long (dd/compare-with-type x y))))
+  ([x y] (not (pos? ^long (typed-compare x y))))
   ([x y & more]
    (if (less-equal x y)
      (if (next more)
@@ -109,7 +138,7 @@
 
 (defn- greater-equal
   ([x] true)
-  ([x y] (not (neg? ^long (dd/compare-with-type x y))))
+  ([x y] (not (neg? ^long (typed-compare x y))))
   ([x y & more]
    (if (greater-equal x y)
      (if (next more)
@@ -117,18 +146,21 @@
        (greater-equal y (first more)))
      false)))
 
-(def query-fns {'=                           =,
+(defn- not-equal
+  ([x] false)
+  ([x y] (not (t/= x y)))
+  ([x y & more] (not (apply t/= x y more))))
+
+(def query-fns {'=                           t/=,
                 '==                          ==,
-                'not=                        not=,
-                '!=                          not=,
+                'not=                        not-equal
+                '!=                          not-equal,
                 '<                           less
                 '>                           greater
                 '<=                          less-equal
                 '>=                          greater-equal
                 '+                           t/plus
                 '-                           t/minus
-                ;; '+                           +,
-                ;; '-                           -,
                 '*                           *,
                 '/                           /,
                 'quot                        quot,
@@ -195,7 +227,28 @@
                 'clojure.string/starts-with? str/starts-with?,
                 'clojure.string/ends-with?   str/ends-with?
                 'now                         -now
-                'local-date-time             t/local-date-time})
+                ;; 'local-date-time             t/local-date-time
+                'as                          t/as
+                'time-between                t/time-between
+                ;; 'years                       t/years
+                ;; 'months                      t/months
+                ;; 'weeks                       t/weeks
+                ;; 'days                        t/days
+                ;; 'hours                       t/hours
+                ;; 'minutes                     t/minutes
+                ;; 'seconds                     t/seconds
+                ;; 'millis                      t/millis
+                ;; 'weekday?                    t/weekday?
+                ;; 'weekend?                    t/weekend?
+                ;; 'monday?                     t/monday?
+                ;; 'tuesday?                    t/tuesday?
+                ;; 'wednesday?                  t/wednesday?
+                ;; 'thursday?                   t/thursday?
+                ;; 'friday?                     t/friday?
+                ;; 'saturday?                   t/saturday?
+                ;; 'sunday?                     t/sunday?
+                })
+
 
 ;; Aggregates
 

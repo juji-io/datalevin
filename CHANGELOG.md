@@ -2,11 +2,13 @@
 
 ## WIP
 ### Added
-- [Datalog] Add many functions from clojure.java-time library as build-in
-  functions to deal with some common time calculations.
-- [Datalog] Added `:order-by` clause
+- [Datalog] Create search engines on-demand with `new-search-domain`. #206
+- [Datalog] Add `:db/fulltextDomain` property to attribute schema, #176
+- [Datalog] Add functions `as` and `time-between` from clojure.java-time library
+  as build-in functions. Also added `now` to return current instant.
 ### Fixed
 - [Datalog] Removed problematic caching in pull api implementation
+### Improved
 
 ## 0.8.23 (2023-12-06)
 ### Fixed
