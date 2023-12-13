@@ -162,7 +162,9 @@
 ;; search engine
 
 (def ^:const +max-term-length+ 128) ; we ignore exceedingly long strings
+
 (def ^:const default-domain "datalevin")
+
 
 ;; server / client
 

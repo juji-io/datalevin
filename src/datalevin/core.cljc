@@ -219,7 +219,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -276,7 +276,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -492,7 +492,14 @@ Only usable for debug output.
   ([db index c1 c2 c3 c4] {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3 c4])))
 
 (defn fulltext-datoms
-  "Return datoms that found by the given fulltext search query"
+  "This is the same as `fulltext` built-in query function.
+
+  Return datoms that found by the given fulltext search query.
+
+  `opts` is an option map that is the same as that of [[search]], with an
+  additional option `:domains`, which is a vector listing the search domains
+  that this query will be posted to. When this option is missing or the vector
+  is empty, all search domains will be searched and results concatenated."
   ([db query]
    (fulltext-datoms db query nil))
   ([^DB db query opts]
@@ -554,7 +561,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine. See [[search]]
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -578,7 +585,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine. See [[search]]
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -1586,7 +1593,7 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
 
    * `:domain` is an identifier string, indicates the domain of this search engine.
       This way, multiple independent search engines can reside in the same
-      key-value database, each with its own domain identifier.
+      database, each with its own domain identifier.
 
    * `:analyzer` is a function that takes a text string and return a seq of
     [term, position, offset], where term is a word, position is the sequence

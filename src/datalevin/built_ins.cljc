@@ -81,19 +81,27 @@
   (reduce (fn [a b]
             (if b (reduced b) b)) nil args))
 
+(defn- fulltext*
+  [store lmdb engines query opts domain]
+  (let [engine (engines domain)]
+    (sequence
+      (map (fn [d]
+             (if (= :g (nth d 0))
+               (st/gt->datom lmdb (peek d))
+               (st/e-aid-v->datom store d))))
+      (s/search engine query opts))))
+
 (defn fulltext
   ([db query]
    (fulltext db query nil))
   ([^DB db query opts]
-   (let [^Store store         (.-store db)
-         lmdb                 (.-lmdb store)
-         ^SearchEngine engine (.-search-engine store)]
+   (let [^Store store      (.-store db)
+         lmdb              (.-lmdb store)
+         engines           (.-search-engines store)
+         {:keys [domains]} opts]
      (sequence
-       (map (fn [d]
-              (if (= :g (nth d 0))
-                (st/gt->datom lmdb (peek d))
-                (st/e-aid-v->datom store d))))
-       (s/search engine query opts)))))
+       (mapcat #(fulltext* store lmdb engines query opts %))
+       (if (seq domains) domains (keys engines))))))
 
 (defn- typed-compare
   [x y]

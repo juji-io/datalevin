@@ -115,7 +115,7 @@
   )
 
 (deftest re-index-search-test
-  (let [dir    "dtlv://datalevin:datalevin@localhost/blank-analyzer-test"
+  (let [dir    "dtlv://datalevin:datalevin@localhost/re-index-search-test"
         lmdb   (d/open-kv dir)
         opts   {:index-position? true
                 :include-text?   true}
@@ -134,3 +134,69 @@
       (is (= [:doc1 :doc5] (d/search engine1 "dog"))))
 
     (d/close-kv lmdb)))
+
+(deftest domain-test
+  (let [dir      "dtlv://datalevin:datalevin@localhost/domain-test"
+        analyzer (su/create-analyzer
+                   {:token-filters [(su/create-stemming-token-filter
+                                      "english")]})
+        conn     (d/create-conn
+                   dir
+                   {:a/id     {:db/valueType :db.type/long
+                               :db/unique    :db.unique/identity}
+                    :a/string {:db/valueType        :db.type/string
+                               :db/fulltext         true
+                               :db.fulltext/domains ["da"]}
+                    :b/string {:db/valueType        :db.type/string
+                               :db/fulltext         true
+                               :db.fulltext/domains ["db"]}}
+                   {:search-domains {"da" {:analyzer analyzer}
+                                     "db" {}}})
+        sa       "The quick brown fox jumps over the lazy dogs"
+        sb       "Pack my box with five dozen liquor jugs."
+        sc       "How vexingly quick daft zebras jump!"
+        sd       "Five dogs jump over my fence."]
+    (d/transact! conn [{:a/id 1 :a/string sa :b/string sb}])
+    (d/transact! conn [{:a/id 2 :a/string sc :b/string sd}])
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q {:domains ["da"]}) [[?e _ ?v]]]]
+                     (d/db conn) "jump"))
+           #{sa sc}))
+    (is (= (d/q '[:find [?v ...]
+                  :in $ ?q
+                  :where
+                  [(fulltext $ ?q {:domains ["db"]}) [[?e _ ?v]]]]
+                (d/db conn) "jump")
+           [sd]))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q {:domains ["da" "db"]}) [[?e _ ?v]]]]
+                     (d/db conn) "jump"))
+           #{sa sc sd}))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q) [[?e _ ?v]]]]
+                     (d/db conn) "jump"))
+           #{sa sc sd}))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q) [[?e _ ?v]]]]
+                     (d/db conn) "dog"))
+           #{sa}))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q) [[?e _ ?v]]]]
+                     (d/db conn) "dogs"))
+           #{sa sd}))
+    (is (empty? (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q {:domains ["db"]}) [[?e _ ?v]]]]
+                     (d/db conn) "dog")))
+    (d/close conn)))

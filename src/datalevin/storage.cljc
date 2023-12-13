@@ -182,26 +182,7 @@
   [lmdb gt]
   (lmdb/get-value lmdb c/giants gt :id :datom))
 
-(declare attrs)
-
-(defn e-aid-v->datom
-  [store e-aid-v]
-  (d/datom (nth e-aid-v 0) ((attrs store) (nth e-aid-v 1)) (peek e-aid-v)))
-
-(defn- retrieved->datom
-  [lmdb attrs [^Retrieved k ^long v :as kv]]
-  (when kv
-    (if (= v c/normal)
-      (d/datom (.-e k) (attrs (.-a k)) (.-v k))
-      (gt->datom lmdb v))))
-
-(defn- datom-pred->kv-pred
-  [lmdb attrs index pred]
-  (fn [kv]
-    (let [^Retrieved k (b/read-buffer (lmdb/k kv) index)
-          ^long v      (b/read-buffer (lmdb/v kv) :id)
-          ^Datom d     (retrieved->datom lmdb attrs [k v])]
-      (pred d))))
+;; (declare attrs)
 
 (defprotocol IStore
   (opts [this] "Return the opts map")
@@ -260,10 +241,29 @@
     that return true for (pred x), where x is the datom")
   )
 
+(defn e-aid-v->datom
+  [store e-aid-v]
+  (d/datom (nth e-aid-v 0) ((attrs store) (nth e-aid-v 1)) (peek e-aid-v)))
+
+(defn- retrieved->datom
+  [lmdb attrs [^Retrieved k ^long v :as kv]]
+  (when kv
+    (if (= v c/normal)
+      (d/datom (.-e k) (attrs (.-a k)) (.-v k))
+      (gt->datom lmdb v))))
+
+(defn- datom-pred->kv-pred
+  [lmdb attrs index pred]
+  (fn [kv]
+    (let [^Retrieved k (b/read-buffer (lmdb/k kv) index)
+          ^long v      (b/read-buffer (lmdb/v kv) :id)
+          ^Datom d     (retrieved->datom lmdb attrs [k v])]
+      (pred d))))
+
 (declare insert-data delete-data fulltext-index check transact-opts)
 
 (deftype Store [lmdb
-                search-engine
+                search-engines
                 ^:volatile-mutable opts
                 ^:volatile-mutable schema
                 ^:volatile-mutable rschema
@@ -378,7 +378,8 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      ;; fulltext [:a [e aid v]], [:d [e aid v]], [:g [gt v]] or [:r gt]
+      ;; fulltext [:a d [e aid v]], [:d d [e aid v]],
+      ;; [:g d [gt v]] or [:r d gt]
       (let [ft-ds  (transient [])
             ;; needed because a giant may be deleted in the same tx
             giants (volatile! {})
@@ -390,7 +391,7 @@
                                (delete-data this datom ft-ds giants))))]
         (lmdb/transact-kv
           lmdb (persistent! (reduce add-fn (transient []) datoms)))
-        (fulltext-index search-engine ft-ds)
+        (fulltext-index search-engines ft-ds)
         (lmdb/transact-kv
           lmdb [[:put c/meta :max-tx (advance-max-tx this) :attr :long]
                 [:put c/meta :last-modified (System/currentTimeMillis)
@@ -524,14 +525,17 @@
         :id))))
 
 (defn fulltext-index
-  [search-engine ft-ds]
+  [search-engines ft-ds]
   (doseq [res  (persistent! ft-ds)
-          :let [d (nth res 1)]]
-    (case (nth res 0)
-      :a (s/add-doc search-engine d (peek d) false)
-      :d (s/remove-doc search-engine d)
-      :g (s/add-doc search-engine [:g (nth d 0)] (peek d) false)
-      :r (s/remove-doc search-engine [:g d]))))
+          :let [op (peek res)
+                d (nth op 1)]]
+    (doseq [domain (nth res 0)
+            :let   [engine (search-engines domain)]]
+      (case (nth op 0)
+        :a (s/add-doc engine d (peek d) false)
+        :d (s/remove-doc engine d)
+        :g (s/add-doc engine [:g (nth d 0)] (peek d) false)
+        :r (s/remove-doc engine [:g d])))))
 
 (defn- check-cardinality
   [^Store store attr old new]
@@ -589,6 +593,12 @@
       :db/unique      (check-unique store attr v' v)
       :pass-through)))
 
+(defn- collect-fulltext
+  [ft-ds props v op]
+  (when-not (str/blank? v)
+    (conj! ft-ds [(or (props :db.fulltext/domains) [c/default-domain])
+                  op])))
+
 (defn- insert-data
   [^Store store ^Datom d ft-ds giants]
   (let [attr  (.-a d)
@@ -610,14 +620,14 @@
         (vswap! giants assoc [e aid v] max-gt)
         (when ft?
           (let [v (str v)]
-            (when-not (str/blank? v) (conj! ft-ds [:g [max-gt v]]))))
+            (collect-fulltext ft-ds props v [:g [max-gt v]])))
         (cond-> [[:put c/eav i max-gt :eav :id]
                  [:put c/ave i max-gt :ave :id]
                  [:put c/giants max-gt d :id :datom [:append]]]
           ref? (conj [:put c/vea i max-gt :vea :id])))
       (do (when ft?
             (let [v (str v)]
-              (when-not (str/blank? v) (conj! ft-ds [:a [e aid v]]))))
+              (collect-fulltext ft-ds props v [:a [e aid v]])))
           (cond-> [[:put c/eav i c/normal :eav :id]
                    [:put c/ave i c/normal :ave :id]]
             ref? (conj [:put c/vea i c/normal :vea :id]))))))
@@ -634,10 +644,9 @@
         gt    (when (b/giant? i)
                 (or (@giants [e aid v])
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id)))]
-    (when (:db/fulltext props)
+    (when (props :db/fulltext)
       (let [v (str v)]
-        (when-not (str/blank? v)
-          (conj! ft-ds (if gt [:r gt] [:d [e aid v]])))))
+        (collect-fulltext ft-ds props v (if gt [:r gt] [:d [e aid v]]))))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
@@ -665,6 +674,42 @@
   (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/opts {:key-size c/+max-key-size+}))
 
+(defn- init-domains
+  [search-domains0 schema search-opts search-domains]
+  (reduce-kv
+    (fn [dms _ {:keys [db.fulltext/domains db/fulltext]}]
+      (if fulltext
+        (if (seq domains)
+          (reduce (fn [m domain]
+                    (let [new-opts (assoc (get search-domains domain {})
+                                          :domain domain)]
+                      (assoc m domain
+                             (if-let [opts (m domain)]
+                               (merge opts new-opts)
+                               new-opts))))
+                  dms
+                  domains)
+          ;; default domain
+          (let [new-opts (assoc (or (get search-domains c/default-domain)
+                                    search-opts
+                                    {})
+                                :domain c/default-domain)]
+            (assoc dms c/default-domain
+                   (if-let [opts (dms c/default-domain)]
+                     (merge opts new-opts)
+                     new-opts))))
+        dms))
+    (or search-domains0 {})
+    schema))
+
+(defn- init-engines
+  [lmdb domains]
+  (reduce-kv
+    (fn [m domain opts]
+      (assoc m domain (s/new-search-engine lmdb opts)))
+    {}
+    domains))
+
 (defn open
   "Open and return the storage."
   ([]
@@ -673,8 +718,8 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [kv-opts search-opts validate-data? auto-entity-time?
-                       db-name cache-limit]
+  ([dir schema {:keys [kv-opts search-opts search-domains validate-data?
+                       auto-entity-time? db-name cache-limit]
                 :or   {validate-data?    false
                        auto-entity-time? false
                        db-name           (str (UUID/randomUUID))
@@ -683,13 +728,19 @@
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
-     (transact-opts lmdb (merge opts {:validate-data?    validate-data?
-                                      :auto-entity-time? auto-entity-time?
-                                      :db-name           db-name
-                                      :cache-limit       cache-limit}))
-     (let [schema (init-schema lmdb schema)]
+     (let [schema  (init-schema lmdb schema)
+           opts0   (load-opts lmdb)
+           domains (init-domains (:search-domains opts0)
+                                 schema search-opts search-domains)]
+       (transact-opts lmdb (merge opts0
+                                  opts
+                                  {:validate-data?    validate-data?
+                                   :auto-entity-time? auto-entity-time?
+                                   :db-name           db-name
+                                   :cache-limit       cache-limit
+                                   :search-domains    domains}))
        (->Store lmdb
-                (s/new-search-engine lmdb search-opts)
+                (init-engines lmdb domains)
                 (load-opts lmdb)
                 schema
                 (schema->rschema schema)
@@ -699,12 +750,16 @@
                 (init-max-tx lmdb)
                 (volatile! :storage-mutex))))))
 
+(defn- transfer-engines
+  [engines lmdb]
+  (zipmap (keys engines) (map #(s/transfer % lmdb) (vals engines))))
+
 (defn transfer
   "transfer state of an existing store to a new store that has a different
   LMDB instance"
   [^Store old lmdb]
   (->Store lmdb
-           (s/transfer (.-search-engine old) lmdb)
+           (transfer-engines (.-search-engines old) lmdb)
            (opts old)
            (schema old)
            (rschema old)

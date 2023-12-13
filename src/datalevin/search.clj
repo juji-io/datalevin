@@ -804,14 +804,18 @@
     (l/visit lmdb docs-dbi load [:all-back])
     [@max-id norms docs]))
 
+(def default-opts {:analyzer        en-analyzer
+                   :index-position? false
+                   :include-text?   false})
+
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
   ([lmdb {:keys [domain analyzer query-analyzer index-position? include-text?]
           :or   {domain          c/default-domain
-                 analyzer        en-analyzer
-                 index-position? false
-                 include-text?   false}}]
+                 analyzer        (default-opts :analyzer)
+                 index-position? (default-opts :index-position?)
+                 include-text?   (default-opts :include-text?)}}]
    (let [terms-dbi     (str domain "/" c/terms)
          docs-dbi      (str domain "/" c/docs)
          positions-dbi (str domain "/" c/positions)

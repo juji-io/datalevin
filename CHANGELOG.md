@@ -2,13 +2,16 @@
 
 ## WIP
 ### Added
-- [Datalog] Create search engines on-demand with `new-search-domain`. #206
-- [Datalog] Add `:db/fulltextDomain` property to attribute schema, #176
+- [Datalog] Add `:db.fulltext/domains` property to attribute schema, #176
+- [Datalog] Add `:search-domains` to connection option map, a map from domain
+  names to search engine option maps.
 - [Datalog] Add functions `as` and `time-between` from clojure.java-time library
   as build-in functions. Also added `now` to return current instant.
 ### Fixed
 - [Datalog] Removed problematic caching in pull api implementation
 ### Improved
+- [Datalog] Create search engines on-demand. #206
+
 
 ## 0.8.23 (2023-12-06)
 ### Fixed
