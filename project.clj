@@ -17,7 +17,7 @@
    [com.taoensso/timbre "6.3.1"]
    ;; only for testing serializing joda-time, as some user data contain these
    [joda-time/joda-time "2.12.5"]
-   [clojure.java-time "1.4.2"]
+   ;; [clojure.java-time "1.4.2"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
    [org.babashka/sci "0.8.41"]
@@ -44,7 +44,7 @@
    [com.github.jnr/jnr-ffi]
    [com.taoensso/timbre]
    [org.lmdbjava/lmdbjava]
-   [clojure.java-time]
+   ;; [clojure.java-time]
    [com.taoensso/nippy]
    [org.babashka/sci]
    [nrepl/bencode]

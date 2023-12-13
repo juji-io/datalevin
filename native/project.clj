@@ -19,7 +19,7 @@
                  [org.roaringbitmap/RoaringBitmap]
                  [org.eclipse.collections/eclipse-collections]
                  [me.lemire.integercompression/JavaFastPFOR]
-                 [clojure.java-time]
+                 ;; [clojure.java-time]
                  [com.taoensso/timbre]
                  [org.graalvm.sdk/graal-sdk]
                  [org.graalvm.nativeimage/svm]
