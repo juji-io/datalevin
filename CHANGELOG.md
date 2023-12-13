@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.24 (2023-12-12)
 ### Added
 - [Datalog] Add `:db.fulltext/domains` property to attribute schema, #176
 - [Datalog] Add `:search-domains` to connection option map, a map from domain
