@@ -12,9 +12,9 @@ cd ..
 
 call lein.bat run
 
-cd native
+call %GRAALVM_HOME%\bin\gu.cmd install --file native.jar
 
-call %GRAALVM_HOME%\bin\gu.cmd install native-image
+cd native
 
 call ..\lein.bat with-profile test0-uberjar do clean, uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
