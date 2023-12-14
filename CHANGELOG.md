@@ -5,6 +5,7 @@
 - [Datalog] Add `:db.fulltext/domains` property to attribute schema, #176
 - [Datalog] Add `:search-domains` to connection option map, a map from domain
   names to search engine option maps.
+- [Datalog] Add `:domains` option to `fulltext` built-in function option map
 ### Fixed
 - [Datalog] Removed problematic caching in pull api implementation
 ### Improved
