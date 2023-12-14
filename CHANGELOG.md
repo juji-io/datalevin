@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.25 (2023-12-14)
 ### Added
 - [Datalog] Add `:db.fulltext/autoDomain` boolean property to attribute schema,
   default is `false`. When `true`, a search domain
