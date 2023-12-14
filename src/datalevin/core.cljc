@@ -1606,6 +1606,8 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
     query time (and not indexing time). Mostly useful for autocomplete search in
     conjunction with the `datalevin.search-utils/prefix-token-filter`.
 
+   * `:search-opts` is the default option map passed to the [[search]] function.
+
   See [[datalevin.search-utils]] for some functions to customize search.
   "
   ([lmdb]

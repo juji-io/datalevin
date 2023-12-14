@@ -7,6 +7,8 @@
   specifically for this attribute will be created, with a domain name "<namespace>/<attribute>",
   e.g. "my/attribute". This enables the same `fulltext` function syntax as
   Datomic, i.e. `(fulltext $ :my/attribute ?search)`.
+- [Search] Add `:search-opts` option to `new-search-engine` option argument,
+  specifying default options passed to `search` function.
 
 
 ## 0.8.24 (2023-12-12)

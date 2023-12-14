@@ -671,9 +671,10 @@ A love that's never spent.
                     :a/string {:db/valueType        :db.type/string
                                :db/fulltext         true
                                :db.fulltext/domains ["da"]}
-                    :b/string {:db/valueType        :db.type/string
-                               :db/fulltext         true
-                               :db.fulltext/domains ["db"]}}
+                    :b/string {:db/valueType           :db.type/string
+                               :db/fulltext            true
+                               :db.fulltext/autoDomain true
+                               :db.fulltext/domains    ["db"]}}
                    {:search-domains {"da" {:analyzer analyzer}
                                      "db" {}}})
         sa       "The quick brown fox jumps over the lazy dogs"
@@ -682,6 +683,12 @@ A love that's never spent.
         sd       "Five dogs jump over my fence."]
     (d/transact! conn [{:a/id 1 :a/string sa :b/string sb}])
     (d/transact! conn [{:a/id 2 :a/string sc :b/string sd}])
+    (is (= (d/q '[:find [?v ...]
+                  :in $ ?q
+                  :where
+                  [(fulltext $ :b/string ?q) [[?e _ ?v]]]]
+                (d/db conn) "jump")
+           [sd]))
     (is (= (set (d/q '[:find [?v ...]
                        :in $ ?q
                        :where
