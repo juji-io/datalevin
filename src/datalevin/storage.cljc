@@ -594,9 +594,11 @@
       :pass-through)))
 
 (defn- collect-fulltext
-  [ft-ds props v op]
+  [ft-ds attr props v op]
   (when-not (str/blank? v)
-    (conj! ft-ds [(or (props :db.fulltext/domains) [c/default-domain])
+    (conj! ft-ds [(cond-> (or (props :db.fulltext/domains) [c/default-domain])
+                    (props :db.fulltext/autoDomain)
+                    (conj (u/keyword->string attr)))
                   op])))
 
 (defn- insert-data
@@ -620,21 +622,22 @@
         (vswap! giants assoc [e aid v] max-gt)
         (when ft?
           (let [v (str v)]
-            (collect-fulltext ft-ds props v [:g [max-gt v]])))
+            (collect-fulltext ft-ds attr props v [:g [max-gt v]])))
         (cond-> [[:put c/eav i max-gt :eav :id]
                  [:put c/ave i max-gt :ave :id]
                  [:put c/giants max-gt d :id :datom [:append]]]
           ref? (conj [:put c/vea i max-gt :vea :id])))
       (do (when ft?
             (let [v (str v)]
-              (collect-fulltext ft-ds props v [:a [e aid v]])))
+              (collect-fulltext ft-ds attr props v [:a [e aid v]])))
           (cond-> [[:put c/eav i c/normal :eav :id]
                    [:put c/ave i c/normal :ave :id]]
             ref? (conj [:put c/vea i c/normal :vea :id]))))))
 
 (defn- delete-data
   [^Store store ^Datom d ft-ds giants]
-  (let [props ((schema store) (.-a d))
+  (let [attr  (.-a d)
+        props ((schema store) attr)
         vt    (value-type props)
         ref?  (= :db.type/ref vt)
         e     (.-e d)
@@ -646,7 +649,7 @@
                     (lmdb/get-value (.-lmdb store) c/eav i :eav :id)))]
     (when (props :db/fulltext)
       (let [v (str v)]
-        (collect-fulltext ft-ds props v (if gt [:r gt] [:d [e aid v]]))))
+        (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
     (cond-> [[:del c/eav i :eav]
              [:del c/ave i :ave]]
       ref? (conj [:del c/vea i :vea])
@@ -674,30 +677,46 @@
   (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/opts {:key-size c/+max-key-size+}))
 
+(defn- default-domain
+  [dms search-opts search-domains]
+  (let [new-opts (assoc (or (get search-domains c/default-domain)
+                            search-opts
+                            {})
+                        :domain c/default-domain)]
+    (assoc dms c/default-domain
+           (if-let [opts (dms c/default-domain)]
+             (merge opts new-opts)
+             new-opts))))
+
+(defn- listed-domains
+  [dms domains search-domains]
+  (reduce (fn [m domain]
+            (let [new-opts (assoc (get search-domains domain {})
+                                  :domain domain)]
+              (assoc m domain
+                     (if-let [opts (m domain)]
+                       (merge opts new-opts)
+                       new-opts))))
+          dms
+          domains))
+
 (defn- init-domains
   [search-domains0 schema search-opts search-domains]
   (reduce-kv
-    (fn [dms _ {:keys [db.fulltext/domains db/fulltext]}]
+    (fn [dms attr
+        {:keys [db/fulltext db.fulltext/domains db.fulltext/autoDomain]}]
       (if fulltext
-        (if (seq domains)
-          (reduce (fn [m domain]
-                    (let [new-opts (assoc (get search-domains domain {})
-                                          :domain domain)]
-                      (assoc m domain
-                             (if-let [opts (m domain)]
+        (cond-> (if (seq domains)
+                  (listed-domains dms domains search-domains)
+                  (default-domain dms search-opts search-domains))
+          autoDomain (#(let [domain (u/keyword->string attr)]
+                         (assoc
+                           % domain
+                           (let [new-opts (assoc (get search-domains domain {})
+                                                 :domain domain)]
+                             (if-let [opts (% domain)]
                                (merge opts new-opts)
-                               new-opts))))
-                  dms
-                  domains)
-          ;; default domain
-          (let [new-opts (assoc (or (get search-domains c/default-domain)
-                                    search-opts
-                                    {})
-                                :domain c/default-domain)]
-            (assoc dms c/default-domain
-                   (if-let [opts (dms c/default-domain)]
-                     (merge opts new-opts)
-                     new-opts))))
+                               new-opts))))))
         dms))
     (or search-domains0 {})
     schema))

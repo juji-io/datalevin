@@ -94,11 +94,16 @@
 (defn fulltext
   ([db query]
    (fulltext db query nil))
-  ([^DB db query opts]
-   (let [^Store store      (.-store db)
-         lmdb              (.-lmdb store)
-         engines           (.-search-engines store)
-         {:keys [domains]} opts]
+  ([^DB db arg1 arg2]
+   (let [^Store store (.-store db)
+         lmdb         (.-lmdb store)
+         engines      (.-search-engines store)
+         datomic?     (keyword? arg1)
+         domains      (if datomic?
+                        [(u/keyword->string arg1)]
+                        (:domains arg2))
+         query        (if datomic? arg2 arg1)
+         opts         (if datomic? nil arg2)]
      (sequence
        (mapcat #(fulltext* store lmdb engines query opts %))
        (if (seq domains) domains (keys engines))))))

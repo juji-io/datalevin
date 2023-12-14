@@ -323,6 +323,12 @@
 (declare doc-ref->id remove-doc* add-doc* hydrate-query display-xf score-docs
          get-rawtext new-search-engine)
 
+(def default-search-opts {:display             :refs
+                          :top                 10
+                          :proximity-expansion 2
+                          :proximity-max-dist  45
+                          :doc-filter          (constantly true)})
+
 (deftype SearchEngine [lmdb
                        analyzer
                        query-analyzer
@@ -337,7 +343,8 @@
                        ^AtomicInteger max-doc
                        ^AtomicInteger max-term
                        index-position?
-                       include-text?]
+                       include-text?
+                       search-opts]
   ISearchEngine
   (add-doc [this doc-ref doc-text check-exist?]
     (locking docs
@@ -371,11 +378,14 @@
     (.search this query {}))
   (search [this query {:keys [display top proximity-expansion
                               proximity-max-dist doc-filter]
-                       :or   {display             :refs
-                              top                 10
-                              proximity-expansion 2
-                              proximity-max-dist  45
-                              doc-filter          (constantly true)}}]
+                       :or   {display (:display search-opts)
+                              top     (:top search-opts)
+                              proximity-expansion
+                              (:proximity-expansion search-opts)
+                              proximity-max-dist
+                              (:proximity-max-dist search-opts)
+                              doc-filter
+                              (:doc-filter search-opts)}}]
     (when-not (s/blank? query)
       (let [tokens (->> (query-analyzer query)
                         (mapv first)
@@ -806,16 +816,19 @@
 
 (def default-opts {:analyzer        en-analyzer
                    :index-position? false
-                   :include-text?   false})
+                   :include-text?   false
+                   :search-opts     default-search-opts})
 
 (defn new-search-engine
   ([lmdb]
    (new-search-engine lmdb nil))
-  ([lmdb {:keys [domain analyzer query-analyzer index-position? include-text?]
+  ([lmdb {:keys [domain analyzer query-analyzer index-position?
+                 include-text? search-opts]
           :or   {domain          c/default-domain
                  analyzer        (default-opts :analyzer)
                  index-position? (default-opts :index-position?)
-                 include-text?   (default-opts :include-text?)}}]
+                 include-text?   (default-opts :include-text?)
+                 search-opts     (default-opts :search-opts)}}]
    (let [terms-dbi     (str domain "/" c/terms)
          docs-dbi      (str domain "/" c/docs)
          positions-dbi (str domain "/" c/positions)
@@ -837,7 +850,8 @@
                        (AtomicInteger. max-doc)
                        (AtomicInteger. max-term)
                        index-position?
-                       include-text?)))))
+                       include-text?
+                       search-opts)))))
 
 (defn transfer
   "transfer state of an existing engine to an new engine that has a
@@ -857,7 +871,8 @@
                   (.-max-doc old)
                   (.-max-term old)
                   (.-index-position? old)
-                  (.-include-text? old)))
+                  (.-include-text? old)
+                  (.-search-opts old)))
 
 (defprotocol IIndexWriter
   (write [this doc-ref doc-text])

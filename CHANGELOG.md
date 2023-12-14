@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+### Added
+- [Datalog] Add `:db.fulltext/autoDomain` boolean property to attribute schema,
+  default is `false`. When `true`, a search domain
+  specifically for this attribute will be created, with a domain name "<namespace>/<attribute>",
+  e.g. "my/attribute". This enables the same `fulltext` function syntax as
+  Datomic, i.e. `(fulltext $ :my/attribute ?search)`.
+
+
 ## 0.8.24 (2023-12-12)
 ### Added
 - [Datalog] Add `:db.fulltext/domains` property to attribute schema, #176
