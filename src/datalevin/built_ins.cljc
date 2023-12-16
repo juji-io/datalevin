@@ -6,7 +6,6 @@
    ;;  :refer [Plusable Minusable Convert As KnowsTimeBetween]]
    [datalevin.db :as db]
    [datalevin.storage :as st]
-   [datalevin.constants :as c]
    [datalevin.datom :as dd]
    [datalevin.search :as s]
    [datalevin.entity :as de]
@@ -105,6 +104,9 @@
                         (:domains arg2))
          query        (if datomic? arg2 arg1)
          opts         (if datomic? nil arg2)]
+     (when datomic?
+       (when-not (-> store st/schema arg1 :db.fulltext/autoDomain)
+         (raise (str ":db.fulltext/autoDomain is not true for " arg1) {})))
      (sequence
        (mapcat #(fulltext* store lmdb engines query opts %))
        (if (seq domains) domains (keys engines))))))

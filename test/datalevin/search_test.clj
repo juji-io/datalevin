@@ -683,6 +683,12 @@ A love that's never spent.
         sd       "Five dogs jump over my fence."]
     (d/transact! conn [{:a/id 1 :a/string sa :b/string sb}])
     (d/transact! conn [{:a/id 2 :a/string sc :b/string sd}])
+    (is (thrown-with-msg? Exception #":db.fulltext/autoDomain"
+                          (d/q '[:find [?v ...]
+                                 :in $ ?q
+                                 :where
+                                 [(fulltext $ :a/string ?q) [[?e _ ?v]]]]
+                               (d/db conn) "jump")))
     (is (= (d/q '[:find [?v ...]
                   :in $ ?q
                   :where

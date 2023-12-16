@@ -59,7 +59,8 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ;; A search engine depends on a key-value store to store the indices.
 (def lmdb (d/open-kv "/tmp/search-db"))
-(def engine (d/new-search-engine lmdb {:index-position? true}))
+(def engine (d/new-search-engine lmdb {:index-position? true
+                                       :include-text?   true}))
 
 ;; Here are the documents to be indxed, keyed by doc-id
 (def docs
@@ -75,12 +76,16 @@ involves only a few functions: `new-search-engine`, `add-doc`, `remove-doc`, and
 
 ;; search by default return a list of `doc-ref` ordered by relevance to query
 (d/search engine "red")
-;=> (1 2)
+;;=> (1 2)
 
 ;; we can alter the display to show offets of term occurrences as well, useful
 ;; e.g. to highlight matched terms in documents
 (d/search engine "red" {:display :offsets})
-;=> ([1 (["red" [10 39]])] [2 (["red" [40]])])
+;;=> ([1 (["red" [10 39]])] [2 (["red" [40]])])
+
+(sut/search engine "red" {:display :texts+offsets})
+;;=> [[1  "The quick red fox jumped over the lazy red dogs." [["red" [10 39]]]]
+;;=>  [2  "Mary had a little lamb whose fleece was red as fire." [["red" [40]]]]]
 
 ```
 
@@ -118,20 +123,80 @@ the query.
 In the above example, we destructure the returned datoms into three variables,
 `?e`, `?a` and `?v`.
 
-As can be seen, the search is across the whole database, not limited to an
-individual attribute.
+As can be seen, by default, the search is across the whole database, not limited
+to an individual attribute.
 
-To further filter the search results,
-a `doc-filter` function can be supplied in the search option, that takes the
-`doc-ref` and return true or false, e.g. `{:doc-filter #(= (:a %) :text)}` will
-only return datoms that have attribute `:text`. Or one can opt to put this
-constraint in the Datalog where clause instead.
+Sometimes, it is useful to group several attributes and search them together, or
+an attribute wants to be searched alone, so a concept of search domain is
+introduced. A search domain is supported by a search engine of its own, so each
+can have its own analyzer and other options. These can be passed in as
+`:search-domains` when opening the DB connection.
+
+A fulltext search enabled attribute can then declare the search domains it
+belongs to in the schema with `:db.fulltext/domains` vector. In addition, if
+`:db.fulltext/autoDomain` is true, an attribute specific domain is created for
+the attribute, enabling the same syntax and semantics as that of the Datomic
+`fulltext` function. Otherwise, `fulltext` function's option map argument can
+take a `:domains` key to specify the domains this search query will be posted to,
+and the results are concatenated together.
+
+```clojure
+  (let [analyzer (su/create-analyzer
+                   {:token-filters [(su/create-stemming-token-filter
+                                      "english")]})
+        conn     (d/create-conn
+                   "/tmp/test-db"
+                   {:a/id     {:db/valueType :db.type/long
+                               :db/unique    :db.unique/identity}
+                    :a/string {:db/valueType        :db.type/string
+                               :db/fulltext         true
+                               :db.fulltext/domains ["da"]}
+                    :b/string {:db/valueType           :db.type/string
+                               :db/fulltext            true
+                               :db.fulltext/autoDomain true
+                               :db.fulltext/domains    ["db"]}}
+                   {:search-domains {"da" {:analyzer analyzer}
+                                     "db" {}}})
+        sa       "The quick brown fox jumps over the lazy dogs"
+        sb       "Pack my box with five dozen liquor jugs."
+        sc       "How vexingly quick daft zebras jump!"
+        sd       "Five dogs jump over my fence."]
+
+    (d/transact! conn [{:a/id 1 :a/string sa :b/string sb}
+                       {:a/id 2 :a/string sc :b/string sd}])
+
+    (d/q '[:find [?v ...]
+           :in $ ?q
+           :where
+           [(fulltext $ :b/string ?q) [[?e _ ?v]]]]
+         (d/db conn) "jump")
+    ;;=> ["Five dogs jump over my fence."]
+
+    (d/q '[:find ([?v ...])
+           :in $ ?q
+           :where
+           [(fulltext $ ?q {:domains ["da" "db"]}) [[?e _ ?v]]]]
+         (d/db conn) "jump")
+    ;;=> ["The quick brown fox jumps over the lazy dogs"
+    ;;=>  "How vexingly quick daft zebras jump!"
+    ;;=>  "Five dogs jump over my fence.]"
+
+    (d/close conn)
+    (u/delete-files dir))
+
+```
+
+To customize filtering the search results further, a `doc-filter` function can
+be supplied in the search option, that takes the `doc-ref` and return true or
+false, e.g. `{:doc-filter #(= (:a %) :text)}` will only return datoms that have
+attribute `:text`. Or one can choose to put this constraint in the Datalog where
+clause, but this will be less efficient.
 
 ### Custom Search
 
 The search feature can be customized at indexing time and at query time.
 
-### Custom analyzer
+#### Custom analyzer
 
 When creating the search engine, an `:analyzer` option can be used to supply
 an analyzer function that takes a document as string, and output a list of `[term
@@ -141,11 +206,10 @@ Some common utility functions for creating analyzers are also provided in
 `datalevin.search-utils`  namespace: stemming, stop words, regular expression,
 ngrams, prefix, and so on.
 
-### Search options
+#### Search options
 
 See documentation for `search` function to see available options that can be
-passed at run time to customize search: top-k, proximity expansion factor,
-results display, and so on.
+passed at run time to customize search: domains, top-k, proximity expansion factor, results display, and so on.
 
 ## Implementation
 
