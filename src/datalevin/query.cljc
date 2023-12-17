@@ -653,7 +653,7 @@
 (defn solve-rule [context clause]
   (let [final-attrs     (filter free-var? clause)
         final-attrs-map (zipmap final-attrs (range))
-;;         clause-cache    (atom {}) ;; TODO
+        ;;         clause-cache    (atom {}) ;; TODO
         solve           (fn [prefix-context clauses]
                           (reduce -resolve-clause prefix-context clauses))
         empty-rels?     (fn [context]
@@ -670,7 +670,7 @@
 
             ;; no rules -> expand, collect, sum
             (let [context (solve (:prefix-context frame) clauses)
-                  tuples  (-collect context final-attrs)
+                  tuples  (u/distinct-by vec (-collect context final-attrs))
                   new-rel (relation! final-attrs-map tuples)]
               (recur (next stack) (sum-rel rel new-rel)))
 
@@ -692,9 +692,9 @@
                     (recur (next stack) rel)
 
                     ;; need to expand rule to branches
-                    (let [used-args  (assoc (:used-args frame) rule
-                                       (conj (get (:used-args frame) rule []) call-args))
-                          branches   (expand-rule rule-clause context used-args)]
+                    (let [used-args (assoc (:used-args frame) rule
+                                           (conj (get (:used-args frame) rule []) call-args))
+                          branches  (expand-rule rule-clause context used-args)]
                       (recur (concat
                                (for [branch branches]
                                  {:prefix-clauses prefix-clauses

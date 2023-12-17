@@ -344,6 +344,19 @@
       [init 0]
       xs)))
 
+(defn distinct-by
+  [f coll]
+  (->> (reduce
+         (fn [[seen res :as acc] el]
+           (let [key (f el)]
+             (if (contains? seen key)
+               acc
+               [(conj! seen key) (conj! res el)])))
+         [(transient #{}) (transient [])]
+         coll)
+       second
+       persistent!))
+
 (defn long-inc ^long [^long x] (inc x))
 
 (defn index-of
