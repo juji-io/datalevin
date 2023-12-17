@@ -20,7 +20,7 @@
    [joda-time/joda-time "2.12.5"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
-   [org.babashka/sci "0.8.40"]
+   [org.babashka/sci "0.8.41"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
    [org.clojure/clojure "1.11.1"]
    [org.clojure/tools.cli "1.0.219"]
@@ -39,7 +39,7 @@
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
    [org.lmdbjava/lmdbjava "0.8.3"]
-   [org.roaringbitmap/RoaringBitmap "1.0.0"]]
+   [org.roaringbitmap/RoaringBitmap "1.0.1"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
