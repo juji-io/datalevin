@@ -5,8 +5,6 @@
 ### Added
 - [All] **Breaking** Option `:compress?` to compress the data (default `true`).
   See [details](doc/compress.md). #14
-- [Client] **Breaking** Option `:compress-message?` (default `true`) to compress
-  network messages, set to `false` for older versions of server.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -37,6 +35,8 @@
   prone to happen.
 - [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first
   element of triples.
+- [Datalog] **Breaking** Unpacked components argument in `datoms`, `seek-datoms`
+  and rseek-datoms, i.e. [c1 c2 c3 c4] => c1 c2 c2 c4, for better performance.
 - [Datalog] Query results are spillable to disk. #166
 
 ### Improved
