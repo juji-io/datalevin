@@ -45,8 +45,7 @@
         :let [^Datom datom (first-seq datoms)]
 
         (or (nil? datom) (not= (.-a datom) (.-name attr)))
-        [(ResultFrame. ((.-xform attr) (not-empty (persistent! acc)))
-                       (or datoms ()))]
+        [(ResultFrame. (not-empty (persistent! acc)) (or datoms ()))]
 
         ;; got limit, skip rest of the datoms
         (and (.-limit attr) (>= (count acc) ^long (.-limit attr)))
@@ -75,8 +74,7 @@
       :let [^Datom datom (first-seq datoms)]
 
       (or (nil? datom) (not= (.-a datom) (.-name attr)))
-      [(ResultFrame. ((.-xform attr) (not-empty (persistent! acc)))
-                     (or datoms ()))]
+      [(ResultFrame. (not-empty (persistent! acc)) (or datoms ()))]
 
       ;; got limit, skip rest of the datoms
       (and (.-limit attr) (>= (count acc) ^long (.-limit attr)))
@@ -98,7 +96,8 @@
     (AttrsFrame.
       seen
       recursion-limits
-      (assoc-some! acc (.-as attr) (.-value ^ResultFrame result))
+      (assoc-some!
+        acc (.-as attr) ((.-xform attr) (.-value ^ResultFrame result)))
       pattern
       (first-seq attrs)
       (next-seq attrs)
@@ -171,7 +170,8 @@
 
         (.-ref? attr)
         [(AttrsFrame. seen recursion-limits acc pattern attr attrs datoms id)
-         (MultivalRefAttrFrame. seen recursion-limits (transient {}) pattern attr datoms)]
+         (MultivalRefAttrFrame.
+           seen recursion-limits (transient {}) pattern attr datoms)]
 
         :else
         (recur
@@ -185,7 +185,8 @@
     (ReverseAttrsFrame.
       seen
       recursion-limits
-      (assoc-some! acc (.-as attr) (.-value ^ResultFrame result))
+      (assoc-some!
+        acc (.-as attr) ((.-xform attr) (.-value ^ResultFrame result)))
       pattern
       (first-seq attrs)
       (next-seq attrs)

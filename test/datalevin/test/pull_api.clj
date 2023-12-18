@@ -568,6 +568,19 @@
       (is (= {:unknown "[unknown]"}
              (d/pull test-db
                      '[[:unknown :default "[unknown]" :xform vector]] 1))))
+
+    (testing ":xform on cardinality/one"
+      (is (= {:name "David" :father "Petr"}
+             (d/pull test-db [:name {[:father :xform #(:name %)] ['*]}] 2))))
+
+    (testing ":xform on reverse ref"
+      (is (= {:name "Petr" :_father ["David" "Thomas"]}
+             (d/pull test-db [:name {[:_father :xform #(mapv :name %)] [:name]}] 1))))
+
+    (testing ":xform on reverse component ref"
+      (is (= {:name "Part A.A" :_part "Part A"}
+             (d/pull test-db [:name {[:_part :xform #(:name %)] [:name]}] 11))))
+
     (d/close-db test-db)
     (u/delete-files dir)))
 
