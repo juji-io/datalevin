@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as str]
    [datalevin.db :as db]
+   [datalevin.datom :as dd]
    [datalevin.storage :as st]
    [datalevin.search :as s]
    [datalevin.entity :as de]
@@ -35,6 +36,7 @@
 (defn- -missing?
   [db e a]
   (nil? (get (de/entity db e) a)))
+
 (defn- and-fn [& args]
   (reduce (fn [a b]
             (if b b (reduced b))) true args))
@@ -43,28 +45,84 @@
   (reduce (fn [a b]
             (if b (reduced b) b)) nil args))
 
+(defn- fulltext*
+  [store lmdb engines query opts domain]
+  (let [engine (engines domain)]
+    (sequence
+      (map (fn [d]
+             (if (= :g (nth d 0))
+               (st/gt->datom lmdb (peek d))
+               (st/e-aid-v->datom store d))))
+      (s/search engine query opts))))
+
 (defn fulltext
   ([db query]
    (fulltext db query nil))
-  ([^DB db query opts]
-   (let [^Store store         (.-store db)
-         lmdb                 (.-lmdb store)
-         ^SearchEngine engine (.-search-engine store)]
+  ([^DB db arg1 arg2]
+   (let [^Store store (.-store db)
+         lmdb         (.-lmdb store)
+         engines      (.-search-engines store)
+         datomic?     (keyword? arg1)
+         domains      (if datomic?
+                        [(u/keyword->string arg1)]
+                        (:domains arg2))
+         query        (if datomic? arg2 arg1)
+         opts         (if datomic? nil arg2)]
+     (when datomic?
+       (when-not (-> store st/schema arg1 :db.fulltext/autoDomain)
+         (raise (str ":db.fulltext/autoDomain is not true for " arg1) {})))
      (sequence
-       (map (fn [d]
-              (if (= :g (nth d 0))
-                (st/gt->datom lmdb (peek d))
-                (st/e-aid-v->datom store d))))
-       (s/search engine query opts)))))
+       (mapcat #(fulltext* store lmdb engines query opts %))
+       (if (seq domains) domains (keys engines))))))
+
+(defn- less
+  ([x] true)
+  ([x y] (neg? ^long (dd/compare-with-type x y)))
+  ([x y & more]
+   (if (less x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (less y (first more)))
+     false)))
+
+(defn- greater
+  ([x] true)
+  ([x y] (pos? ^long (dd/compare-with-type x y)))
+  ([x y & more]
+   (if (greater x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (greater y (first more)))
+     false)))
+
+(defn- less-equal
+  ([x] true)
+  ([x y] (not (pos? ^long (dd/compare-with-type x y))))
+  ([x y & more]
+   (if (less-equal x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (less-equal y (first more)))
+     false)))
+
+(defn- greater-equal
+  ([x] true)
+  ([x y] (not (neg? ^long (dd/compare-with-type x y))))
+  ([x y & more]
+   (if (greater-equal x y)
+     (if (next more)
+       (recur y (first more) (next more))
+       (greater-equal y (first more)))
+     false)))
 
 (def query-fns {'=                           =,
                 '==                          ==,
                 'not=                        not=,
                 '!=                          not=,
-                '<                           <,
-                '>                           >,
-                '<=                          <=,
-                '>=                          >=,
+                '<                           less
+                '>                           greater
+                '<=                          less-equal
+                '>=                          greater-equal
                 '+                           +,
                 '-                           -,
                 '*                           *,

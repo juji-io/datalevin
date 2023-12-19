@@ -277,6 +277,8 @@
    :post [(string? %)]}
   (s/join "-" (map s/lower-case (split-words s))))
 
+(defn keyword->string [k] (subs (str k) 1))
+
 (defn lazy-concat
   [colls]
   (lazy-seq

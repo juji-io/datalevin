@@ -103,8 +103,7 @@
                          ^TreeSortedSet eavt
                          ^TreeSortedSet avet
                          ^TreeSortedSet veat
-                         pull-patterns
-                         pull-attrs]
+                         pull-patterns]
 
   Searchable
   (-searchable? [_] true)

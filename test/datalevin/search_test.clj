@@ -301,16 +301,15 @@
                                   [t i (.indexOf text t)])
                                 (s/split text #"\s")))
         dir      (u/tmp-dir (str "fulltext-fns-" (UUID/randomUUID)))
-        conn     (d/create-conn dir
-                                {:a/id     {:db/valueType :db.type/long
-                                            :db/unique    :db.unique/identity
-                                            }
-                                 :a/string {:db/valueType :db.type/string
-                                            :db/fulltext  true}
-                                 :b/string {:db/valueType :db.type/string
-                                            :db/fulltext  true}}
-                                {:auto-entity-time? true
-                                 :search-opts       {:analyzer analyzer}})
+        conn     (d/create-conn
+                   dir {:a/id     {:db/valueType :db.type/long
+                                   :db/unique    :db.unique/identity}
+                        :a/string {:db/valueType :db.type/string
+                                   :db/fulltext  true}
+                        :b/string {:db/valueType :db.type/string
+                                   :db/fulltext  true}}
+                   {:auto-entity-time? true
+                    :search-opts       {:analyzer analyzer}})
         s        "The quick brown fox jumps over the lazy dog"]
     (d/transact! conn [{:a/id 1 :a/string s :b/string ""}])
     (d/transact! conn [{:a/id 1 :a/string s :b/string "bar"}])
@@ -660,6 +659,86 @@ A love that's never spent.
       (is (= [:doc1 :doc5] (sut/search engine1 "dog"))))
 
     (l/close-kv lmdb)
+    (u/delete-files dir)))
+
+(deftest domain-test
+  (let [dir      (u/tmp-dir (str "domain-test-" (UUID/randomUUID)))
+        analyzer (su/create-analyzer
+                   {:token-filters [(su/create-stemming-token-filter
+                                      "english")]})
+        conn     (d/create-conn
+                   dir
+                   {:a/id     {:db/valueType :db.type/long
+                               :db/unique    :db.unique/identity}
+                    :a/string {:db/valueType        :db.type/string
+                               :db/fulltext         true
+                               :db.fulltext/domains ["da"]}
+                    :b/string {:db/valueType           :db.type/string
+                               :db/fulltext            true
+                               :db.fulltext/autoDomain true
+                               :db.fulltext/domains    ["db"]}}
+                   {:search-domains {"da" {:analyzer analyzer}
+                                     "db" {}}})
+        sa       "The quick brown fox jumps over the lazy dogs"
+        sb       "Pack my box with five dozen liquor jugs."
+        sc       "How vexingly quick daft zebras jump!"
+        sd       "Five dogs jump over my fence."]
+    (d/transact! conn [{:a/id 1 :a/string sa :b/string sb}])
+    (d/transact! conn [{:a/id 2 :a/string sc :b/string sd}])
+    (is (thrown-with-msg? Exception #":db.fulltext/autoDomain"
+                          (d/q '[:find [?v ...]
+                                 :in $ ?q
+                                 :where
+                                 [(fulltext $ :a/string ?q) [[?e _ ?v]]]]
+                               (d/db conn) "jump")))
+    (is (= (d/q '[:find [?v ...]
+                  :in $ ?q
+                  :where
+                  [(fulltext $ :b/string ?q) [[?e _ ?v]]]]
+                (d/db conn) "jump")
+           [sd]))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q {:domains ["da"]}) [[?e _ ?v]]]]
+                     (d/db conn) "jump"))
+           #{sa sc}))
+    (is (= (d/q '[:find [?v ...]
+                  :in $ ?q
+                  :where
+                  [(fulltext $ ?q {:domains ["db"]}) [[?e _ ?v]]]]
+                (d/db conn) "jump")
+           [sd]))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q {:domains ["da" "db"]}) [[?e _ ?v]]]]
+                     (d/db conn) "jump"))
+           #{sa sc sd}))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q) [[?e _ ?v]]]]
+                     (d/db conn) "jump"))
+           #{sa sc sd}))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q) [[?e _ ?v]]]]
+                     (d/db conn) "dog"))
+           #{sa}))
+    (is (= (set (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q) [[?e _ ?v]]]]
+                     (d/db conn) "dogs"))
+           #{sa sd}))
+    (is (empty? (d/q '[:find [?v ...]
+                       :in $ ?q
+                       :where
+                       [(fulltext $ ?q {:domains ["db"]}) [[?e _ ?v]]]]
+                     (d/db conn) "dog")))
+    (d/close conn)
     (u/delete-files dir)))
 
 ;; TODO double compares are not really reliable

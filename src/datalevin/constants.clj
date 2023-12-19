@@ -210,6 +210,8 @@
 
 ;; search
 
+(def ^:const default-domain "datalevin")
+
 (def default-display
   "default `search` function `:display` option value is `:refs`"
   :refs)
@@ -229,15 +231,19 @@
 (def default-doc-filter (constantly true))
 
 
+
 (def ^:const terms
   "dbi name suffix for search engine terms index is `terms`"
   "terms")
+
 (def ^:const docs
   "dbi name suffix for search engine documents index is `docs`"
   "docs")
+
 (def ^:const positions
   "dbi name suffix for search engine positions index is `positions`"
   "positions")
+
 (def ^:const rawtext
   "dbi name suffix for search engine raw text is `rawtext`"
   "rawtext")

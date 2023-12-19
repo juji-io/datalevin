@@ -137,7 +137,7 @@
         (if (nil? o2) 0
             (cmp-fn o1 o2)))))
 
-(defn- compare-with-type [a b]
+(defn compare-with-type [a b]
   (if (identical? (class a) (class b))
     (try
       (compare a b)

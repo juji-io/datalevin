@@ -46,6 +46,39 @@
 - [Search] `search-utils` functions are now compiled instead of being
   interpreted to improve performance.
 
+## 0.8.25 (2023-12-14)
+### Added
+- [Datalog] Add `:db.fulltext/autoDomain` boolean property to attribute schema,
+  default is `false`. When `true`, a search domain
+  specifically for this attribute will be created, with a domain name same as
+  attribute name, e.g. "my/attribute". This enables the same `fulltext` function syntax as
+  Datomic, i.e. `(fulltext $ :my/attribute ?search)`.
+- [Search] Add `:search-opts` option to `new-search-engine` option argument,
+  specifying default options passed to `search` function.
+
+
+## 0.8.24 (2023-12-12)
+### Added
+- [Datalog] Add `:db.fulltext/domains` property to attribute schema, #176
+- [Datalog] Add `:search-domains` to connection option map, a map from domain
+  names to search engine option maps.
+- [Datalog] Add `:domains` option to `fulltext` built-in function option map
+### Fixed
+- [Datalog] Removed problematic caching in pull api implementation
+### Improved
+- [Datalog] Create search engines on-demand. #206
+
+
+## 0.8.23 (2023-12-06)
+### Fixed
+- deps conflict
+
+## 0.8.22 (2023-12-06)
+### Improved
+- [Datalog] `<`, `>`, `<=`, `>=` built-in functions handle any comparable data, not just numbers.
+- [Datalog] Better fix for #224 [Thx @dvingo]
+- bump deps
+
 ## 0.8.21 (2023-10-31)
 ### Fixed
 - [All] Do not interfere with the default print-methods of regular expression, byte

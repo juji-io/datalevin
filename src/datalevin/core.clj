@@ -225,8 +225,8 @@ Only usable for debug output.
  `:db/created-at` and `:db/updated-at` values for each entity. Default
  is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in
- full-text search engine. See [[search]]
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
+
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -284,7 +284,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine. See [[search]]
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -574,7 +574,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 
@@ -597,7 +597,7 @@ Only usable for debug output.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
-   * `:search-opts`, an option map that will be passed to the built-in full-text search engine
+   * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. [[new-search-engine]]
 
    * `:kv-opts`, an option map that will be passed to the underlying kV store
 

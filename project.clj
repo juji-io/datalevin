@@ -1,4 +1,4 @@
-(def version "0.8.21")
+(def version "0.8.25")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -14,7 +14,6 @@
    [com.fasterxml.jackson.core/jackson-databind "2.15.3"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.15"]
-   [com.taoensso/encore "3.74.0"]
    [com.taoensso/nippy "3.4.0-beta1"]
    [com.taoensso/timbre "6.3.1"]
    [joda-time/joda-time "2.12.5"]
@@ -46,11 +45,9 @@
    [org.clojars.huahaiy/dtlvnative-windows-amd64-shared]
    [org.clojars.huahaiy/dtlvnative-linux-amd64-shared]
    [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
-   ;; [com.github.luben/zstd-jni]
    [com.github.jnr/jnr-ffi]
    [com.taoensso/timbre]
    [org.lmdbjava/lmdbjava]
-   [com.taoensso/encore]
    [com.taoensso/nippy]
    [org.babashka/sci]
    [nrepl/bencode]
@@ -63,7 +60,6 @@
    [org.roaringbitmap/RoaringBitmap]
    [org.eclipse.collections/eclipse-collections]
    [me.lemire.integercompression/JavaFastPFOR]
-   ;; [com.github.seancorfield/next.jdbc]
    [com.cognitect/transit-clj]]
   :source-paths ["src"]
   :java-source-paths ["src/java"]
