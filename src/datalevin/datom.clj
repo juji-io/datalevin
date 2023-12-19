@@ -81,13 +81,28 @@
 (defn- seq-datom [^Datom d]
   (list (.-e d) (.-a d) (.-v d) (datom-tx d) (datom-added d)))
 
-(defn- val-at-datom [^Datom d k not-found]
-  (case k
-    (:e "e")         (.-e d)
-    (:a "a")         (.-a d)
-    (:v "v")         (.-v d)
-    (:tx "tx")       (datom-tx d)
-    (:added "added") (datom-added d)
+(defn- val-at-datom
+  [^Datom d k not-found]
+  (cond
+    (keyword? k)
+    (case k
+      :e     (.-e d)
+      :a     (.-a d)
+      :v     (.-v d)
+      :tx    (datom-tx d)
+      :added (datom-added d)
+      not-found)
+
+    (string? k)
+    (case k
+      "e"     (.-e d)
+      "a"     (.-a d)
+      "v"     (.-v d)
+      "tx"    (datom-tx d)
+      "added" (datom-added d)
+      not-found)
+
+    :else
     not-found))
 
 (defn- nth-datom

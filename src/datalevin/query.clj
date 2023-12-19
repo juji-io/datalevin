@@ -659,7 +659,7 @@
 
             ;; no rules -> expand, collect, sum
             (let [context (solve (:prefix-context frame) clauses)
-                  tuples  (-collect context final-attrs)
+                  tuples  (u/distinct-by vec (-collect context final-attrs))
                   new-rel (relation! final-attrs-map tuples)]
               (recur (next stack) (sum-rel rel new-rel)))
 
