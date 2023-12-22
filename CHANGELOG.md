@@ -3,8 +3,9 @@
 ## WIP
 
 ### Added
-- [All] **Breaking** Option `:compress?` to compress the data (default `true`).
-  See [details](doc/compress.md). #14
+- [Datalog] New query engine. See [details](doc/query.md). #11
+- [KV] Option `:compress?` to compress the data (default `true`). See
+  [details](doc/compress.md). #14
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -24,9 +25,10 @@
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
 
+
 ### Changed
 - [KV] **Breaking** Change default write setting to be synchronously flushing to disk, so
-  that it is crash resilient, but is slower. To get back the old default setting
+  that the database is crash resilient, but writing is slower. To get back the old default setting
   that is faster but less safe, conj `:mapasync` to `:flags` option.
 - [KV] **Breaking** Upgrade LMDB to the latest, now tracking mdb.master branch,
   as it includes important fixes, such as
@@ -36,12 +38,11 @@
 - [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first
   element of triples.
 - [Datalog] **Breaking** Unpacked components argument in `datoms`, `seek-datoms`
-  and rseek-datoms, i.e. [c1 c2 c3 c4] => c1 c2 c2 c4, for better performance.
+  and rseek-datoms, i.e. [c1 c2 c3] => c1 c2 c2, for better performance.
 - [Datalog] Query results are spillable to disk. #166
 
 ### Improved
-- [Datalog] Query performance improvement by using mutable collections
-  whenever appropriate, up to 40% speed improvement for some queries.
+- [Datalog] In addition to new query engine, general performance improvement by using mutable collections whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
 - [Search] `search-utils` functions are now compiled instead of being
   interpreted to improve performance.

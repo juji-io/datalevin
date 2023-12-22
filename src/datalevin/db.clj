@@ -33,12 +33,12 @@
   (-last [data pattern]))
 
 (defprotocol IIndexAccess
-  (-populated? [db index components])
-  (-datoms [db index components])
+  (-populated? [db index c1 c2 c3])
+  (-datoms [db index c1 c2 c3])
   (-range-datoms [db index start-datom end-datom])
-  (-first-datom [db index components])
-  (-seek-datoms [db index components])
-  (-rseek-datoms [db index components])
+  (-first-datom [db index c1 c2 c3])
+  (-seek-datoms [db index c1 c2 c3])
+  (-rseek-datoms [db index c1 c2 c3])
   (-index-range [db attr start end]))
 
 (defprotocol IDB
@@ -204,20 +204,22 @@
 
   IIndexAccess
   (-populated?
-    [db index cs]
+    [db index c1 c2 c3]
     (wrap-cache
       store
-      [:populated? index cs]
-      (s/populated? store index (components->pattern db index cs e0 tx0)
-                    (components->pattern db index cs emax txmax))))
+      [:populated? index c1 c2 c3]
+      (s/populated? store index
+                    (components->pattern db index c1 c2 c3 e0)
+                    (components->pattern db index c1 c2 c3 emax))))
 
   (-datoms
-    [db index cs]
+    [db index c1 c2 c3]
     (wrap-cache
       store
-      [:datoms index cs]
-      (s/slice store index (components->pattern db index cs e0 tx0)
-               (components->pattern db index cs emax txmax))))
+      [:datoms index c1 c2 c3]
+      (s/slice store index
+               (components->pattern db index c1 c2 c3 e0)
+               (components->pattern db index c1 c2 c3 emax))))
 
   (-range-datoms
     [db index start-datom end-datom]
@@ -227,28 +229,31 @@
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
-    [db index cs]
+    [db index c1 c2 c3]
     (wrap-cache
       store
-      [:first-datom index cs]
-      (s/head store index (components->pattern db index cs e0 tx0)
-              (components->pattern db index cs emax txmax))))
+      [:first-datom index c1 c2 c3]
+      (s/head store index
+              (components->pattern db index c1 c2 c3 e0)
+              (components->pattern db index c1 c2 c3 emax))))
 
   (-seek-datoms
-    [db index cs]
+    [db index c1 c2 c3]
     (wrap-cache
       store
-      [:seek index cs]
-      (s/slice store index (components->pattern db index cs e0 tx0)
-               (datom emax nil nil txmax))))
+      [:seek index c1 c2 c3]
+      (s/slice store index
+               (components->pattern db index c1 c2 c3 e0)
+               (datom emax nil nil))))
 
   (-rseek-datoms
-    [db index cs]
+    [db index c1 c2 c3]
     (wrap-cache
       store
-      [:rseek index cs]
-      (s/rslice store index (components->pattern db index cs emax txmax)
-                (datom e0 nil nil tx0))))
+      [:rseek index c1 c2 c3]
+      (s/rslice store index
+                (components->pattern db index c1 c2 c3 emax)
+                (datom e0 nil nil))))
 
   (-index-range
     [db attr start end]
@@ -256,8 +261,8 @@
       store
       [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
-          (s/slice store :avet (resolve-datom db nil attr start nil e0 tx0)
-                   (resolve-datom db nil attr end nil emax txmax)))))
+          (s/slice store :avet (resolve-datom db nil attr start e0)
+                   (resolve-datom db nil attr end emax)))))
 
   clojure.data/EqualityPartition
   (equality-partition [x] :datalevin/db))
@@ -427,21 +432,20 @@
 
 (declare entid-strict entid-some ref?)
 
-(defn- resolve-datom [db e a v t default-e default-tx]
-  (when a (validate-attr a (list 'resolve-datom 'db e a v t)))
+(defn- resolve-datom [db e a v default-e ]
+  (when a (validate-attr a (list 'resolve-datom 'db e a v default-e)))
   (datom
     (or (entid-some db e) default-e)  ;; e
     a                                 ;; a
     (if (and (some? v) (ref? db a))   ;; v
       (entid-strict db v)
-      v)
-    (or (entid-some db t) default-tx))) ;; t
+      v)))
 
-(defn- components->pattern [db index [c0 c1 c2 c3] default-e default-tx]
+(defn- components->pattern [db index c0 c1 c2 default-e]
   (case index
-    (:eav :eavt) (resolve-datom db c0 c1 c2 c3 default-e default-tx)
-    (:ave :avet) (resolve-datom db c2 c0 c1 c3 default-e default-tx)
-    (:vea :veat) (resolve-datom db c2 c1 c0 c3 default-e default-tx)))
+    (:eav :eavt) (resolve-datom db c0 c1 c2 default-e)
+    (:ave :avet) (resolve-datom db c2 c0 c1 default-e)
+    (:vea :veat) (resolve-datom db c2 c1 c0 default-e)))
 
 ;; ----------------------------------------------------------------------------
 
@@ -483,13 +487,13 @@
         (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                              (datom e0 attr value tx0)
                              (datom emax attr value txmax))))
-            (:e (-first-datom db :avet eid)))))
+            (:e (-first-datom db :avet attr value nil)))))
 
     (keyword? eid)
     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                          (datom e0 :db/ident eid tx0)
                          (datom emax :db/ident eid txmax))))
-        (:e (-first-datom db :avet [:db/ident eid])))
+        (:e (-first-datom db :avet :db/ident eid nil)))
 
     :else
     (raise "Expected number or lookup ref for entity id, got " eid
@@ -515,7 +519,7 @@
                                    (.subSet ^TreeSortedSet (:avet db)
                                             (d/datom e0 a v tx0)
                                             (d/datom emax a v txmax))))
-                            (-populated? db :avet [a v])))]
+                            (-populated? db :avet a v nil)))]
       (raise "Cannot add " datom " because of unique constraint: " found
              {:error     :transact/unique
               :attribute (.-a datom)
@@ -611,7 +615,7 @@
                                (.subSet ^TreeSortedSet (:eavt db)
                                         (d/datom e tuple nil tx0)
                                         (d/datom e tuple nil txmax))))
-                         (:v (-first-datom db :eavt [e tuple]))
+                         (:v (-first-datom db :eavt e tuple nil))
                          (vec (repeat (-> db -schema (get tuple)
                                           :db/tupleAttrs count)
                                       nil)))
@@ -684,7 +688,7 @@
                     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                                          (d/datom e0 a v tx0)
                                          (d/datom emax a v txmax))))
-                        (:e (-first-datom db :avet [a v]))))
+                        (:e (-first-datom db :avet a v nil))))
 
           split (fn [a vs]
                   (reduce
@@ -937,7 +941,7 @@
                   current (or (:v (sf (.subSet ^TreeSortedSet (:eavt db)
                                                (d/datom eid tuple nil tx0)
                                                (d/datom eid tuple nil txmax))))
-                              (:v (-first-datom db :eavt [eid tuple])))]
+                              (:v (-first-datom db :eavt eid tuple nil)))]
               (cond
                 (= value current) entities
                 (nil? value)      (conj entities ^::internal [:db/retract eid tuple current])
@@ -1119,7 +1123,7 @@
                                                      ^TreeSortedSet (:avet db)
                                                      (d/datom e0 a v tx0)
                                                      (d/datom emax a v txmax))))
-                                           (:e (-first-datom db :avet [a v]))))
+                                           (:e (-first-datom db :avet a v nil))))
                        allocated-eid (get tempids e)]
                    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
                      (retry-with-tempid initial-report report initial-es e upserted-eid)
@@ -1142,7 +1146,7 @@
                                                ^TreeSortedSet (:eavt db)
                                                (d/datom e tuple-attr nil tx0)
                                                (d/datom e tuple-attr nil txmax))))
-                                       (:v (-first-datom db :eavt [e tuple-attr])))]
+                                       (:v (-first-datom db :eavt e tuple-attr nil)))]
                                (= tuple-value db-value)))
                            (map vector tuple-attrs v)))
                      (recur report entities)

@@ -463,11 +463,15 @@ Only usable for debug output.
 
    - Index lookup is usually more efficient than doing a query with a single clause.
    "
-  ([db index]             {:pre [(db/db? db)]} (db/-datoms db index []))
-  ([db index c1]          {:pre [(db/db? db)]} (db/-datoms db index [c1]))
-  ([db index c1 c2]       {:pre [(db/db? db)]} (db/-datoms db index [c1 c2]))
-  ([db index c1 c2 c3]    {:pre [(db/db? db)]} (db/-datoms db index [c1 c2 c3]))
-  ([db index c1 c2 c3 c4] {:pre [(db/db? db)]} (db/-datoms db index [c1 c2 c3 c4])))
+  ([db index]             {:pre [(db/db? db)]}
+   (db/-datoms db index nil nil nil))
+  ([db index c1]          {:pre [(db/db? db)]}
+   (db/-datoms db index c1 nil nil))
+  ([db index c1 c2]       {:pre [(db/db? db)]}
+   (db/-datoms db index c1 c2 nil))
+  ([db index c1 c2 c3]    {:pre [(db/db? db)]}
+   (db/-datoms db index c1 c2 c3))
+  )
 
 
 (defn seek-datoms
@@ -498,20 +502,28 @@ Only usable for debug output.
        (seek-datoms db :eav 2 :likes \"fish\")
        ; => (#datalevin/Datom [2 :likes \"pie\"]
        ;     #datalevin/Datom [2 :likes \"pizza\"])"
-  ([db index]             {:pre [(db/db? db)]} (db/-seek-datoms db index []))
-  ([db index c1]          {:pre [(db/db? db)]} (db/-seek-datoms db index [c1]))
-  ([db index c1 c2]       {:pre [(db/db? db)]} (db/-seek-datoms db index [c1 c2]))
-  ([db index c1 c2 c3]    {:pre [(db/db? db)]} (db/-seek-datoms db index [c1 c2 c3]))
-  ([db index c1 c2 c3 c4] {:pre [(db/db? db)]} (db/-seek-datoms db index [c1 c2 c3 c4])))
+  ([db index]             {:pre [(db/db? db)]}
+   (db/-seek-datoms db index nil nil nil))
+  ([db index c1]          {:pre [(db/db? db)]}
+   (db/-seek-datoms db index c1 nil nil))
+  ([db index c1 c2]       {:pre [(db/db? db)]}
+   (db/-seek-datoms db index c1 c2 nil))
+  ([db index c1 c2 c3]    {:pre [(db/db? db)]}
+   (db/-seek-datoms db index c1 c2 c3))
+  )
 
 
 (defn rseek-datoms
   "Same as [[seek-datoms]], but goes backwards."
-  ([db index]             {:pre [(db/db? db)]} (db/-rseek-datoms db index []))
-  ([db index c1]          {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1]))
-  ([db index c1 c2]       {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2]))
-  ([db index c1 c2 c3]    {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3]))
-  ([db index c1 c2 c3 c4] {:pre [(db/db? db)]} (db/-rseek-datoms db index [c1 c2 c3 c4])))
+  ([db index]             {:pre [(db/db? db)]}
+   (db/-rseek-datoms db index nil nil nil))
+  ([db index c1]          {:pre [(db/db? db)]}
+   (db/-rseek-datoms db index c1 nil nil))
+  ([db index c1 c2]       {:pre [(db/db? db)]}
+   (db/-rseek-datoms db index c1 c2 nil))
+  ([db index c1 c2 c3]    {:pre [(db/db? db)]}
+   (db/-rseek-datoms db index c1 c2 c3))
+  )
 
 (defn fulltext-datoms
   "Return datoms that found by the given fulltext search query"
