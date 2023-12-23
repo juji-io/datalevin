@@ -35,10 +35,8 @@
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [KV] Increase default spill threshold from 80 to 95 percent, so it is less
   prone to happen.
-- [Datalog] **Breaking** Store triples in list dbis, to avoid repeating first
-  element of triples.
-- [Datalog] **Breaking** Unpacked components argument in `datoms`, `seek-datoms`
-  and rseek-datoms, i.e. [c1 c2 c3] => c1 c2 c2, for better performance.
+- [Datalog] Store triples in list dbis, to avoid repeating first element of
+  triples.
 - [Datalog] Query results are spillable to disk. #166
 
 ### Improved

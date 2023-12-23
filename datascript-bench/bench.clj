@@ -82,15 +82,15 @@
                   ":deps {datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.1\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.3\"}
-                  com.taoensso/nippy    {:mvn/version \"3.2.0\"}
-                  com.cognitect/transit-clj {:mvn/version \"1.0.324\"}
+                  com.taoensso/nippy    {:mvn/version \"3.4.0-beta1\"}
+                  com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
-                  org.roaringbitmap/RoaringBitmap {:mvn/version \"0.9.39\"}
-                  org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
-                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.8.5\"}
-                  org.clojars.huahaiy/dtlvnative-windows-amd64-shared {:mvn/version \"0.8.5\"}
-                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.8.5\"}
-                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.8.5\"}
+                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.1\"}
+                  org.eclipse.collections/eclipse-collections {:mvn/version \"12.0.0.M3\"}
+                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.8.8\"}
+                  org.clojars.huahaiy/dtlvnative-windows-amd64-shared {:mvn/version \"0.8.8\"}
+                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.8.8\"}
+                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.8.8\"}
                   }}"
                   )
 
@@ -108,7 +108,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src-datascript\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.4.2" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.1" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.datascript"
            benchmarks)
@@ -117,7 +117,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src\" \"src-datomic\"]"
-                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.6726" version) "\"}}"
+                " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7075" version) "\"}}"
                 "}")
            "-M" "-m" "datalevin-bench.datomic"
            benchmarks)
@@ -144,7 +144,7 @@
 (def default-versions
   [["latest" "datomic"]
    ["latest" "datascript"]
-   ["0.8.16" "datalevin"]
+   ["0.8.25" "datalevin"]
    ["latest" "datalevin"]])
 
 
