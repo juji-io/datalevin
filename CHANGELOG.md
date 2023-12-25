@@ -3,7 +3,9 @@
 ## WIP
 
 ### Added
-- [Datalog] New query engine. See [details](doc/query.md). #11
+- [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
+- `with-read-transaction` and `with-read-transaction-kv` macros to allow
+  multiple reads to see the same consistent view.
 - [KV] Option `:compress?` to compress the data (default `true`). See
   [details](doc/compress.md). #14
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
@@ -25,22 +27,18 @@
 - [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
   as information about each dbi, as flags, key-size, etc. #184
 
-
 ### Changed
-- [KV] **Breaking** Change default write setting to be synchronously flushing to disk, so
-  that the database is crash resilient, but writing is slower. To get back the old default setting
-  that is faster but less safe, conj `:mapasync` to `:flags` option.
-- [KV] **Breaking** Upgrade LMDB to the latest, now tracking mdb.master branch,
+- [KV] Change default write setting to be synchronously flushing to disk, so
+  that the database is crash resilient, but writing is slower. To get back the
+  old default setting that is faster but less safe, conj `:mapasync` to `:flags`
+  option.
+- [KV] Upgrade LMDB to the latest, now tracking mdb.master branch,
   as it includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
-- [KV] Increase default spill threshold from 80 to 95 percent, so it is less
-  prone to happen.
-- [Datalog] Store triples in list dbis, to avoid repeating first element of
-  triples.
+- [Datalog] Change VEA index to VAE.
 - [Datalog] Query results are spillable to disk. #166
 
 ### Improved
-- [Datalog] In addition to new query engine, general performance improvement by using mutable collections whenever appropriate, up to 40% speed improvement for some queries.
 - [Datalog] More robust handling of multiple threads concurrent transactions.
 - [Search] `search-utils` functions are now compiled instead of being
   interpreted to improve performance.
