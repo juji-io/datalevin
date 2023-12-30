@@ -165,21 +165,21 @@
   (case index
     (:eav :eavt) c/eav
     (:ave :avet) c/ave
-    (:vea :veat) c/vea))
+    (:vae :vaet) c/vae))
 
 (defn- index->vtype
   [index]
   (case index
     (:eav :eavt) :avg
     (:ave :avet) :veg
-    (:vea :veat) :eag))
+    (:vae :vaet) :aeg))
 
 (defn- index->ktype
   [index]
   (case index
     (:eav :eavt) :id
     (:ave :avet) :int
-    (:vea :veat) :id))
+    (:vae :vaet) :id))
 
 (defn- index->k
   [index schema ^Datom datom high?]
@@ -187,7 +187,7 @@
     (:eav :eavt) (or (.-e datom) (if high? c/emax c/e0))
     (:ave :avet) (or (:db/aid (schema (.-a datom)))
                      (if high? c/amax c/a0))
-    (:vea :veat) (or (.-v datom) (if high? c/vmax c/v0))))
+    (:vae :vaet) (or (.-v datom) (if high? c/vmax c/v0))))
 
 (defn gt->datom
   [lmdb gt]
@@ -642,7 +642,7 @@
         (u/raise "Invalid data, expecting " vt {:input v}))
     (.add txs [:put c/eav e i :id :avg])
     (.add txs [:put c/ave aid i :int :veg])
-    (when ref? (.add txs [:put c/vea v i :id :eag]))
+    (when ref? (.add txs [:put c/vae v i :id :aeg]))
     (when giant?
       (advance-max-gt store)
       (let [gd [e attr v]]
@@ -684,7 +684,7 @@
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
       (.add txs [:del-list c/eav e [ii] :id :avg])
       (.add txs [:del-list c/ave aid [ii] :int :veg])
-      (when ref? (.add txs [:del-list c/vea v [ii] :id :eag])))
+      (when ref? (.add txs [:del-list c/vae v [ii] :id :aeg])))
     (when gt
       (when gt-this-tx (.remove giants d-eav))
       (.add txs [:del c/giants gt :id]))))
@@ -707,7 +707,7 @@
   (lmdb/open-list-dbi
     lmdb c/ave {:key-size c/+short-id-bytes+ :val-size c/+max-key-size+})
   (lmdb/open-list-dbi
-    lmdb c/vea {:key-size c/+id-bytes+ :val-size 20})
+    lmdb c/vae {:key-size c/+id-bytes+ :val-size 20})
   (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
   (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})
@@ -778,7 +778,7 @@
                 :or   {validate-data?    false
                        auto-entity-time? false
                        db-name           (str (UUID/randomUUID))
-                       cache-limit       100}
+                       cache-limit       32}
                 :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]

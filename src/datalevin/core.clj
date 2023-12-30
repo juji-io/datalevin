@@ -305,7 +305,7 @@ Only usable for debug output.
 (u/import-macro l/with-transaction-kv)
 
 (defn datalog-index-cache-limit
-  "Get or set the cache limit of a Datalog DB. Default is 100. Set to 0 to
+  "Get or set the cache limit of a Datalog DB. Default is 32. Set to 0 to
    disable the cache, useful when transacting bulk data as it saves memory."
   ([^DB db]
    (let [^Store store (.-store db)]
@@ -406,7 +406,7 @@ Only usable for debug output.
                   (close conn)
                   (open-kv dir))
                 (.-lmdb ^Store store))]
-    (doseq [dbi [c/eav c/ave c/vea c/giants c/schema]]
+    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
 
@@ -415,7 +415,7 @@ Only usable for debug output.
 (defn datoms
   "Index lookup in Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
 
-   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vea` (only available for :db.type/ref datoms).
+   Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
 
    Usage:
 

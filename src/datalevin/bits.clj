@@ -795,10 +795,10 @@
   (put-long bf (.-e x))
   (put-long bf (.-g x)))
 
-(defn- put-eag
+(defn- put-aeg
   [bf ^Indexable x]
-  (put-long bf (.-e x))
   (put-int bf (.-a x))
+  (put-long bf (.-e x))
   (put-long bf (.-g x)))
 
 (deftype Retrieved [e a v g])
@@ -834,10 +834,10 @@
         (Retrieved. e nil v g))
       (Retrieved. nil nil nil g))))
 
-(defn- get-eag
+(defn- get-aeg
   [bf]
-  (let [e (get-long bf)
-        a (get-int bf)
+  (let [a (get-int bf)
+        e (get-long bf)
         g (get-long bf)]
     (Retrieved. e a nil g)))
 
@@ -851,7 +851,7 @@
   (case x-type
     (:eav :eavt) (indexable->retrieved x)
     (:ave :avet) (indexable->retrieved x)
-    (:vea :veat) (indexable->retrieved x)
+    (:vae :vaet) (indexable->retrieved x)
     x))
 
 (defn put-buffer
@@ -911,7 +911,7 @@
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
      :veg            (put-veg bf x)
-     :eag            (put-eag bf x)
+     :aeg            (put-aeg bf x)
      :raw            (put-bytes bf x)
      (if (vector? x-type)
        (if (= 1 (count x-type))
@@ -965,7 +965,7 @@
      :attr           (get-attr bf)
      :avg            (get-avg bf)
      :veg            (get-veg bf)
-     :eag            (get-eag bf)
+     :aeg            (get-aeg bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
      ;; range query are NOT supported on these

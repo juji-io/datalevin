@@ -102,7 +102,7 @@
                          ^long max-tx
                          ^TreeSortedSet eavt
                          ^TreeSortedSet avet
-                         ^TreeSortedSet veat
+                         ^TreeSortedSet vaet
                          pull-patterns]
 
   Searchable
@@ -117,7 +117,7 @@
     (let [clear #(.clear ^TreeSortedSet %)]
       (clear eavt)
       (clear avet)
-      (clear veat)
+      (clear vaet)
       db))
 
   ISearch
@@ -389,7 +389,7 @@
               :max-tx        (s/max-tx store)
               :eavt          (TreeSortedSet. ^Comparator d/cmp-datoms-eavt)
               :avet          (TreeSortedSet. ^Comparator d/cmp-datoms-avet)
-              :veat          (TreeSortedSet. ^Comparator d/cmp-datoms-veat)
+              :vaet          (TreeSortedSet. ^Comparator d/cmp-datoms-vaet)
               :pull-patterns (lru/cache 32 :constant)
               :pull-attrs    (lru/cache 32 :constant)})]
     (swap! dbs assoc (s/db-name store) db)
@@ -445,7 +445,7 @@
   (case index
     (:eav :eavt) (resolve-datom db c0 c1 c2 default-e)
     (:ave :avet) (resolve-datom db c2 c0 c1 default-e)
-    (:vea :veat) (resolve-datom db c2 c1 c0 default-e)))
+    (:vae :vaet) (resolve-datom db c2 c1 c0 default-e)))
 
 ;; ----------------------------------------------------------------------------
 
@@ -596,7 +596,7 @@
         (cond-> db
           true (update :eavt add)
           true (update :avet add)
-          ref? (update :veat add)
+          ref? (update :vaet add)
           true (advance-max-eid (.-e datom))))
       (if (not
             (.isEmpty
@@ -606,7 +606,7 @@
         (cond-> db
           true (update :eavt del)
           true (update :avet del)
-          ref? (update :veat del))
+          ref? (update :vaet del))
         db))))
 
 (defn- queue-tuple [queue tuple idx db e a v]
@@ -1224,10 +1224,10 @@
                                              (datom e nil nil)
                                              (datom e nil nil)))
                          v-datoms (u/concatv
-                                    (.subSet ^TreeSortedSet (:veat db)
+                                    (.subSet ^TreeSortedSet (:vaet db)
                                              (datom e0 nil e tx0)
                                              (datom emax nil e txmax))
-                                    (s/slice (:store db) :vea
+                                    (s/slice (:store db) :vae
                                              (datom e0 nil e)
                                              (datom emax nil e)))]
                      (recur (reduce transact-retract-datom report

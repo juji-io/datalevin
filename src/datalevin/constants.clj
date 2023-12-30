@@ -186,9 +186,9 @@
 (def ^:const ave
   "dbi name for Datalog AVE index is `datalevin/ave"
   "datalevin/ave")
-(def ^:const vea
-  "dbi name for Datalog VEA index is `datalevin/vea"
-  "datalevin/vea")
+(def ^:const vae
+  "dbi name for Datalog VAE index is `datalevin/vae"
+  "datalevin/vae")
 (def ^:const giants
   "dbi name for Datalog large datoms is `datalevin/giants"
   "datalevin/giants")

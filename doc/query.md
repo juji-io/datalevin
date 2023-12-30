@@ -103,8 +103,7 @@ estimation using counting, which dominates the cost of planning.
 ### Worst-case optimal join where appropriate
 
 Instead of always do normal binary joins, we use worst-case optimal technique
-to handle some cases: value based joins, joins on more than one attribute, and
-so on.
+to handle some cases, e.g. joins on more than one attribute.
 
 ## Remark
 
