@@ -225,6 +225,12 @@
     "Return true if there exists at least one datom in the given boundary (inclusive)")
   (size [this index low-datom high-datom]
     "Return the number of datoms within the given range (inclusive)")
+  (e-size [this e]
+    "Return the numbers of datoms with the given e value")
+  (a-size [this a]
+    "Return the numbers of datoms with the given a value")
+  (v-size [this v]
+    "Return the numbers of ref datoms with the given v value")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")
   (tail [this index high-datom low-datom]
@@ -443,6 +449,16 @@
       [:closed
        (datom->indexable schema c/g0 low-datom false)
        (datom->indexable schema c/gmax high-datom true)] (index->vtype index)))
+
+  (e-size [_ e]
+    (lmdb/list-count lmdb (index->dbi :eav) e (index->ktype :eav)))
+
+  (a-size [_ a]
+    (lmdb/list-count lmdb (index->dbi :ave)
+                     (:db/aid (schema a)) (index->ktype :ave)))
+
+  (v-size [_ v]
+    (lmdb/list-count lmdb (index->dbi :vae) v (index->ktype :vae)))
 
   (head [this index low-datom high-datom]
     (retrieved->datom lmdb attrs
