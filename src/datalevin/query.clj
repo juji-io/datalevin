@@ -104,7 +104,7 @@
       (dotimes [i l1] (aset res i (aget ^objects t1 (aget idxs1 i))))
       (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
     (if (.isArray (.getClass ^Object t2))
-      (dotimes [i l2] (aset res (+ l1 i) (get ^objects t2 (aget idxs2 i))))
+      (dotimes [i l2] (aset res (+ l1 i) (aget ^objects t2 (aget idxs2 i))))
       (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
     res))
 
