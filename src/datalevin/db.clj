@@ -19,7 +19,6 @@
    [datalevin.storage IStore Store]
    [datalevin.remote DatalogStore]
    [datalevin.lru LRU]
-   [java.net URI]
    [java.util SortedSet Comparator]
    [java.util.concurrent ConcurrentHashMap]
    [org.eclipse.collections.impl.set.sorted.mutable TreeSortedSet]))
@@ -47,12 +46,16 @@
   (-attrs-by [db property])
   (-clear-tx-cache [db]))
 
-(defprotocol Searchable
+(defprotocol ISearchable
   (-searchable? [_]))
 
-(extend-type Object Searchable (-searchable? [_] false))
+(extend-type Object ISearchable (-searchable? [_] false))
 
-(extend-type nil Searchable (-searchable? [_] false))
+(extend-type nil ISearchable (-searchable? [_] false))
+
+(defprotocol IQuery
+  (eids [db pattern pred])
+  (pivot-scan [db eids attrs preds]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -105,7 +108,7 @@
                          ^TreeSortedSet vaet
                          pull-patterns]
 
-  Searchable
+  ISearchable
   (-searchable? [_] true)
 
   IDB
@@ -125,8 +128,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:search e a v]
+          store
+          [:search e a v]
         (case-tree
           [e a (some? v)]
           [(s/fetch store (datom e a v)) ; e a v
@@ -146,8 +149,8 @@
     (let [[e a v _] pattern
           pred      (vpred v)]
       (wrap-cache
-        store
-        [:first e a v]
+          store
+          [:first e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
@@ -166,8 +169,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:last e a v]
+          store
+          [:last e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
@@ -186,8 +189,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:count e a v]
+          store
+          [:count e a v]
         (case-tree
           [e a (some? v)]
           [(s/size store :eav (datom e a v) (datom e a v)) ; e a v
@@ -209,8 +212,8 @@
   (-populated?
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:populated? index c1 c2 c3]
+        store
+        [:populated? index c1 c2 c3]
       (s/populated? store index
                     (components->pattern db index c1 c2 c3 e0)
                     (components->pattern db index c1 c2 c3 emax))))
@@ -218,8 +221,8 @@
   (-datoms
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:datoms index c1 c2 c3]
+        store
+        [:datoms index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (components->pattern db index c1 c2 c3 emax))))
@@ -227,15 +230,15 @@
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
-      store
-      [:range-datoms index start-datom end-datom]
+        store
+        [:range-datoms index start-datom end-datom]
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:first-datom index c1 c2 c3]
+        store
+        [:first-datom index c1 c2 c3]
       (s/head store index
               (components->pattern db index c1 c2 c3 e0)
               (components->pattern db index c1 c2 c3 emax))))
@@ -243,8 +246,8 @@
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:seek index c1 c2 c3]
+        store
+        [:seek index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (datom emax nil nil))))
@@ -252,8 +255,8 @@
   (-rseek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:rseek index c1 c2 c3]
+        store
+        [:rseek index c1 c2 c3]
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 nil nil))))
@@ -261,8 +264,8 @@
   (-index-range
     [db attr start end]
     (wrap-cache
-      store
-      [attr start end]
+        store
+        [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start e0)
                    (resolve-datom db nil attr end emax)))))
