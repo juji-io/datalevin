@@ -54,8 +54,9 @@
 (extend-type nil ISearchable (-searchable? [_] false))
 
 (defprotocol IQuery
-  (eids [db pattern pred])
-  (pivot-scan [db eids attrs preds]))
+  (av->eids [db pattern pred])
+  (rev-merge-eids [db tuples veid-idx] "tuples already sorted by veid")
+  (pivot-scan [db tuples eid-idx attrs preds] "tuples already sorted by eid"))
 
 ;; ----------------------------------------------------------------------------
 
@@ -128,8 +129,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-          store
-          [:search e a v]
+        store
+        [:search e a v]
         (case-tree
           [e a (some? v)]
           [(s/fetch store (datom e a v)) ; e a v
@@ -149,8 +150,8 @@
     (let [[e a v _] pattern
           pred      (vpred v)]
       (wrap-cache
-          store
-          [:first e a v]
+        store
+        [:first e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
@@ -169,8 +170,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-          store
-          [:last e a v]
+        store
+        [:last e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
@@ -189,8 +190,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-          store
-          [:count e a v]
+        store
+        [:count e a v]
         (case-tree
           [e a (some? v)]
           [(s/size store :eav (datom e a v) (datom e a v)) ; e a v
@@ -199,12 +200,9 @@
                           (fn [^Datom d] ((vpred v) (.-v d)))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
-           ;; (s/size store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/e-size store e) ; e _ _
            (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
-           ;; (s/size store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
            (s/a-size store a) ; _ a _
-           ;; (s/size store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/v-size store v) ; _ _ v
            (s/datom-count store :eav)])))) ; _ _ _
 
@@ -212,8 +210,8 @@
   (-populated?
     [db index c1 c2 c3]
     (wrap-cache
-        store
-        [:populated? index c1 c2 c3]
+      store
+      [:populated? index c1 c2 c3]
       (s/populated? store index
                     (components->pattern db index c1 c2 c3 e0)
                     (components->pattern db index c1 c2 c3 emax))))
@@ -221,8 +219,8 @@
   (-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store
-        [:datoms index c1 c2 c3]
+      store
+      [:datoms index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (components->pattern db index c1 c2 c3 emax))))
@@ -230,15 +228,15 @@
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
-        store
-        [:range-datoms index start-datom end-datom]
+      store
+      [:range-datoms index start-datom end-datom]
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index c1 c2 c3]
     (wrap-cache
-        store
-        [:first-datom index c1 c2 c3]
+      store
+      [:first-datom index c1 c2 c3]
       (s/head store index
               (components->pattern db index c1 c2 c3 e0)
               (components->pattern db index c1 c2 c3 emax))))
@@ -246,8 +244,8 @@
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store
-        [:seek index c1 c2 c3]
+      store
+      [:seek index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (datom emax nil nil))))
@@ -255,8 +253,8 @@
   (-rseek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-        store
-        [:rseek index c1 c2 c3]
+      store
+      [:rseek index c1 c2 c3]
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 nil nil))))
@@ -264,8 +262,8 @@
   (-index-range
     [db attr start end]
     (wrap-cache
-        store
-        [attr start end]
+      store
+      [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start e0)
                    (resolve-datom db nil attr end emax)))))
@@ -598,21 +596,20 @@
     (if (datom-added datom)
       (do
         (validate-datom db datom)
-        (cond-> db
-          true (update :eavt add)
-          true (update :avet add)
-          ref? (update :vaet add)
-          true (advance-max-eid (.-e datom))))
-      (if (not
-            (.isEmpty
-              (.subSet ^TreeSortedSet (:eavt db)
-                       (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
-                       (d/datom (.-e datom) (.-a datom) (.-v datom) txmax))))
-        (cond-> db
-          true (update :eavt del)
-          true (update :avet del)
-          ref? (update :vaet del))
-        db))))
+        (cond-> (-> db
+                    (update :eavt add)
+                    (update :avet add)
+                    (advance-max-eid (.-e datom)))
+          ref? (update :vaet add)))
+      (if (.isEmpty
+            (.subSet ^TreeSortedSet (:eavt db)
+                     (d/datom (.-e datom) (.-a datom) (.-v datom) tx0)
+                     (d/datom (.-e datom) (.-a datom) (.-v datom) txmax)))
+        db
+        (cond-> (-> db
+                    (update :eavt del)
+                    (update :avet del))
+          ref? (update :vaet del))))))
 
 (defn- queue-tuple [queue tuple idx db e a v]
   (let [tuple-value  (or (get queue tuple)

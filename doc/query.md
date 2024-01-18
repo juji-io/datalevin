@@ -58,8 +58,8 @@ of the triple, plus a reference to the full datom if the datom is larger than
 the maximal key size allowed by LMDB.
 
 This list based triple storage also facilitate counting of elements, as the list
-count can be immediately read once the key is found, without performing actual
-count during query time.
+count can be immediately read from the index, without performing actual
+count, e.g. the number of datoms matching `[?e :attr ?x]` pattern is read directly from the `:ave` index.
 
 ## Query Optimizations
 
@@ -74,11 +74,11 @@ results. This is done to predicates involving one attribute only.
 ### Pivot scan
 
 For star-like attributes, we use pivot scan [2] that returns multiple attribute
-values with a single index scan on EAV index. This single scan takes an ordered
+values with a single index scan on `:eav` index. This single scan takes an ordered
 list of entity IDs, an ordered list of attributes needed, and conditions on
 attributes, to produce a relation. This avoids performing joins within the same
 entity class to obtain the same relation. The input entity IDs may come from a
-search on AVE index that returns the smallest result set, or a set of linking
+search on `:ave` index that returns the smallest result set, or a set of linking
 references from a relation produced in the previous steps.
 
 ### Query graph simplification
@@ -88,22 +88,29 @@ works mainly on the simplified graph that consists of stars and the links
 between them [3] [7], this significantly reduces the size of optimizer search
 space.
 
-### Direct count for cardinality (new)
-
-Instead of estimating cardinality, we count elements directly if possible,
-because counts in our list based triple storage is cheap to obtain. For those cases that cannot be counted, we use magic number.
-
 ### Left-deep join tree
 
 Our planner generates left-deep join trees, which may not be optimal [8], but work
 well for our simplified query graph, since stars are already turned into meta
-nodes and mostly chains remain. This also reduces the cost of cardinality
-estimation using counting, which dominates the cost of planning.
+nodes and mostly chains remain. This also reduces the cost of cost estimation, which dominates the cost of planning.
 
-### Worst-case optimal join where appropriate
+### Join methods
 
-Instead of always do normal binary joins, we use worst-case optimal technique
-to handle some cases, e.g. joins on more than one attribute.
+For two sets of where clauses involving two classes of entities respectively,
+e.g. `?e` and `?f`, we consider three possible methods of joining them. If there
+is a reference attribute in the clauses to connect these two classes of entities
+e.g. `[?e :a/ref ?f]`, "forward" or "backward" method can be considered, and for
+other cases, only hash join is considered. The forward method first sorts the
+`e?` relation by value of `?f`, then pivot scan `?f` entities, effectively doing
+a merge join with `?f` relation as the inner relation. Backward method has an extra step,
+it starts with `?f` relation and scan `:vae` index to merge in corresponding `?e`,
+sort the relation by `?e`, then pivot scan `?e` entities. The choice of the
+method is determined by cost estimation.
+
+### Direct count for cardinality (new)
+
+Instead of relying on estimation, we count elements directly if possible,
+because counts in our list based triple storage is cheap to obtain. For those cases that cannot be counted, we use magic number.
 
 ## Remark
 

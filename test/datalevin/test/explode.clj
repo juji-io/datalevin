@@ -45,7 +45,7 @@
 (deftest test-explode-ref
   (let [dir (u/tmp-dir (str "test-" (UUID/randomUUID)))
 
-        db0 (d/empty-db dir { :children { :db/valueType  :db.type/ref
+        db0 (d/empty-db dir { :children {:db/valueType   :db.type/ref
                                          :db/cardinality :db.cardinality/many } })]
     (let [db (d/db-with db0 [{:db/id -1, :name "Ivan", :children [-2 -3]}
                              {:db/id -2, :name "Petr"}
