@@ -71,15 +71,17 @@ As mentioned above, we take advantage of the opportunities to push selection
 predicates down to index scan in order to minimize unnecessary intermediate
 results. This is done to predicates involving one attribute only.
 
-### Pivot scan
+### Merge scan
 
-For star-like attributes, we use pivot scan [2] that returns multiple attribute
-values with a single index scan on `:eav` index. This single scan takes an ordered
-list of entity IDs, an ordered list of attributes needed, and conditions on
-attributes, to produce a relation. This avoids performing joins within the same
-entity class to obtain the same relation. The input entity IDs may come from a
-search on `:ave` index that returns the smallest result set, or a set of linking
-references from a relation produced in the previous steps.
+For star-like attributes, we borrow the idea of pivot scan [2] that returns
+multiple attribute values with a single index scan on `:eav` index. This single
+scan takes an ordered list of entity IDs, an ordered list of attributes needed,
+and conditions on attributes, to produce a relation. This avoids performing
+joins within the same entity class to obtain the same relation. The input entity
+IDs may come from a search on `:ave` index that returns the smallest result set,
+or a set of linking references from a relation produced in the previous steps.
+This scan also double as a merge join between the outer relation (sorted by the
+entity ids of the inner) and new entities to be scanned as the inner relation.
 
 ### Query graph simplification
 
@@ -92,20 +94,21 @@ space.
 
 Our planner generates left-deep join trees, which may not be optimal [8], but work
 well for our simplified query graph, since stars are already turned into meta
-nodes and mostly chains remain. This also reduces the cost of cost estimation, which dominates the cost of planning.
+nodes and mostly chains remain. This also reduces the cost of cost estimation,
+which dominates the cost of planning.
 
 ### Join methods
 
 For two sets of where clauses involving two classes of entities respectively,
 e.g. `?e` and `?f`, we consider three possible methods of joining them. If there
 is a reference attribute in the clauses to connect these two classes of entities
-e.g. `[?e :a/ref ?f]`, "forward" or "backward" method can be considered, and for
-other cases, only hash join is considered. The forward method first sorts the
-`e?` relation by value of `?f`, then pivot scan `?f` entities, effectively doing
-a merge join with `?f` relation as the inner relation. Backward method has an extra step,
-it starts with `?f` relation and scan `:vae` index to merge in corresponding `?e`,
-sort the relation by `?e`, then pivot scan `?e` entities. The choice of the
-method is determined by cost estimation.
+e.g. `[?e :a/ref ?f]`, "forward merge" or "backward merge" method can be
+considered, and for other cases, only hash join is considered. The forward merge
+method first sorts the `e?` relation by value of `?f`, then merge scan `?f`
+entities. Backward method has an extra step, it starts with `?f` relation and
+reverse merge scan `:vae` index to merge in corresponding `?e`, sort the
+relation by `?e`, then merge scan `?e` entities. The choice of the method is
+determined by cost estimation.
 
 ### Direct count for cardinality (new)
 

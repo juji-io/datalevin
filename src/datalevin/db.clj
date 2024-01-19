@@ -54,9 +54,12 @@
 (extend-type nil ISearchable (-searchable? [_] false))
 
 (defprotocol IQuery
-  (av->eids [db pattern pred])
-  (rev-merge-eids [db tuples veid-idx] "tuples already sorted by veid")
-  (pivot-scan [db tuples eid-idx attrs preds] "tuples already sorted by eid"))
+  (av->eids [db pattern pred]
+    "return tuples of eids that matches pattern")
+  (rev-merge-scan [db tuples veid-idx attr]
+    "assume tuples already sorted by veid")
+  (merge-scan [db tuples eid-idx attrs preds]
+    "assume tuples already sorted by eid"))
 
 ;; ----------------------------------------------------------------------------
 

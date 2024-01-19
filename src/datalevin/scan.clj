@@ -182,6 +182,7 @@
     (raise "Fail to range-count: " e
            {:dbi dbi-name :k-range k-range :k-type k-type})))
 
+;; TODO all these .rewind should be removed
 (defn get-some
   [lmdb dbi-name pred k-range k-type v-type ignore-key?]
   (scan

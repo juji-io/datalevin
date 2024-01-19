@@ -189,9 +189,7 @@
                      (if high? c/amax c/a0))
     (:vae :vaet) (or (.-v datom) (if high? c/vmax c/v0))))
 
-(defn gt->datom
-  [lmdb gt]
-  (lmdb/get-value lmdb c/giants gt :id :datom))
+(defn gt->datom [lmdb gt] (lmdb/get-value lmdb c/giants gt :id :datom))
 
 (defprotocol IStore
   (opts [this] "Return the opts map")
@@ -254,6 +252,11 @@
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
+  (av->eids [this aid value vpred] "Return sorted tuples of eids")
+  (merge-scan [this tuples eid-inx aids->preds]
+    "aids->preds is a sorted map, return tuples of merged tuples")
+  (rev-merge-scan [this tuples veid-idx aid]
+    " return tuples of merged tuples with eid as the last column")
   )
 
 (defn e-aid-v->datom
@@ -281,6 +284,19 @@
           ^Retrieved v (b/read-buffer (lmdb/v kv) (index->vtype index))
           ^Datom d     (retrieved->datom lmdb attrs [k v])]
       (pred d))))
+
+(defn- retrieved->v
+  [lmdb ^Retrieved r]
+  (let [g (.-g r)]
+    (if (= g c/normal)
+      (.-v r)
+      (d/datom-v (gt->datom lmdb g)))))
+
+(defn- vpred->kv-pred
+  [lmdb index pred]
+  (fn [kv]
+    (let [^Retrieved r (b/read-buffer (lmdb/v kv) (index->vtype index))]
+      (pred (retrieved->v lmdb r)))))
 
 (declare insert-datom delete-datom transact-list transact-giants
          fulltext-index check transact-opts)
@@ -534,6 +550,8 @@
          (datom->indexable schema c/g0 low-datom false)]
         (index->vtype index))))
 
+  ;; TODO datom-pred->kv-pred already converted data to datom,
+  ;; no need to read into datom again
   (slice-filter [_ index pred low-datom high-datom]
     (mapv (partial retrieved->datom lmdb attrs)
           (lmdb/list-range-filter
@@ -557,7 +575,21 @@
              (datom->indexable schema c/gmax high-datom true)
              (datom->indexable schema c/g0 low-datom false)]
             (index->vtype index))))
-  )
+
+  (av->eids [_ aid value vpred]
+    (let [veg (if value () ())]
+      (->> (lmdb/list-range-filter
+             lmdb c/ave (vpred->kv-pred lmdb :ave vpred)
+             [:closed aid aid] :int [:closed veg veg] :veg)
+           (mapv (partial retrieved->v lmdb))
+           to-array
+           sort)))
+
+  (merge-scan [this tuples eid-inx aids->preds]
+    )
+
+  (rev-merge-scan [this tuples veid-idx aid]
+    ))
 
 (defn fulltext-index
   [search-engines ft-ds]
