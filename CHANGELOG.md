@@ -4,10 +4,10 @@
 
 ### Added
 - [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
+- Option `:compress?` to compress the data (default `true`). See
+  [details](doc/compress.md). #14
 - `with-read-transaction` and `with-read-transaction-kv` macros to allow
   multiple reads to see the same consistent view.
-- [KV] Option `:compress?` to compress the data (default `true`). See
-  [details](doc/compress.md). #14
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`
@@ -24,8 +24,8 @@
     * `list-range-filter-count`
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.
-- [KV] `datalevin/kv-info` dbi to keep information about the databases, as well
-  as information about each dbi, as flags, key-size, etc. #184
+- [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as
+  well as information about each dbi, as flags, key-size, etc. #184
 
 ### Changed
 - [KV] Change default write setting to be synchronously flushing to disk, so
@@ -35,8 +35,13 @@
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch,
   as it includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
+- [KV] Functions that take a predicate have a new option `:raw-pred?` to
+  indicate whether the predicate takes a raw KV object, or a pair of decoded
+  values of k and v (default).
+  [KV] Functions that took a `ignore-key?` argument, the argument is now a
+  keyword option, e.g. change `true` to `:ignore-key? true`.
 - [Datalog] Change VEA index to VAE.
-- [Datalog] Query results are spillable to disk. #166
+- [Datalog] Query results can now be spillable to disk. #166
 
 ### Improved
 - [Datalog] More robust handling of multiple threads concurrent transactions.

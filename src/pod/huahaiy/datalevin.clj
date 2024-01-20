@@ -444,7 +444,10 @@
   ([db dbi-name pred k-range]
    (when-let [d (get-kv db)] (d/range-count d dbi-name pred k-range)))
   ([db dbi-name pred k-range k-type]
-   (when-let [d (get-kv db)] (d/range-count d dbi-name pred k-range k-type))))
+   (when-let [d (get-kv db)] (d/range-count d dbi-name pred k-range k-type)))
+  ([db dbi-name pred k-range k-type v-type]
+   (when-let [d (get-kv db)]
+     (d/range-count d dbi-name pred k-range k-type v-type))))
 
 (defn visit
   ([db dbi-name pred k-range]

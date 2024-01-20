@@ -403,7 +403,7 @@
   (lru/-get
     (.-cache engine) [:get-pos-info doc-id term-id]
     #(l/get-value (.-lmdb engine) (.-positions-dbi engine)
-                  [doc-id term-id] :int-int :pos-info true)))
+                  [doc-id term-id] :int-int :pos-info)))
 
 (defn- get-offsets
   [^SearchEngine engine doc-id term-id]
@@ -573,7 +573,7 @@
             [:doc-ref->term-ids doc-ref]
             #(let [ar (peek (l/get-value (.-lmdb engine)
                                          (.-docs-dbi engine)
-                                         doc-ref :data :doc-info true))]
+                                         doc-ref :data :doc-info))]
                (if (< 0 (alength ^ints ar))
                  ar
                  (term-ids-via-positions-dbi engine doc-ref)))))
@@ -697,7 +697,7 @@
 (defn- get-rawtext
   [^SearchEngine engine doc-id]
   (l/get-value (.-lmdb engine) (.-rawtext-dbi engine) doc-id
-               :int :string true))
+               :int :string))
 
 (defn- add-rawtext
   [^SearchEngine engine doc-filter [_ doc-id :as result]]
@@ -709,12 +709,12 @@
   (when-let [doc-ref (get-doc-ref engine doc-filter result)]
     [doc-ref
      (l/get-value (.-lmdb engine) (.-rawtext-dbi engine)
-                  doc-id :int :string true)
+                  doc-id :int :string)
      (sequence
        (comp (map (fn [tid]
-                    (when-let [offsets (get-offsets engine doc-id tid)]
-                      [(terms tid) (apply vector offsets)])))
-             (remove nil?))
+                 (when-let [offsets (get-offsets engine doc-id tid)]
+                   [(terms tid) (apply vector offsets)])))
+          (remove nil?))
        (keys terms))]))
 
 (defn- display-xf
@@ -867,7 +867,7 @@
 
                 [tid mw sl]
                 (or (.get hit-terms term)
-                    (l/get-value lmdb terms-dbi term :string :term-info true)
+                    (l/get-value lmdb terms-dbi term :string :term-info)
                     [(.incrementAndGet ^AtomicInteger max-term)
                      0.0
                      (sl/sparse-arraylist)])]

@@ -86,19 +86,23 @@
      specified key range")
   (list-range-filter
     [db list-name pred k-range k-type v-range v-type]
+    [db list-name pred k-range k-type v-range v-type & {:as opts}]
     "Return a seq of key-values in the specified value range of the
-     specified key range, filtered by pred")
+     specified key range, filtered by pred call")
   (list-range-some
     [db list-name pred k-range k-type v-range v-type]
-    "Return the first kv pair that has logical true value of `(pred kv)`in
+    [db list-name pred k-range k-type v-range v-type & {:as opts}]
+    "Return the first kv pair that has logical true value of pred call in
      the specified value range of the specified key range")
   (list-range-filter-count
     [db list-name pred k-range k-type v-range v-type]
+    [db list-name pred k-range k-type v-range v-type & {:as opts}]
     "Return the count of key-values in the specified value range of the
-     specified key range")
+     specified key range for those pred call is true")
   (visit-list-range
     [db list-name visitor k-range k-type v-range v-type]
-    "visit a list range, presumably for side effects"))
+    [db list-name visitor k-range k-type v-range v-type & {:as opts}]
+    "visit a list range, presumably for side effects of vistor call`"))
 
 (defprotocol ILMDB
   (check-ready [db] "check if db is ready to be operated on")
@@ -151,26 +155,25 @@
     [db dbi-name k]
     [db dbi-name k k-type]
     [db dbi-name k k-type v-type]
-    [db dbi-name k k-type v-type ignore-key?]
+    [db dbi-name k k-type v-type & {:as opts}]
     "Get kv pair of the specified key `k`. ")
   (get-first
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type & {:as opts}]
     "Return the first kv pair in the specified key range;")
   (range-seq
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type ignore-key?]
-    [db dbi-name k-range k-type v-type ignore-key? opts]
+    [db dbi-name k-range k-type v-type & {:as opts}]
     "Return a lazy seq of kv pairs in the specified key range;")
   (get-range
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type & {:as opts}]
     "Return an eager seq of kv pairs in the specified key range;")
   (key-range
     [db dbi-name k-range]
@@ -186,25 +189,29 @@ values;")
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type ignore-key?]
-    "Return the first kv pair that has logical true value of `(pred kv)`")
+    [db dbi-name pred k-range k-type v-type & {:as opts}]
+    "Return the first kv pair that has logical true value of pred call")
   (range-filter
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range k-type v-type & {:as opts}]
     "Return a seq of kv pair in the specified key range, for only those
-     return true value for `(pred kv)`.")
+     return true value for pred call.")
   (range-filter-count
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
+    [db dbi-name pred k-range k-type v-type]
+    [db dbi-name pred k-range k-type v-type & {:as opts}]
     "Return the number of kv pairs in the specified key range, for only those
-     return true value for `(pred kv)`")
+     return true value for pred call")
   (visit
     [db dbi-name visitor k-range]
     [db dbi-name visitor k-range k-type]
-    "Call `visitor` function on each kv pairs in the specified key range, presumably
-     for side effects. Return nil."))
+    [db dbi-name visitor k-range k-type v-type]
+    [db dbi-name visitor k-range k-type v-type & {:as opts}]
+    "Call `visitor` function on each k, v pairs in the specified key range,
+     presumably for side effects of visitor call. Return nil."))
 
 (defprotocol IWriting
   "Used to mark the db so that it should use the write-txn"
@@ -456,23 +463,23 @@ values;")
      (let [writing#   (writing? ~orig-db)
            condition# (fn [~'e] (and (resized? ~'e) (not writing#)))]
        (u/repeat-try-catch
-         ~c/+in-tx-overflow-times+
-         condition#
+           ~c/+in-tx-overflow-times+
+           condition#
          (try
            (let [~db (if writing# ~orig-db (open-transact-kv ~orig-db))]
              (u/repeat-try-catch
-               ~c/+in-tx-overflow-times+
-               condition#
+                 ~c/+in-tx-overflow-times+
+                 condition#
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
 
 #_(defmacro with-read-transaction-kv
-   "Evaluate body within the context of a single read-only transaction,
+    "Evaluate body within the context of a single read-only transaction,
   ensuring consistent view of key-value store.
 
   `db` is a new identifier of the kv database with a single read-only
   transaction attached, and `orig-db` is the original kv database.
 
   `body` should refer to `db`. "
-   [[db orig-db] & body]
-   `(let []))
+    [[db orig-db] & body]
+    `(let []))

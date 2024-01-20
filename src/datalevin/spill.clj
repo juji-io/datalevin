@@ -137,7 +137,8 @@
   (peek [this]
     (if (zero? ^long (disk-count this))
       (.getLast memory)
-      (l/get-first @disk c/tmp-dbi [:all-back] :id :data true)))
+      (l/get-first @disk c/tmp-dbi [:all-back] :id :data
+                   :ignore-key? true)))
 
   (pop [this]
     (cond
