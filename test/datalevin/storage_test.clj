@@ -21,7 +21,7 @@
   (let [dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store (sut/open
                 dir {}
-                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (is (= c/g0 (sut/max-gt store)))
     (is (= 3 (sut/max-aid store)))
     (is (= (merge c/entity-time-schema c/implicit-schema)
@@ -130,7 +130,8 @@
       (is (= 1 (sut/datom-count store c/vae)))
       (sut/close store)
       (is (sut/closed? store))
-      (let [store (sut/open dir)]
+      (let [store (sut/open dir {}
+                            {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
         (is (= (+ 4 c/tx0) (sut/max-tx store)))
         (is (= [d1] (sut/slice store :eav d1 d1)))
         (sut/load-datoms store [(d/delete d1)])
@@ -144,7 +145,8 @@
             p3    {:db/valueType :db.type/long}
             s3    (assoc s2 d (merge p3 {:db/aid 6}))
             s4    (assoc s3 :f/g {:db/aid 7 :db/valueType :db.type/string})
-            store (sut/open dir {d p3})]
+            store (sut/open dir {d p3}
+                            {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
         (is (= (+ 6 c/tx0) (sut/max-tx store)))
         (is (= s3 (sut/schema store)))
         (sut/set-schema store {:f/g {:db/valueType :db.type/string}})
@@ -158,7 +160,7 @@
         dir   (u/tmp-dir (str "datalevin-schema-test-" (UUID/randomUUID)))
         store (sut/open
                 dir s
-                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         s1    (sut/schema store)]
     (sut/close store)
     (is (sut/closed? store))
@@ -172,7 +174,7 @@
         dir    (u/tmp-dir (str "datalevin-giants-str-test-" (UUID/randomUUID)))
         store  (sut/open
                  dir schema
-                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         v      (apply str (repeat 100 (UUID/randomUUID)))
         d      (d/datom c/e0 :a v)]
     (sut/load-datoms store [d])
@@ -187,7 +189,7 @@
   (let [dir   (u/tmp-dir (str "datalevin-giants-data-test-" (UUID/randomUUID)))
         store (sut/open
                 dir nil
-                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         v     (apply str (repeat 100 (UUID/randomUUID)))
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
@@ -197,7 +199,8 @@
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax))))
     (sut/close store)
-    (let [store' (sut/open dir)]
+    (let [store' (sut/open dir nil
+                           {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
       (is (sut/populated? store' :eav
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax)))
@@ -215,7 +218,7 @@
   (let [dir   (u/tmp-dir (str "datalevin-normal-data-test-" (UUID/randomUUID)))
         store (sut/open
                 dir nil
-                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         v     (UUID/randomUUID)
         d     (d/datom c/e0 :a v)
         d1    (d/datom (inc c/e0) :b v)]
@@ -226,7 +229,8 @@
                           (d/datom c/e0 :a c/vmax))))
     (sut/close store)
 
-    (let [store' (sut/open dir)]
+    (let [store' (sut/open dir nil
+                           {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
       (is (sut/populated? store' :eav
                           (d/datom c/e0 :a c/v0)
                           (d/datom c/e0 :a c/vmax)))
@@ -243,7 +247,8 @@
 (deftest false-value-test
   (let [d     (d/datom c/e0 :a false)
         dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-        store (sut/open dir)]
+        store (sut/open dir nil
+                        {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (sut/load-datoms store [d])
     (is (= [d] (sut/fetch store d)))
     (sut/close store)
@@ -259,7 +264,7 @@
           dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
           store (sut/open dir {}
                           {:kv-opts
-                           {:flags (conj c/default-env-flags :mapasync)}})
+                           {:flags (conj c/default-env-flags :nosync)}})
           _     (sut/load-datoms store [d])
           r     (sut/fetch store d)]
       (sut/close store)

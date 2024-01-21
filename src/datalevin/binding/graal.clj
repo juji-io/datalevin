@@ -466,17 +466,21 @@
       holder)))
 
 (defn- visit-list*
-  [^Rtx rtx ^Cursor cur k kt visitor]
+  [^Rtx rtx ^Cursor cur visitor raw-pred? k kt vt]
   (let [kv (reify IKV
              (k [_] (.outBuf (.key cur)))
-             (v [_] (.outBuf (.val cur))))]
+             (v [_] (.outBuf (.val cur))))
+        vs #(if raw-pred?
+              (visitor kv)
+              (visitor (b/read-buffer (l/k kv) kt)
+                       (when vt (b/read-buffer (l/v kv) vt))))]
     (.put-key rtx k kt)
     (when (.get cur ^BufVal (.-kp rtx) Lib$MDB_cursor_op/MDB_SET)
       (.seek cur Lib$MDB_cursor_op/MDB_FIRST_DUP)
-      (visitor kv)
+      (vs)
       (dotimes [_ (dec (.count cur))]
         (.seek cur Lib$MDB_cursor_op/MDB_NEXT_DUP)
-        (visitor kv)))))
+        (vs)))))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
@@ -810,32 +814,46 @@
     (scan/range-count this dbi-name k-range k-type))
 
   (get-some [this dbi-name pred k-range]
-    (.get-some this dbi-name pred k-range :data :data false))
+    (.get-some this dbi-name pred k-range :data :data false true))
   (get-some [this dbi-name pred k-range k-type]
-    (.get-some this dbi-name pred k-range k-type :data false))
+    (.get-some this dbi-name pred k-range k-type :data false true))
   (get-some [this dbi-name pred k-range k-type v-type]
-    (.get-some this dbi-name pred k-range k-type v-type false))
+    (.get-some this dbi-name pred k-range k-type v-type false true))
   (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
-    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?))
+    (.get-some this dbi-name pred k-range k-type v-type  ignore-key? true))
+  (get-some [this dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
+    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?
+                   raw-pred?))
 
   (range-filter [this dbi-name pred k-range]
-    (.range-filter this dbi-name pred k-range :data :data false))
+    (.range-filter this dbi-name pred k-range :data :data false true))
   (range-filter [this dbi-name pred k-range k-type]
-    (.range-filter this dbi-name pred k-range k-type :data false))
+    (.range-filter this dbi-name pred k-range k-type :data false true))
   (range-filter [this dbi-name pred k-range k-type v-type]
-    (.range-filter this dbi-name pred k-range k-type v-type false))
+    (.range-filter this dbi-name pred k-range k-type v-type false true))
   (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
-    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?))
+    (.range-filter this dbi-name pred k-range k-type v-type  ignore-key? true))
+  (range-filter [this dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
+    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?
+                       raw-pred?))
 
   (range-filter-count [this dbi-name pred k-range]
-    (.range-filter-count this dbi-name pred k-range :data))
+    (.range-filter-count this dbi-name pred k-range :data :data true))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (scan/range-filter-count this dbi-name pred k-range k-type))
+    (.range-filter-count this dbi-name pred k-range k-type :data true))
+  (range-filter-count [this dbi-name pred k-range k-type v-type]
+    (.range-filter-count this dbi-name pred k-range k-type v-type true))
+  (range-filter-count [this dbi-name pred k-range k-type v-type raw-pred?]
+    (scan/range-filter-count this dbi-name pred k-range k-type v-type raw-pred?))
 
   (visit [this dbi-name visitor k-range]
-    (.visit this dbi-name visitor k-range :data))
+    (.visit this dbi-name visitor k-range :data :data true))
   (visit [this dbi-name visitor k-range k-type]
-    (scan/visit this dbi-name visitor k-range k-type))
+    (.visit this dbi-name visitor k-range k-type :data true))
+  (visit [this dbi-name visitor k-range k-type v-type]
+    (.visit this dbi-name visitor k-range k-type v-type true))
+  (visit [this dbi-name visitor k-range k-type v-type raw-pred?]
+    (scan/visit this dbi-name visitor k-range k-type v-type raw-pred?))
 
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
                                  :or   {key-size c/+max-key-size+
@@ -867,11 +885,15 @@
           (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.visit-list this dbi-name visitor k kt :data true))
+  (visit-list [this dbi-name visitor k kt vt]
+    (.visit-list this dbi-name visitor k kt vt true))
+  (visit-list [this dbi-name visitor k kt vt raw-pred?]
     (.check-ready this)
     (when k
       (let [lmdb this]
         (scan/scan
-          (visit-list* rtx cur k kt visitor)
+          (visit-list* rtx cur visitor raw-pred? k kt vt)
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
@@ -903,16 +925,33 @@
     (scan/list-range-first this dbi-name k-range kt v-range vt))
 
   (list-range-filter [this dbi-name pred k-range kt v-range vt]
-    (scan/list-range-filter this dbi-name pred k-range kt v-range vt))
+    (.list-range-filter this dbi-name pred k-range kt v-range vt true))
+  (list-range-filter [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (scan/list-range-filter this dbi-name pred k-range kt v-range vt raw-pred?))
 
-  (list-range-some [this dbi-name pred k-range kt v-range vt]
-    (scan/list-range-some this dbi-name pred k-range kt v-range vt))
+  (list-range-some [this list-name pred k-range k-type v-range v-type]
+    (.list-range-some this list-name pred k-range k-type v-range v-type
+                      true))
+  (list-range-some [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (scan/list-range-some this dbi-name pred k-range kt v-range vt raw-pred?))
 
-  (list-range-filter-count [this dbi-name pred k-range kt v-range vt]
-    (scan/list-range-filter-count this dbi-name pred k-range kt v-range vt))
+  (list-range-filter-count
+    [this list-name pred k-range k-type v-range v-type]
+    (.list-range-filter-count this list-name pred k-range k-type v-range
+                              v-type true))
+  (list-range-filter-count
+    [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (scan/list-range-filter-count this dbi-name pred k-range kt v-range
+                                  vt raw-pred?))
 
-  (visit-list-range [this dbi-name visitor k-range kt v-range vt]
-    (scan/visit-list-range this dbi-name visitor k-range kt v-range vt))
+  (visit-list-range
+    [this list-name visitor k-range k-type v-range v-type]
+    (.visit-list-range this list-name visitor k-range k-type v-range
+                       v-type true))
+  (visit-list-range
+    [this dbi-name visitor k-range kt v-range vt raw-pred?]
+    (scan/visit-list-range this dbi-name visitor k-range kt v-range
+                           vt raw-pred?))
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
@@ -975,6 +1014,9 @@
                                mapsize
                                (c/pick-mapsize dir)))
                        1024 1024)
+           flags    (if temp?
+                      (set (conj flags :nosync))
+                      flags)
            ^Env env (Env/create dir mapsize max-readers max-dbs
                                 (kv-flags flags))
            info     (merge opts {:dir         dir

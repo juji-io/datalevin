@@ -279,8 +279,11 @@
 
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
-  (fn [k v]
-    (pred (retrieved->datom lmdb attrs [k v]))))
+  (fn [kv]
+    (let [k            (b/read-buffer (lmdb/k kv) (index->ktype index))
+          ^Retrieved v (b/read-buffer (lmdb/v kv) (index->vtype index))
+          ^Datom d     (retrieved->datom lmdb attrs [k v])]
+      (pred d))))
 
 (defn- retrieved->v
   [lmdb ^Retrieved r]

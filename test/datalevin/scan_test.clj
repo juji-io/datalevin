@@ -22,7 +22,7 @@
 
 (deftest get-first-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "a")
     (l/open-dbi lmdb "c" {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks  (shuffle (range 0 1000))
@@ -46,7 +46,7 @@
 
 (deftest range-seq-test
   (let [dir  (u/tmp-dir (str "range-seq-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "a")
 
     (l/transact-kv lmdb [[:put "a" 0 0 :long :long]
@@ -82,7 +82,7 @@
 
 (deftest range-no-gap-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "c"
                 {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 1000))
@@ -161,7 +161,7 @@
 
 (deftest range-gap-test
   (let [dir        (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        db         (l/open-kv dir)
+        db         (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         misc-table "misc-test-table"]
     (l/open-dbi db misc-table {:key-size (b/type-size :long)
                                :val-size (b/type-size :long)})
@@ -365,15 +365,15 @@
 
 (deftest get-some-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "c"
                 {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
           pred (i/inter-fn [kv]
-                           (let [^long k (b/read-buffer (l/k kv) :long)]
-                             (> k 15)))]
+                 (let [^long k (b/read-buffer (l/k kv) :long)]
+                   (> k 15)))]
       (l/transact-kv lmdb txs)
       (is (= 17 (l/get-some lmdb "c" pred [:all] :long :long true)))
       (is (= [16 17] (l/get-some lmdb "c" pred [:all] :long :long))))
@@ -382,15 +382,15 @@
 
 (deftest range-filter-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "c"
                 {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
     (let [ks   (shuffle (range 0 100))
           vs   (map inc ks)
           txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
           pred (i/inter-fn [kv]
-                           (let [^long k (b/read-buffer (l/k kv) :long)]
-                             (< 10 k 20)))
+                 (let [^long k (b/read-buffer (l/k kv) :long)]
+                   (< 10 k 20)))
           fks  (range 11 20)
           fvs  (map inc fks)
           res  (map (fn [k v] [k v]) fks fvs)
@@ -405,9 +405,9 @@
 
       (let [hm      (HashMap.)
             visitor (i/inter-fn [kv]
-                                (let [^long k (b/read-buffer (l/k kv) :long)
-                                      ^long v (b/read-buffer (l/v kv) :long)]
-                                  (.put hm k v)))]
+                      (let [^long k (b/read-buffer (l/k kv) :long)
+                            ^long v (b/read-buffer (l/v kv) :long)]
+                        (.put hm k v)))]
         (l/visit lmdb "c" visitor [:closed 11 19] :long)
         (is (= (into {} res) hm))))
     (l/close-kv lmdb)
@@ -415,7 +415,7 @@
 
 (deftest get-range-transduce-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)]
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "a")
     (l/transact-kv lmdb [[:put "a" 1 2]
                          [:put "a" 3 4]
@@ -428,9 +428,9 @@
 
 (deftest list-fns-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir)
+        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
         pred (i/inter-fn
-               [kv]
+                 [kv]
                (let [^long v (b/read-buffer (l/v kv) :long)]
                  (even? v)))]
     (l/open-list-dbi lmdb "a")
@@ -565,7 +565,7 @@
      knoise gen/small-integer
      vnoise gen/small-integer]
     (let [dir  (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
-          lmdb (l/open-kv dir {:flags (conj c/default-env-flags :mapasync)})
+          lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
           _    (l/open-list-dbi lmdb "a")
           top  20
           _    (dotimes [i top]

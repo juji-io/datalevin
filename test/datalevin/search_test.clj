@@ -5,6 +5,7 @@
    [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
    [datalevin.core :as d]
+   [datalevin.constants :as c]
    [datalevin.analyzer :as a]
    [datalevin.sparselist :as sl]
    [datalevin.util :as u]
@@ -50,7 +51,8 @@
                                         [t i (.indexOf text t)])
                                       (s/split text #"\s")))
         dir            (u/tmp-dir (str "analyzer-" (UUID/randomUUID)))
-        lmdb           (l/open-kv dir)
+        lmdb           (l/open-kv dir {:flags
+                                       (conj c/default-env-flags :nosync)})
         engine         (sut/new-search-engine
                          lmdb {:analyzer        blank-analyzer
                                :index-position? true})]
@@ -63,7 +65,8 @@
 
 (deftest index-test
   (let [dir           (u/tmp-dir (str "index-" (UUID/randomUUID)))
-        lmdb          (l/open-kv dir)
+        lmdb          (l/open-kv dir {:flags
+                                      (conj c/default-env-flags :nosync)})
         engine        ^SearchEngine (sut/new-search-engine
                                       lmdb {:index-position? true})
         terms-dbi     (.-terms-dbi engine)
@@ -144,7 +147,8 @@
 
 (deftest search-test
   (let [dir    (u/tmp-dir (str "search-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
+        lmdb   (l/open-kv dir {:flags
+                               (conj c/default-env-flags :nosync)})
         engine ^SearchEngine (sut/new-search-engine
                                lmdb {:index-position? true})]
     (add-docs sut/add-doc engine)
@@ -179,7 +183,8 @@
 
 (deftest search-143-test
   (let [dir           (u/tmp-dir (str "search-143-" (UUID/randomUUID)))
-        lmdb          (l/open-kv dir)
+        lmdb          (l/open-kv dir {:flags
+                                      (conj c/default-env-flags :nosync)})
         engine        ^SearchEngine (sut/new-search-engine
                                       lmdb {:index-position? true})
         terms-dbi     (.-terms-dbi engine)
@@ -226,7 +231,8 @@
 
 (deftest multi-domains-test
   (let [dir     (u/tmp-dir (str "search-multi" (UUID/randomUUID)))
-        lmdb    (l/open-kv dir)
+        lmdb    (l/open-kv dir {:flags
+                                (conj c/default-env-flags :nosync)})
         engine1 ^SearchEngine (sut/new-search-engine lmdb)
         engine2 ^SearchEngine (sut/new-search-engine
                                 lmdb {:domain "another"})]
@@ -244,7 +250,8 @@
 
 (deftest search-kv-test
   (let [dir    (u/tmp-dir (str "search-kv-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
+        lmdb   (l/open-kv dir {:flags
+                               (conj c/default-env-flags :nosync)})
         engine (sut/new-search-engine lmdb {:index-position? true
                                             :include-text?   true})
         texts  {1 "The quick red fox jumped over the lazy red dogs."
@@ -394,7 +401,8 @@
 
 (deftest update-doc-test
   (let [dir       (u/tmp-dir (str "update-doc-test-" (UUID/randomUUID)))
-        lmdb      (d/open-kv dir)
+        lmdb      (d/open-kv dir {:flags
+                                  (conj c/default-env-flags :nosync)})
         engine    ^SearchEngine (d/new-search-engine lmdb)
         terms-dbi (.-terms-dbi engine)]
     (add-docs d/add-doc engine)
@@ -447,7 +455,8 @@
 
 (deftest huge-doc-test
   (let [dir    (u/tmp-dir (str "huge-doc-test-" (UUID/randomUUID)))
-        lmdb   (d/open-kv dir)
+        lmdb   (d/open-kv dir {:flags
+                               (conj c/default-env-flags :nosync)})
         engine ^SearchEngine (d/new-search-engine
                                lmdb {:index-position? true})]
     (d/add-doc engine "Romeo and Juliet" (slurp "test/data/romeo.txt"))
@@ -463,7 +472,8 @@
 
 (deftest index-writer-test
   (let [dir    (u/tmp-dir (str "writer-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
+        lmdb   (l/open-kv dir {:flags
+                               (conj c/default-env-flags :nosync)})
         writer ^IndexWriter (sut/search-index-writer
                               lmdb {:index-position? true})]
     (add-docs sut/write writer)
@@ -477,7 +487,8 @@
 
 (deftest proximity-span-test
   (let [dir      (u/tmp-dir (str "proximity-span-test-" (UUID/randomUUID)))
-        lmdb     (d/open-kv dir)
+        lmdb     (d/open-kv dir {:flags
+                                 (conj c/default-env-flags :nosync)})
         analyzer (su/create-analyzer
                    {:tokenizer
                     (su/create-regexp-tokenizer #"[\s:\.,'\-()]+")
@@ -628,7 +639,8 @@ A love that's never spent.
 
 (deftest proximity-search-test
   (let [dir    (u/tmp-dir (str "proximity-search-test-" (UUID/randomUUID)))
-        lmdb   (d/open-kv dir)
+        lmdb   (d/open-kv dir {:flags
+                               (conj c/default-env-flags :nosync)})
         engine ^SearchEngine (d/new-search-engine
                                lmdb {:index-position? true})]
     (sut/add-doc engine "bug1"
@@ -641,7 +653,8 @@ A love that's never spent.
 
 (deftest re-index-search-test
   (let [dir    (u/tmp-dir (str "re-index-search-" (UUID/randomUUID)))
-        lmdb   (l/open-kv dir)
+        lmdb   (l/open-kv dir {:flags
+                               (conj c/default-env-flags :nosync)})
         opts   {:index-position? true
                 :include-text?   true}
         engine (sut/new-search-engine lmdb opts)]

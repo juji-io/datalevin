@@ -995,7 +995,7 @@
                         (.setMaxReaders max-readers)
                         (.setMaxDbs max-dbs))
            flags      (if temp?
-                        (set (conj flags :mapasync))
+                        (set (conj flags :nosync))
                         flags)
            ^Env env   (.open builder file (kv-flags :env flags))
            info       (merge opts {:dir         dir

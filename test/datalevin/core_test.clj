@@ -34,7 +34,7 @@
         dir  (u/tmp-dir (str "datalevin-core-test-" (UUID/randomUUID)))
         conn (sut/create-conn
                dir schema
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         txs
         [{:juji.data/synonyms      ["company" "customer"],
           :juji.data/display?      true,
@@ -215,7 +215,7 @@
                 {:foo/id   {:db/unique    :db.unique/identity
                             :db/valueType :db.type/string}
                  :foo/date {:db/valueType :db.type/instant}}
-                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         query '[:find ?d .
                 :where
                 [?e :foo/id "foo"]
@@ -238,7 +238,7 @@
                            :db/valueType :db.type/string}
                 :foo/num  {:db/valueType :db.type/long}
                 :foo/date {:db/valueType :db.type/instant}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         now  (java.util.Date.)
         t42  (java.util.Date. 42)
         t50  (java.util.Date. 50)
@@ -284,7 +284,7 @@
   (let [dir  (u/tmp-dir (str "datalevin-other-lang-test-" (UUID/randomUUID)))
         conn (sut/get-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (sut/transact! conn [{:german "Ümläüt"}])
     (is (= '([{:db/id 1 :german "Ümläüt"}])
            (sut/q '[:find (pull ?e [*])
@@ -307,7 +307,7 @@
                      {:entity-things {:db/valueType   :db.type/ref
                                       :db/cardinality :db.cardinality/many}
                       :foo-bytes     {:db/valueType :db.type/bytes}}
-                     {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                     {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         ^bytes bs  (.getBytes "foooo")
         ^bytes bs1 (.getBytes "foooo")
         ^bytes bs2 (.getBytes ^String (apply str (range 50000)))]
@@ -363,7 +363,7 @@
         dir    (u/tmp-dir (str "datalevin-number-test-" (UUID/randomUUID)))
         conn   (sut/get-conn
                  dir schema
-                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (sut/transact! conn [{:name "John" :height 1.73 :weight 12M}
                          {:name "Peter" :height 1.92 :weight 150M}])
     (is (= (sut/pull (sut/db conn) '[*] 1)
@@ -420,7 +420,7 @@
           dst  (u/tmp-dir (str "dl-copy-test-" (UUID/randomUUID)))
           conn (sut/create-conn
                  src {}
-                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
       (sut/transact! conn [{:name "datalevin"}])
       (sut/copy (sut/db conn) dst true)
       (let [conn-copied (sut/create-conn dst)]
@@ -469,7 +469,7 @@
   (let [dir   (u/tmp-dir (str "with-tx-test-" (UUID/randomUUID)))
         conn  (sut/create-conn
                 dir {}
-                {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         query '[:find ?c .
                 :in $ ?e
                 :where [?e :counter ?c]]]
@@ -508,7 +508,7 @@
                    dir {:buggy/key {:db/valueType :db.type/string
                                     :db/unique    :db.unique/identity}}
                    {:kv-opts {:mapsize 1
-                              :flags   (conj c/default-env-flags :mapasync)}})]
+                              :flags   (conj c/default-env-flags :nosync)}})]
         (sut/transact! conn (for [i (range 100000)]
                               {:buggy/key  (format "%20d" i)
                                :buggy/val  (format "bubba-%d" i)
@@ -540,7 +540,7 @@
         conn  (sut/create-conn
                 dir nil
                 {:kv-opts {:mapsize 1
-                           :flags   (conj c/default-env-flags :mapasync)}})
+                           :flags   (conj c/default-env-flags :nosync)}})
         query '[:find ?e .
                 :in $ ?d
                 :where [?e :content ?d]]
@@ -568,7 +568,7 @@
                dir
                {:id {:db/unique    :db.unique/identity
                      :db/valueType :db.type/long}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (let [rp (sut/transact! conn [{:id 1}])]
       (is (= (:tx-data rp) [(sut/datom 1 :id 1)]))
       (is (= (dd/datom-tx (first (:tx-data rp))) 2)))
@@ -605,7 +605,7 @@
 
 (deftest re-index-lmdb-test
   (let [dir  (u/tmp-dir (str "re-index-lmdb-" (UUID/randomUUID)))
-        lmdb (sut/open-kv dir {:flags (conj c/default-env-flags :mapasync)})]
+        lmdb (sut/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (sut/open-dbi lmdb "misc")
 
     (sut/transact-kv
@@ -642,7 +642,7 @@
                {:aka  {:db/cardinality :db.cardinality/many}
                 :name {:db/valueType :db.type/string
                        :db/unique    :db.unique/identity}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (let [rp (sut/transact!
                conn
                [{:name "Frege", :db/id -1, :nation "France",

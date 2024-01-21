@@ -20,7 +20,7 @@
                                      :db/unique    :db.unique/identity}}
                             {:auto-entity-time? true
                              :kv-opts
-                             {:flags (conj c/default-env-flags :mapasync)}})]
+                             {:flags (conj c/default-env-flags :nosync)}})]
     (doseq [n (range 10)]
       (d/transact! conn [{:no n :value n}]))
     (d/transact! conn [{:no 0 :value 10}])
@@ -46,7 +46,7 @@
                 #:db{:valueType   :db.type/long
                      :unique      :db.unique/identity
                      :cardinality :db.cardinality/one}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (dorun (pmap #(d/transact! conn [{:instance/id %}])
                  (range 100)))
     (is (= 100 (d/q '[:find (max ?e) . :where [?e :instance/id]] @conn)))
@@ -63,7 +63,7 @@
                                        :auto-entity-time? true
                                        :kv-opts
                                        {:flags
-                                        (conj c/default-env-flags :mapasync)}})
+                                        (conj c/default-env-flags :nosync)}})
         q+      '[:find ?i+j .
                   :in $ ?i ?j
                   :where [?e :i+j ?i+j] [?e :i ?i] [?e :j ?j]]
@@ -314,7 +314,7 @@
         conn (d/create-conn
                dir
                {:aka {:db/cardinality :db.cardinality/many}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [[:db/add 1 :name "Ivan"]])
     (d/transact! conn [[:db/add 1 :name "Petr"]])
     (d/transact! conn [[:db/add 1 :aka "Devil"]])
@@ -334,7 +334,7 @@
     (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           conn (d/create-conn
                  dir {}
-                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
       (d/transact! conn [{:foo 1}
                          {:foo "1"}
                          {:foo :bar}])
@@ -354,7 +354,7 @@
     (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
           conn (d/create-conn
                  dir {}
-                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
       (d/transact! conn [{:foo [1 2]}
                          {:foo [1 "2"]}
                          {:foo [1 :2]}])
@@ -378,7 +378,7 @@
 (deftest test-transact!-1
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn
-               dir {} {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               dir {} {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [{:db/id -1 :a 1}])
     (is (= (d/q '[:find ?v
                   :where [_ :a ?v]] @conn)
@@ -395,7 +395,7 @@
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [[:db/add 1 :weight 200]])
     (d/transact! conn [[:db.fn/cas 1 :weight 200 300]])
     (is (= (:weight (d/entity @conn 1)) 300))
@@ -408,7 +408,7 @@
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {:label {:db/cardinality :db.cardinality/many}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [[:db/add 1 :label :x]])
     (d/transact! conn [[:db/add 1 :label :y]])
     (d/transact! conn [[:db.fn/cas 1 :label :y :z]])
@@ -421,7 +421,7 @@
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [[:db/add 1 :name "Ivan"]])
     (d/transact! conn [[:db.fn/cas 1 :age nil 42]])
     (is (= (:age (d/entity @conn 1)) 42))
@@ -433,7 +433,7 @@
   (let [dir  (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (is (thrown-msg? "Can't use tempid in '[:db.fn/cas -1 :attr nil :val]'. Tempids are allowed in :db/add only"
                      (d/transact! conn [[:db/add -1 :name "Ivan"]
                                         [:db.fn/cas -1 :attr nil :val]])))
@@ -446,7 +446,7 @@
   (let [dir                (u/tmp-dir (str "test-fn-" (UUID/randomUUID)))
         conn               (d/create-conn
                              dir {}
-                             {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                             {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         test-tx            (fn [_ tempid]
                              [{:db/id tempid :node/value (testing-fn)}])
         {:keys [db-after]} (d/transact! conn [[:db.fn/call test-tx -1]])
@@ -459,7 +459,7 @@
   (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn    (d/create-conn
                   dir {:aka {:db/cardinality :db.cardinality/many}}
-                  {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         inc-age (fn [db name]
                   (if-let [[eid age] (first (d/q '{:find  [?e ?age]
                                                    :in    [$ ?name]
@@ -492,7 +492,7 @@
   (let [dir     (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         conn    (d/create-conn
                   dir {:name {:db/unique :db.unique/identity}}
-                  {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         inc-age (i/inter-fn [db name]
                             (if-some [ent (d/entity db [:name name])]
                               [{:db/id (:db/id ent)
@@ -607,7 +607,7 @@
         conn (d/create-conn
                dir {:friend {:db/valueType   :db.type/ref
                              :db/cardinality :db.cardinality/many}}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         tx   (d/transact! conn [{:name   "Sergey"
                                  :friend [-1 -2]}
                                 [:db/add -1 :name "Ivan"]
@@ -720,7 +720,7 @@
         dir    (u/tmp-dir (str "issue-127-" (UUID/randomUUID)))
         conn   (d/create-conn
                  dir schema
-                 {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+                 {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [{:foo/id "foo" :foo/stats {:lul "bar"}}])
     (dotimes [n 1000]
       (d/transact! conn [{:foo/id (str "foo" n) :foo/stats {:lul "bar"}}]))
@@ -802,7 +802,7 @@
   (let [dir  (u/tmp-dir (str "unchanged-datoms-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         rp1  (d/transact! conn [{:foo "bar"}])]
     (is (= [true] (map :added (:tx-data rp1))))
 
@@ -817,7 +817,7 @@
   (let [dir  (u/tmp-dir (str "unthawable-datoms-" (UUID/randomUUID)))
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
 
     (is (thrown? Exception (d/transact! conn [{:bar (defn bar [] :bar)}])))
 

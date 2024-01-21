@@ -431,6 +431,8 @@
     (l/range-filter-count db dbi-name pred k-range :data :data true))
   (range-filter-count [db dbi-name pred k-range k-type]
     (l/range-filter-count db dbi-name pred k-range k-type :data true))
+  (range-filter-count [db dbi-name pred k-range k-type v-type]
+    (l/range-filter-count db dbi-name pred k-range k-type v-type true))
   (range-filter-count [_ dbi-name pred k-range k-type v-type raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request

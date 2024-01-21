@@ -114,7 +114,9 @@
         (let [ks   (shuffle (range 0 10000))
               vs   (map inc ks)
               txs  (map (fn [k v] [:put "r" k v :long :long]) ks vs)
-              pred (i/inter-fn [k _] (< 10 k 20))
+              pred (i/inter-fn [kv]
+                     (let [^long k (dc/read-buffer (dc/k kv) :long)]
+                       (< 10 k 20)))
               fks  (range 11 20)
               fvs  (map inc fks)
               res  (map (fn [k v] [k v]) fks fvs)
