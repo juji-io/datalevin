@@ -337,37 +337,34 @@
           (u/raise "Error transacting kv to server:" message {:uri uri})))))
 
   (get-value [db dbi-name k]
-    (l/get-value db dbi-name k :data :data))
+    (l/get-value db dbi-name k :data :data true))
   (get-value [db dbi-name k k-type]
-    (l/get-value db dbi-name k k-type :data))
-  ;; (get-value [db dbi-name k k-type v-type]
-  ;;   (l/get-value db dbi-name k k-type v-type true))
-  (get-value [_ dbi-name k k-type v-type & {:keys [ignore-key?]
-                                            :or   {ignore-key? true}}]
+    (l/get-value db dbi-name k k-type :data true))
+  (get-value [db dbi-name k k-type v-type]
+    (l/get-value db dbi-name k k-type v-type true))
+  (get-value [_ dbi-name k k-type v-type ignore-key?]
     (cl/normal-request
       client :get-value
       [db-name dbi-name k k-type v-type ignore-key?] writing?))
 
   (get-first [db dbi-name k-range]
-    (l/get-first db dbi-name k-range :data :data))
+    (l/get-first db dbi-name k-range :data :data false))
   (get-first [db dbi-name k-range k-type]
-    (l/get-first db dbi-name k-range k-type :data ))
-  ;; (get-first [db dbi-name k-range k-type v-type]
-  ;;   (l/get-first db dbi-name k-range k-type v-type false))
-  (get-first [_ dbi-name k-range k-type v-type & {:keys [ignore-key?]
-                                                  :or   {ignore-key? false}}]
+    (l/get-first db dbi-name k-range k-type :data false))
+  (get-first [db dbi-name k-range k-type v-type]
+    (l/get-first db dbi-name k-range k-type v-type false))
+  (get-first [_ dbi-name k-range k-type v-type ignore-key?]
     (cl/normal-request
       client :get-first
       [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
 
   (get-range [db dbi-name k-range]
-    (l/get-range db dbi-name k-range :data :data))
+    (l/get-range db dbi-name k-range :data :data false))
   (get-range [db dbi-name k-range k-type]
-    (l/get-range db dbi-name k-range k-type :data))
-  ;; (get-range [db dbi-name k-range k-type v-type]
-  ;;   (l/get-range db dbi-name k-range k-type v-type false))
-  (get-range [_ dbi-name k-range k-type v-type & {:keys [ignore-key?]
-                                                  :or   {ignore-key? false}}]
+    (l/get-range db dbi-name k-range k-type :data false))
+  (get-range [db dbi-name k-range k-type v-type]
+    (l/get-range db dbi-name k-range k-type v-type false))
+  (get-range [_ dbi-name k-range k-type v-type ignore-key?]
     (cl/normal-request
       client :get-range
       [db-name dbi-name k-range k-type v-type ignore-key?] writing?))
@@ -399,14 +396,14 @@
       client :range-count [db-name dbi-name k-range k-type] writing?))
 
   (get-some [db dbi-name pred k-range]
-    (l/get-some db dbi-name pred k-range :data :data))
+    (l/get-some db dbi-name pred k-range :data :data false true))
   (get-some [db dbi-name pred k-range k-type]
-    (l/get-some db dbi-name pred k-range k-type :data))
-  ;; (get-some [db dbi-name pred k-range k-type v-type]
-  ;;   (l/get-some db dbi-name pred k-range k-type v-type false))
-  (get-some [_ dbi-name pred k-range k-type v-type
-             & {:keys [ignore-key? raw-pred?]
-                :or   {ignore-key? false raw-pred? false}}]
+    (l/get-some db dbi-name pred k-range k-type :data false true))
+  (get-some [db dbi-name pred k-range k-type v-type]
+    (l/get-some db dbi-name pred k-range k-type v-type false true))
+  (get-some [db dbi-name pred k-range k-type v-type ignore-key?]
+    (l/get-some db dbi-name pred k-range k-type v-type  ignore-key? true))
+  (get-some [_ dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :get-some
@@ -415,14 +412,14 @@
         writing?)))
 
   (range-filter [db dbi-name pred k-range]
-    (l/range-filter db dbi-name pred k-range :data :data))
+    (l/range-filter db dbi-name pred k-range :data :data false true))
   (range-filter [db dbi-name pred k-range k-type]
-    (l/range-filter db dbi-name pred k-range k-type :data))
-  ;; (range-filter [db dbi-name pred k-range k-type v-type]
-  ;;   (l/range-filter db dbi-name pred k-range k-type v-type false))
-  (range-filter [db dbi-name pred k-range k-type v-type
-                 & {:keys [ignore-key? raw-pred?]
-                    :or   {ignore-key? false raw-pred? false}}]
+    (l/range-filter db dbi-name pred k-range k-type :data false true))
+  (range-filter [db dbi-name pred k-range k-type v-type]
+    (l/range-filter db dbi-name pred k-range k-type v-type false true))
+  (range-filter [db dbi-name pred k-range k-type v-type ignore-key?]
+    (l/range-filter db dbi-name pred k-range k-type v-type  ignore-key? true))
+  (range-filter [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :range-filter
@@ -431,12 +428,10 @@
         writing?)))
 
   (range-filter-count [db dbi-name pred k-range]
-    (l/range-filter-count db dbi-name pred k-range :data :data))
+    (l/range-filter-count db dbi-name pred k-range :data :data true))
   (range-filter-count [db dbi-name pred k-range k-type]
-    (l/range-filter-count db dbi-name pred k-range k-type :data))
-  (range-filter-count [_ dbi-name pred k-range k-type v-type
-                       & {:keys [raw-pred?]
-                          :or   {raw-pred? false}}]
+    (l/range-filter-count db dbi-name pred k-range k-type :data true))
+  (range-filter-count [_ dbi-name pred k-range k-type v-type raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :range-filter-count
@@ -444,12 +439,11 @@
         writing?)))
 
   (visit [db dbi-name visitor k-range]
-    (l/visit db dbi-name visitor k-range :data :data))
+    (l/visit db dbi-name visitor k-range :data :data true))
   (visit [db dbi-name visitor k-range k-type]
-    (l/visit db dbi-name visitor k-range k-type :data))
-  (visit [_ dbi-name visitor k-range k-type v-type
-          & {:keys [raw-pred?]
-             :or   {raw-pred? false}}]
+    (l/visit db dbi-name visitor k-range k-type :data true))
+  (visit
+    [_ dbi-name visitor k-range k-type v-type raw-pred?]
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request
         client :visit
@@ -478,11 +472,16 @@
   (get-list [_ dbi-name k kt vt]
     (cl/normal-request client :get-list
                        [db-name dbi-name k kt vt] writing?))
-  (visit-list [_ dbi-name visitor k kt]
+
+  (visit-list [db list-name visitor k k-type]
+    (.visit-ist db list-name visitor k k-type nil true))
+  (visit-list [db list-name visitor k k-type v-type]
+    (.visit-ist db list-name visitor k k-type v-type true))
+  (visit-list [_ dbi-name visitor k kt vt raw-pred?]
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request
         client :visit-list
-        [db-name dbi-name frozen-visitor k kt] writing?)))
+        [db-name dbi-name frozen-visitor k kt vt raw-pred?] writing?)))
 
   (list-count [_ dbi-name k kt]
     (cl/normal-request client :list-count
@@ -504,29 +503,42 @@
     (cl/normal-request client :list-range-first
                        [db-name dbi-name k-range kt v-range vt] writing?))
 
-  (list-range-filter [_ dbi-name pred k-range kt v-range vt]
+  (list-range-filter [db list-name pred k-range k-type v-range v-type]
+    (.list-range-filter db list-name pred k-range k-type v-range v-type true))
+  (list-range-filter [_ dbi-name pred k-range kt v-range vt raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :list-range-filter
-        [db-name dbi-name frozen-pred k-range kt v-range vt] writing?)))
+        [db-name dbi-name frozen-pred k-range kt v-range vt raw-pred?]
+        writing?)))
 
-  (list-range-some [_ dbi-name pred k-range kt v-range vt]
+  (list-range-some [db list-name pred k-range k-type v-range v-type]
+    (.list-range-some db list-name pred k-range k-type v-range v-type true))
+  (list-range-some [_ dbi-name pred k-range kt v-range vt raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :list-range-some
-        [db-name dbi-name frozen-pred k-range kt v-range vt] writing?)))
+        [db-name dbi-name frozen-pred k-range kt v-range vt raw-pred?]
+        writing?)))
 
-  (list-range-filter-count [_ dbi-name pred k-range kt v-range vt]
+  (list-range-filter-count [db list-name pred k-range k-type v-range v-type]
+    (.list-range-filter-count db list-name pred k-range k-type v-range v-type
+                              true))
+  (list-range-filter-count [_ dbi-name pred k-range kt v-range vt raw-pred?]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :list-range-filter-count
-        [db-name dbi-name frozen-pred k-range kt v-range vt] writing?)))
+        [db-name dbi-name frozen-pred k-range kt v-range vt raw-pred?]
+        writing?)))
 
-  (visit-list-range [_ dbi-name visitor k-range kt v-range vt]
+  (visit-list-range [db list-name visitor k-range k-type v-range v-type]
+    (.visit-list-range db list-name visitor k-range k-type v-range v-type true))
+  (visit-list-range [_ dbi-name visitor k-range kt v-range vt raw-pred?]
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request
         client :visit-list-range
-        [db-name dbi-name frozen-visitor k-range kt v-range vt] writing?)))
+        [db-name dbi-name frozen-visitor k-range kt v-range vt raw-pred?]
+        writing?)))
 
   IAdmin
   (re-index [db opts]

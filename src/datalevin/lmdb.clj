@@ -66,7 +66,10 @@
     [db list-name k vs k-type v-type]
     "delete a list or some items of a list by the key")
   (get-list [db list-name k k-type v-type] "get a list by key")
-  (visit-list [db list-name visitor k k-type]
+  (visit-list
+    [db list-name visitor k k-type]
+    [db list-name visitor k k-type v-type]
+    [db list-name visitor k k-type v-type raw-pred?]
     "visit a list, presumably for side effects")
   (list-count [db list-name k k-type]
     "return the number of items in the list of a key")
@@ -86,22 +89,22 @@
      specified key range")
   (list-range-filter
     [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type & {:as opts}]
+    [db list-name pred k-range k-type v-range v-type raw-pred?]
     "Return a seq of key-values in the specified value range of the
      specified key range, filtered by pred call")
   (list-range-some
     [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type & {:as opts}]
+    [db list-name pred k-range k-type v-range v-type raw-pred?]
     "Return the first kv pair that has logical true value of pred call in
      the specified value range of the specified key range")
   (list-range-filter-count
     [db list-name pred k-range k-type v-range v-type]
-    [db list-name pred k-range k-type v-range v-type & {:as opts}]
+    [db list-name pred k-range k-type v-range v-type raw-pred?]
     "Return the count of key-values in the specified value range of the
      specified key range for those pred call is true")
   (visit-list-range
     [db list-name visitor k-range k-type v-range v-type]
-    [db list-name visitor k-range k-type v-range v-type & {:as opts}]
+    [db list-name visitor k-range k-type v-range v-type raw-pred?]
     "visit a list range, presumably for side effects of vistor call`"))
 
 (defprotocol ILMDB
@@ -155,25 +158,26 @@
     [db dbi-name k]
     [db dbi-name k k-type]
     [db dbi-name k k-type v-type]
-    [db dbi-name k k-type v-type & {:as opts}]
+    [db dbi-name k k-type v-type ignore-key?]
     "Get kv pair of the specified key `k`. ")
   (get-first
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type & {:as opts}]
+    [db dbi-name k-range k-type v-type ignore-key?]
     "Return the first kv pair in the specified key range;")
   (range-seq
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type & {:as opts}]
+    [db dbi-name k-range k-type v-type ignore-key?]
+    [db dbi-name k-range k-type v-type ignore-key? opts]
     "Return a lazy seq of kv pairs in the specified key range;")
   (get-range
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
     [db dbi-name k-range k-type v-type]
-    [db dbi-name k-range k-type v-type & {:as opts}]
+    [db dbi-name k-range k-type v-type ignore-key?]
     "Return an eager seq of kv pairs in the specified key range;")
   (key-range
     [db dbi-name k-range]
@@ -189,27 +193,29 @@ values;")
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type & {:as opts}]
+    [db dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
     "Return the first kv pair that has logical true value of pred call")
   (range-filter
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type & {:as opts}]
+    [db dbi-name pred k-range k-type v-type ignore-key?]
+    [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
     "Return a seq of kv pair in the specified key range, for only those
      return true value for pred call.")
   (range-filter-count
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]
     [db dbi-name pred k-range k-type v-type]
-    [db dbi-name pred k-range k-type v-type & {:as opts}]
+    [db dbi-name pred k-range k-type v-type raw-pred?]
     "Return the number of kv pairs in the specified key range, for only those
      return true value for pred call")
   (visit
     [db dbi-name visitor k-range]
     [db dbi-name visitor k-range k-type]
     [db dbi-name visitor k-range k-type v-type]
-    [db dbi-name visitor k-range k-type v-type & {:as opts}]
+    [db dbi-name visitor k-range k-type v-type raw-pred?]
     "Call `visitor` function on each k, v pairs in the specified key range,
      presumably for side effects of visitor call. Return nil."))
 

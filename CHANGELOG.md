@@ -35,11 +35,9 @@
 - [KV] Upgrade LMDB to the latest, now tracking mdb.master branch,
   as it includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
-- [KV] Functions that take a predicate have a new option `:raw-pred?` to
-  indicate whether the predicate takes a raw KV object, or a pair of decoded
-  values of k and v (default).
-  [KV] Functions that took a `ignore-key?` argument, the argument is now a
-  keyword option, e.g. change `true` to `:ignore-key? true`.
+- [KV] Functions that take a predicate have a new argument `raw-pred?` to
+  indicate whether the predicate takes a raw KV object (default), or a pair of
+  decoded values of k and v.
 - [Datalog] Change VEA index to VAE.
 - [Datalog] Query results can now be spillable to disk. #166
 

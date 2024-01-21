@@ -465,17 +465,21 @@
       holder)))
 
 (defn- visit-list*
-  [^Rtx rtx ^Cursor cur k kt visitor]
+  [^Rtx rtx ^Cursor cur visitor raw-pred? k kt vt]
   (let [kv (reify IKV
              (k [_] (.key cur))
-             (v [_] (.val cur)))]
+             (v [_] (.val cur)))
+        vs #(if raw-pred?
+              (visitor kv)
+              (visitor (b/read-buffer (l/k kv) kt)
+                       (when vt (b/read-buffer (l/v kv) vt))))]
     (.put-key rtx k kt)
     (when (.get cur (.-kb rtx) GetOp/MDB_SET)
       (.seek cur SeekOp/MDB_FIRST_DUP)
-      (visitor kv)
+      (vs)
       (dotimes [_ (dec (.count cur))]
         (.seek cur SeekOp/MDB_NEXT_DUP)
-        (visitor kv)))))
+        (vs)))))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]
@@ -739,36 +743,30 @@
           (catch Exception e (raise "Fail to transact to LMDB: " e {}))))))
 
   (get-value [this dbi-name k]
-    (.get-value this dbi-name k :data :data))
+    (.get-value this dbi-name k :data :data true))
   (get-value [this dbi-name k k-type]
-    (.get-value this dbi-name k k-type :data))
-  ;; (get-value [this dbi-name k k-type v-type]
-  ;;   (.get-value this dbi-name k k-type v-type :ignore-key? true))
-  (get-value [this dbi-name k k-type v-type
-              & {:keys [ignore-key?]
-                 :or   {ignore-key? true}}]
+    (.get-value this dbi-name k k-type :data true))
+  (get-value [this dbi-name k k-type v-type]
+    (.get-value this dbi-name k k-type v-type true))
+  (get-value [this dbi-name k k-type v-type ignore-key?]
     (scan/get-value this dbi-name k k-type v-type ignore-key?))
 
   (get-first [this dbi-name k-range]
-    (.get-first this dbi-name k-range :data :data))
+    (.get-first this dbi-name k-range :data :data false))
   (get-first [this dbi-name k-range k-type]
-    (.get-first this dbi-name k-range k-type :data))
-  ;; (get-first [this dbi-name k-range k-type v-type]
-  ;;   (.get-first this dbi-name k-range k-type v-type :ignore-key? false))
-  (get-first [this dbi-name k-range k-type v-type
-              & {:keys [ignore-key?]
-                 :or   {ignore-key? false}}]
+    (.get-first this dbi-name k-range k-type :data false))
+  (get-first [this dbi-name k-range k-type v-type]
+    (.get-first this dbi-name k-range k-type v-type false))
+  (get-first [this dbi-name k-range k-type v-type ignore-key?]
     (scan/get-first this dbi-name k-range k-type v-type ignore-key?))
 
   (get-range [this dbi-name k-range]
-    (.get-range this dbi-name k-range :data :data))
+    (.get-range this dbi-name k-range :data :data false))
   (get-range [this dbi-name k-range k-type]
-    (.get-range this dbi-name k-range k-type :data))
-  ;; (get-range [this dbi-name k-range k-type v-type]
-  ;;   (.get-range this dbi-name k-range k-type v-type :ignore-key? false))
-  (get-range [this dbi-name k-range k-type v-type
-              & {:keys [ignore-key?]
-                 :or   {ignore-key? false}}]
+    (.get-range this dbi-name k-range k-type :data false))
+  (get-range [this dbi-name k-range k-type v-type]
+    (.get-range this dbi-name k-range k-type v-type false))
+  (get-range [this dbi-name k-range k-type v-type ignore-key?]
     (scan/get-range this dbi-name k-range k-type v-type ignore-key?))
 
   (key-range [this dbi-name k-range]
@@ -777,15 +775,15 @@
     (scan/key-range this dbi-name k-range k-type))
 
   (range-seq [this dbi-name k-range]
-    (.range-seq this dbi-name k-range :data :data))
+    (.range-seq this dbi-name k-range :data :data false nil))
   (range-seq [this dbi-name k-range k-type]
-    (.range-seq this dbi-name k-range k-type :data))
-  ;; (range-seq [this dbi-name k-range k-type v-type]
-  ;;   (.range-seq this dbi-name k-range k-type v-type :ignore-key? false))
-  (range-seq [this dbi-name k-range k-type v-type
-              & {:keys [ignore-key?]
-                 :or   {ignore-key? false}}]
-    (scan/range-seq this dbi-name k-range k-type v-type ignore-key?))
+    (.range-seq this dbi-name k-range k-type :data false nil))
+  (range-seq [this dbi-name k-range k-type v-type]
+    (.range-seq this dbi-name k-range k-type v-type false nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key?]
+    (.range-seq this dbi-name k-range k-type v-type  ignore-key? nil))
+  (range-seq [this dbi-name k-range k-type v-type ignore-key? opts]
+    (scan/range-seq this dbi-name k-range k-type v-type ignore-key? opts))
 
   (range-count [this dbi-name k-range]
     (.range-count this dbi-name k-range :data))
@@ -793,47 +791,46 @@
     (scan/range-count this dbi-name k-range k-type))
 
   (get-some [this dbi-name pred k-range]
-    (.get-some this dbi-name pred k-range :data :data))
+    (.get-some this dbi-name pred k-range :data :data false true))
   (get-some [this dbi-name pred k-range k-type]
-    (.get-some this dbi-name pred k-range k-type :data))
-  (get-some [this dbi-name pred k-range k-type v-type
-             & {:keys [ignore-key? raw-pred?]
-                :or   {ignore-key? false raw-pred? false}}]
-    (scan/get-some this dbi-name pred k-range k-type v-type
-                   ignore-key? raw-pred?))
+    (.get-some this dbi-name pred k-range k-type :data false true))
+  (get-some [this dbi-name pred k-range k-type v-type]
+    (.get-some this dbi-name pred k-range k-type v-type false true))
+  (get-some [this dbi-name pred k-range k-type v-type ignore-key?]
+    (.get-some this dbi-name pred k-range k-type v-type ignore-key? true))
+  (get-some [this dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
+    (scan/get-some this dbi-name pred k-range k-type v-type ignore-key?
+                   raw-pred?))
 
   (range-filter [this dbi-name pred k-range]
-    (.range-filter this dbi-name pred k-range :data :data))
+    (.range-filter this dbi-name pred k-range :data :data false true))
   (range-filter [this dbi-name pred k-range k-type]
-    (.range-filter this dbi-name pred k-range k-type :data))
-  (range-filter [this dbi-name pred k-range k-type v-type
-                 & {:keys [ignore-key? raw-pred?]
-                    :or   {ignore-key? false raw-pred? false}}]
-    (scan/range-filter this dbi-name pred k-range k-type v-type
-                       ignore-key? raw-pred?))
+    (.range-filter this dbi-name pred k-range k-type :data false true))
+  (range-filter [this dbi-name pred k-range k-type v-type]
+    (.range-filter this dbi-name pred k-range k-type v-type false true))
+  (range-filter [this dbi-name pred k-range k-type v-type ignore-key?]
+    (.range-filter this dbi-name pred k-range k-type v-type ignore-key? true))
+  (range-filter [this dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
+    (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?
+                       raw-pred?))
 
   (range-filter-count [this dbi-name pred k-range]
-    (.range-filter-count this dbi-name pred k-range :data :data))
+    (.range-filter-count this dbi-name pred k-range :data :data true))
   (range-filter-count [this dbi-name pred k-range k-type]
-    (.range-filter-count this dbi-name pred k-range k-type :data))
-  ;; (range-filter-count [this dbi-name pred k-range k-type v-type]
-  ;;   (.range-filter-count this dbi-name pred k-range k-type v-type
-  ;;                        :raw-pred? false))
-  (range-filter-count [this dbi-name pred k-range k-type v-type
-                       & {:keys [raw-pred?]
-                          :or   {raw-pred? false}}]
+    (.range-filter-count this dbi-name pred k-range k-type :data true))
+  (range-filter-count [this dbi-name pred k-range k-type v-type]
+    (.range-filter-count this dbi-name pred k-range k-type v-type true))
+  (range-filter-count [this dbi-name pred k-range k-type v-type raw-pred?]
     (scan/range-filter-count this dbi-name pred k-range k-type v-type
                              raw-pred?))
 
   (visit [this dbi-name visitor k-range]
-    (.visit this dbi-name visitor k-range :data :data))
+    (.visit this dbi-name visitor k-range :data :data true))
   (visit [this dbi-name visitor k-range k-type]
-    (scan/visit this dbi-name visitor k-range k-type :data))
-  ;; (visit [this dbi-name visitor k-range k-type v-type]
-  ;;   (scan/visit this dbi-name visitor k-range k-type v-type :raw-pred? false))
-  (visit [this dbi-name visitor k-range k-type v-type
-          & {:keys [raw-pred?]
-             :or   {raw-pred? false}}]
+    (scan/visit this dbi-name visitor k-range k-type :data true))
+  (visit [this dbi-name visitor k-range k-type v-type]
+    (scan/visit this dbi-name visitor k-range k-type v-type true))
+  (visit [this dbi-name visitor k-range k-type v-type raw-pred?]
     (scan/visit this dbi-name visitor k-range k-type v-type raw-pred?))
 
   (open-list-dbi [this dbi-name {:keys [key-size val-size]
@@ -866,11 +863,15 @@
           (raise "Fail to get a list: " e {:dbi dbi-name :key k})))))
 
   (visit-list [this dbi-name visitor k kt]
+    (.visit-list this dbi-name visitor k kt :data true))
+  (visit-list [this dbi-name visitor k kt vt]
+    (.visit-list this dbi-name visitor k kt vt true))
+  (visit-list [this dbi-name visitor k kt vt raw-pred?]
     (.check-ready this)
     (when k
       (let [lmdb this]
         (scan/scan
-          (visit-list* rtx cur k kt visitor)
+          (visit-list* rtx cur visitor raw-pred? k kt vt)
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
   (list-count [this dbi-name k kt]
@@ -881,8 +882,6 @@
           (list-count* rtx cur k kt)
           (raise "Fail to count list: " e {:dbi dbi-name :k k})))
       0))
-
-
 
   (in-list? [this dbi-name k v kt vt]
     (.check-ready this)
@@ -903,25 +902,32 @@
   (list-range-first [this dbi-name k-range kt v-range vt]
     (scan/list-range-first this dbi-name k-range kt v-range vt))
 
-  (list-range-filter [this dbi-name pred k-range kt v-range vt
-                      & {:keys [raw-pred?]
-                         :or   {raw-pred? false}}]
+  (list-range-filter [this dbi-name pred k-range kt v-range vt]
+    (.list-range-filter this dbi-name pred k-range kt v-range vt true))
+  (list-range-filter [this dbi-name pred k-range kt v-range vt raw-pred?]
     (scan/list-range-filter this dbi-name pred k-range kt v-range vt raw-pred?))
 
-  (list-range-some [this dbi-name pred k-range kt v-range vt
-                    & {:keys [raw-pred?]
-                       :or   {raw-pred? false}}]
+  (list-range-some [this list-name pred k-range k-type v-range v-type]
+    (.list-range-some this list-name pred k-range k-type v-range v-type
+                      true))
+  (list-range-some [this dbi-name pred k-range kt v-range vt raw-pred?]
     (scan/list-range-some this dbi-name pred k-range kt v-range vt raw-pred?))
 
-  (list-range-filter-count [this dbi-name pred k-range kt v-range vt
-                            & {:keys [raw-pred?]
-                               :or   {raw-pred? false}}]
+  (list-range-filter-count
+    [this list-name pred k-range k-type v-range v-type]
+    (.list-range-filter-count this list-name pred k-range k-type v-range
+                              v-type true))
+  (list-range-filter-count
+    [this dbi-name pred k-range kt v-range vt raw-pred?]
     (scan/list-range-filter-count this dbi-name pred k-range kt v-range
                                   vt raw-pred?))
 
-  (visit-list-range [this dbi-name visitor k-range kt v-range vt
-                     & {:keys [raw-pred?]
-                        :or   {raw-pred? false}}]
+  (visit-list-range
+    [this list-name visitor k-range k-type v-range v-type]
+    (.visit-list-range this list-name visitor k-range k-type v-range
+                       v-type true))
+  (visit-list-range
+    [this dbi-name visitor k-range kt v-range vt raw-pred?]
     (scan/visit-list-range this dbi-name visitor k-range kt v-range
                            vt raw-pred?))
 
@@ -961,9 +967,9 @@
                                 [:keyword :string]))
         info (into {}
                    (l/range-filter lmdb c/kv-info
-                                   (fn [k _] (keyword? k)
-                                     #_(let [b (b/read-buffer (l/k kv) :byte)]
-                                         (not= b c/type-hete-tuple)))
+                                   (fn [kv]
+                                     (let [b (b/read-buffer (l/k kv) :byte)]
+                                       (not= b c/type-hete-tuple)))
                                    [:all]))]
     (vreset! (.-info lmdb) (assoc info :dbis dbis))))
 
