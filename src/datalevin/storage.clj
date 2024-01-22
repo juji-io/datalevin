@@ -533,31 +533,26 @@
       (index->vtype index)))
 
   (head-filter [_ index pred low-datom high-datom]
-    (retrieved->datom
-      lmdb attrs
-      ;; TODO this should return (pred x), instead of x
-      (lmdb/list-range-some
-        lmdb (index->dbi index)
-        (datom-pred->kv-pred lmdb attrs index pred)
-        [:closed (index->k index schema low-datom false)
-         (index->k index schema high-datom true)] (index->ktype index)
-        [:closed
-         (datom->indexable schema low-datom false)
-         (datom->indexable schema high-datom true)]
-        (index->vtype index))))
+    (lmdb/list-range-some
+      lmdb (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed (index->k index schema low-datom false)
+       (index->k index schema high-datom true)] (index->ktype index)
+      [:closed
+       (datom->indexable schema low-datom false)
+       (datom->indexable schema high-datom true)]
+      (index->vtype index)))
 
   (tail-filter [_ index pred high-datom low-datom]
-    (retrieved->datom
-      lmdb attrs
-      (lmdb/list-range-some
-        lmdb (index->dbi index)
-        (datom-pred->kv-pred lmdb attrs index pred)
-        [:closed-back (index->k index schema high-datom true)
-         (index->k index schema low-datom false)] (index->ktype index)
-        [:closed-back
-         (datom->indexable schema high-datom true)
-         (datom->indexable schema low-datom false)]
-        (index->vtype index))))
+    (lmdb/list-range-some
+      lmdb (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed-back (index->k index schema high-datom true)
+       (index->k index schema low-datom false)] (index->ktype index)
+      [:closed-back
+       (datom->indexable schema high-datom true)
+       (datom->indexable schema low-datom false)]
+      (index->vtype index)))
 
   ;; TODO datom-pred->kv-pred already converted data to datom,
   ;; no need to read into datom again, need list-range-keep

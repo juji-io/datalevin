@@ -12,10 +12,10 @@
              :where [?e :counter ?c]])
 
 (deftest new-value-invisible-outside-test
-  (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+  (let [dir  "dtlv://datalevin:datalevin@localhost/new-value"
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/with-transaction [cn conn]
       (is (nil? (d/q query @cn 1)))
       (d/transact! cn [{:db/id 1 :counter 1}])
@@ -25,10 +25,10 @@
     (d/close conn)))
 
 (deftest abort-test
-  (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+  (let [dir  "dtlv://datalevin:datalevin@localhost/abort"
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [{:db/id 1 :counter 1}])
     (d/with-transaction [cn conn]
       (d/transact! cn [{:db/id 1 :counter 2}])
@@ -38,11 +38,11 @@
     (d/close conn)))
 
 (deftest same-client-concurrent-test
-  (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+  (let [dir  "dtlv://datalevin:datalevin@localhost/same-client"
         conn (d/create-conn
                dir nil
                {:client-opts {:pool-size 1}
-                :kv-opts     {:flags (conj c/default-env-flags :nosync)}})]
+                :kv-opts     {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [{:db/id 1 :counter 1}])
     (let [count-f
           #(d/with-transaction [cn conn]
@@ -55,10 +55,10 @@
     (d/close conn)))
 
 (deftest diff-clients-concurrent-test
-  (let [dir  "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+  (let [dir  "dtlv://datalevin:datalevin@localhost/diff-client"
         conn (d/create-conn
                dir nil
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
     (d/transact! conn [{:db/id 1 :counter 4}])
     (let [count-f
           #(d/with-transaction [cn (d/create-conn
@@ -66,7 +66,7 @@
                                      {:client-opts {:pool-size 1}
                                       :kv-opts     {:flags
                                                     (conj c/default-env-flags
-                                                          :nosync)}})]
+                                                          :mapasync)}})]
              (let [^long now (d/q query @cn 1)]
                (d/transact! cn [{:db/id 1 :counter (inc now)}])
                (d/q query @cn 1)))]
@@ -76,11 +76,11 @@
     (d/close conn)))
 
 (deftest with-txn-map-resize-test
-  (let [dir    "dtlv://datalevin:datalevin@localhost/remote-with-tx"
+  (let [dir    "dtlv://datalevin:datalevin@localhost/map-resize"
         conn   (d/create-conn
                  dir nil
                  {:kv-opts {:mapsize 1
-                            :flags   (conj c/default-env-flags :nosync)}})
+                            :flags   (conj c/default-env-flags :mapasync)}})
         query1 '[:find ?d .
                  :in $ ?e
                  :where [?e :content ?d]]

@@ -88,11 +88,12 @@
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
       (is (= d (sut/head-filter store :eav
-                                (fn [^Datom d] (= v (.-v d)))
+                                (fn [^Datom d] (when (= v (.-v d)) d))
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
       (is (= d (sut/tail-filter store :eav
-                                (fn [^Datom d] (= v (.-v d)))
+                                (fn [^Datom d]
+                                  (when (= v (.-v d)) d))
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
       (is (= [d] (sut/slice-filter store :eav

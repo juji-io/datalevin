@@ -1559,10 +1559,14 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      supported for both `k-range` and `v-range`."}
   list-range-filter-count l/list-range-filter-count)
 
-(def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
-       :doc      "Return the first key-values in the specified value range
-     and the specified key range of a sub-database opened by
-     [[open-list-dbi]], filtered by a predicate `pred`.
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
+                   [db list-name pred k-range k-type v-range v-type raw-pred?])
+       :doc      "Return the first logical true result of `pred` calls in
+       the specified value range and the specified key range of a
+       sub-database opened by [[open-list-dbi]].
+
+     `raw-pred?` indicates whether `pred` takes a single raw `kv` object
+     (default), or a pair of decoded `k` and `v` values.
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}

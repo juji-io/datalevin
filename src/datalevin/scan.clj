@@ -365,19 +365,13 @@
                                    v-range v-type)]
       (loop [^Iterator iter (.iterator ^Iterable iterable)]
         (when (.hasNext iter)
-          (let [kv             (.next iter)
-                ^ByteBuffer kb (l/k kv)
-                ^ByteBuffer vb (l/v kv)]
+          (let [kv (.next iter)]
             (if raw-pred?
-              (if (pred kv)
-                [(b/read-buffer (.rewind kb) k-type)
-                 (b/read-buffer (.rewind vb) v-type)]
-                (recur iter))
-              (let [rk (b/read-buffer kb k-type)
-                    rv (b/read-buffer vb k-type)]
-                (if (pred rk rv)
-                  [rk rv]
-                  (recur iter))))))))
+              (or (pred kv)
+                  (recur iter))
+              (or (pred (b/read-buffer (l/k kv) k-type)
+                        (b/read-buffer (l/v kv) k-type))
+                  (recur iter)))))))
     (raise "Fail to find some in list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
 

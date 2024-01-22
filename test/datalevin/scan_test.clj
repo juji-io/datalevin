@@ -542,9 +542,7 @@
     (is (= [[2 2] [2 4]]
            (l/list-range-filter lmdb "a" pred [:closed 2 2] :long
                                 [:all] :long)))
-    (is (= [2 2]
-           (l/list-range-some lmdb "a" pred [:closed 2 2] :long
-                              [:all] :long)))
+    (is (l/list-range-some lmdb "a" pred [:closed 2 2] :long [:all] :long))
     (is (= 5 (l/list-range-filter-count
                lmdb "a" pred [:open 2 6] :long [:greater-than 5] :long)))
 

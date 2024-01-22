@@ -92,10 +92,15 @@
     [db list-name pred k-range k-type v-range v-type raw-pred?]
     "Return a seq of key-values in the specified value range of the
      specified key range, filtered by pred call")
+  (list-range-keep
+    [db list-name pred k-range k-type v-range v-type]
+    [db list-name pred k-range k-type v-range v-type raw-pred?]
+    "Return the non-nil results of pred calls in
+     the specified value range of the specified key range")
   (list-range-some
     [db list-name pred k-range k-type v-range v-type]
     [db list-name pred k-range k-type v-range v-type raw-pred?]
-    "Return the first kv pair that has logical true value of pred call in
+    "Return the first logical true result of pred calls in
      the specified value range of the specified key range")
   (list-range-filter-count
     [db list-name pred k-range k-type v-range v-type]
@@ -204,6 +209,20 @@ values;")
     [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
     "Return a seq of kv pair in the specified key range, for only those
      return true value for pred call.")
+  (range-keep
+    [db dbi-name pred k-range]
+    [db dbi-name pred k-range k-type]
+    [db dbi-name pred k-range k-type v-type]
+    [db dbi-name pred k-range k-type v-type raw-pred?]
+    "Return a seq of non-nil results of pred calls in the specified key
+     range.")
+  (range-some
+    [db dbi-name pred k-range]
+    [db dbi-name pred k-range k-type]
+    [db dbi-name pred k-range k-type v-type]
+    [db dbi-name pred k-range k-type v-type raw-pred?]
+    "Return the first logical true result of pred calls in the specified key
+     range.")
   (range-filter-count
     [db dbi-name pred k-range]
     [db dbi-name pred k-range k-type]

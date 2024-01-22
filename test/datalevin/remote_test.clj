@@ -107,7 +107,9 @@
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
         (is (= d (st/head-filter store :eav
-                                 (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
+                                 (i/inter-fn [^Datom d]
+                                             (when (= v (dc/datom-v d))
+                                               d))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
         (is (= [d] (st/slice-filter store :eav
