@@ -816,23 +816,24 @@
   (.position bf (- (.limit bf) 8))
   (let [g (get-long bf)]
     (.rewind bf)
-    (if (= g c/normal)
-      (let [a (get-int bf)
-            v (get-value bf 9)]
-        (Retrieved. nil a v g))
-      (Retrieved. nil nil nil g))))
+    (let [a (get-int bf)]
+      (if (= g c/normal)
+        (Retrieved. nil a (get-value bf 9) g)
+        (Retrieved. nil a nil g)))))
 
 (defn- get-veg
   [^ByteBuffer bf]
-  (.position bf (- (.limit bf) 8))
-  (let [g (get-long bf)]
-    (.rewind bf)
+  (.position bf (- (.limit bf) 16))
+  (let [e (get-long bf)
+        g (get-long bf)]
     (if (= g c/normal)
-      (let [v (get-value bf 17)
-            _ (get-byte bf)
-            e (get-long bf)]
-        (Retrieved. e nil v g))
-      (Retrieved. nil nil nil g))))
+      (Retrieved. e nil (get-value (.rewind bf) 17) g)
+      (Retrieved. e nil nil g))))
+
+(defn veg->e
+  [^ByteBuffer bf]
+  (.position bf (- (.limit bf) 16))
+  (get-long bf))
 
 (defn- get-aeg
   [bf]

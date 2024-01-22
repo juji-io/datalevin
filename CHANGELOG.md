@@ -21,9 +21,12 @@
     * `list-range-filter`
     * `list-range-first`
     * `list-range-some`
+    * `list-range-keep`
     * `list-range-filter-count`
     * `visit-list-range`
 - [KV] `key-range` function that returns a range of keys only.
+- [KV] `range-some` function that is similar to `some` for a given range.
+- [KV] `range-keep` function that is similar to `keep` for a given range.
 - [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as
   well as information about each dbi, as flags, key-size, etc. #184
 
