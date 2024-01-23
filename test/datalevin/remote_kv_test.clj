@@ -2,6 +2,7 @@
   (:require
    [datalevin.remote :as sut]
    [datalevin.lmdb :as l]
+   [datalevin.constants :as c]
    [datalevin.bits :as b]
    [datalevin.util :as u]
    [datalevin.datom :as d]
@@ -18,6 +19,7 @@
   (let [dir   "dtlv://datalevin:datalevin@localhost/testkv"
         store (sut/open-kv dir)]
     (is (instance? datalevin.remote.KVStore store))
+
     (l/open-dbi store "a")
     (l/open-dbi store "b")
     (l/open-dbi store "c" {:key-size (inc Long/BYTES)
@@ -45,7 +47,14 @@
                       [:put "b" :long 1 :data :long]
                       [:put "b" 2 3 :long :long]
                       [:put "b" "ok" 42 :string :int]
-                      [:put "d" 3.14 :pi :double :keyword]]))
+                      [:put "d" 3.14 :pi :double :keyword]
+                      [:put "d" #inst "1969-01-01" "nice year" :instant :string]
+                      [:put "d" [-1 0 1 2 3 4] 1 [:long]]
+                      [:put "d" [:a :b :c :d] [1 2 3] [:keyword] [:long]]
+                      [:put "d" [-1 "heterogeneous" :datalevin/tuple] 2
+                       [:long :string :keyword]]
+                      [:put "d"  [:ok -0.687 "nice"] [2 4]
+                       [:keyword :double :string] [:long]]]))
 
     (testing "entries"
       (is (= 5 (:entries (l/stat store))))
@@ -74,11 +83,14 @@
       (is (= 1 (l/get-value store "b" :long :data :long)))
       (is (= 3 (l/get-value store "b" 2 :long :long)))
       (is (= 42 (l/get-value store "b" "ok" :string :int)))
-      (is (= :pi (l/get-value store "d" 3.14 :double :keyword))))
+      (is (= :pi (l/get-value store "d" 3.14 :double :keyword)))
+      (is (= "nice year"
+             (l/get-value store "d" #inst "1969-01-01" :instant :string))))
 
     (testing "delete"
       (l/transact-kv store [[:del "a" 1]
-                            [:del "a" :non-exist]])
+                            [:del "a" :non-exist]
+                            [:del "a" "random things that do not exist"]])
       (is (nil? (l/get-value store "a" 1))))
 
     (testing "entries-again"
@@ -93,7 +105,8 @@
       (is (= (range 50000) (l/get-value store "c" 1))))
 
     (testing "key overflow throws"
-      (is (thrown? Exception (l/transact-kv store [[:put "a" (range 1000) 1]]))))
+      (is (thrown? Exception
+                   (l/transact-kv store [[:put "a" (range 1000) 1]]))))
 
     (testing "close then re-open, clear and drop"
       (l/close-kv store)
@@ -217,6 +230,73 @@
            (l/get-list lmdb "l" "b" :string :long)))
     (l/close-kv lmdb)))
 
+(deftest list-string-test
+  (let [dir   (str "dtlv://datalevin:datalevin@localhost/" (UUID/randomUUID))
+        lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
+        pred  (i/inter-fn [kv]
+                          (let [^String v (b/read-buffer (l/v kv) :string)]
+                            (< (count v) 5)))
+        pred1 (i/inter-fn [kv]
+                          (let [^String v (b/read-buffer (l/v kv) :string)]
+                            (when (< (count v) 5) v)))]
+    (l/open-list-dbi lmdb "str")
+    (is (l/list-dbi? lmdb "str"))
+
+    (l/put-list-items lmdb "str" "a" ["abc" "hi" "defg" ] :string :string)
+    (l/put-list-items lmdb "str" "b" ["hello" "world" "nice"] :string :string)
+
+    (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
+            ["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:all] :string :string)))
+    (is (= [["a" "abc"] ["a" "defg"] ["a" "hi"]
+            ["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:closed "a" "b"] :string :string)))
+    (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:closed "b" "b"] :string :string)))
+    (is (= [["b" "hello"] ["b" "nice"] ["b" "world"]]
+           (l/get-range lmdb "str" [:open-closed "a" "b"] :string :string)))
+
+    (is (= [["b" "nice"]]
+           (l/list-range-filter lmdb "str" pred [:greater-than "a"] :string
+                                [:all] :string)))
+
+    (is (= ["nice"]
+           (l/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
+                              [:all] :string)))
+    (is (= "nice"
+           (l/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
+                              [:all] :string)))
+
+    (is (= ["a" "abc"]
+           (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))
+
+    (is (= (l/list-count lmdb "str" "a" :string) 3))
+    (is (= (l/list-count lmdb "str" "b" :string) 3))
+
+    (is (not (l/in-list? lmdb "str" "a" "hello" :string :string)))
+    (is (l/in-list? lmdb "str" "b" "hello" :string :string))
+
+    (is (= (l/get-list lmdb "str" "a" :string :string)
+           ["abc" "defg" "hi"]))
+
+    (l/del-list-items lmdb "str" "a" :string)
+
+    (is (= (l/list-count lmdb "str" "a" :string) 0))
+    (is (not (l/in-list? lmdb "str" "a" "hi" :string :string)))
+    (is (nil? (l/get-list lmdb "str" "a" :string :string)))
+
+    (l/put-list-items lmdb "str" "b" ["good" "peace"] :string :string)
+
+    (is (= (l/list-count lmdb "str" "b" :string) 5))
+    (is (l/in-list? lmdb "str" "b" "good" :string :string))
+
+    (l/del-list-items lmdb "str" "b" ["hello" "world"] :string :string)
+
+    (is (= (l/list-count lmdb "str" "b" :string) 3))
+    (is (not (l/in-list? lmdb "str" "b" "world" :string :string)))
+
+    (l/close-kv lmdb)))
+
 (deftest copy-test
   (let [src    "dtlv://datalevin:datalevin@localhost/copytest"
         rstore (sut/open-kv src)
@@ -234,8 +314,6 @@
       (l/close-kv cstore))
     (l/close-kv rstore)
     (u/delete-files dst)))
-
-
 
 (deftest re-index-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/re-index"

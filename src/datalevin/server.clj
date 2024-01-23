@@ -1121,6 +1121,8 @@
    'range-count
    'get-some
    'range-filter
+   'range-keep
+   'range-some
    'range-filter-count
    'visit
    'get-list
@@ -1132,6 +1134,7 @@
    'list-range-first
    'list-range-filter
    'list-range-some
+   'list-range-keep
    'list-range-filter-count
    'visit-list-range
    'q
@@ -1959,6 +1962,26 @@
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
 
+(defn- range-keep
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen  (nth args 2)
+          args    (replace {frozen (b/deserialize frozen)} args)
+          db-name (nth args 0)
+          data    (apply l/range-keep
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- range-some
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler range-some))))
+
 (defn- range-filter-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error
@@ -2025,6 +2048,19 @@
           args    (replace {frozen (b/deserialize frozen)} args)
           db-name (nth args 0)
           data    (apply l/list-range-filter
+                         (lmdb server skey db-name writing?)
+                         (rest args))]
+      (if (< (count data) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result data})
+        (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- list-range-keep
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen  (nth args 2)
+          args    (replace {frozen (b/deserialize frozen)} args)
+          db-name (nth args 0)
+          data    (apply l/list-range-keep
                          (lmdb server skey db-name writing?)
                          (rest args))]
       (if (< (count data) ^long c/+wire-datom-batch-size+)

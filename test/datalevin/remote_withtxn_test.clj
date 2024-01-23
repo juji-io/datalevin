@@ -3,7 +3,7 @@
    [datalevin.core :as d]
    [datalevin.constants :as c]
    [datalevin.test.core :as tdc :refer [server-fixture]]
-   [clojure.test :as t :refer [is deftest testing use-fixtures]]))
+   [clojure.test :as t :refer [is deftest use-fixtures]]))
 
 (use-fixtures :each server-fixture)
 

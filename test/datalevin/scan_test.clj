@@ -380,25 +380,35 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest range-filter-test
+(deftest range-filter-keep-some-test
   (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
     (l/open-dbi lmdb "c"
                 {:key-size (inc Long/BYTES) :val-size (inc Long/BYTES)})
-    (let [ks   (shuffle (range 0 100))
-          vs   (map inc ks)
-          txs  (map (fn [k v] [:put "c" k v :long :long]) ks vs)
-          pred (i/inter-fn [kv]
-                 (let [^long k (b/read-buffer (l/k kv) :long)]
-                   (< 10 k 20)))
-          fks  (range 11 20)
-          fvs  (map inc fks)
-          res  (map (fn [k v] [k v]) fks fvs)
-          rc   (count res)]
+    (let [ks    (shuffle (range 0 100))
+          vs    (map inc ks)
+          txs   (map (fn [k v] [:put "c" k v :long :long]) ks vs)
+          pred  (i/inter-fn [kv]
+                  (let [^long k (b/read-buffer (l/k kv) :long)]
+                    (< 10 k 20)))
+          pred1 (i/inter-fn [kv]
+                  (let [^long k (b/read-buffer (l/k kv) :long)]
+                    (when (< 10 k 13) k)))
+          pred2 (i/inter-fn [k v] (< 10 k 20))
+          pred3 (i/inter-fn [k v] (when (< 10 k 13) k))
+          fks   (range 11 20)
+          fvs   (map inc fks)
+          res   (map (fn [k v] [k v]) fks fvs)
+          rc    (count res)]
       (l/transact-kv lmdb txs)
       (is (= fvs (l/range-filter lmdb "c" pred [:all] :long :long true)))
       (is (= rc (l/range-filter-count lmdb "c" pred [:all] :long)))
       (is (= res (l/range-filter lmdb "c" pred [:all] :long :long)))
+      (is (= [11 12] (l/range-keep lmdb "c" pred1 [:all] :long :long)))
+      (is (= 11 (l/range-some lmdb "c" pred1 [:all] :long :long)))
+      (is (= res (l/range-filter lmdb "c" pred2 [:all] :long :long false false)))
+      (is (= [11 12] (l/range-keep lmdb "c" pred3 [:all] :long :long false)))
+      (is (= 11 (l/range-some lmdb "c" pred3 [:all] :long :long false)))
       (is (= fks (map first
                       (l/range-filter lmdb "c" pred [:all]
                                       :long :ignore false))))
@@ -427,12 +437,14 @@
     (u/delete-files dir)))
 
 (deftest list-fns-test
-  (let [dir  (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
-        pred (i/inter-fn
-                 [kv]
-               (let [^long v (b/read-buffer (l/v kv) :long)]
-                 (even? v)))]
+  (let [dir   (u/tmp-dir (str "lmdb-test-" (UUID/randomUUID)))
+        lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
+        pred  (i/inter-fn [kv]
+                (let [^long v (b/read-buffer (l/v kv) :long)]
+                  (even? v)))
+        pred1 (i/inter-fn [kv]
+                (let [^long v (b/read-buffer (l/v kv) :long)]
+                  (when (even? v) v)))]
     (l/open-list-dbi lmdb "a")
     (l/put-list-items lmdb "a" 1 [3 4 3 2] :long :long)
     (l/put-list-items lmdb "a" 2 [7 9 4 3 2] :long :long)
@@ -541,6 +553,10 @@
                                [:greater-than 20] :long)))
     (is (= [[2 2] [2 4]]
            (l/list-range-filter lmdb "a" pred [:closed 2 2] :long
+                                [:all] :long)))
+    (is (= [2 4] (l/list-range-keep lmdb "a" pred1 [:closed 2 2] :long
+                                    [:all] :long)))
+    (is (= 2 (l/list-range-some lmdb "a" pred1 [:closed 2 2] :long
                                 [:all] :long)))
     (is (l/list-range-some lmdb "a" pred [:closed 2 2] :long [:all] :long))
     (is (= 5 (l/list-range-filter-count

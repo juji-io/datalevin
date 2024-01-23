@@ -814,6 +814,24 @@
     (scan/range-filter this dbi-name pred k-range k-type v-type ignore-key?
                        raw-pred?))
 
+  (range-keep [this dbi-name pred k-range]
+    (.range-keep this dbi-name pred k-range :data :data true))
+  (range-keep [this dbi-name pred k-range k-type]
+    (.range-keep this dbi-name pred k-range k-type :data true))
+  (range-keep [this dbi-name pred k-range k-type v-type]
+    (.range-keep this dbi-name pred k-range k-type v-type true))
+  (range-keep [this dbi-name pred k-range k-type v-type raw-pred?]
+    (scan/range-keep this dbi-name pred k-range k-type v-type raw-pred?))
+
+  (range-some [this dbi-name pred k-range]
+    (.range-some this dbi-name pred k-range :data :data true))
+  (range-some [this dbi-name pred k-range k-type]
+    (.range-some this dbi-name pred k-range k-type :data true))
+  (range-some [this dbi-name pred k-range k-type v-type]
+    (.range-some this dbi-name pred k-range k-type v-type true))
+  (range-some [this dbi-name pred k-range k-type v-type raw-pred?]
+    (scan/range-some this dbi-name pred k-range k-type v-type raw-pred?))
+
   (range-filter-count [this dbi-name pred k-range]
     (.range-filter-count this dbi-name pred k-range :data :data true))
   (range-filter-count [this dbi-name pred k-range k-type]
@@ -907,16 +925,20 @@
   (list-range-filter [this dbi-name pred k-range kt v-range vt raw-pred?]
     (scan/list-range-filter this dbi-name pred k-range kt v-range vt raw-pred?))
 
+  (list-range-keep [this dbi-name pred k-range kt v-range vt]
+    (.list-range-keep this dbi-name pred k-range kt v-range vt true))
+  (list-range-keep [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (scan/list-range-keep this dbi-name pred k-range kt v-range vt raw-pred?))
+
   (list-range-some [this list-name pred k-range k-type v-range v-type]
-    (.list-range-some this list-name pred k-range k-type v-range v-type
-                      true))
+    (.list-range-some this list-name pred k-range k-type v-range v-type true))
   (list-range-some [this dbi-name pred k-range kt v-range vt raw-pred?]
     (scan/list-range-some this dbi-name pred k-range kt v-range vt raw-pred?))
 
   (list-range-filter-count
     [this list-name pred k-range k-type v-range v-type]
-    (.list-range-filter-count this list-name pred k-range k-type v-range
-                              v-type true))
+    (.list-range-filter-count this list-name pred k-range k-type v-range v-type
+                              true))
   (list-range-filter-count
     [this dbi-name pred k-range kt v-range vt raw-pred?]
     (scan/list-range-filter-count this dbi-name pred k-range kt v-range

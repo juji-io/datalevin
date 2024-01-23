@@ -1316,14 +1316,13 @@ See [[get-range]] for usage of the augments.
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
                    [db dbi-name pred k-range k-type v-type]
-                   [db dbi-name pred k-range k-type v-type ignore-key?])
+                   [db dbi-name pred k-range k-type v-type ignore-key?]
+                   [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?])
        :doc
-       "Return the first kv pair that has logical true value of `(pred x)` in
-        the key-value store, where `pred` is a function, `x` is an `IKV`
+       "Return the first kv pair that has logical true value of calling `pred` in
+        the key-value store, where `pred` is a function. When `raw-pred?` is true (default), `pred` takes an `IKV`
         fetched from the store, with both key and value fields being a
-        `ByteBuffer`.
-
-     `pred` can use [[read-buffer]] to read the content.
+        `ByteBuffer`, otherwise, it takes already decoded `k` and `v`.
 
       To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
@@ -1357,14 +1356,13 @@ See [[get-range]] for usage of the augments.
 (def ^{:arglists '([db dbi-name pred k-range]
                    [db dbi-name pred k-range k-type]
                    [db dbi-name pred k-range k-type v-type]
-                   [db dbi-name pred k-range k-type v-type ignore-key?])
+                   [db dbi-name pred k-range k-type v-type ignore-key?]
+                   [db dbi-name pred k-range k-type v-type ignore-key? raw-pred?])
        :doc      "Return a seq of kv pair in the specified key range in the key-value store, for only those
-     return true value for `(pred x)`, where `pred` is a function, and `x`
-     is an `IKV`, with both key and value fields being a `ByteBuffer`.
+     return true value for `pred` call, where `pred` is a function. When `raw-pred?` is true (default), the call is `(pred kv)`, where `kv`
+     is a raw `IKV` object, with both key and value fields being a `ByteBuffer`; otherwise, the call is `(pred k v)`, where `k` and `v` are already decoded key and value.
 
 This function is eager and attempts to load all matching data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
-
-`pred` can use [[read-buffer]] to read the buffer content.
 
 To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
@@ -1393,13 +1391,43 @@ If value is to be ignored, put `:ignore` as `v-type`
   range-filter l/range-filter)
 
 (def ^{:arglists '([db dbi-name pred k-range]
-                   [db dbi-name pred k-range k-type])
-       :doc      "Return the number of kv pairs in the specified key range in the
-key-value store, for only those return true value for `(pred x)`, where `pred` is a
-function, and `x`is an `IKV`, with both key and value fields being a `ByteBuffer`.
-Does not process the kv pairs.
+                   [db dbi-name pred k-range k-type]
+                   [db dbi-name pred k-range k-type v-type]
+                   [db dbi-name pred k-range k-type v-type raw-pred?])
+       :doc      "Return a seq of non-nil results of calling `pred` in the specified key range in the key-value store, where `pred` is a function. If `raw-pred?` is true (default), `pred` takes a single raw KV object, otherwise, takes a pair of decoded `k` and `v` values.
 
-`pred` can use [[read-buffer]] to read the buffer content.
+This function is eager and attempts to load all matching data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
+
+To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`;
+
+`k-type` and `v-type` are data types of `k` and `v`, respectively. The allowed data types are described in [[read-buffer]].
+
+See also [[range-filter]] "}
+  range-keep l/range-keep)
+
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type]
+                   [db dbi-name pred k-range k-type v-type]
+                   [db dbi-name pred k-range k-type v-type raw-pred?])
+       :doc      "Return the first logical true esult of calling `pred` in the specified key range in the key-value store, where `pred` is a function. If `raw-pred?` is true (default), `pred` takes a single raw `IKV` object, otherwise, takes a pair of decoded `k` and `v` values.
+
+To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`;
+
+`k-type` and `v-type` are data types of `k` and `v`, respectively. The allowed data types are described in [[read-buffer]].
+
+See also [[range-filter]] "}
+  range-some l/range-some)
+
+(def ^{:arglists '([db dbi-name pred k-range]
+                   [db dbi-name pred k-range k-type]
+                   [db dbi-name pred k-range k-type v-type]
+                   [db dbi-name pred k-range k-type v-type raw-pred?])
+       :doc      "Return the number of kv pairs in the specified key range in the
+key-value store, for only those return true value for `pred` function call. If `raw-pred?` is true (default), `pred` takes a single raw `IKV` object, otherwise, takes a pair of decoded `k` and `v` values.
 
 To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
 
@@ -1421,8 +1449,10 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   range-filter-count l/range-filter-count)
 
 (def ^{:arglists '([db dbi-name pred k-range]
-                   [db dbi-name pred k-range k-type])
-       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return `nil`. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`. `visitor` function can use [[read-buffer]] to read the buffer content.
+                   [db dbi-name pred k-range k-type]
+                   [db dbi-name visitor k-range k-type v-type]
+                   [db dbi-name visitor k-range k-type v-type raw-pred?])
+       :doc      "Call `visitor` function on each kv pairs in the specified key range, presumably for side effects. Return `nil`. Each kv pair is an `IKV`, with both key and value fields being a `ByteBuffer`. If `raw-pred?` is true (default), `visitor` takes a single raw `IKV` object, otherwise, takes a pair of decoded `k` and `v` values.
 
       If `visitor` function returns a special value `:datalevin/terminate-visit`, the visit will stop immediately.
 
@@ -1499,9 +1529,12 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
   by [[put-list-items]]."}
   get-list l/get-list)
 
-(def ^{:arglists '([db list-name visitor k k-type])
+(def ^{:arglists '([db list-name visitor k k-type]
+                   [db list-name visitor k k-type v-type]
+                   [db list-name visitor k k-type v-type raw-pred?])
        :doc      "Visit the list associated with a key, presumably for
-  side effects. The list items were added by [[put-list-items]]."}
+  side effects. The list items were added by [[put-list-items]]. When `raw-pred?` is true (default), the visitor call is `(visitor kv)`, where `kv`
+     is a raw `IKV` object, with both key and value fields being a `ByteBuffer`; otherwise, the call is `(visitor k v)`, where `k` and `v` are already decoded key and value. "}
   visit-list l/visit-list)
 
 (def ^{:arglists '([db list-name k k-type])
@@ -1541,19 +1574,34 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
      supported for both `k-range` and `v-range`."}
   list-range-first l/list-range-first)
 
-(def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
+                   [db list-name pred k-range k-type v-range v-type raw-pred?])
        :doc      "Return a seq of key-values in the specified value range
      and the specified key range of a sub-database opened by
-     [[open-list-dbi]], filtered by a predicate `pred`.
+     [[open-list-dbi]], filtered by a predicate `pred`. When `raw-pred?` is true (default), the predicate call is `(pred kv)`, where `kv`
+     is a raw `IKV` object, with both key and value fields being a `ByteBuffer`; otherwise, the call is `(pred k v)`, where `k` and `v` are already decoded key and value.
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
   list-range-filter l/list-range-filter)
 
-(def ^{:arglists '([db list-name pred k-range k-type v-range v-type])
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
+                   [db list-name pred k-range k-type v-range v-type raw-pred?])
+       :doc      "Return a seq of logical true results of calling `pred` in the specified value range and the specified key range of a sub-database opened by [[open-list-dbi]]. If `raw-pred?` is true (default), `pred` takes a single raw KV object, otherwise, takes a pair of decoded `k` and `v` values.
+
+To access store on a server, [[interpret.inter-fn]] should be used to define the `pred`.
+
+This function is eager and attempts to load all matching data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
+
+     The same range specification as `k-range` in [[get-range]] is
+     supported for both `k-range` and `v-range`."}
+  list-range-keep l/list-range-keep)
+
+(def ^{:arglists '([db list-name pred k-range k-type v-range v-type]
+                   [db list-name pred k-range k-type v-range v-type raw-pred?])
        :doc      "Return the number of key-values in the specified value range
      and the specified key range of a sub-database opened by
-     [[open-list-dbi]], filtered by a predicate `pred`.
+     [[open-list-dbi]], filtered by a predicate `pred`. If `raw-pred?` is true (default), `pred` takes a single raw KV object, otherwise, takes a pair of decoded `k` and `v` values.
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
@@ -1563,18 +1611,16 @@ To access store on a server, [[interpret.inter-fn]] should be used to define the
                    [db list-name pred k-range k-type v-range v-type raw-pred?])
        :doc      "Return the first logical true result of `pred` calls in
        the specified value range and the specified key range of a
-       sub-database opened by [[open-list-dbi]].
-
-     `raw-pred?` indicates whether `pred` takes a single raw `kv` object
-     (default), or a pair of decoded `k` and `v` values.
+       sub-database opened by [[open-list-dbi]]. If `raw-pred?` is true (default), `pred` takes a single raw KV object, otherwise, takes a pair of decoded `k` and `v` values.
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}
   list-range-some l/list-range-some)
 
-(def ^{:arglists '([db list-name visitor k-range k-type v-range v-type])
+(def ^{:arglists '([db list-name visitor k-range k-type v-range v-type]
+                   [db list-name visitor k-range k-type v-range v-type raw-pred?])
        :doc      "Visit a list range, presumably for side effects, in a
-     sub-database opened by [[open-list-dbi]].
+     sub-database opened by [[open-list-dbi]]. If `raw-pred?` is true (default), `visitor` function takes a single raw KV object, otherwise, it takes a pair of decoded `k` and `v` values.
 
      The same range specification as `k-range` in [[get-range]] is
      supported for both `k-range` and `v-range`."}

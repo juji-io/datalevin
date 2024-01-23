@@ -362,12 +362,14 @@
     (u/delete-files dir)))
 
 (deftest list-string-test
-  (let [dir  (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
-        lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
-        pred (i/inter-fn
-                 [kv]
-               (let [^String v (b/read-buffer (l/v kv) :string)]
-                 (< (count v) 5)))]
+  (let [dir   (u/tmp-dir (str "string-list-test-" (UUID/randomUUID)))
+        lmdb  (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
+        pred  (i/inter-fn [kv]
+                (let [^String v (b/read-buffer (l/v kv) :string)]
+                  (< (count v) 5)))
+        pred1 (i/inter-fn [kv]
+                (let [^String v (b/read-buffer (l/v kv) :string)]
+                  (when (< (count v) 5) v)))]
     (l/open-list-dbi lmdb "str")
     (is (l/list-dbi? lmdb "str"))
 
@@ -388,6 +390,13 @@
     (is (= [["b" "nice"]]
            (l/list-range-filter lmdb "str" pred [:greater-than "a"] :string
                                 [:all] :string)))
+
+    (is (= ["nice"]
+           (l/list-range-keep lmdb "str" pred1 [:greater-than "a"] :string
+                              [:all] :string)))
+    (is (= "nice"
+          (l/list-range-some lmdb "str" pred1 [:greater-than "a"] :string
+                             [:all] :string)))
 
     (is (= ["a" "abc"]
            (l/get-first lmdb "str" [:closed "a" "a"] :string :string)))

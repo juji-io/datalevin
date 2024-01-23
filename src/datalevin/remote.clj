@@ -427,6 +427,32 @@
          raw-pred?]
         writing?)))
 
+  (range-keep [this dbi-name pred k-range]
+    (.range-keep this dbi-name pred k-range :data :data true))
+  (range-keep [this dbi-name pred k-range k-type]
+    (.range-keep this dbi-name pred k-range k-type :data true))
+  (range-keep [this dbi-name pred k-range k-type v-type]
+    (.range-keep this dbi-name pred k-range k-type v-type true))
+  (range-keep [this dbi-name pred k-range k-type v-type raw-pred?]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :range-keep
+        [db-name dbi-name frozen-pred k-range k-type v-type raw-pred?]
+        writing?)))
+
+  (range-some [this dbi-name pred k-range]
+    (.range-some this dbi-name pred k-range :data :data true))
+  (range-some [this dbi-name pred k-range k-type]
+    (.range-some this dbi-name pred k-range k-type :data true))
+  (range-some [this dbi-name pred k-range k-type v-type]
+    (.range-some this dbi-name pred k-range k-type v-type true))
+  (range-some [this dbi-name pred k-range k-type v-type raw-pred?]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :range-some
+        [db-name dbi-name frozen-pred k-range k-type v-type raw-pred?]
+        writing?)))
+
   (range-filter-count [db dbi-name pred k-range]
     (l/range-filter-count db dbi-name pred k-range :data :data true))
   (range-filter-count [db dbi-name pred k-range k-type]
@@ -511,6 +537,15 @@
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request
         client :list-range-filter
+        [db-name dbi-name frozen-pred k-range kt v-range vt raw-pred?]
+        writing?)))
+
+  (list-range-keep [this dbi-name pred k-range kt v-range vt]
+    (.list-range-keep this dbi-name pred k-range kt v-range vt true))
+  (list-range-keep [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (let [frozen-pred (b/serialize pred)]
+      (cl/normal-request
+        client :list-range-keep
         [db-name dbi-name frozen-pred k-range kt v-range vt raw-pred?]
         writing?)))
 
