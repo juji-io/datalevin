@@ -41,8 +41,7 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/same-client"
         conn (d/create-conn
                dir nil
-               {:client-opts {:pool-size 1}
-                :kv-opts     {:flags (conj c/default-env-flags :mapasync)}})]
+               {:client-opts {:pool-size 1}})]
     (d/transact! conn [{:db/id 1 :counter 1}])
     (let [count-f
           #(d/with-transaction [cn conn]

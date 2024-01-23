@@ -516,7 +516,8 @@
           (lmdb/list-range
             lmdb (index->dbi index)
             [:closed-back (index->k index schema high-datom true)
-             (index->k index schema low-datom false)] (index->ktype index)
+             (index->k index schema low-datom false)]
+            (index->ktype index)
             [:closed-back
              (datom->indexable schema high-datom true)
              (datom->indexable schema low-datom false)]
@@ -527,7 +528,8 @@
       lmdb (index->dbi index)
       (datom-pred->kv-pred lmdb attrs index pred)
       [:closed (index->k index schema low-datom false)
-       (index->k index schema high-datom true)] (index->ktype index)
+       (index->k index schema high-datom true)]
+      (index->ktype index)
       [:closed (datom->indexable schema low-datom false)
        (datom->indexable schema high-datom true)]
       (index->vtype index)))
@@ -537,7 +539,8 @@
       lmdb (index->dbi index)
       (datom-pred->kv-pred lmdb attrs index pred)
       [:closed (index->k index schema low-datom false)
-       (index->k index schema high-datom true)] (index->ktype index)
+       (index->k index schema high-datom true)]
+      (index->ktype index)
       [:closed
        (datom->indexable schema low-datom false)
        (datom->indexable schema high-datom true)]
@@ -548,37 +551,36 @@
       lmdb (index->dbi index)
       (datom-pred->kv-pred lmdb attrs index pred)
       [:closed-back (index->k index schema high-datom true)
-       (index->k index schema low-datom false)] (index->ktype index)
+       (index->k index schema low-datom false)]
+      (index->ktype index)
       [:closed-back
        (datom->indexable schema high-datom true)
        (datom->indexable schema low-datom false)]
       (index->vtype index)))
 
-  ;; TODO datom-pred->kv-pred already converted data to datom,
-  ;; no need to read into datom again, need list-range-keep
   (slice-filter [_ index pred low-datom high-datom]
-    (mapv (partial retrieved->datom lmdb attrs)
-          (lmdb/list-range-filter
-            lmdb (index->dbi index)
-            (datom-pred->kv-pred lmdb attrs index pred)
-            [:closed (index->k index schema low-datom false)
-             (index->k index schema high-datom true)] (index->ktype index)
-            [:closed
-             (datom->indexable schema low-datom false)
-             (datom->indexable schema high-datom true)]
-            (index->vtype index))))
+    (lmdb/list-range-keep
+      lmdb (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed (index->k index schema low-datom false)
+       (index->k index schema high-datom true)]
+      (index->ktype index)
+      [:closed
+       (datom->indexable schema low-datom false)
+       (datom->indexable schema high-datom true)]
+      (index->vtype index)))
 
   (rslice-filter [_ index pred high-datom low-datom]
-    (mapv (partial retrieved->datom lmdb attrs)
-          (lmdb/list-range-filter
-            lmdb (index->dbi index)
-            (datom-pred->kv-pred lmdb attrs index pred)
-            [:closed-back (index->k index schema high-datom true)
-             (index->k index schema low-datom false)] (index->ktype index)
-            [:closed-back
-             (datom->indexable schema high-datom true)
-             (datom->indexable schema low-datom false)]
-            (index->vtype index))))
+    (lmdb/list-range-keep
+      lmdb (index->dbi index)
+      (datom-pred->kv-pred lmdb attrs index pred)
+      [:closed-back (index->k index schema high-datom true)
+       (index->k index schema low-datom false)]
+      (index->ktype index)
+      [:closed-back
+       (datom->indexable schema high-datom true)
+       (datom->indexable schema low-datom false)]
+      (index->vtype index)))
 
   (av->eids [_ aid low-value high-value vpred]
     (let [props   (-> aid attrs schema)

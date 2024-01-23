@@ -86,6 +86,32 @@
     (d/close-db db)
     (u/delete-files dir)))
 
+(deftest test-search-datoms
+  (let [dir  (u/tmp-dir (str "search-datoms-test-" (UUID/randomUUID)))
+        dvec #(vector (:e %) (:a %) (:v %))
+        db   (-> (d/empty-db dir {:name {:db/valueType :db.type/string}
+                                  :age  {:db/valueType :db.type/long}})
+                 (d/db-with [[:db/add 1 :name "Petr"]
+                             [:db/add 1 :age 44]
+                             [:db/add 2 :name "Ivan"]
+                             [:db/add 2 :age 25]
+                             [:db/add 3 :name "Sergey"]
+                             [:db/add 3 :age 11]]))]
+
+    (testing "Non-termination"
+      (is (= (map dvec (d/search-datoms db nil :age 11))
+             [ [3 :age 11]])))
+
+    (testing "Exact value lookup"
+      (is (= (map dvec (d/search-datoms db nil :name "Petr"))
+             [ [1 :name "Petr"]])))
+
+    (testing "Know value only"
+      (is (= (map dvec (d/search-datoms db nil nil "Sergey"))
+             [[3 :name "Sergey"]])))
+    (d/close-db db)
+    (u/delete-files dir)))
+
 ;; should not expect attributes in lexicographic order
 (deftest test-rseek-datoms
   (let [dir  (u/tmp-dir (str "rseek-test-" (UUID/randomUUID)))

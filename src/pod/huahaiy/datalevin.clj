@@ -149,6 +149,11 @@
    (when-let [d (get-db dl)]
      (map dd/datom-eav (d/datoms d index c1 c2 c3 c4)))))
 
+(defn search-datoms
+  [dl e a v]
+  (when-let [d (get-db dl)]
+    (map dd/datom-eav (d/search-datoms d e a v))))
+
 (defn seek-datoms
   ([dl index]
    (when-let [d (get-db dl)] (map dd/datom-eav (d/seek-datoms d index))))
@@ -674,6 +679,7 @@
    'init-db                   init-db
    'close-db                  close-db
    'datoms                    datoms
+   'search-datoms             search-datoms
    'seek-datoms               seek-datoms
    'fulltext-datoms           fulltext-datoms
    'rseek-datoms              rseek-datoms

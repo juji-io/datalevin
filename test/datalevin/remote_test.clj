@@ -108,12 +108,13 @@
                                  (d/datom c/e0 nil nil))))
         (is (= d (st/head-filter store :eav
                                  (i/inter-fn [^Datom d]
-                                             (when (= v (dc/datom-v d))
-                                               d))
+                                   (when (= v (dc/datom-v d))
+                                     d))
                                  (d/datom c/e0 nil nil)
                                  (d/datom c/e0 nil nil))))
         (is (= [d] (st/slice-filter store :eav
-                                    (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
+                                    (i/inter-fn [^Datom d]
+                                      (when (= v (dc/datom-v d)) d))
                                     (d/datom c/e0 nil nil)
                                     (d/datom c/e0 nil nil))))
         (is (= [d1 d] (st/rslice store :ave d1 d)))
@@ -124,7 +125,8 @@
                                  (d/datom c/e0 b nil)
                                  (d/datom c/e0 nil nil))))
         (is (= [d] (st/slice-filter store :ave
-                                    (i/inter-fn [^Datom d] (= v (dc/datom-v d)))
+                                    (i/inter-fn [^Datom d]
+                                      (when (= v (dc/datom-v d)) d))
                                     (d/datom c/e0 nil nil)
                                     (d/datom c/e0 nil nil))))
         (st/swap-attr store c (i/inter-fn [& ms] (apply merge ms)) p2)
@@ -176,7 +178,8 @@
         vs    (range 0 end)
         txs   (mapv d/datom (range c/e0 (+ c/e0 end)) (repeat :id)
                     vs)
-        pred  (i/inter-fn [d] (odd? (dc/datom-v d)))]
+        pred  (i/inter-fn [d] (odd? (dc/datom-v d)))
+        pred1 (i/inter-fn [d] (when (odd? (dc/datom-v d)) d))]
     (is (instance? datalevin.remote.DatalogStore store))
     (st/load-datoms store txs)
     (is (= (d/datom c/e0 :id 0)
@@ -186,7 +189,7 @@
            (st/tail store :ave (d/datom c/emax :id nil)
                     (d/datom c/e0 :id nil))))
     (is (= (filter pred txs)
-           (st/slice-filter store :eav pred
+           (st/slice-filter store :eav pred1
                             (d/datom c/e0 nil nil)
                             (d/datom c/emax nil nil))))
     (is (= (reverse txs)

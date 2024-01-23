@@ -4,6 +4,7 @@
 
 ### Added
 - [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
+- [Datalog] `search-datoms` to lookup datoms without having to specify an index.
 - Option `:compress?` to compress the data (default `true`). See
   [details](doc/compress.md). #14
 - `with-read-transaction` and `with-read-transaction-kv` macros to allow

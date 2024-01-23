@@ -259,8 +259,8 @@
               (recur iter))
           (let [rk (b/read-buffer kb k-type)
                 rv (b/read-buffer vb v-type)]
-            (do (when-let [res (pred rk rv)] (.cons holder res))
-                (recur iter)))))
+            (when-let [res (pred rk rv)] (.cons holder res))
+            (recur iter))))
       holder)))
 
 (defn range-keep

@@ -413,7 +413,7 @@ Only usable for debug output.
 ;; Index lookups
 
 (defn datoms
-  "Index lookup in Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
+  "Lookup datoms in specified index of Datalog db. Returns a sequence of datoms (iterator over actual DB index) whose components (e, a, v) match passed arguments.
 
    Datoms are sorted in index sort order. Possible `index` values are: `:eav`, `:ave`, or `:vae` (only available for :db.type/ref datoms).
 
@@ -459,9 +459,6 @@ Only usable for debug output.
        ; find N entities with highest attr value (e.g. 10 latest posts)
        (->> (datoms db :ave attr) (reverse) (take N))
 
-   Gotchas:
-
-   - Index lookup is usually more efficient than doing a query with a single clause.
    "
   ([db index]             {:pre [(db/db? db)]}
    (db/-datoms db index nil nil nil))
@@ -472,6 +469,37 @@ Only usable for debug output.
   ([db index c1 c2 c3]    {:pre [(db/db? db)]}
    (db/-datoms db index c1 c2 c3))
   )
+
+(defn search-datoms
+  "Datom lookup in Datalog db. Returns a sequence of datoms matching the passed e, a, v components. When any of the components is `nil`, it is considered a wildcard. This function chooses the most efficient index to look up the datoms. The order of the returned datoms depends on the index chosen.
+
+   Usage:
+
+       ; find all datoms for entity id == 1 (any attrs and values)
+       ; sort by attribute, then value
+       (search-datoms db 1 nil nil)
+       ; => (#datalevin/Datom [1 :friends 2]
+       ;     #datalevin/Datom [1 :likes \"fries\"]
+       ;     #datalevin/Datom [1 :likes \"pizza\"]
+       ;     #datalevin/Datom [1 :name \"Ivan\"])
+
+       ; find all datoms for entity id == 1 and attribute == :likes (any values)
+       ; sorted by value
+       (search-datoms db 1 :likes nil)
+       ; => (#datalevin/Datom [1 :likes \"fries\"]
+       ;     #datalevin/Datom [1 :likes \"pizza\"])
+
+       ; find all datoms for entity id == 1, attribute == :likes and value == \"pizza\"
+       (search-datoms db 1 :likes \"pizza\")
+       ; => (#datalevin/Datom [1 :likes \"pizza\"])
+
+       ; find all datoms that have attribute == `:likes` and value == `\"pizza\"` (any entity id)
+       (search-datoms db nil :likes \"pizza\")
+       ; => (#datalevin/Datom [1 :likes \"pizza\"]
+       ;     #datalevin/Datom [2 :likes \"pizza\"])
+   "
+  [db e a v]             {:pre [(db/db? db)]}
+  (db/-search db [e a v]))
 
 
 (defn seek-datoms

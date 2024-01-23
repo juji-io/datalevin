@@ -97,7 +97,8 @@
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
       (is (= [d] (sut/slice-filter store :eav
-                                   (fn [^Datom d] (= v (.-v d)))
+                                   (fn [^Datom d]
+                                     (when (= v (.-v d)) d))
                                    (d/datom c/e0 nil nil)
                                    (d/datom c/e0 nil nil))))
       (is (= [d1 d] (sut/rslice store :ave d1 d)))
@@ -108,7 +109,8 @@
                                 (d/datom c/e0 b nil)
                                 (d/datom c/e0 nil nil))))
       (is (= [d] (sut/slice-filter store :ave
-                                   (fn [^Datom d] (= v (.-v d)))
+                                   (fn [^Datom d]
+                                     (when (= v (.-v d)) d))
                                    (d/datom c/e0 nil nil)
                                    (d/datom c/e0 nil nil))))
       (sut/swap-attr store c merge p2)

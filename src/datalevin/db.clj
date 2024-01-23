@@ -132,35 +132,41 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:search e a v]
+          store
+          [:search e a v]
         (case-tree
           [e a (some? v)]
           [(s/fetch store (datom e a v)) ; e a v
            (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/slice-filter store :eav
-                           (fn [^Datom d] ((vpred v) (.-v d)))
+                           (fn [^Datom d]
+                             (when ((vpred v) (.-v d)) d))
                            (datom e nil nil)
                            (datom e nil nil))  ; e _ v
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/slice store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/slice-filter store :eav
+                           (fn [^Datom d]
+                             (when ((vpred v) (.-v d)) d))
+                           (datom e0 nil nil)
+                           (datom emax nil nil)) ; _ _ v
+           ;; (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-first
     [db pattern]
-    (let [[e a v _] pattern
-          pred      (vpred v)]
+    (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:first e a v]
+          store
+          [:first e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
            (s/head store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/head-filter store :eav
-                          (fn [^Datom d] ((vpred v) (.-v d)))
+                          (fn [^Datom d]
+                            (when ((vpred v) (.-v d)) d))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
            (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
@@ -173,14 +179,15 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:last e a v]
+          store
+          [:last e a v]
         (case-tree
           [e a (some? v)]
           [(first (s/fetch store (datom e a v))) ; e a v
            (s/tail store :eav  (datom e a c/vmax) (datom e a c/v0)) ; e a _
            (s/tail-filter store :eav
-                          (fn [^Datom d] ((vpred v) (.-v d)))
+                          (fn [^Datom d]
+                            (when ((vpred v) (.-v d)) d))
                           (datom e nil nil)
                           (datom e nil nil))  ; e _ v
            (s/tail store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
@@ -193,8 +200,8 @@
     [db pattern]
     (let [[e a v _] pattern]
       (wrap-cache
-        store
-        [:count e a v]
+          store
+          [:count e a v]
         (case-tree
           [e a (some? v)]
           [(s/size store :eav (datom e a v) (datom e a v)) ; e a v
@@ -213,8 +220,8 @@
   (-populated?
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:populated? index c1 c2 c3]
+        store
+        [:populated? index c1 c2 c3]
       (s/populated? store index
                     (components->pattern db index c1 c2 c3 e0)
                     (components->pattern db index c1 c2 c3 emax))))
@@ -222,8 +229,8 @@
   (-datoms
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:datoms index c1 c2 c3]
+        store
+        [:datoms index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (components->pattern db index c1 c2 c3 emax))))
@@ -231,15 +238,15 @@
   (-range-datoms
     [db index start-datom end-datom]
     (wrap-cache
-      store
-      [:range-datoms index start-datom end-datom]
+        store
+        [:range-datoms index start-datom end-datom]
       (s/slice store index start-datom end-datom)))
 
   (-first-datom
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:first-datom index c1 c2 c3]
+        store
+        [:first-datom index c1 c2 c3]
       (s/head store index
               (components->pattern db index c1 c2 c3 e0)
               (components->pattern db index c1 c2 c3 emax))))
@@ -247,8 +254,8 @@
   (-seek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:seek index c1 c2 c3]
+        store
+        [:seek index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (datom emax nil nil))))
@@ -256,8 +263,8 @@
   (-rseek-datoms
     [db index c1 c2 c3]
     (wrap-cache
-      store
-      [:rseek index c1 c2 c3]
+        store
+        [:rseek index c1 c2 c3]
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 nil nil))))
@@ -265,8 +272,8 @@
   (-index-range
     [db attr start end]
     (wrap-cache
-      store
-      [attr start end]
+        store
+        [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start e0)
                    (resolve-datom db nil attr end emax)))))
