@@ -151,7 +151,6 @@
                              (when ((vpred v) (.-v d)) d))
                            (datom e0 nil nil)
                            (datom emax nil nil)) ; _ _ v
-           ;; (s/slice store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
            (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-first
@@ -172,7 +171,11 @@
            (s/head store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/head store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/head store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
-           (s/head store :vae (datom e0 nil v) (datom emax nil v)) ; _ _ v
+           (s/head-filter store :eav
+                          (fn [^Datom d]
+                            (when ((vpred v) (.-v d)) d))
+                          (datom e0 nil nil)
+                          (datom emax nil nil)) ; _ _ v
            (s/head store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
 
   (-last
@@ -193,7 +196,11 @@
            (s/tail store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (s/tail store :ave (datom emax a v) (datom e0 a v)) ; _ a v
            (s/tail store :ave (datom emax a nil) (datom e0 a nil)) ; _ a _
-           (s/tail store :vae (datom emax nil v) (datom e0 nil v)) ; _ _ v
+           (s/tail-filter store :eav
+                          (fn [^Datom d]
+                            (when ((vpred v) (.-v d)) d))
+                          (datom emax nil nil)
+                          (datom e0 nil nil)) ; _ _ v
            (s/tail store :eav (datom emax nil nil) (datom e0 nil nil))]))))
 
   (-count
@@ -213,7 +220,7 @@
            (s/e-size store e) ; e _ _
            (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
            (s/a-size store a) ; _ a _
-           (s/v-size store v) ; _ _ v
+           (s/v-size store v) ; _ _ v, for ref only
            (s/datom-count store :eav)])))) ; _ _ _
 
   IIndexAccess
@@ -276,10 +283,7 @@
         [attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start e0)
-                   (resolve-datom db nil attr end emax)))))
-
-  clojure.data/EqualityPartition
-  (equality-partition [x] :datalevin/db))
+                   (resolve-datom db nil attr end emax))))))
 
 ;; (defmethod print-method DB [^DB db, ^java.io.Writer w]
 ;;   (binding [*out* w]
