@@ -182,7 +182,6 @@ and the results are concatenated together.
     ;;=>  "Five dogs jump over my fence.]"
 
     (d/close conn)
-    (u/delete-files dir))
 
 ```
 
