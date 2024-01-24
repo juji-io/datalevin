@@ -171,7 +171,7 @@
   (loop [^Iterator iter (.iterator ^Iterable iterable)
          c              0]
     (if (.hasNext iter)
-      (do (.next iter) (recur iter (inc c)))
+      (do (.next iter) (recur iter (unchecked-inc c)))
       c)))
 
 (defn range-count
@@ -302,11 +302,11 @@
       (let [kv (.next iter)]
         (if raw-pred?
           (if (pred kv)
-            (recur iter (inc c))
+            (recur iter (unchecked-inc c))
             (recur iter c))
           (if (pred (b/read-buffer (l/k kv) k-type)
                     (when v-type (b/read-buffer (l/v kv) v-type)))
-            (recur iter (inc c))
+            (recur iter (unchecked-inc c))
             (recur iter c))))
       c)))
 

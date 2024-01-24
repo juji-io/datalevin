@@ -53,13 +53,13 @@
 
 (extend-type nil ISearchable (-searchable? [_] false))
 
-(defprotocol IQuery
-  (av->eids [db pattern pred]
-    "return tuples of eids that matches pattern")
-  (rev-merge-scan [db tuples veid-idx attr]
-    "assume tuples already sorted by veid")
-  (merge-scan [db tuples eid-idx attrs preds]
-    "assume tuples already sorted by eid"))
+#_(defprotocol IQuery
+    (av->eids [db pattern pred]
+      "return tuples of eids that matches pattern")
+    (rev-merge-scan [db tuples veid-idx attr]
+      "assume tuples already sorted by veid")
+    (merge-scan [db tuples eid-idx attrs preds]
+      "assume tuples already sorted by eid"))
 
 ;; ----------------------------------------------------------------------------
 
@@ -144,8 +144,11 @@
                            (datom e nil nil)
                            (datom e nil nil))  ; e _ v
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-           (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
-           (s/slice store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
+           (mapv #(datom (aget % 0) a v) (s/ave-direct store a v v))
+           ;; (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+           (mapv #(datom (aget % 0) a (aget % 1))
+                 (s/ave-direct store a nil nil nil true))
+           ;; (s/slice store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
            (s/slice-filter store :eav
                            (fn [^Datom d]
                              (when ((vpred v) (.-v d)) d))

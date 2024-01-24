@@ -2,6 +2,7 @@
   "Storage layer of Datalog store"
   (:require
    [datalevin.lmdb :as lmdb :refer [IWriting]]
+   [datalevin.spill :as sp]
    [datalevin.util :as u]
    [datalevin.bits :as b]
    [datalevin.search :as s]
@@ -13,7 +14,6 @@
    [java.util UUID]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -145,6 +145,7 @@
   [schema ^Datom d high?]
   (let [e  (.-e d)
         vm (if high? c/vmax c/v0)
+
         gm (if high? c/gmax c/g0)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
@@ -164,8 +165,10 @@
           (b/indexable e am vm :db.type/sysMin gm))))))
 
 (defn- av->indexable
-  [props aid value high?]
-  )
+  [aid value vt high?]
+  (if high?
+    (b/indexable c/emax aid (or value c/vmax) vt c/gmax)
+    (b/indexable c/e0 aid (or value c/v0) vt c/g0)))
 
 (defn- index->dbi
   [index]
@@ -259,12 +262,15 @@
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
-  (av->eids [this aid low-value high-value vpred]
-    "Return sorted tuples of eids")
-  (merge-scan [this tuples eid-inx aids->preds]
-    "aids->preds is a sorted map, return tuples of merged tuples")
-  (rev-merge-scan [this tuples veid-idx aid]
-    " return tuples of merged tuples with eid as the last column")
+  (ave-direct
+    [this attr low-value high-value]
+    [this attr low-value high-value vpred]
+    [this attr low-value high-value vpred get-v?]
+    "Direct access of :ave index, return tuples")
+  (merge-scan [this tuples eid-idx attrs vpreds]
+    "Return merged tuples using :eav index")
+  (vae-merge [this tuples veid-idx attr]
+    "Return merged tuples with eid as the last column using :vae index")
   )
 
 (defn e-aid-v->datom
@@ -582,29 +588,38 @@
        (datom->indexable schema low-datom false)]
       (index->vtype index)))
 
-  (av->eids [_ aid low-value high-value vpred]
-    (let [props   (-> aid attrs schema)
-          eids    (LongHashSet.)
-          visitor (fn [kv]
-                    (if vpred
-                      (let [^Retrieved r (b/read-buffer (l/v kv) :veg)
-                            v            (retrieved->v lmdb r)]
-                        (when (vpred v) (.add eids (.-e r))))
-                      (.add eids (b/veg->e (l/v kv)))))]
-      (lmdb/visit-list-range
-        lmdb c/ave visitor
-        [:closed aid aid] :int
-        [:closed
-         (av->indexable props aid low-value false)
-         (av->indexable props aid high-value true)]
-        :veg)
-      (.toSortedArray eids)))
+  (ave-direct [store attr low-value high-value]
+    (.ave-direct store attr low-value high-value nil false))
+  (ave-direct [store attr low-value high-value vpred]
+    (.ave-direct store attr low-value high-value vpred false))
+  (ave-direct [_ attr low-value high-value vpred get-v?]
+    (when-let [props (schema attr)]
+      (let [vt      (value-type props)
+            aid     (props :db/aid)
+            res     (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
+            visitor (fn [kv]
+                      (if (or vpred get-v?)
+                        (let [^Retrieved r (b/read-buffer (l/v kv) :veg)
+                              v            (retrieved->v lmdb r)
+                              e            (.-e r)]
+                          (if vpred
+                            (when (vpred v)
+                              (.cons res (if get-v?
+                                           (object-array [e v])
+                                           (object-array [e]))))
+                            (.cons res (object-array [e v]))))
+                        (.cons res (object-array [(b/veg->e (l/v kv))]))))]
+        (lmdb/visit-list-range
+          lmdb c/ave visitor
+          [:closed aid aid] :int
+          [:closed (av->indexable aid low-value vt false)
+           (av->indexable aid high-value vt true)] :veg)
+        res)))
 
-  (merge-scan [this tuples eid-inx aids->preds]
-    )
-
-  (rev-merge-scan [this tuples veid-idx aid]
+  (merge-scan [this tuples eid-idx attrs->preds]
     ))
+
+
 
 (defn fulltext-index
   [search-engines ft-ds]
