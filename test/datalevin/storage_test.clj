@@ -101,9 +101,10 @@
                                      (when (= v (.-v d)) d))
                                    (d/datom c/e0 nil nil)
                                    (d/datom c/e0 nil nil))))
-      (is (= [c/e0] (map #(aget % 0)
+      (is (= [c/e0] (map #(aget ^objects % 0)
                          (sut/ave-direct store a nil nil (constantly true)))))
-      (is (= [c/e0] (map #(aget % 0) (sut/ave-direct store b v1 v1))))
+      (is (= [c/e0] (map #(aget ^objects % 0)
+                         (sut/ave-direct store b v1 v1))))
       (is (= [d1 d] (sut/rslice store :ave d1 d)))
       (is (= [d d1] (sut/slice store :ave
                                (d/datom c/e0 a nil)

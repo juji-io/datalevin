@@ -502,9 +502,9 @@
                        [db-name dbi-name k kt vt] writing?))
 
   (visit-list [db list-name visitor k k-type]
-    (.visit-ist db list-name visitor k k-type nil true))
+    (.visit-list db list-name visitor k k-type nil true))
   (visit-list [db list-name visitor k k-type v-type]
-    (.visit-ist db list-name visitor k k-type v-type true))
+    (.visit-list db list-name visitor k k-type v-type true))
   (visit-list [_ dbi-name visitor k kt vt raw-pred?]
     (let [frozen-visitor (b/serialize visitor)]
       (cl/normal-request

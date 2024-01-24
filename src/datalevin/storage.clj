@@ -15,6 +15,7 @@
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
+   [datalevin.spill SpillableVector]
    [datalevin.bits Retrieved Indexable]))
 
 (if (u/graal?)
@@ -594,21 +595,23 @@
     (.ave-direct store attr low-value high-value vpred false))
   (ave-direct [_ attr low-value high-value vpred get-v?]
     (when-let [props (schema attr)]
-      (let [vt      (value-type props)
-            aid     (props :db/aid)
-            res     (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
-            visitor (fn [kv]
-                      (if (or vpred get-v?)
-                        (let [^Retrieved r (b/read-buffer (l/v kv) :veg)
-                              v            (retrieved->v lmdb r)
-                              e            (.-e r)]
-                          (if vpred
-                            (when (vpred v)
-                              (.cons res (if get-v?
-                                           (object-array [e v])
-                                           (object-array [e]))))
-                            (.cons res (object-array [e v]))))
-                        (.cons res (object-array [(b/veg->e (l/v kv))]))))]
+      (let [vt  (value-type props)
+            aid (props :db/aid)
+            ^SpillableVector res
+            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
+            visitor
+            (fn [kv]
+              (if (or vpred get-v?)
+                (let [^Retrieved r (b/read-buffer (l/v kv) :veg)
+                      v            (retrieved->v lmdb r)
+                      e            (.-e r)]
+                  (if vpred
+                    (when (vpred v)
+                      (.cons res (if get-v?
+                                   (object-array [e v])
+                                   (object-array [e]))))
+                    (.cons res (object-array [e v]))))
+                (.cons res (object-array [(b/veg->e (l/v kv))]))))]
         (lmdb/visit-list-range
           lmdb c/ave visitor
           [:closed aid aid] :int
@@ -616,7 +619,7 @@
            (av->indexable aid high-value vt true)] :veg)
         res)))
 
-  (merge-scan [this tuples eid-idx attrs->preds]
+  (merge-scan [this tuples eid-idx attrs vpreds]
     ))
 
 

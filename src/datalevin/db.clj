@@ -139,19 +139,16 @@
           [(s/fetch store (datom e a v)) ; e a v
            (s/slice store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
            (s/slice-filter store :eav
-                           (fn [^Datom d]
-                             (when ((vpred v) (.-v d)) d))
+                           (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e nil nil)
                            (datom e nil nil))  ; e _ v
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
-           (mapv #(datom (aget % 0) a v) (s/ave-direct store a v v))
-           ;; (s/slice store :ave (datom e0 a v) (datom emax a v)) ; _ a v
-           (mapv #(datom (aget % 0) a (aget % 1))
-                 (s/ave-direct store a nil nil nil true))
-           ;; (s/slice store :ave (datom e0 a nil) (datom emax a nil)) ; _ a _
+           (mapv #(datom (aget ^objects % 0) a v)
+                 (s/ave-direct store a v v)) ; _ a v
+           (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
+                 (s/ave-direct store a nil nil nil true)) ; _ a _
            (s/slice-filter store :eav
-                           (fn [^Datom d]
-                             (when ((vpred v) (.-v d)) d))
+                           (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e0 nil nil)
                            (datom emax nil nil)) ; _ _ v
            (s/slice store :eav (datom e0 nil nil) (datom emax nil nil))])))) ; _ _ _
