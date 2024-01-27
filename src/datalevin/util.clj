@@ -5,6 +5,7 @@
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
+   [org.eclipse.collections.impl.list.mutable FastList]
    [java.util Random Arrays]
    [java.io File]
    [java.nio.file Files Paths LinkOption AccessDeniedException]
@@ -300,16 +301,22 @@
 
 (defn distinct-by
   [f coll]
-  (->> (reduce
-         (fn [[seen res :as acc] el]
-           (let [key (f el)]
-             (if (contains? seen key)
-               acc
-               [(conj! seen key) (conj! res el)])))
-         [(transient #{}) (transient [])]
-         coll)
-       second
-       persistent!))
+  (peek (reduce (fn [[seen ^FastList res :as acc] el]
+                  (let [key (f el)]
+                    (if (contains? seen key)
+                      acc
+                      (do (.add res el)
+                          [(conj! seen key) res]))))
+                [(transient #{}) (FastList.)]
+                coll)))
+
+(defn map-fl
+  [f coll]
+  (reduce (fn [^FastList acc e]
+            (.add acc (f e))
+            acc)
+          (FastList.)
+          coll))
 
 (defn long-inc ^long [^long x] (inc x))
 

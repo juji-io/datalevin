@@ -80,6 +80,24 @@
       (l/open-dbi @disk c/tmp-dbi {:key-size Long/BYTES}))
     this)
 
+  List
+
+  (get [this i]
+    (.valAt this i))
+
+  (size [this]
+    (.count this))
+
+  (add [this item]
+    (.cons this item)
+    true)
+
+  (addAll [this other]
+    (let [n (.size ^List other)]
+      (dotimes [i n]
+        (.cons this (.get ^List other i)))
+      (< 0 n)))
+
   IPersistentVector
 
   (assocN [this i v]
@@ -288,9 +306,16 @@
      (doseq [v vs] (.cons svec v))
      svec)))
 
+(defn map-sv
+  [f sv]
+  (reduce
+    (fn [^SpillableVector acc r] (.cons acc (f r)))
+    (new-spillable-vector)
+    sv))
+
 (nippy/extend-freeze
-  SpillableVector :spillable-vec
-  [^SpillableVector x ^DataOutput out]
+    SpillableVector :spillable-vec
+    [^SpillableVector x ^DataOutput out]
   (let [n (count x)]
     (.writeLong out n)
     (dotimes [i n] (nippy/freeze-to-out! out (nth x i)))))

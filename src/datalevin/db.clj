@@ -11,6 +11,7 @@
    [datalevin.util :as u
     :refer [case-tree raise defrecord-updatable cond+]]
    [datalevin.storage :as s]
+   [datalevin.spill :as sp]
    [datalevin.lmdb :as l]
    [datalevin.remote :as r]
    [datalevin.inline :refer [update]])

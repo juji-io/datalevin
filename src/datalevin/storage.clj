@@ -165,12 +165,6 @@
               {:v v}))
           (b/indexable e am vm :db.type/sysMin gm))))))
 
-(defn- av->indexable
-  [aid value vt high?]
-  (if high?
-    (b/indexable c/emax aid (or value c/vmax) vt c/gmax)
-    (b/indexable c/e0 aid (or value c/v0) vt c/g0)))
-
 (defn- index->dbi
   [index]
   (case index
@@ -267,9 +261,9 @@
     [this attr low-value high-value]
     [this attr low-value high-value vpred]
     [this attr low-value high-value vpred get-v?]
-    "Direct access of :ave index, return tuples")
+    "Direct access of :ave index, return tuples of e in an array or e and v in an array")
   (merge-scan [this tuples eid-idx attrs vpreds]
-    "Return merged tuples using :eav index")
+    "Return merged tuples using :eav index. Assume tuples is a vector of tuples (object arrays) sorted by eid")
   (vae-merge [this tuples veid-idx attr]
     "Return merged tuples with eid as the last column using :vae index")
   )
@@ -615,14 +609,37 @@
         (lmdb/visit-list-range
           lmdb c/ave visitor
           [:closed aid aid] :int
-          [:closed (av->indexable aid low-value vt false)
-           (av->indexable aid high-value vt true)] :veg)
+          [:closed
+           (b/indexable c/e0 aid (or low-value c/v0) vt c/g0)
+           (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
   (merge-scan [this tuples eid-idx attrs vpreds]
-    ))
-
-
+    (when (and (seq tuples) (seq attrs))
+      (let [start-e   (aget ^objects (first tuples) eid-idx)
+            end-e     (aget ^objects (peek tuples) eid-idx)
+            aids      (mapv #(-> % schema :db/aid) attrs)
+            aid->pred (zipmap aids vpreds)
+            aids      (vec (sort aids))
+            ^SpillableVector res
+            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
+            tuples-i  (volatile! 0)
+            visitor
+            (fn [kv]
+              (let [^long ie     (b/read-buffer (l/k kv) :id)
+                    ^objects tup (nth tuples @tuples-i)
+                    ^long te     (aget tup eid-idx)]
+                (cond
+                  (= ie te) ()
+                  (< ie te) :advance-index
+                  :else     (vswap! tuples-i u/long-inc))))]
+        (lmdb/visit-list-range
+          lmdb c/eav visitor
+          [:closed start-e end-e] :id
+          [:closed
+           (b/indexable nil (first aids) c/v0 nil c/g0)
+           (b/indexable nil (peek aids) c/vmax nil c/gmax)] :avg)
+        res))))
 
 (defn fulltext-index
   [search-engines ft-ds]

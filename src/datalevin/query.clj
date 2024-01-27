@@ -5,6 +5,7 @@
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
+   [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [raise cond+]]
    [datalevin.lru :as lru]
@@ -14,9 +15,12 @@
    [datalevin.timeout :as timeout])
   (:import
    [clojure.lang ILookup LazilyPersistentVector]
+   [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar Variable]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [org.eclipse.collections.impl.list.mutable FastList]
+   [java.util List]
    [java.lang Long]))
 
 ;; ----------------------------------------------------------------------------
@@ -28,17 +32,6 @@
 ;; Records
 
 (defrecord Context [rels sources rules])
-
-;; attrs:
-;;    {?e 0, ?v 1} or {?e2 "a", ?age "v"}
-;; tuples:
-;;    [ objects ... ]
-;; or [ (Datom. 2 "Oleg" 1 55) ... ]
-(defrecord Relation [attrs tuples])
-
-(defn relation! [attrs tuples]
-  (timeout/assert-time-left)
-  (Relation. attrs tuples))
 
 ;; Utilities
 
@@ -54,12 +47,6 @@
 (defn zip
   ([a b] (mapv vector a b))
   ([a b & rest] (apply mapv vector a b rest)))
-
-(defn same-keys?
-  [a b]
-  (and (= (count a) (count b))
-       (every? #(contains? b %) (keys a))
-       (every? #(contains? b %) (keys a))))
 
 (defn- looks-like?
   [pattern form]
@@ -88,80 +75,6 @@
 
 (defn lookup-ref? [form] (looks-like? [attr? '_] form))
 
-;; Relation algebra
-
-(def typed-aget (fn [a i] (aget ^objects a ^Long i)))
-
-(defn join-tuples
-  [t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
-   t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
-  (let [l1 (alength idxs1)
-        l2 (alength idxs2)
-
-        ^{:tag "[[Ljava.lang.Object;"} res
-        (make-array Object (+ l1 l2))]
-    (if (.isArray (.getClass ^Object t1))
-      (dotimes [i l1] (aset res i (aget ^objects t1 (aget idxs1 i))))
-      (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
-    (if (.isArray (.getClass ^Object t2))
-      (dotimes [i l2] (aset res (+ l1 i) (aget ^objects t2 (aget idxs2 i))))
-      (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
-    res))
-
-(defn sum-rel
-  [a b]
-  (let [{attrs-a :attrs, tuples-a :tuples} a
-        {attrs-b :attrs, tuples-b :tuples} b]
-    (cond
-      (= attrs-a attrs-b)
-      (relation! attrs-a (into (vec tuples-a) tuples-b))
-
-      (not (same-keys? attrs-a attrs-b))
-      (raise
-        "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
-        {:error :query/where})
-
-      (every? number? (vals attrs-a)) ;; can’t conj into BTSetIter
-      (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
-                              [idx-b (attrs-a sym)]))
-            tlen       (->> (vals attrs-a) ^long (reduce max) (inc))
-            tuples'    (persistent!
-                         (reduce
-                           (fn [acc tuple-b]
-                             (let [tuple' (make-array Object tlen)
-                                   tg     (if (u/array? tuple-b)
-                                            typed-aget get)]
-                               (doseq [[idx-b idx-a] idxb->idxa]
-                                 (aset ^objects tuple'
-                                       idx-a (tg tuple-b idx-b)))
-                               (conj! acc tuple')))
-                           (transient (vec tuples-a))
-                           tuples-b))]
-        (relation! attrs-a tuples'))
-
-      :else
-      (let [all-attrs (zipmap (keys (merge attrs-a attrs-b)) (range))]
-        (-> (relation! all-attrs [])
-            (sum-rel a)
-            (sum-rel b))))))
-
-(defn ^Relation prod-rel
-  ([] (relation! {} [(make-array Object 0)]))
-  ([rel1 rel2]
-   (let [attrs1 (keys (:attrs rel1))
-         attrs2 (keys (:attrs rel2))
-         idxs1  (to-array (map (:attrs rel1) attrs1))
-         idxs2  (to-array (map (:attrs rel2) attrs2))]
-     (relation!
-       (zipmap (u/concatv attrs1 attrs2) (range))
-       (persistent!
-         (reduce
-           (fn [acc t1]
-             (reduce (fn [acc t2]
-                       (conj! acc (join-tuples t1 idxs1 t2 idxs2)))
-                     acc (:tuples rel2)))
-           (transient []) (:tuples rel1)))))))
-
 ;;
 
 (defn parse-rules
@@ -174,7 +87,7 @@
   [binding]
   (let [vars (->> (dp/collect-vars-distinct binding)
                   (map :symbol))]
-    (relation! (zipmap vars (range)) [])))
+    (r/relation! (zipmap vars (range)) (FastList.))))
 
 (defprotocol IBinding
   ^Relation (in->rel [binding value]))
@@ -182,12 +95,12 @@
 (extend-protocol IBinding
   BindIgnore
   (in->rel [_ _]
-    (prod-rel))
+    (r/prod-rel))
 
   BindScalar
   (in->rel [binding value]
-    (relation! {(get-in binding [:variable :symbol]) 0}
-               [(into-array Object [value])]))
+    (r/relation! {(get-in binding [:variable :symbol]) 0}
+                 (doto (FastList.) (.add (into-array Object [value])))))
 
   BindColl
   (in->rel [binding coll]
@@ -200,7 +113,7 @@
       :else
       (->> coll
            (map #(in->rel (:binding binding) %))
-           (reduce sum-rel))))
+           (reduce r/sum-rel))))
 
   BindTuple
   (in->rel [binding coll]
@@ -213,7 +126,7 @@
              (dp/source binding)
              {:error :query/binding, :value coll, :binding (dp/source binding)})
       :else
-      (reduce prod-rel
+      (reduce r/prod-rel
               (map #(in->rel %1 %2) (:bindings binding) coll)))))
 
 (defn resolve-in
@@ -338,42 +251,38 @@
         key-fn1      (tuple-key-fn attrs1 common-attrs)
         key-fn2      (tuple-key-fn attrs2 common-attrs)]
     (if (< (count tuples1) (count tuples2))
-      (let [^UnifiedMap hash (hash-attrs key-fn1 tuples1)
-            new-tuples
-            (persistent!
-              (reduce
-                (fn outer [acc tuple2]
-                  (let [key (key-fn2 tuple2)]
-                    (if-some [tuples1 (.get hash key)]
-                      (reduce
-                        (fn inner [acc tuple1]
-                          (conj! acc
-                                 (join-tuples
-                                   tuple1 keep-idxs1 tuple2 keep-idxs2)))
-                        acc tuples1)
-                      acc)))
-                (transient [])
-                tuples2))]
-        (relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
-                   new-tuples))
-      (let [^UnifiedMap hash (hash-attrs key-fn2 tuples2)
-            new-tuples
-            (persistent!
-              (reduce
-                (fn outer [acc tuple1]
-                  (let [key (key-fn1 tuple1)]
-                    (if-some [tuples2 (.get hash key)]
-                      (reduce
-                        (fn inner [acc tuple2]
-                          (conj! acc
-                                 (join-tuples
-                                   tuple1 keep-idxs1 tuple2 keep-idxs2)))
-                        acc tuples2)
-                      acc)))
-                (transient [])
-                tuples1))]
-        (relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
-                   new-tuples)))))
+      (let [^UnifiedMap hash (hash-attrs key-fn1 tuples1)]
+        (r/relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
+                     (reduce
+                       (fn outer [acc tuple2]
+                         (let [key (key-fn2 tuple2)]
+                           (if-some [tuples1 (.get hash key)]
+                             (reduce
+                               (fn inner [^List acc tuple1]
+                                 (.add acc
+                                       (r/join-tuples
+                                         tuple1 keep-idxs1 tuple2 keep-idxs2))
+                                 acc)
+                               acc tuples1)
+                             acc)))
+                       (FastList.)
+                       tuples2)))
+      (let [^UnifiedMap hash (hash-attrs key-fn2 tuples2)]
+        (r/relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
+                     (reduce
+                       (fn outer [acc tuple1]
+                         (let [key (key-fn1 tuple1)]
+                           (if-some [tuples2 (.get hash key)]
+                             (reduce
+                               (fn inner [^List acc tuple2]
+                                 (.add acc
+                                       (r/join-tuples
+                                         tuple1 keep-idxs1 tuple2 keep-idxs2))
+                                 acc)
+                               acc tuples2)
+                             acc)))
+                       (FastList.)
+                       tuples1))))))
 
 (defn subtract-rel
   [a b]
@@ -395,7 +304,7 @@
         attr->prop     (->> (map vector pattern ["e" "a" "v" "tx"])
                             (filter (fn [[s _]] (free-var? s)))
                             (into {}))]
-    (relation! attr->prop datoms)))
+    (r/relation! attr->prop datoms)))
 
 (defn matches-pattern?
   [pattern tuple]
@@ -415,7 +324,7 @@
         attr->idx (->> (map vector pattern (range))
                        (filter (fn [[s _]] (free-var? s)))
                        (into {}))]
-    (relation! attr->idx (mapv to-array data)))) ;; FIXME to-array
+    (r/relation! attr->idx (u/map-fl to-array data))))
 
 (defn normalize-pattern-clause
   [clause]
@@ -455,7 +364,7 @@
   [context sym]
   (when-some [rel (rel-with-attr context sym)]
     (when-some [tuple (first (:tuples rel))]
-      (let [tg (if (u/array? tuple) typed-aget get)]
+      (let [tg (if (u/array? tuple) r/typed-aget get)]
         (tg tuple ((:attrs rel) sym))))))
 
 (defn- rel-contains-attrs? [rel attrs] (some #(contains? (:attrs rel) %) attrs))
@@ -463,7 +372,7 @@
 (defn- rel-prod-by-attrs
   [context attrs]
   (let [rels       (filter #(rel-contains-attrs? % attrs) (:rels context))
-        production (reduce prod-rel rels)]
+        production (reduce r/prod-rel rels)]
     [(update context :rels #(remove (set rels) %)) production]))
 
 (defn- dot-form [f] (when (and (symbol? f) (str/starts-with? (name f) ".")) f))
@@ -508,7 +417,7 @@
         (let [args (aclone static-args)]
           (dotimes [i len]
             (when-some [tuple-idx (aget tuples-args i)]
-              (let [tg (if (u/array? tuple) typed-aget get)
+              (let [tg (if (u/array? tuple) r/typed-aget get)
                     v  (tg tuple tuple-idx)]
                 (aset args i v))))
           (make-call f args)))
@@ -516,7 +425,7 @@
         ;; TODO raise if not all args are bound
         (dotimes [i len]
           (when-some [tuple-idx (aget tuples-args i)]
-            (let [tg (if (u/array? tuple) typed-aget get)
+            (let [tg (if (u/array? tuple) r/typed-aget get)
                   v  (tg tuple tuple-idx)]
               (aset static-args i v))))
         (make-call f static-args)))))
@@ -572,12 +481,14 @@
                 rels     (for [tuple (:tuples production)
                                :let  [val (tuple-fn tuple)]
                                :when (not (nil? val))]
-                           (prod-rel (relation! (:attrs production) [tuple])
-                                     (in->rel binding val)))]
+                           (r/prod-rel
+                             (r/relation! (:attrs production)
+                                          (doto (FastList.) (.add tuple)))
+                             (in->rel binding val)))]
             (if (empty? rels)
-              (prod-rel production (empty-rel binding))
-              (reduce sum-rel rels)))
-          (prod-rel (assoc production :tuples []) (empty-rel binding)))]
+              (r/prod-rel production (empty-rel binding))
+              (reduce r/sum-rel rels)))
+          (r/prod-rel (assoc production :tuples []) (empty-rel binding)))]
     (update context :rels collapse-rels new-rel)))
 
 ;;; RULES
@@ -671,7 +582,7 @@
                         :clauses        [clause]
                         :used-args      {}
                         :pending-guards {}})
-           rel   (relation! final-attrs-map [])]
+           rel   (r/relation! final-attrs-map (FastList.))]
       (if-some [frame (first stack)]
         (let [[clauses [rule-clause & next-clauses]]
               (split-with #(not (rule? context %)) (:clauses frame))]
@@ -680,8 +591,8 @@
             ;; no rules -> expand, collect, sum
             (let [context (solve (:prefix-context frame) clauses)
                   tuples  (u/distinct-by vec (-collect context final-attrs))
-                  new-rel (relation! final-attrs-map tuples)]
-              (recur (next stack) (sum-rel rel new-rel)))
+                  new-rel (r/relation! final-attrs-map tuples)]
+              (recur (next stack) (r/sum-rel rel new-rel)))
 
             ;; has rule -> add guards -> check if dead -> expand rule -> push to stack, recur
             (let [[rule & call-args] rule-clause
@@ -818,7 +729,7 @@
            _              (check-free-same (bound-vars context) branches clause)
            contexts       (map #(resolve-clause context %) branches)
            rels           (map #(reduce hash-join (:rels %)) contexts)]
-       (assoc (first contexts) :rels [(reduce sum-rel rels)]))
+       (assoc (first contexts) :rels [(reduce r/sum-rel rels)]))
 
      '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
      (let [[_ [req-vars & vars] & branches] clause
@@ -837,7 +748,7 @@
                                          (limit-context vars))
                                     branches)
            rels                (map #(reduce hash-join (:rels %)) contexts)
-           sum-rel             (reduce sum-rel rels)]
+           sum-rel             (reduce r/sum-rel rels)]
        (update context :rels collapse-rels sum-rel))
 
      '[and *] ;; (and ...)
