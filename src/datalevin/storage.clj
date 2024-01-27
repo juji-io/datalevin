@@ -263,10 +263,11 @@
     [this attr low-value high-value vpred get-v?]
     "Direct access of :ave index, return tuples of e in an array or e and v in an array")
   (merge-scan [this tuples eid-idx attrs vpreds]
-    "Return merged tuples using :eav index. Assume tuples is a vector of tuples (object arrays) sorted by eid")
+    "Return merged tuples using :eav index. Assume tuples is a list of tuples (object arrays) sorted by eid")
   (vae-merge [this tuples veid-idx attr]
     "Return merged tuples with eid as the last column using :vae index")
-  )
+  (ave-merge [this tuples v-idx attr]
+    "Return merged tuples with eid as the last column using :ave index"))
 
 (defn e-aid-v->datom
   [store e-aid-v]

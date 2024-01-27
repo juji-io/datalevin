@@ -46,9 +46,13 @@
   (iterate-kv [this rtx cur k-range k-type v-type]
     "Return an Iterable of key-values, given the key range")
   (iterate-key [this rtx cur k-range k-type]
-    "Return an Iterable of keys only, given the key range")
+    "Return an Iterable based on key range only")
   (iterate-list [this rtx cur k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
+     applicable only to list dbi")
+  (iterate-list-kv [this rtx cur k-range k-type v-range v-type]
+    "Return a IListKVIterable given key range and value range,
+     that allows advancing key and value separately, forward only,
      applicable only to list dbi")
   (get-cursor [this rtx] "Get a reusable read-only cursor")
   (close-cursor [this cur] "Close cursor")
@@ -111,6 +115,17 @@
     [db list-name visitor k-range k-type v-range v-type]
     [db list-name visitor k-range k-type v-range v-type raw-pred?]
     "visit a list range, presumably for side effects of vistor call`"))
+
+(defprotocol IListKVIterable
+  (kv-iterator [this]
+    "return an IListKVIterator that advances key and value separately,
+     forward only"))
+
+(defprotocol IListKVIterator
+  (has-next-key [this])
+  (next-key [this])
+  (has-next-val [this])
+  (next-val [this]))
 
 (defprotocol ILMDB
   (check-ready [db] "check if db is ready to be operated on")
