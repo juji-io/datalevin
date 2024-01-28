@@ -453,4 +453,12 @@
                                    v-range v-type)]
       (visit* iterable visitor raw-pred? k-type v-type))
     (raise "Fail to visit list range: " e
-           {:dbi dbi-name :key-range k-range :val-range v-range})) )
+           {:dbi dbi-name :key-range k-range :val-range v-range})))
+
+(defn operate-list-val-range
+  [lmdb dbi-name operator k-type v-range v-type]
+  (scan
+    (let [iterable (l/iterate-list-val dbi rtx cur k-type v-range v-type)]
+      (operator iterable))
+    (raise "Fail to operate list val range: " e
+           {:dbi dbi-name :val-range v-range})))

@@ -50,9 +50,9 @@
   (iterate-list [this rtx cur k-range k-type v-range v-type]
     "Return an Iterable of key-values given key range and value range,
      applicable only to list dbi")
-  (iterate-list-kv [this rtx cur k-range k-type v-range v-type]
-    "Return a IListKVIterable given key range and value range,
-     that allows advancing key and value separately, forward only,
+  (iterate-list-val [this rtx cur k-type v-range v-type]
+    "Return a IListRandKeyValIterable given the value range,
+     which allows randomly seek key and iterate its values forwardly,
      applicable only to list dbi")
   (get-cursor [this rtx] "Get a reusable read-only cursor")
   (close-cursor [this cur] "Close cursor")
@@ -114,16 +114,18 @@
   (visit-list-range
     [db list-name visitor k-range k-type v-range v-type]
     [db list-name visitor k-range k-type v-range v-type raw-pred?]
-    "visit a list range, presumably for side effects of vistor call`"))
+    "visit a list range, presumably for side effects of vistor call")
+  (operate-list-val-range
+    [db list-name operator k-type v-range v-type]
+    "Take an operator function that operates a ListRandKeyValIterable"))
 
-(defprotocol IListKVIterable
-  (kv-iterator [this]
-    "return an IListKVIterator that advances key and value separately,
-     forward only"))
+(defprotocol IListRandKeyValIterable
+  (val-iterator [this]
+    "Return an IListRandKeyValIterator that can seek random key and iterate
+     its values forwardly"))
 
-(defprotocol IListKVIterator
-  (has-next-key [this])
-  (next-key [this])
+(defprotocol IListRandKeyValIterator
+  (seek-key [this k-value k-type])
   (has-next-val [this])
   (next-val [this]))
 

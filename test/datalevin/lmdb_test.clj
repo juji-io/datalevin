@@ -15,6 +15,7 @@
   (:import
    [java.util UUID Arrays]
    [java.lang Long]
+   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 (if (u/graal?)
@@ -274,13 +275,22 @@
                   (is (and put-ok del-ok)))))
 
 (deftest list-basic-ops-test
-  (let [dir     (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
-        lmdb    (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
-        sum     (volatile! 0)
-        visitor (i/inter-fn
-                    [kv]
-                  (let [^long v (b/read-buffer (l/v kv) :long)]
-                    (vswap! sum #(+ ^long %1 ^long %2) v)))]
+  (let [dir      (u/tmp-dir (str "list-test-" (UUID/randomUUID)))
+        lmdb     (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})
+        sum      (volatile! 0)
+        visitor  (i/inter-fn
+                     [kv]
+                   (let [^long v (b/read-buffer (l/v kv) :long)]
+                     (vswap! sum #(+ ^long %1 ^long %2) v)))
+        values   (volatile! [])
+        operator (i/inter-fn [^IListRandKeyValIterable iterable]
+                   (let [^IListRandKeyValIterator iter
+                         (l/val-iterator iterable)]
+                     (loop [next? (l/seek-key iter "b" :string)]
+                       (when next?
+                         (vswap! values conj
+                                 (b/read-buffer (l/next-val iter) :long))
+                         (recur (l/has-next-val iter))))))]
     (l/open-list-dbi lmdb "list")
     (is (l/list-dbi? lmdb "list"))
 
@@ -289,6 +299,20 @@
     (l/put-list-items lmdb "list" "c" [3 6 9] :string :long)
 
     (is (= (l/entries lmdb "list") 10))
+
+    (l/operate-list-val-range lmdb "list" operator :string [:all] :long)
+    (is (= [5 6 7] @values))
+    (vreset! values [])
+
+    (l/operate-list-val-range lmdb "list" operator :string
+                              [:closed 5 6] :long)
+    (is (= [5 6] @values))
+    (vreset! values [])
+
+    (l/operate-list-val-range lmdb "list" operator :string
+                              [:open-closed 5 6] :long)
+    (is (= [6] @values))
+    (vreset! values [])
 
     (is (= [["a" 1] ["a" 2] ["a" 3] ["a" 4] ["b" 5] ["b" 6] ["b" 7]
             ["c" 3] ["c" 6] ["c" 9]]

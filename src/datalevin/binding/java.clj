@@ -10,7 +10,8 @@
    [datalevin.scan :as scan]
    [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
                                  IList ILMDB IWriting IAdmin
-                                 IListKVIterable IListKVIterator]]
+                                 IListRandKeyValIterable
+                                 IListRandKeyValIterator]]
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
@@ -136,7 +137,7 @@
    :overflow-pages (.-overflowPages stat)
    :entries        (.-entries stat)})
 
-(declare ->KeyIterable ->ListIterable ->ListKVIterable)
+(declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable)
 
 (deftype DBI [^Dbi db
               ^ConcurrentLinkedQueue curs
@@ -194,11 +195,11 @@
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (iterate-list-kv [this rtx cur [k-range-type k1 k2] k-type
-                    [v-range-type v1 v2] v-type]
-    (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
+  (iterate-list-val [this rtx cur k-type
+                     [v-range-type v1 v2] v-type]
+    (let [ctx (l/list-range-info rtx :all nil nil k-type
                                  v-range-type v1 v2 v-type)]
-      (->ListKVIterable this cur rtx ctx)))
+      (->ListRandKeyValIterable this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
@@ -389,56 +390,30 @@
               (if forward-val? (advance-val) (advance-val-back))))
           (next [_] (MapEntry. k v)))))))
 
-(deftype ListKVIterable [^DBI db
-                         ^Cursor cur
-                         ^Rtx rtx
-                         ctx]
-  IListKVIterable
-  (kv-iterator [_]
-    (let [[[forward-key? include-start-key? include-stop-key?
-            ^ByteBuffer sk ^ByteBuffer ek]
-           [forward-val? include-start-val? include-stop-val? ^ByteBuffer sv ^ByteBuffer ev]]
-          ctx
+(deftype ListRandKeyValIterable [^DBI db
+                                 ^Cursor cur
+                                 ^Rtx rtx
+                                 ctx]
+  IListRandKeyValIterable
+  (val-iterator [_]
+    (let [[_ [forward-val? include-start-val? include-stop-val?
+              ^ByteBuffer sv ^ByteBuffer ev]] ctx
 
-          started?   (volatile! false)
-          key-ended? (volatile! false)
-          k          (.key cur)
-          v          (.val cur)]
-      (assert (and forward-key? forward-val?)
-              "Backward iterate is not supported in ListKVIterable")
-      (letfn [(init-key []
-                (if sk
-                  (if (.get cur sk GetOp/MDB_SET_RANGE)
-                    (if include-start-key?
-                      (key-continue?)
-                      (if (zero? (bf/compare-buffer k sk))
-                        (check-key SeekOp/MDB_NEXT_NODUP)
-                        (key-continue?)))
-                    false)
-                  (check-key SeekOp/MDB_FIRST)))
-              (init-val []
+          v (.val cur)]
+      (assert forward-val?
+              "Backward iterate is not supported in ListRandKeyValIterable")
+      (letfn [(init-val []
                 (if sv
-                  (if (.get cur (.key cur) sv SeekOp/MDB_GET_BOTH_RANGE)
+                  (if (.get cur (.-kb rtx) sv SeekOp/MDB_GET_BOTH_RANGE)
                     (if include-start-val?
                       (val-continue?)
                       (if (zero? (bf/compare-buffer v sv))
                         (check-val SeekOp/MDB_NEXT_DUP)
                         (val-continue?)))
                     false)
-                  (check-val SeekOp/MDB_FIRST_DUP)))
-              (key-end [] (vreset! key-ended? true) false)
-              (key-continue? []
-                (if ek
-                  (let [r (bf/compare-buffer k ek)]
-                    (if (= r 0)
-                      (do (vreset! key-ended? true) include-stop-key?)
-                      (if (> r 0) (key-end) true)))
-                  true))
-              (check-key [op]
-                (if (.seek cur op) (key-continue?) (key-end)))
-              (advance-key []
-                (or (and (check-key SeekOp/MDB_NEXT_NODUP) (init-val))
-                    (if @key-ended? false (recur))))
+                  (if (.get cur (.-kb rtx) GetOp/MDB_SET_RANGE)
+                    (check-val SeekOp/MDB_FIRST_DUP)
+                    false)))
               (val-continue? []
                 (if ev
                   (let [r (bf/compare-buffer v ev)]
@@ -451,12 +426,10 @@
               (advance-val []
                 (check-val SeekOp/MDB_NEXT_DUP))]
         (reify
-          IListKVIterator
-          (has-next-key [_]
-            (if (not @started?)
-              (do (vreset! started? true) (init-key))
-              (advance-key)))
-          (next-key [_] k)
+          IListRandKeyValIterator
+          (seek-key [_ k kt]
+            (l/put-key rtx k kt)
+            (init-val))
           (has-next-val [_] (advance-val))
           (next-val [_] v))))))
 
@@ -1028,6 +1001,10 @@
     [this dbi-name visitor k-range kt v-range vt raw-pred?]
     (scan/visit-list-range this dbi-name visitor k-range kt v-range
                            vt raw-pred?))
+
+  (operate-list-val-range
+    [this dbi-name operator kt v-range vt]
+    (scan/operate-list-val-range this dbi-name operator kt v-range vt))
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))

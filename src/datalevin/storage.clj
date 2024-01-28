@@ -2,20 +2,18 @@
   "Storage layer of Datalog store"
   (:require
    [datalevin.lmdb :as lmdb :refer [IWriting]]
-   [datalevin.spill :as sp]
    [datalevin.util :as u]
    [datalevin.bits :as b]
    [datalevin.search :as s]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
-   [clojure.string :as str]
-   [datalevin.lmdb :as l])
+   [clojure.string :as str])
   (:import
-   [java.util UUID]
+   [java.util UUID List Iterator]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
-   [datalevin.spill SpillableVector]
+   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]
    [datalevin.bits Retrieved Indexable]))
 
 (if (u/graal?)
@@ -261,9 +259,11 @@
     [this attr low-value high-value]
     [this attr low-value high-value vpred]
     [this attr low-value high-value vpred get-v?]
-    "Direct access of :ave index, return tuples of e in an array or e and v in an array")
+    "Direct access of :ave index, return tuples of e in an array or e and v
+in an array")
   (merge-scan [this tuples eid-idx attrs vpreds]
-    "Return merged tuples using :eav index. Assume tuples is a list of tuples (object arrays) sorted by eid")
+    "Return merged tuples using :eav index. tuples is a list of tuples
+ (object array)")
   (vae-merge [this tuples veid-idx attr]
     "Return merged tuples with eid as the last column using :vae index")
   (ave-merge [this tuples v-idx attr]
@@ -590,57 +590,64 @@
     (.ave-direct store attr low-value high-value vpred false))
   (ave-direct [_ attr low-value high-value vpred get-v?]
     (when-let [props (schema attr)]
-      (let [vt  (value-type props)
-            aid (props :db/aid)
-            ^SpillableVector res
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
-            visitor
-            (fn [kv]
-              (if (or vpred get-v?)
-                (let [^Retrieved r (b/read-buffer (l/v kv) :veg)
-                      v            (retrieved->v lmdb r)
-                      e            (.-e r)]
-                  (if vpred
-                    (when (vpred v)
-                      (.cons res (if get-v?
-                                   (object-array [e v])
-                                   (object-array [e]))))
-                    (.cons res (object-array [e v]))))
-                (.cons res (object-array [(b/veg->e (l/v kv))]))))]
-        (lmdb/visit-list-range
-          lmdb c/ave visitor
-          [:closed aid aid] :int
+      (let [vt            (value-type props)
+            aid           (props :db/aid)
+            ^FastList res (FastList.)
+            operator
+            (fn [^IListRandKeyValIterable iterable]
+              (let [^IListRandKeyValIterator iter (lmdb/val-iterator iterable)]
+                (loop [next? (lmdb/seek-key iter aid :int)]
+                  (when next?
+                    (let [veg (lmdb/next-val iter)]
+                      (if (or vpred get-v?)
+                        (let [r (b/read-buffer veg :veg)
+                              v (retrieved->v lmdb r)
+                              e (.-e ^Retrieved r)]
+                          (if vpred
+                            (when (vpred v)
+                              (.add res (object-array (if get-v? [e v] [e]))))
+                            (.add res (object-array [e v]))))
+                        (.add res (object-array [(b/veg->e veg)]))))
+                    (recur (lmdb/has-next-val iter))))))]
+        (lmdb/operate-list-val-range
+          lmdb c/ave operator :int
           [:closed
            (b/indexable c/e0 aid (or low-value c/v0) vt c/g0)
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
-  (merge-scan [this tuples eid-idx attrs vpreds]
-    (when (and (seq tuples) (seq attrs))
-      (let [start-e   (aget ^objects (first tuples) eid-idx)
-            end-e     (aget ^objects (peek tuples) eid-idx)
-            aids      (mapv #(-> % schema :db/aid) attrs)
-            aid->pred (zipmap aids vpreds)
-            aids      (vec (sort aids))
-            ^SpillableVector res
-            (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
-            tuples-i  (volatile! 0)
-            visitor
-            (fn [kv]
-              (let [^long ie     (b/read-buffer (l/k kv) :id)
-                    ^objects tup (nth tuples @tuples-i)
-                    ^long te     (aget tup eid-idx)]
-                (cond
-                  (= ie te) ()
-                  (< ie te) :advance-index
-                  :else     (vswap! tuples-i u/long-inc))))]
-        (lmdb/visit-list-range
-          lmdb c/eav visitor
-          [:closed start-e end-e] :id
-          [:closed
-           (b/indexable nil (first aids) c/v0 nil c/g0)
-           (b/indexable nil (peek aids) c/vmax nil c/gmax)] :avg)
-        res))))
+  #_(merge-scan [_ tuples eid-idx attrs vpreds]
+      (when (and (seq tuples) (seq attrs))
+        (let [start-e (aget ^objects (first tuples) eid-idx)
+              end-e   (aget ^objects (peek tuples) eid-idx)
+
+              aids          (mapv #(-> % schema :db/aid) attrs)
+              aid->pred     (zipmap aids vpreds)
+              aids          (vec (sort aids))
+              ^FastList res (FastList.)
+              operator
+              (fn [^IListKVIterable iterable]
+                (let [index-iter    ^IListKVIterator (.kv-iterator iterable)
+                      tuple-iter    ^Iterator (.iterator ^List tuples)
+                      advance-index #(when (lmdb/has-next-key index-iter)
+                                       (lmdb/next-key index-iter))
+                      advance-tuple #(when (.hasNext tuple-iter)
+                                       (.next tuple-iter))]
+                  (loop [kb (advance-index) tup (advance-tuple)]
+                    (when (and kb tup)
+                      (let [^long ie (b/read-buffer kb :id)
+                            ^long te (aget ^objects tup eid-idx)]
+                        (cond
+                          (= ie te) ()
+                          (< ie te) (recur (advance-index) tup)
+                          :else     (recur kb (advance-tuple))))))))]
+          (lmdb/operate-list-range
+            lmdb c/eav operator
+            [:closed start-e end-e] :id
+            [:closed
+             (b/indexable nil (first aids) c/v0 nil c/g0)
+             (b/indexable nil (peek aids) c/vmax nil c/gmax)] :avg)
+          res))))
 
 (defn fulltext-index
   [search-engines ft-ds]
