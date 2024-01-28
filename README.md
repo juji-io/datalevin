@@ -101,7 +101,7 @@ coherent and elegant manner.
 
 Using one data store for different use cases simplifies and reduces the cost of
 software development, deployment and maintenance. Therefore, we plan to
-implement necessary extensions to make Datalevin also a production rule engine,
+implement necessary extensions to make Datalevin also a vector databse, a production rule engine,
 a graph database, and a document database, since the storage and index structure
 of Datalevin is already compatible with all of them.
 
@@ -449,7 +449,7 @@ than just the difference in data durability and running mode:
   there is no need to specify `:db/index`, similar to Datomic® Cloud. Does not
   have AEV index, in order to save storage and improve write speed.
 
-* Transaction functions should be defined with `intern-fn`, for
+* Transaction functions should be defined with `inter-fn`, for
   function serialization requires special care in order to support GraalVM.
 
 * Attributes are stored in indices as integer ids, thus attributes in index
@@ -511,6 +511,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2023 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2024 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).
