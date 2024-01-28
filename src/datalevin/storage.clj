@@ -610,7 +610,7 @@ in an array")
                         (.add res (object-array [(b/veg->e veg)]))))
                     (recur (lmdb/has-next-val iter))))))]
         (lmdb/operate-list-val-range
-          lmdb c/ave operator :int
+          lmdb c/ave operator
           [:closed
            (b/indexable c/e0 aid (or low-value c/v0) vt c/g0)
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
@@ -618,18 +618,17 @@ in an array")
 
   #_(merge-scan [_ tuples eid-idx attrs vpreds]
       (when (and (seq tuples) (seq attrs))
-        (let [start-e (aget ^objects (first tuples) eid-idx)
-              end-e   (aget ^objects (peek tuples) eid-idx)
-
-              aids          (mapv #(-> % schema :db/aid) attrs)
-              aid->pred     (zipmap aids vpreds)
-              aids          (vec (sort aids))
-              ^FastList res (FastList.)
+        (let [start-e   (aget ^objects (first tuples) eid-idx)
+              end-e     (aget ^objects (peek tuples) eid-idx)
+              aids      (mapv #(-> % schema :db/aid) attrs)
+              aid->pred (zipmap aids vpreds)
+              aids      (vec (sort aids))
+              res       ^FastList (FastList.)
               operator
-              (fn [^IListKVIterable iterable]
-                (let [index-iter    ^IListKVIterator (.kv-iterator iterable)
+              (fn [^IListRandKeyValIterable iterable]
+                (let [index-iter    ^IListRandKeyValIterator (.val-iterator iterable)
                       tuple-iter    ^Iterator (.iterator ^List tuples)
-                      advance-index #(when (lmdb/has-next-key index-iter)
+                      advance-index #(when (lmdb/seek-key index-iter %1 %2)
                                        (lmdb/next-key index-iter))
                       advance-tuple #(when (.hasNext tuple-iter)
                                        (.next tuple-iter))]
@@ -641,9 +640,8 @@ in an array")
                           (= ie te) ()
                           (< ie te) (recur (advance-index) tup)
                           :else     (recur kb (advance-tuple))))))))]
-          (lmdb/operate-list-range
-            lmdb c/eav operator
-            [:closed start-e end-e] :id
+          (lmdb/operate-list-val-range
+            lmdb c/eav operator :id
             [:closed
              (b/indexable nil (first aids) c/v0 nil c/g0)
              (b/indexable nil (peek aids) c/vmax nil c/gmax)] :avg)

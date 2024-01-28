@@ -195,9 +195,8 @@
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
-  (iterate-list-val [this rtx cur k-type
-                     [v-range-type v1 v2] v-type]
-    (let [ctx (l/list-range-info rtx :all nil nil k-type
+  (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
+    (let [ctx (l/list-range-info rtx :all nil nil nil
                                  v-range-type v1 v2 v-type)]
       (->ListRandKeyValIterable this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
@@ -1003,8 +1002,8 @@
                            vt raw-pred?))
 
   (operate-list-val-range
-    [this dbi-name operator kt v-range vt]
-    (scan/operate-list-val-range this dbi-name operator kt v-range vt))
+    [this dbi-name operator v-range vt]
+    (scan/operate-list-val-range this dbi-name operator v-range vt))
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
