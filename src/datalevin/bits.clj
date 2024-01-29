@@ -821,6 +821,15 @@
         (Retrieved. nil a (get-value bf 9) g)
         (Retrieved. nil a nil g)))))
 
+(defn avg->r
+  [^ByteBuffer bf]
+  (.position bf (- (.limit bf) 8))
+  (let [g (get-long bf)]
+    (if (= g c/normal)
+      (do (.position bf 4)
+          (Retrieved. nil nil (get-value bf 9) g))
+      (Retrieved. nil nil nil g))))
+
 (defn- get-veg
   [^ByteBuffer bf]
   (.position bf (- (.limit bf) 16))

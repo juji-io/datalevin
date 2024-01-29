@@ -9,7 +9,8 @@
    [clojure.test.check.properties :as prop]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest testing is use-fixtures]]
-   [datalevin.lmdb :as lmdb])
+   [datalevin.lmdb :as lmdb]
+   [clojure.string :as s])
   (:import
    [java.util UUID]
    [datalevin.storage Store]
@@ -102,9 +103,9 @@
                                    (d/datom c/e0 nil nil)
                                    (d/datom c/e0 nil nil))))
       (is (= [c/e0] (map #(aget ^objects % 0)
-                         (sut/ave-direct store a nil nil (constantly true)))))
+                         (sut/ave-tuples store a nil nil (constantly true)))))
       (is (= [c/e0] (map #(aget ^objects % 0)
-                         (sut/ave-direct store b v1 v1))))
+                         (sut/ave-tuples store b v1 v1))))
       (is (= [d1 d] (sut/rslice store :ave d1 d)))
       (is (= [d d1] (sut/slice store :ave
                                (d/datom c/e0 a nil)
@@ -277,3 +278,51 @@
       (sut/close store)
       (u/delete-files dir)
       (is (= [d] r)))))
+
+(deftest eav-scan-v-test
+  (let [d0      (d/datom 0 :a 10)
+        d1      (d/datom 5 :a 1)
+        d2      (d/datom 5 :b "5b")
+        d3      (d/datom 8 :a 7)
+        d4      (d/datom 8 :b "8b")
+        d5      (d/datom 10 :b "10b")
+        d6      (d/datom 10 :c :c10)
+        tuples0 [(object-array [0]) (object-array [5]) (object-array [8])]
+        tuples1 [(object-array [:none 0])
+                 (object-array [:nada 8])
+                 (object-array [:zero 10])]
+        dir     (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
+        store   (sut/open dir
+                          {:a {}
+                           :b {:db/valueType :db.type/string}
+                           :c {:db/valueType :db.type/keyword}}
+                          {:kv-opts
+                           {:flags (conj c/default-env-flags :nosync)}})]
+    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6])
+    (is (= [[5 1 "5b"] [8 7 "8b"]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
+                                     [(constantly true)
+                                      (constantly true)]))))
+    (is (= [[5 1 "5b"] [8 7 "8b"]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a] [nil nil]))))
+    (is (= [[5 1 "5b"] [8 7 "8b"]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
+                                     [odd? #(s/ends-with? % "b")]))))
+    (is (= [[5 1 "5b"] [8 7 "8b"]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [odd? nil]))))
+    (is (= [[5 1 "5b"] [8 7 "8b"]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
+                                     [(constantly true) odd?]))))
+    (is (= []
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
+                                     [(constantly true) even?]))))
+    (is (= [[0 10]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a] [even?]))))
+    (is (= [[:none 0 10]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:a] [even?]))))
+    (is (= [[:none 0 10] [:nada 8 7]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:a] [nil]))))
+    (is (= [[:zero 10 "10b" :c10]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:b :c] [nil nil]))))
+    (sut/close store)
+    (u/delete-files dir)))

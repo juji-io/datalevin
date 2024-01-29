@@ -3,13 +3,14 @@
   (:require
    [datalevin.lmdb :as lmdb :refer [IWriting]]
    [datalevin.util :as u]
+   [datalevin.relation :as r]
    [datalevin.bits :as b]
    [datalevin.search :as s]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
    [clojure.string :as str])
   (:import
-   [java.util UUID List Iterator]
+   [java.util UUID List Arrays]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
@@ -255,18 +256,16 @@
   (rslice-filter [this index pred high-datom low-datom]
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
-  (ave-direct
+  (ave-tuples
     [this attr low-value high-value]
     [this attr low-value high-value vpred]
     [this attr low-value high-value vpred get-v?]
-    "Direct access of :ave index, return tuples of e in an array or e and v
-in an array")
-  (merge-scan [this tuples eid-idx attrs vpreds]
-    "Return merged tuples using :eav index. tuples is a list of tuples
- (object array)")
-  (vae-merge [this tuples veid-idx attr]
+    "Return tuples of e or e and v using :ave index")
+  (eav-scan-v [this tuples eid-idx attrs vpreds]
+    "Scan values and merge into tuples using :eav index.")
+  (vae-scan-e [this tuples veid-idx attr]
     "Return merged tuples with eid as the last column using :vae index")
-  (ave-merge [this tuples v-idx attr]
+  (ave-scan-e [this tuples v-idx attr]
     "Return merged tuples with eid as the last column using :ave index"))
 
 (defn e-aid-v->datom
@@ -584,11 +583,11 @@ in an array")
        (datom->indexable schema low-datom false)]
       (index->vtype index)))
 
-  (ave-direct [store attr low-value high-value]
-    (.ave-direct store attr low-value high-value nil false))
-  (ave-direct [store attr low-value high-value vpred]
-    (.ave-direct store attr low-value high-value vpred false))
-  (ave-direct [_ attr low-value high-value vpred get-v?]
+  (ave-tuples [store attr low-value high-value]
+    (.ave-tuples store attr low-value high-value nil false))
+  (ave-tuples [store attr low-value high-value vpred]
+    (.ave-tuples store attr low-value high-value vpred false))
+  (ave-tuples [_ attr low-value high-value vpred get-v?]
     (when-let [props (schema attr)]
       (let [vt            (value-type props)
             aid           (props :db/aid)
@@ -616,36 +615,45 @@ in an array")
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
-  #_(merge-scan [_ tuples eid-idx attrs vpreds]
-      (when (and (seq tuples) (seq attrs))
-        (let [start-e   (aget ^objects (first tuples) eid-idx)
-              end-e     (aget ^objects (peek tuples) eid-idx)
-              aids      (mapv #(-> % schema :db/aid) attrs)
-              aid->pred (zipmap aids vpreds)
-              aids      (vec (sort aids))
-              res       ^FastList (FastList.)
-              operator
-              (fn [^IListRandKeyValIterable iterable]
-                (let [index-iter    ^IListRandKeyValIterator (.val-iterator iterable)
-                      tuple-iter    ^Iterator (.iterator ^List tuples)
-                      advance-index #(when (lmdb/seek-key index-iter %1 %2)
-                                       (lmdb/next-key index-iter))
-                      advance-tuple #(when (.hasNext tuple-iter)
-                                       (.next tuple-iter))]
-                  (loop [kb (advance-index) tup (advance-tuple)]
-                    (when (and kb tup)
-                      (let [^long ie (b/read-buffer kb :id)
-                            ^long te (aget ^objects tup eid-idx)]
-                        (cond
-                          (= ie te) ()
-                          (< ie te) (recur (advance-index) tup)
-                          :else     (recur kb (advance-tuple))))))))]
-          (lmdb/operate-list-val-range
-            lmdb c/eav operator :id
-            [:closed
-             (b/indexable nil (first aids) c/v0 nil c/g0)
-             (b/indexable nil (peek aids) c/vmax nil c/gmax)] :avg)
-          res))))
+  (eav-scan-v [_ tuples eid-idx attrs vpreds]
+    (when (and (seq tuples) (seq attrs))
+      (let [aids      (mapv #(-> % schema :db/aid) attrs)
+            na        (count aids)
+            aid->pred (zipmap aids vpreds)
+            aids      ^ints (let [as (int-array aids)] (Arrays/sort as) as)
+            res       ^FastList (FastList.)
+            operator
+            (fn [^IListRandKeyValIterable iterable]
+              (let [iter ^IListRandKeyValIterator (.val-iterator iterable)]
+                (dotimes [i (.size ^List tuples)]
+                  (let [tuple ^objects (.get ^List tuples i)
+                        te    ^long (aget tuple eid-idx)
+                        values
+                        (loop [next? (lmdb/seek-key iter te :id)
+                               ai    0
+                               vs    (transient [])]
+                          (if (and (< ai na) next?)
+                            (let [vb (lmdb/next-val iter)
+                                  a  (b/read-buffer vb :int)]
+                              (if (= a (aget aids ai))
+                                (let [v    (retrieved->v lmdb (b/avg->r vb))
+                                      pred (aid->pred a)]
+                                  (when (or (nil? pred) (pred v))
+                                    (recur (lmdb/has-next-val iter)
+                                           (u/long-inc ai)
+                                           (conj! vs v))))
+                                (recur (lmdb/has-next-val iter) ai vs)))
+                            (when (= ai na) (persistent! vs))))]
+                    (when (seq values)
+                      (.add res
+                            (r/join-tuples tuple (object-array values))))))))]
+        (lmdb/operate-list-val-range
+          lmdb c/eav operator
+          [:closed
+           (b/indexable nil (aget aids 0) c/v0 nil c/g0)
+           (b/indexable nil (aget aids (dec (alength aids))) c/vmax nil c/gmax)]
+          :avg)
+        res))))
 
 (defn fulltext-index
   [search-engines ft-ds]

@@ -145,9 +145,9 @@
                            (datom e nil nil))  ; e _ v
            (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
            (mapv #(datom (aget ^objects % 0) a v)
-                 (s/ave-direct store a v v)) ; _ a v
+                 (s/ave-tuples store a v v)) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
-                 (s/ave-direct store a nil nil nil true)) ; _ a _
+                 (s/ave-tuples store a nil nil nil true)) ; _ a _
            (s/slice-filter store :eav
                            (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e0 nil nil)

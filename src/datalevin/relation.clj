@@ -24,20 +24,24 @@
 (defn typed-aget [a i] (aget ^objects a ^Long i))
 
 (defn join-tuples
-  [t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
-   t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
-  (let [l1 (alength idxs1)
-        l2 (alength idxs2)
+  ([t1 t2]
+   (let [idxs1 (object-array (range (alength ^objects t1)))
+         idxs2 (object-array (range (alength ^objects t2)))]
+     (join-tuples t1 idxs1 t2 idxs2)))
+  ([t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
+    t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
+   (let [l1 (alength idxs1)
+         l2 (alength idxs2)
 
-        ^{:tag "[[Ljava.lang.Object;"} res
-        (make-array Object (+ l1 l2))]
-    (if (.isArray (.getClass ^Object t1))
-      (dotimes [i l1] (aset res i (typed-aget t1 (aget idxs1 i))))
-      (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
-    (if (.isArray (.getClass ^Object t2))
-      (dotimes [i l2] (aset res (+ l1 i) (typed-aget t2 (aget idxs2 i))))
-      (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
-    res))
+         ^{:tag "[[Ljava.lang.Object;"} res
+         (make-array Object (+ l1 l2))]
+     (if (.isArray (.getClass ^Object t1))
+       (dotimes [i l1] (aset res i (typed-aget t1 (aget idxs1 i))))
+       (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
+     (if (.isArray (.getClass ^Object t2))
+       (dotimes [i l2] (aset res (+ l1 i) (typed-aget t2 (aget idxs2 i))))
+       (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
+     res)))
 
 (defn same-keys?
   [a b]
