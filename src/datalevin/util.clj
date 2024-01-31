@@ -310,6 +310,8 @@
                 [(transient #{}) (FastList.)]
                 coll)))
 
+(defn list-add [^FastList lst item] (.add lst item) lst)
+
 (defn map-fl
   [f coll]
   (reduce (fn [^FastList acc e]

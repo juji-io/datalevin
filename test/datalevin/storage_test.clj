@@ -287,18 +287,27 @@
         d4      (d/datom 8 :b "8b")
         d5      (d/datom 10 :b "10b")
         d6      (d/datom 10 :c :c10)
+        d7      (d/datom 10 :d "Tom")
+        d8      (d/datom 10 :d "Jerry")
+        d9      (d/datom 10 :d "Mick")
+        d10     (d/datom 10 :e "not used")
         tuples0 [(object-array [0]) (object-array [5]) (object-array [8])]
         tuples1 [(object-array [:none 0])
                  (object-array [:nada 8])
                  (object-array [:zero 10])]
+        tuples2 [(object-array [8]) (object-array [5]) (object-array [8])]
+        tuples3 [(object-array [10]) (object-array [5]) (object-array [10])]
         dir     (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store   (sut/open dir
                           {:a {}
-                           :b {:db/valueType :db.type/string}
-                           :c {:db/valueType :db.type/keyword}}
+                           :b {:db/valueType   :db.type/string
+                               :db/cardinality :db.cardinality/many}
+                           :c {:db/valueType :db.type/keyword}
+                           :d {:db/cardinality :db.cardinality/many
+                               :db/valueType   :db.type/string}}
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6])
+    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10])
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
                                      [(constantly true)
@@ -324,5 +333,17 @@
            (mapv vec (sut/eav-scan-v store tuples1 1 [:a] [nil]))))
     (is (= [[:zero 10 "10b" :c10]]
            (mapv vec (sut/eav-scan-v store tuples1 1 [:b :c] [nil nil]))))
+    (is (= [[:zero 10 "Jerry"] [:zero 10 "Mick"] [:zero 10 "Tom"]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [nil]))))
+    (is (= [[:zero 10 "Tom"]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [#(< (count %) 4)]))))
+    (is (= [[:zero 10 :c10 "Tom"]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:c :d]
+                                     [nil #(< (count %) 4)]))))
+    (is (= [[8 7 "8b"] [5 1 "5b"] [8 7 "8b"]]
+           (mapv vec (sut/eav-scan-v store tuples2 0 [:b :a] [nil nil]))))
+    (is (= [[10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]
+            [10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]]
+           (mapv vec (sut/eav-scan-v store tuples3 0 [:c :d] [nil nil]))))
     (sut/close store)
     (u/delete-files dir)))

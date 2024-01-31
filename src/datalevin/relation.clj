@@ -1,4 +1,3 @@
-
 (ns ^:no-doc datalevin.relation
   (:require
    [datalevin.spill :as sp]
@@ -88,6 +87,17 @@
             (sum-rel a)
             (sum-rel b))))))
 
+(defn prod-tuples
+  [tuples1 tuples2]
+  (reduce
+    (fn [acc t1]
+      (reduce (fn [^FastList acc t2]
+                (.add acc (join-tuples t1 t2))
+                acc)
+              acc tuples2))
+    (FastList.)
+    tuples1))
+
 (defn prod-rel
   ([] (relation! {} (doto (FastList.) (.add (make-array Object 0)))))
   ([rel1 rel2]
@@ -105,3 +115,20 @@
                    acc (:tuples rel2)))
          (FastList.)
          (:tuples rel1))))))
+
+(defn vertical-tuples
+  [coll]
+  (doto (FastList.) (.addAll (map #(object-array [%]) coll))))
+
+(defn horizontal-tuples
+  [coll]
+  (doto (FastList.) (.add (object-array coll))))
+
+(defn many-tuples
+  [values]
+  (->> values
+       (partition-by #(instance? FastList %))
+       (map #(if (instance? FastList (first %))
+               (reduce prod-tuples (map vertical-tuples %))
+               (horizontal-tuples %)))
+       (reduce prod-tuples)))

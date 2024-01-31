@@ -11,6 +11,7 @@
    [clojure.string :as str])
   (:import
    [java.util UUID List Arrays]
+   [java.nio ByteBuffer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
@@ -615,24 +616,62 @@
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
-  (eav-scan-v [_ tuples eid-idx attrs vpreds]
-    (when (and (seq tuples) (seq attrs))
-      (let [aids      (mapv #(-> % schema :db/aid) attrs)
+  (eav-scan-v [_ tuples eid-idx as vpreds]
+    (when (and (seq tuples) (seq as))
+      (let [aids      (mapv #(-> % schema :db/aid) as)
             na        (count aids)
             aid->pred (zipmap aids vpreds)
+            many      (set (filter #(= (-> % attrs schema :db/cardinality)
+                                       :db.cardinality/many) aids))
             aids      ^ints (let [as (int-array aids)] (Arrays/sort as) as)
             res       ^FastList (FastList.)
             operator
             (fn [^IListRandKeyValIterable iterable]
-              (let [iter ^IListRandKeyValIterator (.val-iterator iterable)]
+              (let [iter ^IListRandKeyValIterator (.val-iterator iterable)
+                    seen (UnifiedMap.)]
                 (dotimes [i (.size ^List tuples)]
                   (let [tuple ^objects (.get ^List tuples i)
-                        te    ^long (aget tuple eid-idx)
-                        values
+                        te    ^long (aget tuple eid-idx)]
+                    (if-let [ts (.get seen te)]
+                      (.addAll res ts)
+                      (if (seq many)
+                        (loop [next? (lmdb/seek-key iter te :id)
+                               ai    0
+                               dups  nil
+                               vs    (transient [])]
+                          (if next?
+                            (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                  a  (b/read-buffer (.rewind vb) :int)]
+                              (if (= a (aget aids ai))
+                                (let [v    (retrieved->v lmdb (b/avg->r vb))
+                                      pred (aid->pred a)
+                                      go?  (or (nil? pred) (pred v))]
+                                  (if (many a)
+                                    (recur (lmdb/has-next-val iter)
+                                           ai
+                                           (when go?
+                                             ((fnil u/list-add (FastList.)) dups v))
+                                           vs)
+                                    (when go?
+                                      (recur (lmdb/has-next-val iter)
+                                             (u/long-inc ai)
+                                             nil
+                                             (conj! vs v)))))
+                                (if dups
+                                  (recur true (u/long-inc ai) nil (conj! vs dups))
+                                  (recur (lmdb/has-next-val iter) ai nil vs))))
+                            (let [ai (if dups (u/long-inc ai) ai)
+                                  vs (if dups (conj! vs dups) vs)]
+                              (when (= ai na)
+                                (let [new (r/prod-tuples
+                                            (doto (FastList.) (.add tuple))
+                                            (r/many-tuples (persistent! vs)))]
+                                  (.put seen te new)
+                                  (.addAll res new))))))
                         (loop [next? (lmdb/seek-key iter te :id)
                                ai    0
                                vs    (transient [])]
-                          (if (and (< ai na) next?)
+                          (if next?
                             (let [vb (lmdb/next-val iter)
                                   a  (b/read-buffer vb :int)]
                               (if (= a (aget aids ai))
@@ -643,17 +682,26 @@
                                            (u/long-inc ai)
                                            (conj! vs v))))
                                 (recur (lmdb/has-next-val iter) ai vs)))
-                            (when (= ai na) (persistent! vs))))]
-                    (when (seq values)
-                      (.add res
-                            (r/join-tuples tuple (object-array values))))))))]
+                            (when (= ai na)
+                              (let [values (persistent! vs)]
+                                (when (seq values)
+                                  (let [new (r/join-tuples
+                                              tuple (object-array values))]
+                                    (.put seen te [new])
+                                    (.add res new)))))))))))))]
         (lmdb/operate-list-val-range
           lmdb c/eav operator
           [:closed
            (b/indexable nil (aget aids 0) c/v0 nil c/g0)
            (b/indexable nil (aget aids (dec (alength aids))) c/vmax nil c/gmax)]
           :avg)
-        res))))
+        res)))
+
+  (vae-scan-e [this tuples veid-idx attr]
+    )
+
+  (ave-scan-e [this tuples v-idx attr]
+    ))
 
 (defn fulltext-index
   [search-engines ft-ds]
