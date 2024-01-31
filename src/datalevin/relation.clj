@@ -88,15 +88,17 @@
             (sum-rel b))))))
 
 (defn prod-tuples
-  [tuples1 tuples2]
-  (reduce
-    (fn [acc t1]
-      (reduce (fn [^FastList acc t2]
-                (.add acc (join-tuples t1 t2))
-                acc)
-              acc tuples2))
-    (FastList.)
-    tuples1))
+  ([] (doto (FastList.) (.add (object-array []))))
+  ([tuples] tuples)
+  ([tuples1 tuples2]
+   (reduce
+     (fn [acc t1]
+       (reduce (fn [^FastList acc t2]
+                 (.add acc (join-tuples t1 t2))
+                 acc)
+               acc tuples2))
+     (FastList.)
+     tuples1)))
 
 (defn prod-rel
   ([] (relation! {} (doto (FastList.) (.add (make-array Object 0)))))
@@ -126,9 +128,10 @@
 
 (defn many-tuples
   [values]
-  (->> values
-       (partition-by #(instance? FastList %))
-       (map #(if (instance? FastList (first %))
-               (reduce prod-tuples (map vertical-tuples %))
-               (horizontal-tuples %)))
-       (reduce prod-tuples)))
+  (transduce (comp
+               (partition-by #(instance? FastList %))
+               (map #(if (instance? FastList (first %))
+                       (reduce prod-tuples (map vertical-tuples %))
+                       (horizontal-tuples %))))
+             prod-tuples
+             values))

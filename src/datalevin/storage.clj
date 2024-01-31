@@ -15,7 +15,6 @@
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
-   [datalevin.lmdb IListRandKeyValIterable IListRandKeyValIterator]
    [datalevin.bits Retrieved Indexable]))
 
 (if (u/graal?)
@@ -590,12 +589,12 @@
     (.ave-tuples store attr low-value high-value vpred false))
   (ave-tuples [_ attr low-value high-value vpred get-v?]
     (when-let [props (schema attr)]
-      (let [vt            (value-type props)
-            aid           (props :db/aid)
-            ^FastList res (FastList.)
+      (let [vt  (value-type props)
+            aid (props :db/aid)
+            res ^FastList (FastList.)
             operator
-            (fn [^IListRandKeyValIterable iterable]
-              (let [^IListRandKeyValIterator iter (lmdb/val-iterator iterable)]
+            (fn [iterable]
+              (let [iter (lmdb/val-iterator iterable)]
                 (loop [next? (lmdb/seek-key iter aid :int)]
                   (when next?
                     (let [veg (lmdb/next-val iter)]
@@ -626,8 +625,8 @@
             aids      ^ints (let [as (int-array aids)] (Arrays/sort as) as)
             res       ^FastList (FastList.)
             operator
-            (fn [^IListRandKeyValIterable iterable]
-              (let [iter ^IListRandKeyValIterator (.val-iterator iterable)
+            (fn [iterable]
+              (let [iter (lmdb/val-iterator iterable)
                     seen (UnifiedMap.)]
                 (dotimes [i (.size ^List tuples)]
                   (let [tuple ^objects (.get ^List tuples i)
@@ -650,7 +649,8 @@
                                     (recur (lmdb/has-next-val iter)
                                            ai
                                            (when go?
-                                             ((fnil u/list-add (FastList.)) dups v))
+                                             ((fnil u/list-add (FastList.))
+                                              dups v))
                                            vs)
                                     (when go?
                                       (recur (lmdb/has-next-val iter)
