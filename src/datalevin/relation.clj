@@ -1,6 +1,5 @@
 (ns ^:no-doc datalevin.relation
   (:require
-   [datalevin.spill :as sp]
    [datalevin.util :as u :refer [raise]]
    [datalevin.timeout :as timeout])
   (:import

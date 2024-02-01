@@ -13,6 +13,7 @@
    [java.util UUID List Arrays]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
+   [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
@@ -627,7 +628,7 @@
             operator
             (fn [iterable]
               (let [iter (lmdb/val-iterator iterable)
-                    seen (UnifiedMap.)]
+                    seen (LongObjectHashMap.)]
                 (dotimes [i (.size ^List tuples)]
                   (let [tuple ^objects (.get ^List tuples i)
                         te    ^long (aget tuple eid-idx)]
@@ -706,36 +707,59 @@
               res ^FastList (FastList.)
               operator
               (fn [iterable]
-                (let [iter (lmdb/val-iterator iterable)
-                      seen (UnifiedMap.)]
+                (let [iter (lmdb/val-iterator iterable)]
                   (dotimes [i (.size ^List tuples)]
                     (let [tuple ^objects (.get ^List tuples i)
                           tv    ^long (aget tuple veid-idx)]
-                      (if-let [ts (.get seen tv)]
-                        (.addAll res ts)
-                        (loop [next? (lmdb/seek-key iter tv :id)
-                               es    (transient [])]
-                          (if next?
-                            (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                  _  (.position vb 4)
-                                  e  (b/read-buffer vb :id)]
-                              (recur (lmdb/has-next-val iter)
-                                     (conj! es e)))
-                            (let [new (r/prod-tuples
-                                        (r/single-tuples tuple)
-                                        (r/vertical-tuples (persistent! es)))]
-                              (.put seen tv new)
-                              (.addAll res new)))))))))]
+                      (loop [next? (lmdb/seek-key iter tv :id)
+                             es    (transient [])]
+                        (if next?
+                          (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                e  (b/read-buffer (.position vb 4) :id)]
+                            (recur (lmdb/has-next-val iter)
+                                   (conj! es e)))
+                          (.addAll res (r/prod-tuples
+                                         (r/single-tuples tuple)
+                                         (r/vertical-tuples
+                                           (persistent! es))))))))))]
           (lmdb/operate-list-val-range
             lmdb c/vae operator
             [:closed
              (b/indexable c/e0 aid nil :db.type/ref c/g0)
-             (b/indexable c/emax aid nil :db.type/ref c/gmax)]
-            :aeg)
+             (b/indexable c/emax aid nil :db.type/ref c/gmax)] :aeg)
           res))))
 
   (ave-scan-e [_ tuples v-idx attr]
-    ))
+    (when (and (seq tuples) attr)
+      (when-let [props (schema attr)]
+        (let [vt  (value-type props)
+              aid (props :db/aid)
+              res ^FastList (FastList.)
+              scan-e
+              (fn [tuple v]
+                (let [operator
+                      (fn [iterable]
+                        (let [iter (lmdb/val-iterator iterable)]
+                          (loop [next? (lmdb/seek-key iter aid :int)
+                                 es    (transient [])]
+                            (if next?
+                              (let [e (b/veg->e (lmdb/next-val iter))]
+                                (recur (lmdb/has-next-val iter)
+                                       (conj! es e)))
+                              (.addAll res (r/prod-tuples
+                                             (r/single-tuples tuple)
+                                             (r/vertical-tuples
+                                               (persistent! es))))))))]
+                  (lmdb/operate-list-val-range
+                    lmdb c/ave operator
+                    [:closed
+                     (b/indexable c/e0 aid v vt c/g0)
+                     (b/indexable c/emax aid v vt c/gmax)] :veg)))]
+          (dotimes [i (.size ^List tuples)]
+            (let [tuple ^objects (.get ^List tuples i)
+                  tv    ^long (aget tuple v-idx)]
+              (scan-e tuple tv)))
+          res)))))
 
 (defn fulltext-index
   [search-engines ft-ds]
