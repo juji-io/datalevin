@@ -664,7 +664,7 @@
                                   vs (if dups (conj! vs dups) vs)]
                               (when (= ai na)
                                 (let [new (r/prod-tuples
-                                            (doto (FastList.) (.add tuple))
+                                            (r/single-tuples tuple)
                                             (r/many-tuples (persistent! vs)))]
                                   (.put seen te new)
                                   (.addAll res new))))))
@@ -697,10 +697,44 @@
           :avg)
         res)))
 
-  (vae-scan-e [this tuples veid-idx attr]
-    )
+  (vae-scan-e [_ tuples veid-idx attr]
+    (when (and (seq tuples) attr)
+      (when-let [props (schema attr)]
+        (assert (= :db.type/ref (props :db/valueType))
+                (str attr " is not a :db.type/ref"))
+        (let [aid (props :db/aid)
+              res ^FastList (FastList.)
+              operator
+              (fn [iterable]
+                (let [iter (lmdb/val-iterator iterable)
+                      seen (UnifiedMap.)]
+                  (dotimes [i (.size ^List tuples)]
+                    (let [tuple ^objects (.get ^List tuples i)
+                          tv    ^long (aget tuple veid-idx)]
+                      (if-let [ts (.get seen tv)]
+                        (.addAll res ts)
+                        (loop [next? (lmdb/seek-key iter tv :id)
+                               es    (transient [])]
+                          (if next?
+                            (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                  _  (.position vb 4)
+                                  e  (b/read-buffer vb :id)]
+                              (recur (lmdb/has-next-val iter)
+                                     (conj! es e)))
+                            (let [new (r/prod-tuples
+                                        (r/single-tuples tuple)
+                                        (r/vertical-tuples (persistent! es)))]
+                              (.put seen tv new)
+                              (.addAll res new)))))))))]
+          (lmdb/operate-list-val-range
+            lmdb c/vae operator
+            [:closed
+             (b/indexable c/e0 aid nil :db.type/ref c/g0)
+             (b/indexable c/emax aid nil :db.type/ref c/gmax)]
+            :aeg)
+          res))))
 
-  (ave-scan-e [this tuples v-idx attr]
+  (ave-scan-e [_ tuples v-idx attr]
     ))
 
 (defn fulltext-index

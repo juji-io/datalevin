@@ -126,12 +126,15 @@
   [coll]
   (doto (FastList.) (.add (object-array coll))))
 
+(defn single-tuples [tuple] (doto (FastList.) (.add tuple)))
+
 (defn many-tuples
   [values]
-  (transduce (comp
-               (partition-by #(instance? FastList %))
-               (map #(if (instance? FastList (first %))
-                       (reduce prod-tuples (map vertical-tuples %))
-                       (horizontal-tuples %))))
-             prod-tuples
-             values))
+  (transduce
+    (comp
+      (partition-by #(instance? FastList %))
+      (map #(if (instance? FastList (first %))
+              (reduce prod-tuples (map vertical-tuples %))
+              (horizontal-tuples %))))
+    prod-tuples
+    values))
