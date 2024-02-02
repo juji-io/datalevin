@@ -71,9 +71,7 @@
 
 (defn free-var? [sym] (and (symbol? sym) (= \? (first (name sym)))))
 
-(defn attr? [form] (or (keyword? form) (string? form)))
-
-(defn lookup-ref? [form] (looks-like? [attr? '_] form))
+(defn lookup-ref? [form] (looks-like? [keyword? '_] form))
 
 ;;
 
@@ -301,7 +299,7 @@
   (let [search-pattern (mapv #(if (or (= % '_) (free-var? %)) nil %)
                              pattern)
         datoms         (db/-search db search-pattern)
-        attr->prop     (->> (map vector pattern ["e" "a" "v" "tx"])
+        attr->prop     (->> (map vector pattern ["e" "a" "v"])
                             (filter (fn [[s _]] (free-var? s)))
                             (into {}))]
     (r/relation! attr->prop datoms)))
@@ -634,22 +632,20 @@
 (defn resolve-pattern-lookup-refs
   [source pattern]
   (if (db/-searchable? source)
-    (let [[e a v tx] pattern]
+    (let [[e a v] pattern]
       (->
-        [(if (or (lookup-ref? e) (attr? e)) (db/entid-strict source e) e)
+        [(if (or (lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
          a
-         (if (and v (attr? a) (db/ref? source a) (or (lookup-ref? v) (attr? v)))
-           (db/entid-strict source v) v)
-         (if (lookup-ref? tx) (db/entid-strict source tx) tx)]
+         (if (and v (keyword? a) (db/ref? source a) (or (lookup-ref? v) (keyword? v)))
+           (db/entid-strict source v) v)]
         (subvec 0 (count pattern))))
     pattern))
 
 (defn dynamic-lookup-attrs
   [source pattern]
-  (let [[e a v tx] pattern]
+  (let [[e a v] pattern]
     (cond-> #{}
       (free-var? e)         (conj e)
-      (free-var? tx)        (conj tx)
       (and
         (free-var? v)
         (not (free-var? a))

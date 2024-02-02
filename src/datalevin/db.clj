@@ -54,13 +54,11 @@
 
 (extend-type nil ISearchable (-searchable? [_] false))
 
-#_(defprotocol IQuery
-    (av->eids [db pattern pred]
-      "return tuples of eids that matches pattern")
-    (rev-merge-scan [db tuples veid-idx attr]
-      "assume tuples already sorted by veid")
-    (merge-scan [db tuples eid-idx attrs preds]
-      "assume tuples already sorted by eid"))
+(defprotocol ITuples
+  (-init-tuples [db pattern pred])
+  (-eav-scan-v [db tuples eid-idx attrs preds])
+  (-vae-scan-e [db tuples veid-idx attr])
+  (-ave-scan-e [db tuples v-idx attr]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -127,6 +125,29 @@
       (clear avet)
       (clear vaet)
       db))
+
+  ITuples
+  (-init-tuples
+    [db pattern pred]
+    (let [[_ a v _] pattern]
+      (wrap-cache
+          store
+          [:init-tuples a v pred]
+        (if v
+          (s/ave-tuples store a v v pred false)
+          (s/ave-tuples store a nil nil pred true)))))
+
+  (-eav-scan-v
+    [db tuples eid-idx attrs preds]
+    (s/eav-scan-v store tuples eid-idx attrs preds))
+
+  (-vae-scan-e
+    [db tuples veid-idx attr]
+    (s/vae-scan-e store tuples veid-idx attr))
+
+  (-ave-scan-e
+    [db tuples v-idx attr]
+    (s/ave-scan-e store tuples v-idx attr))
 
   ISearch
   (-search
