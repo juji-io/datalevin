@@ -700,7 +700,8 @@
 ;; query
 
 ;; q* prefix because of https://dev.clojure.org/jira/browse/CLJS-2237
-(deftrecord Query [qfind qwith return-map qin qwhere qtimeout])
+(deftrecord Query
+  [qfind qwith qreturn-map qin qwhere qorig-where qtimeout])
 
 (defn query->map [query]
   (loop [parsed {}, key nil, qs query]
@@ -803,7 +804,8 @@
                  (sequential? q) (query->map q)
                  :else           (raise "Query should be a vector or a map"
                                         {:error :parser/query, :form q}))
-        qwhere (parse-where (:where qm []))
+        where  (:where qm [])
+        qwhere (parse-where where)
         res    (map->Query
                  {:qfind       (parse-find (:find qm))
                   :qwith       (when-let [with (:with qm)]
@@ -814,6 +816,7 @@
                   :qin         (parse-in
                                  (or (:in qm) (default-in qwhere)))
                   :qwhere      qwhere
-                  :qtimeout   (parse-timeout (:timeout qm))})]
+                  :qorig-where where
+                  :qtimeout    (parse-timeout (:timeout qm))})]
     (validate-query res q qm)
     res))

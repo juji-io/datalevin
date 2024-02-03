@@ -4,6 +4,7 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
+   [clojure.pprint :as pp]
    [datalevin.db :as db]
    [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
@@ -22,6 +23,8 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List]
    [java.lang Long]))
+
+(defn spy [x] (pp/pprint x) x)
 
 ;; ----------------------------------------------------------------------------
 
@@ -43,10 +46,6 @@
 (defn intersect-keys
   [attrs1 attrs2]
   (set/intersection (set (keys attrs1)) (set (keys attrs2))))
-
-(defn zip
-  ([a b] (mapv vector a b))
-  ([a b & rest] (apply mapv vector a b rest)))
 
 (defn- looks-like?
   [pattern form]
@@ -137,25 +136,14 @@
          (instance? RulesVar (:variable binding)))
     (assoc context :rules (parse-rules value))
     :else
-    (update context :rels conj (in->rel binding value))))
+    (do
+      ;; (println "binding" binding "type ==>" (type binding))
+      ;; (println "varible type ==>" (type (:variable binding)))
+      (update context :rels conj (in->rel binding value)))))
 
 (defn resolve-ins
   [context bindings values]
-  (let [cb (count bindings)
-        cv (count values)]
-    (cond
-      (< cb cv)
-      (raise "Extra inputs passed, expected: "
-             (mapv #(:source (meta %)) bindings) ", got: " cv
-             {:error :query/inputs :expected bindings :got values})
-
-      (> cb cv)
-      (raise "Too few inputs passed, expected: "
-             (mapv #(:source (meta %)) bindings) ", got: " cv
-             {:error :query/inputs :expected bindings :got values})
-
-      :else
-      (reduce resolve-in context (zipmap bindings values)))))
+  (reduce resolve-in context (zipmap bindings values)))
 
 ;;
 
@@ -846,21 +834,19 @@
   [acc rel ^long len copy-map]
   (->Eduction
     (comp
-      (map
-        (fn [^{:tag "[[Ljava.lang.Object;"} t1]
-          (->Eduction
-            (map
-              (fn [t2]
-                (let [res (aclone t1)]
-                  (if (.isArray (.getClass ^Object t2))
-                    (dotimes [i len]
-                      (when-some [idx (aget ^objects copy-map i)]
-                        (aset res i (aget ^objects t2 idx))))
-                    (dotimes [i len]
-                      (when-some [idx (aget ^objects copy-map i)]
-                        (aset res i (get t2 idx)))))
-                  res)))
-            (:tuples rel))))
+      (map (fn [^{:tag "[[Ljava.lang.Object;"} t1]
+             (->Eduction
+               (map (fn [t2]
+                      (let [res (aclone t1)]
+                        (if (u/array? t2)
+                          (dotimes [i len]
+                            (when-some [idx (aget ^objects copy-map i)]
+                              (aset res i (aget ^objects t2 idx))))
+                          (dotimes [i len]
+                            (when-some [idx (aget ^objects copy-map i)]
+                              (aset res i (get t2 idx)))))
+                        res)))
+               (:tuples rel))))
       cat)
     acc))
 
@@ -923,30 +909,26 @@
         (first tuples)
         (range)))
 
-(defn- idxs-of
-  [pred coll]
-  (->> (map #(when (pred %1) %2) coll (range))
-       (remove nil?)))
-
 (defn aggregate
   [find-elements context resultset]
-  (let [group-idxs (idxs-of (complement dp/aggregate?) find-elements)
-        group-fn   (fn [tuple]
-                     (map #(nth tuple %) group-idxs))
+  (let [group-idxs (u/idxs-of (complement dp/aggregate?) find-elements)
+        group-fn   (fn [tuple] (map #(nth tuple %) group-idxs))
         grouped    (group-by group-fn resultset)]
     (for [[_ tuples] grouped]
       (-aggregate find-elements context tuples))))
 
-(defn map* [f xs] (reduce #(conj %1 (f %2)) (empty xs) xs))
+(defn map* [f xs]
+  (persistent! (reduce #(conj! %1 (f %2)) (transient (empty xs)) xs)))
 
 (defn tuples->return-map
   [return-map tuples]
   (let [symbols (:symbols return-map)
         idxs    (range 0 (count symbols))]
     (map* (fn [tuple]
-            (reduce
-              (fn [m i] (assoc m (nth symbols i) (nth tuple i)))
-              {} idxs))
+            (persistent!
+              (reduce
+                (fn [m i] (assoc! m (nth symbols i) (nth tuple i)))
+                (transient {}) idxs)))
           tuples)))
 
 (defprotocol IPostProcess
@@ -989,28 +971,46 @@
         resolved
         tuple))))
 
+(defn- sub-inputs
+  [parsed-q inputs]
+  ;; (spy parsed-q)
+  (let [wheres  (:qwhere parsed-q)
+        owheres (:qorig-where parsed-q)
+        ins     (:qin parsed-q)
+        cb      (count ins)
+        cv      (count inputs)]
+    (cond
+      (< cb cv)
+      (raise "Extra inputs passed, expected: "
+             (mapv #(:source (meta %)) ins) ", got: " cv
+             {:error :query/inputs :expected ins :got inputs})
+
+      (> cb cv)
+      (raise "Too few inputs passed, expected: "
+             (mapv #(:source (meta %)) ins) ", got: " cv
+             {:error :query/inputs :expected ins :got inputs})
+
+      :else
+      [parsed-q inputs])))
+
 (defn q
   [q & inputs]
-  (let [parsed-q      (lru/-get *query-cache* q #(dp/parse-query q))
-        find          (:qfind parsed-q)
-        find-elements (dp/find-elements find)
-        find-vars     (dp/find-vars find)
-        result-arity  (count find-elements)
-        with          (:qwith parsed-q)
-        timeout       (:qtimeout parsed-q)]
-    (binding [timeout/*deadline* (timeout/to-deadline timeout)]
-      (let [;; TODO utilize parser
-            all-vars  (u/concatv find-vars (map :symbol with))
-            q         (cond-> q
-                        (sequential? q) dp/query->map)
-            wheres    (:where q)
-            context   (-> (Context. [] {} {})
-                          (resolve-ins (:qin parsed-q) inputs))
-            resultset (-> context
-                          (-q wheres)
-                          (collect all-vars))]
+  (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
+    (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
+      (let [find              (:qfind parsed-q)
+            find-elements     (dp/find-elements find)
+            find-vars         (dp/find-vars find)
+            result-arity      (count find-elements)
+            with              (:qwith parsed-q)
+            all-vars          (u/concatv find-vars (map :symbol with))
+            [parsed-q inputs] (sub-inputs parsed-q inputs)
+            context           (-> (Context. [] {} {})
+                                  (resolve-ins (:qin parsed-q) inputs))
+            resultset         (-> context
+                                  (-q (:qorig-where parsed-q))
+                                  (collect all-vars))]
         (cond->> resultset
-          (:with q)
+          with
           (mapv #(vec (subvec % 0 result-arity)))
 
           (some dp/aggregate? find-elements)

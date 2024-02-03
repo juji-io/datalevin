@@ -326,6 +326,11 @@
   [pred xs]
   (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
 
+(defn idxs-of
+  [pred coll]
+  (->> (map #(when (pred %1) %2) coll (range))
+       (remove nil?)))
+
 (defn array? [^Object x] (some-> x .getClass .isArray))
 
 (defn same-sign?
