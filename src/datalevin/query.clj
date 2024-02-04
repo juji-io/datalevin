@@ -136,10 +136,7 @@
          (instance? RulesVar (:variable binding)))
     (assoc context :rules (parse-rules value))
     :else
-    (do
-      ;; (println "binding" binding "type ==>" (type binding))
-      ;; (println "varible type ==>" (type (:variable binding)))
-      (update context :rels conj (in->rel binding value)))))
+    (update context :rels conj (in->rel binding value))))
 
 (defn resolve-ins
   [context bindings values]
@@ -971,19 +968,28 @@
         resolved
         tuple))))
 
+(defn- or-join-var?
+  [clause s]
+  (and (list? clause)
+       (= 'or-join (first clause))
+       (some #(= % s) (tree-seq sequential? seq (second clause)))))
+
 (defn- sub-inputs*
   [parsed-q inputs]
   (let [qins    (:qin parsed-q)
+        finds   (tree-seq sequential? seq (:qorig-find parsed-q))
         owheres (:qorig-where parsed-q)
-        wheres  (tree-seq vector? seq owheres) ;; ignore symbols in ()
-        to-rm   (keep-indexed (fn [i qin]
-                                (let [v (:variable qin)
-                                      s (:symbol v)]
-                                  (when (and (instance? BindScalar qin)
-                                             (instance? Variable v)
-                                             (some #(= s %) wheres))
-                                    [i s])))
-                              qins)
+        to-rm   (keep-indexed
+                  (fn [i qin]
+                    (let [v (:variable qin)
+                          s (:symbol v)]
+                      (when (and (instance? BindScalar qin)
+                                 (instance? Variable v)
+                                 (not (fn? (nth inputs i)))
+                                 (not (some #(= s %) finds))
+                                 (not (some #(or-join-var? % s) owheres)))
+                        [i s])))
+                  qins)
         rm-idxs (set (map first to-rm))
         smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
     [(assoc parsed-q
