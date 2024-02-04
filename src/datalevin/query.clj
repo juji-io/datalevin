@@ -34,7 +34,7 @@
 
 ;; Records
 
-(defrecord Context [rels sources rules])
+(defrecord Context [parsed-q rels sources rules clauses graph])
 
 ;; Utilities
 
@@ -139,8 +139,9 @@
     (update context :rels conj (in->rel binding value))))
 
 (defn resolve-ins
-  [context bindings values]
-  (reduce resolve-in context (zipmap bindings values)))
+  [context values]
+  (let [bindings (get-in context [:parsed-q :qin])]
+    (reduce resolve-in context (zipmap bindings values))))
 
 ;;
 
@@ -822,10 +823,65 @@
                  (clause-size clause))))
            clauses))
 
+(defn- or-join-var?
+  [clause s]
+  (and (list? clause)
+       (= 'or-join (first clause))
+       (some #(= % s) (tree-seq sequential? seq (second clause)))))
+
+(defn- sub-inputs*
+  [parsed-q inputs]
+  (let [qins    (:qin parsed-q)
+        finds   (tree-seq sequential? seq (:qorig-find parsed-q))
+        owheres (:qorig-where parsed-q)
+        to-rm   (keep-indexed
+                  (fn [i qin]
+                    (let [v (:variable qin)
+                          s (:symbol v)]
+                      (when (and (instance? BindScalar qin)
+                                 (instance? Variable v)
+                                 (not (fn? (nth inputs i)))
+                                 (not (some #(= s %) finds))
+                                 (not (some #(or-join-var? % s) owheres)))
+                        [i s])))
+                  qins)
+        rm-idxs (set (map first to-rm))
+        smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
+    [(assoc parsed-q
+            :qorig-where (walk/postwalk-replace smap owheres)
+            :qin (u/remove-idxs rm-idxs qins))
+     (u/remove-idxs rm-idxs inputs)]))
+
+(defn- sub-inputs
+  [parsed-q inputs]
+  (let [ins (:qin parsed-q)
+        cb  (count ins)
+        cv  (count inputs)]
+    (cond
+      (< cb cv)
+      (raise "Extra inputs passed, expected: "
+             (mapv #(:source (meta %)) ins) ", got: " cv
+             {:error :query/inputs :expected ins :got inputs})
+      (> cb cv)
+      (raise "Too few inputs passed, expected: "
+             (mapv #(:source (meta %)) ins) ", got: " cv
+             {:error :query/inputs :expected ins :got inputs})
+      :else
+      (sub-inputs* parsed-q inputs))))
+
+(defn- build-graph
+  [context]
+  (assoc context :clauses (get-in context [:parsed-q :qorig-where])))
+
+(defn- pushdown-predicates
+  [context]
+  context)
+
 (defn -q
-  [context clauses]
+  [context]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context (sort-clauses context clauses))))
+    (reduce resolve-clause context
+            (sort-clauses context (:clauses context)))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -968,52 +1024,6 @@
         resolved
         tuple))))
 
-(defn- or-join-var?
-  [clause s]
-  (and (list? clause)
-       (= 'or-join (first clause))
-       (some #(= % s) (tree-seq sequential? seq (second clause)))))
-
-(defn- sub-inputs*
-  [parsed-q inputs]
-  (let [qins    (:qin parsed-q)
-        finds   (tree-seq sequential? seq (:qorig-find parsed-q))
-        owheres (:qorig-where parsed-q)
-        to-rm   (keep-indexed
-                  (fn [i qin]
-                    (let [v (:variable qin)
-                          s (:symbol v)]
-                      (when (and (instance? BindScalar qin)
-                                 (instance? Variable v)
-                                 (not (fn? (nth inputs i)))
-                                 (not (some #(= s %) finds))
-                                 (not (some #(or-join-var? % s) owheres)))
-                        [i s])))
-                  qins)
-        rm-idxs (set (map first to-rm))
-        smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
-    [(assoc parsed-q
-            :qorig-where (walk/postwalk-replace smap owheres)
-            :qin (u/remove-idxs rm-idxs qins))
-     (u/remove-idxs rm-idxs inputs)]))
-
-(defn- sub-inputs
-  [parsed-q inputs]
-  (let [ins (:qin parsed-q)
-        cb  (count ins)
-        cv  (count inputs)]
-    (cond
-      (< cb cv)
-      (raise "Extra inputs passed, expected: "
-             (mapv #(:source (meta %)) ins) ", got: " cv
-             {:error :query/inputs :expected ins :got inputs})
-      (> cb cv)
-      (raise "Too few inputs passed, expected: "
-             (mapv #(:source (meta %)) ins) ", got: " cv
-             {:error :query/inputs :expected ins :got inputs})
-      :else
-      (sub-inputs* parsed-q inputs))))
-
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
@@ -1025,10 +1035,11 @@
             with              (:qwith parsed-q)
             all-vars          (u/concatv find-vars (map :symbol with))
             [parsed-q inputs] (sub-inputs parsed-q inputs)
-            context           (-> (Context. [] {} {})
-                                  (resolve-ins (:qin parsed-q) inputs))
-            resultset         (-> context
-                                  (-q (:qorig-where parsed-q))
+            context           (-> (Context. parsed-q [] {} {} [] {})
+                                  (build-graph)
+                                  (pushdown-predicates)
+                                  (resolve-ins inputs))
+            resultset         (-> (-q context)
                                   (collect all-vars))]
         (cond->> resultset
           with

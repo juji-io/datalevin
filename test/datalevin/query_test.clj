@@ -87,10 +87,10 @@
                   [?e :aka ?k]
                   [?e :name ?n]
                   [?e :age  ?a]]
-                "dragon_killer_94"
+                "dragon_saver_94"
                 [[1 :name "Ivan"]
                  [1 :age  19]
-                 [1 :aka  "dragon_killer_94"]
+                 [1 :aka  "dragon_saver_94"]
                  [1 :aka  "-=autobot=-"]])
            #{["Ivan" 19]}))
     (d/close-db db)
