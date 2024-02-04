@@ -971,27 +971,42 @@
         resolved
         tuple))))
 
+(defn- sub-inputs*
+  [parsed-q inputs]
+  (let [qins    (:qin parsed-q)
+        owheres (:qorig-where parsed-q)
+        wheres  (tree-seq vector? seq owheres) ;; ignore symbols in ()
+        to-rm   (keep-indexed (fn [i qin]
+                                (let [v (:variable qin)
+                                      s (:symbol v)]
+                                  (when (and (instance? BindScalar qin)
+                                             (instance? Variable v)
+                                             (some #(= s %) wheres))
+                                    [i s])))
+                              qins)
+        rm-idxs (set (map first to-rm))
+        smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
+    [(assoc parsed-q
+            :qorig-where (walk/postwalk-replace smap owheres)
+            :qin (u/remove-idxs rm-idxs qins))
+     (u/remove-idxs rm-idxs inputs)]))
+
 (defn- sub-inputs
   [parsed-q inputs]
-  ;; (spy parsed-q)
-  (let [wheres  (:qwhere parsed-q)
-        owheres (:qorig-where parsed-q)
-        ins     (:qin parsed-q)
-        cb      (count ins)
-        cv      (count inputs)]
+  (let [ins (:qin parsed-q)
+        cb  (count ins)
+        cv  (count inputs)]
     (cond
       (< cb cv)
       (raise "Extra inputs passed, expected: "
              (mapv #(:source (meta %)) ins) ", got: " cv
              {:error :query/inputs :expected ins :got inputs})
-
       (> cb cv)
       (raise "Too few inputs passed, expected: "
              (mapv #(:source (meta %)) ins) ", got: " cv
              {:error :query/inputs :expected ins :got inputs})
-
       :else
-      [parsed-q inputs])))
+      (sub-inputs* parsed-q inputs))))
 
 (defn q
   [q & inputs]

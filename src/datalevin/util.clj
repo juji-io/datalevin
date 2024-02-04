@@ -331,6 +331,12 @@
   (->> (map #(when (pred %1) %2) coll (range))
        (remove nil?)))
 
+(defn remove-idxs
+  [rm-idxs coll]
+  (->> coll
+       (map-indexed #(when-not (rm-idxs %1) %2))
+       (remove nil?)))
+
 (defn array? [^Object x] (some-> x .getClass .isArray))
 
 (defn same-sign?

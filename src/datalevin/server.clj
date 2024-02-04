@@ -403,24 +403,24 @@
 
 (defn- transact-role-permission
   [sys-conn rid perm-act perm-obj perm-tgt]
-  (if-let [pid (permission-eid sys-conn perm-act perm-obj perm-tgt)]
-    (d/transact! sys-conn [{:role-perm/perm pid :role-perm/role rid}])
-    (if perm-tgt
-      (if-let [tid (perm-tgt-eid sys-conn perm-obj perm-tgt)]
+  (if perm-tgt
+    (if-let [tid (perm-tgt-eid sys-conn perm-obj perm-tgt)]
+      (if-let [pid (permission-eid sys-conn perm-act perm-obj tid)]
+        (d/transact! sys-conn [{:role-perm/perm pid :role-perm/role rid}])
         (d/transact! sys-conn [{:db/id          -1
                                 :permission/act perm-act
                                 :permission/obj perm-obj
                                 :permission/tgt tid}
                                {:db/id          -2
                                 :role-perm/perm -1
-                                :role-perm/role rid}])
-        (u/raise "Permission target does not exist." {}))
-      (d/transact! sys-conn [{:db/id          -1
-                              :permission/act perm-act
-                              :permission/obj perm-obj}
-                             {:db/id          -2
-                              :role-perm/perm -1
-                              :role-perm/role rid}]))))
+                                :role-perm/role rid}]))
+      (u/raise "Permission target does not exist." {}))
+    (d/transact! sys-conn [{:db/id          -1
+                            :permission/act perm-act
+                            :permission/obj perm-obj}
+                           {:db/id          -2
+                            :role-perm/perm -1
+                            :role-perm/role rid}])))
 
 (defn- transact-revoke-permission
   [sys-conn rid perm-act perm-obj perm-tgt]

@@ -1,16 +1,18 @@
 (ns datalevin.remote-test
-  (:require [datalevin.remote :as sut]
-            [datalevin.storage :as st]
-            [datalevin.interpret :as i]
-            [datalevin.datom :as d]
-            [datalevin.core :as dc]
-            [datalevin.db :as db]
-            [datalevin.constants :as c]
-            [datalevin.client :as cl]
-            [datalevin.test.core :refer [server-fixture]]
-            [clojure.test :refer [is testing deftest use-fixtures]])
-  (:import [java.util UUID]
-           [datalevin.datom Datom]))
+  (:require
+   [datalevin.remote :as sut]
+   [datalevin.storage :as st]
+   [datalevin.interpret :as i]
+   [datalevin.datom :as d]
+   [datalevin.core :as dc]
+   [datalevin.db :as db]
+   [datalevin.constants :as c]
+   [datalevin.client :as cl]
+   [datalevin.test.core :refer [server-fixture]]
+   [clojure.test :refer [is testing deftest use-fixtures]])
+  (:import
+   [java.util UUID]
+   [datalevin.datom Datom]))
 
 (use-fixtures :each server-fixture)
 

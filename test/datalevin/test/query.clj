@@ -138,7 +138,7 @@
 
 
 (deftest test-q-in
-  (let [dir   (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+  (let [dir   (u/tmp-dir (str "test-q-in-" (UUID/randomUUID)))
         db    (-> (d/empty-db dir)
                   (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
                               { :db/id 2, :name "Petr", :age 37 }
