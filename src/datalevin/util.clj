@@ -1,7 +1,7 @@
 (ns ^:no-doc datalevin.util
   (:refer-clojure :exclude [seqable?])
   (:require
-   [clojure.walk]
+   [clojure.walk :as walk]
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
@@ -180,7 +180,7 @@
   (let [impl-map (->> impls (map (juxt get-sig identity))
                       (filter first) (into {}))
         body     (macroexpand-1 (list* 'defrecord name fields impls))]
-    (clojure.walk/postwalk
+    (walk/postwalk
       (fn [form]
         (if (and (sequential? form) (= 'deftype* (first form)))
           (->> form
@@ -280,6 +280,16 @@
   (s/join "-" (map s/lower-case (split-words s))))
 
 (defn keyword->string [k] (subs (str k) 1))
+
+;;
+
+(defn walk-collect
+  [form pred]
+  (let [res (volatile! (transient []))]
+    (walk/postwalk
+      #(do (when (pred %) (vswap! res conj! %)) %)
+      form)
+    (persistent! @res)))
 
 (defn lazy-concat
   [colls]

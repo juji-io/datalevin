@@ -34,7 +34,7 @@
 
 ;; Records
 
-(defrecord Context [parsed-q rels sources rules clauses graph])
+(defrecord Context [parsed-q rels sources rules clauses graph plan])
 
 ;; Utilities
 
@@ -537,13 +537,7 @@
           :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
       [(u/concatv ['-differ?] call-args prev-args)])))
 
-(defn walk-collect
-  [form pred]
-  (let [res (atom [])]
-    (walk/postwalk #(do (when (pred %) (swap! res conj %)) %) form)
-    @res))
-
-(defn collect-vars [clause] (set (walk-collect clause free-var?)))
+(defn collect-vars [clause] (set (u/walk-collect clause free-var?)))
 
 (defn split-guards
   [clauses guards]
@@ -785,44 +779,6 @@
       (update context :rels collapse-rels (solve-rule context clause)))
     (-resolve-clause context clause)))
 
-#_(defn- sort-clauses
-    [context clauses]
-    (sort-by (fn [clause]
-               (if (rule? context clause)
-                 Long/MAX_VALUE
-                 ;; TODO dig into these
-                 (condp looks-like? clause
-                   [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
-                   Long/MAX_VALUE
-
-                   [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
-                   Long/MAX_VALUE
-
-                   [source? '*] ;; source + anything
-                   Long/MAX_VALUE
-
-                   '[or *] ;; (or ...)
-                   Long/MAX_VALUE
-
-                   '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
-                   Long/MAX_VALUE
-
-                   '[or-join [*] *] ;; (or-join [vars] ...)
-                   Long/MAX_VALUE
-
-                   '[and *] ;; (and ...)
-                   Long/MAX_VALUE
-
-                   '[not *] ;; (not ...)
-                   Long/MAX_VALUE
-
-                   '[not-join [*] *] ;; (not-join [vars] ...)
-                   Long/MAX_VALUE
-
-                   '[*] ;; pattern
-                   (clause-size clause))))
-             clauses))
-
 (defn- or-join-var?
   [clause s]
   (and (list? clause)
@@ -878,21 +834,25 @@
       :else
       (plugin-inputs* parsed-q inputs))))
 
-(defn- pushdown-predicates
-  "optimization that push down predicates into value scans"
-  [graph clauses]
-  [graph clauses])
-
-(defn- build-init-graph
+(defn- split-clauses
   [context]
   (let [ptn-idxs (set (u/idxs-of #(instance? Pattern %)
                                  (get-in context [:parsed-q :qwhere])))
         clauses  (get-in context [:parsed-q :qorig-where])]
     [(u/keep-idxs ptn-idxs clauses) (u/remove-idxs ptn-idxs clauses)]))
 
+(defn- init-graph
+  [[patterns clauses]]
+  [patterns clauses])
+
+(defn- pushdown-predicates
+  "optimization that push down predicates into value scans"
+  [[graph clauses]]
+  [graph clauses])
+
 ;; TODO group by source
 (defn- build-graph
-  "query graph looks like this:
+  "Split clauses, turn the group of clauses to be optimized into a query    graph that looks like this:
 
   {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
                 {:type :val-eq :tgt ?e1 :attrs {?e :age ?e1 :age}}
@@ -904,20 +864,34 @@
                 :friend {:var ?e0 :count 2500}}}
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
         :free  {:age {:var ?a :count 10890}}}
-   ...}"
+   ...}
+
+  Remaining clauses will be joined after the graph produces a relation"
   [context]
   (let [clauses (get-in context [:parsed-q :qorig-where])]
     (if (< 1 (count clauses))
-      (let [[graph clauses] (build-init-graph context)
-            [graph clauses] (pushdown-predicates graph clauses)]
+      (let [[graph clauses] (-> context
+                                (split-clauses)
+                                (init-graph)
+                                (pushdown-predicates))]
         (assoc context :clauses clauses :graph graph))
       (assoc context :clauses clauses))))
+
+(defn- optimize-plan
+  [context]
+  (if-let [graph (:graph context)]
+    (assoc context :plan graph)
+    context))
+
+(defn- execute-plan
+  [context]
+  (reduce resolve-clause context (:plan context)))
 
 (defn -q
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
     (as-> context c
-      (reduce resolve-clause c (:graph c))
+      (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
 
 (defn -collect-tuples
@@ -1074,9 +1048,10 @@
             with              (:qwith parsed-q)
             all-vars          (u/concatv find-vars (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
-            context           (-> (Context. parsed-q [] {} {} [] {})
+            context           (-> (Context. parsed-q [] {} {} [] {} [])
                                   (resolve-ins inputs)
-                                  (build-graph))
+                                  (build-graph)
+                                  (optimize-plan))
             resultset         (-> (-q context)
                                   (collect all-vars))]
         (cond->> resultset
