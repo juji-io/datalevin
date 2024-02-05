@@ -21,8 +21,7 @@
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar Variable]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util List]
-   [java.lang Long]))
+   [java.util List]))
 
 (defn spy [x] (pp/pprint x) x)
 
@@ -80,8 +79,8 @@
     (dp/parse-rules rules) ;; validation
     (group-by ffirst rules)))
 
-(defn ^Relation empty-rel
-  [binding]
+(defn empty-rel
+  ^Relation [binding]
   (let [vars (->> (dp/collect-vars-distinct binding)
                   (map :symbol))]
     (r/relation! (zipmap vars (range)) (FastList.))))
@@ -507,7 +506,7 @@
 (def rule-seqid (atom 0))
 
 (defn expand-rule
-  [clause context used-args]
+  [clause context]
   (let [[rule & call-args] clause
         seqid              (swap! rule-seqid inc)
         branches           (get (:rules context) rule)]
@@ -603,7 +602,7 @@
                                            (conj (get (:used-args frame)
                                                       rule [])
                                                  call-args))
-                          branches  (expand-rule rule-clause context used-args)]
+                          branches  (expand-rule rule-clause context)]
                       (recur (u/concatv
                                (for [branch branches]
                                  {:prefix-clauses prefix-clauses
@@ -639,8 +638,8 @@
 
 (defn- clause-size
   [clause]
-  (let [source   *implicit-source*
-        pattern  (resolve-pattern-lookup-refs source clause)]
+  (let [source  *implicit-source*
+        pattern (resolve-pattern-lookup-refs source clause)]
     (pattern-size source pattern)))
 
 (defn limit-rel
@@ -884,11 +883,42 @@
   [graph clauses])
 
 (defn- build-init-graph
-  [clauses]
-  ;; (spy clauses)
-  ;; (println "----")
-  [nil clauses]
-  )
+  [context clauses]
+  (split-with
+    (fn [clause]
+      (if (rule? context clause)
+        false
+        (condp looks-like? clause
+          [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
+          false
+
+          [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
+          false
+
+          [source? '*] ;; source + anything
+          false
+
+          '[or *] ;; (or ...)
+          false
+
+          '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
+          false
+
+          '[or-join [*] *] ;; (or-join [vars] ...)
+          false
+
+          '[and *] ;; (and ...)
+          false
+
+          '[not *] ;; (not ...)
+          false
+
+          '[not-join [*] *] ;; (not-join [vars] ...)
+          false
+
+          '[*] ;; pattern
+          true)))
+    clauses))
 
 ;; TODO group by source
 (defn- build-graph
@@ -907,15 +937,16 @@
    ...}"
   [context]
   (let [clauses         (get-in context [:parsed-q :qorig-where])
-        [graph clauses] (build-init-graph clauses)
+        [graph clauses] (build-init-graph context clauses)
         [graph clauses] (pushdown-predicates graph clauses)]
     (assoc context :clauses clauses :graph graph)))
 
 (defn -q
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context (:graph context))
-    (reduce resolve-clause context (sort-clauses context (:clauses context)))))
+    (as-> context c
+      (reduce resolve-clause c (:graph c))
+      (reduce resolve-clause c (sort-clauses c (:clauses c))))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -1029,11 +1060,11 @@
       (tuples->return-map return-map tuples)))
 
   FindColl
-  (-post-process [_ return-map tuples]
+  (-post-process [_ _ tuples]
     (into [] (map first) tuples))
 
   FindScalar
-  (-post-process [_ return-map tuples]
+  (-post-process [_ _ tuples]
     (ffirst tuples))
 
   FindTuple
@@ -1061,8 +1092,8 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    (println "-----")
-    (spy q)
+    ;; (println "-----")
+    ;; (spy q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
@@ -1072,8 +1103,8 @@
             all-vars          (u/concatv find-vars (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
             context           (-> (Context. parsed-q [] {} {} [] {})
-                                  (build-graph)
-                                  (resolve-ins inputs))
+                                  (resolve-ins inputs)
+                                  (build-graph))
             resultset         (-> (-q (spy context))
                                   (collect all-vars))]
         (cond->> resultset

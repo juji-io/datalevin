@@ -3,11 +3,10 @@
 ## WIP
 
 ### Added
-- [Datalog] New storage format that is more space efficient.
+- [Datalog] New storage format that is more space efficient, leveraging LMDB
+  dupsort feature, resulting in smaller data file.
 - [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
-- [Datalog] `search-datoms` to lookup datoms without having to specify an index.
-- [KV] Option `:compress?` to compress the data (default `true`). See
-  [details](doc/compress.md). #14
+- [Datalog] `search-datoms` function to lookup datoms without having to specify an index.
 - `with-read-transaction` and `with-read-transaction-kv` macros to allow
   multiple reads to see the same consistent view.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
@@ -35,22 +34,22 @@
 
 ### Changed
 - [KV] Change default write setting to be synchronously flushing to disk, so
-  that the database is crash resilient, but writing is slower. To get back the
-  old default setting that is faster but less safe, conj `:mapasync` to `:flags`
+  that the database is crash resilient, but write is slower. To get back the
+  old default setting that writes faster but less safe, conj `:mapasync` to `:flags`
   option.
-- [KV] Upgrade LMDB to the latest, now tracking mdb.master branch,
+- [KV] Upgrade LMDB to the latest version, now tracking mdb.master branch,
   as it includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [KV] Functions that take a predicate have a new argument `raw-pred?` to
   indicate whether the predicate takes a raw KV object (default), or a pair of
-  decoded values of k and v.
-- [Datalog] Change VEA index to VAE.
-- [Datalog] Query results can now be spillable to disk. #166
+  decoded values of k and v (more convenient).
+- [Datalog] Change VEA index back to VAE.
 
 ### Improved
+- [Datalog] Query results is now spillable to disk. #166
 - [Datalog] More robust handling of multiple threads concurrent transactions.
-- [Search] `search-utils` functions are now compiled instead of being
-  interpreted to improve performance.
+- [Search] Functions in `search-utils` namespace are now compiled instead of
+  being interpreted to improve performance.
 
 ## 0.8.25 (2023-12-14)
 ### Added
