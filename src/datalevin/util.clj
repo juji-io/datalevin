@@ -251,9 +251,10 @@
     (sequential? x) (vec x)
     :else [x]))
 
-(defn memoize-1 [f]
+(defn memoize-1
   "Like clojure.core/memoize but only caches the last invocation.
   Effectively dedupes invocations with same args."
+  [f]
   (let [cache (atom {})]
     (fn [& args]
       (or (get @cache args)
@@ -331,11 +332,23 @@
   (->> (map #(when (pred %1) %2) coll (range))
        (remove nil?)))
 
+(defn keep-idxs
+  "take a set of idxs to keep"
+  [kp-idxs-set coll]
+  (into []
+        (comp
+          (map-indexed #(when (kp-idxs-set %1) %2))
+          (remove nil?))
+        coll))
+
 (defn remove-idxs
-  [rm-idxs coll]
-  (->> coll
-       (map-indexed #(when-not (rm-idxs %1) %2))
-       (remove nil?)))
+  "take a set of idxs to remove"
+  [rm-idxs-set coll]
+  (into []
+        (comp
+          (map-indexed #(when-not (rm-idxs-set %1) %2))
+          (remove nil?))
+        coll))
 
 (defn array? [^Object x] (some-> x .getClass .isArray))
 
@@ -388,7 +401,7 @@
   "Makes sure that all changes to `src` are reflected in `dst`."
   [src dst]
   (add-watch src dst
-             (fn [_ src old new]
+             (fn [_ src _ _]
                (alter-var-root dst (constantly @src))
                (alter-meta! dst merge (dissoc (meta src) :name)))))
 
@@ -400,10 +413,9 @@
   ([sym]
    `(import-macro ~sym nil))
   ([sym name]
-   (let [vr       (resolve sym)
-         m        (meta vr)
-         n        (or name (with-meta (:name m) {}))
-         arglists (:arglists m)]
+   (let [vr (resolve sym)
+         m  (meta vr)
+         n  (or name (with-meta (:name m) {}))]
      (when-not vr
        (throw (IllegalArgumentException. (str "Don't recognize " sym))))
      (when-not (:macro m)

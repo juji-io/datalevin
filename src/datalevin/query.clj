@@ -18,7 +18,8 @@
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
-    FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar Variable]
+    FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
+    Variable Pattern]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List]))
@@ -321,12 +322,12 @@
     (lookup-pattern-db source pattern)
     (lookup-pattern-coll source pattern)))
 
-(defn- pattern-size
-  [source pattern]
-  (if (db/-searchable? source)
-    (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)]
-      (db/-count source search-pattern))
-    (count (filter #(matches-pattern? pattern %) source))))
+#_(defn- pattern-size
+    [source pattern]
+    (if (db/-searchable? source)
+      (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)]
+        (db/-count source search-pattern))
+      (count (filter #(matches-pattern? pattern %) source))))
 
 (defn collapse-rels
   [rels new-rel]
@@ -636,11 +637,11 @@
         (not (free-var? a))
         (db/ref? source a)) (conj v))))
 
-(defn- clause-size
-  [clause]
-  (let [source  *implicit-source*
-        pattern (resolve-pattern-lookup-refs source clause)]
-    (pattern-size source pattern)))
+#_(defn- clause-size
+    [clause]
+    (let [source  *implicit-source*
+          pattern (resolve-pattern-lookup-refs source clause)]
+      (pattern-size source pattern)))
 
 (defn limit-rel
   [rel vars]
@@ -784,43 +785,43 @@
       (update context :rels collapse-rels (solve-rule context clause)))
     (-resolve-clause context clause)))
 
-(defn- sort-clauses
-  [context clauses]
-  (sort-by (fn [clause]
-             (if (rule? context clause)
-               Long/MAX_VALUE
-               ;; TODO dig into these
-               (condp looks-like? clause
-                 [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
+#_(defn- sort-clauses
+    [context clauses]
+    (sort-by (fn [clause]
+               (if (rule? context clause)
                  Long/MAX_VALUE
+                 ;; TODO dig into these
+                 (condp looks-like? clause
+                   [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
+                   Long/MAX_VALUE
 
-                 [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
-                 Long/MAX_VALUE
+                   [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
+                   Long/MAX_VALUE
 
-                 [source? '*] ;; source + anything
-                 Long/MAX_VALUE
+                   [source? '*] ;; source + anything
+                   Long/MAX_VALUE
 
-                 '[or *] ;; (or ...)
-                 Long/MAX_VALUE
+                   '[or *] ;; (or ...)
+                   Long/MAX_VALUE
 
-                 '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
-                 Long/MAX_VALUE
+                   '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
+                   Long/MAX_VALUE
 
-                 '[or-join [*] *] ;; (or-join [vars] ...)
-                 Long/MAX_VALUE
+                   '[or-join [*] *] ;; (or-join [vars] ...)
+                   Long/MAX_VALUE
 
-                 '[and *] ;; (and ...)
-                 Long/MAX_VALUE
+                   '[and *] ;; (and ...)
+                   Long/MAX_VALUE
 
-                 '[not *] ;; (not ...)
-                 Long/MAX_VALUE
+                   '[not *] ;; (not ...)
+                   Long/MAX_VALUE
 
-                 '[not-join [*] *] ;; (not-join [vars] ...)
-                 Long/MAX_VALUE
+                   '[not-join [*] *] ;; (not-join [vars] ...)
+                   Long/MAX_VALUE
 
-                 '[*] ;; pattern
-                 (clause-size clause))))
-           clauses))
+                   '[*] ;; pattern
+                   (clause-size clause))))
+             clauses))
 
 (defn- or-join-var?
   [clause s]
@@ -883,42 +884,11 @@
   [graph clauses])
 
 (defn- build-init-graph
-  [context clauses]
-  (split-with
-    (fn [clause]
-      (if (rule? context clause)
-        false
-        (condp looks-like? clause
-          [[symbol? '*]] ;; predicate [(pred ?a ?b ?c)]
-          false
-
-          [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
-          false
-
-          [source? '*] ;; source + anything
-          false
-
-          '[or *] ;; (or ...)
-          false
-
-          '[or-join [[*] *] *] ;; (or-join [[req-vars] vars] ...)
-          false
-
-          '[or-join [*] *] ;; (or-join [vars] ...)
-          false
-
-          '[and *] ;; (and ...)
-          false
-
-          '[not *] ;; (not ...)
-          false
-
-          '[not-join [*] *] ;; (not-join [vars] ...)
-          false
-
-          '[*] ;; pattern
-          true)))
-    clauses))
+  [context]
+  (let [ptn-idxs (set (u/idxs-of #(instance? Pattern %)
+                                 (get-in context [:parsed-q :qwhere])))
+        clauses  (get-in context [:parsed-q :qorig-where])]
+    [(u/keep-idxs ptn-idxs clauses) (u/remove-idxs ptn-idxs clauses)]))
 
 ;; TODO group by source
 (defn- build-graph
@@ -936,17 +906,19 @@
         :free  {:age {:var ?a :count 10890}}}
    ...}"
   [context]
-  (let [clauses         (get-in context [:parsed-q :qorig-where])
-        [graph clauses] (build-init-graph context clauses)
-        [graph clauses] (pushdown-predicates graph clauses)]
-    (assoc context :clauses clauses :graph graph)))
+  (let [clauses (get-in context [:parsed-q :qorig-where])]
+    (if (< 1 (count clauses))
+      (let [[graph clauses] (build-init-graph context)
+            [graph clauses] (pushdown-predicates graph clauses)]
+        (assoc context :clauses clauses :graph graph))
+      (assoc context :clauses clauses))))
 
 (defn -q
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
     (as-> context c
       (reduce resolve-clause c (:graph c))
-      (reduce resolve-clause c (sort-clauses c (:clauses c))))))
+      (reduce resolve-clause c (:clauses c)))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -1093,7 +1065,7 @@
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
     ;; (println "-----")
-    ;; (spy q)
+    ;; (println parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
@@ -1105,7 +1077,7 @@
             context           (-> (Context. parsed-q [] {} {} [] {})
                                   (resolve-ins inputs)
                                   (build-graph))
-            resultset         (-> (-q (spy context))
+            resultset         (-> (-q context)
                                   (collect all-vars))]
         (cond->> resultset
           with
