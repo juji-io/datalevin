@@ -77,6 +77,15 @@
                   [?e2 :name ?n]] db "Ivan")
            #{[1 1 "Ivan"]
              [1 4 "John"]}))
+    (is (= (d/q '[:find ?n
+                  :in $ ?i
+                  :where
+                  [?e :name ?i]
+                  [?e :age ?a]
+                  [?e2 :age ?a2]
+                  [(< ?a ?a2)]
+                  [?e2 :name ?n]] db "Ivan")
+           #{["Oleg"] ["Petr"]}))
     (is (= (d/q '[:find  ?a1
                   :where [_ :age ?a1]
                   [(>= ?a1 22)]] db)

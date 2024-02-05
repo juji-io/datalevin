@@ -829,7 +829,7 @@
        (= 'or-join (first clause))
        (some #(= % s) (tree-seq sequential? seq (second clause)))))
 
-(defn- sub-inputs*
+(defn- plugin-inputs*
   [parsed-q inputs]
   (let [qins    (:qin parsed-q)
         finds   (tree-seq sequential? seq (:qorig-find parsed-q))
@@ -848,11 +848,20 @@
         rm-idxs (set (map first to-rm))
         smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
     [(assoc parsed-q
+            :qwhere (reduce (fn [ws [s v]]
+                              (walk/postwalk (fn [e]
+                                               (if (and (instance? Variable e)
+                                                        (= s (:symbol e)))
+                                                 (Constant. v)
+                                                 e))
+                                             ws))
+                            (:qwhere parsed-q) smap)
             :qorig-where (walk/postwalk-replace smap owheres)
             :qin (u/remove-idxs rm-idxs qins))
      (u/remove-idxs rm-idxs inputs)]))
 
-(defn- sub-inputs
+(defn- plugin-inputs
+  "optimization that plugs simple value inputs into where clauses"
   [parsed-q inputs]
   (let [ins (:qin parsed-q)
         cb  (count ins)
@@ -867,21 +876,46 @@
              (mapv #(:source (meta %)) ins) ", got: " cv
              {:error :query/inputs :expected ins :got inputs})
       :else
-      (sub-inputs* parsed-q inputs))))
-
-(defn- build-graph
-  [context]
-  (assoc context :clauses (get-in context [:parsed-q :qorig-where])))
+      (plugin-inputs* parsed-q inputs))))
 
 (defn- pushdown-predicates
+  "optimization that push down predicates into value scans"
+  [graph clauses]
+  [graph clauses])
+
+(defn- build-init-graph
+  [clauses]
+  ;; (spy clauses)
+  ;; (println "----")
+  [nil clauses]
+  )
+
+;; TODO group by source
+(defn- build-graph
+  "query graph looks like this:
+
+  {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
+                {:type :val-eq :tgt ?e1 :attrs {?e :age ?e1 :age}}
+                {:type  :val-pred :tgt ?e2 :pred (< ?a ?y)
+                 :attrs {?e :age ?e2 :year}}]
+        :bound {:name {:val \"Tom\" :count 5}}
+        :free  {:age    {:var ?a :count 10890}
+                :salary {:var ?s :pred (< ?s 200000)}
+                :friend {:var ?e0 :count 2500}}}
+   ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
+        :free  {:age {:var ?a :count 10890}}}
+   ...}"
   [context]
-  context)
+  (let [clauses         (get-in context [:parsed-q :qorig-where])
+        [graph clauses] (build-init-graph clauses)
+        [graph clauses] (pushdown-predicates graph clauses)]
+    (assoc context :clauses clauses :graph graph)))
 
 (defn -q
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (reduce resolve-clause context
-            (sort-clauses context (:clauses context)))))
+    (reduce resolve-clause context (:graph context))
+    (reduce resolve-clause context (sort-clauses context (:clauses context)))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -1027,6 +1061,8 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
+    (println "-----")
+    (spy q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
@@ -1034,12 +1070,11 @@
             result-arity      (count find-elements)
             with              (:qwith parsed-q)
             all-vars          (u/concatv find-vars (map :symbol with))
-            [parsed-q inputs] (sub-inputs parsed-q inputs)
+            [parsed-q inputs] (plugin-inputs parsed-q inputs)
             context           (-> (Context. parsed-q [] {} {} [] {})
                                   (build-graph)
-                                  (pushdown-predicates)
                                   (resolve-ins inputs))
-            resultset         (-> (-q context)
+            resultset         (-> (-q (spy context))
                                   (collect all-vars))]
         (cond->> resultset
           with

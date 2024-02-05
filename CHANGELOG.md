@@ -3,9 +3,10 @@
 ## WIP
 
 ### Added
+- [Datalog] New storage format that is more space efficient.
 - [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
 - [Datalog] `search-datoms` to lookup datoms without having to specify an index.
-- Option `:compress?` to compress the data (default `true`). See
+- [KV] Option `:compress?` to compress the data (default `true`). See
   [details](doc/compress.md). #14
 - `with-read-transaction` and `with-read-transaction-kv` macros to allow
   multiple reads to see the same consistent view.
@@ -25,6 +26,7 @@
     * `list-range-keep`
     * `list-range-filter-count`
     * `visit-list-range`
+    * `operate-list-val-range`
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `range-some` function that is similar to `some` for a given range.
 - [KV] `range-keep` function that is similar to `keep` for a given range.
