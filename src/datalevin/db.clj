@@ -139,15 +139,24 @@
 
   (-eav-scan-v
     [db tuples eid-idx attrs preds]
-    (s/eav-scan-v store tuples eid-idx attrs preds))
+    (wrap-cache
+        store
+        [:eav-scan-v tuples eid-idx attrs preds]
+      (s/eav-scan-v store tuples eid-idx attrs preds)))
 
   (-vae-scan-e
     [db tuples veid-idx attr]
-    (s/vae-scan-e store tuples veid-idx attr))
+    (wrap-cache
+        store
+        [:vae-scan-e tuples veid-idx attr]
+      (s/vae-scan-e store tuples veid-idx attr)))
 
   (-ave-scan-e
     [db tuples v-idx attr]
-    (s/ave-scan-e store tuples v-idx attr))
+    (wrap-cache
+        store
+        [:ave-scan-e tuples v-idx attr]
+      (s/ave-scan-e store tuples v-idx attr)))
 
   ISearch
   (-search
@@ -433,6 +442,11 @@
               :pull-patterns (lru/cache 32 :constant)})]
     (swap! dbs assoc (s/db-name store) db)
     db))
+
+(defn transfer
+  [^DB old store]
+  (DB. store (.-max-eid old) (.-max-tx old) (.-eavt old) (.-avet old)
+       (.-vaet old) (.-pull-patterns old)))
 
 (defn ^DB empty-db
   ([] (empty-db nil nil))

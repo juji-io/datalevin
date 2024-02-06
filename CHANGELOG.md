@@ -7,8 +7,6 @@
   dupsort feature, resulting in smaller data file.
 - [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
 - [Datalog] `search-datoms` function to lookup datoms without having to specify an index.
-- `with-read-transaction` and `with-read-transaction-kv` macros to allow
-  multiple reads to see the same consistent view.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
     * `put-list-items`

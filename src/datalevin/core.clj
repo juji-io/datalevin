@@ -1,7 +1,6 @@
 (ns datalevin.core
   "User facing API for Datalevin library features"
   (:require
-   [clojure.java.io :as io]
    [clojure.pprint :as p]
    [clojure.edn :as edn]
    [taoensso.nippy :as nippy]
@@ -177,36 +176,6 @@ Only usable for debug output.
              ;     {:db/id 2, :name \"Oleg\"}]"}
   pull-many dp/pull-many)
 
-;; Query
-
-(defn- only-remote-db
-  "Return [remote-db [updated-inputs]] if the inputs contain only one db
-  and its backing store is a remote one, where the remote-db in the inputs is
-  replaced by `:remote-db-placeholder, otherwise return `nil`"
-  [inputs]
-  (let [dbs (filter db/db? inputs)]
-    (when-let [rdb (first dbs)]
-      (let [rstore (.-store ^DB rdb)]
-        (when (and (= 1 (count dbs)) (instance? DatalogStore rstore))
-          [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
-
-(defn q
-  "Executes a Datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
-
-          Usage:
-
-          ```
-          (q '[:find ?value
-               :where [_ :likes ?value]
-               :timeout 5000]
-             db)
-          ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
-          ```"
-  [query & inputs]
-  (if-let [[store inputs'] (only-remote-db inputs)]
-    (r/q store query inputs')
-    (apply dq/q query inputs)))
-
 ;; Creating DB
 
 (def ^{:arglists '([] [dir] [dir schema] [dir schema opts])
@@ -339,38 +308,39 @@ Only usable for debug output.
      (let [db#  ^DB (deref ~orig-conn)
            s#   (.-store db#)
            old# (datalog-index-cache-limit db#)]
-       (locking (l/write-txn s#)
-         (datalog-index-cache-limit db# 0)
-         (if (instance? DatalogStore s#)
-           (let [res#    (if (l/writing? s#)
-                           (let [~conn ~orig-conn]
-                             ~@body)
-                           (let [s1# (r/open-transact s#)
-                                 w#  #(let [~conn (atom (db/new-db s1#)
-                                                        :meta (meta ~orig-conn))]
-                                        ~@body) ]
-                             (try
-                               (u/repeat-try-catch
-                                   ~c/+in-tx-overflow-times+
-                                   l/resized? (w#))
-                               (finally (r/close-transact s#)))))
-                 new-db# (db/new-db s#)]
-             (reset! ~orig-conn new-db#)
-             (datalog-index-cache-limit new-db# old#)
-             res#)
-           (let [kv#     (.-lmdb ^Store s#)
-                 s1#     (volatile! nil)
-                 res1#   (l/with-transaction-kv [kv1# kv#]
-                           (let [conn1# (atom (db/new-db (s/transfer s# kv1#))
-                                              :meta (meta ~orig-conn))
-                                 res#   (let [~conn conn1#]
-                                          ~@body)]
-                             (vreset! s1# (.-store ^DB (deref conn1#)))
-                             res#))
-                 new-db# (db/new-db (s/transfer (deref s1#) kv#))]
-             (reset! ~orig-conn new-db#)
-             (datalog-index-cache-limit new-db# old#)
-             res1#))))))
+       (datalog-index-cache-limit db# 0)
+       (if (instance? DatalogStore s#)
+         (let [res#    (if (l/writing? s#)
+                         (let [~conn ~orig-conn]
+                           ~@body)
+                         (let [s1# (r/open-transact s#)
+                               w#  #(let [~conn
+                                          (atom (db/transfer db# s1#)
+                                                :meta (meta ~orig-conn))]
+                                      ~@body) ]
+                           (try
+                             (u/repeat-try-catch
+                                 ~c/+in-tx-overflow-times+
+                                 l/resized? (w#))
+                             (finally (r/close-transact s#)))))
+               new-db# (db/new-db s#)]
+           (reset! ~orig-conn new-db#)
+           (datalog-index-cache-limit new-db# old#)
+           res#)
+         (let [kv#     (.-lmdb ^Store s#)
+               s1#     (volatile! nil)
+               res1#   (l/with-transaction-kv [kv1# kv#]
+                         (let [conn1# (atom (db/transfer
+                                              db# (s/transfer s# kv1#))
+                                            :meta (meta ~orig-conn))
+                               res#   (let [~conn conn1#]
+                                        ~@body)]
+                           (vreset! s1# (.-store ^DB (deref conn1#)))
+                           res#))
+               new-db# (db/new-db (s/transfer (deref s1#) kv#))]
+           (reset! ~orig-conn new-db#)
+           (datalog-index-cache-limit new-db# old#)
+           res1#)))))
 
 (def ^{:arglists '([conn])
        :doc      "Rollback writes of the transaction from inside [[with-transaction]]."}
@@ -410,6 +380,40 @@ Only usable for debug output.
     (doseq [dbi [c/eav c/ave c/vae c/giants c/schema]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
+
+
+;; Query
+
+(defn- only-remote-db
+  "Return [remote-db [updated-inputs]] if the inputs contain only one db
+  and its backing store is a remote one, where the remote-db in the inputs is
+  replaced by `:remote-db-placeholder, otherwise return `nil`"
+  [inputs]
+  (let [dbs (filter db/-searchable? inputs)]
+    (when-let [rdb (first dbs)]
+      (let [rstore (.-store ^DB rdb)]
+        (when (and (= 1 (count dbs))
+                   (instance? DatalogStore rstore)
+                   (db/db? rdb))
+          [rstore (vec (replace {rdb :remote-db-placeholder} inputs))])))))
+
+(defn q
+  "Executes a Datalog query. See [docs.datomic.com/on-prem/query.html](https://docs.datomic.com/on-prem/query.html).
+
+          Usage:
+
+          ```
+          (q '[:find ?value
+               :where [_ :likes ?value]
+               :timeout 5000]
+             db)
+          ; => #{[\"fries\"] [\"candy\"] [\"pie\"] [\"pizza\"]}
+          ```"
+  [query & inputs]
+  (if-let [[store inputs'] (only-remote-db inputs)]
+    (r/q store query inputs')
+    (apply dq/q query inputs)))
+
 
 ;; Index lookups
 
@@ -856,6 +860,8 @@ Only usable for debug output.
   {:pre [(conn? conn)]}
   @conn)
 
+;;
+
 (defn opts
   "Return the option map of the Datalog DB"
   [conn]
@@ -976,13 +982,11 @@ Only usable for debug output.
    {:pre [(conn? conn)]}
    (future-call #(transact! conn tx-data tx-meta))))
 
-(defn- rand-bits [^long pow]
-  (rand-int (bit-shift-left 1 pow)))
-
 (defn ^:no-doc squuid
-  "Generates a UUID that grow with time. Such UUIDs will always go to the end  of the index and that will minimize insertions in the middle.
+  "Generates a UUID that grow with time.
 
-  Consist of 64 bits of current UNIX timestamp (in seconds) and 64 random bits (2^64 different unique values per second)."
+  Not particuarly meaningful in Datalevin, included only for the purpose
+  of compatibility with code that worked with Datomic and Datascript. "
   ([]
    (squuid (System/currentTimeMillis)))
   ([^long msec]
@@ -995,7 +999,8 @@ Only usable for debug output.
      (UUID. new-high low))))
 
 (defn ^:no-doc squuid-time-millis
-  "Returns time that was used in [[squuid]] call, in milliseconds, rounded to the closest second."
+  "Returns time that was used in [[squuid]] call, in milliseconds,
+  rounded to the closest second."
   [uuid]
   (-> (.getMostSignificantBits ^UUID uuid)
       (bit-shift-right 32)

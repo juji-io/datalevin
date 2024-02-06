@@ -24,7 +24,7 @@
    [java.nio ByteBuffer BufferOverflowException]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
-   [clojure.lang IPersistentVector MapEntry]
+   [clojure.lang IPersistentVector MapEntry IObj]
    [datalevin.spill SpillableVector]
    [datalevin.compress ICompressor]))
 
@@ -553,7 +553,8 @@
                ^ByteBuffer start-vb-w
                ^ByteBuffer stop-vb-w
                write-txn
-               writing?]
+               writing?
+               ^:unsynchronized-mutable meta]
   IWriting
   (writing? [_] writing?)
 
@@ -562,7 +563,11 @@
   (mark-write [_]
     (->LMDB
       env info pool dbis kb-w start-kb-w stop-kb-w
-      start-vb-w stop-vb-w write-txn true))
+      start-vb-w stop-vb-w write-txn true meta))
+
+  IObj
+  (withMeta [this m] (set! meta m) this)
+  (meta [_] meta)
 
   ILMDB
   (close-kv [_]
@@ -1088,7 +1093,8 @@
                               (bf/allocate-buffer c/+max-key-size+)
                               (bf/allocate-buffer c/+max-key-size+)
                               (volatile! nil)
-                              false)]
+                              false
+                              nil)]
        (l/open-dbi lmdb c/kv-info)
        (if temp?
          (u/delete-on-exit file)

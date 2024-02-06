@@ -514,14 +514,3 @@ values;")
                  condition#
                ~@body))
            (finally (when-not writing# (close-transact-kv ~orig-db))))))))
-
-#_(defmacro with-read-transaction-kv
-    "Evaluate body within the context of a single read-only transaction,
-  ensuring consistent view of key-value store.
-
-  `db` is a new identifier of the kv database with a single read-only
-  transaction attached, and `orig-db` is the original kv database.
-
-  `body` should refer to `db`. "
-    [[db orig-db] & body]
-    `(let []))
