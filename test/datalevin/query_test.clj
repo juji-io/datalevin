@@ -39,14 +39,24 @@
                        :where [?e :age ?v]]
                      db [:name "Ivan"]))
            #{[15]}))
+    (is (= (set (d/q '[:find ?v ?s
+                       :in $ ?e
+                       :where
+                       [?e :age ?v]
+                       [?e :school ?s]]
+                     db [:name "Ivan"]))
+           #{[15 :ny/union]}))
     (is (= #{"robot" "ai" "bigmac"}
            (set (d/q '[:find [?aname ...]
                        :where
                        [_ :aka ?aname]]
                      db))))
     (is (= (d/q '[:find  ?a ?v
-                  :in    $db ?e
-                  :where [$db ?e ?a ?v]] db 1)
+                  :in    $db ?e ?k
+                  :where
+                  [$db ?e ?a ?v]
+                  [$db ?e :aka ?k]]
+                db 1 "ai")
            #{[:name "Ivan"]
              [:age 15]
              [:friend 2]

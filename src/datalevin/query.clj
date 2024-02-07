@@ -613,12 +613,12 @@
   [source pattern]
   (if (db/-searchable? source)
     (let [[e a v] pattern]
-      (->
-        [(if (or (lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
-         a
-         (if (and v (keyword? a) (db/ref? source a) (or (lookup-ref? v) (keyword? v)))
-           (db/entid-strict source v) v)]
-        (subvec 0 (count pattern))))
+      [(if (or (lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
+       a
+       (if (and v (keyword? a) (db/ref? source a)
+                (or (lookup-ref? v) (keyword? v)))
+         (db/entid-strict source v)
+         v)])
     pattern))
 
 (defn dynamic-lookup-attrs
@@ -834,26 +834,59 @@
       :else
       (plugin-inputs* parsed-q inputs))))
 
+(defn- optimizable?
+  "only data stored in Datalevin are optimizable"
+  [sources pattern]
+  (when (instance? Pattern pattern)
+    (if-let [s (get-in pattern [:source :symbol])]
+      (when-let [src (get sources s)]
+        (db/-searchable? src))
+      (when-let [src (get sources '$)]
+        (db/-searchable? src)))))
+
 (defn- split-clauses
+  "split clauses into two parts, one part is to be optimized"
   [context]
-  (let [ptn-idxs (set (u/idxs-of #(instance? Pattern %)
+  (let [ptn-idxs (set (u/idxs-of #(optimizable? (:sources context) %)
                                  (get-in context [:parsed-q :qwhere])))
         clauses  (get-in context [:parsed-q :qorig-where])]
-    [(u/keep-idxs ptn-idxs clauses) (u/remove-idxs ptn-idxs clauses)]))
+    (assoc context :graph (u/keep-idxs ptn-idxs clauses)
+           :clauses (u/remove-idxs ptn-idxs clauses))))
+
+(defn- make-nodes
+  "nodes for one Datalevin DB"
+  [[src patterns]]
+  (let [nodes (->> patterns
+                   )]
+    [src patterns]))
+
+(defn- get-src [[f & _]] (if (source? f) f '$))
+
+(defn- resolve-lookup-refs
+  [[src patterns]]
+  [src (mapv #(resolve-pattern-lookup-refs src %) patterns)])
 
 (defn- init-graph
-  [[patterns clauses]]
-  [patterns clauses])
+  [context]
+  (let [patterns (:graph context)]
+    (if (< 1 (count patterns))
+      (let [graphs (->> patterns
+                        (group-by get-src)
+                        (map resolve-lookup-refs)
+                        (map make-nodes)
+                        (into {}))]
+        (spy graphs)
+        (assoc context :graph patterns))
+      context)))
 
 (defn- pushdown-predicates
   "optimization that push down predicates into value scans"
-  [[graph clauses]]
-  [graph clauses])
+  [context]
+  context)
 
-;; TODO group by source
 (defn- build-graph
   "Split clauses, turn the group of clauses to be optimized into a query    graph that looks like this:
-
+  {$
   {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
                 {:type :val-eq :tgt ?e1 :attrs {?e :age ?e1 :age}}
                 {:type  :val-pred :tgt ?e2 :pred (< ?a ?y)
@@ -864,20 +897,20 @@
                 :friend {:var ?e0 :count 2500}}}
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
         :free  {:age {:var ?a :count 10890}}}
-   ...}
+   ...}}
 
   Remaining clauses will be joined after the graph produces a relation"
   [context]
   (let [clauses (get-in context [:parsed-q :qorig-where])]
     (if (< 1 (count clauses))
-      (let [[graph clauses] (-> context
-                                (split-clauses)
-                                (init-graph)
-                                (pushdown-predicates))]
-        (assoc context :clauses clauses :graph graph))
+      (-> context
+          split-clauses
+          init-graph
+          spy
+          pushdown-predicates)
       (assoc context :clauses clauses))))
 
-(defn- optimize-plan
+(defn- build-plan
   [context]
   (if-let [graph (:graph context)]
     (assoc context :plan graph)
@@ -891,6 +924,9 @@
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
     (as-> context c
+      (build-graph c)
+      ;; (spy c)
+      (build-plan c)
       (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
 
@@ -1038,20 +1074,17 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    ;; (println "-----")
-    ;; (println parsed-q)
+    (println "----->" q)
+    (println parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
-            find-vars         (dp/find-vars find)
             result-arity      (count find-elements)
             with              (:qwith parsed-q)
-            all-vars          (u/concatv find-vars (map :symbol with))
+            all-vars          (u/concatv (dp/find-vars find) (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
             context           (-> (Context. parsed-q [] {} {} [] {} [])
-                                  (resolve-ins inputs)
-                                  (build-graph)
-                                  (optimize-plan))
+                                  (resolve-ins inputs))
             resultset         (-> (-q context)
                                   (collect all-vars))]
         (cond->> resultset
