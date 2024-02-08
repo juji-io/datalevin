@@ -333,6 +333,8 @@
 
 (defn long-inc ^long [^long x] (inc x))
 
+(def conjv (fnil conj []))
+
 (defn index-of
   [pred xs]
   (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))

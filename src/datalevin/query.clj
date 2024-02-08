@@ -8,7 +8,7 @@
    [datalevin.db :as db]
    [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [raise cond+]]
+   [datalevin.util :as u :refer [raise cond+ conjv]]
    [datalevin.lru :as lru]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -24,7 +24,9 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List]))
 
-(defn spy [x] (pp/pprint x) x)
+(defn spy
+  ([x] (pp/pprint x) x)
+  ([x msg] (print msg "--> ") (pp/pprint x) x))
 
 ;; ----------------------------------------------------------------------------
 
@@ -835,9 +837,10 @@
       (plugin-inputs* parsed-q inputs))))
 
 (defn- optimizable?
-  "only data stored in Datalevin are optimizable"
+  "only optimize attribute-known patterns referring to Datalevin data source"
   [sources pattern]
-  (when (instance? Pattern pattern)
+  (when (and (instance? Pattern pattern)
+             (instance? Constant (second (:pattern pattern))))
     (if-let [s (get-in pattern [:source :symbol])]
       (when-let [src (get sources s)]
         (db/-searchable? src))
@@ -853,31 +856,87 @@
     (assoc context :graph (u/keep-idxs ptn-idxs clauses)
            :clauses (u/remove-idxs ptn-idxs clauses))))
 
+(defn- placeholder? [e] (and (symbol? e) (= \_ (first (name e)))))
+
+(defn- get-v [pattern] (when (< 2 (count pattern)) (peek pattern)))
+
+(defn- make-node
+  [[e patterns]]
+  [e (reduce (fn [m pattern]
+               (let [attr (second pattern)]
+                 (if-let [v (get-v pattern)]
+                   (if (free-var? v)
+                     (assoc-in m [:free attr] {:var v})
+                     (assoc-in m [:bound attr] {:val v}))
+                   (assoc-in m [:free attr] {}))))
+             {}
+             patterns)])
+
+(defn- link-refs
+  [graph]
+  (let [es (set (keys graph))]
+    (reduce
+      (fn [g [e {:keys [free]}]]
+        (reduce
+          (fn [g [k {:keys [var]}]]
+            (if (es var)
+              (-> g
+                  (update-in [e :links] conjv {:type :ref :tgt var :attr k})
+                  (update-in [var :links] conjv {:type :_ref :tgt e :attr k}))
+              g))
+          g free))
+      graph
+      graph)))
+
+(defn- link-eqs
+  [graph]
+  graph)
+
 (defn- make-nodes
-  "nodes for one Datalevin DB"
   [[src patterns]]
-  (let [nodes (->> patterns
-                   )]
-    [src patterns]))
+  [src (->> (group-by first patterns)
+            (into {} (map make-node))
+            link-refs
+            link-eqs)])
+
+(defn- resolve-lookup-refs
+  [sources [src patterns]]
+  [src (mapv #(resolve-pattern-lookup-refs (sources src) %) patterns)])
+
+(defn- remove-src
+  [[src patterns]]
+  [src (mapv #(if (= (first %) src) (vec (rest %)) %) patterns)])
 
 (defn- get-src [[f & _]] (if (source? f) f '$))
 
-(defn- resolve-lookup-refs
-  [[src patterns]]
-  [src (mapv #(resolve-pattern-lookup-refs src %) patterns)])
+(defn- distinct-placeholder
+  [patterns]
+  (let [i (volatile! 0)]
+    (walk/postwalk (fn [e]
+                     (if (= '_ e)
+                       (do (vswap! i u/long-inc) (symbol (str "_" @i)))
+                       e))
+                   patterns)))
+
+(defn- link-preds
+  [parsed-q graph]
+  graph)
 
 (defn- init-graph
+  "one graph per Datalevin db"
   [context]
-  (let [patterns (:graph context)]
-    (if (< 1 (count patterns))
-      (let [graphs (->> patterns
-                        (group-by get-src)
-                        (map resolve-lookup-refs)
-                        (map make-nodes)
-                        (into {}))]
-        (spy graphs)
-        (assoc context :graph patterns))
-      context)))
+  (let [patterns (:graph context)
+        sources  (:sources context)
+        parsed-q (:parsed-q context)
+        graphs   (into {}
+                       (comp
+                         (map remove-src)
+                         (map #(resolve-lookup-refs sources %))
+                         (map make-nodes)
+                         (map #(link-preds parsed-q %)))
+                       (group-by get-src (distinct-placeholder patterns)))]
+    (spy graphs "graphs")
+    (assoc context :graph patterns)))
 
 (defn- pushdown-predicates
   "optimization that push down predicates into value scans"
@@ -885,7 +944,8 @@
   context)
 
 (defn- build-graph
-  "Split clauses, turn the group of clauses to be optimized into a query    graph that looks like this:
+  "Split clauses, turn the group of clauses to be optimized into a query
+  graph that looks like this:
   {$
   {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
                 {:type :val-eq :tgt ?e1 :attrs {?e :age ?e1 :age}}
@@ -906,7 +966,7 @@
       (-> context
           split-clauses
           init-graph
-          spy
+          ;; spy
           pushdown-predicates)
       (assoc context :clauses clauses))))
 

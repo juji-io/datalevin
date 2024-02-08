@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [distinct?])
   (:require
    [clojure.set :as set]
-   [datalevin.util :as u :refer [raise]]))
+   [datalevin.util :as u :refer [raise conjv]]))
 
 ;; utils
 
@@ -708,7 +708,7 @@
     (if-let [q (first qs)]
       (if (keyword? q)
         (recur parsed q (next qs))
-        (recur (update-in parsed [key] (fnil conj []) q) key (next qs)))
+        (recur (update-in parsed [key] conjv q) key (next qs)))
       parsed)))
 
 (defn explicit-input [parsed]

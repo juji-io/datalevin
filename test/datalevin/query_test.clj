@@ -27,6 +27,22 @@
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
+    (is (= (set (d/q '[:find ?a
+                       :in $ ?n
+                       :where
+                       [?e :friend ?e1]
+                       [?e :name ?n]
+                       [?e1 :age ?a]]
+                     db "Ivan"))
+           #{[37]}))
+    (is (= (set (d/q '[:find ?a
+                       :in $ ?n
+                       :where
+                       [?e :friend]
+                       [?e :name ?n]
+                       [?e :age ?a]]
+                     db "Ivan"))
+           #{[15]}))
     (is (= [1] (d/q '[:find [?e ...]
                       :in $ ?ns-in
                       :where

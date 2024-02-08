@@ -9,7 +9,7 @@
    [datalevin.datom :as d
     :refer [datom datom-added datom?]]
    [datalevin.util :as u
-    :refer [case-tree raise defrecord-updatable cond+]]
+    :refer [case-tree raise defrecord-updatable cond+ conjv]]
    [datalevin.storage :as s]
    [datalevin.spill :as sp]
    [datalevin.lmdb :as l]
@@ -850,8 +850,6 @@
         (if reverse?
           [:db/add v   straight-a eid]
           [:db/add eid straight-a v])))))
-
-(def conjv (fnil conj []))
 
 (defn- transact-add [report [_ e a v tx :as ent]]
   (validate-attr a ent)
