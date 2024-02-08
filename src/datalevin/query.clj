@@ -19,7 +19,7 @@
    [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
-    Variable Pattern]
+    Variable Pattern Predicate]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List]))
@@ -36,7 +36,7 @@
 
 ;; Records
 
-(defrecord Context [parsed-q rels sources rules clauses graph plan])
+(defrecord Context [parsed-q rels sources rules clauses opt-clauses graph plan])
 
 ;; Utilities
 
@@ -853,7 +853,7 @@
   (let [ptn-idxs (set (u/idxs-of #(optimizable? (:sources context) %)
                                  (get-in context [:parsed-q :qwhere])))
         clauses  (get-in context [:parsed-q :qorig-where])]
-    (assoc context :graph (u/keep-idxs ptn-idxs clauses)
+    (assoc context :opt-clauses (u/keep-idxs ptn-idxs clauses)
            :clauses (u/remove-idxs ptn-idxs clauses))))
 
 (defn- placeholder? [e] (and (symbol? e) (= \_ (first (name e)))))
@@ -934,23 +934,52 @@
                    patterns)))
 
 (defn- init-graph
-  "one graph per Datalevin db"
+  "build one graph per Datalevin db"
   [context]
-  (let [patterns (:graph context)
-        sources  (:sources context)
-        graphs   (into {}
-                       (comp
-                         (map remove-src)
-                         (map #(resolve-lookup-refs sources %))
-                         (map make-nodes))
-                       (group-by get-src (distinct-placeholder patterns)))]
-    (spy graphs "graphs")
-    (assoc context :graph patterns)))
+  (let [patterns (:opt-clauses context)
+        sources  (:sources context)]
+    (assoc context :graph
+           (into {}
+                 (comp
+                   (map remove-src)
+                   (map #(resolve-lookup-refs sources %))
+                   (map make-nodes))
+                 (group-by get-src (distinct-placeholder patterns))))))
+
+(defn- pushdownable
+  "push down predicate that involves only one free variable"
+  [where gseq]
+  (when (instance? Predicate where)
+    (let [vars (filter #(instance? Variable %) (:args where))]
+      (when (= 1 (count vars))
+        (let [s (:symbol (first vars))]
+          (some #(when (= % {:var s}) s) gseq))))))
 
 (defn- pushdown-predicates
-  "optimization that push down predicates into value scans"
+  "optimization that push predicates down to value scans"
+  [{:keys [parsed-q graph] :as context}]
+  (let [gseq (tree-seq coll? seq graph)]
+    (u/reduce-indexed
+      (fn [c where i]
+        (if-let [v (pushdownable where gseq)]
+          (let [clause (nth (:qorig-where parsed-q) i)]
+            (-> c
+                (update :clauses #(remove #{clause} %))
+                (update :opt-clauses conj clause)
+                (update :graph (fn [g]
+                                 (walk/postwalk
+                                   #(if (= {:var v} %)
+                                      (assoc % :pred (first clause))
+                                      %)
+                                   g)))))
+          c))
+      context
+      (:qwhere parsed-q))))
+
+(defn- estimate-cardinalities
   [context]
-  context)
+  context
+  )
 
 (defn- build-graph
   "Split clauses, turn the group of clauses to be optimized into a query
@@ -973,14 +1002,14 @@
       (-> context
           split-clauses
           init-graph
-          ;; spy
-          pushdown-predicates)
+          pushdown-predicates
+          estimate-cardinalities)
       (assoc context :clauses clauses))))
 
 (defn- build-plan
   [context]
   (if-let [graph (:graph context)]
-    (assoc context :plan graph)
+    (assoc context :plan (:opt-clauses context))
     context))
 
 (defn- execute-plan
@@ -992,7 +1021,7 @@
   (binding [*implicit-source* (get (:sources context) '$)]
     (as-> context c
       (build-graph c)
-      ;; (spy c)
+      (spy c)
       (build-plan c)
       (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
@@ -1132,9 +1161,7 @@
     (for [tuple resultset]
       (mapv
         (fn [parsed-opts el]
-          (if parsed-opts
-            (dpa/pull-impl parsed-opts el)
-            el))
+          (if parsed-opts (dpa/pull-impl parsed-opts el) el))
         resolved
         tuple))))
 
@@ -1150,7 +1177,7 @@
             with              (:qwith parsed-q)
             all-vars          (u/concatv (dp/find-vars find) (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
-            context           (-> (Context. parsed-q [] {} {} [] {} [])
+            context           (-> (Context. parsed-q [] {} {} [] nil nil nil)
                                   (resolve-ins inputs))
             resultset         (-> (-q context)
                                   (collect all-vars))]
