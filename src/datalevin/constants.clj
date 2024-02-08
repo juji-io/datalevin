@@ -351,7 +351,13 @@
        :doc     "The number of samples considered when build the key compression dictionary is 65536"}
   *compress-sample-size* 65536)
 
-;;search engine
+;; datalog
+
+(def ^{:dynamic true
+       :doc     "Magic number for predicates when query cardinality estimation"}
+  magic-number-pred 0.2)
+
+;; search engine
 
 (def ^{:dynamic true
        :doc     "The set of English stop words, a Java HashSet, contains

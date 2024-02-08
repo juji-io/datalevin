@@ -13,7 +13,8 @@
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
    [datalevin.pull-api :as dpa]
-   [datalevin.timeout :as timeout])
+   [datalevin.timeout :as timeout]
+   [datalevin.constants :as c])
   (:import
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.relation Relation]
@@ -324,13 +325,6 @@
     (lookup-pattern-db source pattern)
     (lookup-pattern-coll source pattern)))
 
-#_(defn- pattern-size
-    [source pattern]
-    (if (db/-searchable? source)
-      (let [search-pattern (mapv #(if (symbol? %) nil %) pattern)]
-        (db/-count source search-pattern))
-      (count (filter #(matches-pattern? pattern %) source))))
-
 (defn collapse-rels
   [rels new-rel]
   (loop [rels    rels
@@ -632,12 +626,6 @@
         (free-var? v)
         (not (free-var? a))
         (db/ref? source a)) (conj v))))
-
-#_(defn- clause-size
-    [clause]
-    (let [source  *implicit-source*
-          pattern (resolve-pattern-lookup-refs source clause)]
-      (pattern-size source pattern)))
 
 (defn limit-rel
   [rel vars]
@@ -976,10 +964,38 @@
       context
       (:qwhere parsed-q))))
 
+(defn- datom-n
+  [db clauses]
+  (reduce
+    (fn [c [attr {:keys [val pred]}]]
+      (let [^long n (db/-count db [nil attr val])]
+        (assoc-in c [attr :count]
+                  (if pred
+                    (long (* ^double c/magic-number-pred n))
+                    n))))
+    clauses clauses))
+
 (defn- estimate-cardinalities
-  [context]
-  context
-  )
+  [{:keys [sources graph] :as context}]
+  (reduce
+    (fn [c [src nodes]]
+      (let [db (sources src)
+            nc (count nodes)]
+        (reduce
+          (fn [c [e {:keys [free bound]}]]
+            (let [fc (count free)
+                  bc (count bound)]
+              (if (or (< 1 nc) (< 1 (+ fc bc)))
+                (update c :graph
+                        (fn [g]
+                          (cond-> g
+                            (< 0 bc)
+                            (update-in [src e :bound] #(datom-n db %))
+                            (< 0 fc)
+                            (update-in [src e :free] #(datom-n db %)))))
+                c)))
+          c nodes)))
+    context graph))
 
 (defn- build-graph
   "Split clauses, turn the group of clauses to be optimized into a query
