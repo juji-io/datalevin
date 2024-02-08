@@ -869,8 +869,7 @@
                      (assoc-in m [:free attr] {:var v})
                      (assoc-in m [:bound attr] {:val v}))
                    (assoc-in m [:free attr] {}))))
-             {}
-             patterns)])
+             {} patterns)])
 
 (defn- link-refs
   [graph]
@@ -885,19 +884,35 @@
                   (update-in [var :links] conjv {:type :_ref :tgt e :attr k}))
               g))
           g free))
-      graph
-      graph)))
+      graph graph)))
 
 (defn- link-eqs
   [graph]
-  graph)
+  (reduce
+    (fn [g [v lst]]
+      (if (< 1 (count lst))
+        (reduce
+          (fn [g [[e1 k1] [e2 k2]]]
+            (let [attrs {e1 k1 e2 k2}]
+              (-> g
+                  (update-in [e1 :links] conjv
+                             {:type :val-eq :tgt e2 :var v :attrs attrs})
+                  (update-in [e2 :links] conjv
+                             {:type :val-eq :tgt e1 :var v :attrs attrs}))))
+          g (u/combinations lst 2))
+        g))
+    graph (reduce (fn [m [e {:keys [free]}]]
+                    (reduce (fn [m [k {:keys [var]}]]
+                              (if var (update m var conjv [e k]) m))
+                            m free))
+                  {} graph)))
 
 (defn- make-nodes
   [[src patterns]]
-  [src (->> (group-by first patterns)
-            (into {} (map make-node))
-            link-refs
-            link-eqs)])
+  [src (let [graph (into {} (map make-node) (group-by first patterns))]
+         (if (< 1 (count graph))
+           (-> graph link-refs link-eqs)
+           graph))])
 
 (defn- resolve-lookup-refs
   [sources [src patterns]]
@@ -918,22 +933,16 @@
                        e))
                    patterns)))
 
-(defn- link-preds
-  [parsed-q graph]
-  graph)
-
 (defn- init-graph
   "one graph per Datalevin db"
   [context]
   (let [patterns (:graph context)
         sources  (:sources context)
-        parsed-q (:parsed-q context)
         graphs   (into {}
                        (comp
                          (map remove-src)
                          (map #(resolve-lookup-refs sources %))
-                         (map make-nodes)
-                         (map #(link-preds parsed-q %)))
+                         (map make-nodes))
                        (group-by get-src (distinct-placeholder patterns)))]
     (spy graphs "graphs")
     (assoc context :graph patterns)))
@@ -948,9 +957,7 @@
   graph that looks like this:
   {$
   {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
-                {:type :val-eq :tgt ?e1 :attrs {?e :age ?e1 :age}}
-                {:type  :val-pred :tgt ?e2 :pred (< ?a ?y)
-                 :attrs {?e :age ?e2 :year}}]
+                {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
         :bound {:name {:val \"Tom\" :count 5}}
         :free  {:age    {:var ?a :count 10890}
                 :salary {:var ?s :pred (< ?s 200000)}

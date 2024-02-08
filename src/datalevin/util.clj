@@ -335,6 +335,15 @@
 
 (def conjv (fnil conj []))
 
+(defn combinations [coll ^long r]
+  (cond
+    (= r 0)       '(())
+    (empty? coll) '()
+    :else
+    (concat
+      (map #(cons (first coll) %) (combinations (rest coll) (dec r)))
+      (combinations (rest coll) r))))
+
 (defn index-of
   [pred xs]
   (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
