@@ -844,7 +844,7 @@
     (assoc context :opt-clauses (u/keep-idxs ptn-idxs clauses)
            :clauses (u/remove-idxs ptn-idxs clauses))))
 
-(defn- placeholder? [e] (and (symbol? e) (= \_ (first (name e)))))
+#_(defn- placeholder? [e] (and (symbol? e) (= \_ (first (name e)))))
 
 (defn- get-v [pattern] (when (< 2 (count pattern)) (peek pattern)))
 
@@ -912,14 +912,14 @@
 
 (defn- get-src [[f & _]] (if (source? f) f '$))
 
-(defn- distinct-placeholder
-  [patterns]
-  (let [i (volatile! 0)]
-    (walk/postwalk (fn [e]
-                     (if (= '_ e)
-                       (do (vswap! i u/long-inc) (symbol (str "_" @i)))
-                       e))
-                   patterns)))
+#_(defn- distinct-placeholder
+    [patterns]
+    (let [i (volatile! 0)]
+      (walk/postwalk (fn [e]
+                       (if (= '_ e)
+                         (do (vswap! i u/long-inc) (symbol (str "_" @i)))
+                         e))
+                     patterns)))
 
 (defn- init-graph
   "build one graph per Datalevin db"
@@ -932,7 +932,8 @@
                    (map remove-src)
                    (map #(resolve-lookup-refs sources %))
                    (map make-nodes))
-                 (group-by get-src (distinct-placeholder patterns))))))
+                 (group-by get-src patterns
+                           #_(distinct-placeholder patterns))))))
 
 (defn- pushdownable
   "push down predicate that involves only one free variable"
@@ -1022,23 +1023,45 @@
           estimate-cardinalities)
       (assoc context :clauses clauses))))
 
+(defn- single-plan
+  [nodes]
+  [])
+
+(defn- build-plan*
+  [nodes]
+  [])
+
 (defn- build-plan
-  [context]
-  (if-let [graph (:graph context)]
-    (assoc context :plan (:opt-clauses context))
+  "Generate a query plan that looks like this:
+
+  [{:op :init-tuples :attr :name :val \"Tom\" :pred nil :vars [?e]}
+   {:op :eav-scan-v  :attrs [:age :friend] :preds [#(< % 20) nil]
+    :vars [?a ?f]}
+   {:op :vae-scan-e :attr :friend :var ?e1}
+   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n]}]"
+  [{:keys [graph] :as context}]
+  (if graph
+    (reduce
+      (fn [c [src nodes]]
+        (assoc-in c [:plan src] (if (< 1 (count nodes))
+                                  (build-plan* nodes)
+                                  (single-plan nodes))))
+      context graph)
     context))
 
 (defn- execute-plan
-  [context]
-  (reduce resolve-clause context (:plan context)))
+  [{:keys [plan opt-clauses] :as context}]
+  (if plan
+    (reduce resolve-clause context opt-clauses)
+    (reduce resolve-clause context opt-clauses)))
 
 (defn -q
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
     (as-> context c
       (build-graph c)
-      (spy c)
       (build-plan c)
+      (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
 
