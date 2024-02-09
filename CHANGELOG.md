@@ -1,9 +1,11 @@
 # Change Log
 
-## WIP
+## 0.8.26 (2024-02-09)
 ### Fixed
 - [Datalog] `:validate-data? true` not working for some data types. [Thx @andersmurphy]
 - [Datalog] ported applicable fixes from Datascript up to 1.6.1
+### Improved
+- bump deps
 
 ## 0.8.25 (2023-12-14)
 ### Added
