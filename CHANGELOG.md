@@ -1,5 +1,9 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] `:validate-data? true` not working for some data types. [Thx @andersmurphy]
+
 ## 0.8.25 (2023-12-14)
 ### Added
 - [Datalog] Add `:db.fulltext/autoDomain` boolean property to attribute schema,

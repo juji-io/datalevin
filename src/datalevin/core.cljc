@@ -339,8 +339,8 @@ Only usable for debug output.
                                       ~@body) ]
                            (try
                              (u/repeat-try-catch
-                               ~c/+in-tx-overflow-times+
-                               l/resized? (w#))
+                                 ~c/+in-tx-overflow-times+
+                                 l/resized? (w#))
                              (finally (r/close-transact s#)))))
                new-db# (db/new-db s#)]
            (reset! ~orig-conn new-db#)

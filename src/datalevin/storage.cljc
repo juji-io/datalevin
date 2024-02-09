@@ -612,8 +612,8 @@
         v     (.-v d)
         aid   (:db/aid props)
         _     (or (not (:validate-data? (opts store)))
-                (b/valid-data? v vt)
-                (u/raise "Invalid data, expecting " vt {:input v}))
+                  (b/valid-data? v vt)
+                  (u/raise "Invalid data, expecting" vt "got" v{:input v}))
         i     (b/indexable e aid v vt)
         ft?   (:db/fulltext props)]
     (if (b/giant? i)
