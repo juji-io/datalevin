@@ -646,12 +646,25 @@
 (deftest validate-data
   "validate data during transact"
   (let [sc  {:company {:db/valueType :db.type/string}
-             :id      {:db/valueType :db.type/uuid}}
-        es  [{:db/id -1 :company "IBM" :id "ibm"}
-             {:db/id -2 :company "PwC" :id "pwc"}]
+             :id      {:db/valueType :db.type/uuid}
+             :code    {:db/valueType :db.type/long}}
         dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (d/empty-db dir sc {:validate-data? true})]
-    (is (thrown? Exception (d/db-with db es)))
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (d/db-with db
+            [{:db/id -1 :company "IBM" :id "ibm" :code 1}])))
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (d/db-with db
+            [{:db/id -2 :company 1 :id (random-uuid) :code 1}])))
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (d/db-with db
+            [{:db/id -3 :company :abc :id (random-uuid) :code 1}])))
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (d/db-with db
+            [{:db/id -4 :company 1.0 :id (random-uuid) :code 1}])))
+    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+          (d/db-with db
+            [{:db/id -5 :company "XYZ" :id (random-uuid) :code "1"}])))
     (d/close-db db)
     (u/delete-files dir)))
 

@@ -611,11 +611,11 @@
         e     (.-e d)
         v     (.-v d)
         aid   (:db/aid props)
+        _     (or (not (:validate-data? (opts store)))
+                (b/valid-data? v vt)
+                (u/raise "Invalid data, expecting " vt {:input v}))
         i     (b/indexable e aid v vt)
         ft?   (:db/fulltext props)]
-    (or (not (:validate-data? (opts store)))
-        (b/valid-data? v vt)
-        (u/raise "Invalid data, expecting " vt {:input v}))
     (if (b/giant? i)
       (let [max-gt (max-gt store)]
         (advance-max-gt store)
