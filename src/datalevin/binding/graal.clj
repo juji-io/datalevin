@@ -195,7 +195,7 @@
   (put-key [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
-        (raise "Invalid data, expecting " t {:input x}))
+        (raise "Invalid data, expecting " t " got " x {:input x}))
     (let [^ByteBuffer kb (.inBuf kp)
           dbi-name       (.dbi-name this)]
       (try
@@ -211,7 +211,7 @@
   (put-val [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
-        (raise "Invalid data, expecting " t {:input x}))
+        (raise "Invalid data, expecting " t " got " x {:input x}))
     (let [^ByteBuffer vb (.inBuf vp)
           dbi-name       (.dbi-name this)]
       (try
