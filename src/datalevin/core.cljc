@@ -217,6 +217,8 @@ Only usable for debug output.
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
+   * `:closed-schema?`, a boolean, instructing the system to only allow entity attributes defined in the schema during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
    * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
@@ -273,6 +275,8 @@ Only usable for debug output.
  `opts` map has keys:
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
+   * `:closed-schema?`, a boolean, instructing the system to only allow entity attributes defined in the schema during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
@@ -559,6 +563,8 @@ Only usable for debug output.
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
 
+   * `:closed-schema?`, a boolean, instructing the system to only allow entity attributes defined in the schema during transaction. Default is `false`.
+
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
    * `:search-domains`, an option map from domain names to search option maps of those domains, which will be passed to the corresponding full-text search engines. See [[new-search-engine]]
@@ -582,6 +588,8 @@ Only usable for debug output.
   `opts` map may have keys:
 
    * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
+   * `:closed-schema?`, a boolean, instructing the system to only allow entity attributes defined in the schema during transaction. Default is `false`.
 
    * `:auto-entity-time?`, a boolean indicating whether to maintain `:db/created-at` and `:db/updated-at` values for each entity. Default is `false`.
 
@@ -1075,6 +1083,8 @@ Only usable for debug output.
        :doc      "Open a named DBI (i.e. sub-db) in the key-value store. `opts` is an option map that may have the following keys:
 
       * `:validate-data?`, a boolean, instructing the system to validate data type during transaction. Default is `false`.
+
+      * `:closed-schema?`, a boolean, instructing the system to only allow entity attributes defined in the schema during transaction. Default is `false`.
 
       * `:key-size` is the max size of the key in bytes, cannot be greater than 511, default is 511.
 

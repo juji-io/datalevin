@@ -668,6 +668,20 @@
     (d/close-db db)
     (u/delete-files dir)))
 
+(deftest closed-schema
+  "closed schema during transact"
+  (let [sc  {:id      {:db/valueType :db.type/uuid}
+             :company {}}
+        dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
+        db  (d/empty-db dir sc {:closed-schema? true})]
+    (is (thrown-with-msg? Exception
+          #"Entity attribute not defined in schema :undefined-attr"
+          (d/db-with db
+            [{:db/id -1 :company "IBM" :id (random-uuid)
+              :undefined-attr "ibm"}])))
+    (d/close-db db)
+    (u/delete-files dir)))
+
 #?(:clj
    (deftest test-transact-bytes
      "requires comparing byte-arrays"
