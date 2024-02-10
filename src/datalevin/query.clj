@@ -8,7 +8,7 @@
    [datalevin.db :as db]
    [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
-   [datalevin.util :as u :refer [raise cond+ conjv]]
+   [datalevin.util :as u :refer [raise cond+ conjv concatv]]
    [datalevin.lru :as lru]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -830,10 +830,8 @@
   (when (and (instance? Pattern pattern)
              (instance? Constant (second (:pattern pattern))))
     (if-let [s (get-in pattern [:source :symbol])]
-      (when-let [src (get sources s)]
-        (db/-searchable? src))
-      (when-let [src (get sources '$)]
-        (db/-searchable? src)))))
+      (when-let [src (get sources s)] (db/-searchable? src))
+      (when-let [src (get sources '$)] (db/-searchable? src)))))
 
 (defn- split-clauses
   "split clauses into two parts, one part is to be optimized"
@@ -843,8 +841,6 @@
         clauses  (get-in context [:parsed-q :qorig-where])]
     (assoc context :opt-clauses (u/keep-idxs ptn-idxs clauses)
            :clauses (u/remove-idxs ptn-idxs clauses))))
-
-#_(defn- placeholder? [e] (and (symbol? e) (= \_ (first (name e)))))
 
 (defn- get-v [pattern] (when (< 2 (count pattern)) (peek pattern)))
 
@@ -912,15 +908,6 @@
 
 (defn- get-src [[f & _]] (if (source? f) f '$))
 
-#_(defn- distinct-placeholder
-    [patterns]
-    (let [i (volatile! 0)]
-      (walk/postwalk (fn [e]
-                       (if (= '_ e)
-                         (do (vswap! i u/long-inc) (symbol (str "_" @i)))
-                         e))
-                     patterns)))
-
 (defn- init-graph
   "build one graph per Datalevin db"
   [context]
@@ -932,8 +919,7 @@
                    (map remove-src)
                    (map #(resolve-lookup-refs sources %))
                    (map make-nodes))
-                 (group-by get-src patterns
-                           #_(distinct-placeholder patterns))))))
+                 (group-by get-src patterns)))))
 
 (defn- pushdownable
   "push down predicate that involves only one free variable"
@@ -976,7 +962,7 @@
                     n))))
     clauses clauses))
 
-(defn- estimate-cardinalities
+(defn- estimate-clause-cardinalities
   [{:keys [sources graph] :as context}]
   (reduce
     (fn [c [src nodes]]
@@ -1020,12 +1006,45 @@
           split-clauses
           init-graph
           pushdown-predicates
-          estimate-cardinalities)
+          estimate-clause-cardinalities)
       (assoc context :clauses clauses))))
 
+(defn- add-pred
+  [old-pred new-pred]
+  (if old-pred
+    (fn [x] (and (old-pred x) (new-pred x)))
+    new-pred))
+
+(defn- attr-count [[_ {:keys [count]}]] count)
+
+(defn- attr-pred [[_ {:keys [pred]}]] pred)
+
+(defn- attr-var [[_ {:keys [var]}]] (or var '_))
+
 (defn- single-plan
-  [nodes]
-  [])
+  [[e {:keys [bound free]}]]
+  (let [mbound (when bound (apply min-key attr-count bound))
+        mfree  (when free (apply min-key attr-count free))
+        [attr {:keys [var val pred]} :as mattr]
+        (cond
+          (and mbound mfree)
+          (if (<= ^long (attr-count mbound) ^long (attr-count mfree))
+            mbound mfree)
+          mbound mbound
+          mfree  mfree)]
+    (cond-> [(cond-> {:op :init-tuples :vars [e var]}
+               val     (assoc :val val :vars [e])
+               (not (int? e)) (assoc :attr attr :pred pred))]
+      (< 1 (+ (count bound) (count free)))
+      (conj (let [bound' (->> bound
+                              (remove #{mattr})
+                              (mapv (fn [[_ {:keys [val]} :as b]]
+                                      (update-in b [1 :pred] add-pred #(= % val)))))
+                  free'  (remove #{mattr} free)
+                  attrs  (concatv (mapv key bound') (mapv key free'))
+                  preds  (concatv (mapv attr-pred bound') (mapv attr-pred free'))
+                  vars   (concatv (mapv attr-var bound') (mapv attr-var free'))]
+              {:op :eav-scan-v :attrs attrs :preds preds :vars vars})))))
 
 (defn- build-plan*
   [nodes]
@@ -1045,7 +1064,7 @@
       (fn [c [src nodes]]
         (assoc-in c [:plan src] (if (< 1 (count nodes))
                                   (build-plan* nodes)
-                                  (single-plan nodes))))
+                                  (single-plan (first nodes)))))
       context graph)
     context))
 

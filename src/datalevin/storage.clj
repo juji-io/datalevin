@@ -616,8 +616,6 @@
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
-  ;; TODO add an argument for those attributes that only need to be present
-  ;; and their values are not needed in the resulting tuples
   (eav-scan-v [_ tuples eid-idx as vpreds]
     (when (and (seq tuples) (seq as))
       (let [aids      (mapv #(-> % schema :db/aid) as)
