@@ -319,6 +319,8 @@
                                       (constantly true)]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a] [nil nil]))))
+    (is (= [[5 1] [8 7]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a] [nil nil] [:b]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
                                      [odd? #(s/ends-with? % "b")]))))
@@ -327,9 +329,8 @@
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
                                      [(constantly true) odd?]))))
-    (is (= []
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
-                                     [(constantly true) even?]))))
+    (is (= [] (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
+                                        [(constantly true) even?]))))
     (is (= [[0 10]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a] [even?]))))
     (is (= [[:none 0 10]]
@@ -340,11 +341,16 @@
            (mapv vec (sut/eav-scan-v store tuples1 1 [:b :c] [nil nil]))))
     (is (= [[:zero 10 "Jerry"] [:zero 10 "Mick"] [:zero 10 "Tom"]]
            (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [nil]))))
+    (is (= [[:zero 10]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [nil] [:d]))))
     (is (= [[:zero 10 "Tom"]]
            (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [#(< (count %) 4)]))))
     (is (= [[:zero 10 :c10 "Tom"]]
            (mapv vec (sut/eav-scan-v store tuples1 1 [:c :d]
                                      [nil #(< (count %) 4)]))))
+    (is (= [[:zero 10 "Tom"]]
+           (mapv vec (sut/eav-scan-v store tuples1 1 [:c :d]
+                                     [nil #(< (count %) 4)] [:c]))))
     (is (= [[8 7 "8b"] [5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples2 0 [:b :a] [nil nil]))))
     (is (= [[10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]
@@ -354,6 +360,13 @@
             [10 "Mick" "good"] [10 "Mick" "nice"]
             [10 "Tom" "good"] [10 "Tom" "nice"]]
            (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil]))))
+    (is (= [[10 "good"] [10 "nice"]]
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil] [:d]))))
+    (is (= [[10 "Jerry"] [10 "Mick"] [10 "Tom"] ]
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil] [:e]))))
+    (is (= [[10]]
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil]
+                                     [:e :d]))))
     (sut/close store)
     (u/delete-files dir)))
 

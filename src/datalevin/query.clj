@@ -239,7 +239,7 @@
         key-fn2      (tuple-key-fn attrs2 common-attrs)]
     (if (< (count tuples1) (count tuples2))
       (let [^UnifiedMap hash (hash-attrs key-fn1 tuples1)]
-        (r/relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
+        (r/relation! (zipmap (concatv keep-attrs1 keep-attrs2) (range))
                      (reduce
                        (fn outer [acc tuple2]
                          (let [key (key-fn2 tuple2)]
@@ -255,7 +255,7 @@
                        (FastList.)
                        tuples2)))
       (let [^UnifiedMap hash (hash-attrs key-fn2 tuples2)]
-        (r/relation! (zipmap (u/concatv keep-attrs1 keep-attrs2) (range))
+        (r/relation! (zipmap (concatv keep-attrs1 keep-attrs2) (range))
                      (reduce
                        (fn outer [acc tuple1]
                          (let [key (key-fn1 tuple1)]
@@ -531,7 +531,7 @@
         prev-call-args     (get used-args rule)]
     (for [prev-args prev-call-args
           :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
-      [(u/concatv ['-differ?] call-args prev-args)])))
+      [(concatv ['-differ?] call-args prev-args)])))
 
 (defn collect-vars [clause] (set (u/walk-collect clause free-var?)))
 
@@ -573,14 +573,14 @@
                   guards
                   (rule-gen-guards rule-clause (:used-args frame))
                   [active-gs pending-gs]
-                  (split-guards (u/concatv (:prefix-clauses frame) clauses)
-                                (u/concatv guards (:pending-guards frame)))]
+                  (split-guards (concatv (:prefix-clauses frame) clauses)
+                                (concatv guards (:pending-guards frame)))]
               (if (some #(= % '[(-differ?)]) active-gs) ;; trivial always false case like [(not= [?a ?b] [?a ?b])]
 
                 ;; this branch has no data, just drop it from stack
                 (recur (next stack) rel)
 
-                (let [prefix-clauses (u/concatv clauses active-gs)
+                (let [prefix-clauses (concatv clauses active-gs)
                       prefix-context (solve (:prefix-context frame)
                                             prefix-clauses)]
                   (if (empty-rels? prefix-context)
@@ -594,11 +594,11 @@
                                                       rule [])
                                                  call-args))
                           branches  (expand-rule rule-clause context)]
-                      (recur (u/concatv
+                      (recur (concatv
                                (for [branch branches]
                                  {:prefix-clauses prefix-clauses
                                   :prefix-context prefix-context
-                                  :clauses        (u/concatv branch next-clauses)
+                                  :clauses        (concatv branch next-clauses)
                                   :used-args      used-args
                                   :pending-guards pending-gs})
                                (next stack))
@@ -1036,15 +1036,16 @@
                val     (assoc :val val :vars [e])
                (not (int? e)) (assoc :attr attr :pred pred))]
       (< 1 (+ (count bound) (count free)))
-      (conj (let [bound' (->> bound
-                              (remove #{mattr})
-                              (mapv (fn [[_ {:keys [val]} :as b]]
-                                      (update-in b [1 :pred] add-pred #(= % val)))))
-                  free'  (remove #{mattr} free)
-                  attrs  (concatv (mapv key bound') (mapv key free'))
-                  preds  (concatv (mapv attr-pred bound') (mapv attr-pred free'))
-                  vars   (concatv (mapv attr-var bound') (mapv attr-var free'))]
-              {:op :eav-scan-v :attrs attrs :preds preds :vars vars})))))
+      (conj
+        (let [bound' (->> bound
+                          (remove #{mattr})
+                          (mapv (fn [[_ {:keys [val]} :as b]]
+                                  (update-in b [1 :pred] add-pred #(= % val)))))
+              free'  (remove #{mattr} free)
+              attrs  (concatv (mapv key bound') (mapv key free'))
+              preds  (concatv (mapv attr-pred bound') (mapv attr-pred free'))
+              vars   (concatv (mapv attr-var bound') (mapv attr-var free'))]
+          {:op :eav-scan-v :attrs attrs :preds preds :vars vars})))))
 
 (defn- build-plan*
   [nodes]
@@ -1157,7 +1158,7 @@
                   args (map #(-context-resolve % context)
                             (butlast (:args element)))
                   vals (map #(nth % i) tuples)]
-              (apply f (u/concatv args [vals])))
+              (apply f (concatv args [vals])))
             fixed-value))
         find-elements
         (first tuples)
@@ -1233,7 +1234,7 @@
             find-elements     (dp/find-elements find)
             result-arity      (count find-elements)
             with              (:qwith parsed-q)
-            all-vars          (u/concatv (dp/find-vars find) (map :symbol with))
+            all-vars          (concatv (dp/find-vars find) (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
             context           (-> (Context. parsed-q [] {} {} [] nil nil nil)
                                   (resolve-ins inputs))

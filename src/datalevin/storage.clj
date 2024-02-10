@@ -8,7 +8,8 @@
    [datalevin.search :as s]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
-   [clojure.string :as str])
+   [clojure.string :as str]
+   [datalevin.lmdb :as l])
   (:import
    [java.util UUID List Arrays]
    [java.nio ByteBuffer]
@@ -262,7 +263,9 @@
     [this attr low-value high-value vpred]
     [this attr low-value high-value vpred get-v?]
     "Return tuples of e or e and v using :ave index")
-  (eav-scan-v [this tuples eid-idx attrs vpreds]
+  (eav-scan-v
+    [this tuples eid-idx attrs vpreds]
+    [this tuples eid-idx attrs vpreds skip-attrs]
     "Scan values and merge into tuples using :eav index.")
   (vae-scan-e [this tuples veid-idx attr]
     "Return merged tuples with eid as the last column using :vae index")
@@ -616,9 +619,14 @@
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
-  (eav-scan-v [_ tuples eid-idx as vpreds]
+  (eav-scan-v [store tuples eid-idx as vpreds]
+    (.eav-scan-v store tuples eid-idx as vpreds []))
+  (eav-scan-v
+    [_ tuples eid-idx as vpreds skip-as]
     (when (and (seq tuples) (seq as))
-      (let [aids      (mapv #(-> % schema :db/aid) as)
+      (let [attr->aid #(-> % schema :db/aid)
+            skip-aids (set (map attr->aid skip-as))
+            aids      (mapv attr->aid as)
             na        (count aids)
             aid->pred (zipmap aids vpreds)
             many      (set (filter #(= (-> % attrs schema :db/cardinality)
@@ -643,26 +651,36 @@
                             (let [vb ^ByteBuffer (lmdb/next-val iter)
                                   a  (b/read-buffer (.rewind vb) :int)]
                               (if (= a (aget aids ai))
-                                (let [v    (retrieved->v lmdb (b/avg->r vb))
-                                      pred (aid->pred a)
-                                      go?  (or (nil? pred) (pred v))]
+                                (if (skip-aids a)
                                   (if (many a)
                                     (recur (lmdb/has-next-val iter)
                                            ai
-                                           (when go?
-                                             ((fnil u/list-add (FastList.))
-                                              dups v))
+                                           true
                                            vs)
-                                    (when go?
+                                    (recur (lmdb/has-next-val iter)
+                                           (u/long-inc ai) nil vs))
+                                  (let [v    (retrieved->v lmdb (b/avg->r vb))
+                                        pred (aid->pred a)
+                                        go?  (or (nil? pred) (pred v))]
+                                    (if (many a)
                                       (recur (lmdb/has-next-val iter)
-                                             (u/long-inc ai)
-                                             nil
-                                             (conj! vs v)))))
+                                             ai
+                                             (when go?
+                                               ((fnil u/list-add (FastList.))
+                                                dups v))
+                                             vs)
+                                      (when go?
+                                        (recur (lmdb/has-next-val iter)
+                                               (u/long-inc ai)
+                                               nil
+                                               (conj! vs v))))))
                                 (if dups
-                                  (recur true (u/long-inc ai) nil (conj! vs dups))
+                                  (recur true (u/long-inc ai) nil
+                                         (if (true? dups) vs (conj! vs dups)))
                                   (recur (lmdb/has-next-val iter) ai nil vs))))
                             (let [ai (if dups (u/long-inc ai) ai)
-                                  vs (if dups (conj! vs dups) vs)]
+                                  vs (if (and dups (not (true? dups)))
+                                       (conj! vs dups) vs)]
                               (when (= ai na)
                                 (let [new (r/prod-tuples
                                             (r/single-tuples tuple)
@@ -676,12 +694,16 @@
                             (let [vb (lmdb/next-val iter)
                                   a  (b/read-buffer vb :int)]
                               (if (= a (aget aids ai))
-                                (let [v    (retrieved->v lmdb (b/avg->r vb))
-                                      pred (aid->pred a)]
-                                  (when (or (nil? pred) (pred v))
-                                    (recur (lmdb/has-next-val iter)
-                                           (u/long-inc ai)
-                                           (conj! vs v))))
+                                (if (skip-aids a)
+                                  (recur (lmdb/has-next-val iter)
+                                         (u/long-inc ai)
+                                         vs)
+                                  (let [v    (retrieved->v lmdb (b/avg->r vb))
+                                        pred (aid->pred a)]
+                                    (when (or (nil? pred) (pred v))
+                                      (recur (lmdb/has-next-val iter)
+                                             (u/long-inc ai)
+                                             (conj! vs v)))))
                                 (recur (lmdb/has-next-val iter) ai vs)))
                             (when (= ai na)
                               (let [values (persistent! vs)]
