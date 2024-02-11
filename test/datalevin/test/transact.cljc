@@ -650,19 +650,24 @@
              :code    {:db/valueType :db.type/long}}
         dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (d/empty-db dir sc {:validate-data? true})]
-    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+    (is (thrown-with-msg? Exception
+          #"Invalid data, expecting :db.type/uuid got \"ibm\""
           (d/db-with db
             [{:db/id -1 :company "IBM" :id "ibm" :code 1}])))
-    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+    (is (thrown-with-msg? Exception
+          #"Invalid data, expecting :db.type/string got 1"
           (d/db-with db
             [{:db/id -2 :company 1 :id (random-uuid) :code 1}])))
-    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+    (is (thrown-with-msg? Exception
+          #"Invalid data, expecting :db.type/string got :abc"
           (d/db-with db
             [{:db/id -3 :company :abc :id (random-uuid) :code 1}])))
-    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+    (is (thrown-with-msg? Exception
+          #"Invalid data, expecting :db.type/string got 1.0"
           (d/db-with db
             [{:db/id -4 :company 1.0 :id (random-uuid) :code 1}])))
-    (is (thrown-with-msg? Exception #"Invalid data, expecting"
+    (is (thrown-with-msg? Exception
+          #"Invalid data, expecting :db.type/long got \"1\""
           (d/db-with db
             [{:db/id -5 :company "XYZ" :id (random-uuid) :code "1"}])))
     (d/close-db db)
