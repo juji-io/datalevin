@@ -922,7 +922,7 @@
                  (group-by get-src patterns)))))
 
 (defn- pushdownable
-  "push down predicate that involves only one free variable"
+  "predicates that can be pushed down involve only one free variable"
   [where gseq]
   (when (instance? Predicate where)
     (let [vars (filter #(instance? Variable %) (:args where))]
@@ -944,7 +944,7 @@
                 (update :graph (fn [g]
                                  (walk/postwalk
                                    #(if (= {:var v} %)
-                                      (assoc % :pred (first clause))
+                                      (update % :pred conjv (first clause))
                                       %)
                                    g)))))
           c))
@@ -1009,11 +1009,11 @@
           estimate-clause-cardinalities)
       (assoc context :clauses clauses))))
 
-(defn- add-pred
-  [old-pred new-pred]
-  (if old-pred
-    (fn [x] (and (old-pred x) (new-pred x)))
-    new-pred))
+#_(defn- add-pred
+    [old-pred new-pred]
+    (if old-pred
+      (fn [x] (and (old-pred x) (new-pred x)))
+      new-pred))
 
 (defn- attr-count [[_ {:keys [count]}]] count)
 
@@ -1039,13 +1039,13 @@
       (conj
         (let [bound' (->> bound
                           (remove #{mattr})
-                          (mapv (fn [[_ {:keys [val]} :as b]]
-                                  (update-in b [1 :pred] add-pred #(= % val)))))
-              free'  (remove #{mattr} free)
-              attrs  (concatv (mapv key bound') (mapv key free'))
-              preds  (concatv (mapv attr-pred bound') (mapv attr-pred free'))
-              vars   (concatv (mapv attr-var bound') (mapv attr-var free'))]
-          {:op :eav-scan-v :attrs attrs :preds preds :vars vars})))))
+                          (mapv (fn [[a {:keys [val] :as b}]]
+                                  [a (update b :pred conjv (= '% val))])))
+              free'  (remove #{mattr} free)]
+          {:op    :eav-scan-v
+           :attrs (concatv (mapv first bound') (mapv first free'))
+           :preds (concatv (mapv attr-pred bound') (mapv attr-pred free'))
+           :vars  (concatv (mapv attr-var bound') (mapv attr-var free'))})))))
 
 (defn- build-plan*
   [nodes]
@@ -1081,7 +1081,7 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      (spy c)
+      ;; (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
 
@@ -1227,8 +1227,8 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    (println "----->" q)
-    (println parsed-q)
+    ;; (println "----->" q)
+    ;; (println parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)

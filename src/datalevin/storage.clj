@@ -8,8 +8,7 @@
    [datalevin.search :as s]
    [datalevin.constants :as c]
    [datalevin.datom :as d]
-   [clojure.string :as str]
-   [datalevin.lmdb :as l])
+   [clojure.string :as str])
   (:import
    [java.util UUID List Arrays]
    [java.nio ByteBuffer]
@@ -305,11 +304,11 @@
       (.-v r)
       (d/datom-v (gt->datom lmdb g)))))
 
-(defn- vpred->kv-pred
-  [lmdb index pred]
-  (fn [kv]
-    (let [^Retrieved r (b/read-buffer (lmdb/v kv) (index->vtype index))]
-      (pred (retrieved->v lmdb r)))))
+#_(defn- vpred->kv-pred
+    [lmdb index pred]
+    (fn [kv]
+      (let [^Retrieved r (b/read-buffer (lmdb/v kv) (index->vtype index))]
+        (pred (retrieved->v lmdb r)))))
 
 (declare insert-datom delete-datom transact-list transact-giants
          fulltext-index check transact-opts)
@@ -653,10 +652,7 @@
                               (if (= a (aget aids ai))
                                 (if (skip-aids a)
                                   (if (many a)
-                                    (recur (lmdb/has-next-val iter)
-                                           ai
-                                           true
-                                           vs)
+                                    (recur (lmdb/has-next-val iter) ai true vs)
                                     (recur (lmdb/has-next-val iter)
                                            (u/long-inc ai) nil vs))
                                   (let [v    (retrieved->v lmdb (b/avg->r vb))

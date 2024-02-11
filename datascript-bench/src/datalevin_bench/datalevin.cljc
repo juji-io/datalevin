@@ -53,9 +53,7 @@
 (def db100k
   (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query"
                                          (UUID/randomUUID)))
-                         schema
-                         {:kv-opts
-                          {:flags (conj c/default-env-flags :mapasync)}})
+                         schema)
              core/people20k))
 
 

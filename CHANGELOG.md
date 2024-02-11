@@ -3,9 +3,9 @@
 ## WIP
 
 ### Added
-- [Datalog] New storage format that is more space efficient, leveraging LMDB
-  dupsort feature, resulting in smaller data file.
-- [Datalog] New query engine with improved performance. See [details](doc/query.md). #11
+- [Datalog] New query engine with an optimizer to improve query performance. See [details](doc/query.md). #11
+- [Datalog] More space efficient storage format, leveraging LMDB's
+  dupsort feature, resulting in smaller data file and faster data counting.
 - [Datalog] `search-datoms` function to lookup datoms without having to specify an index.
 - [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
     * `open-list-dbi`
@@ -31,10 +31,10 @@
   well as information about each dbi, as flags, key-size, etc. #184
 
 ### Changed
-- [KV] Change default write setting to be synchronously flushing to disk, so
-  that the database is crash resilient, but write is slower. To get back the
-  old default setting that writes faster but less safe, conj `:mapasync` to `:flags`
-  option.
+- [KV] Change default write setting from `:mapasync` to `:nometasync`, so
+  that the database is more crash resilient, while without significantly slowing
+  down the writes. In case of system crash, only the last transaction may be
+  lost, but the database will not be corrupted. #228
 - [KV] Upgrade LMDB to the latest version, now tracking mdb.master branch,
   as it includes important fixes, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723

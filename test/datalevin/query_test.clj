@@ -28,6 +28,14 @@
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
     (is (= (set (d/q '[:find ?a
+                       :in $
+                       :where
+                       [?e :age ?a]
+                       [?e :aka "bigmac"]
+                       [?e :name "Oleg"]]
+                     db ))
+           #{[37]}))
+    (is (= (set (d/q '[:find ?a
                        :in $ ?n
                        :where
                        [?e :friend ?e1]

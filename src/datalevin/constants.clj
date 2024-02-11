@@ -47,14 +47,11 @@
 ;; lmdb
 
 (def default-env-flags
-  "Default LMDB env flag is `[:nordahead :writemap :notls]`. See
+  "Default LMDB env flag is `[:nordahead :notls :writemap :nometasync]`. See
   http://www.lmdb.tech/doc/group__mdb__env.html for full list of flags.
 
-  Passed as `:flags` option value to `open-kv` function. For example,
-  `(open-kv \"/tmp/mydb\" {:flags (conj default-env-flags :mapasync)})`
-  can be used to enable asynchronous writes to improve write speed, in
-  expense of safety."
-  [:nordahead :writemap :notls])
+  Passed as `:flags` option value to `open-kv` function."
+  [:nordahead :notls :writemap :nometasync])
 
 (def default-dbi-flags
   "Default LMDB dbi flag is `[:create]`. See http://www.lmdb.tech/doc/group__mdb__dbi__open.html for full list of flags"
