@@ -604,6 +604,9 @@
 (defn- insert-data
   [^Store store ^Datom d ft-ds giants]
   (let [attr  (.-a d)
+        _     (or (not (:closed-schema? (opts store)))
+                ((schema store) attr)
+                (u/raise "Entity attribute not defined in schema " attr {}))
         props (or ((schema store) attr)
                   (swap-attr store attr identity))
         vt    (value-type props)
@@ -738,8 +741,10 @@
   ([dir schema]
    (open dir schema nil))
   ([dir schema {:keys [kv-opts search-opts search-domains validate-data?
-                       auto-entity-time? db-name cache-limit]
+                       closed-schema?  auto-entity-time? db-name
+                       cache-limit]
                 :or   {validate-data?    false
+                       closed-schema?    false
                        auto-entity-time? false
                        db-name           (str (UUID/randomUUID))
                        cache-limit       100}
@@ -754,6 +759,7 @@
        (transact-opts lmdb (merge opts0
                                   opts
                                   {:validate-data?    validate-data?
+                                   :closed-schema?    closed-schema?
                                    :auto-entity-time? auto-entity-time?
                                    :db-name           db-name
                                    :cache-limit       cache-limit
