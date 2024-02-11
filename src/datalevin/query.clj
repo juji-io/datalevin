@@ -928,7 +928,7 @@
     (let [vars (filter #(instance? Variable %) (:args where))]
       (when (= 1 (count vars))
         (let [s (:symbol (first vars))]
-          (some #(when (= % {:var s}) s) gseq))))))
+          (some #(when (= s (:var %)) s) gseq))))))
 
 (defn- pushdown-predicates
   "optimization that push predicates down to value scans"
@@ -943,7 +943,7 @@
                 (update :opt-clauses conj clause)
                 (update :graph (fn [g]
                                  (walk/postwalk
-                                   #(if (= {:var v} %)
+                                   #(if (= (:var %) v)
                                       (update % :pred conjv (first clause))
                                       %)
                                    g)))))
@@ -1081,7 +1081,7 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      ;; (spy c)
+      (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
 
@@ -1227,7 +1227,7 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    ;; (println "----->" q)
+    (println "----->" q)
     ;; (println parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)

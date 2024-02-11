@@ -131,8 +131,10 @@
                   [?e2 :name ?n]] db "Ivan")
            #{["Oleg"] ["Petr"]}))
     (is (= (d/q '[:find  ?a1
-                  :where [_ :age ?a1]
-                  [(>= ?a1 22)]] db)
+                  :where
+                  [_ :age ?a1]
+                  [(>= ?a1 22)]
+                  [(odd? ?a1)]] db)
            #{[37]}))
     (is (= (d/q '[:find  ?n ?a
                   :in ?k $
