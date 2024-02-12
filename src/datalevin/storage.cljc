@@ -605,8 +605,10 @@
   [^Store store ^Datom d ft-ds giants]
   (let [attr  (.-a d)
         _     (or (not (:closed-schema? (opts store)))
-                ((schema store) attr)
-                (u/raise "Entity attribute not defined in schema " attr {}))
+                  ((schema store) attr)
+                  (u/raise "Entity attribute not defined in schema " attr
+                    {:attribute attr
+                     :value     (.-v d)}))
         props (or ((schema store) attr)
                   (swap-attr store attr identity))
         vt    (value-type props)
