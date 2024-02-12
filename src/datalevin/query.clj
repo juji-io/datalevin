@@ -1023,26 +1023,31 @@
 
 (defn- single-plan
   [[e {:keys [bound free]}]]
-  (let [mbound (when bound (apply min-key attr-count bound))
-        mfree  (when free (apply min-key attr-count free))
+  (let [know-e? (int? e)
+        mbound  (when bound (apply min-key attr-count bound))
+        mfree   (when free (apply min-key attr-count free))
         [attr {:keys [var val pred]} :as mattr]
         (cond
           (and mbound mfree)
           (if (<= ^long (attr-count mbound) ^long (attr-count mfree))
             mbound mfree)
           mbound mbound
-          mfree  mfree)]
-    (cond-> [(cond-> {:op :init-tuples :vars [e var]}
+          mfree  mfree)
+        rm-got  #(if know-e? % (remove #{mattr} %))]
+    (cond-> [(cond-> {:op :init-tuples}
                val     (assoc :val val :vars [e])
-               (not (int? e)) (assoc :attr attr :pred pred))]
+               (not know-e?) (assoc :attr attr :pred pred
+                                    :vars [e var])
+               know-e? (assoc :vars [e]))]
       (< 1 (+ (count bound) (count free)))
       (conj
         (let [bound' (->> bound
-                          (remove #{mattr})
+                          rm-got
                           (mapv (fn [[a {:keys [val] :as b}]]
                                   [a (update b :pred conjv (= '% val))])))
-              free'  (remove #{mattr} free)]
+              free'  (rm-got free)]
           {:op    :eav-scan-v
+           :index e
            :attrs (concatv (mapv first bound') (mapv first free'))
            :preds (concatv (mapv attr-pred bound') (mapv attr-pred free'))
            :vars  (concatv (mapv attr-var bound') (mapv attr-var free'))})))))
@@ -1055,10 +1060,10 @@
   "Generate a query plan that looks like this:
 
   [{:op :init-tuples :attr :name :val \"Tom\" :pred nil :vars [?e]}
-   {:op :eav-scan-v  :attrs [:age :friend] :preds [#(< % 20) nil]
-    :vars [?a ?f]}
-   {:op :vae-scan-e :attr :friend :var ?e1}
-   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n]}]"
+   {:op :eav-scan-v  :attrs [:age :friend] :preds [(< ?a 20) nil]
+    :vars [?a ?f]    :index ?e}
+   {:op :vae-scan-e :attr :friend :var ?e1 :index ?f}
+   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index ?e1}]"
   [{:keys [graph] :as context}]
   (if graph
     (reduce
@@ -1069,10 +1074,42 @@
       context graph)
     context))
 
+(defn- init-tuples
+  [db {:keys [vars val attr pred]}]
+  (let [tuples (if attr
+                 (db/-init-tuples db [nil attr val] pred)
+                 (doto (FastList.) (.add (object-array [(first vars)]))))]))
+
+(defn- eav-scan-v
+  [db step]
+  )
+
+(defn- execute-step
+  [db {:keys [op] :as step}]
+  (case op
+    :init-tuples (init-tuples db step)
+    :eav-scan-v  (eav-scan-v db step)
+    ))
+
+(defn- execute-steps
+  [db [f & r]]
+  (reduce (fn [rel step] (execute-step db step)) (execute-step db f) r))
+
+(defn- execute-plan*
+  [{:keys [plan sources opt-clauses] :as context}]
+  (println "runnning plan")
+  (reduce resolve-clause context opt-clauses)
+  #_(reduce
+      (fn [c [src steps]]
+        (update c :rels collapse-rels (execute-steps (sources src) steps)))
+      context plan))
+
 (defn- execute-plan
   [{:keys [plan opt-clauses] :as context}]
   (if plan
-    (reduce resolve-clause context opt-clauses)
+    (if (every? (fn [[src steps]] (seq steps)) plan)
+      (execute-plan* context)
+      (reduce resolve-clause context opt-clauses))
     (reduce resolve-clause context opt-clauses)))
 
 (defn -q
@@ -1228,7 +1265,6 @@
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
     (println "----->" q)
-    ;; (println parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
