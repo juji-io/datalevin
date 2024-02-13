@@ -62,14 +62,32 @@
 
 
 #?(:clj
-  (defmacro bench [& body]
-   `(let [_#       (dotime *warmup-t* ~@body)
-          results# (into []
-                     (for [_# (range *repeats*)]
-                       (dotime *bench-t* ~@body)))
-          ; min#     (reduce min results#)
-          med#     (percentile results# 0.5)
-          ; max#     (reduce max results#)
-          ]
-      med#)))
+   (defmacro bench [& body]
+     `(let [_#       (dotime *warmup-t* ~@body)
+            results# (into []
+                           (for [_# (range *repeats*)]
+                             (dotime *bench-t* ~@body)))
+                                        ; min#     (reduce min results#)
+            med#     (percentile results# 0.5)
+                                        ; max#     (reduce max results#)
+            ]
+        med#)))
 
+
+#?(:clj
+   (defmacro bench-once [& body]
+     `(let [start-t# (now)]
+        ~@body
+        (- (now) start-t#))))
+
+#?(:clj
+   (defmacro bench-10 [& body]
+     `(let [_#       (dotime 2 ~@body)
+            results# (into []
+                           (for [_# (range *repeats*)]
+                             (dotime 5 ~@body)))
+                                        ; min#     (reduce min results#)
+            med#     (percentile results# 0.5)
+                                        ; max#     (reduce max results#)
+            ]
+        med#)))

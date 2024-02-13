@@ -55,8 +55,8 @@
 (extend-type nil ISearchable (-searchable? [_] false))
 
 (defprotocol ITuples
-  (-init-tuples [db pattern pred])
-  (-eav-scan-v [db tuples eid-idx attrs preds])
+  (-init-tuples [db a v pred])
+  (-eav-scan-v [db tuples eid-idx attrs preds skips])
   (-vae-scan-e [db tuples veid-idx attr])
   (-ave-scan-e [db tuples v-idx attr]))
 
@@ -128,21 +128,20 @@
 
   ITuples
   (-init-tuples
-    [db pattern pred]
-    (let [[_ a v _] pattern]
-      (wrap-cache
-          store
-          [:init-tuples a v pred]
-        (if v
-          (s/ave-tuples store a v v pred false)
-          (s/ave-tuples store a nil nil pred true)))))
-
-  (-eav-scan-v
-    [db tuples eid-idx attrs preds]
+    [db a v pred]
     (wrap-cache
         store
-        [:eav-scan-v tuples eid-idx attrs preds]
-      (s/eav-scan-v store tuples eid-idx attrs preds)))
+        [:init-tuples a v pred]
+      (if (nil? v)
+        (s/ave-tuples store a nil nil pred true)
+        (s/ave-tuples store a v v pred false))))
+
+  (-eav-scan-v
+    [db tuples eid-idx attrs preds skips]
+    (wrap-cache
+        store
+        [:eav-scan-v tuples eid-idx attrs preds skips]
+      (s/eav-scan-v store tuples eid-idx attrs preds skips)))
 
   (-vae-scan-e
     [db tuples veid-idx attr]

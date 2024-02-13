@@ -1009,12 +1009,6 @@
           estimate-clause-cardinalities)
       (assoc context :clauses clauses))))
 
-#_(defn- add-pred
-    [old-pred new-pred]
-    (if old-pred
-      (fn [x] (and (old-pred x) (new-pred x)))
-      new-pred))
-
 (defn- attr-count [[_ {:keys [count]}]] count)
 
 (defn- attr-pred [[_ {:keys [pred]}]] pred)
@@ -1022,8 +1016,9 @@
 (defn- attr-var [[_ {:keys [var]}]] (or var '_))
 
 (defn- single-plan
-  [[e {:keys [bound free]}]]
-  (let [know-e? (int? e)
+  [db [e {:keys [bound free]}]]
+  (let [schema  (db/-schema db)
+        know-e? (int? e)
         mbound  (when bound (apply min-key attr-count bound))
         mfree   (when free (apply min-key attr-count free))
         [attr {:keys [var val pred]} :as mattr]
@@ -1034,26 +1029,33 @@
           mbound mbound
           mfree  mfree)
         rm-got  #(if know-e? % (remove #{mattr} %))]
-    (cond-> [(cond-> {:op :init-tuples}
+    ;; (spy mattr "mattr")
+    (cond-> [(cond-> {:op :init-tuples :attr attr}
+               var     (assoc :pred pred :vars [e var])
                val     (assoc :val val :vars [e])
-               (not know-e?) (assoc :attr attr :pred pred
-                                    :vars [e var])
-               know-e? (assoc :vars [e]))]
+               know-e? (assoc :know-e? true :vars [e]))]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [bound' (->> bound
-                          rm-got
+        (let [bound' (->> (rm-got bound)
                           (mapv (fn [[a {:keys [val] :as b}]]
-                                  [a (update b :pred conjv (= '% val))])))
-              free'  (rm-got free)]
+                                  [a (let [fv (gensym "?bound")]
+                                       (-> b
+                                           (update :pred conjv
+                                                   (list '= val fv))
+                                           (assoc :var fv)))])))
+              all    (->> (concatv bound' (rm-got free))
+                          (sort-by (fn [[a _]] (-> a schema :db/aid))))
+              attrs  (mapv first all)
+              vars   (mapv attr-var all)]
           {:op    :eav-scan-v
-           :index e
-           :attrs (concatv (mapv first bound') (mapv first free'))
-           :preds (concatv (mapv attr-pred bound') (mapv attr-pred free'))
-           :vars  (concatv (mapv attr-var bound') (mapv attr-var free'))})))))
+           :index 0
+           :attrs attrs
+           :vars  vars
+           :preds (mapv attr-pred all)
+           :skips (remove nil? (map #(when (= %2 '_) %1) attrs vars))})))))
 
 (defn- build-plan*
-  [nodes]
+  [db nodes]
   [])
 
 (defn- build-plan
@@ -1061,48 +1063,85 @@
 
   [{:op :init-tuples :attr :name :val \"Tom\" :pred nil :vars [?e]}
    {:op :eav-scan-v  :attrs [:age :friend] :preds [(< ?a 20) nil]
-    :vars [?a ?f]    :index ?e}
-   {:op :vae-scan-e :attr :friend :var ?e1 :index ?f}
-   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index ?e1}]"
-  [{:keys [graph] :as context}]
+    :vars [?a ?f]    :index 0}
+   {:op :vae-scan-e :attr :friend :var ?e1 :index 2}
+   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index 3}]"
+  [{:keys [graph sources] :as context}]
   (if graph
     (reduce
       (fn [c [src nodes]]
-        (assoc-in c [:plan src] (if (< 1 (count nodes))
-                                  (build-plan* nodes)
-                                  (single-plan (first nodes)))))
+        (let [db (sources src)]
+          (assoc-in c [:plan src] (if (< 1 (count nodes))
+                                    (build-plan* db nodes)
+                                    (single-plan db (first nodes))))))
       context graph)
     context))
 
-(defn- init-tuples
-  [db {:keys [vars val attr pred]}]
-  (let [tuples (if attr
-                 (db/-init-tuples db [nil attr val] pred)
-                 (doto (FastList.) (.add (object-array [(first vars)]))))]))
+(defn- update-attrs
+  [attrs vars]
+  (let [n (count attrs)]
+    (into attrs (comp
+                  (remove #{'_})
+                  (map-indexed (fn [i v] [v (+ n ^long i)]))) vars)))
+
+(defn- add-pred
+  [old-pred new-pred]
+  (if old-pred
+    (fn [x] (and (old-pred x) (new-pred x)))
+    new-pred))
+
+(defn- activate-pred [[f & r]]
+  (when f
+    (let [f' (resolve-sym f)]
+      (fn [x]
+        (apply f' (map #(if (free-var? %) x %) r))))))
+
+(defn- combine-pred [preds] (reduce add-pred nil (map activate-pred preds)))
+
+(defn- init-relation
+  [db {:keys [vars val attr pred know-e?]}]
+  (cond
+    know-e?
+    (r/relation!
+      {'_ 0}
+      (doto (FastList.) (.add (object-array [(first vars)]))))
+    (nil? val)
+    (r/relation!
+      {(first vars) 0 (peek vars) 1}
+      (db/-init-tuples db attr nil (combine-pred pred)))
+    :else
+    (r/relation!
+      {(first vars) 0}
+      (db/-init-tuples db attr val nil))))
 
 (defn- eav-scan-v
-  [db step]
-  )
+  [db rel {:keys [attrs preds vars index skips]}]
+  (->  rel
+       (update :attrs #(update-attrs % vars))
+       (assoc :tuples (db/-eav-scan-v
+                        db (:tuples rel) index attrs
+                        (mapv combine-pred preds) skips))))
 
 (defn- execute-step
-  [db {:keys [op] :as step}]
+  [db {:keys [op] :as step} rel]
   (case op
-    :init-tuples (init-tuples db step)
-    :eav-scan-v  (eav-scan-v db step)
+    :init-tuples (init-relation db step)
+    :eav-scan-v  (eav-scan-v db rel step)
     ))
 
 (defn- execute-steps
   [db [f & r]]
-  (reduce (fn [rel step] (execute-step db step)) (execute-step db f) r))
+  (reduce (fn [rel step] (execute-step db step rel))
+          (execute-step db f nil) r))
 
 (defn- execute-plan*
   [{:keys [plan sources opt-clauses] :as context}]
-  (println "runnning plan")
-  (reduce resolve-clause context opt-clauses)
-  #_(reduce
-      (fn [c [src steps]]
-        (update c :rels collapse-rels (execute-steps (sources src) steps)))
-      context plan))
+  ;; (println "runnning plan")
+  ;; (reduce resolve-clause context opt-clauses)
+  (reduce
+    (fn [c [src steps]]
+      (update c :rels collapse-rels (execute-steps (sources src) steps)))
+    context plan))
 
 (defn- execute-plan
   [{:keys [plan opt-clauses] :as context}]
@@ -1118,12 +1157,14 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      (spy c)
+      ;; (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:clauses c)))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
+  ;; (spy (:attrs rel) "rel attr")
+  ;; (spy (mapv vec (:tuples rel)) "rel tuples")
   (->Eduction
     (comp
       (map (fn [^{:tag "[[Ljava.lang.Object;"} t1]
@@ -1264,7 +1305,7 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    (println "----->" q)
+    ;; (println "----->" q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)

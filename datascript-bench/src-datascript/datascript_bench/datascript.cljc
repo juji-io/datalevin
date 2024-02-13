@@ -2,7 +2,9 @@
   (:require
    [clojure.string :as str]
    [datascript.core :as d]
-   [datascript-bench.core :as core]))
+   [datascript-bench.core :as core])
+  (:import
+   [java.util UUID]))
 
 
 #?(:cljs
@@ -32,62 +34,93 @@
 
 (defn- long-db [depth width]
   (d/db-with (d/empty-db schema)
-    (apply concat
-      (for [x (range width)
-            y (range depth)
-            :let [from (+ (* x (inc depth)) y)
-                  to   (+ (* x (inc depth)) y 1)]]
-        [{:db/id     from
-            :name    "Ivan"
-            :follows to}
-           {:db/id   to
-            :name    "Ivan"}]))))
+             (apply concat
+                    (for [x    (range width)
+                          y    (range depth)
+                          :let [from (+ (* x (inc depth)) y)
+                                to   (+ (* x (inc depth)) y 1)]]
+                      [{:db/id   from
+                        :name    "Ivan"
+                        :follows to}
+                       {:db/id to
+                        :name  "Ivan"}]))))
 
+(def query-storage
+  (d/file-storage "/tmp/datascript-query-db"))
 
 (def db100k
-  (d/db-with (d/empty-db) core/people20k))
+  (d/store (d/db-with
+             (d/empty-db schema {:storage query-storage})
+             core/people20k)))
 
 
 (defn ^:export add-1 []
-  (core/bench
-    (reduce
-      (fn [db p]
-        (-> db
-          (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
-          (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
-          (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
-          (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
-          (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
-      (d/empty-db)
-      core/people20k)))
+  (let [storage (d/file-storage (str "/tmp/datascript-bench-"
+                                     (UUID/randomUUID)))]
+    (core/bench-once
+      (reduce
+        (fn [db p]
+          (-> db
+              (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
+              (d/store)
+              (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
+              (d/store)
+              (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
+              (d/store)
+              (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
+              (d/store)
+              (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])
+              (d/store)))
+        (d/store (d/empty-db schema {:storage storage}))
+        core/people20k))))
 
 
 (defn ^:export add-5 []
-  (core/bench
-    (reduce (fn [db p] (d/db-with db [p])) (d/empty-db) core/people20k)))
+  (let [storage (d/file-storage (str "/tmp/datascript-bench-"
+                                     (UUID/randomUUID)))]
+    (core/bench-once
+      (reduce (fn [db p] (-> db (d/db-with [p]) (d/store)))
+              (d/store (d/empty-db schema {:storage storage}))
+              core/people20k))))
 
 
 (defn ^:export add-all []
-  (core/bench
-    (d/db-with (d/empty-db) core/people20k)))
+  (let [storage (d/file-storage (str "/tmp/datascript-bench-"
+                                     (UUID/randomUUID)))]
+    (core/bench-once
+      (-> (d/db-with
+            (d/empty-db schema {:storage storage})
+            core/people20k)
+          (d/store)))))
 
 
 (defn ^:export init []
-  (let [datoms (into []
-                 (for [p core/people20k
-                       :let [id (#?(:clj Integer/parseInt :cljs js/parseInt) (:db/id p))]
-                       [k v] p
-                       :when (not= k :db/id)]
-                   (d/datom id k v)))]
-    (core/bench
-      (d/init-db datoms))))
+  (let [datoms  (into []
+                      (for [p     core/people20k
+                            :let  [id (#?(:clj Integer/parseInt :cljs js/parseInt) (:db/id p))]
+                            [k v] p
+                            :when (not= k :db/id)]
+                        (d/datom id k v)))
+        storage (d/file-storage (str "/tmp/datascript-bench-"
+                                     (UUID/randomUUID)))]
+    (core/bench-10
+      (-> (d/init-db datoms schema {:storage storage})
+          (d/store)))))
 
 
 (defn ^:export retract-5 []
-  (let [db   (d/db-with (d/empty-db) core/people20k)
+  (let [db   (-> (let [storage (d/file-storage (str "/tmp/datascript-bench-"
+                                                    (UUID/randomUUID)))]
+                   (d/store (d/empty-db schema {:storage storage})))
+                 (d/db-with core/people20k)
+                 (d/store))
         eids (->> (d/datoms db :aevt :name) (map :e) (shuffle))]
-    (core/bench
-      (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
+    (core/bench-once
+      (reduce (fn [db eid]
+                (-> db
+                    (d/db-with [[:db.fn/retractEntity eid]])
+                    (d/store)))
+              db eids))))
 
 
 (defn ^:export q1 []

@@ -314,23 +314,23 @@
                            {:flags (conj c/default-env-flags :nosync)}})]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
                                      [(constantly true)
                                       (constantly true)]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [nil nil]))))
     (is (= [[5 1] [8 7]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a] [nil nil] [:b]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [nil nil] [:b]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
                                      [odd? #(s/ends-with? % "b")]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [odd? nil]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
-                                     [(constantly true) odd?]))))
-    (is (= [] (mapv vec (sut/eav-scan-v store tuples0 0 [:b :a]
-                                        [(constantly true) even?]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
+                                     [odd? (constantly true)]))))
+    (is (= [] (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
+                                        [even? (constantly true)]))))
     (is (= [[0 10]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a] [even?]))))
     (is (= [[:none 0 10]]
@@ -352,20 +352,20 @@
            (mapv vec (sut/eav-scan-v store tuples1 1 [:c :d]
                                      [nil #(< (count %) 4)] [:c]))))
     (is (= [[8 7 "8b"] [5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples2 0 [:b :a] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples2 0 [:a :b] [nil nil]))))
     (is (= [[10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]
             [10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]]
            (mapv vec (sut/eav-scan-v store tuples3 0 [:c :d] [nil nil]))))
     (is (= [[10 "Jerry" "good"] [10 "Jerry" "nice"]
             [10 "Mick" "good"] [10 "Mick" "nice"]
             [10 "Tom" "good"] [10 "Tom" "nice"]]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil]))))
     (is (= [[10 "good"] [10 "nice"]]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil] [:d]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil] [:d]))))
     (is (= [[10 "Jerry"] [10 "Mick"] [10 "Tom"] ]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil] [:e]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil] [:e]))))
     (is (= [[10]]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:e :d] [nil nil]
+           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil]
                                      [:e :d]))))
     (sut/close store)
     (u/delete-files dir)))

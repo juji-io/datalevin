@@ -3,11 +3,13 @@
 ## WIP
 
 ### Added
-- [Datalog] New query engine with an optimizer to improve query performance. See [details](doc/query.md). #11
+- [Datalog] New query engine with an optimizer to improve query performance,
+  reulting in orders of magnitude speed up for complex queries. See
+  [details](doc/query.md). #11
 - [Datalog] More space efficient storage format, leveraging LMDB's
-  dupsort feature, resulting in smaller data file and faster data counting.
+  dupsort feature, resulting in about 10% space reduction and faster counting of data entries.
 - [Datalog] `search-datoms` function to lookup datoms without having to specify an index.
-- [KV] Expose LMDB dupsort functionality, #181, as the following list functions:
+- [KV] Expose LMDB dupsort functionality, #181, as the following new functions:
     * `open-list-dbi`
     * `put-list-items`
     * `del-list-items`
@@ -31,21 +33,21 @@
   well as information about each dbi, as flags, key-size, etc. #184
 
 ### Changed
+- [Datalog] Change VEA index back to VAE.
 - [KV] Change default write setting from `:mapasync` to `:nometasync`, so
-  that the database is more crash resilient, while without significantly slowing
-  down the writes. In case of system crash, only the last transaction may be
-  lost, but the database will not be corrupted. #228
+  that the database is more crash resilient, while retaining the write speed. In
+  case of system crash, only the last transaction might be lost, but the database
+  will not be corrupted. #228
 - [KV] Upgrade LMDB to the latest version, now tracking mdb.master branch,
-  as it includes important fixes, such as
+  as it includes important fixes for dupsort, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
 - [KV] Functions that take a predicate have a new argument `raw-pred?` to
   indicate whether the predicate takes a raw KV object (default), or a pair of
   decoded values of k and v (more convenient).
-- [Datalog] Change VEA index back to VAE.
 
 ### Improved
 - [Datalog] Query results is now spillable to disk. #166
-- [Datalog] More robust handling of multiple threads concurrent transactions.
+- [Datalog] More robust handling of multiple concurrent transactions.
 - [Search] Functions in `search-utils` namespace are now compiled instead of
   being interpreted to improve performance.
 

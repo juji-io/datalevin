@@ -80,7 +80,7 @@
 
 
 (defn ^:export add-1 []
-  (core/bench
+  (core/bench-once
     (let [conn (new-conn)]
       (doseq [p core/people20k]
         (let [report @(d/transact conn [[:db/add "p" :name (:name p)]])
@@ -92,20 +92,20 @@
 
 
 (defn ^:export add-5 []
-  (core/bench
+  (core/bench-once
     (let [conn (new-conn)]
       (doseq [p core/people20k]
         @(d/transact conn [p])))))
 
 
 (defn ^:export add-all []
-  (core/bench
+  (core/bench-once
     (let [conn (new-conn)]
       @(d/transact conn core/people20k))))
 
 
 (defn ^:export retract-5 []
-  (core/bench
+  (core/bench-once
     (let [conn (new-conn)
           db   (db-with conn core/people20k)
           eids (->> (d/datoms db :aevt :name) (map :e) (shuffle))]

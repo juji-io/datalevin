@@ -265,7 +265,8 @@
   (eav-scan-v
     [this tuples eid-idx attrs vpreds]
     [this tuples eid-idx attrs vpreds skip-attrs]
-    "Scan values and merge into tuples using :eav index.")
+    "Scan values and merge into tuples using :eav index., assuming attrs are
+    already sorted by aid")
   (vae-scan-e [this tuples veid-idx attr]
     "Return merged tuples with eid as the last column using :vae index")
   (ave-scan-e [this tuples v-idx attr]
@@ -618,11 +619,14 @@
            (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
         res)))
 
+
   (eav-scan-v [store tuples eid-idx as vpreds]
     (.eav-scan-v store tuples eid-idx as vpreds []))
   (eav-scan-v
     [_ tuples eid-idx as vpreds skip-as]
     (when (and (seq tuples) (seq as))
+      ;; (println "tuples" (map vec tuples) "eid-idx" eid-idx
+      ;;          "as" as "vpreds" vpreds "skip-as" skip-as)
       (let [attr->aid #(-> % schema :db/aid)
             skip-aids (set (map attr->aid skip-as))
             aids      (mapv attr->aid as)
@@ -630,7 +634,8 @@
             aid->pred (zipmap aids vpreds)
             many      (set (filter #(= (-> % attrs schema :db/cardinality)
                                        :db.cardinality/many) aids))
-            aids      ^ints (let [as (int-array aids)] (Arrays/sort as) as)
+            ;; aids      ^ints (let [as (int-array aids)] (Arrays/sort as) as)
+            aids      (int-array aids)
             res       ^FastList (FastList.)
             operator
             (fn [iterable]
@@ -1014,7 +1019,7 @@
                 :or   {validate-data?    false
                        auto-entity-time? false
                        db-name           (str (UUID/randomUUID))
-                       cache-limit       32}
+                       cache-limit       64}
                 :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
