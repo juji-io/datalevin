@@ -391,24 +391,14 @@
             (aset static-args i source)
             (aset tuples-args i (get attrs arg)))
           (aset static-args i arg))))
-    (if false
-      (fn [tuple]
-        ;; TODO raise if not all args are bound
-        (let [args (aclone static-args)]
-          (dotimes [i len]
-            (when-some [tuple-idx (aget tuples-args i)]
-              (let [tg (if (u/array? tuple) r/typed-aget get)
-                    v  (tg tuple tuple-idx)]
-                (aset args i v))))
-          (make-call f args)))
-      (fn [tuple]
-        ;; TODO raise if not all args are bound
-        (dotimes [i len]
-          (when-some [tuple-idx (aget tuples-args i)]
-            (let [tg (if (u/array? tuple) r/typed-aget get)
-                  v  (tg tuple tuple-idx)]
-              (aset static-args i v))))
-        (make-call f static-args)))))
+    (fn [tuple]
+      ;; TODO raise if not all args are bound
+      (dotimes [i len]
+        (when-some [tuple-idx (aget tuples-args i)]
+          (let [tg (if (u/array? tuple) r/typed-aget get)
+                v  (tg tuple tuple-idx)]
+            (aset static-args i v))))
+      (make-call f static-args))))
 
 (defn- resolve-sym
   [sym]
@@ -417,17 +407,21 @@
                      (ns-resolve 'pod.huahaiy.datalevin sym)))]
     @v))
 
+(defn- resolve-pred
+  [f context clause]
+  (or (get built-ins/query-fns f)
+      (context-resolve-val context f)
+      (dot-form f)
+      (resolve-sym f)
+      (when (nil? (rel-with-attr context f))
+        (raise "Unknown predicate '" f " in " clause
+               {:error :query/where, :form clause,
+                :var   f}))))
+
 (defn filter-by-pred
   [context clause]
   (let [[[f & args]]         clause
-        pred                 (or (get built-ins/query-fns f)
-                                 (context-resolve-val context f)
-                                 (dot-form f)
-                                 (resolve-sym f)
-                                 (when (nil? (rel-with-attr context f))
-                                   (raise "Unknown predicate '" f " in " clause
-                                          {:error :query/where, :form clause,
-                                           :var   f})))
+        pred                 (resolve-pred f context clause)
         [context production] (rel-prod-by-attrs context (filter symbol? args))
 
         new-rel (if pred
@@ -1001,13 +995,18 @@
   Remaining clauses will be joined after the graph produces a relation"
   [context]
   (let [clauses (get-in context [:parsed-q :qorig-where])]
-    (if (< 1 (count clauses))
-      (-> context
-          split-clauses
-          init-graph
-          pushdown-predicates
-          estimate-clause-cardinalities)
-      (assoc context :clauses clauses))))
+    (-> context
+        split-clauses
+        init-graph
+        ;; pushdown-predicates
+        estimate-clause-cardinalities)
+    #_(if (< 1 (count clauses))
+        (-> context
+            split-clauses
+            init-graph
+            pushdown-predicates
+            estimate-clause-cardinalities)
+        (assoc context :clauses clauses))))
 
 (defn- attr-count [[_ {:keys [count]}]] count)
 
@@ -1030,10 +1029,10 @@
           mfree  mfree)
         rm-got  #(if know-e? % (remove #{mattr} %))]
     ;; (spy mattr "mattr")
-    (cond-> [(cond-> {:op :init-tuples :attr attr}
+    (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e]}
                var     (assoc :pred pred :vars [e var])
-               val     (assoc :val val :vars [e])
-               know-e? (assoc :know-e? true :vars [e]))]
+               val     (assoc :val val)
+               know-e? (assoc :know-e? true))]
       (< 1 (+ (count bound) (count free)))
       (conj
         (let [bound' (->> (rm-got bound)
@@ -1090,29 +1089,37 @@
     (fn [x] (and (old-pred x) (new-pred x)))
     new-pred))
 
-(defn- activate-pred [[f & r]]
+(defn- activate-pred [[f & r :as clause]]
   (when f
-    (let [f' (resolve-sym f)]
+    (let [f' (resolve-pred f nil clause)]
       (fn [x]
-        (apply f' (map #(if (free-var? %) x %) r))))))
+        (make-call f' (mapv #(if (free-var? %) x %) r))))))
 
-(defn- combine-pred [preds] (reduce add-pred nil (map activate-pred preds)))
+(defn- combine-pred
+  [preds]
+  (reduce add-pred nil (mapv activate-pred preds)))
 
 (defn- init-relation
   [db {:keys [vars val attr pred know-e?]}]
-  (cond
-    know-e?
-    (r/relation!
-      {'_ 0}
-      (doto (FastList.) (.add (object-array [(first vars)]))))
-    (nil? val)
-    (r/relation!
-      {(first vars) 0 (peek vars) 1}
-      (db/-init-tuples db attr nil (combine-pred pred)))
-    :else
-    (r/relation!
-      {(first vars) 0}
-      (db/-init-tuples db attr val nil))))
+  (let [get-v? (< 1 (count vars))
+        e      (first vars)
+        v      (peek vars)]
+    (cond
+      know-e?
+      (r/relation!
+        (cond-> {'_ 0} get-v? (assoc v 1))
+        (let [tuples (doto (FastList.) (.add (object-array [e])))]
+          (if get-v?
+            (db/-eav-scan-v db tuples 0 [attr] [nil] [])
+            tuples)))
+      (nil? val)
+      (r/relation!
+        (cond-> {e 0} get-v? (assoc v 1))
+        (db/-init-tuples db attr nil (combine-pred pred)))
+      :else
+      (r/relation!
+        {e 0}
+        (db/-init-tuples db attr val nil)))))
 
 (defn- eav-scan-v
   [db rel {:keys [attrs preds vars index skips]}]
