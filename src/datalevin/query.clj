@@ -994,25 +994,36 @@
 
   Remaining clauses will be joined after the graph produces a relation"
   [context]
-  (let [clauses (get-in context [:parsed-q :qorig-where])]
-    (-> context
-        split-clauses
-        init-graph
-        ;; pushdown-predicates
-        estimate-clause-cardinalities)
-    #_(if (< 1 (count clauses))
-        (-> context
-            split-clauses
-            init-graph
-            pushdown-predicates
-            estimate-clause-cardinalities)
-        (assoc context :clauses clauses))))
+  (-> context
+      split-clauses
+      init-graph
+      pushdown-predicates
+      estimate-clause-cardinalities))
 
 (defn- attr-count [[_ {:keys [count]}]] count)
 
-(defn- attr-pred [[_ {:keys [pred]}]] pred)
-
 (defn- attr-var [[_ {:keys [var]}]] (or var '_))
+
+(defn- add-pred
+  [old-pred new-pred]
+  (if old-pred
+    (fn [x] (and (old-pred x) (new-pred x)))
+    new-pred))
+
+(defn- activate-pred
+  [var clause]
+  (when clause
+    (if (fn? clause)
+      clause
+      (let [[f & args] clause
+            f'         (resolve-pred f nil clause)
+            i          (u/index-of #(= var %) args)
+            args-arr   (object-array args)]
+        (fn [x] (make-call f' (do (aset args-arr i x) args-arr)))))))
+
+(defn- attr-pred
+  [[_ {:keys [var pred]}]]
+  (reduce add-pred nil (mapv #(activate-pred var %) pred)))
 
 (defn- single-plan
   [db [e {:keys [bound free]}]]
@@ -1030,18 +1041,16 @@
         rm-got  #(if know-e? % (remove #{mattr} %))]
     ;; (spy mattr "mattr")
     (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e]}
-               var     (assoc :pred pred :vars [e var])
+               var     (assoc :pred (attr-pred mattr) :vars [e var])
                val     (assoc :val val)
                know-e? (assoc :know-e? true))]
       (< 1 (+ (count bound) (count free)))
       (conj
         (let [bound' (->> (rm-got bound)
                           (mapv (fn [[a {:keys [val] :as b}]]
-                                  [a (let [fv (gensym "?bound")]
-                                       (-> b
-                                           (update :pred conjv
-                                                   (list '= val fv))
-                                           (assoc :var fv)))])))
+                                  [a (-> b
+                                         (update :pred conjv #(= val %))
+                                         (assoc :var (gensym "?bound")))])))
               all    (->> (concatv bound' (rm-got free))
                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
               attrs  (mapv first all)
@@ -1076,29 +1085,6 @@
       context graph)
     context))
 
-(defn- update-attrs
-  [attrs vars]
-  (let [n (count attrs)]
-    (into attrs (comp
-                  (remove #{'_})
-                  (map-indexed (fn [i v] [v (+ n ^long i)]))) vars)))
-
-(defn- add-pred
-  [old-pred new-pred]
-  (if old-pred
-    (fn [x] (and (old-pred x) (new-pred x)))
-    new-pred))
-
-(defn- activate-pred [[f & r :as clause]]
-  (when f
-    (let [f' (resolve-pred f nil clause)]
-      (fn [x]
-        (make-call f' (mapv #(if (free-var? %) x %) r))))))
-
-(defn- combine-pred
-  [preds]
-  (reduce add-pred nil (mapv activate-pred preds)))
-
 (defn- init-relation
   [db {:keys [vars val attr pred know-e?]}]
   (let [get-v? (< 1 (count vars))
@@ -1115,26 +1101,31 @@
       (nil? val)
       (r/relation!
         (cond-> {e 0} get-v? (assoc v 1))
-        (db/-init-tuples db attr nil (combine-pred pred)))
+        (db/-init-tuples db attr nil pred))
       :else
       (r/relation!
         {e 0}
         (db/-init-tuples db attr val nil)))))
+
+(defn- update-attrs
+  [attrs vars]
+  (let [n (count attrs)]
+    (into attrs (comp
+                  (remove #{'_})
+                  (map-indexed (fn [i v] [v (+ n ^long i)]))) vars)))
 
 (defn- eav-scan-v
   [db rel {:keys [attrs preds vars index skips]}]
   (->  rel
        (update :attrs #(update-attrs % vars))
        (assoc :tuples (db/-eav-scan-v
-                        db (:tuples rel) index attrs
-                        (mapv combine-pred preds) skips))))
+                        db (:tuples rel) index attrs preds skips))))
 
 (defn- execute-step
   [db {:keys [op] :as step} rel]
   (case op
     :init-tuples (init-relation db step)
-    :eav-scan-v  (eav-scan-v db rel step)
-    ))
+    :eav-scan-v  (eav-scan-v db rel step)))
 
 (defn- execute-steps
   [db [f & r]]
@@ -1142,9 +1133,7 @@
           (execute-step db f nil) r))
 
 (defn- execute-plan*
-  [{:keys [plan sources opt-clauses] :as context}]
-  ;; (println "runnning plan")
-  ;; (reduce resolve-clause context opt-clauses)
+  [{:keys [plan sources] :as context}]
   (reduce
     (fn [c [src steps]]
       (update c :rels collapse-rels (execute-steps (sources src) steps)))
@@ -1170,8 +1159,6 @@
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
-  ;; (spy (:attrs rel) "rel attr")
-  ;; (spy (mapv vec (:tuples rel)) "rel tuples")
   (->Eduction
     (comp
       (map (fn [^{:tag "[[Ljava.lang.Object;"} t1]

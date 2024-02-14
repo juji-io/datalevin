@@ -58,6 +58,11 @@
                       [(= ?ns ?ns-in)]
                       [?e :school ?v]]
                     db "ny")))
+    (is (= (set (d/q '[:find ?e ?v
+                       :in $ ?e
+                       :where [?e :age ?v]]
+                     db [:name "Ivan"]))
+           #{[[:name "Ivan"] 11]}))
     (is (= (set (d/q '[:find ?v
                        :in $ ?e
                        :where [?e :age ?v]]

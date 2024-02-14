@@ -137,3 +137,13 @@
               (horizontal-tuples %))))
     prod-tuples
     values))
+
+(defn filter-rel
+  [{:keys [attrs ^List tuples]} v pred]
+  (let [new-tuples (FastList.)
+        idx        (attrs v)]
+    (dotimes [i (.size tuples)]
+      (let [tuple ^objects (.get tuples i)]
+        (when (pred (aget tuple idx))
+          (.add new-tuples tuple))))
+    (relation! attrs new-tuples)))
