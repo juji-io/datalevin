@@ -12,9 +12,10 @@
   (:import
    [java.util UUID List]
    [java.nio ByteBuffer]
+   [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
-   [org.eclipse.collections.impl.list.mutable FastList]
+   [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -258,9 +259,9 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
   (ave-tuples
-    [this attr low-value high-value]
-    [this attr low-value high-value vpred]
-    [this attr low-value high-value vpred get-v?]
+    [this attr val-range]
+    [this attr val-range vpred]
+    [this attr val-range vpred get-v?]
     "Return tuples of e or e and v using :ave index")
   (eav-scan-v
     [this tuples eid-idx attrs vpreds]
@@ -587,15 +588,16 @@
        (datom->indexable schema low-datom false)]
       (index->vtype index)))
 
-  (ave-tuples [store attr low-value high-value]
-    (.ave-tuples store attr low-value high-value nil false))
-  (ave-tuples [store attr low-value high-value vpred]
-    (.ave-tuples store attr low-value high-value vpred false))
-  (ave-tuples [_ attr low-value high-value vpred get-v?]
+  (ave-tuples [store attr val-range]
+    (.ave-tuples store attr val-range nil false))
+  (ave-tuples [store attr val-range vpred]
+    (.ave-tuples store attr val-range vpred false))
+  (ave-tuples [_ attr val-range vpred get-v?]
     (when-let [props (schema attr)]
-      (let [vt  (value-type props)
-            aid (props :db/aid)
-            res ^FastList (FastList.)
+      (let [vt   (value-type props)
+            aid  (props :db/aid)
+            seen (LongHashSet.)
+            res  ^FastList (FastList.)
             operator
             (fn [iterable]
               (let [iter (lmdb/val-iterator iterable)]
@@ -606,17 +608,40 @@
                         (let [r (b/read-buffer veg :veg)
                               v (retrieved->v lmdb r)
                               e (.-e ^Retrieved r)]
-                          (if vpred
-                            (when (vpred v)
-                              (.add res (object-array (if get-v? [e v] [e]))))
-                            (.add res (object-array [e v]))))
-                        (.add res (object-array [(b/veg->e veg)]))))
+                          (if get-v?
+                            (if vpred
+                              (when (vpred v)
+                                (.add seen e)
+                                (.add res (object-array [e v])))
+                              (do (.add seen e)
+                                  (.add res (object-array [e v]))))
+                            (when-not (.contains seen e)
+                              (when (vpred v)
+                                (.add seen e)
+                                (.add res (object-array [e]))))))
+                        (let [e (b/veg->e veg)]
+                          (when-not (.contains seen e)
+                            (.add seen e)
+                            (.add res (object-array [e]))))))
                     (recur (lmdb/has-next-val iter))))))]
         (lmdb/operate-list-val-range
           lmdb c/ave operator
-          [:closed
-           (b/indexable c/e0 aid (or low-value c/v0) vt c/g0)
-           (b/indexable c/emax aid (or high-value c/vmax) vt c/gmax)] :veg)
+          (let [[op lv hv] val-range]
+            (case op
+              :all          val-range
+              :at-least     [op (b/indexable c/e0 aid lv vt c/g0)]
+              :at-most      [op (b/indexable c/emax aid lv vt c/gmax)]
+              :closed       [op (b/indexable c/e0 aid lv vt c/g0)
+                             (b/indexable c/emax aid hv vt c/gmax)]
+              :closed-open  [op (b/indexable c/e0 aid lv vt c/g0)
+                             (b/indexable c/e0 aid hv vt c/g0)]
+              :greater-than [op (b/indexable c/emax aid lv vt c/gmax)]
+              :less-than    [op (b/indexable c/e0 aid lv vt c/g0)]
+              :open         [op (b/indexable c/emax aid lv vt c/gmax)
+                             (b/indexable c/e0 aid hv vt c/g0)]
+              :open-closed  [op (b/indexable c/emax aid lv vt c/gmax)
+                             (b/indexable c/emax aid hv vt c/gmax)]))
+          :veg)
         res)))
 
   (eav-scan-v [store tuples eid-idx as vpreds]

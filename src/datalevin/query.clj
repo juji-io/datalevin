@@ -789,12 +789,13 @@
         smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
     [(assoc parsed-q
             :qwhere (reduce (fn [ws [s v]]
-                              (walk/postwalk (fn [e]
-                                               (if (and (instance? Variable e)
-                                                        (= s (:symbol e)))
-                                                 (Constant. v)
-                                                 e))
-                                             ws))
+                              (walk/postwalk
+                                (fn [e]
+                                  (if (and (instance? Variable e)
+                                           (= s (:symbol e)))
+                                    (Constant. v)
+                                    e))
+                                ws))
                             (:qwhere parsed-q) smap)
             :qorig-where (walk/postwalk-replace smap owheres)
             :qin (u/remove-idxs rm-idxs qins))
@@ -919,13 +920,49 @@
   "predicates that can be pushed down involve only one free variable"
   [where gseq]
   (when (instance? Predicate where)
-    (let [vars (filter #(instance? Variable %) (:args where))]
+    (let [vars (filterv #(instance? Variable %) (:args where))]
       (when (= 1 (count vars))
         (let [s (:symbol (first vars))]
           (some #(when (= s (:var %)) s) gseq))))))
 
+(defn- set-range
+  [i m args ac o1 o2 o3 switch?]
+  (let [ac ^long ac
+        i  ^long i]
+    (cond
+      (= i 0)
+      (assoc m :range [o1 (second args)])
+      (= i (dec ac))
+      (assoc m :range [o2 (nth args (dec i))])
+      switch?
+      (assoc m :range [o3 (nth args (inc i)) (nth args (dec i))])
+      :else
+      (assoc m :range [o3 (nth args (dec i)) (nth args (inc i))]))))
+
+(defn- add-pred-clause
+  [graph clause v]
+  (walk/postwalk
+    (fn [m]
+      (if (= (:var m) v)
+        (let [[f & args :as pred] (first clause)]
+          (if (:range m)
+            ;; TODO merge multiple range predicates
+            (update m :pred conjv pred)
+            (let [ac (count args)
+                  i  ^long (u/index-of #(= % v) args)]
+              (condp = f
+                '<  (set-range i m args ac :less-than :greater-than :open false)
+                '<= (set-range i m args ac :at-most :at-least :closed false)
+                '>  (set-range i m args ac :greater-than :less-than :open true)
+                '>= (set-range i m args ac :at-least :at-most :closed true)
+                '=  (let [c (some #(when-not (free-var? %) %) args)]
+                      (assoc m :range [:closed c c]))
+                (update m :pred conjv pred)))))
+        m))
+    graph))
+
 (defn- pushdown-predicates
-  "optimization that push predicates down to value scans"
+  "optimization that pushes predicates down to value scans"
   [{:keys [parsed-q graph] :as context}]
   (let [gseq (tree-seq coll? seq graph)]
     (u/reduce-indexed
@@ -935,47 +972,76 @@
             (-> c
                 (update :clauses #(remove #{clause} %))
                 (update :opt-clauses conj clause)
-                (update :graph (fn [g]
-                                 (walk/postwalk
-                                   #(if (= (:var %) v)
-                                      (update % :pred conjv (first clause))
-                                      %)
-                                   g)))))
+                (update :graph #(add-pred-clause % clause v))))
           c))
       context
       (:qwhere parsed-q))))
 
+(defn- pred-count [^long n]
+  (long (Math/ceil (* ^double c/magic-number-pred n))))
+
+(defn- range->start-end
+  [[op lv hv]]
+  (case op
+    (:at-least :greater-than) [lv nil]
+    (:at-most :less-than)     [nil lv]
+    (:closed :open)           [lv hv]))
+
 (defn- datom-n
   [db clauses]
   (reduce
-    (fn [c [attr {:keys [val pred]}]]
-      (let [^long n (db/-count db [nil attr val])]
-        (assoc-in c [attr :count]
-                  (if pred
-                    (long (* ^double c/magic-number-pred n))
-                    n))))
+    (fn [c [attr {:keys [val range]}]]
+      (assoc-in c [attr :count]
+                (cond
+                  ;; TODO cap the following two countings to not go far beyond
+                  ;; existing mininum among clauses, then add :capped? true
+                  (some? val) (db/-count db [nil attr val])
+                  range       (let [[lv hv] (range->start-end range)]
+                                (db/-index-range-size db attr lv hv))
+                  :else       (db/-count db [nil attr nil])))) ; cheap
     clauses clauses))
 
-(defn- estimate-clause-cardinalities
+(defn- count-clause-datoms
   [{:keys [sources graph] :as context}]
   (reduce
     (fn [c [src nodes]]
-      (let [db (sources src)
-            nc (count nodes)]
+      (let [db (sources src)]
         (reduce
           (fn [c [e {:keys [free bound]}]]
-            (let [fc (count free)
-                  bc (count bound)]
-              (if (or (< 1 nc) (< 1 (+ fc bc)))
-                (update c :graph
-                        (fn [g]
-                          (cond-> g
-                            (< 0 bc)
-                            (update-in [src e :bound] #(datom-n db %))
-                            (< 0 fc)
-                            (update-in [src e :free] #(datom-n db %)))))
-                c)))
+            (update c :graph
+                    (fn [g]
+                      (cond-> g
+                        (not-empty bound)
+                        (update-in [src e :bound] #(datom-n db %))
+                        (not-empty free)
+                        (update-in [src e :free] #(datom-n db %))))))
           c nodes)))
+    context graph))
+
+(defn- attr-count [[_ {:keys [count]}]] count)
+
+(defn- attr-var [[_ {:keys [var]}]] (or var '_))
+
+(defn- min-path
+  [bound free]
+  (let [mbound (when bound (apply min-key attr-count bound))
+        mfree  (when free (apply min-key attr-count free))]
+    (cond
+      (and mbound mfree)
+      (if (<= ^long (attr-count mbound) ^long (attr-count mfree))
+        [:bound (first mbound)]
+        [:free (first mfree)])
+      mbound [:bound (first mbound)]
+      mfree  [:free (first mfree)])))
+
+(defn- mark-min
+  [{:keys [graph] :as context}]
+  (reduce
+    (fn [c [src nodes]]
+      (reduce
+        (fn [c [e {:keys [free bound]}]]
+          (update c :graph #(assoc-in % [src e :min] (min-path bound free))))
+        c nodes))
     context graph))
 
 (defn- build-graph
@@ -984,11 +1050,13 @@
   {$
   {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
                 {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
+        :min   [:bound :name]
         :bound {:name {:val \"Tom\" :count 5}}
-        :free  {:age    {:var ?a :count 10890}
-                :salary {:var ?s :pred (< ?s 200000)}
+        :free  {:age    {:var ?a :range [:less-than 18] :count 1089}
+                :school {:var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
                 :friend {:var ?e0 :count 2500}}}
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
+        :min   [:free :age]
         :free  {:age {:var ?a :count 10890}}}
    ...}}
 
@@ -998,11 +1066,8 @@
       split-clauses
       init-graph
       pushdown-predicates
-      estimate-clause-cardinalities))
-
-(defn- attr-count [[_ {:keys [count]}]] count)
-
-(defn- attr-var [[_ {:keys [var]}]] (or var '_))
+      count-clause-datoms
+      mark-min))
 
 (defn- add-pred
   [old-pred new-pred]
@@ -1026,41 +1091,38 @@
   (reduce add-pred nil (mapv #(activate-pred var %) pred)))
 
 (defn- single-plan
-  [db [e {:keys [bound free]}]]
-  (let [schema  (db/-schema db)
+  [db [e clauses]]
+  (let [{:keys [bound free] min-path :min} clauses
+        {:keys [var val range] mcount :count :as clause}
+        (get-in clauses min-path)
+
+        attr    (peek min-path)
         know-e? (int? e)
-        mbound  (when bound (apply min-key attr-count bound))
-        mfree   (when free (apply min-key attr-count free))
-        [attr {:keys [var val pred]} :as mattr]
-        (cond
-          (and mbound mfree)
-          (if (<= ^long (attr-count mbound) ^long (attr-count mfree))
-            mbound mfree)
-          mbound mbound
-          mfree  mfree)
-        rm-got  #(if know-e? % (remove #{mattr} %))]
-    ;; (spy mattr "mattr")
-    (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e]}
-               var     (assoc :pred (attr-pred mattr) :vars [e var])
-               val     (assoc :val val)
-               know-e? (assoc :know-e? true))]
-      (< 1 (+ (count bound) (count free)))
-      (conj
-        (let [bound' (->> (rm-got bound)
-                          (mapv (fn [[a {:keys [val] :as b}]]
-                                  [a (-> b
-                                         (update :pred conjv #(= val %))
-                                         (assoc :var (gensym "?bound")))])))
-              all    (->> (concatv bound' (rm-got free))
-                          (sort-by (fn [[a _]] (-> a schema :db/aid))))
-              attrs  (mapv first all)
-              vars   (mapv attr-var all)]
-          {:op    :eav-scan-v
-           :index 0
-           :attrs attrs
-           :vars  vars
-           :preds (mapv attr-pred all)
-           :skips (remove nil? (map #(when (= %2 '_) %1) attrs vars))})))))
+        schema  (db/-schema db)]
+    (if (zero? ^long mcount)
+      []
+      (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e]}
+                 var     (assoc :pred (attr-pred [attr clause]) :vars [e var]
+                                :range range)
+                 val     (assoc :val val)
+                 know-e? (assoc :know-e? true))]
+        (< 1 (+ (count bound) (count free)))
+        (conj
+          (let [bound' (->> (dissoc bound attr)
+                            (mapv (fn [[a {:keys [val] :as b}]]
+                                    [a (-> b
+                                           (update :pred conjv #(= val %))
+                                           (assoc :var (gensym "?bound")))])))
+                all    (->> (concatv bound' (dissoc free attr))
+                            (sort-by (fn [[a _]] (-> a schema :db/aid))))
+                attrs  (mapv first all)
+                vars   (mapv attr-var all)]
+            {:op    :eav-scan-v
+             :index 0
+             :attrs attrs
+             :vars  vars
+             :preds (mapv attr-pred all)
+             :skips (remove nil? (map #(when (= %2 '_) %1) attrs vars))}))))))
 
 (defn- build-plan*
   [db nodes]
@@ -1086,26 +1148,23 @@
     context))
 
 (defn- init-relation
-  [db {:keys [vars val attr pred know-e?]}]
+  [db {:keys [vars val attr range pred know-e?]}]
   (let [get-v? (< 1 (count vars))
         e      (first vars)
         v      (peek vars)]
     (cond
       know-e?
-      (r/relation!
-        (cond-> {'_ 0} get-v? (assoc v 1))
-        (let [tuples (doto (FastList.) (.add (object-array [e])))]
-          (if get-v?
-            (db/-eav-scan-v db tuples 0 [attr] [nil] [])
-            tuples)))
+      (r/relation! (cond-> {'_ 0} get-v? (assoc v 1))
+                   (let [tuples (doto (FastList.) (.add (object-array [e])))]
+                     (if get-v?
+                       (db/-eav-scan-v db tuples 0 [attr] [nil] [])
+                       tuples)))
       (nil? val)
-      (r/relation!
-        (cond-> {e 0} get-v? (assoc v 1))
-        (db/-init-tuples db attr nil pred))
+      (r/relation! (cond-> {e 0} get-v? (assoc v 1))
+                   (db/-init-tuples db attr (or range [:all]) pred get-v?))
       :else
-      (r/relation!
-        {e 0}
-        (db/-init-tuples db attr val nil)))))
+      (r/relation! {e 0}
+                   (db/-init-tuples db attr [:closed val val] nil false)))))
 
 (defn- update-attrs
   [attrs vars]
@@ -1142,7 +1201,7 @@
 (defn- execute-plan
   [{:keys [plan opt-clauses] :as context}]
   (if plan
-    (if (every? (fn [[src steps]] (seq steps)) plan)
+    (if (every? (fn [[_ steps]] (seq steps)) plan)
       (execute-plan* context)
       (reduce resolve-clause context opt-clauses))
     (reduce resolve-clause context opt-clauses)))

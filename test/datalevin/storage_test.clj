@@ -103,9 +103,9 @@
                                    (d/datom c/e0 nil nil)
                                    (d/datom c/e0 nil nil))))
       (is (= [c/e0] (map #(aget ^objects % 0)
-                         (sut/ave-tuples store a nil nil (constantly true)))))
+                         (sut/ave-tuples store a [:all] (constantly true)))))
       (is (= [c/e0] (map #(aget ^objects % 0)
-                         (sut/ave-tuples store b v1 v1))))
+                         (sut/ave-tuples store b [:closed v1 v1]))))
       (is (= [d1 d] (sut/rslice store :ave d1 d)))
       (is (= [d d1] (sut/slice store :ave
                                (d/datom c/e0 a nil)
@@ -278,6 +278,62 @@
       (sut/close store)
       (u/delete-files dir)
       (is (= [d] r)))))
+
+(deftest ave-tuples-test
+  (let [d0    (d/datom 0 :a "0a0")
+        d1    (d/datom 0 :a "0a1")
+        d2    (d/datom 0 :a "0a2")
+        d3    (d/datom 0 :b 7)
+        d4    (d/datom 8 :a "8a")
+        d5    (d/datom 8 :b 11)
+        d6    (d/datom 10 :a "10a")
+        d7    (d/datom 10 :b 4)
+        d8    (d/datom 10 :b 15)
+        d9    (d/datom 10 :b 20)
+        d10   (d/datom 15 :a "15a")
+        d11   (d/datom 15 :b 1)
+        d12   (d/datom 20 :b 2)
+        dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
+        store (sut/open dir
+                        {:a {:db/valueType   :db.type/string
+                             :db/cardinality :db.cardinality/many}
+                         :b {:db/cardinality :db.cardinality/many
+                             :db/valueType   :db.type/long}}
+                        {:kv-opts
+                         {:flags (conj c/default-env-flags :nosync)}})]
+    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
+    (is (= [[8] [10]] (mapv vec (sut/ave-tuples store :b [:at-least 11]))))
+    (is (= [[8 11] [10 15] [10 20]]
+           (mapv vec (sut/ave-tuples store :b [:at-least 11] nil true))))
+    (is (= [[15] [20] [10] [0] [8]]
+           (mapv vec (sut/ave-tuples store :b [:at-most 11]))))
+    (is (= [[15] [0] [8]]
+           (mapv vec (sut/ave-tuples store :b [:at-most 11] odd?))))
+    (is (= [[8] [10]]
+           (mapv vec (sut/ave-tuples store :b [:closed-open 11 20]))))
+    (is (= [[10]] (mapv vec (sut/ave-tuples store :b [:greater-than 11]))))
+    (is (= [[15] [20] [10] [0]]
+           (mapv vec (sut/ave-tuples store :b [:less-than 11]))))
+    (is (= [[15 1] [0 7]]
+           (mapv vec (sut/ave-tuples store :b [:less-than 11] odd? true))))
+    (is (= [[10] [0]] (mapv vec (sut/ave-tuples store :b [:open 2 11]))))
+    (is (= [[10] [0] [8]]
+           (mapv vec (sut/ave-tuples store :b [:open-closed 2 11]))))
+    (is (= [[8]]
+           (mapv vec (sut/ave-tuples store :a [:at-least "8"]))))
+    (is (= [[0] [10]]
+           (mapv vec (sut/ave-tuples store :a [:at-most "10a"]))))
+    (is (= [[10]]
+           (mapv vec (sut/ave-tuples store :a [:closed-open "10a" "15a"]))))
+    (is (= [[15] [8]]
+           (mapv vec (sut/ave-tuples store :a [:greater-than "10a"]))))
+    (is (= [[0]] (mapv vec (sut/ave-tuples store :a [:less-than "10a"]))))
+    (is (= [[0] [10]]
+           (mapv vec (sut/ave-tuples store :a [:open "0a0" "15a"]))))
+    (is (= [[0] [10] [15]]
+           (mapv vec (sut/ave-tuples store :a [:open-closed "0a0" "15a"]))))
+    (sut/close store)
+    (u/delete-files dir)))
 
 (deftest eav-scan-v-test
   (let [d0      (d/datom 0 :a 10)
