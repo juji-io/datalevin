@@ -28,7 +28,7 @@
 
 (defprotocol ISearch
   (-search [data pattern])
-  (-count [data pattern])
+  (-count [data pattern] [data pattern cap])
   (-first [data pattern])
   (-last [data pattern]))
 
@@ -40,7 +40,7 @@
   (-seek-datoms [db index c1 c2 c3])
   (-rseek-datoms [db index c1 c2 c3])
   (-index-range [db attr start end])
-  (-index-range-size [db attr start end]))
+  (-index-range-size [db attr start end] [db attr start end cap]))
 
 (defprotocol IDB
   (-schema [db])
@@ -227,19 +227,21 @@
 
   (-count
     [db pattern]
+    (.-count db pattern nil))
+  (-count
+    [db pattern cap]
     (let [[e a v _] pattern]
       (wrap-cache
-          store [:count e a v]
+          store [:count e a v cap]
         (case-tree
           [e a (some? v)]
-          [(s/size store :eav (datom e a v) (datom e a v)) ; e a v
-           (s/size store :eav (datom e a c/v0) (datom e a c/vmax)) ; e a _
+          [(s/size store :eav (datom e a v) (datom e a v) cap) ; e a v
+           (s/size store :eav (datom e a c/v0) (datom e a c/vmax) cap) ; e a _
            (s/size-filter store :eav
                           (fn [^Datom d] ((vpred v) (.-v d)))
-                          (datom e nil nil)
-                          (datom e nil nil))  ; e _ v
+                          (datom e nil nil) (datom e nil nil) cap)  ; e _ v
            (s/e-size store e) ; e _ _
-           (s/size store :ave (datom e0 a v) (datom emax a v)) ; _ a v
+           (s/size store :ave (datom e0 a v) (datom emax a v) cap) ; _ a v
            (s/a-size store a) ; _ a _
            (s/v-size store v) ; _ _ v, for ref only
            (s/datom-count store :eav)])))) ; _ _ _
@@ -298,13 +300,15 @@
       (do (validate-attr attr (list '-index-range 'db attr start end))
           (s/slice store :avet (resolve-datom db nil attr start e0)
                    (resolve-datom db nil attr end emax)))))
-
   (-index-range-size
     [db attr start end]
+    (.-index-range-size db attr start end nil))
+  (-index-range-size
+    [db attr start end cap]
     (wrap-cache
         store [:index-range-size attr start end]
       (s/size store :avet (resolve-datom db nil attr start e0)
-              (resolve-datom db nil attr end emax)))))
+              (resolve-datom db nil attr end emax) cap))))
 
 ;; (defmethod print-method DB [^DB db, ^java.io.Writer w]
 ;;   (binding [*out* w]

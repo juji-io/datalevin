@@ -284,7 +284,6 @@
 
 (defn lookup-pattern-db
   [db pattern]
-  ;; TODO optimize with bound attrs min/max values here
   (let [search-pattern (mapv #(if (or (= % '_) (free-var? %)) nil %)
                              pattern)
         datoms         (db/-search db search-pattern)
@@ -988,61 +987,59 @@
     (:closed :open)           [lv hv]))
 
 (defn- datom-n
-  [db clauses]
+  [db k node]
   (reduce
-    (fn [c [attr {:keys [val range]}]]
-      (assoc-in c [attr :count]
-                (cond
-                  ;; TODO cap the following two countings to not go far beyond
-                  ;; existing mininum among clauses, then add :capped? true
-                  (some? val) (db/-count db [nil attr val])
-                  range       (let [[lv hv] (range->start-end range)]
-                                (db/-index-range-size db attr lv hv))
-                  :else       (db/-count db [nil attr nil])))) ; cheap
-    clauses clauses))
+    (fn [{:keys [mcount] :as node} [attr {:keys [val range]}]]
+      (let [^long res
+            (cond
+              (some? val) (db/-count db [nil attr val] mcount)
+              range       (let [[lv hv] (range->start-end range)]
+                            (db/-index-range-size db attr lv hv mcount))
+              :else       (db/-count db [nil attr nil]))]
+        (if (< res ^long mcount)
+          (-> node
+              (assoc-in [k attr :count] res)
+              (assoc :mcount res :mpath [k attr]))
+          (assoc-in node [k attr :count] (inc res)))))
+    node (k node)))
+
+(defn- datom-1
+  [k node]
+  (let [[attr _] (first (k node))]
+    (-> node
+        (assoc :mpath [k attr])
+        (assoc-in [k attr :count] 1))))
 
 (defn- count-clause-datoms
   [{:keys [sources graph] :as context}]
   (reduce
     (fn [c [src nodes]]
-      (let [db (sources src)]
+      (let [db (sources src)
+            nc (count nodes)]
         (reduce
           (fn [c [e {:keys [free bound]}]]
-            (update c :graph
-                    (fn [g]
-                      (cond-> g
-                        (not-empty bound)
-                        (update-in [src e :bound] #(datom-n db %))
-                        (not-empty free)
-                        (update-in [src e :free] #(datom-n db %))))))
+            (let [fc (count free)
+                  bc (count bound)]
+              (if (or (< 1 nc) (< 1 (+ fc bc)))
+                (update c :graph
+                        (fn [g]
+                          (cond-> (assoc-in g [src e :mcount] Long/MAX_VALUE)
+                            (< 0 bc)
+                            (update-in [src e] #(datom-n db :bound %))
+                            (< 0 fc)
+                            (update-in [src e] #(datom-n db :free %)))))
+                ;; don't count for single clause
+                (update c :graph
+                        (fn [g]
+                          (cond-> (assoc-in g [src e :mcount] 1)
+                            (< 0 bc)
+                            (update-in [src e] #(datom-1 :bound %))
+                            (< 0 fc)
+                            (update-in [src e] #(datom-1 :free %))))))))
           c nodes)))
     context graph))
 
-(defn- attr-count [[_ {:keys [count]}]] count)
-
 (defn- attr-var [[_ {:keys [var]}]] (or var '_))
-
-(defn- min-path
-  [bound free]
-  (let [mbound (when bound (apply min-key attr-count bound))
-        mfree  (when free (apply min-key attr-count free))]
-    (cond
-      (and mbound mfree)
-      (if (<= ^long (attr-count mbound) ^long (attr-count mfree))
-        [:bound (first mbound)]
-        [:free (first mfree)])
-      mbound [:bound (first mbound)]
-      mfree  [:free (first mfree)])))
-
-(defn- mark-min
-  [{:keys [graph] :as context}]
-  (reduce
-    (fn [c [src nodes]]
-      (reduce
-        (fn [c [e {:keys [free bound]}]]
-          (update c :graph #(assoc-in % [src e :min] (min-path bound free))))
-        c nodes))
-    context graph))
 
 (defn- build-graph
   "Split clauses, turn the group of clauses to be optimized into a query
@@ -1050,13 +1047,13 @@
   {$
   {?e  {:links [{:type :ref :tgt ?e0 :attr :friend}
                 {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
-        :min   [:bound :name]
+        :mpath [:bound :name]
         :bound {:name {:val \"Tom\" :count 5}}
         :free  {:age    {:var ?a :range [:less-than 18] :count 1089}
                 :school {:var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
                 :friend {:var ?e0 :count 2500}}}
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
-        :min   [:free :age]
+        :mpath [:free :age]
         :free  {:age {:var ?a :count 10890}}}
    ...}}
 
@@ -1066,8 +1063,7 @@
       split-clauses
       init-graph
       pushdown-predicates
-      count-clause-datoms
-      mark-min))
+      count-clause-datoms))
 
 (defn- add-pred
   [old-pred new-pred]
@@ -1092,11 +1088,11 @@
 
 (defn- single-plan
   [db [e clauses]]
-  (let [{:keys [bound free] min-path :min} clauses
+  (let [{:keys [bound free mpath]} clauses
         {:keys [var val range] mcount :count :as clause}
-        (get-in clauses min-path)
+        (get-in clauses mpath)
 
-        attr    (peek min-path)
+        attr    (peek mpath)
         know-e? (int? e)
         schema  (db/-schema db)]
     (if (zero? ^long mcount)

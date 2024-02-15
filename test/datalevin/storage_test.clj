@@ -73,6 +73,7 @@
       (is (= d (sut/head store :eav d d1)))
       (is (= d1 (sut/tail store :eav d1 d)))
       (is (= 2 (sut/size store :eav d d1)))
+      (is (= 1 (sut/size store :eav d d1 1)))
       (is (= 2 (sut/e-size store c/e0)))
       (is (= 1 (sut/a-size store b)))
       (is (= [d d1] (sut/slice store :eav d d1)))
@@ -88,6 +89,10 @@
                                 (fn [^Datom d] (= v (.-v d)))
                                 (d/datom c/e0 nil nil)
                                 (d/datom c/e0 nil nil))))
+      (is (= 0 (sut/size-filter store :eav
+                                (fn [^Datom d] (= v (.-v d)))
+                                (d/datom c/e0 nil nil)
+                                (d/datom c/e0 nil nil) 0)))
       (is (= d (sut/head-filter store :eav
                                 (fn [^Datom d] (when (= v (.-v d)) d))
                                 (d/datom c/e0 nil nil)

@@ -89,6 +89,7 @@
      specified key range")
   (list-range-count
     [db list-name k-range k-type v-range v-type]
+    [db list-name k-range k-type v-range v-type cap]
     "Return the number of key-values in the specified value range of the
      specified key range")
   (list-range-filter
@@ -109,6 +110,7 @@
   (list-range-filter-count
     [db list-name pred k-range k-type v-range v-type]
     [db list-name pred k-range k-type v-range v-type raw-pred?]
+    [db list-name pred k-range k-type v-range v-type raw-pred? cap]
     "Return the count of key-values in the specified value range of the
      specified key range for those pred call is true")
   (visit-list-range

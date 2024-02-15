@@ -968,7 +968,9 @@
     (scan/list-range this dbi-name k-range kt v-range vt))
 
   (list-range-count [this dbi-name k-range kt v-range vt]
-    (scan/list-range-count this dbi-name k-range kt v-range vt))
+    (.list-range-count this dbi-name k-range kt v-range vt nil))
+  (list-range-count [this dbi-name k-range kt v-range vt cap]
+    (scan/list-range-count this dbi-name k-range kt v-range vt cap))
 
   (list-range-first [this dbi-name k-range kt v-range vt]
     (scan/list-range-first this dbi-name k-range kt v-range vt))
@@ -990,12 +992,16 @@
 
   (list-range-filter-count
     [this list-name pred k-range k-type v-range v-type]
-    (.list-range-filter-count this list-name pred k-range k-type v-range v-type
-                              true))
+    (.list-range-filter-count this list-name pred k-range k-type v-range
+                              v-type true nil))
   (list-range-filter-count
     [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (.list-range-filter-count this dbi-name pred k-range kt v-range
+                              vt raw-pred? nil))
+  (list-range-filter-count
+    [this dbi-name pred k-range kt v-range vt raw-pred? cap]
     (scan/list-range-filter-count this dbi-name pred k-range kt v-range
-                                  vt raw-pred?))
+                                  vt raw-pred? cap))
 
   (visit-list-range
     [this list-name visitor k-range k-type v-range v-type]
