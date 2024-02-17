@@ -37,7 +37,8 @@
 
 ;; Records
 
-(defrecord Context [parsed-q rels sources rules clauses opt-clauses graph plan])
+(defrecord Context
+    [parsed-q rels sources rules opt-clauses late-clauses graph plan])
 
 ;; Utilities
 
@@ -820,21 +821,26 @@
 
 (defn- optimizable?
   "only optimize attribute-known patterns referring to Datalevin data source"
-  [sources pattern]
-  (when (and (instance? Pattern pattern)
-             (instance? Constant (second (:pattern pattern))))
-    (if-let [s (get-in pattern [:source :symbol])]
-      (when-let [src (get sources s)] (db/-searchable? src))
-      (when-let [src (get sources '$)] (db/-searchable? src)))))
+  [sources resolved clause]
+  (when (instance? Pattern clause)
+    (let [{:keys [pattern]} clause]
+      (when (and (instance? Constant (second pattern))
+                 (not-any? resolved (map :symbol pattern)))
+        (if-let [s (get-in clause [:source :symbol])]
+          (when-let [src (get sources s)] (db/-searchable? src))
+          (when-let [src (get sources '$)] (db/-searchable? src)))))))
 
 (defn- split-clauses
   "split clauses into two parts, one part is to be optimized"
-  [context]
-  (let [ptn-idxs (set (u/idxs-of #(optimizable? (:sources context) %)
-                                 (get-in context [:parsed-q :qwhere])))
-        clauses  (get-in context [:parsed-q :qorig-where])]
+  [{:keys [sources parsed-q rels] :as context}]
+  (let [resolved (reduce (fn [rs {:keys [attrs]}]
+                           (set/union rs (set (keys attrs))))
+                         #{} rels)
+        ptn-idxs (set (u/idxs-of #(optimizable? sources resolved %)
+                                 (:qwhere parsed-q)))
+        clauses  (:qorig-where parsed-q)]
     (assoc context :opt-clauses (u/keep-idxs ptn-idxs clauses)
-           :clauses (u/remove-idxs ptn-idxs clauses))))
+           :late-clauses (u/remove-idxs ptn-idxs clauses))))
 
 (defn- get-v [pattern] (when (< 2 (count pattern)) (peek pattern)))
 
@@ -969,7 +975,7 @@
         (if-let [v (pushdownable where gseq)]
           (let [clause (nth (:qorig-where parsed-q) i)]
             (-> c
-                (update :clauses #(remove #{clause} %))
+                (update :late-clauses #(remove #{clause} %))
                 (update :opt-clauses conj clause)
                 (update :graph #(add-pred-clause % clause v))))
           c))
@@ -1208,9 +1214,9 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      ;; (spy c)
+      (spy c)
       (execute-plan c)
-      (reduce resolve-clause c (:clauses c)))))
+      (reduce resolve-clause c (:late-clauses c)))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]

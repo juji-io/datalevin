@@ -45,81 +45,59 @@
                        {:db/id to
                         :name  "Ivan"}]))))
 
-(def query-storage
-  (d/file-storage "/tmp/datascript-query-db"))
-
 (def db100k
-  (d/store (d/db-with
-             (d/empty-db schema {:storage query-storage})
-             core/people20k)))
+  (d/db-with
+    (d/empty-db schema)
+    core/people20k))
 
 
 (defn ^:export add-1 []
-  (let [storage (d/file-storage (str "/tmp/datascript-bench-"
-                                     (UUID/randomUUID)))]
-    (core/bench-once
-      (reduce
-        (fn [db p]
-          (-> db
-              (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
-              (d/store)
-              (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
-              (d/store)
-              (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
-              (d/store)
-              (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
-              (d/store)
-              (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])
-              (d/store)))
-        (d/store (d/empty-db schema {:storage storage}))
-        core/people20k))))
+  (core/bench-once
+    (reduce
+      (fn [db p]
+        (-> db
+            (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
+            (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
+            (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
+            (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
+            (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
+      (d/empty-db schema)
+      core/people20k)))
 
 
 (defn ^:export add-5 []
-  (let [storage (d/file-storage (str "/tmp/datascript-bench-"
-                                     (UUID/randomUUID)))]
-    (core/bench-once
-      (reduce (fn [db p] (-> db (d/db-with [p]) (d/store)))
-              (d/store (d/empty-db schema {:storage storage}))
-              core/people20k))))
+  (core/bench-once
+    (reduce (fn [db p] (-> db (d/db-with [p])))
+            (d/empty-db schema)
+            core/people20k)))
 
 
 (defn ^:export add-all []
-  (let [storage (d/file-storage (str "/tmp/datascript-bench-"
-                                     (UUID/randomUUID)))]
-    (core/bench-once
-      (-> (d/db-with
-            (d/empty-db schema {:storage storage})
-            core/people20k)
-          (d/store)))))
+  (core/bench-once
+    (-> (d/db-with
+          (d/empty-db schema)
+          core/people20k))))
 
 
 (defn ^:export init []
-  (let [datoms  (into []
-                      (for [p     core/people20k
-                            :let  [id (#?(:clj Integer/parseInt :cljs js/parseInt) (:db/id p))]
-                            [k v] p
-                            :when (not= k :db/id)]
-                        (d/datom id k v)))
-        storage (d/file-storage (str "/tmp/datascript-bench-"
-                                     (UUID/randomUUID)))]
+  (let [datoms (into []
+                     (for [p     core/people20k
+                           :let  [id (#?(:clj Integer/parseInt :cljs js/parseInt) (:db/id p))]
+                           [k v] p
+                           :when (not= k :db/id)]
+                       (d/datom id k v)))]
     (core/bench-10
-      (-> (d/init-db datoms schema {:storage storage})
-          (d/store)))))
+      (d/init-db datoms schema))))
 
 
 (defn ^:export retract-5 []
-  (let [db   (-> (let [storage (d/file-storage (str "/tmp/datascript-bench-"
-                                                    (UUID/randomUUID)))]
-                   (d/store (d/empty-db schema {:storage storage})))
-                 (d/db-with core/people20k)
-                 (d/store))
+  (let [db   (-> (d/empty-db schema)
+                 (d/db-with core/people20k))
         eids (->> (d/datoms db :aevt :name) (map :e) (shuffle))]
     (core/bench-once
       (reduce (fn [db eid]
                 (-> db
-                    (d/db-with [[:db.fn/retractEntity eid]])
-                    (d/store)))
+                    (d/db-with [[:db.fn/retractEntity eid]])))
               db eids))))
 
 

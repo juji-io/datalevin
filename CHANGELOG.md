@@ -35,9 +35,8 @@
 ### Changed
 - [Datalog] Change VEA index back to VAE.
 - [KV] Change default write setting from `:mapasync` to `:nometasync`, so
-  that the database is more crash resilient, while retaining the write speed. In
-  case of system crash, only the last transaction might be lost, but the database
-  will not be corrupted. #228
+  that the database is more crash resilient. In case of system crash, only the
+  last transaction might be lost, but the database will not be corrupted. #228
 - [KV] Upgrade LMDB to the latest version, now tracking mdb.master branch,
   as it includes important fixes for dupsort, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
