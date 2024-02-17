@@ -153,12 +153,10 @@
                  [1 :aka  "dragon_saver_94"]
                  [1 :aka  "-=autobot=-"]])
            #{["Ivan" 19]}))
-    (is (= (d/q '[:find ?e ?a ?v
+    (is (= #{[3 :age 37] [2 :age 37] [4 :age 15] [1 :school :ny/union]}
+           (d/q '[:find ?e ?a ?v
                   :where
                   [?e :name _]
-                  [(get-some $ ?e :school :age) [?a ?v]]] db)
-           #{[1 :age 15]
-             [2 :school :ny/union]
-             [3 :age 37]}))
+                  [(get-some $ ?e :school :age) [?a ?v]]] db)))
     (d/close-db db)
     (u/delete-files dir)))

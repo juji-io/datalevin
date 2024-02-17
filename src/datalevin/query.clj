@@ -74,6 +74,9 @@
 
 (defn free-var? [sym] (and (symbol? sym) (= \? (first (name sym)))))
 
+(defn placeholder? [sym]
+  (and (symbol? sym) (str/starts-with? (name sym) "?placeholder")))
+
 (defn lookup-ref? [form] (looks-like? [keyword? '_] form))
 
 ;;
@@ -842,7 +845,12 @@
     (assoc context :opt-clauses (u/keep-idxs ptn-idxs clauses)
            :late-clauses (u/remove-idxs ptn-idxs clauses))))
 
-(defn- get-v [pattern] (when (< 2 (count pattern)) (peek pattern)))
+(defn- get-v [pattern]
+  (when (< 2 (count pattern))
+    (let [v (peek pattern)]
+      (if (= v '_)
+        (gensym "?placeholder")
+        v))))
 
 (defn- make-node
   [[e patterns]]
@@ -1104,7 +1112,10 @@
     (if (zero? ^long mcount)
       []
       (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e]}
-                 var     (assoc :pred (attr-pred [attr clause]) :vars [e var]
+                 var     (assoc :pred (attr-pred [attr clause])
+                                :vars (cond-> [e]
+                                        (not (placeholder? var))
+                                        (conj var))
                                 :range range)
                  val     (assoc :val val)
                  know-e? (assoc :know-e? true))]
@@ -1124,7 +1135,9 @@
              :attrs attrs
              :vars  vars
              :preds (mapv attr-pred all)
-             :skips (remove nil? (map #(when (= %2 '_) %1) attrs vars))}))))))
+             :skips (remove nil?
+                            (map #(when (or (= %2 '_) (placeholder? %2)) %1)
+                                 attrs vars))}))))))
 
 (defn- build-plan*
   [db nodes]
@@ -1214,7 +1227,7 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      (spy c)
+      ;; (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:late-clauses c)))))
 
