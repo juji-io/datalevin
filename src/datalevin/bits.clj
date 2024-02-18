@@ -795,11 +795,10 @@
   (put-long bf (.-e x))
   (put-long bf (.-g x)))
 
-(defn- put-aeg
+(defn- put-ae
   [bf ^Indexable x]
   (put-int bf (.-a x))
-  (put-long bf (.-e x))
-  (put-long bf (.-g x)))
+  (put-long bf (.-e x)))
 
 (deftype Retrieved [e a v g])
 
@@ -844,12 +843,11 @@
   (.position bf (- (.limit bf) 16))
   (get-long bf))
 
-(defn- get-aeg
+(defn- get-ae
   [bf]
   (let [a (get-int bf)
-        e (get-long bf)
-        g (get-long bf)]
-    (Retrieved. e a nil g)))
+        e (get-long bf)]
+    (Retrieved. e a nil nil)))
 
 (defn- indexable->retrieved
   [^Indexable i]
@@ -921,7 +919,7 @@
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
      :veg            (put-veg bf x)
-     :aeg            (put-aeg bf x)
+     :ae             (put-ae bf x)
      :raw            (put-bytes bf x)
      (if (vector? x-type)
        (if (= 1 (count x-type))
@@ -975,7 +973,7 @@
      :attr           (get-attr bf)
      :avg            (get-avg bf)
      :veg            (get-veg bf)
-     :aeg            (get-aeg bf)
+     :ae             (get-ae bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
      ;; range query are NOT supported on these

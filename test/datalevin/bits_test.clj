@@ -534,36 +534,36 @@
       (is (= a1 (.-a r)))
       (is (= v1 (.-v r))))))
 
-(defn- aeg-test
+(defn- ae-test
   [e1 a1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (bf/allocate-buffer 16384)
         ^ByteBuffer bf1 (bf/allocate-buffer 16384)
         _               (.clear ^ByteBuffer bf)
-        _               (sut/put-buffer bf d :aeg)
+        _               (sut/put-buffer bf d :ae)
         _               (.flip ^ByteBuffer bf)
         _               (.clear ^ByteBuffer bf1)
-        _               (sut/put-buffer bf1 d1 :aeg)
+        _               (sut/put-buffer bf1 d1 :ae)
         _               (.flip ^ByteBuffer bf1)
         res             (bf/compare-buffer bf bf1)]
     (is (u/same-sign? res (u/combine-cmp (compare a a1) (compare e e1))))
     (.rewind ^ByteBuffer bf)
-    (let [^Retrieved r (sut/read-buffer bf :aeg)]
+    (let [^Retrieved r (sut/read-buffer bf :ae)]
       (is (= e (.-e r)))
       (is (= a (.-a r))))
     (.rewind ^ByteBuffer bf1)
-    (let [^Retrieved r (sut/read-buffer bf1 :aeg)]
+    (let [^Retrieved r (sut/read-buffer bf1 :ae)]
       (is (= e1 (.-e r)))
       (is (= a1 (.-a r))))))
 
-(test/defspec aeg-generative-test
+(test/defspec ae-generative-test
   100
   (prop/for-all
     [e1 (gen/large-integer* {:min c/e0})
      a1 gen/nat
      v  (gen/large-integer* {:min c/e0})]
-    (aeg-test e1 a1
-              (sut/indexable e a v :db.type/ref g)
-              (sut/indexable e1 a1 v :db.type/ref g))))
+    (ae-test e1 a1
+             (sut/indexable e a v :db.type/ref g)
+             (sut/indexable e1 a1 v :db.type/ref g))))
 
 (test/defspec instant-avg-generative-test
   100

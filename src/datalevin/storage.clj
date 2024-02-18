@@ -178,7 +178,7 @@
   (case index
     (:eav :eavt) :avg
     (:ave :avet) :veg
-    (:vae :vaet) :aeg))
+    (:vae :vaet) :ae))
 
 (defn- index->ktype
   [index]
@@ -281,7 +281,7 @@
   [lmdb attrs [k ^Retrieved r :as kv]]
   (when kv
     (let [g (.-g r)]
-      (if (= g c/normal)
+      (if (or (nil? g) (= g c/normal))
         (let [e (.-e r)
               a (.-a r)
               v (.-v r)]
@@ -654,8 +654,6 @@
     (.eav-scan-v store tuples eid-idx as vpreds []))
   (eav-scan-v
     [_ tuples eid-idx as vpreds skip-as]
-    ;; (println "tuples" (map vec tuples) "eid-idx" eid-idx
-    ;;          "as" as "vpreds" vpreds "skip-as" skip-as)
     (let [attr->aid #(-> % schema :db/aid)
           aids      (mapv attr->aid as)]
       (when (and (seq tuples) (seq aids) (not-any? nil? aids))
@@ -778,7 +776,7 @@
             lmdb c/vae operator
             [:closed
              (b/indexable c/e0 aid nil :db.type/ref c/g0)
-             (b/indexable c/emax aid nil :db.type/ref c/gmax)] :aeg)
+             (b/indexable c/emax aid nil :db.type/ref c/gmax)] :ae)
           res))))
 
   (ave-scan-e [_ tuples v-idx attr]
@@ -900,7 +898,6 @@
         props  (or ((schema store) attr)
                    (swap-attr store attr identity))
         vt     (value-type props)
-        ref?   (= :db.type/ref vt)
         e      (.-e d)
         v      (.-v d)
         aid    (props :db/aid)
@@ -912,7 +909,7 @@
         giant? (b/giant? i)]
     (.add txs [:put c/eav e i :id :avg])
     (.add txs [:put c/ave aid i :int :veg])
-    (when ref? (.add txs [:put c/vae v i :id :aeg]))
+    (when (= :db.type/ref vt) (.add txs [:put c/vae v i :id :ae]))
     (when giant?
       (advance-max-gt store)
       (let [gd [e attr v]]
@@ -929,7 +926,6 @@
   (let [attr         (.-a d)
         props        ((schema store) attr)
         vt           (value-type props)
-        ref?         (= :db.type/ref vt)
         e            (.-e d)
         aid          (props :db/aid)
         v            (.-v d)
@@ -954,7 +950,7 @@
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
       (.add txs [:del-list c/eav e [ii] :id :avg])
       (.add txs [:del-list c/ave aid [ii] :int :veg])
-      (when ref? (.add txs [:del-list c/vae v [ii] :id :aeg])))
+      (when (= :db.type/ref vt) (.add txs [:del-list c/vae v [ii] :id :ae])))
     (when gt
       (when gt-this-tx (.remove giants d-eav))
       (.add txs [:del c/giants gt :id]))))
