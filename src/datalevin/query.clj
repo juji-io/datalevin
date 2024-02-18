@@ -405,21 +405,29 @@
 
 (defn- resolve-sym
   [sym]
-  (when-let [v (or (resolve sym)
-                   (when (find-ns 'pod.huahaiy.datalevin)
-                     (ns-resolve 'pod.huahaiy.datalevin sym)))]
-    @v))
+  (when (symbol? sym)
+    (when-let [v (or (resolve sym)
+                     (when (find-ns 'pod.huahaiy.datalevin)
+                       (ns-resolve 'pod.huahaiy.datalevin sym)))]
+      @v)))
+
+(defonce pod-fns (atom {}))
 
 (defn- resolve-pred
   [f context clause]
-  (or (get built-ins/query-fns f)
-      (context-resolve-val context f)
-      (dot-form f)
-      (resolve-sym f)
-      (when (nil? (rel-with-attr context f))
-        (raise "Unknown predicate '" f " in " clause
-               {:error :query/where, :form clause,
-                :var   f}))))
+  (let [fun (if (fn? f)
+              f
+              (or (get built-ins/query-fns f)
+                  (context-resolve-val context f)
+                  (dot-form f)
+                  (resolve-sym f)
+                  (when (nil? (rel-with-attr context f))
+                    (raise "Unknown function or predicate '" f " in " clause
+                           {:error :query/where, :form clause,
+                            :var   f}))))]
+    (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
+      (@pod-fns s)
+      fun)))
 
 (defn filter-by-pred
   [context clause]
@@ -433,24 +441,11 @@
                   (assoc production :tuples []))]
     (update context :rels conj new-rel)))
 
-(defonce pod-fns (atom {}))
-
 (defn bind-by-fn
   [context clause]
-  (let [[[f & args] out] clause
-        binding          (dp/parse-binding out)
-        fun              (or (get built-ins/query-fns f)
-                             (context-resolve-val context f)
-                             (resolve-sym f)
-                             (dot-form f)
-                             (when (nil? (rel-with-attr context f))
-                               (raise "Unknown function '" f " in " clause
-                                      {:error :query/where, :form clause,
-                                       :var   f})))
-        fun              (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
-                           (@pod-fns s)
-                           fun)
-
+  (let [[[f & args] out]     clause
+        binding              (dp/parse-binding out)
+        fun                  (resolve-pred f context clause)
         [context production] (rel-prod-by-attrs context (filter symbol? args))
         new-rel
         (if fun
@@ -676,7 +671,19 @@
                     clause)
        (filter-by-pred context clause))
 
+     [[fn? '*]] ;; predicate [(pred ?a ?b ?c)]
+     (do
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause))
+                    clause)
+       (filter-by-pred context clause))
+
      [[symbol? '*] '_] ;; function [(fn ?a ?b) ?res]
+     (do
+       (check-bound (bound-vars context) (filter free-var? (nfirst clause))
+                    clause)
+       (bind-by-fn context clause))
+
+     [[fn? '*] '_] ;; function [(fn ?a ?b) ?res]
      (do
        (check-bound (bound-vars context) (filter free-var? (nfirst clause))
                     clause)
@@ -783,7 +790,7 @@
                           s (:symbol v)]
                       (when (and (instance? BindScalar qin)
                                  (instance? Variable v)
-                                 (not (fn? (nth inputs i)))
+                                 ;; (not (fn? (nth inputs i)))
                                  (not (some #(= s %) finds))
                                  (not (some #(or-join-var? % s) owheres)))
                         [i s])))
@@ -1370,10 +1377,40 @@
         resolved
         tuple))))
 
+(defn- resolve-redudants
+  "handle pathological cases of variable is already bound in where clauses"
+  [{:keys [parsed-q] :as context}]
+  (let [{:keys [qwhere]} parsed-q
+        get-v            #(nth (:pattern %) 2)]
+    (reduce
+      (fn [c [_ patterns]]
+        (let [v (some #(let [v (get-v %)]
+                         (when (instance? Constant v) (:value v)))
+                      patterns)]
+          (reduce
+            (fn [c pattern]
+              (let [idx (u/index-of #(= pattern %) patterns)]
+                (-> c
+                    (update-in [:parsed-q :qwhere] #(remove #{pattern} %))
+                    (update-in [:parsed-q :qorig-where]
+                               #(u/remove-idxs #{idx} %))
+                    (update :rels conj
+                            (r/relation! {(:symbol (get-v pattern)) 0}
+                                         (doto (FastList.)
+                                           (.add (object-array [v]))))))))
+            c (filter #(instance? Variable (get-v %)) patterns))))
+      context
+      (->> qwhere
+           (filter #(instance? Pattern %))
+           (group-by (fn [{:keys [source pattern]}]
+                       [source (first pattern) (second pattern)]))
+           (filter #(< 1 (count (val %))))))))
+
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
     ;; (println "----->" q)
+    ;; (println "parsed-q" parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
@@ -1382,7 +1419,8 @@
             all-vars          (concatv (dp/find-vars find) (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
             context           (-> (Context. parsed-q [] {} {} [] nil nil nil)
-                                  (resolve-ins inputs))
+                                  (resolve-ins inputs)
+                                  (resolve-redudants))
             resultset         (-> (-q context)
                                   (collect all-vars))]
         (cond->> resultset

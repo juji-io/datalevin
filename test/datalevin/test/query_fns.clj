@@ -31,7 +31,7 @@
                   [?e :text ?v]
                   [(clojure.string/ends-with? ?v ?ext)]]
                 db "?") 3))
-    (is (thrown-with-msg? Exception #"Unknown predicate"
+    (is (thrown-with-msg? Exception #"Unknown"
                           (d/q '[:find ?e .
                                  :in $ ?ext
                                  :where
@@ -337,14 +337,14 @@
 
 (deftest test-exceptions
   (is (thrown-with-msg? ExceptionInfo
-                        #"Unknown predicate 'fun in \[\(fun \?e\)\]"
+                        #"Unknown"
                         (d/q '[:find ?e
                                :in   [?e ...]
                                :where [(fun ?e)]]
                              [1])))
 
   (is (thrown-with-msg? ExceptionInfo
-                        #"Unknown function 'fun in \[\(fun \?e\) \?x\]"
+                        #"Unknown"
                         (d/q '[:find ?e ?x
                                :in   [?e ...]
                                :where [(fun ?e) ?x]]

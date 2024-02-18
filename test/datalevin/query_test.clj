@@ -92,15 +92,6 @@
              [:school :ny/union]
              [:aka "robot"]
              [:aka "ai"]}))
-    (is (= #{}
-           (d/q '[:find ?name
-                  :in $ ?my-fn
-                  :where
-                  [?e :name ?name]
-                  [(?my-fn) ?result]
-                  [(< ?result 3)]]
-                db
-                (fn [] 5))))
     (is (= (d/q '[:find ?e
                   :where [?e :aka "ai"]] db)
            #{[1]}))
@@ -158,5 +149,25 @@
                   :where
                   [?e :name _]
                   [(get-some $ ?e :school :age) [?a ?v]]] db)))
+    (is (= (d/q '[:find  ?e ?a
+                  :where
+                  [?e :age ?a]
+                  [?e :age 15]]
+                db)
+           #{[1 15] [4 15]}))
+    (is (= (d/q '[:find  ?e
+                  :in    $ ?adult
+                  :where [?e :age ?a]
+                  [(?adult ?a)]]
+                db #(> ^long % 18))
+           #{[2] [3]}))
+    (is (= #{}
+           (d/q '[:find ?name
+                  :in $ ?my-fn
+                  :where
+                  [?e :name ?name]
+                  [(?my-fn) ?result]
+                  [(< ?result 3)]]
+                db (fn [] 5))))
     (d/close-db db)
     (u/delete-files dir)))
