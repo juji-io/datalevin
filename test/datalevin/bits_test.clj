@@ -19,7 +19,7 @@
    [org.joda.time DateTime]
    [org.roaringbitmap RoaringBitmap]
    [datalevin.sparselist SparseIntArrayList]
-   [datalevin.bits Indexable Retrieved]))
+   [datalevin.bits Indexable Retrieved Stat ValBytes]))
 
 (def freqs (repeatedly 65536 #(rand-int 1000000)))
 (def kc    (cp/key-compressor (long-array (map inc freqs))))
@@ -411,7 +411,7 @@
                   (sut/indexable e a c/vmax :db.type/string c/gmax))))
 
 (test/defspec boolean-extrema-generative-test
-  5
+  100
   (prop/for-all
     [v  gen/boolean]
     (test-extrema v
@@ -534,6 +534,28 @@
       (is (= a1 (.-a r)))
       (is (= v1 (.-v r))))))
 
+(defn- vf-test
+  [^Stat s ^Stat s1]
+  (let [^ByteBuffer bf  (bf/get-direct-buffer 16384)
+        ^ByteBuffer bf1 (bf/get-direct-buffer 16384)
+        _               (.clear ^ByteBuffer bf)
+        _               (sut/put-buffer bf s :vf)
+        _               (.flip ^ByteBuffer bf)
+        _               (.clear ^ByteBuffer bf1)
+        _               (sut/put-buffer bf1 s1 :vf)
+        _               (.flip ^ByteBuffer bf1)
+        res             (bf/compare-buffer bf bf1)]
+    (is (u/same-sign? res (u/combine-cmp (compare (.-v s) (.-v s1))
+                                         (compare (.-f s) (.-f s)))))
+    (.rewind ^ByteBuffer bf)
+    (let [^Stat r (sut/read-buffer bf :vf)]
+      (is (= (.-v s) (.-v r)))
+      (is (= (.-f s) (.-f r))))
+    (.rewind ^ByteBuffer bf1)
+    (let [^Stat r (sut/read-buffer bf1 :vf)]
+      (is (= (.-v s1) (.-v r)))
+      (is (= (.-f s1) (.-f r))))))
+
 (defn- ae-test
   [e1 a1 ^Indexable d ^Indexable d1]
   (let [^ByteBuffer bf  (bf/allocate-buffer 16384)
@@ -554,6 +576,15 @@
     (let [^Retrieved r (sut/read-buffer bf1 :ae)]
       (is (= e1 (.-e r)))
       (is (= a1 (.-a r))))))
+
+(test/defspec vf-generative-test
+  100
+  (prop/for-all
+    [v1 (gen/not-empty gen/bytes)
+     f1 (gen/large-integer* {:min c/e0})
+     v2 (gen/not-empty gen/bytes)
+     f2 (gen/large-integer* {:min c/e0})]
+    (vf-test (Stat. (ValBytes. v1) f1) (Stat. (ValBytes. v2) f2))))
 
 (test/defspec ae-generative-test
   100
@@ -818,7 +849,7 @@
                 (sut/indexable e1 a1 f1 :db.type/float g)))))
 
 (test/defspec uuid-avg-generative-test
-  50
+  100
   (prop/for-all
     [v  gen/uuid]
     (let [^ByteBuffer bf (bf/allocate-buffer 16384)
@@ -831,7 +862,7 @@
       (is (= v (.-v r))))))
 
 (test/defspec uuid-veg-generative-test
-  50
+  100
   (prop/for-all
     [v  gen/uuid]
     (let [^ByteBuffer bf (bf/allocate-buffer 16384)
@@ -844,7 +875,7 @@
       (is (= v (.-v r))))))
 
 (test/defspec bytes-avg-generative-test
-  50
+  100
   (prop/for-all
     [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/bytes)]
@@ -858,7 +889,7 @@
       (is (Arrays/equals ^bytes v ^bytes (.-v r))))))
 
 (test/defspec bytes-veg-generative-test
-  50
+  100
   (prop/for-all
     [v  (gen/such-that (partial bytes-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/bytes)]
@@ -876,7 +907,7 @@
   (< (alength ^bytes (sut/serialize data)) limit))
 
 (test/defspec data-avg-generative-test
-  50
+  100
   (prop/for-all
     [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/any-equatable)]
@@ -890,7 +921,7 @@
       (is (= v (.-v r))))))
 
 (test/defspec data-veg-generative-test
-  50
+  100
   (prop/for-all
     [v  (gen/such-that (partial data-size-less-than? c/+val-bytes-wo-hdr+)
                        gen/any-equatable)]

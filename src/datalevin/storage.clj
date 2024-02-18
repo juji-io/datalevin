@@ -312,8 +312,7 @@
       (let [^Retrieved r (b/read-buffer (lmdb/v kv) (index->vtype index))]
         (pred (retrieved->v lmdb r)))))
 
-(declare insert-datom delete-datom transact-list transact-giants
-         fulltext-index check transact-opts)
+(declare insert-datom delete-datom fulltext-index check transact-opts)
 
 (deftype Store [lmdb
                 search-engines
@@ -438,6 +437,8 @@
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (FastList.)
             txs    (FastList.)
+            adds   (FastList.)
+            dels   (FastList.)
             giants (UnifiedMap.)]
         (doseq [datom datoms]
           (if (d/datom-added datom)
@@ -907,15 +908,15 @@
                    (u/raise "Invalid data, expecting" vt {:input v}))
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)]
-    (.add txs [:put c/eav e i :id :avg])
     (.add txs [:put c/ave aid i :int :veg])
-    (when (= :db.type/ref vt) (.add txs [:put c/vae v i :id :ae]))
+    (.add txs [:put c/eav e i :id :avg])
     (when giant?
       (advance-max-gt store)
       (let [gd [e attr v]]
         (.put giants gd max-gt)
         (.add txs
               [:put c/giants max-gt (apply d/datom gd) :id :data [:append]])))
+    (when (= :db.type/ref vt) (.add txs [:put c/vae v i :id :ae]))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
@@ -923,37 +924,37 @@
 
 (defn- delete-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
-  (let [attr         (.-a d)
-        props        ((schema store) attr)
-        vt           (value-type props)
-        e            (.-e d)
-        aid          (props :db/aid)
-        v            (.-v d)
-        ^Indexable i (b/indexable e aid v vt c/g0)
-        d-eav        [e attr v]
-        gt-this-tx   (.get giants d-eav)
-        gt           (when (b/giant? i)
-                       (or gt-this-tx
-                           (let [[_ ^Retrieved r]
-                                 (nth
-                                   (lmdb/list-range
-                                     (.-lmdb store) c/eav [:closed e e] :id
-                                     [:closed i
-                                      (Indexable. e aid v (.-f i) (.-b i)
-                                                  c/gmax)] :avg)
-                                   0)]
-                             (.-g r))))]
+  (let [e          (.-e d)
+        attr       (.-a d)
+        v          (.-v d)
+        d-eav      [e attr v]
+        props      ((schema store) attr)
+        vt         (value-type props)
+        aid        (props :db/aid)
+        i          ^Indexable (b/indexable e aid v vt c/g0)
+        gt-this-tx (.get giants d-eav)
+        gt         (when (b/giant? i)
+                     (or gt-this-tx
+                         (let [[_ ^Retrieved r]
+                               (nth
+                                 (lmdb/list-range
+                                   (.-lmdb store) c/eav [:closed e e] :id
+                                   [:closed
+                                    i
+                                    (Indexable. e aid v (.-f i) (.-b i) c/gmax)]
+                                   :avg)
+                                 0)]
+                           (.-g r))))]
     (when (props :db/fulltext)
       (let [v (str v)]
-        (collect-fulltext ft-ds attr props v
-                          (if gt [:r gt] [:d [e aid v]]))))
+        (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
-      (.add txs [:del-list c/eav e [ii] :id :avg])
       (.add txs [:del-list c/ave aid [ii] :int :veg])
-      (when (= :db.type/ref vt) (.add txs [:del-list c/vae v [ii] :id :ae])))
-    (when gt
-      (when gt-this-tx (.remove giants d-eav))
-      (.add txs [:del c/giants gt :id]))))
+      (.add txs [:del-list c/eav e [ii] :id :avg])
+      (when gt
+        (when gt-this-tx (.remove giants d-eav))
+        (.add txs [:del c/giants gt :id]))
+      (when (= :db.type/ref vt) (.add txs [:del-list c/vae v [ii] :id :ae])))))
 
 (defn- transact-opts
   [lmdb opts]
@@ -973,7 +974,9 @@
   (lmdb/open-list-dbi
     lmdb c/ave {:key-size c/+short-id-bytes+ :val-size c/+max-key-size+})
   (lmdb/open-list-dbi
-    lmdb c/vae {:key-size c/+id-bytes+ :val-size 20})
+    lmdb c/vae {:key-size c/+id-bytes+ :val-size 12})
+  (lmdb/open-list-dbi
+    lmdb c/stats {:key-size c/+short-id-bytes+ :val-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
   (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})

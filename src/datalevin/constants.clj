@@ -186,6 +186,9 @@
 (def ^:const vae
   "dbi name for Datalog VAE index is `datalevin/vae"
   "datalevin/vae")
+(def ^:const stats
+  "dbi name for Datalog statistics is `datalevin/stats"
+  "datalevin/stats")
 (def ^:const giants
   "dbi name for Datalog large datoms is `datalevin/giants"
   "datalevin/giants")
@@ -193,7 +196,7 @@
   "dbi name for Datalog schema is `datalevin/schema"
   "datalevin/schema")
 (def ^:const meta
-  "dbi name for Datalog meta information is `datalevin/meta"
+  "dbi name for Datalog runtime meta information is `datalevin/meta"
   "datalevin/meta")
 (def ^:const opts
   "dbi name for Datalog options is `datalevin/opts"

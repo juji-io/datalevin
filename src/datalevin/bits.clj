@@ -795,6 +795,46 @@
   (put-long bf (.-e x))
   (put-long bf (.-g x)))
 
+(deftype ValBytes [^bytes b]
+  Object
+
+  (equals [_ other]
+    (if (instance? ValBytes other)
+      (Arrays/equals b ^bytes (.b ^ValBytes other))
+      false))
+
+  (hashCode [_]
+    (Arrays/hashCode b))
+
+  Comparable
+
+  (compareTo [_ other]
+    (if (instance? ValBytes other)
+      (bf/compare-buffer (ByteBuffer/wrap b)
+                         (ByteBuffer/wrap (.b ^ValBytes other)))
+      (u/raise (str "ValBytes cannot be compared to " (type other)) {}))))
+
+(deftype Stat [^ValBytes v ^Long f])
+
+(defn indexable->val-bytes
+  [^Indexable x]
+  (let [bf ^ByteBuffer (bf/get-array-buffer)]
+    (when-let [hdr (.-f x)] (put-byte bf hdr))
+    (if-let [bs (.-b x)]
+      (do (put-bytes bf bs)
+          (when (giant? x) (put-byte bf c/truncator)))
+      (put-fixed bf (.-v x) (.-f x)))
+    (let [bas (byte-array (.position bf))]
+      (.rewind bf)
+      (.get bf bas)
+      (ValBytes. bas))))
+
+(defn- put-vf
+  [bf ^Stat x]
+  (put-bytes bf (.b ^ValBytes (.-v x)))
+  (put-byte bf c/separator)
+  (put-long bf (.-f x)))
+
 (defn- put-ae
   [bf ^Indexable x]
   (put-int bf (.-a x))
@@ -842,6 +882,13 @@
   [^ByteBuffer bf]
   (.position bf (- (.limit bf) 16))
   (get-long bf))
+
+(defn- get-vf
+  [^ByteBuffer bf]
+  (let [b (get-bytes bf (- (.limit bf) 9))
+        _ (get-byte bf)
+        f (get-long bf)]
+    (Stat. (ValBytes. b) f)))
 
 (defn- get-ae
   [bf]
@@ -919,6 +966,7 @@
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
      :veg            (put-veg bf x)
+     :vf             (put-vf bf x)
      :ae             (put-ae bf x)
      :raw            (put-bytes bf x)
      (if (vector? x-type)
@@ -973,6 +1021,7 @@
      :attr           (get-attr bf)
      :avg            (get-avg bf)
      :veg            (get-veg bf)
+     :vf             (get-vf bf)
      :ae             (get-ae bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
