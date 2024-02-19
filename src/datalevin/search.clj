@@ -611,20 +611,19 @@
 
 (defn- add-doc*
   [^SearchEngine engine doc-ref doc-text]
-  (let [result          ((.-analyzer engine) doc-text)
+  (let [terms-dbi       (.-terms-dbi engine)
+        positions-dbi   (.-positions-dbi engine)
+        terms           ^SpillableMap (.-terms engine)
+        max-term        (.-max-term engine)
+        index-position? (.-index-position? engine)
+        include-text?   (.-include-text? engine)
+        result          ((.-analyzer engine) doc-text)
         new-terms       ^UnifiedMap (collect-terms result)
         unique          (.size new-terms)
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
-        txs             (FastList.)
-        terms-dbi       (.-terms-dbi engine)
-        positions-dbi   (.-positions-dbi engine)
-        rawtext-dbi     (.-rawtext-dbi engine)
-        terms           ^SpillableMap (.-terms engine)
-        max-term        (.-max-term engine)
-        index-position? (.-index-position? engine)
-        include-text?   (.-include-text? engine)]
-    (when include-text? (.add txs [:put rawtext-dbi doc-id doc-text
+        txs             (FastList.)]
+    (when include-text? (.add txs [:put (.-rawtext-dbi engine) doc-id doc-text
                                    :int :string]))
     (.put ^SpillableMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)

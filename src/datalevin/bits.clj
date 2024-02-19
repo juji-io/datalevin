@@ -784,56 +784,23 @@
   (put-byte bf c/separator)
   (put-long bf (.-g x)))
 
-(defn- put-veg
+(defn- put-av
   [bf ^Indexable x]
+  (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
   (if-let [bs (.-b x)]
     (do (put-bytes bf bs)
-        (when (giant? x) (put-byte bf c/truncator)))
-    (put-fixed bf (.-v x) (.-f x)))
-  (put-byte bf c/separator)
+        (if (giant? x)
+          (do (put-byte bf c/truncator)
+              (put-byte bf c/true-value))
+          (put-byte bf c/false-value)))
+    (do (put-fixed bf (.-v x) (.-f x))
+        (put-byte bf c/false-value))))
+
+(defn- put-eg
+  [bf ^Indexable x]
   (put-long bf (.-e x))
   (put-long bf (.-g x)))
-
-(deftype ValBytes [^bytes b]
-  Object
-
-  (equals [_ other]
-    (if (instance? ValBytes other)
-      (Arrays/equals b ^bytes (.b ^ValBytes other))
-      false))
-
-  (hashCode [_]
-    (Arrays/hashCode b))
-
-  Comparable
-
-  (compareTo [_ other]
-    (if (instance? ValBytes other)
-      (bf/compare-buffer (ByteBuffer/wrap b)
-                         (ByteBuffer/wrap (.b ^ValBytes other)))
-      (u/raise (str "ValBytes cannot be compared to " (type other)) {}))))
-
-(deftype Stat [^ValBytes v ^Long f])
-
-(defn indexable->val-bytes
-  [^Indexable x]
-  (let [bf ^ByteBuffer (bf/get-array-buffer)]
-    (when-let [hdr (.-f x)] (put-byte bf hdr))
-    (if-let [bs (.-b x)]
-      (do (put-bytes bf bs)
-          (when (giant? x) (put-byte bf c/truncator)))
-      (put-fixed bf (.-v x) (.-f x)))
-    (let [bas (byte-array (.position bf))]
-      (.rewind bf)
-      (.get bf bas)
-      (ValBytes. bas))))
-
-(defn- put-vf
-  [bf ^Stat x]
-  (put-bytes bf (.b ^ValBytes (.-v x)))
-  (put-byte bf c/separator)
-  (put-long bf (.-f x)))
 
 (defn- put-ae
   [bf ^Indexable x]
@@ -869,26 +836,20 @@
           (Retrieved. nil nil (get-value bf 9) g))
       (Retrieved. nil nil nil g))))
 
-(defn- get-veg
+(defn- get-eg
   [^ByteBuffer bf]
-  (.position bf (- (.limit bf) 16))
   (let [e (get-long bf)
         g (get-long bf)]
-    (if (= g c/normal)
-      (Retrieved. e nil (get-value (.rewind bf) 17) g)
-      (Retrieved. e nil nil g))))
+    (Retrieved. e nil nil g)))
 
-(defn veg->e
+(defn- get-av
   [^ByteBuffer bf]
-  (.position bf (- (.limit bf) 16))
-  (get-long bf))
-
-(defn- get-vf
-  [^ByteBuffer bf]
-  (let [b (get-bytes bf (- (.limit bf) 9))
-        _ (get-byte bf)
-        f (get-long bf)]
-    (Stat. (ValBytes. b) f)))
+  (.position bf (- (.limit bf) 1))
+  (let [giant? (= c/true-value (get-byte bf))
+        a      (get-int (.rewind bf))]
+    (if giant?
+      (Retrieved. nil a nil nil)
+      (Retrieved. nil a (get-value bf 1) nil))))
 
 (defn- get-ae
   [bf]
@@ -965,8 +926,8 @@
                        (cp/put-sorted-ints bf i2))
      :attr           (put-attr bf x)
      :avg            (put-avg bf x)
-     :veg            (put-veg bf x)
-     :vf             (put-vf bf x)
+     :av             (put-av bf x)
+     :eg             (put-eg bf x)
      :ae             (put-ae bf x)
      :raw            (put-bytes bf x)
      (if (vector? x-type)
@@ -1020,8 +981,8 @@
      :int            (get-int bf)
      :attr           (get-attr bf)
      :avg            (get-avg bf)
-     :veg            (get-veg bf)
-     :vf             (get-vf bf)
+     :eg             (get-eg bf)
+     :av             (get-av bf)
      :ae             (get-ae bf)
      :byte           (get-byte bf)
      :raw            (get-bytes bf)
