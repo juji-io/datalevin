@@ -298,7 +298,7 @@
     (wrap-cache
         store [:index-range attr start end]
       (do (validate-attr attr (list '-index-range 'db attr start end))
-          (s/slice store :avet (resolve-datom db nil attr start e0)
+          (s/slice store :ave (resolve-datom db nil attr start e0)
                    (resolve-datom db nil attr end emax)))))
   (-index-range-size
     [db attr start end]
@@ -307,7 +307,7 @@
     [db attr start end cap]
     (wrap-cache
         store [:index-range-size attr start end]
-      (s/size store :avet (resolve-datom db nil attr start e0)
+      (s/size store :ave (resolve-datom db nil attr start e0)
               (resolve-datom db nil attr end emax) cap))))
 
 ;; (defmethod print-method DB [^DB db, ^java.io.Writer w]
@@ -490,9 +490,9 @@
 
 (defn- components->pattern [db index c0 c1 c2 default-e]
   (case index
-    (:eav :eavt) (resolve-datom db c0 c1 c2 default-e)
-    (:ave :avet) (resolve-datom db c2 c0 c1 default-e)
-    (:vae :vaet) (resolve-datom db c2 c1 c0 default-e)))
+    :eav (resolve-datom db c0 c1 c2 default-e)
+    :ave (resolve-datom db c2 c0 c1 default-e)
+    :vae (resolve-datom db c2 c1 c0 default-e)))
 
 ;; ----------------------------------------------------------------------------
 
@@ -534,13 +534,13 @@
         (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                              (datom e0 attr value tx0)
                              (datom emax attr value txmax))))
-            (:e (-first-datom db :avet attr value nil)))))
+            (:e (-first-datom db :ave attr value nil)))))
 
     (keyword? eid)
     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                          (datom e0 :db/ident eid tx0)
                          (datom emax :db/ident eid txmax))))
-        (:e (-first-datom db :avet :db/ident eid nil)))
+        (:e (-first-datom db :ave :db/ident eid nil)))
 
     :else
     (raise "Expected number or lookup ref for entity id, got " eid
@@ -566,7 +566,7 @@
                                    (.subSet ^TreeSortedSet (:avet db)
                                             (d/datom e0 a v tx0)
                                             (d/datom emax a v txmax))))
-                            (-populated? db :avet a v nil)))]
+                            (-populated? db :ave a v nil)))]
       (raise "Cannot add " datom " because of unique constraint: " found
              {:error     :transact/unique
               :attribute (.-a datom)
@@ -661,7 +661,7 @@
                                (.subSet ^TreeSortedSet (:eavt db)
                                         (d/datom e tuple nil tx0)
                                         (d/datom e tuple nil txmax))))
-                         (:v (-first-datom db :eavt e tuple nil))
+                         (:v (-first-datom db :eav e tuple nil))
                          (vec (repeat (-> db -schema (get tuple)
                                           :db/tupleAttrs count)
                                       nil)))
@@ -734,7 +734,7 @@
                     (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
                                          (d/datom e0 a v tx0)
                                          (d/datom emax a v txmax))))
-                        (:e (-first-datom db :avet a v nil))))
+                        (:e (-first-datom db :ave a v nil))))
 
           split (fn [a vs]
                   (reduce
@@ -985,7 +985,7 @@
                   current (or (:v (sf (.subSet ^TreeSortedSet (:eavt db)
                                                (d/datom eid tuple nil tx0)
                                                (d/datom eid tuple nil txmax))))
-                              (:v (-first-datom db :eavt eid tuple nil)))]
+                              (:v (-first-datom db :eav eid tuple nil)))]
               (cond
                 (= value current) entities
                 (nil? value)      (conj entities ^::internal [:db/retract eid tuple current])
@@ -1167,7 +1167,7 @@
                                                      ^TreeSortedSet (:avet db)
                                                      (d/datom e0 a v tx0)
                                                      (d/datom emax a v txmax))))
-                                           (:e (-first-datom db :avet a v nil))))
+                                           (:e (-first-datom db :ave a v nil))))
                        allocated-eid (get tempids e)]
                    (if (and upserted-eid allocated-eid (not= upserted-eid allocated-eid))
                      (retry-with-tempid initial-report report initial-es e upserted-eid)
@@ -1190,7 +1190,7 @@
                                                ^TreeSortedSet (:eavt db)
                                                (d/datom e tuple-attr nil tx0)
                                                (d/datom e tuple-attr nil txmax))))
-                                       (:v (-first-datom db :eavt e tuple-attr nil)))]
+                                       (:v (-first-datom db :eav e tuple-attr nil)))]
                                (= tuple-value db-value)))
                            (map vector tuple-attrs v)))
                      (recur report entities)

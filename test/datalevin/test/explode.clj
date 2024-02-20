@@ -187,7 +187,7 @@
 
         db (d/db-with (d/empty-db dir schema)
                       [{:db/id 1, :comp [{:name "C"}]}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
+    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
            [ [ 1 :comp 2  ]
             [ 2 :name "C"] ]))
     (d/close-db db)
@@ -199,7 +199,7 @@
 
         db (d/db-with (d/empty-db dir schema)
                       [{:db/id 1, :comp [{:name "C"}]}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
+    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
            [ [ 1 :comp 2  ]
             [ 2 :name "C"] ]))
     (d/close-db db)
@@ -210,7 +210,7 @@
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1, :comp {:name "C"}}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
+    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
            [ [ 1 :comp 2  ]
             [ 2 :name "C"] ]))
     (d/close-db db)
@@ -220,7 +220,7 @@
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1, :comp {:name "C"}}])]
-    (is (= (mapv (juxt :e :a :v) (d/datoms db :eavt))
+    (is (= (mapv (juxt :e :a :v) (d/datoms db :eav))
            [ [ 1 :comp 2  ]
             [ 2 :name "C"] ]))
     (d/close-db db)

@@ -33,7 +33,7 @@
                                 (assoc-in [:a/b :db/aid] 3)
                                 (assoc-in [:c/d :db/aid] 4))))
     (d/transact! conn1 txs)
-    (is (= 2 (count (d/datoms @conn1 :eavt))))
+    (is (= 2 (count (d/datoms @conn1 :eav))))
 
     (is (thrown-with-msg? Exception #"Cannot delete attribute"
                           (d/update-schema conn1 {} #{:c/d})))
@@ -85,7 +85,7 @@
 (deftest test-ways-to-create-conn-1
   (let [dir  (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
-    (is (= #{} (set (d/datoms @conn :eavt))))
+    (is (= #{} (set (d/datoms @conn :eav))))
     (is (= c/implicit-schema (db/-schema @conn)))
     (d/close conn)
     (u/delete-files dir)))
@@ -94,7 +94,7 @@
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 3}}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/create-conn dir schema)]
-    (is (= #{} (set (d/datoms @conn :eavt))))
+    (is (= #{} (set (d/datoms @conn :eav))))
     (is (= (db/-schema @conn) (merge schema c/implicit-schema)))
     (d/close conn)
     (u/delete-files dir)))
@@ -104,7 +104,7 @@
                  (d/datom 1 :name "Ivan")}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-datoms datoms dir)]
-    (is (= datoms (set (d/datoms @conn :eavt))))
+    (is (= datoms (set (d/datoms @conn :eav))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)
     (u/delete-files dir))
@@ -114,7 +114,7 @@
                  (d/datom 1 :name "Ivan")}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-datoms datoms dir schema)]
-    (is (= datoms (set (d/datoms @conn :eavt))))
+    (is (= datoms (set (d/datoms @conn :eav))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)
     (u/delete-files dir))
@@ -127,7 +127,7 @@
                           #"init-db expects list of Datoms, got "
                           (d/init-db [[:add -1 :name "Ivan"]
                                       {:add -1 :age 35}])))
-    (is (= datoms (set (d/datoms @conn :eavt))))
+    (is (= datoms (set (d/datoms @conn :eav))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)
     (u/delete-files dir))
@@ -137,7 +137,7 @@
                  (d/datom 1 :name "Ivan")}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
         conn   (d/conn-from-db (d/init-db datoms dir schema))]
-    (is (= datoms (set (d/datoms @conn :eavt))))
+    (is (= datoms (set (d/datoms @conn :eav))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)
     (u/delete-files dir)))
@@ -156,7 +156,7 @@
       (d/transact! conn2 [{:db/id         -2
                            :name          "Another name"
                            :dt/updated-at (Date.)}])
-      (is (= 4 (count (d/datoms @conn2 :eavt))))
+      (is (= 4 (count (d/datoms @conn2 :eav))))
       (d/close conn2))
     (u/delete-files dir)))
 
@@ -174,7 +174,7 @@
       (d/transact! conn2 [{:db/id         -2
                            :name          "Another name"
                            :dt/updated-at (Date.)}])
-      (is (= 4 (count (d/datoms @conn2 :eavt))))
+      (is (= 4 (count (d/datoms @conn2 :eav))))
       (d/close conn2))
     (u/delete-files dir)))
 

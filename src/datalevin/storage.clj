@@ -169,33 +169,32 @@
 (defn- index->dbi
   [index]
   (case index
-    (:eav :eavt) c/eav
-    (:ave :avet) c/ave
-    (:vae :vaet) c/vae))
+    :eav c/eav
+    :ave c/ave
+    :vae c/vae))
 
 (defn- index->vtype
   [index]
   (case index
-    (:eav :eavt) :avg
-    (:ave :avet) :eg
-    (:vae :vaet) :ae))
+    :eav :avg
+    :ave :eg
+    :vae :ae))
 
 (defn- index->ktype
   [index]
   (case index
-    (:eav :eavt :vae :vaet) :id
-    (:ave :avet)            :av))
+    :eav :id
+    :vae :id
+    :ave :av))
 
 (defn- index->k
   [index schema ^Datom datom high?]
   (case index
-    (:eav :eavt) (or (.-e datom) (if high? c/emax c/e0))
-    (:ave :avet) #_ (or (:db/aid (schema (.-a datom)))
-                       (if high? c/amax c/a0))
-    (datom->indexable schema datom high?)
-    (:vae :vaet) (or (.-v datom) (if high? c/vmax c/v0))))
+    :eav (or (.-e datom) (if high? c/emax c/e0))
+    :ave (datom->indexable schema datom high?)
+    :vae (or (.-v datom) (if high? c/vmax c/v0))))
 
-(defn gt->datom [lmdb gt] (lmdb/get-value lmdb c/giants gt :id :datom))
+(defn gt->datom [lmdb gt] (lmdb/get-value lmdb c/giants gt :id :data))
 
 (defprotocol IStore
   (opts [this] "Return the opts map")

@@ -863,7 +863,7 @@
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
-    (:eav :eavt :vae :vaet :ave :avet) (indexable->retrieved x)
+    (:eav :vae :ave) (indexable->retrieved x)
     x))
 
 (defn put-buffer

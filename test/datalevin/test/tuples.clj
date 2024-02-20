@@ -336,9 +336,9 @@
                    {:db/id 7 :a "a" :b "B" :c "C"}
                    {:db/id 8 :a "A" :b "B" :c "C"}]))]
     (is (= [6]
-           (mapv :e (d/datoms db :avet :a+b+c ["A" "b" "C"]))))
+           (mapv :e (d/datoms db :ave :a+b+c ["A" "b" "C"]))))
     (is (= []
-           (mapv :e (d/datoms db :avet :a+b+c ["A" "b" nil]))))
+           (mapv :e (d/datoms db :ave :a+b+c ["A" "b" nil]))))
     (is (= [8 4 6 2]
            (mapv :e (d/index-range db :a+b+c ["A" "B" "C"] ["A" "b" "c"]))))
     (is (= [8 4]

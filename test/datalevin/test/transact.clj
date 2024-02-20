@@ -130,7 +130,7 @@
                               nil
                               [:db/add 3 :attr 4]]))]
       (is (= [[1 :attr 2], [3 :attr 4]]
-             (map (juxt :e :a :v) (d/datoms db :eavt))))
+             (map (juxt :e :a :v) (d/datoms db :eav))))
       (d/close-db db)
       (u/delete-files dir))))
 
@@ -161,7 +161,7 @@
       (is (= #{[1 :age 17]
                [1 :aka "x"]
                [1 :name "Oleg"]}
-             (set (map (juxt :e :a :v) (d/datoms db :eavt)))))
+             (set (map (juxt :e :a :v) (d/datoms db :eav)))))
       (d/close-db db)
       (u/delete-files dir))))
 
@@ -174,7 +174,7 @@
                               (d/datom 1 :name "Oleg" tx0 false)]))]
       (is (= #{[1 :age 17]}
              (set (map (juxt :e :a :v)
-                       (d/datoms db :eavt)))))
+                       (d/datoms db :eav)))))
       (d/close-db db)
       (u/delete-files dir))))
 
@@ -277,7 +277,7 @@
                              :employed? true, :married? false}]))]
     (let [db' (d/db-with db [[:db/retract 2 :employed? false]])]
       (is (= [(dd/datom 2 :employed? true)]
-             (d/datoms db' :eavt 2 :employed?))))
+             (d/datoms db' :eav 2 :employed?))))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -285,7 +285,7 @@
   (let [dir (u/tmp-dir (str "skip-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}})
                 (d/db-with [[:db/add 1 :name "Ivan"]]))
-        all #(vec (d/datoms % :eavt))]
+        all #(vec (d/datoms % :eav))]
     (are [op] (= [(d/datom 1 :name "Ivan")]
                  (all (d/db-with db [op])))
       [:db/retract 2 :name "Petr"]
@@ -675,9 +675,9 @@
         es   [{:db/id -1 :company "IBM" :country "US"}
               {:db/id -2 :company "PwC" :country "Germany"}]
         db1  (d/db-with (d/empty-db dir1) es)
-        dts1 (d/datoms db1 :eavt)
+        dts1 (d/datoms db1 :eav)
         db2  (d/db-with (d/empty-db dir2) es)
-        dts2 (d/datoms db2 :eavt)]
+        dts2 (d/datoms db2 :eav)]
     (is (= dts1 dts2))
     (d/close-db db1)
     (d/close-db db2)
@@ -753,9 +753,9 @@
     (is (= #{[1 :single {:map 3}]}
            (tdc/all-datoms db)))
     (is (= [(dd/datom 1 :single {:map 3})]
-           (vec (d/datoms db :eavt 1 :single {:map 3}))))
+           (vec (d/datoms db :eav 1 :single {:map 3}))))
     (is (= [(dd/datom 1 :single {:map 3})]
-           (vec (d/datoms db :avet :single {:map 3} 1))))
+           (vec (d/datoms db :ave :single {:map 3} 1))))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -770,9 +770,9 @@
     (is (= #{[1 :multi {:map 1}] [1 :multi {:map 2}]}
            (tdc/all-datoms db)))
     (is (= [(dd/datom 1 :multi {:map 2})]
-           (vec (d/datoms db :eavt 1 :multi {:map 2}))))
+           (vec (d/datoms db :eav 1 :multi {:map 2}))))
     (is (= [(dd/datom 1 :multi {:map 2})]
-           (vec (d/datoms db :avet :multi {:map 2} 1))))
+           (vec (d/datoms db :ave :multi {:map 2} 1))))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -787,9 +787,9 @@
     (is (= #{[1 :index {:map 3}]}
            (tdc/all-datoms db)))
     (is (= [(dd/datom 1 :index {:map 3})]
-           (vec (d/datoms db :eavt 1 :index {:map 3}))))
+           (vec (d/datoms db :eav 1 :index {:map 3}))))
     (is (= [(dd/datom 1 :index {:map 3})]
-           (vec (d/datoms db :avet :index {:map 3} 1 ))))
+           (vec (d/datoms db :ave :index {:map 3} 1 ))))
     (d/close-db db)
     (u/delete-files dir)))
 

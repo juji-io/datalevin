@@ -7,14 +7,18 @@
   reulting in orders of magnitude speed up for complex queries. See
   [details](doc/query.md). #11
 - [Datalog] More space efficient storage format, leveraging LMDB's
-  dupsort feature, resulting in about 10% space reduction and faster counting of data entries.
-- [Datalog] `search-datoms` function to lookup datoms without having to specify an index.
-- [KV] Expose LMDB dupsort functionality, #181, as the following new functions that work only for dbi opened with `open-list-dbi`:
+  dupsort feature, resulting in about 10% space reduction and faster counting of
+  data entries.
+- [Datalog] `search-datoms` function to lookup datoms without having to specify
+  an index.
+- [KV] Expose LMDB dupsort feature, i.e. B+ trees of B+ trees, #181, as the
+  following functions that work only for dbi opened with `open-list-dbi`:
     * `put-list-items`
     * `del-list-items`
     * `visit-list`
     * `get-list`
     * `list-count`
+    * `key-range-list-count`
     * `in-list?`
     * `list-range`
     * `list-range-count`
@@ -26,7 +30,7 @@
     * `visit-list-range`
     * `operate-list-val-range`
 - [KV] `key-range` function that returns a range of keys only.
-- [KV] `key-range-count` function that returns the number of keys.
+- [KV] `key-range-count` function that returns the number of keys in a range.
 - [KV] `range-some` function that is similar to `some` for a given range.
 - [KV] `range-keep` function that is similar to `keep` for a given range.
 - [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as
@@ -34,6 +38,9 @@
 
 ### Changed
 - [Datalog] Change VEA index back to VAE.
+- [Datalog] `:eavt`, `:avet` and `:vaet` are no longer accepted as index names,
+  use `:eav`, `:ave` and `:vae` instead. Otherwise, it's misleading, as we don't
+  store tx id.
 - [KV] Change default write setting from `:mapasync` to `:nometasync`, so
   that the database is more crash resilient. In case of system crash, only the
   last transaction might be lost, but the database will not be corrupted. #228
