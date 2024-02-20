@@ -283,7 +283,7 @@
         store [:seek index c1 c2 c3]
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
-               (datom emax nil nil))))
+               (datom emax c1 nil))))
 
   (-rseek-datoms
     [db index c1 c2 c3]
@@ -291,7 +291,7 @@
         store [:rseek index c1 c2 c3]
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
-                (datom e0 nil nil))))
+                (datom e0 c1 nil))))
 
   (-index-range
     [db attr start end]

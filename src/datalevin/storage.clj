@@ -13,7 +13,6 @@
    [java.util UUID List]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
-   [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
@@ -444,8 +443,6 @@
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (FastList.)
             txs    (FastList.)
-            adds   (FastList.)
-            dels   (FastList.)
             giants (UnifiedMap.)]
         (doseq [datom datoms]
           (if (d/datom-added datom)
@@ -499,7 +496,7 @@
 
   (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
 
-  (av-size [this a v]
+  (av-size [_ a v]
     (lmdb/list-count
       lmdb c/ave (datom->indexable schema (d/datom nil a v) true) :av))
 
@@ -643,19 +640,23 @@
             (case op
               :all          [:closed (b/indexable nil aid c/v0 vt nil)
                              (b/indexable nil aid c/vmax vt nil)]
-              :at-least     [op (b/indexable nil aid lv vt nil)]
-              :at-most      [op (b/indexable nil aid lv vt nil)]
+              :at-least     [:closed (b/indexable nil aid lv vt nil)
+                             (b/indexable nil aid c/vmax vt nil)]
+              :at-most      [:closed (b/indexable nil aid c/v0 vt nil)
+                             (b/indexable nil aid lv vt nil)]
               :closed       [op (b/indexable nil aid lv vt nil)
                              (b/indexable nil aid hv vt nil)]
               :closed-open  [op (b/indexable nil aid lv vt nil)
                              (b/indexable nil aid hv vt nil)]
-              :greater-than [op (b/indexable nil aid lv vt nil)]
-              :less-than    [op (b/indexable nil aid lv vt nil)]
+              :greater-than [:open-closed (b/indexable nil aid lv vt nil)
+                             (b/indexable nil aid c/vmax vt nil)]
+              :less-than    [:closed-open (b/indexable nil aid c/v0 vt nil)
+                             (b/indexable nil aid lv vt nil)]
               :open         [op (b/indexable nil aid lv vt nil)
                              (b/indexable nil aid hv vt nil)]
               :open-closed  [op (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid hv vt nil)]))
-          :av [:all] :eg)
+                             (b/indexable nil aid hv vt nil)])) :av
+          [:all] :eg)
         res)))
 
   (eav-scan-v [store tuples eid-idx as vpreds]
@@ -752,7 +753,8 @@
             lmdb c/eav operator
             [:closed
              (b/indexable nil (aget aids 0) c/v0 nil c/g0)
-             (b/indexable nil (aget aids (dec (alength aids))) c/vmax nil c/gmax)]
+             (b/indexable nil (aget aids (dec (alength aids)))
+                          c/vmax nil c/gmax)]
             :avg)
           res))))
 
