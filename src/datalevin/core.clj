@@ -1298,6 +1298,20 @@ This function is eager and attempts to load all data in range into memory. When 
   key-range l/key-range)
 
 (def ^{:arglists '([db dbi-name k-range]
+                   [db dbi-name k-range k-type])
+       :doc      "Returns the number of keys in the specified key range in the key-value store.
+
+`k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`.
+
+`k-type` is data type of key. The allowed data types are described in [[read-buffer]].
+
+     Examples:
+
+              (key-range lmdb \"c\" [:greater-than 9] :long)
+              ;;==> 1002"}
+  key-range-count l/key-range-count)
+
+(def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]
                    [db dbi-name k-range k-type v-type ignore-key?]

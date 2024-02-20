@@ -375,6 +375,12 @@
     (cl/normal-request client :key-range
                        [db-name dbi-name k-range k-type] writing?))
 
+  (key-range-count [db dbi-name k-range]
+    (.key-range-count db dbi-name k-range :data))
+  (key-range-count [_ dbi-name k-range k-type]
+    (cl/normal-request client :key-range-count
+                       [db-name dbi-name k-range k-type] writing?))
+
   ;; TODO implements batch remote request
   ;; (range-seq [db dbi-name k-range]
   ;;   (l/range-seq db dbi-name k-range :data :data false nil))

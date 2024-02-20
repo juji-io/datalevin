@@ -303,6 +303,11 @@
 
     (is (= (l/entries lmdb "list") 10))
 
+    (is (= (l/key-range-count lmdb "list" [:all]) 3))
+    (is (= (l/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
+    (is (= (l/key-range-count lmdb "list" [:greater-than "b"] :string) 1))
+    (is (= (l/key-range lmdb "list" [:less-than "b"] :string) ["a"]))
+
     (l/operate-list-val-range lmdb "list" (op-gen "b" :string) [:all] :long)
     (is (= [5 6 7] @values))
     (vreset! values [])

@@ -85,21 +85,6 @@
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
 
-(defn key-range
-  [lmdb dbi-name k-range k-type]
-  (scan
-    (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)
-          ^SpillableVector holder
-          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-      (loop [^Iterator iter (.iterator iterable)]
-        (if (.hasNext iter)
-          (let [kv (.next iter)]
-            (.cons holder (b/read-buffer (l/k kv) k-type))
-            (recur iter))
-          holder)))
-    (raise "Fail to get key-range: " e
-           {:dbi dbi-name :k-range k-range :k-type k-type })))
-
 (defn- range-seq*
   [lmdb dbi rtx cur k-range k-type v-type ignore-key?
    {:keys [batch-size] :or {batch-size 100}}]
@@ -189,6 +174,29 @@
       (range-count* iterable))
     (raise "Fail to range-count: " e
            {:dbi dbi-name :k-range k-range :k-type k-type})))
+
+(defn key-range
+  [lmdb dbi-name k-range k-type]
+  (scan
+    (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)
+          ^SpillableVector holder
+          (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
+      (loop [^Iterator iter (.iterator iterable)]
+        (if (.hasNext iter)
+          (let [kv (.next iter)]
+            (.cons holder (b/read-buffer (l/k kv) k-type))
+            (recur iter))
+          holder)))
+    (raise "Fail to get key-range: " e
+           {:dbi dbi-name :k-range k-range :k-type k-type })))
+
+(defn key-range-count
+  [lmdb dbi-name k-range k-type]
+  (scan
+    (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)]
+      (range-count* iterable))
+    (raise "Fail to get key-range-count: " e
+           {:dbi dbi-name :k-range k-range :k-type k-type })))
 
 (defn get-some
   [lmdb dbi-name pred k-range k-type v-type ignore-key? raw-pred?]

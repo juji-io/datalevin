@@ -1117,6 +1117,7 @@
    'get-value
    'get-first
    'key-range
+   'key-range-count
    'get-range
    'range-count
    'get-some
@@ -1937,6 +1938,10 @@
       (if (< (count data) ^long c/+wire-datom-batch-size+)
         (write-message skey {:type :command-complete :result data})
         (copy-out skey data c/+wire-datom-batch-size+)))))
+
+(defn- key-range-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler key-range-count)))
 
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

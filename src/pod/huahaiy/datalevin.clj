@@ -410,6 +410,12 @@
    (when-let [d (get-kv db)]
      (into [] (d/key-range d dbi-name k-range k-type)))))
 
+(defn key-range-count
+  ([db dbi-name k-range]
+   (when-let [d (get-kv db)] (d/key-range-count d dbi-name k-range)))
+  ([db dbi-name k-range k-type]
+   (when-let [d (get-kv db)] (d/key-range-count d dbi-name k-range k-type))))
+
 (defn range-count
   ([db dbi-name k-range]
    (when-let [d (get-kv db)] (d/range-count d dbi-name k-range)))
@@ -718,6 +724,7 @@
    'get-first                 get-first
    'get-range                 get-range
    'key-range                 key-range
+   'key-range-count           key-range-count
    'range-count               range-count
    'get-some                  get-some
    'range-filter              range-filter

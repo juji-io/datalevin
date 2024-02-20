@@ -827,6 +827,11 @@
   (key-range [this dbi-name k-range k-type]
     (scan/key-range this dbi-name k-range k-type))
 
+  (key-range-count [this dbi-name k-range]
+    (.key-range-count this dbi-name k-range :data))
+  (key-range-count [this dbi-name k-range k-type]
+    (scan/key-range-count this dbi-name k-range k-type))
+
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
   (range-seq [this dbi-name k-range k-type]

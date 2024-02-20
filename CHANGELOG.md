@@ -7,7 +7,7 @@
   reulting in orders of magnitude speed up for complex queries. See
   [details](doc/query.md). #11
 - [Datalog] More space efficient storage format, leveraging LMDB's
-  dupsort feature, resulting in about 10% space reduction and faster counting of
+  dupsort feature, resulting in about 20% space reduction and faster counting of
   data entries.
 - [Datalog] `search-datoms` function to lookup datoms without having to specify
   an index.
