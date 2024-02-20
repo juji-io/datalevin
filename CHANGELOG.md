@@ -9,8 +9,7 @@
 - [Datalog] More space efficient storage format, leveraging LMDB's
   dupsort feature, resulting in about 10% space reduction and faster counting of data entries.
 - [Datalog] `search-datoms` function to lookup datoms without having to specify an index.
-- [KV] Expose LMDB dupsort functionality, #181, as the following new functions:
-    * `open-list-dbi`
+- [KV] Expose LMDB dupsort functionality, #181, as the following new functions that work only for dbi opened with `open-list-dbi`:
     * `put-list-items`
     * `del-list-items`
     * `visit-list`
@@ -27,6 +26,7 @@
     * `visit-list-range`
     * `operate-list-val-range`
 - [KV] `key-range` function that returns a range of keys only.
+- [KV] `key-range-count` function that returns the number of keys.
 - [KV] `range-some` function that is similar to `some` for a given range.
 - [KV] `range-keep` function that is similar to `keep` for a given range.
 - [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as

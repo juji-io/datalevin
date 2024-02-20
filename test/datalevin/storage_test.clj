@@ -476,6 +476,7 @@
         tuples0 [(object-array [1]) (object-array [2])]
         tuples1 [(object-array [:none "GPT"])
                  (object-array [:zero "AI"])]
+        tuples2 [(object-array [1]) (object-array [2]) (object-array [1])]
         dir     (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store   (sut/open dir
                           {:a {:db/valueType   :db.type/ref
@@ -490,5 +491,7 @@
            (mapv vec (sut/ave-scan-e store tuples0 0 :a))))
     (is (= [[:none "GPT" 0] [:zero "AI" 5] [:zero "AI" 9]]
            (mapv vec (sut/ave-scan-e store tuples1 1 :b))))
+    (is (= [[1 5] [1 8] [2 8] [1 5] [1 8]]
+           (mapv vec (sut/ave-scan-e store tuples2 0 :a))))
     (sut/close store)
     (u/delete-files dir)))

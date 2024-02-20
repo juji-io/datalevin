@@ -88,8 +88,8 @@
 
 ;; index storage
 
-(def ^:no-doc ^:const +val-bytes-wo-hdr+ 493)  ; - hdr - eid - s - gid
-(def ^:no-doc ^:const +val-bytes-trunc+  492)  ; - tr
+(def ^:no-doc ^:const +val-bytes-wo-hdr+ 497)  ; - hdr - s - g - a
+(def ^:no-doc ^:const +val-bytes-trunc+  496)  ; - tr
 
 (def ^:no-doc ^:const +id-bytes+ Long/BYTES)
 (def ^:no-doc ^:const +short-id-bytes+ Integer/BYTES)
@@ -186,9 +186,6 @@
 (def ^:const vae
   "dbi name for Datalog VAE index is `datalevin/vae"
   "datalevin/vae")
-(def ^:const stats
-  "dbi name for Datalog statistics is `datalevin/stats"
-  "datalevin/stats")
 (def ^:const giants
   "dbi name for Datalog large datoms is `datalevin/giants"
   "datalevin/giants")

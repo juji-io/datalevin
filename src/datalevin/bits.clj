@@ -788,14 +788,13 @@
   [bf ^Indexable x]
   (put-int bf (.-a x))
   (when-let [hdr (.-f x)] (put-byte bf hdr))
-  (if-let [bs (.-b x)]
-    (do (put-bytes bf bs)
-        (if (giant? x)
-          (do (put-byte bf c/truncator)
-              (put-byte bf c/true-value))
-          (put-byte bf c/false-value)))
-    (do (put-fixed bf (.-v x) (.-f x))
-        (put-byte bf c/false-value))))
+  (let [g? (giant? x)]
+    (if-let [bs (.-b x)]
+      (do (put-bytes bf bs)
+          (when g? (put-byte bf c/truncator)))
+      (put-fixed bf (.-v x) (.-f x)))
+    (put-byte bf c/separator)
+    (put-byte bf (if g? c/true-value c/false-value))))
 
 (defn- put-eg
   [bf ^Indexable x]
@@ -820,12 +819,11 @@
 (defn- get-avg
   [^ByteBuffer bf]
   (.position bf (- (.limit bf) 8))
-  (let [g (get-long bf)]
-    (.rewind bf)
-    (let [a (get-int bf)]
-      (if (= g c/normal)
-        (Retrieved. nil a (get-value bf 9) g)
-        (Retrieved. nil a nil g)))))
+  (let [g (get-long bf)
+        a (get-int (.rewind bf))]
+    (if (= g c/normal)
+      (Retrieved. nil a (get-value bf 9) g)
+      (Retrieved. nil a nil g))))
 
 (defn avg->r
   [^ByteBuffer bf]
@@ -849,7 +847,7 @@
         a      (get-int (.rewind bf))]
     (if giant?
       (Retrieved. nil a nil nil)
-      (Retrieved. nil a (get-value bf 1) nil))))
+      (Retrieved. nil a (get-value bf 2) nil))))
 
 (defn- get-ae
   [bf]
@@ -865,9 +863,7 @@
   "Given what's put in, return the expected output from storage"
   [x x-type]
   (case x-type
-    (:eav :eavt) (indexable->retrieved x)
-    (:ave :avet) (indexable->retrieved x)
-    (:vae :vaet) (indexable->retrieved x)
+    (:eav :eavt :vae :vaet :ave :avet) (indexable->retrieved x)
     x))
 
 (defn put-buffer

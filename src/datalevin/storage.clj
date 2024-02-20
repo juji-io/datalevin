@@ -13,6 +13,7 @@
    [java.util UUID List]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
+   [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
    [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
@@ -145,7 +146,7 @@
 
 (defn- datom->indexable
   [schema ^Datom d high?]
-  (let [e  (.-e d)
+  (let [e  (if-some [e (.-e d)] e (if high? c/emax c/e0))
         vm (if high? c/vmax c/v0)
 
         gm (if high? c/gmax c/g0)]
@@ -177,22 +178,22 @@
   [index]
   (case index
     (:eav :eavt) :avg
-    (:ave :avet) :veg
+    (:ave :avet) :eg
     (:vae :vaet) :ae))
 
 (defn- index->ktype
   [index]
   (case index
-    (:eav :eavt) :id
-    (:ave :avet) :int
-    (:vae :vaet) :id))
+    (:eav :eavt :vae :vaet) :id
+    (:ave :avet)            :av))
 
 (defn- index->k
   [index schema ^Datom datom high?]
   (case index
     (:eav :eavt) (or (.-e datom) (if high? c/emax c/e0))
-    (:ave :avet) (or (:db/aid (schema (.-a datom)))
-                     (if high? c/amax c/a0))
+    (:ave :avet) #_ (or (:db/aid (schema (.-a datom)))
+                       (if high? c/amax c/a0))
+    (datom->indexable schema datom high?)
     (:vae :vaet) (or (.-v datom) (if high? c/vmax c/v0))))
 
 (defn gt->datom [lmdb gt] (lmdb/get-value lmdb c/giants gt :id :datom))
@@ -231,10 +232,12 @@
     "Return the number of datoms within the given range (inclusive)")
   (e-size [this e]
     "Return the numbers of datoms with the given e value")
-  (a-size [this a]
+  (a-size [this a] [this a cap]
     "Return the numbers of datoms with the given a value")
   (v-size [this v]
     "Return the numbers of ref datoms with the given v value")
+  (av-size [this a v]
+    "Return the numbers of datoms with the given a and v value")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")
   (tail [this index high-datom low-datom]
@@ -277,28 +280,6 @@
   [store e-aid-v]
   (d/datom (nth e-aid-v 0) ((attrs store) (nth e-aid-v 1)) (peek e-aid-v)))
 
-(defn- retrieved->datom
-  [lmdb attrs [k ^Retrieved r :as kv]]
-  (when kv
-    (let [g (.-g r)]
-      (if (or (nil? g) (= g c/normal))
-        (let [e (.-e r)
-              a (.-a r)
-              v (.-v r)]
-          (cond
-            (nil? e) (d/datom k (attrs a) v)
-            (nil? a) (d/datom e (attrs (int k)) v)
-            (nil? v) (d/datom e (attrs a) k)))
-        (gt->datom lmdb g)))))
-
-(defn- datom-pred->kv-pred
-  [lmdb attrs index pred]
-  (fn [kv]
-    (let [k            (b/read-buffer (lmdb/k kv) (index->ktype index))
-          ^Retrieved v (b/read-buffer (lmdb/v kv) (index->vtype index))
-          ^Datom d     (retrieved->datom lmdb attrs [k v])]
-      (pred d))))
-
 (defn- retrieved->v
   [lmdb ^Retrieved r]
   (let [g (.-g r)]
@@ -306,11 +287,37 @@
       (.-v r)
       (d/datom-v (gt->datom lmdb g)))))
 
-#_(defn- vpred->kv-pred
-    [lmdb index pred]
-    (fn [kv]
-      (let [^Retrieved r (b/read-buffer (lmdb/v kv) (index->vtype index))]
-        (pred (retrieved->v lmdb r)))))
+(defn- ave-kv->retrieved
+  [lmdb [^Retrieved av ^Retrieved eg]]
+  (let [e     (.-e eg)
+        a     (.-a av)
+        g     (.-g eg)
+        r     (Retrieved. e a (.-v av) g)
+        value (retrieved->v lmdb r)]
+    (Retrieved. e a value g)))
+
+(defn- retrieved->datom
+  [lmdb attrs [k ^Retrieved r :as kv]]
+  (when kv
+    (if (instance? Retrieved k)
+      (let [^Retrieved r (ave-kv->retrieved lmdb kv)]
+        (d/datom (.-e r) (attrs (.-a r)) (.-v r)))
+      (let [g (.-g r)]
+        (if (or (nil? g) (= g c/normal))
+          (let [e (.-e r)
+                a (.-a r)
+                v (.-v r)]
+            (cond
+              (nil? e) (d/datom k (attrs a) v)
+              (nil? v) (d/datom e (attrs a) k)))
+          (gt->datom lmdb g))))))
+
+(defn- datom-pred->kv-pred
+  [lmdb attrs index pred]
+  (fn [kv]
+    (let [k (b/read-buffer (lmdb/k kv) (index->ktype index))
+          v (b/read-buffer (lmdb/v kv) (index->vtype index))]
+      (pred (retrieved->datom lmdb attrs [k v])))))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts)
 
@@ -484,15 +491,17 @@
        (datom->indexable schema high-datom true)] (index->vtype index)
       cap))
 
-  (e-size [_ e]
-    (lmdb/list-count lmdb (index->dbi :eav) e (index->ktype :eav)))
+  (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
-  (a-size [_ a]
-    (lmdb/list-count lmdb (index->dbi :ave)
-                     (:db/aid (schema a)) (index->ktype :ave)))
+  (a-size [this a] (.a-size this a nil))
+  (a-size [this a cap]
+    (.size this :ave (d/datom c/e0 a c/v0) (d/datom c/emax a c/vmax) cap))
 
-  (v-size [_ v]
-    (lmdb/list-count lmdb (index->dbi :vae) v (index->ktype :vae)))
+  (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
+
+  (av-size [this a v]
+    (lmdb/list-count
+      lmdb c/ave (datom->indexable schema (d/datom nil a v) true) :av))
 
   (head [this index low-datom high-datom]
     (retrieved->datom lmdb attrs
@@ -605,50 +614,48 @@
             aid  (props :db/aid)
             seen (LongHashSet.)
             res  ^FastList (FastList.)
-            operator
-            (fn [iterable]
-              (let [iter (lmdb/val-iterator iterable)]
-                (loop [next? (lmdb/seek-key iter aid :int)]
-                  (when next?
-                    (let [veg (lmdb/next-val iter)]
-                      (if (or vpred get-v?)
-                        (let [r (b/read-buffer veg :veg)
-                              v (retrieved->v lmdb r)
-                              e (.-e ^Retrieved r)]
-                          (if get-v?
-                            (if vpred
-                              (when (vpred v)
-                                (.add seen e)
-                                (.add res (object-array [e v])))
-                              (do (.add seen e)
-                                  (.add res (object-array [e v]))))
-                            (when-not (.contains seen e)
-                              (when (vpred v)
-                                (.add seen e)
-                                (.add res (object-array [e]))))))
-                        (let [e (b/veg->e veg)]
-                          (when-not (.contains seen e)
-                            (.add seen e)
-                            (.add res (object-array [e]))))))
-                    (recur (lmdb/has-next-val iter))))))]
-        (lmdb/operate-list-val-range
-          lmdb c/ave operator
+            visitor
+            (fn [kv]
+              (if (or vpred get-v?)
+                (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+                      eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+                      r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+                      v  (.-v r)
+                      e  (.-e r)]
+                  (if get-v?
+                    (if vpred
+                      (when (vpred v)
+                        (.add seen e)
+                        (.add res (object-array [e v])))
+                      (do (.add seen e)
+                          (.add res (object-array [e v]))))
+                    (when-not (.contains seen e)
+                      (when (vpred v)
+                        (.add seen e)
+                        (.add res (object-array [e]))))))
+                (let [e (b/read-buffer (lmdb/v kv) :id)]
+                  (when-not (.contains seen e)
+                    (.add seen e)
+                    (.add res (object-array [e]))))))]
+        (lmdb/visit-list-range
+          lmdb c/ave visitor
           (let [[op lv hv] val-range]
             (case op
-              :all          val-range
-              :at-least     [op (b/indexable c/e0 aid lv vt c/g0)]
-              :at-most      [op (b/indexable c/emax aid lv vt c/gmax)]
-              :closed       [op (b/indexable c/e0 aid lv vt c/g0)
-                             (b/indexable c/emax aid hv vt c/gmax)]
-              :closed-open  [op (b/indexable c/e0 aid lv vt c/g0)
-                             (b/indexable c/e0 aid hv vt c/g0)]
-              :greater-than [op (b/indexable c/emax aid lv vt c/gmax)]
-              :less-than    [op (b/indexable c/e0 aid lv vt c/g0)]
-              :open         [op (b/indexable c/emax aid lv vt c/gmax)
-                             (b/indexable c/e0 aid hv vt c/g0)]
-              :open-closed  [op (b/indexable c/emax aid lv vt c/gmax)
-                             (b/indexable c/emax aid hv vt c/gmax)]))
-          :veg)
+              :all          [:closed (b/indexable nil aid c/v0 vt nil)
+                             (b/indexable nil aid c/vmax vt nil)]
+              :at-least     [op (b/indexable nil aid lv vt nil)]
+              :at-most      [op (b/indexable nil aid lv vt nil)]
+              :closed       [op (b/indexable nil aid lv vt nil)
+                             (b/indexable nil aid hv vt nil)]
+              :closed-open  [op (b/indexable nil aid lv vt nil)
+                             (b/indexable nil aid hv vt nil)]
+              :greater-than [op (b/indexable nil aid lv vt nil)]
+              :less-than    [op (b/indexable nil aid lv vt nil)]
+              :open         [op (b/indexable nil aid lv vt nil)
+                             (b/indexable nil aid hv vt nil)]
+              :open-closed  [op (b/indexable nil aid lv vt nil)
+                             (b/indexable nil aid hv vt nil)]))
+          :av [:all] :eg)
         res)))
 
   (eav-scan-v [store tuples eid-idx as vpreds]
@@ -783,29 +790,24 @@
   (ave-scan-e [_ tuples v-idx attr]
     (when (and (seq tuples) attr)
       (when-let [props (schema attr)]
-        (let [vt  (value-type props)
-              aid (props :db/aid)
-              res ^FastList (FastList.)
+        (let [vt   (value-type props)
+              aid  (props :db/aid)
+              seen (UnifiedMap.)
+              res  (FastList.)
               scan-e
               (fn [tuple v]
-                (let [operator
-                      (fn [iterable]
-                        (let [iter (lmdb/val-iterator iterable)]
-                          (loop [next? (lmdb/seek-key iter aid :int)
-                                 es    (transient [])]
-                            (if next?
-                              (let [e (b/veg->e (lmdb/next-val iter))]
-                                (recur (lmdb/has-next-val iter)
-                                       (conj! es e)))
-                              (.addAll res (r/prod-tuples
-                                             (r/single-tuples tuple)
-                                             (r/vertical-tuples
-                                               (persistent! es))))))))]
-                  (lmdb/operate-list-val-range
-                    lmdb c/ave operator
-                    [:closed
-                     (b/indexable c/e0 aid v vt c/g0)
-                     (b/indexable c/emax aid v vt c/gmax)] :veg)))]
+                (if-let [ts (.get seen v)]
+                  (.addAll res (r/prod-tuples (r/single-tuples tuple) ts))
+                  (let [es      (LongHashSet.)
+                        visitor (fn [kv]
+                                  (.add es (b/read-buffer (lmdb/v kv) :id)))
+                        ki      (b/indexable nil aid v vt nil)]
+                    (lmdb/visit-list-range
+                      lmdb c/ave visitor [:closed ki ki] :av [:all] :eg)
+                    (let [ts (r/vertical-tuples (.toArray es))]
+                      (.put seen v ts)
+                      (.addAll res (r/prod-tuples
+                                     (r/single-tuples tuple) ts))))))]
           (dotimes [i (.size ^List tuples)]
             (let [tuple ^objects (.get ^List tuples i)
                   tv    ^long (aget tuple v-idx)]
@@ -848,21 +850,23 @@
   [^Store store low-datom high-datom]
   (let [prev-v   (volatile! nil)
         violate? (volatile! false)
+        lmdb     (.-lmdb store)
         schema   (schema store)
         visitor  (fn [kv]
-                   (let [^Retrieved veg (b/read-buffer (lmdb/v kv) :veg)
-                         v              (.-v veg)]
+                   (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+                         eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+                         r  (Retrieved. nil nil (.-v av) (.-g eg))
+                         v  (retrieved->v lmdb r)]
                      (if (= @prev-v v)
                        (do (vreset! violate? true)
                            :datalevin/terminate-visit)
                        (vreset! prev-v v))))]
     (lmdb/visit-list-range
-      (.-lmdb store) c/ave visitor
+      lmdb c/ave visitor
       [:closed (index->k :ave schema low-datom false)
-       (index->k :ave schema high-datom true)] (index->ktype :ave)
+       (index->k :ave schema high-datom true)] :av
       [:closed (datom->indexable schema low-datom false)
-       (datom->indexable schema high-datom true)]
-      (index->vtype :ave))
+       (datom->indexable schema high-datom true)] :eg)
     @violate?))
 
 (defn- check-unique
@@ -908,7 +912,7 @@
                    (u/raise "Invalid data, expecting" vt {:input v}))
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)]
-    (.add txs [:put c/ave aid i :int :veg])
+    (.add txs [:put c/ave i i :av :eg])
     (.add txs [:put c/eav e i :id :avg])
     (when giant?
       (advance-max-gt store)
@@ -949,7 +953,7 @@
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
-      (.add txs [:del-list c/ave aid [ii] :int :veg])
+      (.add txs [:del-list c/ave ii [ii] :av :eg])
       (.add txs [:del-list c/eav e [ii] :id :avg])
       (when gt
         (when gt-this-tx (.remove giants d-eav))
@@ -972,11 +976,10 @@
   (lmdb/open-list-dbi
     lmdb c/eav {:key-size c/+id-bytes+ :val-size c/+max-key-size+})
   (lmdb/open-list-dbi
-    lmdb c/ave {:key-size c/+short-id-bytes+ :val-size c/+max-key-size+})
+    lmdb c/ave {:key-size c/+max-key-size+ :val-size (* 2 c/+id-bytes+)})
   (lmdb/open-list-dbi
-    lmdb c/vae {:key-size c/+id-bytes+ :val-size 12})
-  (lmdb/open-list-dbi
-    lmdb c/stats {:key-size c/+short-id-bytes+ :val-size c/+max-key-size+})
+    lmdb c/vae {:key-size c/+id-bytes+
+                :val-size (+ c/+short-id-bytes+ c/+id-bytes+)})
   (lmdb/open-dbi lmdb c/giants {:key-size c/+id-bytes+})
   (lmdb/open-dbi lmdb c/schema {:key-size c/+max-key-size+})
   (lmdb/open-dbi lmdb c/meta {:key-size c/+max-key-size+})

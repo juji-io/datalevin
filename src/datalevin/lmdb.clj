@@ -208,6 +208,11 @@
     [db dbi-name k-range k-type]
     "Return an eager seq of keys in the specified key range, does not read
 values;")
+  (key-range-count
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    "Return the number of keys in the specified key range, does not read
+values;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
