@@ -13,9 +13,10 @@
    [java.util UUID List HashMap]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
+   [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
-   [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
+   [org.eclipse.collections.impl.set.mutable UnifiedSet]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -606,10 +607,9 @@
     (.ave-tuples store attr val-range vpred false))
   (ave-tuples [_ attr val-range vpred get-v?]
     (when-let [props (schema attr)]
-      (let [vt   (value-type props)
-            aid  (props :db/aid)
-            seen (LongHashSet.)
-            res  ^FastList (FastList.)
+      (let [vt  (value-type props)
+            aid (props :db/aid)
+            res (UnifiedSet.)
             visitor
             (fn [kv]
               (if (or vpred get-v?)
@@ -617,22 +617,13 @@
                       eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
                       r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
                       v  (.-v r)
-                      e  ^long (.-e r)]
+                      e  (.-e r)]
                   (if get-v?
                     (if vpred
-                      (when (vpred v)
-                        (.add seen e)
-                        (.add res (object-array [e v])))
-                      (do (.add seen e)
-                          (.add res (object-array [e v]))))
-                    (when-not (.contains seen e)
-                      (when (vpred v)
-                        (.add seen e)
-                        (.add res (object-array [e]))))))
-                (let [^long e (b/read-buffer (lmdb/v kv) :id)]
-                  (when-not (.contains seen e)
-                    (.add seen e)
-                    (.add res (object-array [e]))))))]
+                      (when (vpred v) (.add res [e v]))
+                      (.add res [e v]))
+                    (when (vpred v) (.add res [e]))))
+                (.add res [(b/read-buffer (lmdb/v kv) :id)])))]
         (lmdb/visit-list-range
           lmdb c/ave visitor
           (let [[op lv hv] val-range]
@@ -656,7 +647,10 @@
               :open-closed  [op (b/indexable nil aid lv vt nil)
                              (b/indexable nil aid hv vt nil)])) :av
           [:all] :eg)
-        res)))
+        (let [ret  (FastList. (.size res))
+              iter (.iterator res)]
+          (while (.hasNext iter) (.add ret (object-array (.next iter))))
+          ret))))
 
   (eav-scan-v [store tuples eid-idx as vpreds]
     (.eav-scan-v store tuples eid-idx as vpreds []))
@@ -671,17 +665,18 @@
               many      (set (filterv #(= (-> % attrs schema :db/cardinality)
                                           :db.cardinality/many) aids))
               aids      (int-array aids)
-              res       (FastList.)
+              nt        (.size ^List tuples)
+              res       (FastList. nt)
+              seen      (LongObjectHashMap. nt)
               operator
               (fn [iterable]
-                (let [iter (lmdb/val-iterator iterable)
-                      seen (LongObjectHashMap.)]
-                  (dotimes [i (.size ^List tuples)]
+                (let [iter (lmdb/val-iterator iterable)]
+                  (dotimes [i nt]
                     (let [tuple ^objects (.get ^List tuples i)
                           te    ^long (aget tuple eid-idx)]
                       (if-let [ts (.get seen te)]
                         (.addAll res ts)
-                        (let [vs (FastList.)]
+                        (let [vs (FastList. na)]
                           (if (empty? many)
                             (loop [next? (lmdb/seek-key iter te :id)
                                    ai    0]
@@ -764,19 +759,20 @@
       (when-let [props (schema attr)]
         (assert (= :db.type/ref (props :db/valueType))
                 (str attr " is not a :db.type/ref"))
-        (let [aid  (props :db/aid)
-              seen (LongObjectHashMap.)
-              res  ^FastList (FastList.)
+        (let [nt   (.size ^List tuples)
+              aid  (props :db/aid)
+              seen (LongObjectHashMap. nt)
+              res  (FastList. nt)
               operator
               (fn [iterable]
                 (let [iter (lmdb/val-iterator iterable)]
-                  (dotimes [i (.size ^List tuples)]
+                  (dotimes [i nt]
                     (let [tuple ^objects (.get ^List tuples i)
                           tv    ^long (aget tuple veid-idx)]
                       (if-let [ts (.contains seen tv)]
                         (.addAll res (r/prod-tuples
                                        (r/single-tuples tuple) ts))
-                        (let [es (LongHashSet.)]
+                        (let [es (LongArrayList.)]
                           (loop [next? (lmdb/seek-key iter tv :id)]
                             (if next?
                               (let [vb ^ByteBuffer (lmdb/next-val iter)
@@ -800,13 +796,14 @@
       (when-let [props (schema attr)]
         (let [vt   (value-type props)
               aid  (props :db/aid)
-              seen (HashMap.)
-              res  (FastList.)
+              nt   (.size ^List tuples)
+              seen (UnifiedMap. nt)
+              res  (FastList. nt)
               scan-e
               (fn [tuple v]
                 (if-let [ts (.get seen v)]
                   (.addAll res (r/prod-tuples (r/single-tuples tuple) ts))
-                  (let [es      (LongHashSet.)
+                  (let [es      (LongArrayList.)
                         visitor (fn [kv]
                                   (.add es (b/read-buffer (lmdb/v kv) :id)))
                         ki      (b/indexable nil aid v vt nil)]
@@ -816,7 +813,7 @@
                       (.put seen v ts)
                       (.addAll res (r/prod-tuples
                                      (r/single-tuples tuple) ts))))))]
-          (dotimes [i (.size ^List tuples)]
+          (dotimes [i nt]
             (let [tuple ^objects (.get ^List tuples i)]
               (scan-e tuple (aget tuple v-idx))))
           res)))))

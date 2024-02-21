@@ -26,13 +26,11 @@
    (let [idxs1 (object-array (range (alength ^objects t1)))
          idxs2 (object-array (range (alength ^objects t2)))]
      (join-tuples t1 idxs1 t2 idxs2)))
-  ([t1 ^{:tag "[[Ljava.lang.Object;"} idxs1
-    t2 ^{:tag "[[Ljava.lang.Object;"} idxs2]
-   (let [l1 (alength idxs1)
-         l2 (alength idxs2)
-
-         ^{:tag "[[Ljava.lang.Object;"} res
-         (make-array Object (+ l1 l2))]
+  ([t1 ^objects idxs1
+    t2 ^objects idxs2]
+   (let [l1  (alength idxs1)
+         l2  (alength idxs2)
+         res (object-array (+ l1 l2))]
      (if (.isArray (.getClass ^Object t1))
        (dotimes [i l1] (aset res i (typed-aget t1 (aget idxs1 i))))
        (dotimes [i l1] (aset res i (get t1 (aget idxs1 i)))))
@@ -50,7 +48,9 @@
 (defn sum-rel
   [a b]
   (let [{attrs-a :attrs, tuples-a :tuples} a
-        {attrs-b :attrs, tuples-b :tuples} b]
+        {attrs-b :attrs, tuples-b :tuples} b
+        size-a                             (.size ^List tuples-a)
+        size-b                             (.size ^List tuples-b)]
     (cond
       (= attrs-a attrs-b)
       (relation! attrs-a
@@ -82,7 +82,7 @@
 
       :else
       (let [all-attrs (zipmap (keys (merge attrs-a attrs-b)) (range))]
-        (-> (relation! all-attrs (FastList.))
+        (-> (relation! all-attrs (FastList. (+ size-a size-b)))
             (sum-rel a)
             (sum-rel b))))))
 
@@ -96,16 +96,18 @@
                  (.add acc (join-tuples t1 t2))
                  acc)
                acc tuples2))
-     (FastList.)
+     (FastList. (* (.size ^List tuples1) (.size ^List tuples2)))
      tuples1)))
 
 (defn prod-rel
   ([] (relation! {} (doto (FastList.) (.add (make-array Object 0)))))
   ([rel1 rel2]
-   (let [attrs1 (keys (:attrs rel1))
-         attrs2 (keys (:attrs rel2))
-         idxs1  (to-array (map (:attrs rel1) attrs1))
-         idxs2  (to-array (map (:attrs rel2) attrs2))]
+   (let [attrs1  (keys (:attrs rel1))
+         attrs2  (keys (:attrs rel2))
+         tuples1 ^List (:tuples rel1)
+         tuples2 ^List (:tuples rel2)
+         idxs1   (to-array (map (:attrs rel1) attrs1))
+         idxs2   (to-array (map (:attrs rel2) attrs2))]
      (relation!
        (zipmap (u/concatv attrs1 attrs2) (range))
        (reduce
@@ -113,13 +115,14 @@
            (reduce (fn [^FastList acc t2]
                      (.add acc (join-tuples t1 idxs1 t2 idxs2))
                      acc)
-                   acc (:tuples rel2)))
-         (FastList.)
-         (:tuples rel1))))))
+                   acc tuples2))
+         (FastList. (* (.size tuples1) (.size tuples2)))
+         tuples1)))))
 
 (defn vertical-tuples
   [coll]
-  (doto (FastList.) (.addAll (mapv #(object-array [%]) coll))))
+  (doto (FastList. (count coll))
+    (.addAll (mapv #(object-array [%]) coll))))
 
 (defn horizontal-tuples
   [coll]
