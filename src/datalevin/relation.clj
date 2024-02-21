@@ -119,7 +119,7 @@
 
 (defn vertical-tuples
   [coll]
-  (doto (FastList.) (.addAll (map #(object-array [%]) coll))))
+  (doto (FastList.) (.addAll (mapv #(object-array [%]) coll))))
 
 (defn horizontal-tuples
   [coll]
@@ -133,7 +133,7 @@
     (comp
       (partition-by #(instance? FastList %))
       (map #(if (instance? FastList (first %))
-              (reduce prod-tuples (map vertical-tuples %))
+              (reduce prod-tuples (mapv vertical-tuples %))
               (horizontal-tuples %))))
     prod-tuples
     values))

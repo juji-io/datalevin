@@ -529,17 +529,19 @@
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
-      (loop [^Iterator iter (.iterator pool)]
-        (when (.hasNext iter)
-          (.close-rtx ^Rtx (.next iter))
-          (.remove iter)
-          (recur iter)))
-      (doseq [^DBI dbi (.values dbis)]
-        (loop [^Iterator iter (.iterator ^ConcurrentLinkedQueue (.-curs dbi))]
+      (let [^Iterator iter (.iterator pool)]
+        (loop []
           (when (.hasNext iter)
-            (.close ^Cursor (.next iter))
+            (.close-rtx ^Rtx (.next iter))
             (.remove iter)
-            (recur iter)))
+            (recur))))
+      (doseq [^DBI dbi (.values dbis)]
+        (let [^Iterator iter (.iterator ^ConcurrentLinkedQueue (.-curs dbi))]
+          (loop []
+            (when (.hasNext iter)
+              (.close ^Cursor (.next iter))
+              (.remove iter)
+              (recur))))
         (.close ^Dbi (.-db dbi)))
       (.sync env)
       (.close env)

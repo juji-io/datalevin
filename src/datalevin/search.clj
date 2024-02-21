@@ -888,13 +888,14 @@
     (l/transact-kv lmdb txs)
     (.clear txs)
     (l/with-transaction-kv [db lmdb]
-      (loop [iter (.iterator (.entrySet hit-terms))]
-        (when (.hasNext iter)
-          (let [^Map$Entry kv (.next iter)]
-            (.remove iter)
-            (l/transact-kv db [[:put terms-dbi (.getKey kv) (.getValue kv)
-                                :string :term-info]])
-            (recur iter)))))))
+      (let [iter (.iterator (.entrySet hit-terms))]
+        (loop []
+          (when (.hasNext iter)
+            (let [^Map$Entry kv (.next iter)]
+              (.remove iter)
+              (l/transact-kv db [[:put terms-dbi (.getKey kv) (.getValue kv)
+                                  :string :term-info]])
+              (recur))))))))
 
 (defn- init-max-id [lmdb dbi]
   (let [max-id (volatile! 0)

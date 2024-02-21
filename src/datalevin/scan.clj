@@ -68,10 +68,11 @@
     (do
       (assert (not (and (= v-type :ignore) ignore-key?))
               "Cannot ignore both key and value")
-      (let [iterable (l/iterate-kv dbi rtx cur k-range k-type v-type)
+      (let [iterable       (l/iterate-kv dbi rtx cur k-range k-type v-type)
+            ^Iterator iter (.iterator ^Iterable iterable)
             ^SpillableVector holder
             (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-        (loop [^Iterator iter (.iterator ^Iterable iterable)]
+        (loop []
           (if (.hasNext iter)
             (let [kv (.next iter)
                   v  (when (not= v-type :ignore)
@@ -79,7 +80,7 @@
               (.cons holder (if ignore-key?
                               v
                               [(b/read-buffer (l/k kv) k-type) v]))
-              (recur iter))
+              (recur))
             holder))))
     (raise "Fail to get-range: " e
            {:dbi    dbi-name :k-range k-range
@@ -153,19 +154,19 @@
 
 (defn range-count*
   ([iterable]
-   (loop [^Iterator iter (.iterator ^Iterable iterable)
-          c              0]
-     (if (.hasNext iter)
-       (do (.next iter) (recur iter (unchecked-inc c)))
-       c)))
-  ([iterable cap]
-   (loop [^Iterator iter (.iterator ^Iterable iterable)
-          c              0]
-     (if (= c cap)
-       c
+   (let [^Iterator iter (.iterator ^Iterable iterable)]
+     (loop [c 0]
        (if (.hasNext iter)
-         (do (.next iter) (recur iter (unchecked-inc c)))
-         c)))))
+         (do (.next iter) (recur (unchecked-inc c)))
+         c))))
+  ([iterable cap]
+   (let [^Iterator iter (.iterator ^Iterable iterable)]
+     (loop [c 0]
+       (if (= c cap)
+         c
+         (if (.hasNext iter)
+           (do (.next iter) (recur (unchecked-inc c)))
+           c))))))
 
 (defn range-count
   [lmdb dbi-name k-range k-type]
@@ -179,13 +180,14 @@
   [lmdb dbi-name k-range k-type]
   (scan
     (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)
+          ^Iterator iter     (.iterator iterable)
           ^SpillableVector holder
           (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
-      (loop [^Iterator iter (.iterator iterable)]
+      (loop []
         (if (.hasNext iter)
           (let [kv (.next iter)]
             (.cons holder (b/read-buffer (l/k kv) k-type))
-            (recur iter))
+            (recur))
           holder)))
     (raise "Fail to get key-range: " e
            {:dbi dbi-name :k-range k-range :k-type k-type })))
@@ -204,8 +206,9 @@
     (do
       (assert (not (and (= v-type :ignore) ignore-key?))
               "Cannot ignore both key and value")
-      (let [iterable (l/iterate-kv dbi rtx cur k-range k-type v-type)]
-        (loop [^Iterator iter (.iterator ^Iterable iterable)]
+      (let [iterable       (l/iterate-kv dbi rtx cur k-range k-type v-type)
+            ^Iterator iter (.iterator ^Iterable iterable)]
+        (loop []
           (when (.hasNext iter)
             (let [kv             (.next iter)
                   ^ByteBuffer kb (l/k kv)
@@ -216,13 +219,13 @@
                             (b/read-buffer (.rewind vb) v-type))]
                     (if ignore-key?
                       v [(b/read-buffer (.rewind kb) k-type) v]))
-                  (recur iter))
+                  (recur))
                 (let [rk (b/read-buffer kb k-type)
                       rv (b/read-buffer vb v-type)]
                   (if (pred rk rv)
                     (let [v (when (not= v-type :ignore) rv)]
                       (if ignore-key? v [rk v]))
-                    (recur iter)))))))))
+                    (recur)))))))))
     (raise "Fail to get-some: " e
            {:dbi    dbi-name :k-range k-range
             :k-type k-type   :v-type  v-type})))
@@ -235,9 +238,9 @@
               "Cannot ignore both key and value")
       (let [^SpillableVector holder
             (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
-
-            iterable (l/iterate-kv dbi rtx cur k-range k-type v-type)]
-        (loop [^Iterator iter (.iterator ^Iterable iterable)]
+            iterable       (l/iterate-kv dbi rtx cur k-range k-type v-type)
+            ^Iterator iter (.iterator ^Iterable iterable)]
+        (loop []
           (if (.hasNext iter)
             (let [kv             (.next iter)
                   ^ByteBuffer kb (l/k kv)
@@ -249,15 +252,15 @@
                     (.cons holder (if ignore-key?
                                     v
                                     [(b/read-buffer (.rewind kb) k-type) v]))
-                    (recur iter))
-                  (recur iter))
+                    (recur))
+                  (recur))
                 (let [rk (b/read-buffer kb k-type)
                       rv (b/read-buffer vb v-type)]
                   (if (pred rk rv)
                     (let [v (when (not= v-type :ignore) rv)]
                       (.cons holder (if ignore-key? v [rk v]))
-                      (recur iter))
-                    (recur iter)))))
+                      (recur))
+                    (recur)))))
             holder))))
     (raise "Fail to range-filter: " e
            {:dbi    dbi-name :k-range k-range
@@ -265,19 +268,20 @@
 
 (defn- range-keep*
   [^Iterable iterable ^SpillableVector holder pred k-type v-type raw-pred?]
-  (loop [^Iterator iter (.iterator iterable)]
-    (if (.hasNext iter)
-      (let [kv             (.next iter)
-            ^ByteBuffer kb (l/k kv)
-            ^ByteBuffer vb (l/v kv)]
-        (if raw-pred?
-          (do (when-let [res (pred kv)] (.cons holder res))
-              (recur iter))
-          (let [rk (b/read-buffer kb k-type)
-                rv (b/read-buffer vb v-type)]
-            (when-let [res (pred rk rv)] (.cons holder res))
-            (recur iter))))
-      holder)))
+  (let [^Iterator iter (.iterator iterable)]
+    (loop []
+      (if (.hasNext iter)
+        (let [kv             (.next iter)
+              ^ByteBuffer kb (l/k kv)
+              ^ByteBuffer vb (l/v kv)]
+          (if raw-pred?
+            (do (when-let [res (pred kv)] (.cons holder res))
+                (recur))
+            (let [rk (b/read-buffer kb k-type)
+                  rv (b/read-buffer vb v-type)]
+              (when-let [res (pred rk rv)] (.cons holder res))
+              (recur))))
+        holder))))
 
 (defn range-keep
   [lmdb dbi-name pred k-range k-type v-type raw-pred?]
@@ -292,15 +296,16 @@
 
 (defn- range-some*
   [iterable pred k-type v-type raw-pred?]
-  (loop [^Iterator iter (.iterator ^Iterable iterable)]
-    (when (.hasNext iter)
-      (let [kv (.next iter)]
-        (if raw-pred?
-          (or (pred kv)
-              (recur iter))
-          (or (pred (b/read-buffer (l/k kv) k-type)
-                    (b/read-buffer (l/v kv) v-type))
-              (recur iter)))))))
+  (let [^Iterator iter (.iterator ^Iterable iterable)]
+    (loop []
+      (when (.hasNext iter)
+        (let [kv (.next iter)]
+          (if raw-pred?
+            (or (pred kv)
+                (recur))
+            (or (pred (b/read-buffer (l/k kv) k-type)
+                      (b/read-buffer (l/v kv) v-type))
+                (recur))))))))
 
 (defn range-some
   [lmdb dbi-name pred k-range k-type v-type raw-pred?]
@@ -312,35 +317,35 @@
 
 (defn- filter-count*
   ([iterable pred raw-pred? k-type v-type]
-   (loop [^Iterator iter (.iterator ^Iterable iterable)
-          c              0]
-     (if (.hasNext iter)
-       (let [kv (.next iter)]
-         (if raw-pred?
-           (if (pred kv)
-             (recur iter (unchecked-inc c))
-             (recur iter c))
-           (if (pred (b/read-buffer (l/k kv) k-type)
-                     (when v-type (b/read-buffer (l/v kv) v-type)))
-             (recur iter (unchecked-inc c))
-             (recur iter c))))
-       c)))
-  ([iterable pred raw-pred? k-type v-type cap]
-   (loop [^Iterator iter (.iterator ^Iterable iterable)
-          c              0]
-     (if (= c cap)
-       c
+   (let [^Iterator iter (.iterator ^Iterable iterable)]
+     (loop [c 0]
        (if (.hasNext iter)
          (let [kv (.next iter)]
            (if raw-pred?
              (if (pred kv)
-               (recur iter (unchecked-inc c))
-               (recur iter c))
+               (recur (unchecked-inc c))
+               (recur c))
              (if (pred (b/read-buffer (l/k kv) k-type)
                        (when v-type (b/read-buffer (l/v kv) v-type)))
-               (recur iter (unchecked-inc c))
-               (recur iter c))))
-         c)))))
+               (recur (unchecked-inc c))
+               (recur c))))
+         c))))
+  ([iterable pred raw-pred? k-type v-type cap]
+   (let [^Iterator iter (.iterator ^Iterable iterable)]
+     (loop [c 0]
+       (if (= c cap)
+         c
+         (if (.hasNext iter)
+           (let [kv (.next iter)]
+             (if raw-pred?
+               (if (pred kv)
+                 (recur (unchecked-inc c))
+                 (recur c))
+               (if (pred (b/read-buffer (l/k kv) k-type)
+                         (when v-type (b/read-buffer (l/v kv) v-type)))
+                 (recur (unchecked-inc c))
+                 (recur c))))
+           c))))))
 
 (defn range-filter-count
   [lmdb dbi-name pred k-range k-type v-type raw-pred?]
@@ -352,15 +357,16 @@
 
 (defn- visit*
   [iterable visitor raw-pred? k-type v-type]
-  (loop [^Iterator iter (.iterator ^Iterable iterable)]
-    (when (.hasNext iter)
-      (let [kv  (.next iter)
-            res (if raw-pred?
-                  (visitor kv)
-                  (visitor (b/read-buffer (l/k kv) k-type)
-                           (b/read-buffer (l/v kv) v-type)))]
-        (when-not (= res :datalevin/terminate-visit)
-          (recur iter))))))
+  (let [^Iterator iter (.iterator ^Iterable iterable)]
+    (loop []
+      (when (.hasNext iter)
+        (let [kv  (.next iter)
+              res (if raw-pred?
+                    (visitor kv)
+                    (visitor (b/read-buffer (l/k kv) k-type)
+                             (b/read-buffer (l/v kv) v-type)))]
+          (when-not (= res :datalevin/terminate-visit)
+            (recur)))))))
 
 (defn visit
   [lmdb dbi-name visitor k-range k-type v-type raw-pred?]
@@ -375,14 +381,15 @@
   (scan
     (let [^SpillableVector holder
           (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
-          iterable (l/iterate-list dbi rtx cur k-range k-type
-                                   v-range v-type)]
-      (loop [^Iterator iter (.iterator ^Iterable iterable)]
+          iterable       (l/iterate-list dbi rtx cur k-range k-type
+                                         v-range v-type)
+          ^Iterator iter (.iterator ^Iterable iterable)]
+      (loop []
         (if (.hasNext iter)
           (let [kv (.next iter)]
             (.cons holder [(b/read-buffer (l/k kv) k-type)
                            (b/read-buffer (l/v kv) v-type)])
-            (recur iter))
+            (recur))
           holder)))
     (raise "Fail to get list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
@@ -416,9 +423,10 @@
   (scan
     (let [^SpillableVector holder
           (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))
-          iterable (l/iterate-list dbi rtx cur k-range k-type
-                                   v-range v-type)]
-      (loop [^Iterator iter (.iterator ^Iterable iterable)]
+          iterable       (l/iterate-list dbi rtx cur k-range k-type
+                                         v-range v-type)
+          ^Iterator iter (.iterator ^Iterable iterable)]
+      (loop []
         (if (.hasNext iter)
           (let [kv             (.next iter)
                 ^ByteBuffer kb (l/k kv)
@@ -427,14 +435,14 @@
               (if (pred kv)
                 (do (.cons holder [(b/read-buffer (.rewind kb) k-type)
                                    (b/read-buffer (.rewind vb) v-type)])
-                    (recur iter))
-                (recur iter))
+                    (recur))
+                (recur))
               (let [rk (b/read-buffer kb k-type)
                     rv (b/read-buffer vb v-type)]
                 (if (pred rk rv)
                   (do (.cons holder [rk rv])
-                      (recur iter))
-                  (recur iter)))))
+                      (recur))
+                  (recur)))))
           holder)))
     (raise "Fail to filter list range: " e
            {:dbi dbi-name :key-range k-range :val-range v-range})) )
@@ -452,15 +460,15 @@
 
 (defn- range-some*
   [iterable pred k-type v-type raw-pred?]
-  (loop [^Iterator iter (.iterator ^Iterable iterable)]
-    (when (.hasNext iter)
-      (let [kv (.next iter)]
-        (if raw-pred?
-          (or (pred kv)
-              (recur iter))
-          (or (pred (b/read-buffer (l/k kv) k-type)
-                    (b/read-buffer (l/v kv) v-type))
-              (recur iter)))))))
+  (let [^Iterator iter (.iterator ^Iterable iterable)]
+    (loop []
+      (when (.hasNext iter)
+        (let [kv (.next iter)]
+          (if raw-pred?
+            (or (pred kv) (recur))
+            (or (pred (b/read-buffer (l/k kv) k-type)
+                      (b/read-buffer (l/v kv) v-type))
+                (recur))))))))
 
 (defn list-range-some
   [lmdb dbi-name pred k-range k-type v-range v-type raw-pred?]

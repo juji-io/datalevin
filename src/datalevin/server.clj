@@ -2302,15 +2302,16 @@
         (handle-registration server)
         (.select selector)
         (when (.get running)
-          (loop [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
-            (when (.hasNext iter)
-              (let [^SelectionKey skey (.next iter)]
-                (when (and (.isValid skey) (.isAcceptable skey))
-                  (handle-accept skey))
-                (when (and (.isValid skey) (.isReadable skey))
-                  (handle-read server skey)))
-              (.remove iter)
-              (recur iter))))
+          (let [^Iterator iter (-> selector (.selectedKeys) (.iterator))]
+            (loop []
+              (when (.hasNext iter)
+                (let [^SelectionKey skey (.next iter)]
+                  (when (and (.isValid skey) (.isAcceptable skey))
+                    (handle-accept skey))
+                  (when (and (.isValid skey) (.isReadable skey))
+                    (handle-read server skey)))
+                (.remove iter)
+                (recur)))))
         (recur)))))
 
 (defn create

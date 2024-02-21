@@ -572,11 +572,12 @@
   ILMDB
   (close-kv [_]
     (when-not (.isClosed env)
-      (loop [^Iterator iter (.iterator pool)]
-        (when (.hasNext iter)
-          (.close-rtx ^Rtx (.next iter))
-          (.remove iter)
-          (recur iter)))
+      (let [^Iterator iter (.iterator pool)]
+        (loop []
+          (when (.hasNext iter)
+            (.close-rtx ^Rtx (.next iter))
+            (.remove iter)
+            (recur))))
       (.sync env true)
       (.close env))
     (when (@info :temp?) (u/delete-files (@info :dir)))
