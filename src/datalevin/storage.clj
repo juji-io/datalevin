@@ -10,7 +10,7 @@
    [datalevin.datom :as d]
    [clojure.string :as str])
   (:import
-   [java.util UUID List HashMap]
+   [java.util UUID List]
    [java.nio ByteBuffer]
    [org.eclipse.collections.impl.list.mutable FastList]
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
@@ -237,6 +237,8 @@
     "Return the numbers of ref datoms with the given v value")
   (av-size [this a v]
     "Return the numbers of datoms with the given a and v value")
+  (av-range-size [this a lv hv] [this a lv hv cap]
+    "Return the numbers of datoms with the given a and v range")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")
   (tail [this index high-datom low-datom]
@@ -439,10 +441,11 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      (let [;; fulltext [:a d [e aid v]], [:d d [e aid v]],
+      (let [n      (count datoms)
+            ;; fulltext [:a d [e aid v]], [:d d [e aid v]],
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (FastList.)
-            txs    (FastList.)
+            txs    (FastList. (* 2 n))
             giants (UnifiedMap.)]
         (doseq [datom datoms]
           (if (d/datom-added datom)
@@ -481,7 +484,8 @@
   (size [_ index low-datom high-datom cap]
     (lmdb/list-range-count
       lmdb (index->dbi index)
-      [:closed (index->k index schema low-datom false)
+      [:closed
+       (index->k index schema low-datom false)
        (index->k index schema high-datom true)] (index->ktype index)
       [:closed
        (datom->indexable schema low-datom false)
@@ -491,14 +495,22 @@
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
   (a-size [this a] (.a-size this a nil))
-  (a-size [this a cap]
-    (.size this :ave (d/datom c/e0 a c/v0) (d/datom c/emax a c/vmax) cap))
+  (a-size [_ a cap]
+    (lmdb/key-range-list-count
+      lmdb c/ave
+      [:closed
+       (datom->indexable schema (d/datom c/e0 a nil) false)
+       (datom->indexable schema (d/datom c/emax a nil) true)]
+      :av cap))
 
   (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
 
   (av-size [_ a v]
     (lmdb/list-count
-      lmdb c/ave (datom->indexable schema (d/datom nil a v) true) :av))
+      lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false) :av))
+
+  (av-range-size [this a lv hv] (.av-range-size this a lv hv nil))
+  (av-range-size [_ a lv hv cap])
 
   (head [this index low-datom high-datom]
     (retrieved->datom lmdb attrs
@@ -932,27 +944,27 @@
 
 (defn- delete-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
-  (let [e          (.-e d)
-        attr       (.-a d)
-        v          (.-v d)
-        d-eav      [e attr v]
-        props      ((schema store) attr)
-        vt         (value-type props)
-        aid        (props :db/aid)
-        i          ^Indexable (b/indexable e aid v vt c/g0)
-        gt-this-tx (.get giants d-eav)
-        gt         (when (b/giant? i)
-                     (or gt-this-tx
-                         (let [[_ ^Retrieved r]
-                               (nth
-                                 (lmdb/list-range
-                                   (.-lmdb store) c/eav [:closed e e] :id
-                                   [:closed
-                                    i
-                                    (Indexable. e aid v (.-f i) (.-b i) c/gmax)]
-                                   :avg)
-                                 0)]
-                           (.-g r))))]
+  (let [e      (.-e d)
+        attr   (.-a d)
+        v      (.-v d)
+        d-eav  [e attr v]
+        props  ((schema store) attr)
+        vt     (value-type props)
+        aid    (props :db/aid)
+        i      ^Indexable (b/indexable e aid v vt c/g0)
+        gt-cur (.get giants d-eav)
+        gt     (when (b/giant? i)
+                 (or gt-cur
+                     (let [[_ ^Retrieved r]
+                           (nth
+                             (lmdb/list-range
+                               (.-lmdb store) c/eav [:closed e e] :id
+                               [:closed
+                                i
+                                (Indexable. e aid v (.-f i) (.-b i) c/gmax)]
+                               :avg)
+                             0)]
+                       (.-g r))))]
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
@@ -960,7 +972,7 @@
       (.add txs [:del-list c/ave ii [ii] :av :eg])
       (.add txs [:del-list c/eav e [ii] :id :avg])
       (when gt
-        (when gt-this-tx (.remove giants d-eav))
+        (when gt-cur (.remove giants d-eav))
         (.add txs [:del c/giants gt :id]))
       (when (= :db.type/ref vt) (.add txs [:del-list c/vae v [ii] :id :ae])))))
 
