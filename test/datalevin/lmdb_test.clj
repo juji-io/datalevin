@@ -313,7 +313,16 @@
     (is (= (l/key-range-count lmdb "list" [:all] :string 2) 2))
 
     (l/visit-key-range lmdb "list" kvisit [:all] :string)
-    (is (= " a b c" @joins))
+    (is (= "a b c" (s/trim @joins)))
+
+    (is (= (l/key-range-list-count lmdb "list" [:all] :string) 10))
+    (is (= (l/key-range-list-count lmdb "list" [:all] :string 5) 7))
+    (is (= (l/key-range-list-count lmdb "list" [:greater-than "a"] :string)
+           6))
+    (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string)
+           7))
+    (is (= (l/key-range-list-count lmdb "list" [:less-than "c"] :string 5)
+           7))
 
     (is (= (l/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
     (is (= (l/key-range-count lmdb "list" [:greater-than "b"] :string) 1))

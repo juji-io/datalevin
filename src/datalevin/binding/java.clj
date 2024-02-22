@@ -536,6 +536,26 @@
     (.count cur)
     0))
 
+(defn- key-range-list-count*
+  [^DBI dbi ^Rtx rtx ^Cursor cur k-range k-type cap]
+  (let [^Iterable iterable (.iterate-key dbi rtx cur k-range k-type)
+        ^Iterator iter     (.iterator iterable)]
+    (if cap
+      (loop [c 0]
+        (if (<= ^long cap c)
+          c
+          (if (.hasNext iter)
+            (let [n (.count cur)]
+              (.next iter)
+              (recur (+ c n)))
+            c)))
+      (loop [c 0]
+        (if (.hasNext iter)
+          (let [n (.count cur)]
+            (.next iter)
+            (recur (+ c n)))
+          c)))))
+
 (defn- in-list?*
   [^Rtx rtx ^Cursor cur k kt v vt]
   (l/list-range-info rtx :at-least k nil kt :at-least v nil vt)
@@ -960,14 +980,22 @@
           (visit-list* rtx cur visitor raw-pred? k kt vt)
           (raise "Fail to visit list: " e {:dbi dbi-name :k k})))))
 
-  (list-count [this dbi-name k kt]
-    (.check-ready this)
+  (list-count [lmdb dbi-name k kt]
+    (.check-ready lmdb)
     (if k
-      (let [lmdb this]
-        (scan/scan
-          (list-count* rtx cur k kt)
-          (raise "Fail to count list: " e {:dbi dbi-name :k k})))
+      (scan/scan
+        (list-count* rtx cur k kt)
+        (raise "Fail to count list: " e {:dbi dbi-name :k k}))
       0))
+
+  (key-range-list-count [lmdb dbi-name k-range k-type]
+    (.key-range-list-count lmdb dbi-name k-range k-type nil))
+  (key-range-list-count [lmdb dbi-name k-range k-type cap]
+    (.check-ready lmdb)
+    (scan/scan
+      (key-range-list-count* dbi rtx cur k-range k-type cap)
+      (raise "Fail to count list in key range: " e
+             {:dbi dbi-name :k-range k-range})))
 
   (in-list? [this dbi-name k v kt vt]
     (.check-ready this)

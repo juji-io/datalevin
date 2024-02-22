@@ -220,8 +220,8 @@ values;")
     "Return the number of keys in the specified key range, does not read
 values;")
   (key-range-list-count
-    [db dbi-name k-range]
     [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type cap]
     "Return the total number of list items in the specified key range, does not read values;")
   (range-count
     [db dbi-name k-range]

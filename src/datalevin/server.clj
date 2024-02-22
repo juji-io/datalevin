@@ -1118,6 +1118,7 @@
    'get-first
    'key-range
    'key-range-count
+   'key-range-list-count
    'visit-key-range
    'get-range
    'range-count
@@ -1943,6 +1944,10 @@
 (defn- key-range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler key-range-count)))
+
+(defn- key-range-list-count
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error (normal-kv-store-handler key-range-list-count)))
 
 (defn- visit-key-range
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
