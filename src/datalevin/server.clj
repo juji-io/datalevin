@@ -1118,6 +1118,7 @@
    'get-first
    'key-range
    'key-range-count
+   'visit-key-range
    'get-range
    'range-count
    'get-some
@@ -1942,6 +1943,13 @@
 (defn- key-range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]
   (wrap-error (normal-kv-store-handler key-range-count)))
+
+(defn- visit-key-range
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [frozen (nth args 2)
+          args   (replace {frozen (b/deserialize frozen)} args)]
+      (normal-kv-store-handler visit-key-range))))
 
 (defn- range-count
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

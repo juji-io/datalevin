@@ -8,6 +8,7 @@
    [datalevin.constants :as c]
    [datalevin.datom :as d]
    [datalevin.test.core :as tdc :refer [db-fixture]]
+   [clojure.string :as s]
    [clojure.test :refer [deftest testing is use-fixtures]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
@@ -282,6 +283,11 @@
                     [kv]
                   (let [^long v (b/read-buffer (l/v kv) :long)]
                     (vswap! sum #(+ ^long %1 ^long %2) v)))
+        joins   (volatile! "")
+        kvisit  (i/inter-fn
+                    [bf]
+                  (let [k (b/read-buffer bf :string)]
+                    (vswap! joins #(s/join " " [% k]))))
         values  (volatile! [])
         op-gen  (i/inter-fn
                     [k kt]
@@ -304,6 +310,11 @@
     (is (= (l/entries lmdb "list") 10))
 
     (is (= (l/key-range-count lmdb "list" [:all]) 3))
+    (is (= (l/key-range-count lmdb "list" [:all] :string 2) 2))
+
+    (l/visit-key-range lmdb "list" kvisit [:all] :string)
+    (is (= " a b c" @joins))
+
     (is (= (l/key-range lmdb "list" [:all] :string) ["a" "b" "c"]))
     (is (= (l/key-range-count lmdb "list" [:greater-than "b"] :string) 1))
     (is (= (l/key-range lmdb "list" [:less-than "b"] :string) ["a"]))

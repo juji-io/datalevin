@@ -208,11 +208,21 @@
     [db dbi-name k-range k-type]
     "Return an eager seq of keys in the specified key range, does not read
 values;")
+  (visit-key-range
+    [db dbi-name visitor k-range]
+    [db dbi-name visitor k-range k-type]
+    [db dbi-name visitor k-range k-type raw-pred?]
+    "Visit keys in the specified key range for side effects. Return nil.")
   (key-range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]
+    [db dbi-name k-range k-type cap]
     "Return the number of keys in the specified key range, does not read
 values;")
+  (key-range-list-count
+    [db dbi-name k-range]
+    [db dbi-name k-range k-type]
+    "Return the total number of list items in the specified key range, does not read values;")
   (range-count
     [db dbi-name k-range]
     [db dbi-name k-range k-type]

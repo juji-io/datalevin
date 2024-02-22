@@ -416,6 +416,17 @@
   ([db dbi-name k-range k-type]
    (when-let [d (get-kv db)] (d/key-range-count d dbi-name k-range k-type))))
 
+(defn visit-key-range
+  ([db dbi-name visitor k-range]
+   (when-let [d (get-kv db)]
+     (d/visit-key-range d dbi-name visitor k-range)))
+  ([db dbi-name visitor k-range k-type]
+   (when-let [d (get-kv db)]
+     (d/visit-key-range d dbi-name visitor k-range k-type)))
+  ([db dbi-name visitor k-range k-type raw-pred?]
+   (when-let [d (get-kv db)]
+     (d/visit-key-range d dbi-name visitor k-range k-type raw-pred?))))
+
 (defn range-count
   ([db dbi-name k-range]
    (when-let [d (get-kv db)] (d/range-count d dbi-name k-range)))
@@ -423,58 +434,58 @@
    (when-let [d (get-kv db)] (d/range-count d dbi-name k-range k-type))))
 
 (defn get-some
-  ([db dbi-name pred k-range]
-   (when-let [d (get-kv db)] (d/get-some d dbi-name pred k-range)))
-  ([db dbi-name pred k-range k-type]
-   (when-let [d (get-kv db)]
-     (d/get-some d dbi-name pred k-range k-type)))
-  ([db dbi-name pred k-range k-type v-type]
-   (when-let [d (get-kv db)]
-     (d/get-some d dbi-name pred k-range k-type v-type)))
-  ([db dbi-name pred k-range k-type v-type ignore-key?]
-   (when-let [d (get-kv db)]
-     (d/get-some d dbi-name pred k-range k-type v-type ignore-key?)))
-  ([db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
-   (when-let [d (get-kv db)]
-     (d/get-some d dbi-name pred k-range k-type v-type ignore-key? raw-pred?))))
+([db dbi-name pred k-range]
+ (when-let [d (get-kv db)] (d/get-some d dbi-name pred k-range)))
+([db dbi-name pred k-range k-type]
+ (when-let [d (get-kv db)]
+   (d/get-some d dbi-name pred k-range k-type)))
+([db dbi-name pred k-range k-type v-type]
+ (when-let [d (get-kv db)]
+   (d/get-some d dbi-name pred k-range k-type v-type)))
+([db dbi-name pred k-range k-type v-type ignore-key?]
+ (when-let [d (get-kv db)]
+   (d/get-some d dbi-name pred k-range k-type v-type ignore-key?)))
+([db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
+ (when-let [d (get-kv db)]
+   (d/get-some d dbi-name pred k-range k-type v-type ignore-key? raw-pred?))))
 
 (defn range-filter
-  ([db dbi-name pred k-range]
-   (when-let [d (get-kv db)]
-     (into [] (d/range-filter d dbi-name pred k-range))))
-  ([db dbi-name pred k-range k-type]
-   (when-let [d (get-kv db)]
-     (into [] (d/range-filter d dbi-name pred k-range k-type))))
-  ([db dbi-name pred k-range k-type v-type]
-   (when-let [d (get-kv db)]
-     (into [] (d/range-filter d dbi-name pred k-range k-type v-type))))
-  ([db dbi-name pred k-range k-type v-type ignore-key?]
-   (when-let [d (get-kv db)]
-     (into
-       []
-       (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?))))
-  ([db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
-   (when-let [d (get-kv db)]
-     (into
-       []
-       (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?
-                       raw-pred?)))))
+([db dbi-name pred k-range]
+ (when-let [d (get-kv db)]
+   (into [] (d/range-filter d dbi-name pred k-range))))
+([db dbi-name pred k-range k-type]
+ (when-let [d (get-kv db)]
+   (into [] (d/range-filter d dbi-name pred k-range k-type))))
+([db dbi-name pred k-range k-type v-type]
+ (when-let [d (get-kv db)]
+   (into [] (d/range-filter d dbi-name pred k-range k-type v-type))))
+([db dbi-name pred k-range k-type v-type ignore-key?]
+ (when-let [d (get-kv db)]
+   (into
+     []
+     (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?))))
+([db dbi-name pred k-range k-type v-type ignore-key? raw-pred?]
+ (when-let [d (get-kv db)]
+   (into
+     []
+     (d/range-filter d dbi-name pred k-range k-type v-type ignore-key?
+                     raw-pred?)))))
 
 (defn range-keep
-  ([db dbi-name pred k-range]
-   (when-let [d (get-kv db)]
-     (into [] (d/range-keep d dbi-name pred k-range))))
-  ([db dbi-name pred k-range k-type]
-   (when-let [d (get-kv db)]
-     (into [] (d/range-keep d dbi-name pred k-range k-type))))
-  ([db dbi-name pred k-range k-type v-type]
-   (when-let [d (get-kv db)]
-     (into [] (d/range-keep d dbi-name pred k-range k-type v-type))))
-  ([db dbi-name pred k-range k-type v-type raw-pred?]
-   (when-let [d (get-kv db)]
-     (into
-       []
-       (d/range-keep d dbi-name pred k-range k-type v-type raw-pred?)))))
+([db dbi-name pred k-range]
+ (when-let [d (get-kv db)]
+   (into [] (d/range-keep d dbi-name pred k-range))))
+([db dbi-name pred k-range k-type]
+ (when-let [d (get-kv db)]
+   (into [] (d/range-keep d dbi-name pred k-range k-type))))
+([db dbi-name pred k-range k-type v-type]
+ (when-let [d (get-kv db)]
+   (into [] (d/range-keep d dbi-name pred k-range k-type v-type))))
+([db dbi-name pred k-range k-type v-type raw-pred?]
+ (when-let [d (get-kv db)]
+   (into
+     []
+     (d/range-keep d dbi-name pred k-range k-type v-type raw-pred?)))))
 
 (defn range-some
   ([db dbi-name pred k-range]
@@ -725,6 +736,7 @@
    'get-range                 get-range
    'key-range                 key-range
    'key-range-count           key-range-count
+   'visit-key-range           visit-key-range
    'range-count               range-count
    'get-some                  get-some
    'range-filter              range-filter

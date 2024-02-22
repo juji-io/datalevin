@@ -1311,6 +1311,24 @@ This function is eager and attempts to load all data in range into memory. When 
               ;;==> 1002"}
   key-range-count l/key-range-count)
 
+(def ^{:arglists '([db dbi-name visitor k-range]
+                   [db dbi-name visitor k-range k-type]
+                   [db dbi-name visitor k-range k-type raw-pred?])
+       :doc      "Call `visitor` function on each key in the specified key range, presumably for side effects. Return `nil`. If `raw-pred?` is true (default), `visitor` takes a single `ByteBuffer` as the key, otherwise, takes the decoded value of the key.
+
+      If `visitor` function returns a special value `:datalevin/terminate-visit`, the visit will stop immediately.
+
+      For client/server usage, [[datalevin.interpret/inter-fn]] should be used to define the `visitor` function. For babashka pod usage, `defpodfn` should be used.
+
+    `k-type` indicates data type of `k` and the allowed data types are described
+    in [[read-buffer]].
+
+     `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of
+     `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`,
+     `:less-than`, `:open`, `:open-closed`, plus backward variants that put a
+     `-back` suffix to each of the above, e.g. `:all-back`;"}
+  visit-key-range l/visit-key-range)
+
 (def ^{:arglists '([db dbi-name k-range]
                    [db dbi-name k-range k-type]
                    [db dbi-name k-range k-type v-type]

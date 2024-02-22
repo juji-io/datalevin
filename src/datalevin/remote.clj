@@ -381,6 +381,17 @@
     (cl/normal-request client :key-range-count
                        [db-name dbi-name k-range k-type] writing?))
 
+  (visit-key-range [db dbi-name visitor k-range]
+    (l/visit-key-range db dbi-name visitor k-range :data true))
+  (visit-key-range [db dbi-name visitor k-range k-type]
+    (l/visit-key-range db dbi-name visitor k-range k-type true))
+  (visit-key-range [_ dbi-name visitor k-range k-type raw-pred?]
+    (let [frozen-visitor (b/serialize visitor)]
+      (cl/normal-request
+        client :visit-key-range
+        [db-name dbi-name frozen-visitor k-range k-type raw-pred?]
+        writing?)))
+
   ;; TODO implements batch remote request
   ;; (range-seq [db dbi-name k-range]
   ;;   (l/range-seq db dbi-name k-range :data :data false nil))

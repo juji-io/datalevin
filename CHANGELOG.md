@@ -31,6 +31,7 @@
     * `operate-list-val-range`
 - [KV] `key-range` function that returns a range of keys only.
 - [KV] `key-range-count` function that returns the number of keys in a range.
+- [KV] `visit-key-range` function that visit keys in a range for side effects.
 - [KV] `range-some` function that is similar to `some` for a given range.
 - [KV] `range-keep` function that is similar to `keep` for a given range.
 - [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as

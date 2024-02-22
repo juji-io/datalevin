@@ -192,11 +192,29 @@
     (raise "Fail to get key-range: " e
            {:dbi dbi-name :k-range k-range :k-type k-type })))
 
+(defn visit-key-range
+  [lmdb dbi-name visitor k-range k-type raw-pred?]
+  (scan
+    (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)
+          ^Iterator iter     (.iterator iterable)]
+      (loop []
+        (when (.hasNext iter)
+          (let [k   (l/k (.next iter))
+                res (if raw-pred?
+                      (visitor k)
+                      (visitor (b/read-buffer k k-type)))]
+            (when-not (= res :datalevin/terminate-visit)
+              (recur))))))
+    (raise "Fail to visit key range: " e
+           {:dbi dbi-name :k-range k-range :k-type k-type })))
+
 (defn key-range-count
-  [lmdb dbi-name k-range k-type]
+  [lmdb dbi-name k-range k-type cap]
   (scan
     (let [^Iterable iterable (l/iterate-key dbi rtx cur k-range k-type)]
-      (range-count* iterable))
+      (if cap
+        (range-count* iterable cap)
+        (range-count* iterable)))
     (raise "Fail to get key-range-count: " e
            {:dbi dbi-name :k-range k-range :k-type k-type })))
 

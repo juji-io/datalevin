@@ -828,10 +828,19 @@
   (key-range [this dbi-name k-range k-type]
     (scan/key-range this dbi-name k-range k-type))
 
+  (visit-key-range [this dbi-name visitor k-range]
+    (.visit-key-range this dbi-name visitor k-range :data true))
+  (visit-key-range [this dbi-name visitor k-range k-type]
+    (.visit-key-range this dbi-name visitor k-range k-type true))
+  (visit-key-range [this dbi-name visitor k-range k-type raw-pred?]
+    (scan/visit-key-range this dbi-name visitor k-range k-type raw-pred?))
+
   (key-range-count [this dbi-name k-range]
     (.key-range-count this dbi-name k-range :data))
   (key-range-count [this dbi-name k-range k-type]
-    (scan/key-range-count this dbi-name k-range k-type))
+    (.key-range-count this dbi-name k-range k-type nil))
+  (key-range-count [this dbi-name k-range k-type cap]
+    (scan/key-range-count this dbi-name k-range k-type cap))
 
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
