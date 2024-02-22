@@ -510,7 +510,13 @@
       lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false) :av))
 
   (av-range-size [this a lv hv] (.av-range-size this a lv hv nil))
-  (av-range-size [_ a lv hv cap])
+  (av-range-size [_ a lv hv cap]
+    (lmdb/key-range-list-count
+      lmdb c/ave
+      [:closed
+       (datom->indexable schema (d/datom c/e0 a lv) false)
+       (datom->indexable schema (d/datom c/emax a hv) true)]
+      :av cap))
 
   (head [this index low-datom high-datom]
     (retrieved->datom lmdb attrs

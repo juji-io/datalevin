@@ -58,6 +58,8 @@
       (is (= 1 (sut/size store :eav d d)))
       (is (= 1 (sut/e-size store c/e0)))
       (is (= 1 (sut/a-size store a)))
+      (is (= 1 (sut/av-size store a v)))
+      (is (= 1 (sut/av-range-size store a v v)))
       (is (= d (sut/head store :eav d d)))
       (is (= d (sut/tail store :eav d d)))
       (sut/swap-attr store b merge p1)
@@ -298,6 +300,8 @@
         d10   (d/datom 15 :a "15a")
         d11   (d/datom 15 :b 1)
         d12   (d/datom 20 :b 2)
+        d13   (d/datom 20 :b 4)
+        d14   (d/datom 20 :b 7)
         dir   (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
         store (sut/open dir
                         {:a {:db/valueType   :db.type/string
@@ -306,14 +310,28 @@
                              :db/valueType   :db.type/long}}
                         {:kv-opts
                          {:flags (conj c/default-env-flags :nosync)}})]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
+    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
+    (is (= 6 (sut/a-size store :a)))
+    (is (= 4 (sut/a-size store :a 4)))
+
+    (is (= 9 (sut/a-size store :b)))
+    (is (= 4 (sut/a-size store :b 4)))
+
+    (is (= 1 (sut/av-size store :a "8a")))
+    (is (= 2 (sut/av-size store :b 7)))
+
+    (is (= 5 (sut/av-range-size store :b 7 20)))
+    (is (= 7 (sut/av-range-size store :b 4 20)))
+
+    (is (= 3 (sut/av-range-size store :b 2 4 2)))
+
     (is (= (set [[8] [10]])
            (set (mapv vec (sut/ave-tuples store :b [:at-least 11])))))
     (is (= (set [[8 11] [10 15] [10 20]])
            (set (mapv vec (sut/ave-tuples store :b [:at-least 11] nil true)))))
     (is (= (set [[15] [20] [10] [0] [8]])
            (set (mapv vec (sut/ave-tuples store :b [:at-most 11])))))
-    (is (= (set [[15] [0] [8]])
+    (is (= (set [[15] [0] [8] [20]])
            (set (mapv vec (sut/ave-tuples store :b [:at-most 11] odd?)))))
     (is (= (set [[8] [10]])
            (set (mapv vec (sut/ave-tuples store :b [:closed-open 11 20])))))
@@ -321,11 +339,11 @@
            (set (mapv vec (sut/ave-tuples store :b [:greater-than 11])))))
     (is (= (set [[15] [20] [10] [0]])
            (set (mapv vec (sut/ave-tuples store :b [:less-than 11])))))
-    (is (= (set [[15 1] [0 7]])
+    (is (= (set [[15 1] [0 7] [20 7]])
            (set (mapv vec (sut/ave-tuples store :b [:less-than 11] odd? true)))))
-    (is (= (set [[10] [0]])
+    (is (= (set [[10] [0] [20]])
            (set (mapv vec (sut/ave-tuples store :b [:open 2 11])))))
-    (is (= (set [[10] [0] [8]])
+    (is (= (set [[10] [0] [8] [20]])
            (set (mapv vec (sut/ave-tuples store :b [:open-closed 2 11])))))
     (is (= (set [[8]])
            (set (mapv vec (sut/ave-tuples store :a [:at-least "8"])))))
