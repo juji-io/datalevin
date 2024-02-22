@@ -239,6 +239,8 @@
     "Return the numbers of datoms with the given a and v value")
   (av-range-size [this a lv hv] [this a lv hv cap]
     "Return the numbers of datoms with the given a and v range")
+  (cardinality [this a]
+    "Return the number of distinct values of an attribute")
   (head [this index low-datom high-datom]
     "Return the first datom within the given range (inclusive)")
   (tail [this index high-datom low-datom]
@@ -517,6 +519,14 @@
        (datom->indexable schema (d/datom c/e0 a lv) false)
        (datom->indexable schema (d/datom c/emax a hv) true)]
       :av cap))
+
+  (cardinality [_ a]
+    (lmdb/key-range-count
+      lmdb c/ave
+      [:closed
+       (datom->indexable schema (d/datom c/e0 a nil) false)
+       (datom->indexable schema (d/datom c/emax a nil) true)]
+      :av))
 
   (head [this index low-datom high-datom]
     (retrieved->datom lmdb attrs

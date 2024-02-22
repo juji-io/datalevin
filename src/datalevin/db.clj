@@ -46,7 +46,8 @@
   (-schema [db])
   (-rschema [db])
   (-attrs-by [db property])
-  (-clear-tx-cache [db]))
+  (-clear-tx-cache [db])
+  (-cardinality [db attr]))
 
 (defprotocol ISearchable
   (-searchable? [_]))
@@ -126,6 +127,11 @@
       (clear avet)
       (clear vaet)
       db))
+  (-cardinality
+    [db attr]
+    (wrap-cache
+        store [:cardinality attr]
+      (s/cardinality store attr)))
 
   ITuples
   (-init-tuples
