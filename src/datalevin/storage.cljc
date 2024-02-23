@@ -378,8 +378,7 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      (let [n      (count datoms)
-            ;; fulltext [:a d [e aid v]], [:d d [e aid v]],
+      (let [;; fulltext [:a d [e aid v]], [:d d [e aid v]],
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (transient [])
             ;; needed because a giant may be deleted in the same tx

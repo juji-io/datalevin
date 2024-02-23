@@ -5,7 +5,7 @@
 - [Datalog] Concurrent writes of large data values.
 - [Server] Recover options after automatic reconnect. #241
 ### Added
-- [Datalog] `:closed-schema?` option to allow only declared attributes, default
+- [Datalog] `:closed-schema?` option to allow declared attributes only, default
   is `false`. [Thx @andersmurphy]
 ### Improved
 - [Datalog] ported applicable improvements from Datascript up to 1.6.3

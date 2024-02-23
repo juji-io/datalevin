@@ -67,7 +67,7 @@
 (defn same-keys? [a b]
   (and (= (count a) (count b))
        (every? #(contains? b %) (keys a))
-       (every? #(contains? b %) (keys a))))
+       (every? #(contains? a %) (keys b))))
 
 (defn- looks-like? [pattern form]
   (cond
@@ -124,6 +124,24 @@
       (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
     res))
 
+(defn- sum-rel*
+  [attrs-a tuples-a attrs-b tuples-b]
+  (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
+                          [idx-b (attrs-a sym)]))
+        tlen       (->> (vals attrs-a) ^long (reduce max) (inc))
+        tuples'    (persistent!
+                     (reduce
+                       (fn [acc tuple-b]
+                         (let [tuple' (make-array Object tlen)
+                               tg     (if (u/array? tuple-b) typed-aget get)]
+                           (doseq [[idx-b idx-a] idxb->idxa]
+                             (aset ^objects tuple'
+                                   idx-a (tg tuple-b idx-b)))
+                           (conj! acc tuple')))
+                       (transient (vec tuples-a))
+                       tuples-b))]
+    (relation! attrs-a tuples')))
+
 (defn sum-rel [a b]
   (let [{attrs-a :attrs, tuples-a :tuples} a
         {attrs-b :attrs, tuples-b :tuples} b]
@@ -131,31 +149,19 @@
       (= attrs-a attrs-b)
       (relation! attrs-a (into (vec tuples-a) tuples-b))
 
+      (empty? tuples-a) b
+      (empty? tuples-b) a
+
       (not (same-keys? attrs-a attrs-b))
       (raise "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
              {:error :query/where})
 
       (every? number? (vals attrs-a)) ;; can’t conj into BTSetIter
-      (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
-                              [idx-b (attrs-a sym)]))
-            tlen       (->> (vals attrs-a) ^long (reduce max) (inc))
-            tuples'    (persistent!
-                         (reduce
-                           (fn [acc tuple-b]
-                             (let [tuple' (make-array Object tlen)
-                                   tg     (if (u/array? tuple-b) typed-aget get)]
-                               (doseq [[idx-b idx-a] idxb->idxa]
-                                 (aset ^objects tuple'
-                                       idx-a (tg tuple-b idx-b)))
-                               (conj! acc tuple')))
-                           (transient (vec tuples-a))
-                           tuples-b))]
-        (relation! attrs-a tuples'))
+      (sum-rel* attrs-a tuples-a attrs-b tuples-b)
 
       :else
-      (let [all-attrs (zipmap (keys (merge attrs-a attrs-b)) (range))]
-        (-> (relation! all-attrs [])
-            (sum-rel a)
+      (let [number-attrs (zipmap (keys attrs-a) (range))]
+        (-> (sum-rel* number-attrs [] attrs-a tuples-a)
             (sum-rel b))))))
 
 (defn ^Relation prod-rel
@@ -857,12 +863,14 @@
          (update context :rels collapse-rels relation))))))
 
 (defn resolve-clause [context clause]
-  (if (rule? context clause)
-    (if (source? (first clause))
-      (binding [*implicit-source* (get (:sources context) (first clause))]
-        (resolve-clause context (next clause)))
-      (update context :rels collapse-rels (solve-rule context clause)))
-    (-resolve-clause context clause)))
+  (if (->> (:rels context) (some (comp empty? :tuples)))
+    context
+    (if (rule? context clause)
+      (if (source? (first clause))
+        (binding [*implicit-source* (get (:sources context) (first clause))]
+          (resolve-clause context (next clause)))
+        (update context :rels collapse-rels (solve-rule context clause)))
+      (-resolve-clause context clause))))
 
 (defn- sort-clauses [context clauses]
   (sort-by (fn [clause]
