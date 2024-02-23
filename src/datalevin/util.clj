@@ -379,13 +379,20 @@
       (and (< x 0) (< y 0))
       (and (> x 0) (> y 0))))
 
-(defn szudzik
-  "Szudzik's paring function"
-  [x y]
-  (let [x (int x) y (int y)]
-    (if (> y x)
-      (+ x (* y y))
-      (+ x y (* x x)))))
+(defn approximate-factorial
+  "https://www.luschny.de/math/factorial/approx/SimpleCases.html"
+  [^long x]
+  (let [[y p] (loop [y (inc x) p 1]
+                (if (< y 7)
+                  (recur (inc y) (* p y))
+                  [y p]))
+        y     (double y)
+        p     (double p)
+        r     (Math/exp
+                (+ (* y (- (Math/log y) 1))
+                   (/ 1 (* 2 (+ (* 6 y) (/ 1 (* 5 (+ y (/ 1 (* 4 y))))))))))
+        r     (if (< x 7) (/ r p) r)]
+    (long (* r (Math/sqrt (/ (* 2 Math/PI) y))))))
 
 (defn n-bits-mask ^long [^long n] (dec (bit-shift-left 1 n)))
 

@@ -1016,7 +1016,7 @@
               (some? val) (db/-count db [nil attr val] mcount)
               range       (let [[lv hv] (range->start-end range)]
                             (db/-index-range-size db attr lv hv mcount))
-              :else       (db/-count db [nil attr nil]))]
+              :else       (db/-count db [nil attr nil] mcount))]
         (if (< res ^long mcount)
           (-> node
               (assoc-in [k attr :count] res)
@@ -1148,6 +1148,10 @@
 
 (defn- build-plan*
   [db nodes]
+  (let [n     (count nodes)
+        table (UnifiedMap. n)]
+    (dotimes [i n]
+      ()))
   [])
 
 (defn- build-plan

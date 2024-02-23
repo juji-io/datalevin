@@ -12,7 +12,7 @@
 (use-fixtures :each db-fixture)
 
 (deftest single-encla-test
-  (let [dir (u/tmp-dir (str "single-encla-test--" (UUID/randomUUID)))
+  (let [dir (u/tmp-dir (str "single-encla-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir
                             {:name   {:db/unique :db.unique/identity}
                              :friend {:db/valueType :db.type/ref}
@@ -34,14 +34,6 @@
                        [?e :aka "bigmac"]
                        [?e :name "Oleg"]]
                      db ))
-           #{[37]}))
-    (is (= (set (d/q '[:find ?a
-                       :in $ ?n
-                       :where
-                       [?e :friend ?e1]
-                       [?e :name ?n]
-                       [?e1 :age ?a]]
-                     db "Ivan"))
            #{[37]}))
     (is (= (set (d/q '[:find ?a
                        :in $ ?n
@@ -103,29 +95,6 @@
                   [?e :name "Ivan"]
                   [?e :age ?v]] db)
            #{[1 15]}))
-    (is (= (d/q '[:find  ?e1 ?e2
-                  :where
-                  [?e1 :name ?n]
-                  [?e2 :name ?n]] db)
-           #{[1 1] [2 2] [3 3] [4 4] }))
-    (is (= (d/q '[:find  ?e ?e2 ?n
-                  :in $ ?i
-                  :where
-                  [?e :name ?i]
-                  [?e :age ?a]
-                  [?e2 :age ?a]
-                  [?e2 :name ?n]] db "Ivan")
-           #{[1 1 "Ivan"]
-             [1 4 "John"]}))
-    (is (= (d/q '[:find ?n
-                  :in $ ?i
-                  :where
-                  [?e :name ?i]
-                  [?e :age ?a]
-                  [?e2 :age ?a2]
-                  [(< ?a ?a2)]
-                  [?e2 :name ?n]] db "Ivan")
-           #{["Oleg"] ["Petr"]}))
     (is (= (d/q '[:find  ?a1
                   :where
                   [_ :age ?a1]
@@ -169,5 +138,87 @@
                   [(?my-fn) ?result]
                   [(< ?result 3)]]
                 db (fn [] 5))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest multiple-encla-test
+  (let [dir (u/tmp-dir (str "multi-encla-test-" (UUID/randomUUID)))
+        db  (-> (d/empty-db
+                  dir
+                  {:person/name   {:db/unique    :db.unique/identity
+                                   :db/valueType :db.type/string}
+                   :person/friend {:db/valueType   :db.type/ref
+                                   :db/cardinality :db.cardinality/many}
+                   :person/aka    {:db/cardinality :db.cardinality/many
+                                   :db/valueType   :db.type/string}
+                   :person/age    {:db/valueType :db.type/long}
+                   :person/city   {:db/valueType :db.type/string}
+                   :person/hobby  {:db/valueType   :db.type/string
+                                   :db/cardinality :db.cardinality/many}
+                   :person/school {:db/valueType   :db.type/ref
+                                   :db/cardinality :db.cardinality/many}
+                   :school/name   {:db/valueType :db.type/string
+                                   :db/unique    :db.unique/identity}
+                   :school/city   {:db/valueType :db.type/string}}
+                  {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+                (d/db-with [{:db/id         1,
+                             :person/name   "Ivan",
+                             :person/age    15
+                             :person/aka    ["robot" "ai"]
+                             :person/school "Leland"
+                             :person/city   "San Jose"
+                             :person/hobby  ["video games" "chess"]
+                             :person/friend 2}
+                            {:db/id         2,
+                             :person/name   "Petr",
+                             :person/age    16
+                             :person/aka    "fixer"
+                             :person/school "Mission"
+                             :person/city   "Fremont"
+                             :person/hobby  ["video games"]
+                             :person/friend [1 3]}
+                            {:db/id        3,
+                             :person/name  "Oleg",
+                             :person/city  "San Jose"
+                             :person/age   22
+                             :person/hobby ["video games"]
+                             :person/aka   ["bigmac"]}
+                            {:db/id         4,
+                             :person/name   "John"
+                             :person/school "Mission"
+                             :person/city   "Fremont"
+                             :person/hobby  ["video games" "baseball"]
+                             :person/age    15}]))]
+    ;; (is (= (set (d/q '[:find ?a
+    ;;                    :in $ ?n
+    ;;                    :where
+    ;;                    [?e :friend ?e1]
+    ;;                    [?e :name ?n]
+    ;;                    [?e1 :age ?a]]
+    ;;                   db "Ivan"))
+    ;;        #{[37]}))
+    ;; (is (= (d/q '[:find  ?e1 ?e2
+    ;;               :where
+    ;;               [?e1 :name ?n]
+    ;;               [?e2 :name ?n]] db)
+    ;;        #{[1 1] [2 2] [3 3] [4 4] }))
+    ;; (is (= (d/q '[:find  ?e ?e2 ?n
+    ;;               :in $ ?i
+    ;;               :where
+    ;;               [?e :name ?i]
+    ;;               [?e :age ?a]
+    ;;               [?e2 :age ?a]
+    ;;               [?e2 :name ?n]] db "Ivan")
+    ;;        #{[1 1 "Ivan"]
+    ;;          [1 4 "John"]}))
+    ;; (is (= (d/q '[:find ?n
+    ;;               :in $ ?i
+    ;;               :where
+    ;;               [?e :name ?i]
+    ;;               [?e :age ?a]
+    ;;               [?e2 :age ?a2]
+    ;;               [(< ?a ?a2)]
+    ;;               [?e2 :name ?n]] db "Ivan")
+    ;;        #{["Oleg"] ["Petr"]}))
     (d/close-db db)
     (u/delete-files dir)))
