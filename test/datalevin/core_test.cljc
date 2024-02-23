@@ -646,9 +646,9 @@
         conn (sut/get-conn dir)
         d1   (apply str (repeat 1000 \a))
         d2   (apply str (repeat 1000 \a))
-        tx1  [{:a d1}]
-        tx2  [{:a d2}]]
+        tx1  [{:a d1 :b 1}]
+        tx2  [{:a d2 :b 2}]]
     (future (sut/transact! conn tx1))
     @(future (sut/transact! conn tx2))
-    (is (= 2 (count (sut/datoms @conn :eav))))
+    (is (= 4 (count (sut/datoms @conn :eav))))
     (sut/close conn)))
