@@ -1,5 +1,15 @@
 # Change Log
 
+## WIP
+### Fixed
+- [Datalog] Concurrent writes of large data values.
+- [Server] Recover options after automatic reconnect. #241
+### Added
+- [Datalog] `:closed-schema?` option to allow only declared attributes, default
+  is `false`. [Thx @andersmurphy]
+### Improved
+- [Datalog] ported applicable improvements from Datascript up to 1.6.3
+
 ## 0.8.26 (2024-02-09)
 ### Fixed
 - [Datalog] `:validate-data? true` not working for some data types. [Thx @andersmurphy]

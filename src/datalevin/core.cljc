@@ -328,10 +328,10 @@ Only usable for debug output.
               (transact! cn [{:db/id 1 :counter (inc now)}])
               (q query @cn 1))) "
   [[conn orig-conn] & body]
-  `(let [db#  ^DB (deref ~orig-conn)
-         s#   (.-store db#)
-         old# (datalog-index-cache-limit db#)]
-     (locking (l/write-txn s#)
+  `(locking ~orig-conn
+     (let [db#  ^DB (deref ~orig-conn)
+           s#   (.-store db#)
+           old# (datalog-index-cache-limit db#)]
        (datalog-index-cache-limit db# 0)
        (if (instance? DatalogStore s#)
          (let [res#    (if (l/writing? s#)

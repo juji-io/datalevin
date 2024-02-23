@@ -640,3 +640,15 @@
                     "fred")))
       (is (= 1 (count (sut/fulltext-datoms @conn1 "peirce"))))
       (sut/close conn1))))
+
+(deftest large-data-concurrent-write-test
+  (let [dir  (u/tmp-dir (str "large-concurrent-" (UUID/randomUUID)))
+        conn (sut/get-conn dir)
+        d1   (apply str (repeat 1000 \a))
+        d2   (apply str (repeat 1000 \a))
+        tx1  [{:a d1}]
+        tx2  [{:a d2}]]
+    (future (sut/transact! conn tx1))
+    @(future (sut/transact! conn tx2))
+    (is (= 2 (count (sut/datoms @conn :eav))))
+    (sut/close conn)))
