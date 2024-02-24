@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.8.27 (2024-02-23)
+## 0.8.28 (2024-02-23)
 ### Fixed
 - [Datalog] Concurrent writes of large data values.
 - [Server] Recover options after automatic reconnect. #241
