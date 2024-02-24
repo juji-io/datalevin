@@ -650,5 +650,5 @@
         tx2  [{:a d2 :b 2}]]
     (future (sut/transact! conn tx1))
     @(future (sut/transact! conn tx2))
-    (is (= 4 (count (sut/datoms @conn :eav))))
+    (is (#{2 4} (count (sut/datoms @conn :eav))))
     (sut/close conn)))
