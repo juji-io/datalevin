@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.8.29 (2024-02-23)
 ### Improved
 - Support older Clojure version.
 - [Server] Recover options after automatic reconnect. #241
