@@ -1,9 +1,13 @@
 # Change Log
 
+## WIP
+### Improved
+- Support older Clojure version.
+- [Server] Recover options after automatic reconnect. #241
+
 ## 0.8.28 (2024-02-23)
 ### Fixed
 - [Datalog] Concurrent writes of large data values.
-- [Server] Recover options after automatic reconnect. #241
 ### Added
 - [Datalog] `:closed-schema?` option to allow declared attributes only, default
   is `false`. [Thx @andersmurphy]

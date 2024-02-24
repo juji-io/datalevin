@@ -743,30 +743,24 @@
    (open dir nil))
   ([dir schema]
    (open dir schema nil))
-  ([dir schema {:keys [kv-opts search-opts search-domains validate-data?
-                       closed-schema?  auto-entity-time? db-name
-                       cache-limit]
-                :or   {validate-data?    false
-                       closed-schema?    false
-                       auto-entity-time? false
-                       db-name           (str (UUID/randomUUID))
-                       cache-limit       100}
+  ([dir schema {:keys [kv-opts search-opts search-domains]
                 :as   opts}]
    (let [dir  (or dir (u/tmp-dir (str "datalevin-" (UUID/randomUUID))))
          lmdb (lmdb/open-kv dir kv-opts)]
      (open-dbis lmdb)
-     (let [schema  (init-schema lmdb schema)
-           opts0   (load-opts lmdb)
-           domains (init-domains (:search-domains opts0)
+     (let [opts0   (load-opts lmdb)
+           opts1   (if (empty opts0)
+                     {:validate-data?    false
+                      :auto-entity-time? false
+                      :closed-schema?    false
+                      :db-name           (str (UUID/randomUUID))
+                      :cache-limit       100}
+                     opts0)
+           opts2   (merge opts1 opts)
+           schema  (init-schema lmdb schema)
+           domains (init-domains (:search-domains opts2)
                                  schema search-opts search-domains)]
-       (transact-opts lmdb (merge opts0
-                                  opts
-                                  {:validate-data?    validate-data?
-                                   :closed-schema?    closed-schema?
-                                   :auto-entity-time? auto-entity-time?
-                                   :db-name           db-name
-                                   :cache-limit       cache-limit
-                                   :search-domains    domains}))
+       (transact-opts lmdb opts2)
        (->Store lmdb
                 (init-engines lmdb domains)
                 (load-opts lmdb)
