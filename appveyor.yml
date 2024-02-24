@@ -54,7 +54,7 @@ build_script:
     7z a dtlv-0.8.29-windows-amd64.zip dtlv.exe
 
 artifacts:
-  - path: native\dtlv-0.9.29-windows-amd64.zip
+  - path: native\dtlv-0.8.29-windows-amd64.zip
 
 deploy:
   provider: GitHub
