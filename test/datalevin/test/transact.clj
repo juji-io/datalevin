@@ -696,16 +696,16 @@
           (d/db-with db [{:db/id -1 :company "IBM" :id "ibm" :code 1}])))
     (is (thrown-with-msg?
           Exception #"Invalid data, expecting"
-          (d/db-with db [{:db/id -2 :company 1 :id (UUID/randomUUID/g) :code 1}])))
+          (d/db-with db [{:db/id -2 :company 1 :id (UUID/randomUUID) :code 1}])))
     (is (thrown-with-msg?
           Exception #"Invalid data, expecting"
-          (d/db-with db [{:db/id -3 :company :abc :id (UUID/randomUUID/g) :code 1}])))
+          (d/db-with db [{:db/id -3 :company :abc :id (UUID/randomUUID) :code 1}])))
     (is (thrown-with-msg?
           Exception #"Invalid data, expecting"
-          (d/db-with db [{:db/id -4 :company 1.0 :id (UUID/randomUUID/g) :code 1}])))
+          (d/db-with db [{:db/id -4 :company 1.0 :id (UUID/randomUUID) :code 1}])))
     (is (thrown-with-msg?
           Exception #"Invalid data, expecting"
-          (d/db-with db [{:db/id -5 :company "XYZ" :id (UUID/randomUUID/g) :code "1"}])))
+          (d/db-with db [{:db/id -5 :company "XYZ" :id (UUID/randomUUID) :code "1"}])))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -719,7 +719,7 @@
           Exception
           #"Attribute is not defined"
           (d/db-with db
-                     [{:db/id          -1 :company "IBM" :id (UUID/randomUUID/g)
+                     [{:db/id          -1 :company "IBM" :id (UUID/randomUUID)
                        :undefined-attr "ibm"}])))
     (d/close-db db)
     (u/delete-files dir)))
