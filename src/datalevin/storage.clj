@@ -932,7 +932,12 @@
 (defn- insert-datom
   [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
   (let [attr   (.-a d)
-        props  (or ((schema store) attr)
+        schema (schema store)
+        _      (or (not (:closed-schema? (opts store)))
+                   (schema attr)
+                   (u/raise "Attribute is not defined in schema when
+`:closed-schema?` is true:" attr {}))
+        props  (or (schema attr)
                    (swap-attr store attr identity))
         vt     (value-type props)
         e      (.-e d)
