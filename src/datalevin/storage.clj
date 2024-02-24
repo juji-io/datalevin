@@ -936,7 +936,7 @@
         _      (or (not (:closed-schema? (opts store)))
                    (schema attr)
                    (u/raise "Attribute is not defined in schema when
-`:closed-schema?` is true:" attr {}))
+`:closed-schema?` is true: " attr {:attr attr :value (.-v d)}))
         props  (or (schema attr)
                    (swap-attr store attr identity))
         vt     (value-type props)
@@ -946,7 +946,7 @@
         max-gt (max-gt store)
         _      (or (not (:validate-data? (opts store)))
                    (b/valid-data? v vt)
-                   (u/raise "Invalid data, expecting" vt {:input v}))
+                   (u/raise "Invalid data, expecting" vt " got " v {:input v}))
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)]
     (.add txs [:put c/ave i i :av :eg])
@@ -1090,8 +1090,9 @@
            opts1   (if (empty opts0)
                      {:validate-data?    false
                       :auto-entity-time? false
+                      :closed-schema?    false
                       :db-name           (str (UUID/randomUUID))
-                      :cache-limit       32}
+                      :cache-limit       64}
                      opts0)
            opts2   (merge opts1 opts)
            schema  (init-schema lmdb schema)

@@ -766,12 +766,14 @@
 
 (defn resolve-clause
   [context clause]
-  (if (rule? context clause)
-    (if (source? (first clause))
-      (binding [*implicit-source* (get (:sources context) (first clause))]
-        (resolve-clause context (next clause)))
-      (update context :rels collapse-rels (solve-rule context clause)))
-    (-resolve-clause context clause)))
+  (if (->> (:rels context) (some (comp empty? :tuples)))
+    context
+    (if (rule? context clause)
+      (if (source? (first clause))
+        (binding [*implicit-source* (get (:sources context) (first clause))]
+          (resolve-clause context (next clause)))
+        (update context :rels collapse-rels (solve-rule context clause)))
+      (-resolve-clause context clause))))
 
 (defn- or-join-var?
   [clause s]

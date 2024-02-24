@@ -871,7 +871,7 @@
     [ts gen/string-alphanumeric
      tk gen/keyword
      tl gen/int
-     tf (gen/double* {:NaN? false})]
+     tf (gen/double* {:NaN? false :min Float/MIN_VALUE :max Float/MAX_VALUE})]
     (let [^ByteBuffer bf  (bf/allocate-buffer c/+max-key-size+)
           ^ByteBuffer bf1 (bf/allocate-buffer c/+max-key-size+)
           _               (.clear ^ByteBuffer bf)

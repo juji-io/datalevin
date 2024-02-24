@@ -2,6 +2,8 @@
 
 (defproject org.clojars.huahaiy/datalevin-native version
   :description "Datalevin GraalVM native image and command line tool"
+  :license {:name "EPL-1.0"
+            :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :parent-project {:path    "../project.clj"
                    :inherit [:managed-dependencies :profiles
                              :deploy-repositories :global-vars

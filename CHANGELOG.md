@@ -58,6 +58,27 @@
 - [Search] Functions in `search-utils` namespace are now compiled instead of
   being interpreted to improve performance.
 
+## 0.8.29 (2024-02-23)
+### Improved
+- Support older Clojure version.
+- [Server] Recover options after automatic reconnect. #241
+
+## 0.8.28 (2024-02-23)
+### Fixed
+- [Datalog] Concurrent writes of large data values.
+### Added
+- [Datalog] `:closed-schema?` option to allow declared attributes only, default
+  is `false`. [Thx @andersmurphy]
+### Improved
+- [Datalog] ported applicable improvements from Datascript up to 1.6.3
+
+## 0.8.26 (2024-02-09)
+### Fixed
+- [Datalog] `:validate-data? true` not working for some data types. [Thx @andersmurphy]
+- [Datalog] ported applicable fixes from Datascript up to 1.6.1
+### Improved
+- bump deps
+
 ## 0.8.25 (2023-12-14)
 ### Added
 - [Datalog] Add `:db.fulltext/autoDomain` boolean property to attribute schema,
@@ -67,7 +88,6 @@
   Datomic, i.e. `(fulltext $ :my/attribute ?search)`.
 - [Search] Add `:search-opts` option to `new-search-engine` option argument,
   specifying default options passed to `search` function.
-
 
 ## 0.8.24 (2023-12-12)
 ### Added

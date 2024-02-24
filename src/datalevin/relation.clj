@@ -43,7 +43,25 @@
   [a b]
   (and (= (count a) (count b))
        (every? #(contains? b %) (keys a))
-       (every? #(contains? b %) (keys a))))
+       (every? #(contains? a %) (keys b))))
+
+(defn- sum-rel*
+  [attrs-a tuples-a attrs-b tuples-b]
+  (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
+                          [idx-b (attrs-a sym)]))
+        tlen       (->> (vals attrs-a) ^long (reduce max) (inc))
+        tuples'    (persistent!
+                     (reduce
+                       (fn [acc tuple-b]
+                         (let [tuple' (make-array Object tlen)
+                               tg     (if (u/array? tuple-b) typed-aget get)]
+                           (doseq [[idx-b idx-a] idxb->idxa]
+                             (aset ^objects tuple'
+                                   idx-a (tg tuple-b idx-b)))
+                           (conj! acc tuple')))
+                       (transient (vec tuples-a))
+                       tuples-b))]
+    (relation! attrs-a tuples')))
 
 (defn sum-rel
   [a b]
@@ -59,31 +77,20 @@
                    (do (.addAll ^List tuples-a ^List tuples-b)
                        tuples-a)))
 
+      (empty? tuples-a) b
+      (empty? tuples-b) a
+
       (not (same-keys? attrs-a attrs-b))
       (raise
         "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
         {:error :query/where})
 
-      (every? number? (vals attrs-a)) ;; can’t conj into BTSetIter
-      (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
-                              [idx-b (attrs-a sym)]))
-            tlen       (->> (vals attrs-a) ^long (reduce max) (inc))]
-        (relation! attrs-a
-                   (reduce
-                     (fn [^List acc tuple-b]
-                       (let [tuple' (make-array Object tlen)
-                             tg     (if (u/array? tuple-b) typed-aget get)]
-                         (doseq [[idx-b idx-a] idxb->idxa]
-                           (aset ^objects tuple' idx-a (tg tuple-b idx-b)))
-                         (.add acc tuple')
-                         acc))
-                     tuples-a
-                     tuples-b)))
+      (every? number? (vals attrs-a))
+      (sum-rel* attrs-a tuples-a attrs-b tuples-b)
 
       :else
-      (let [all-attrs (zipmap (keys (merge attrs-a attrs-b)) (range))]
-        (-> (relation! all-attrs (FastList. (+ size-a size-b)))
-            (sum-rel a)
+      (let [number-attrs (zipmap (keys attrs-a) (range))]
+        (-> (sum-rel* number-attrs [] attrs-a tuples-a)
             (sum-rel b))))))
 
 (defn prod-tuples

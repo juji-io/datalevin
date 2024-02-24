@@ -8,10 +8,9 @@
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
-                                 IList ILMDB IWriting IAdmin
-                                 IListRandKeyValIterable
-                                 IListRandKeyValIterator]]
+   [datalevin.lmdb :as l
+    :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
+            IListRandKeyValIterable IListRandKeyValIterator]]
    [clojure.string :as s]
    [clojure.java.io :as io])
   (:import
@@ -151,7 +150,7 @@
   (put-key [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
-        (raise "Invalid data, expecting" t {:input x}))
+        (raise "Invalid data, expecting" t " got " x {:input x}))
     (try
       (b/put-bf kb x t)
       (catch BufferOverflowException _
@@ -162,7 +161,7 @@
   (put-val [this x t]
     (or (not validate-data?)
         (b/valid-data? x t)
-        (raise "Invalid data, expecting " t {:input x}))
+        (raise "Invalid data, expecting " t " got " x {:input x}))
     (try
       (b/put-bf vb x t)
       (catch BufferOverflowException _
