@@ -145,7 +145,7 @@
   [
    ;; ["latest" "datomic"]
    ;; ["latest" "datascript"]
-   ["0.8.26" "datalevin"]
+   ["0.8.29" "datalevin"]
    ["latest" "datalevin"]])
 
 
@@ -166,4 +166,4 @@
         (run-benchmarks version vm benchmarks)))))
 
 (shutdown-agents)
-                                        ; (System/exit 0)
+;; (System/exit 0)

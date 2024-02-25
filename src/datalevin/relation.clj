@@ -49,33 +49,30 @@
   [attrs-a tuples-a attrs-b tuples-b]
   (let [idxb->idxa (vec (for [[sym idx-b] attrs-b]
                           [idx-b (attrs-a sym)]))
-        tlen       (->> (vals attrs-a) ^long (reduce max) (inc))
-        tuples'    (persistent!
-                     (reduce
-                       (fn [acc tuple-b]
-                         (let [tuple' (make-array Object tlen)
-                               tg     (if (u/array? tuple-b) typed-aget get)]
-                           (doseq [[idx-b idx-a] idxb->idxa]
-                             (aset ^objects tuple'
-                                   idx-a (tg tuple-b idx-b)))
-                           (conj! acc tuple')))
-                       (transient (vec tuples-a))
-                       tuples-b))]
-    (relation! attrs-a tuples')))
+        tlen       (->> (vals attrs-a) ^long (reduce max) u/long-inc)]
+    (relation! attrs-a
+               (reduce
+                 (fn [acc tuple-b]
+                   (let [tuple' (make-array Object tlen)
+                         tg     (if (u/array? tuple-b) typed-aget get)]
+                     (doseq [[idx-b idx-a] idxb->idxa]
+                       (aset ^objects tuple' idx-a (tg tuple-b idx-b)))
+                     (.add ^List acc tuple')
+                     acc))
+                 tuples-a
+                 tuples-b))))
 
 (defn sum-rel
   [a b]
   (let [{attrs-a :attrs, tuples-a :tuples} a
-        {attrs-b :attrs, tuples-b :tuples} b
-        size-a                             (.size ^List tuples-a)
-        size-b                             (.size ^List tuples-b)]
+        {attrs-b :attrs, tuples-b :tuples} b]
+
     (cond
       (= attrs-a attrs-b)
-      (relation! attrs-a
-                 (if (vector? tuples-a)
-                   (into tuples-a tuples-b)
-                   (do (.addAll ^List tuples-a ^List tuples-b)
-                       tuples-a)))
+      (relation! attrs-a (if (vector? tuples-a)
+                           (into tuples-a tuples-b)
+                           (do (.addAll ^List tuples-a tuples-b)
+                               tuples-a)))
 
       (empty? tuples-a) b
       (empty? tuples-b) a
@@ -89,8 +86,11 @@
       (sum-rel* attrs-a tuples-a attrs-b tuples-b)
 
       :else
-      (let [number-attrs (zipmap (keys attrs-a) (range))]
-        (-> (sum-rel* number-attrs [] attrs-a tuples-a)
+      (let [number-attrs (zipmap (keys attrs-a) (range))
+            size-a       (.size ^List tuples-a)
+            size-b       (.size ^List tuples-b)]
+        (-> (sum-rel* number-attrs (FastList. (+ size-a size-b))
+                      attrs-a tuples-a)
             (sum-rel b))))))
 
 (defn prod-tuples

@@ -280,11 +280,12 @@
   (let [{attrs-a :attrs, tuples-a :tuples} a
         {attrs-b :attrs, tuples-b :tuples} b
 
-        attrs            (vec (intersect-keys attrs-a attrs-b))
-        key-fn-b         (tuple-key-fn attrs-b attrs)
-        ^UnifiedMap hash (hash-attrs key-fn-b tuples-b)
-        key-fn-a         (tuple-key-fn attrs-a attrs)]
-    (assoc a :tuples (filterv #(nil? (.get hash (key-fn-a %))) tuples-a))))
+        attrs    (vec (intersect-keys attrs-a attrs-b))
+        key-fn-b (tuple-key-fn attrs-b attrs)
+        hash     (hash-attrs key-fn-b tuples-b)
+        key-fn-a (tuple-key-fn attrs-a attrs)]
+    (assoc a :tuples
+           (filterv #(nil? (.get ^UnifiedMap hash (key-fn-a %))) tuples-a))))
 
 (defn lookup-pattern-db
   [db pattern]
