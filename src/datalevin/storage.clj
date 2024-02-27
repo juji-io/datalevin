@@ -443,11 +443,10 @@
 
   (load-datoms [this datoms]
     (locking (lmdb/write-txn lmdb)
-      (let [n      (count datoms)
-            ;; fulltext [:a d [e aid v]], [:d d [e aid v]],
+      (let [;; fulltext [:a d [e aid v]], [:d d [e aid v]],
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (FastList.)
-            txs    (FastList. (* 2 n))
+            txs    (FastList. (* 2 (count datoms)))
             giants (UnifiedMap.)]
         (doseq [datom datoms]
           (if (d/datom-added datom)

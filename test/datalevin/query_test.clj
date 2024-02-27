@@ -138,6 +138,39 @@
                   [(?my-fn) ?result]
                   [(< ?result 3)]]
                 db (fn [] 5))))
+
+
+    (is (= (set (d/q '[:find ?a
+                       :in $ ?n
+                       :where
+                       [?e :friend ?e1]
+                       [?e :name ?n]
+                       [?e1 :age ?a]]
+                     db "Ivan"))
+           #{[37]}))
+    (is (= (d/q '[:find  ?e1 ?e2
+                  :where
+                  [?e1 :name ?n]
+                  [?e2 :name ?n]] db)
+           #{[1 1] [2 2] [3 3] [4 4] }))
+    (is (= (d/q '[:find  ?e ?e2 ?n
+                  :in $ ?i
+                  :where
+                  [?e :name ?i]
+                  [?e :age ?a]
+                  [?e2 :age ?a]
+                  [?e2 :name ?n]] db "Ivan")
+           #{[1 1 "Ivan"]
+             [1 4 "John"]}))
+    (is (= (d/q '[:find ?n
+                  :in $ ?i
+                  :where
+                  [?e :name ?i]
+                  [?e :age ?a]
+                  [?e2 :age ?a2]
+                  [(< ?a ?a2)]
+                  [?e2 :name ?n]] db "Ivan")
+           #{["Oleg"] ["Petr"]}))
     (d/close-db db)
     (u/delete-files dir)))
 

@@ -1110,7 +1110,7 @@
   [[_ {:keys [var pred]}]]
   (reduce add-pred nil (mapv #(activate-pred var %) pred)))
 
-(defn- single-plan
+(defn- init-node-plan
   [db [e clauses]]
   (let [{:keys [bound free mpath]} clauses
         {:keys [var val range] mcount :count :as clause}
@@ -1149,12 +1149,42 @@
                             (map #(when (or (= %2 '_) (placeholder? %2)) %1)
                                  attrs vars))}))))))
 
-(defn- build-plan*
+(defn- plan-component
   [db nodes]
   (let [n     (count nodes)
         table (UnifiedMap. n)]
     (dotimes [i n]
-      ()))
+      ())))
+
+(defn dfs
+  [graph start]
+  (loop [stack [start] visited #{}]
+    (if (empty? stack)
+      visited
+      (let [v     (peek stack)
+            stack (pop stack)]
+        (if (visited v)
+          (recur stack visited)
+          (let [neighbors (mapv :tgt (:links (graph v)))]
+            (recur (into stack neighbors) (conj visited v))))))))
+
+(defn connected-components
+  [graph]
+  (loop [vertices (keys graph) components []]
+    (if (empty? vertices)
+      components
+      (let [start     (first vertices)
+            component (dfs graph start)
+            vertices  (remove component vertices)]
+        (recur vertices (conj components component))))))
+
+(defn- build-plan*
+  [db nodes]
+  (spy (connected-components nodes) "connected")
+  (let [cc (connected-components nodes)]
+    (if (= 1 (count cc))
+      [(plan-component db (first cc))]
+      (pmap #(plan-component db %) cc)))
   [])
 
 (defn- build-plan
@@ -1170,9 +1200,10 @@
     (reduce
       (fn [c [src nodes]]
         (let [db (sources src)]
-          (assoc-in c [:plan src] (if (< 1 (count nodes))
-                                    (build-plan* db nodes)
-                                    (single-plan db (first nodes))))))
+          (assoc-in c [:plan src]
+                    (if (< 1 (count nodes))
+                      (build-plan* db nodes)
+                      [(init-node-plan db (first nodes))]))))
       context graph)
     context))
 
@@ -1241,7 +1272,7 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      ;; (spy c)
+      (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:late-clauses c)))))
 
@@ -1416,7 +1447,7 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    ;; (println "----->" q)
+    (println "----->" q)
     ;; (println "parsed-q" parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
