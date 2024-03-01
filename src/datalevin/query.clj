@@ -1150,11 +1150,14 @@
                                  attrs vars))}))))))
 
 (defn- plan-component
-  [db nodes]
-  (let [n     (count nodes)
-        table (UnifiedMap. n)]
-    (dotimes [i n]
-      ())))
+  [db nodes component]
+  (mapcat (fn [e]
+            (init-node-plan db [e (nodes e)]))
+          component)
+  #_(let [n     (count nodes)
+          table (UnifiedMap. n)]
+      (dotimes [i n]
+        ())))
 
 (defn dfs
   [graph start]
@@ -1180,21 +1183,21 @@
 
 (defn- build-plan*
   [db nodes]
-  (spy (connected-components nodes) "connected")
   (let [cc (connected-components nodes)]
     (if (= 1 (count cc))
-      [(plan-component db (first cc))]
-      (pmap #(plan-component db %) cc)))
-  [])
+      [(plan-component db nodes (first cc))]
+      (pmap #(plan-component db nodes %) cc))))
 
 (defn- build-plan
   "Generate a query plan that looks like this:
 
-  [{:op :init-tuples :attr :name :val \"Tom\" :pred nil :vars [?e]}
+  [{:op :init-tuples :attr :name :val \"Tom\" :out #{?e} :vars [?e]}
    {:op :eav-scan-v  :attrs [:age :friend] :preds [(< ?a 20) nil]
-    :vars [?a ?f]    :index 0}
-   {:op :vae-scan-e :attr :friend :var ?e1 :index 2}
-   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index 3}]"
+    :vars [?a ?f] :in #{?e} :index 0 :out #{?e}}
+   {:op :vae-scan-e :attr :friend :var ?e1 :in #{?e} :index 2
+    :out #{?e ?e1}}
+   {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index 3
+    :in #{?e ?e1} :out #{?e ?e1}}]"
   [{:keys [graph sources] :as context}]
   (if graph
     (reduce
@@ -1251,20 +1254,27 @@
   (reduce (fn [rel step] (execute-step db step rel))
           (execute-step db f nil) r))
 
-(defn- execute-plan*
-  [{:keys [plan sources] :as context}]
-  (reduce
-    (fn [c [src steps]]
-      (update c :rels collapse-rels (execute-steps (sources src) steps)))
-    context plan))
-
 (defn- execute-plan
-  [{:keys [plan opt-clauses] :as context}]
-  (if plan
-    (if (every? (fn [[_ steps]] (seq steps)) plan)
-      (execute-plan* context)
-      (reduce resolve-clause context opt-clauses))
-    (reduce resolve-clause context opt-clauses)))
+  [{:keys [plan sources] :as context}]
+  (let [n (reduce + (map (fn [[_ components]] (count components)) plan))]
+    (if (= 1 n)
+      (update context :rels collapse-rels
+              (let [[src components] (first plan)]
+                (execute-steps (sources src) (first components))))
+      (let [new-rels (vec (repeatedly n promise))
+            i        (atom 0)]
+        (doseq [[src components] plan
+                :let             [db (sources src)]]
+          (doseq [steps components]
+            (future
+              (let [rel (execute-steps db steps)]
+                (swap! i (fn [i]
+                           (deliver (nth new-rels i) rel)
+                           (u/long-inc i)))))))
+        (reduce
+          (fn [c j]
+            (update c :rels collapse-rels @(nth new-rels j)))
+          context (range n))))))
 
 (defn -q
   [context]
