@@ -1121,7 +1121,7 @@
         schema  (db/-schema db)]
     (if (zero? ^long mcount)
       []
-      (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e]}
+      (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}}
                  var     (assoc :pred (attr-pred [attr clause])
                                 :vars (cond-> [e]
                                         (not (placeholder? var))
@@ -1144,20 +1144,40 @@
              :index 0
              :attrs attrs
              :vars  vars
+             :in    #{e}
+             :out   #{e}
              :preds (mapv attr-pred all)
              :skips (remove nil?
                             (map #(when (or (= %2 '_) (placeholder? %2)) %1)
                                  attrs vars))}))))))
 
+(defn- plan-alpha
+  [db nodes component tables alpha]
+  )
+
+(defn- estimate-cost
+  [db steps]
+  )
+
+(defn- base-plans
+  [db nodes component]
+  (into {}
+        (map (fn [e]
+               [#{e}
+                (let [steps (init-node-plan db (find nodes e))]
+                  {:steps steps
+                   :cost  (estimate-cost db steps)})]))
+        component))
+
 (defn- plan-component
   [db nodes component]
-  (mapcat (fn [e]
-            (init-node-plan db [e (nodes e)]))
-          component)
-  #_(let [n     (count nodes)
-          table (UnifiedMap. n)]
-      (dotimes [i n]
-        ())))
+  (let [n (count component)]
+    (if (= n 1)
+      (init-node-plan db (first nodes))
+      (let [tables (FastList. n)]
+        (.add tables (base-plans db nodes component))
+        (dotimes [i (dec n)]
+          (plan-alpha db nodes component tables i))))))
 
 (defn dfs
   [graph start]
