@@ -1151,10 +1151,6 @@
                             (map #(when (or (= %2 '_) (placeholder? %2)) %1)
                                  attrs vars))}))))))
 
-(defn- plan-alpha
-  [db nodes component tables alpha]
-  )
-
 (defn- estimate-cost
   [db steps]
   )
@@ -1163,23 +1159,37 @@
   [db nodes component]
   (into {}
         (map (fn [e]
-               [#{e}
-                (let [steps (init-node-plan db (find nodes e))]
-                  {:steps steps
-                   :cost  (estimate-cost db steps)})]))
+               [#{e} (let [steps (init-node-plan db (find nodes e))]
+                       {:steps steps
+                        :cost  (estimate-cost db steps)})]))
         component))
+
+(defn- plans
+  [db nodes connected prev]
+  )
+
+(defn- connected-pairs
+  [nodes component]
+  (into #{}
+        (comp
+          (filter (fn [[e1 e2]]
+                    (some #(= % e2) (map :tgt (get-in nodes [e1 :links])))))
+          (map set))
+        (u/combinations component 2)))
 
 (defn- plan-component
   [db nodes component]
   (let [n (count component)]
     (if (= n 1)
-      (init-node-plan db (first nodes))
-      (let [tables (FastList. n)]
+      (init-node-plan db (find nodes (first component)))
+      (let [connected (connected-pairs nodes component)
+            tables    (FastList. n)]
         (.add tables (base-plans db nodes component))
         (dotimes [i (dec n)]
-          (plan-alpha db nodes component tables i))))))
+          (.add tables (plans db nodes connected (.get tables i))))
+        ))))
 
-(defn dfs
+(defn- dfs
   [graph start]
   (loop [stack [start] visited #{}]
     (if (empty? stack)
@@ -1191,7 +1201,7 @@
           (let [neighbors (mapv :tgt (:links (graph v)))]
             (recur (into stack neighbors) (conj visited v))))))))
 
-(defn connected-components
+(defn- connected-components
   [graph]
   (loop [vertices (keys graph) components []]
     (if (empty? vertices)
@@ -1204,6 +1214,7 @@
 (defn- build-plan*
   [db nodes]
   (let [cc (connected-components nodes)]
+    (spy cc "connected component")
     (if (= 1 (count cc))
       [(plan-component db nodes (first cc))]
       (pmap #(plan-component db nodes %) cc))))
