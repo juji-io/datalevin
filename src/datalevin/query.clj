@@ -833,7 +833,7 @@
       (plugin-inputs* parsed-q inputs))))
 
 (defn- optimizable?
-  "only optimize attribute-known patterns referring to Datalevin data source"
+  "only optimize attribute-known patterns referring to Datalevin source"
   [sources resolved clause]
   (when (instance? Pattern clause)
     (let [{:keys [pattern]} clause]
@@ -997,8 +997,7 @@
                 (update :opt-clauses conj clause)
                 (update :graph #(add-pred-clause % clause v))))
           c))
-      context
-      (:qwhere parsed-q))))
+      context (:qwhere parsed-q))))
 
 (defn- pred-count [^long n]
   (long (Math/ceil (* ^double c/magic-number-pred n))))
@@ -1121,35 +1120,41 @@
         schema  (db/-schema db)]
     (if (zero? ^long mcount)
       []
-      (cond-> [(cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}}
-                 var     (assoc :pred (attr-pred [attr clause])
-                                :vars (cond-> [e]
-                                        (not (placeholder? var))
-                                        (conj var))
-                                :range range)
-                 val     (assoc :val val)
-                 know-e? (assoc :know-e? true))]
-        (< 1 (+ (count bound) (count free)))
-        (conj
-          (let [bound' (->> (dissoc bound attr)
-                            (mapv (fn [[a {:keys [val] :as b}]]
-                                    [a (-> b
-                                           (update :pred conjv #(= val %))
-                                           (assoc :var (gensym "?bound")))])))
-                all    (->> (concatv bound' (dissoc free attr))
-                            (sort-by (fn [[a _]] (-> a schema :db/aid))))
-                attrs  (mapv first all)
-                vars   (mapv attr-var all)]
-            {:op    :eav-scan-v
-             :index 0
-             :attrs attrs
-             :vars  vars
-             :in    #{e}
-             :out   #{e}
-             :preds (mapv attr-pred all)
-             :skips (remove nil?
-                            (map #(when (or (= %2 '_) (placeholder? %2)) %1)
-                                 attrs vars))}))))))
+      (let [init (cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}}
+                   var     (assoc :pred (attr-pred [attr clause])
+                                  :vars (cond-> [e]
+                                          (not (placeholder? var))
+                                          (conj var))
+                                  :range range)
+                   val     (assoc :val val)
+                   know-e? (assoc :know-e? true)
+                   true    (#(assoc % :col (count (:vars %)))))
+            col  (:col init)]
+        (cond-> [init]
+          (< 1 (+ (count bound) (count free)))
+          (conj
+            (let [bound' (->> (dissoc bound attr)
+                              (mapv (fn [[a {:keys [val] :as b}]]
+                                      [a (-> b
+                                             (update :pred conjv #(= val %))
+                                             (assoc :var (gensym "?bound")))])))
+                  all    (->> (concatv bound' (dissoc free attr))
+                              (sort-by (fn [[a _]] (-> a schema :db/aid))))
+                  attrs  (mapv first all)
+                  vars   (mapv attr-var all)
+                  skips  (remove nil?
+                                 (map #(when (or (= %2 '_)
+                                                 (placeholder? %2))
+                                         %1) attrs vars))]
+              {:op    :eav-scan-v
+               :index 0
+               :attrs attrs
+               :vars  vars
+               :col   (- ^long (+ ^long col (count vars)) (count skips))
+               :in    #{e}
+               :out   #{e}
+               :preds (mapv attr-pred all)
+               :skips skips})))))))
 
 (defn- estimate-cost
   [db steps]
@@ -1164,9 +1169,64 @@
                         :cost  (estimate-cost db steps)})]))
         component))
 
-(defn- plans
-  [db nodes connected prev]
+(defn- ref-e-step
+  [db prev-plan link-e new-e link]
   )
+
+(defn- r-ref-e-step
+  [db prev-plan link-e new-e link]
+  )
+
+(defn- val-eq-e-step
+  [db prev-plan link-e new-e link]
+  )
+
+(defn- e-plan
+  [db nodes prev-plan link-e new-e new-key]
+  (let [link  (some #(= new-e (:tgt %)) (get-in nodes [link-e :links]))
+        steps (conj (case (:type link)
+                      :ref    (ref-e-step db prev-plan link-e new-e link)
+                      :_ref   (r-ref-e-step db prev-plan link-e new-e link)
+                      :val-eq (val-eq-e-step db prev-plan link-e new-e link))
+                    {:op :eav-scan-v
+                     })]
+    {:steps steps
+     :cost  (estimate-cost db steps)}))
+
+(defn- h-plan
+  [db nodes prev-plan link-e new-key]
+  )
+
+(defn- binary-plan
+  [db nodes bases prev-plan link-e new-e new-key]
+  (let [e-plan (e-plan db nodes prev-plan link-e new-e new-key)
+        h-plan (h-plan db nodes bases prev-plan link-e new-key)]
+    (if (< ^long (:cost e-plan) ^long (:cost h-plan))
+      e-plan
+      h-plan)))
+
+(defn- plans
+  [db nodes connected bases prev-table]
+  (reduce
+    (fn [table [prev-key prev-plan]]
+      (reduce
+        (fn [t pair]
+          (if-let [link-e (not-empty (set/intersection prev-key pair))]
+            (if (= 1 (count link-e))
+              (let [new-key  (set/union prev-key pair)
+                    cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
+                    {:keys [cost] :as new-plan}
+                    (binary-plan db nodes bases prev-plan
+                                 (first link-e)
+                                 (first (set/difference pair link-e))
+                                 new-key)]
+                (if (< ^long cost ^long cur-cost)
+                  (assoc t new-key new-plan)
+                  t))
+              t)
+            t))
+        table connected))
+    {} prev-table))
 
 (defn- connected-pairs
   [nodes component]
@@ -1183,11 +1243,17 @@
     (if (= n 1)
       (init-node-plan db (find nodes (first component)))
       (let [connected (connected-pairs nodes component)
-            tables    (FastList. n)]
-        (.add tables (base-plans db nodes component))
-        (dotimes [i (dec n)]
-          (.add tables (plans db nodes connected (.get tables i))))
-        ))))
+            tables    (FastList. n)
+            n-1       (dec n)
+            bases     (base-plans db nodes component)]
+        (.add tables bases)
+        (dotimes [i n-1]
+          (.add tables (plans db nodes connected bases (.get tables i))))
+        (reduce
+          (fn [steps i]
+            (concatv (:steps ((.get tables i) (:in (first steps)))) steps))
+          (-> (.get tables n-1) first val :steps)
+          (range (dec n-1) -1 -1))))))
 
 (defn- dfs
   [graph start]
@@ -1222,13 +1288,14 @@
 (defn- build-plan
   "Generate a query plan that looks like this:
 
-  [{:op :init-tuples :attr :name :val \"Tom\" :out #{?e} :vars [?e]}
+  [{:op :init-tuples :attr :name :val \"Tom\" :out #{?e} :vars [?e]
+    :col 1}
    {:op :eav-scan-v  :attrs [:age :friend] :preds [(< ?a 20) nil]
-    :vars [?a ?f] :in #{?e} :index 0 :out #{?e}}
+    :vars [?a ?f] :in #{?e} :index 0 :out #{?e} :col 3}
    {:op :vae-scan-e :attr :friend :var ?e1 :in #{?e} :index 2
-    :out #{?e ?e1}}
+    :out #{?e ?e1} :col 4}
    {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index 3
-    :in #{?e ?e1} :out #{?e ?e1}}]"
+    :in #{?e ?e1} :out #{?e ?e1} :col 5}]"
   [{:keys [graph sources] :as context}]
   (if graph
     (reduce
@@ -1274,11 +1341,26 @@
        (assoc :tuples (db/-eav-scan-v
                         db (:tuples rel) index attrs preds skips))))
 
+(defn- vae-scan-e
+  [db rel step]
+  )
+
+(defn- ave-scan-e
+  [db rel step]
+  )
+
+(defn- hash-join-step
+  [rel step]
+  )
+
 (defn- execute-step
   [db {:keys [op] :as step} rel]
   (case op
     :init-tuples (init-relation db step)
-    :eav-scan-v  (eav-scan-v db rel step)))
+    :eav-scan-v  (eav-scan-v db rel step)
+    :vae-scan-e  (vae-scan-e db rel step)
+    :ave-scan-e  (ave-scan-e db rel step)
+    :hash-join   (hash-join-step rel step)))
 
 (defn- execute-steps
   [db [f & r]]
