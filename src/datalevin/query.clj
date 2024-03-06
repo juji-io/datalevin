@@ -1165,7 +1165,7 @@
     (= 1 (count steps))      mcount
     (:know-e? (first steps)) 1
     :else
-    (let [{:keys [skips vars preds]} (peek steps)
+    (let [{:keys [skips attrs preds]} (peek steps)
 
           n-preds     (count (remove nil? preds))
           pred-factor (if (zero? n-preds)
@@ -1180,11 +1180,24 @@
                        ;; TODO sample instead
                        (db/multival? db attr)
                        (* ^long c/magic-number-many)))
-                   mcount (set/difference (set vars) (set skips))))))))
+                   mcount (set/difference (set attrs) (set skips))))))))
 
 (defn- estimate-base-cost
   [db {:keys [mcount]} steps]
-  )
+  (let [{:keys [vars pred]} (first steps)
+        cost-1              (cond-> (* ^long mcount (count vars))
+                              pred (* ^long c/magic-cost-pred))]
+    (if (< 1 (count steps))
+      (+ ^long cost-1
+         (let [{:keys [attrs preds]} (peek steps)
+
+               n-preds (count (remove nil? preds))]
+           ^long (* mcount
+                    (count attrs)
+                    (if (zero? n-preds)
+                      1
+                      (* ^long c/magic-cost-pred n-preds)))))
+      cost-1)))
 
 (defn- base-plans
   [db nodes component]
@@ -1197,35 +1210,35 @@
                         :size  (estimate-base-size db node steps)})]))
         component))
 
-(defn- ref-e-step
+(defn- ref-step
   [db prev-plan link new-key]
   )
 
-(defn- r-ref-e-step
+(defn- rev-ref-step
   [db prev-plan link new-key]
   )
 
-(defn- val-eq-e-step
+(defn- val-eq-step
   [db prev-plan link new-key]
   )
 
-(defn- estimate-cost
-  [db prev-plan steps node]
+(defn- estimate-scan-cost
+  [prev-plan steps node]
   )
 
 (defn- e-plan
   [db prev-plan link new-key node]
-  (let [steps (conj
-                (case (:type link)
-                  :ref    (ref-e-step db prev-plan link new-key)
-                  :_ref   (r-ref-e-step db prev-plan link new-key)
-                  :val-eq (val-eq-e-step db prev-plan link new-key))
-                {:op  :eav-scan-v
-                 :in  new-key
-                 :out new-key})]
+  (let [steps (case (:type link)
+                :ref    (ref-step db prev-plan link new-key)
+                :_ref   (rev-ref-step db prev-plan link new-key)
+                :val-eq (val-eq-step db prev-plan link new-key)) ]
     {:steps steps
      :cost  (+ ^long (:cost prev-plan)
-               ^long (estimate-cost prev-plan steps node))}))
+               ^long (estimate-scan-cost prev-plan steps node))}))
+
+(defn- estimate-hash-cost
+  [prev-plan new-base-plan]
+  )
 
 (defn- h-plan
   [prev-plan new-base-plan new-key]
@@ -1233,7 +1246,7 @@
                    {:op  :hash-join
                     :out new-key})
    :cost  (+ ^long (:cost prev-plan)
-             ^long (estimate-cost prev-plan new-base-plan))})
+             ^long (estimate-hash-cost prev-plan new-base-plan))})
 
 (defn- estimate-join-size
   [^long prev-size ^long cur-size ^long mdc]
@@ -1254,7 +1267,7 @@
         h-plan    (h-plan prev-plan new-base-plan new-key)]
     (assoc (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)
            :size (if (= :ref (:type link))
-                   prev-size
+                   prev-size ;; TODO adjust for many in new-base-plan
                    (estimate-join-size
                      prev-size (:size (base-plans #{new-e}))
                      (max-domain-cardinality db link))))))
