@@ -46,6 +46,7 @@
   (-schema [db])
   (-rschema [db])
   (-attrs-by [db property])
+  (-is-attr? [db attr property])
   (-clear-tx-cache [db])
   (-cardinality [db attr]))
 
@@ -119,7 +120,12 @@
   IDB
   (-schema [_] (wrap-cache store :schema (s/schema store)))
   (-rschema [_] (wrap-cache store :rschema (s/rschema store)))
-  (-attrs-by [db property] ((-rschema db) property))
+  (-attrs-by [db property]
+    (wrap-cache store [:attrs-by property]
+      ((-rschema db) property)))
+  (-is-attr? [db attr property]
+    (wrap-cache store [:is-attr? attr property]
+      (contains? (.-attrs-by db property) attr)))
   (-clear-tx-cache
     [db]
     (let [clear #(.clear ^TreeSortedSet %)]
@@ -129,8 +135,7 @@
       db))
   (-cardinality
     [db attr]
-    (wrap-cache
-        store [:cardinality attr]
+    (wrap-cache store [:cardinality attr]
       (s/cardinality store attr)))
 
   ITuples
@@ -502,23 +507,19 @@
 
 ;; ----------------------------------------------------------------------------
 
-(defn is-attr?
-  ^Boolean [db attr property]
-  (contains? (-attrs-by db property) attr))
+(defn multival? ^Boolean [db attr] (-is-attr? db attr :db.cardinality/many))
 
-(defn multival? ^Boolean [db attr] (is-attr? db attr :db.cardinality/many))
+(defn ref? ^Boolean [db attr] (-is-attr? db attr :db.type/ref))
 
-(defn ref? ^Boolean [db attr] (is-attr? db attr :db.type/ref))
+(defn component? ^Boolean [db attr] (-is-attr? db attr :db/isComponent))
 
-(defn component? ^Boolean [db attr] (is-attr? db attr :db/isComponent))
+(defn tuple-attr? ^Boolean [db attr] (-is-attr? db attr :db/tupleAttrs))
 
-(defn tuple-attr? ^Boolean [db attr] (is-attr? db attr :db/tupleAttrs))
+(defn tuple-type? ^Boolean [db attr] (-is-attr? db attr :db/tupleType))
 
-(defn tuple-type? ^Boolean [db attr] (is-attr? db attr :db/tupleType))
+(defn tuple-types? ^Boolean [db attr] (-is-attr? db attr :db/tupleTypes))
 
-(defn tuple-types? ^Boolean [db attr] (is-attr? db attr :db/tupleTypes))
-
-(defn tuple-source? ^Boolean [db attr] (is-attr? db attr :db/attrTuples))
+(defn tuple-source? ^Boolean [db attr] (-is-attr? db attr :db/attrTuples))
 
 (defn entid [db eid]
   (cond
@@ -531,7 +532,7 @@
         (not= (count eid) 2)
         (raise "Lookup ref should contain 2 elements: " eid
                {:error :lookup-ref/syntax, :entity-id eid})
-        (not (is-attr? db attr :db/unique))
+        (not (-is-attr? db attr :db/unique))
         (raise "Lookup ref attribute should be marked as :db/unique: " eid
                {:error :lookup-ref/unique, :entity-id eid})
         (nil? value)
@@ -565,7 +566,7 @@
 ;;;;;;;;;; Transacting
 
 (defn validate-datom [db ^Datom datom]
-  (when (and (is-attr? db (.-a datom) :db/unique) (datom-added datom))
+  (when (and (-is-attr? db (.-a datom) :db/unique) (datom-added datom))
     (when-some [found (let [a (.-a datom)
                             v (.-v datom)]
                         (or (not (.isEmpty
@@ -822,7 +823,7 @@
 
     ;; probably lookup ref
     (and (= (count vs) 2)
-         (is-attr? db (first vs) :db.unique/identity))
+         (-is-attr? db (first vs) :db.unique/identity))
     [vs]
 
     :else vs))
@@ -1168,7 +1169,7 @@
                             es)))
 
                  (tempid? e)
-                 (let [upserted-eid  (when (is-attr? db a :db.unique/identity)
+                 (let [upserted-eid  (when (-is-attr? db a :db.unique/identity)
                                        (or (:e (sf (.subSet
                                                      ^TreeSortedSet (:avet db)
                                                      (d/datom e0 a v tx0)

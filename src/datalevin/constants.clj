@@ -351,8 +351,16 @@
 ;; datalog
 
 (def ^{:dynamic true
-       :doc     "Magic number for predicates when query cardinality estimation"}
+       :doc     "Magic number for predicates when size estimation"}
   magic-number-pred 0.2)
+
+(def ^{:dynamic true
+       :doc     "Magic number for many cardinality when size estimation"}
+  magic-number-many 2)
+
+(def ^{:dynamic true
+       :doc     "Extra cost associated with running predicate during scan"}
+  magic-cost-pred 2)
 
 ;; search engine
 

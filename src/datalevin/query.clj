@@ -999,9 +999,6 @@
           c))
       context (:qwhere parsed-q))))
 
-(defn- pred-count [^long n]
-  (long (Math/ceil (* ^double c/magic-number-pred n))))
-
 (defn- range->start-end
   [[op lv hv]]
   (case op
@@ -1009,21 +1006,27 @@
     (:at-most :less-than)     [nil lv]
     (:closed :open)           [lv hv]))
 
+(defn- estimate-count [x] (long (Math/ceil x)))
+
+;; TODO sample instead
+(defn- pred-count [^long n] (estimate-count (* ^double c/magic-number-pred n)))
+
 (defn- datom-n
   [db k node]
   (reduce
-    (fn [{:keys [mcount] :as node} [attr {:keys [val range]}]]
-      (let [^long res
-            (cond
-              (some? val) (db/-count db [nil attr val] mcount)
-              range       (let [[lv hv] (range->start-end range)]
-                            (db/-index-range-size db attr lv hv mcount))
-              :else       (db/-count db [nil attr nil] mcount))]
-        (if (< res ^long mcount)
+    (fn [{:keys [mcount] :as node} [attr {:keys [val range pred]}]]
+      (let [c (cond->
+                  (cond
+                    (some? val) (db/-count db [nil attr val] mcount)
+                    range       (let [[lv hv] (range->start-end range)]
+                                  (db/-index-range-size db attr lv hv mcount))
+                    :else       (db/-count db [nil attr nil] mcount))
+                pred (pred-count))]
+        (if (< ^long c ^long mcount)
           (-> node
-              (assoc-in [k attr :count] res)
-              (assoc :mcount res :mpath [k attr]))
-          (assoc-in node [k attr :count] (inc res)))))
+              (assoc-in [k attr :count] c)
+              (assoc :mcount c :mpath [k attr]))
+          (assoc-in node [k attr :count] (u/long-inc c)))))
     node (k node)))
 
 (defn- datom-1
@@ -1156,57 +1159,108 @@
                :preds (mapv attr-pred all)
                :skips skips})))))))
 
-(defn- estimate-cost
-  [db steps]
+(defn- estimate-base-size
+  [db {:keys [mcount]} steps]
+  (cond
+    (= 1 (count steps))      mcount
+    (:know-e? (first steps)) 1
+    :else
+    (let [{:keys [skips vars preds]} (peek steps)
+
+          n-preds     (count (remove nil? preds))
+          pred-factor (if (zero? n-preds)
+                        1.0
+                        ;; TODO sample
+                        (Math/pow c/magic-number-pred n-preds))]
+      (estimate-count
+        (* ^double pred-factor
+           ^long (reduce
+                   (fn [s attr]
+                     (cond-> ^long s
+                       ;; TODO sample instead
+                       (db/multival? db attr)
+                       (* ^long c/magic-number-many)))
+                   mcount (set/difference (set vars) (set skips))))))))
+
+(defn- estimate-base-cost
+  [db {:keys [mcount]} steps]
   )
 
 (defn- base-plans
   [db nodes component]
   (into {}
         (map (fn [e]
-               [#{e} (let [steps (init-node-plan db (find nodes e))]
+               [#{e} (let [[_ node :as kv] (find nodes e)
+                           steps           (init-node-plan db kv)]
                        {:steps steps
-                        :cost  (estimate-cost db steps)})]))
+                        :cost  (estimate-base-cost db node steps)
+                        :size  (estimate-base-size db node steps)})]))
         component))
 
 (defn- ref-e-step
-  [db prev-plan link-e new-e link]
+  [db prev-plan link new-key]
   )
 
 (defn- r-ref-e-step
-  [db prev-plan link-e new-e link]
+  [db prev-plan link new-key]
   )
 
 (defn- val-eq-e-step
-  [db prev-plan link-e new-e link]
+  [db prev-plan link new-key]
+  )
+
+(defn- estimate-cost
+  [db prev-plan steps node]
   )
 
 (defn- e-plan
-  [db nodes prev-plan link-e new-e new-key]
-  (let [link  (some #(= new-e (:tgt %)) (get-in nodes [link-e :links]))
-        steps (conj (case (:type link)
-                      :ref    (ref-e-step db prev-plan link-e new-e link)
-                      :_ref   (r-ref-e-step db prev-plan link-e new-e link)
-                      :val-eq (val-eq-e-step db prev-plan link-e new-e link))
-                    {:op :eav-scan-v
-                     })]
+  [db prev-plan link new-key node]
+  (let [steps (conj
+                (case (:type link)
+                  :ref    (ref-e-step db prev-plan link new-key)
+                  :_ref   (r-ref-e-step db prev-plan link new-key)
+                  :val-eq (val-eq-e-step db prev-plan link new-key))
+                {:op  :eav-scan-v
+                 :in  new-key
+                 :out new-key})]
     {:steps steps
-     :cost  (estimate-cost db steps)}))
+     :cost  (+ ^long (:cost prev-plan)
+               ^long (estimate-cost prev-plan steps node))}))
 
 (defn- h-plan
-  [db nodes prev-plan link-e new-key]
-  )
+  [prev-plan new-base-plan new-key]
+  {:steps (concatv prev-plan new-base-plan
+                   {:op  :hash-join
+                    :out new-key})
+   :cost  (+ ^long (:cost prev-plan)
+             ^long (estimate-cost prev-plan new-base-plan))})
+
+(defn- estimate-join-size
+  [^long prev-size ^long cur-size ^long mdc]
+  (estimate-count (/ (* prev-size cur-size) mdc)))
+
+(defn- max-domain-cardinality
+  [db {:keys [attr attrs]}]
+  (cond
+    attr  (db/-cardinality db attr)
+    attrs (apply max (map #(db/-cardinality db %) (vals attrs)))))
 
 (defn- binary-plan
-  [db nodes bases prev-plan link-e new-e new-key]
-  (let [e-plan (e-plan db nodes prev-plan link-e new-e new-key)
-        h-plan (h-plan db nodes bases prev-plan link-e new-key)]
-    (if (< ^long (:cost e-plan) ^long (:cost h-plan))
-      e-plan
-      h-plan)))
+  [db nodes new-base-plan prev-plan link-e new-e new-key]
+  (let [link      (some #(when (= new-e (:tgt %)) %)
+                        (get-in nodes [link-e :links]))
+        prev-size (:size prev-plan)
+        e-plan    (e-plan prev-plan link new-key (nodes new-e))
+        h-plan    (h-plan prev-plan new-base-plan new-key)]
+    (assoc (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)
+           :size (if (= :ref (:type link))
+                   prev-size
+                   (estimate-join-size
+                     prev-size (:size (base-plans #{new-e}))
+                     (max-domain-cardinality db link))))))
 
 (defn- plans
-  [db nodes connected bases prev-table]
+  [db nodes connected base-plans prev-table]
   (reduce
     (fn [table [prev-key prev-plan]]
       (reduce
@@ -1214,12 +1268,12 @@
           (if-let [link-e (not-empty (set/intersection prev-key pair))]
             (if (= 1 (count link-e))
               (let [new-key  (set/union prev-key pair)
+                    new-e    (set/difference pair link-e)
                     cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
                     {:keys [cost] :as new-plan}
-                    (binary-plan db nodes bases prev-plan
-                                 (first link-e)
-                                 (first (set/difference pair link-e))
-                                 new-key)]
+                    (binary-plan db nodes (base-plans new-e)
+                                 prev-plan (first link-e)
+                                 (first new-e) new-key)]
                 (if (< ^long cost ^long cur-cost)
                   (assoc t new-key new-plan)
                   t))
@@ -1245,10 +1299,11 @@
       (let [connected (connected-pairs nodes component)
             tables    (FastList. n)
             n-1       (dec n)
-            bases     (base-plans db nodes component)]
-        (.add tables bases)
+            base-ps   (base-plans db nodes component)]
+        (spy base-ps "base plans")
+        (.add tables base-ps)
         (dotimes [i n-1]
-          (.add tables (plans db nodes connected bases (.get tables i))))
+          (.add tables (plans db nodes connected base-ps (.get tables i))))
         (reduce
           (fn [steps i]
             (concatv (:steps ((.get tables i) (:in (first steps)))) steps))
@@ -1280,7 +1335,6 @@
 (defn- build-plan*
   [db nodes]
   (let [cc (connected-components nodes)]
-    (spy cc "connected component")
     (if (= 1 (count cc))
       [(plan-component db nodes (first cc))]
       (pmap #(plan-component db nodes %) cc))))
@@ -1395,7 +1449,7 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      (spy c)
+      ;; (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:late-clauses c)))))
 
