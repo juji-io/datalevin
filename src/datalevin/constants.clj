@@ -348,19 +348,23 @@
        :doc     "The number of samples considered when build the key compression dictionary is 65536"}
   *compress-sample-size* 65536)
 
-;; datalog
+;; datalog query engine
 
 (def ^{:dynamic true
-       :doc     "Magic number for predicates when size estimation"}
+       :doc     "Magic number for predicates when estimating size"}
   magic-number-pred 0.2)
 
 (def ^{:dynamic true
-       :doc     "Magic number for many cardinality when size estimation"}
-  magic-number-many 2)
+       :doc     "Magic number for many cardinality when estimating size"}
+  magic-number-many 2.0)
 
 (def ^{:dynamic true
-       :doc     "Extra cost associated with running predicate during scan"}
-  magic-cost-pred 2)
+       :doc     "Cost associated with running predicate during scan"}
+  magic-cost-pred 1.5)
+
+(def ^{:dynamic true
+       :doc     "Cost associated with hash join"}
+  magic-cost-hash 3.0)
 
 ;; search engine
 
