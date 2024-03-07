@@ -1291,20 +1291,19 @@
    :cols  (conj (:cols last-step) tgt)})
 
 (defn- rev-ref-plan
-  [prev-steps link-e {:keys [attr tgt]} new-key new-steps]
-  (let [last-step (peek prev-steps)
-        index     (u/index-of #(= link-e %) (:cols last-step))
-        step      (link-step :vae-scan-e last-step index attr tgt new-key)]
+  [last-step link-e {:keys [attr tgt]} new-key new-steps]
+  (let [index (u/index-of #(= link-e %) (:cols last-step))
+        step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step
        (scan-v-step step (dec (count (:cols step))) new-key new-steps)])))
 
 (defn- val-eq-plan
-  [prev-steps {:keys [attr tgt]} new-key new-steps]
-  (let [last-step (peek prev-steps)
-        index     (u/index-of #(= attr %) (:cols last-step))
-        step      (link-step :ave-scan-e last-step index attr tgt new-key)]
+  [last-step {:keys [attrs tgt]} link-e new-key new-steps]
+  (let [index (u/index-of #(= (attrs link-e) %) (:cols last-step))
+        step  (link-step :ave-scan-e last-step index (attrs tgt)
+                         tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step
@@ -1343,7 +1342,7 @@
         (case (:type link)
           :ref    (ref-plan last-step link new-key new-steps)
           :_ref   (rev-ref-plan last-step link-e link new-key new-steps)
-          :val-eq (val-eq-plan last-step link new-key new-steps)) ]
+          :val-eq (val-eq-plan last-step link link-e new-key new-steps))]
     {:steps cur-steps
      :cost  (+ ^long (:cost prev-plan)
                ^long (estimate-e-plan-cost prev-plan cur-steps result-size))
