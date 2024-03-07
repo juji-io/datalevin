@@ -950,37 +950,40 @@
 
 (defn- set-range
   [i m args ac o1 o2 o3 switch?]
-  (let [ac ^long ac
-        i  ^long i]
-    (cond
-      (= i 0)
-      (assoc m :range [o1 (second args)])
-      (= i (dec ac))
-      (assoc m :range [o2 (nth args (dec i))])
-      switch?
-      (assoc m :range [o3 (nth args (inc i)) (nth args (dec i))])
-      :else
-      (assoc m :range [o3 (nth args (dec i)) (nth args (inc i))]))))
+  (let [ac-1 (dec ^long ac)
+        i    ^long i
+        i-1  (dec i)
+        i+1  (inc i)]
+    (assoc m :range (cond
+                      (= i 0)    [o1 (second args)]
+                      (= i ac-1) [o2 (nth args i-1)]
+                      switch?    [o3 (nth args i+1) (nth args i-1)]
+                      :else      [o3 (nth args i-1) (nth args i+1)]))))
 
 (defn- add-pred-clause
   [graph clause v]
   (walk/postwalk
     (fn [m]
       (if (= (:var m) v)
-        (let [[f & args :as pred] (first clause)]
+        (let [[f & args :as pred] (first clause)
+              args                (vec args)]
           (if (:range m)
             ;; TODO merge multiple range predicates
             (update m :pred conjv pred)
             (let [ac (count args)
                   i  ^long (u/index-of #(= % v) args)]
               (condp = f
-                '<  (set-range i m args ac :less-than :greater-than :open false)
-                '<= (set-range i m args ac :at-most :at-least :closed false)
-                '>  (set-range i m args ac :greater-than :less-than :open true)
-                '>= (set-range i m args ac :at-least :at-most :closed true)
-                '=  (let [c (some #(when-not (free-var? %) %) args)]
-                      (assoc m :range [:closed c c]))
-                (update m :pred conjv pred)))))
+                '<       (set-range i m args ac :less-than :greater-than
+                                    :open false)
+                     '<= (set-range i m args ac :at-most :at-least
+                                    :closed false)
+                     '>  (set-range i m args ac :greater-than :less-than
+                                    :open true)
+                     '>= (set-range i m args ac :at-least :at-most
+                                    :closed true)
+                     '=  (let [c (some #(when-not (free-var? %) %) args)]
+                           (assoc m :range [:closed c c]))
+                     (update m :pred conjv pred)))))
         m))
     graph))
 
@@ -1131,8 +1134,9 @@
                                   :range range)
                    val     (assoc :val val)
                    know-e? (assoc :know-e? true)
-                   true    (#(assoc % :col (count (:vars %)))))
-            col  (:col init)]
+                   true    (#(assoc % :cols
+                                    (if (= 1 (count (:vars %))) [e] [e attr]))))
+            cols (:cols init)]
         (cond-> [init]
           (< 1 (+ (count bound) (count free)))
           (conj
@@ -1153,7 +1157,7 @@
                :index 0
                :attrs attrs
                :vars  vars
-               :col   (- ^long (+ ^long col (count vars)) (count skips))
+               :cols  (concatv cols (remove (set skips) attrs))
                :in    #{e}
                :out   #{e}
                :preds (mapv attr-pred all)
@@ -1190,8 +1194,7 @@
     (if (< 1 (count steps))
       (+ ^long cost-1
          (let [{:keys [attrs preds]} (peek steps)
-
-               n-preds (count (remove nil? preds))]
+               n-preds               (count (remove nil? preds))]
            ^long (* mcount
                     (count attrs)
                     (if (zero? n-preds)
@@ -1210,31 +1213,95 @@
                         :size  (estimate-base-size db node steps)})]))
         component))
 
-(defn- ref-step
-  [db prev-plan link new-key]
-  )
+(defn- add-back-range
+  [v step]
+  (let [p (:pred step)]
+    (if-let [[f & r] (:range step)]
+      (let [c (first r)]
+        (add-pred
+          p
+          (activate-pred v (case f
+                             :less-than    (list '< v c)
+                             :greater-than (list '> v c)
+                             :at-most      (list '<= v c)
+                             :at-least     (list '>= v c)
+                             :open         (list '< c v (second r))
+                             :closed       (list '<= c v (second r))))))
+      p)))
 
-(defn- rev-ref-step
-  [db prev-plan link new-key]
-  )
+(defn- scan-v-step
+  [last-step index new-key new-steps]
+  (merge
+    {:op    :eav-scan-v
+     :index index
+     :in    (:out last-step)
+     :out   new-key}
+    (if (= 1 (count new-steps))
+      (let [s (first new-steps)
+            v (peek (:vars s))
+            a (:attr s)]
+        {:attrs [a]
+         :vars  [v]
+         :skips []
+         :preds [(add-back-range v s)]
+         :cols  (concatv (:cols last-step) [a])})
+      (let [[s1 s2] new-steps
+            v       (peek (:vars s1))
+            skips   (:skips s2)]
+        {:attrs (concatv [(:attr s1)] (:attrs s2))
+         :vars  (concatv [v] (:vars s2))
+         :skips skips
+         :preds (concatv [(add-back-range v s1)] (:preds s2))
+         :cols  (concatv (:cols last-step)
+                         (remove (set skips) (:attrs s2)))}))))
 
-(defn- val-eq-step
-  [db prev-plan link new-key]
-  )
+(defn- ref-plan
+  [last-step {:keys [attr]} new-key new-steps]
+  (let [index (u/index-of #(= attr %) (:cols last-step))]
+    [(scan-v-step last-step index new-key new-steps)]))
+
+(defn- link-step
+  [op last-step index attr tgt new-key]
+  {:op    op
+   :index index
+   :in    (:out last-step)
+   :out   new-key
+   :attr  attr
+   :var   tgt
+   :cols  (conj (:cols last-step) tgt)})
+
+(defn- rev-ref-plan
+  [prev-steps link-e {:keys [attr tgt]} new-key new-steps]
+  (let [last-step (peek prev-steps)
+        index     (u/index-of #(= link-e %) (:cols last-step))
+        step      (link-step :vae-scan-e last-step index attr tgt new-key)]
+    [step
+     (scan-v-step step (dec (count (:cols step))) new-key new-steps)]))
+
+(defn- val-eq-plan
+  [prev-steps {:keys [attr tgt]} new-key new-steps]
+  (let [last-step (peek prev-steps)
+        index     (u/index-of #(= attr %) (:cols last-step))
+        step      (link-step :ave-scan-e last-step index attr tgt new-key)]
+    [step
+     (scan-v-step step (dec (count (:cols step))) new-key new-steps)]))
 
 (defn- estimate-scan-cost
-  [prev-plan steps node]
+  [prev-plan steps]
   )
 
 (defn- e-plan
-  [db prev-plan link new-key node]
-  (let [steps (case (:type link)
-                :ref    (ref-step db prev-plan link new-key)
-                :_ref   (rev-ref-step db prev-plan link new-key)
-                :val-eq (val-eq-step db prev-plan link new-key)) ]
+  [prev-plan link-e link new-key new-base-plan]
+  (let [new-steps (:steps new-base-plan)
+        last-step (peek (:steps prev-plan))
+        steps
+        (case (:type link)
+          :ref    (ref-plan last-step link new-key new-steps)
+          :_ref   (rev-ref-plan last-step link-e link new-key new-steps)
+          :val-eq (val-eq-plan last-step link new-key new-steps)) ]
     {:steps steps
      :cost  (+ ^long (:cost prev-plan)
-               ^long (estimate-scan-cost prev-plan steps node))}))
+               ^long (estimate-scan-cost prev-plan steps))}))
 
 (defn- estimate-hash-cost
   [prev-plan new-base-plan]
@@ -1242,9 +1309,8 @@
 
 (defn- h-plan
   [prev-plan new-base-plan new-key]
-  {:steps (concatv prev-plan new-base-plan
-                   {:op  :hash-join
-                    :out new-key})
+  {:steps (concatv new-base-plan {:op  :hash-join
+                                  :out new-key})
    :cost  (+ ^long (:cost prev-plan)
              ^long (estimate-hash-cost prev-plan new-base-plan))})
 
@@ -1263,7 +1329,7 @@
   (let [link      (some #(when (= new-e (:tgt %)) %)
                         (get-in nodes [link-e :links]))
         prev-size (:size prev-plan)
-        e-plan    (e-plan prev-plan link new-key (nodes new-e))
+        e-plan    (e-plan prev-plan link-e link new-key new-base-plan)
         h-plan    (h-plan prev-plan new-base-plan new-key)]
     (assoc (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)
            :size (if (= :ref (:type link))
@@ -1356,22 +1422,21 @@
   "Generate a query plan that looks like this:
 
   [{:op :init-tuples :attr :name :val \"Tom\" :out #{?e} :vars [?e]
-    :col 1}
+    :cols [?e]}
    {:op :eav-scan-v  :attrs [:age :friend] :preds [(< ?a 20) nil]
-    :vars [?a ?f] :in #{?e} :index 0 :out #{?e} :col 3}
+    :vars [?a ?f] :in #{?e} :index 0 :out #{?e} :cols [?e :age :friend]}
    {:op :vae-scan-e :attr :friend :var ?e1 :in #{?e} :index 2
-    :out #{?e ?e1} :col 4}
+    :out #{?e ?e1} :cols [?e :age :friend ?e1]}
    {:op :eav-scan-v :attrs [:name] :preds [nil] :vars [?n] :index 3
-    :in #{?e ?e1} :out #{?e ?e1} :col 5}]"
+    :in #{?e ?e1} :out #{?e ?e1} :cols [?e :age :friend ?e1 :name]}]"
   [{:keys [graph sources] :as context}]
   (if graph
     (reduce
       (fn [c [src nodes]]
         (let [db (sources src)]
-          (assoc-in c [:plan src]
-                    (if (< 1 (count nodes))
-                      (build-plan* db nodes)
-                      [(init-node-plan db (first nodes))]))))
+          (assoc-in c [:plan src] (if (< 1 (count nodes))
+                                    (build-plan* db nodes)
+                                    [(init-node-plan db (first nodes))]))))
       context graph)
     context))
 
@@ -1417,7 +1482,7 @@
   )
 
 (defn- hash-join-step
-  [rel step]
+  [db rel step]
   )
 
 (defn- execute-step
@@ -1427,7 +1492,7 @@
     :eav-scan-v  (eav-scan-v db rel step)
     :vae-scan-e  (vae-scan-e db rel step)
     :ave-scan-e  (ave-scan-e db rel step)
-    :hash-join   (hash-join-step rel step)))
+    :hash-join   (hash-join-step db rel step)))
 
 (defn- execute-steps
   [db [f & r]]
@@ -1462,7 +1527,7 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      ;; (spy c)
+      (spy c)
       (execute-plan c)
       (reduce resolve-clause c (:late-clauses c)))))
 
