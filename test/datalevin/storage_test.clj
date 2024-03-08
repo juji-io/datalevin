@@ -488,7 +488,7 @@
     (sut/close store)
     (u/delete-files dir)))
 
-(deftest ave-scan-e-test
+(deftest val-eq-scan-e-test
   (let [d0      (d/datom 0 :b "GPT")
         d1      (d/datom 5 :a 1)
         d2      (d/datom 5 :b "AI")
@@ -510,12 +510,12 @@
                            {:flags (conj c/default-env-flags :nosync)}})]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7])
     (is (= []
-           (mapv vec (sut/ave-scan-e store tuples0 0 :c))))
-    (is (= [[1 5] [1 8] [2 8]]
-           (mapv vec (sut/ave-scan-e store tuples0 0 :a))))
-    (is (= [[:none "GPT" 0] [:zero "AI" 5] [:zero "AI" 9]]
-           (mapv vec (sut/ave-scan-e store tuples1 1 :b))))
-    (is (= [[1 5] [1 8] [2 8] [1 5] [1 8]]
-           (mapv vec (sut/ave-scan-e store tuples2 0 :a))))
+           (mapv vec (sut/val-eq-scan-e store tuples0 0 :c))))
+    (is (= [[1 5] [1 8]]
+           (mapv vec (sut/val-eq-scan-e store tuples0 0 :a))))
+    (is (= [[:zero "AI" 5] [:zero "AI" 9]]
+           (mapv vec (sut/val-eq-scan-e store tuples1 1 :b))))
+    (is (= [[1 5] [1 8] [1 5] [1 8]]
+           (mapv vec (sut/val-eq-scan-e store tuples2 0 :a))))
     (sut/close store)
     (u/delete-files dir)))

@@ -94,7 +94,7 @@
 
 
 (deftest test-q-many
-  (let [dir (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+  (let [dir (u/tmp-dir (str "test-query-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})
                 (d/db-with [ [:db/add 1 :name "Ivan"]
                             [:db/add 1 :aka  "ivolga"]

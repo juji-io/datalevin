@@ -61,7 +61,7 @@
   (-init-tuples [db a v-range pred get-v?])
   (-eav-scan-v [db tuples eid-idx attrs preds skips])
   (-vae-scan-e [db tuples veid-idx attr])
-  (-ave-scan-e [db tuples v-idx attr]))
+  (-val-eq-scan-e [db tuples v-idx attr]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -157,11 +157,11 @@
         store [:vae-scan-e tuples veid-idx attr]
       (s/vae-scan-e store tuples veid-idx attr)))
 
-  (-ave-scan-e
+  (-val-eq-scan-e
     [db tuples v-idx attr]
     (wrap-cache
-        store [:ave-scan-e tuples v-idx attr]
-      (s/ave-scan-e store tuples v-idx attr)))
+        store [:val-eq-scan-e tuples v-idx attr]
+      (s/val-eq-scan-e store tuples v-idx attr)))
 
   ISearch
   (-search

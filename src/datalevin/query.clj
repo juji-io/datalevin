@@ -33,12 +33,15 @@
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
 
+(def ^:dynamic *save-intermediate* :relation)
+
 (declare -collect -resolve-clause resolve-clause)
 
 ;; Records
 
 (defrecord Context
-    [parsed-q rels sources rules opt-clauses late-clauses graph plan temps])
+    [parsed-q rels sources rules opt-clauses late-clauses graph plan
+     intermediates])
 
 ;; Utilities
 
@@ -223,23 +226,17 @@
 (defn hash-attrs [key-fn tuples] (-group-by key-fn '() tuples))
 
 (defn- diff-keys
-  "attrs are vector, keys in attrs2-attrs1"
-  [attrs1 attrs2]
-  (let [attrs1 (set attrs1)]
-    (->> attrs2
-         (reduce-kv (fn keeper [vec k _]
-                      (if (attrs1 k)
-                        vec
-                        (conj! vec k)))
-                    (transient []))
-         persistent!)))
+  "return (- vec2 vec1) elements"
+  [vec1 vec2]
+  (let [vec1 (set vec1)]
+    (persistent! (reduce (fn [vec k]
+                           (if (vec1 k) vec (conj! vec k)))
+                         (transient []) vec2))))
 
 (defn- attr-keys
   "attrs are map, preserve order by val"
   [attrs]
-  (->> attrs
-       (sort-by val)
-       (mapv key)))
+  (->> attrs (sort-by val) (mapv key)))
 
 (defn hash-join
   [rel1 rel2]
@@ -1140,7 +1137,8 @@
         schema  (db/-schema db)]
     (if (zero? ^long mcount)
       []
-      (let [init (cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}}
+      (let [init (cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}
+                          :save *save-intermediate*}
                    var     (assoc :pred (attr-pred [attr clause])
                                   :vars (cond-> [e]
                                           (not (placeholder? var))
@@ -1168,6 +1166,7 @@
                                                  (placeholder? %2))
                                          %1) attrs vars))]
               {:op    :eav-scan-v
+               :save  *save-intermediate*
                :index 0
                :attrs attrs
                :vars  vars
@@ -1248,9 +1247,10 @@
       p)))
 
 (defn- scan-v-step
-  [last-step index new-key new-steps]
+  [last-step index new-key new-steps skip-attr]
   (merge
     {:op    :eav-scan-v
+     :save  *save-intermediate*
      :index index
      :in    (:out last-step)
      :out   new-key}
@@ -1264,23 +1264,39 @@
          :preds [(add-back-range v s)]
          :cols  (concatv (:cols last-step) [a])})
       (let [[s1 s2] new-steps
+            skips   (:skips s2)
+            attr    (:attr s1)
             v       (peek (:vars s1))
-            skips   (:skips s2)]
-        {:attrs (concatv [(:attr s1)] (:attrs s2))
-         :vars  (concatv [v] (:vars s2))
+            attrs2  (:attrs s2)
+            vars2   (:vars s2)
+            preds2  (:preds s2)
+            [attrs vars preds]
+            (if skip-attr
+              (if (= attr skip-attr)
+                [attrs2 vars2 preds2]
+                (let [idx #{(u/index-of #(= skip-attr %) attrs2)}]
+                  [(concatv [attr] (u/remove-idxs idx attrs2))
+                   (concatv [v] (u/remove-idxs idx vars2))
+                   (concatv [(add-back-range v s1)]
+                            (u/remove-idxs idx preds2))]))
+              [(concatv [attr] attrs2)
+               (concatv [v] vars2)
+               (concatv [(add-back-range v s1)] preds2)])]
+        {:attrs attrs
+         :vars  vars
          :skips skips
-         :preds (concatv [(add-back-range v s1)] (:preds s2))
-         :cols  (concatv (:cols last-step)
-                         (remove (set skips) (:attrs s2)))}))))
+         :preds preds
+         :cols  (concatv (:cols last-step) (remove (set skips) attrs))}))))
 
 (defn- ref-plan
   [last-step {:keys [attr]} new-key new-steps]
   (let [index (u/index-of #(= attr %) (:cols last-step))]
-    [(scan-v-step last-step index new-key new-steps)]))
+    [(scan-v-step last-step index new-key new-steps nil)]))
 
 (defn- link-step
   [op last-step index attr tgt new-key]
   {:op    op
+   :save  *save-intermediate*
    :index index
    :in    (:out last-step)
    :out   new-key
@@ -1295,17 +1311,17 @@
     (if (= 1 (count new-steps))
       [step]
       [step
-       (scan-v-step step (dec (count (:cols step))) new-key new-steps)])))
+       (scan-v-step step (dec (count (:cols step))) new-key new-steps nil)])))
 
 (defn- val-eq-plan
   [last-step {:keys [attrs tgt]} link-e new-key new-steps]
   (let [index (u/index-of #(= (attrs link-e) %) (:cols last-step))
-        step  (link-step :ave-scan-e last-step index (attrs tgt)
-                         tgt new-key)]
+        attr  (attrs tgt)
+        step  (link-step :val-eq-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step
-       (scan-v-step step (dec (count (:cols step))) new-key new-steps)])))
+       (scan-v-step step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- max-domain-cardinality
   [db {:keys [attr attrs]}]
@@ -1361,18 +1377,21 @@
 
 (defn- h-plan
   [prev-plan new-base-plan new-key size]
-  {:steps (concatv (let [n (count (:steps new-base-plan))]
-                     (assoc-in new-base-plan
-                               [:steps (dec n) :save?] true))
-                   {:op   :hash-join
-                    :out  new-key
-                    :ins  [(:out (peek (:steps prev-plan)))
-                           (:out (peek (:steps new-base-plan)))]
-                    :cols (hash-cols prev-plan new-base-plan)})
-   :cost  (+ ^long (:cost prev-plan)
-             ^long (:cost new-base-plan)
-             ^long (estimate-hash-cost prev-plan new-base-plan))
-   :size  size})
+  (let [in (:out (peek (:steps prev-plan)))]
+    {:steps (conj (-> (:steps new-base-plan)
+                      (assoc-in [0 :in] in)
+                      (assoc-in [(dec (count (:steps new-base-plan)))
+                                 :save] :relation))
+                  {:op   :hash-join
+                   :save *save-intermediate*
+                   :in   in
+                   :out  new-key
+                   :base (:out (peek (:steps new-base-plan)))
+                   :cols (hash-cols prev-plan new-base-plan)})
+     :cost  (+ ^long (:cost prev-plan)
+               ^long (:cost new-base-plan)
+               ^long (estimate-hash-cost prev-plan new-base-plan))
+     :size  size}))
 
 (defn- binary-plan
   [db nodes new-base-plan prev-plan link-e new-e new-key]
@@ -1477,15 +1496,24 @@
   (if graph
     (reduce
       (fn [c [src nodes]]
-        (let [db (sources src)]
-          (assoc-in c [:plan src] (if (< 1 (count nodes))
-                                    (build-plan* db nodes)
-                                    [(init-node-plan db (first nodes))]))))
+        (let [db   (sources src)
+              plan (if (< 1 (count nodes))
+                     (build-plan* db nodes)
+                     [(init-node-plan db (first nodes))])]
+          (spy plan "plan")
+          (assoc-in c [:plan src] plan)))
       context graph)
     context))
 
+(defn- save-intermediates
+  [context save out out-rel]
+  (vswap! (:intermediates context) assoc out
+          (case save
+            :count    (.size ^List (:tuples out-rel))
+            :relation out-rel)))
+
 (defn- init-relation
-  [context db {:keys [vars val attr range pred out know-e? save?]}]
+  [context db {:keys [vars val attr range pred out know-e? save]}]
   (let [get-v? (< 1 (count vars))
         e      (first vars)
         v      (peek vars)
@@ -1503,7 +1531,7 @@
           :else
           (r/relation! {e 0}
                        (db/-init-tuples db attr [:closed val val] nil false)))]
-    (when save? (vswap! (:temps context) assoc out out-rel))
+    (save-intermediates context save out out-rel)
     out-rel))
 
 (defn- update-attrs
@@ -1514,49 +1542,48 @@
                   (map-indexed (fn [i v] [v (+ n ^long i)]))) vars)))
 
 (defn- eav-scan-v
-  [context db rel {:keys [attrs preds vars index skips out save?]}]
+  [context db rel {:keys [attrs preds vars index skips out save]}]
   (let [out-rel
         (-> rel
             (update :attrs #(update-attrs % vars))
             (assoc :tuples (db/-eav-scan-v
                              db (:tuples rel) index attrs preds skips)))]
-    (when save? (vswap! (:temps context) assoc out out-rel))
+    (save-intermediates context save out out-rel)
     out-rel))
 
 (defn- vae-scan-e
-  [context db rel {:keys [attr var index out save?]}]
+  [context db rel {:keys [attr var index out save]}]
   (let [out-rel
         (-> rel
             (update :attrs #(update-attrs % [var]))
             (assoc :tuples (db/-vae-scan-e db (:tuples rel) index attr)))]
-    (when save? (vswap! (:temps context) assoc out out-rel))
+    (save-intermediates context save out out-rel)
     out-rel))
 
-(defn- ave-scan-e
-  [context db rel {:keys [attr var index out save?]}]
+(defn- val-eq-scan-e
+  [context db rel {:keys [attr var index out save]}]
   (let [out-rel
         (-> rel
             (update :attrs #(update-attrs % [var]))
-            (assoc :tuples (db/-ave-scan-e db (:tuples rel) index attr)))]
-    (when save? (vswap! (:temps context) assoc out out-rel))
+            (assoc :tuples (db/-val-eq-scan-e db (:tuples rel) index attr)))]
+    (save-intermediates context save out out-rel)
     out-rel))
 
 (defn- hash-join-step
-  [context db rel1 {:keys [ins out save?]}]
-  (let [[_ base-in] ins
-        rel2        (@(:temps context) base-in)
-        out-rel     (hash-join rel1 rel2)]
-    (when save? (vswap! (:temps context) assoc out out-rel))
+  [context db rel1 {:keys [base out save]}]
+  (let [rel2    (@(:intermediates context) base)
+        out-rel (hash-join rel1 rel2)]
+    (save-intermediates context save out out-rel)
     out-rel))
 
 (defn- execute-step
   [context db {:keys [op] :as step} rel]
   (case op
-    :init-tuples (init-relation context db step)
-    :eav-scan-v  (eav-scan-v context db rel step)
-    :vae-scan-e  (vae-scan-e context db rel step)
-    :ave-scan-e  (ave-scan-e context db rel step)
-    :hash-join   (hash-join-step context db rel step)))
+    :init-tuples   (init-relation context db step)
+    :eav-scan-v    (eav-scan-v context db rel step)
+    :vae-scan-e    (vae-scan-e context db rel step)
+    :val-eq-scan-e (val-eq-scan-e context db rel step)
+    :hash-join     (hash-join-step context db rel step)))
 
 (defn- execute-steps
   [context db [f & r]]
@@ -1565,19 +1592,18 @@
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
-  (let [n (reduce + (map (fn [[_ components]] (count components)) plan))]
-    (if (= 1 n)
-      (update context :rels collapse-rels
-              (let [[src components] (first plan)]
-                (execute-steps context (sources src) (first components))))
-      (reduce
-        (fn [c r] (update c :rels collapse-rels r))
-        context
-        (pmap #(apply execute-steps context %)
-              (mapcat (fn [[src components]]
-                        (let [db (sources src)]
-                          (for [steps components] [db steps])))
-                      plan))))))
+  (if (= 1 (reduce + (map (fn [[_ components]] (count components)) plan)))
+    (update context :rels collapse-rels
+            (let [[src components] (first plan)]
+              (execute-steps context (sources src) (first components))))
+    (reduce
+      (fn [c r] (update c :rels collapse-rels r))
+      context
+      (pmap #(apply execute-steps context %)
+            (mapcat (fn [[src components]]
+                      (let [db (sources src)]
+                        (for [steps components] [db steps])))
+                    plan)))))
 
 (defn -q
   [context]

@@ -1,9 +1,11 @@
 (ns ^:no-doc datalevin.relation
   (:require
+   [clojure.pprint :as pp]
    [datalevin.util :as u :refer [raise]]
    [datalevin.timeout :as timeout])
   (:import
    [java.util List]
+   [java.io Writer]
    [org.eclipse.collections.impl.list.mutable FastList]))
 
 ;; attrs:
@@ -12,6 +14,11 @@
 ;;    [ objects ... ]
 ;; or [ (Datom. 2 "Oleg" 1 55) ... ]
 (defrecord Relation [attrs tuples])
+
+(defmethod print-method Relation [^Relation r, ^Writer w]
+  (binding [*out* w]
+    (let [{:keys [attrs tuples]} r]
+      (pp/pprint {:attrs attrs :tuples (mapv vec tuples)}))))
 
 (defn relation! [attrs tuples]
   (timeout/assert-time-left)

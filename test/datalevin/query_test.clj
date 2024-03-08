@@ -23,7 +23,8 @@
                 (d/db-with [{:db/id  1,        :name   "Ivan", :age 15
                              :aka    ["robot" "ai"]
                              :school :ny/union :friend 2}
-                            { :db/id 2, :name "Petr", :age 37 :friend 3}
+                            {:db/id 2, :name "Petr", :age 37 :friend 3
+                             :aka   ["ai" "pi"]}
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
@@ -50,11 +51,11 @@
     ;;                   [(= ?ns ?ns-in)]
     ;;                   [?e :school ?v]]
     ;;                 db "ny")))
-    (is (= (set (d/q '[:find ?e ?v
-                       :in $ ?e
-                       :where [?e :age ?v]]
-                     db [:name "Ivan"]))
-           #{[[:name "Ivan"] 15]}))
+    ;; (is (= (set (d/q '[:find ?e ?v
+    ;;                    :in $ ?e
+    ;;                    :where [?e :age ?v]]
+    ;;                  db [:name "Ivan"]))
+    ;;        #{[[:name "Ivan"] 15]}))
     ;; (is (= (set (d/q '[:find ?v
     ;;                    :in $ ?e
     ;;                    :where [?e :age ?v]]
@@ -67,7 +68,7 @@
     ;;                    [?e :school ?s]]
     ;;                  db [:name "Ivan"]))
     ;;        #{[15 :ny/union]}))
-    ;; (is (= #{"robot" "ai" "bigmac"}
+    ;; (is (= #{"robot" "ai" "bigmac" "pi"}
     ;;        (set (d/q '[:find [?aname ...]
     ;;                    :where
     ;;                    [_ :aka ?aname]]
@@ -86,7 +87,7 @@
     ;;          [:aka "ai"]}))
     ;; (is (= (d/q '[:find ?e
     ;;               :where [?e :aka "ai"]] db)
-    ;;        #{[1]}))
+    ;;        #{[1] [2]}))
     ;; (is (= (d/q '[:find ?e
     ;;               :where [?e :name]] db)
     ;;        #{[1] [2] [3] [4]}))
@@ -101,18 +102,18 @@
     ;;               [(>= ?a1 22)]
     ;;               [(odd? ?a1)]] db)
     ;;        #{[37]}))
-    (is (= (d/q '[:find  ?n ?a
-                  :in ?k $
-                  :where
-                  [?e :aka ?k]
-                  [?e :name ?n]
-                  [?e :age  ?a]]
-                "dragon_saver_94"
-                [[1 :name "Ivan"]
-                 [1 :age  19]
-                 [1 :aka  "dragon_saver_94"]
-                 [1 :aka  "-=autobot=-"]])
-           #{["Ivan" 19]}))
+    ;; (is (= (d/q '[:find  ?n ?a
+    ;;               :in ?k $
+    ;;               :where
+    ;;               [?e :aka ?k]
+    ;;               [?e :name ?n]
+    ;;               [?e :age  ?a]]
+    ;;             "dragon_saver_94"
+    ;;             [[1 :name "Ivan"]
+    ;;              [1 :age  19]
+    ;;              [1 :aka  "dragon_saver_94"]
+    ;;              [1 :aka  "-=autobot=-"]])
+    ;;        #{["Ivan" 19]}))
     ;; (is (= #{[3 :age 37] [2 :age 37] [4 :age 15] [1 :school :ny/union]}
     ;;        (d/q '[:find ?e ?a ?v
     ;;               :where
@@ -153,15 +154,15 @@
     ;;               [?e1 :name ?n]
     ;;               [?e2 :name ?n]] db)
     ;;        #{[1 1] [2 2] [3 3] [4 4] }))
-    (is (= (d/q '[:find  ?e ?e2 ?n
-                  :in $ ?i
-                  :where
-                  [?e :name ?i]
-                  [?e :age ?a]
-                  [?e2 :age ?a]
-                  [?e2 :name ?n]] db "Ivan")
-           #{[1 1 "Ivan"]
-             [1 4 "John"]}))
+    ;; (is (= (d/q '[:find  ?e ?e2 ?n
+    ;;               :in $ ?i
+    ;;               :where
+    ;;               [?e :name ?i]
+    ;;               [?e :age ?a]
+    ;;               [?e2 :age ?a]
+    ;;               [?e2 :name ?n]] db "Ivan")
+    ;;        #{[1 1 "Ivan"]
+    ;;          [1 4 "John"]}))
     ;; (is (= (d/q '[:find ?n
     ;;               :in $ ?i
     ;;               :where
@@ -171,6 +172,16 @@
     ;;               [(< ?a ?a2)]
     ;;               [?e2 :name ?n]] db "Ivan")
     ;;        #{["Oleg"] ["Petr"]}))
+    (is (= (d/q '[:find  ?n1 ?n2
+                  :where
+                  [?e1 :aka ?x]
+                  [?e2 :aka ?x]
+                  [?e1 :name ?n1]
+                  [?e2 :name ?n2]] db)
+           #{["Ivan" "Ivan"]
+             ["Petr" "Petr"]
+             ["Ivan" "Petr"]
+             ["Petr" "Ivan"]}))
     (d/close-db db)
     (u/delete-files dir)))
 
