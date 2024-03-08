@@ -38,7 +38,7 @@
 ;; Records
 
 (defrecord Context
-    [parsed-q rels sources rules opt-clauses late-clauses graph plan])
+    [parsed-q rels sources rules opt-clauses late-clauses graph plan temps])
 
 ;; Utilities
 
@@ -257,39 +257,37 @@
         attrs        (zipmap (concatv keep-attrs1 keep-attrs2) (range))]
     (if (< (count tuples1) (count tuples2))
       (let [^UnifiedMap hash (hash-attrs key-fn1 tuples1)]
-        (r/relation!
-          attrs
-          (reduce
-            (fn outer [acc tuple2]
-              (let [key (key-fn2 tuple2)]
-                (if-some [tuples1 (.get hash key)]
-                  (reduce
-                    (fn inner [^List acc tuple1]
-                      (.add acc
-                            (r/join-tuples
-                              tuple1 keep-idxs1 tuple2 keep-idxs2))
-                      acc)
-                    acc tuples1)
-                  acc)))
-            (FastList.)
-            tuples2)))
+        (r/relation! attrs
+                     (reduce
+                       (fn outer [acc tuple2]
+                         (let [key (key-fn2 tuple2)]
+                           (if-some [tuples1 (.get hash key)]
+                             (reduce
+                               (fn inner [^List acc tuple1]
+                                 (.add acc
+                                       (r/join-tuples
+                                         tuple1 keep-idxs1 tuple2 keep-idxs2))
+                                 acc)
+                               acc tuples1)
+                             acc)))
+                       (FastList.)
+                       tuples2)))
       (let [^UnifiedMap hash (hash-attrs key-fn2 tuples2)]
-        (r/relation!
-          attrs
-          (reduce
-            (fn outer [acc tuple1]
-              (let [key (key-fn1 tuple1)]
-                (if-some [tuples2 (.get hash key)]
-                  (reduce
-                    (fn inner [^List acc tuple2]
-                      (.add acc
-                            (r/join-tuples
-                              tuple1 keep-idxs1 tuple2 keep-idxs2))
-                      acc)
-                    acc tuples2)
-                  acc)))
-            (FastList.)
-            tuples1))))))
+        (r/relation! attrs
+                     (reduce
+                       (fn outer [acc tuple1]
+                         (let [key (key-fn1 tuple1)]
+                           (if-some [tuples2 (.get hash key)]
+                             (reduce
+                               (fn inner [^List acc tuple2]
+                                 (.add acc
+                                       (r/join-tuples
+                                         tuple1 keep-idxs1 tuple2 keep-idxs2))
+                                 acc)
+                               acc tuples2)
+                             acc)))
+                       (FastList.)
+                       tuples1))))))
 
 (defn subtract-rel
   [a b]
@@ -1362,8 +1360,10 @@
     (concatv cols1 keep-cols2)))
 
 (defn- h-plan
-[prev-plan new-base-plan new-key size]
-  {:steps (concatv new-base-plan
+  [prev-plan new-base-plan new-key size]
+  {:steps (concatv (let [n (count (:steps new-base-plan))]
+                     (assoc-in new-base-plan
+                               [:steps (dec n) :save?] true))
                    {:op   :hash-join
                     :out  new-key
                     :ins  [(:out (peek (:steps prev-plan)))
@@ -1375,64 +1375,63 @@
    :size  size})
 
 (defn- binary-plan
-[db nodes new-base-plan prev-plan link-e new-e new-key]
+  [db nodes new-base-plan prev-plan link-e new-e new-key]
   (let [link   (some #(when (= new-e (:tgt %)) %)
                      (get-in nodes [link-e :links]))
         size   (estimate-join-size db link (:size prev-plan) new-base-plan)
         e-plan (e-plan prev-plan link-e link new-key new-base-plan size)
         h-plan (h-plan prev-plan new-base-plan new-key size)]
-  (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
+    (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
 (defn- plans
-[db nodes connected base-plans prev-table]
-(reduce
-  (fn [table [prev-key prev-plan]]
-    (reduce
-      (fn [t pair]
-        (if-let [link-e (not-empty (set/intersection prev-key pair))]
-          (if (= 1 (count link-e))
-            (let [new-key  (set/union prev-key pair)
-                  new-e    (set/difference pair link-e)
-                  cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
-                  {:keys [cost] :as new-plan}
-                  (binary-plan db nodes (base-plans new-e)
-                               prev-plan (first link-e)
-                               (first new-e) new-key)]
-              (if (< ^long cost ^long cur-cost)
-                (assoc t new-key new-plan)
-                t))
-            t)
-          t))
-      table connected))
-  {} prev-table))
+  [db nodes connected base-plans prev-table]
+  (reduce
+    (fn [table [prev-key prev-plan]]
+      (reduce
+        (fn [t pair]
+          (if-let [link-e (not-empty (set/intersection prev-key pair))]
+            (if (= 1 (count link-e))
+              (let [new-key  (set/union prev-key pair)
+                    new-e    (set/difference pair link-e)
+                    cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
+                    {:keys [cost] :as new-plan}
+                    (binary-plan db nodes (base-plans new-e)
+                                 prev-plan (first link-e)
+                                 (first new-e) new-key)]
+                (if (< ^long cost ^long cur-cost)
+                  (assoc t new-key new-plan)
+                  t))
+              t)
+            t))
+        table connected))
+    {} prev-table))
 
 (defn- connected-pairs
-[nodes component]
-(into #{}
-      (comp
-        (filter (fn [[e1 e2]]
-                  (some #(= % e2) (map :tgt (get-in nodes [e1 :links])))))
-        (map set))
-      (u/combinations component 2)))
+  [nodes component]
+  (into #{}
+        (comp
+          (filter (fn [[e1 e2]]
+                    (some #(= % e2) (map :tgt (get-in nodes [e1 :links])))))
+          (map set))
+        (u/combinations component 2)))
 
 (defn- plan-component
-[db nodes component]
+  [db nodes component]
   (let [n (count component)]
-  (if (= n 1)
-    (init-node-plan db (find nodes (first component)))
-    (let [connected (connected-pairs nodes component)
-          tables    (FastList. n)
-          n-1       (dec n)
-          base-ps   (build-base-plans db nodes component)]
-      (spy base-ps "base plans")
-      (.add tables base-ps)
-      (dotimes [i n-1]
-        (.add tables (plans db nodes connected base-ps (.get tables i))))
-      (reduce
-        (fn [steps i]
-          (concatv (:steps ((.get tables i) (:in (first steps)))) steps))
-        (-> (.get tables n-1) first val :steps)
-        (range (dec n-1) -1 -1))))))
+    (if (= n 1)
+      (init-node-plan db (find nodes (first component)))
+      (let [connected (connected-pairs nodes component)
+            tables    (FastList. n)
+            n-1       (dec n)
+            base-ps   (build-base-plans db nodes component)]
+        (.add tables base-ps)
+        (dotimes [i n-1]
+          (.add tables (plans db nodes connected base-ps (.get tables i))))
+        (reduce
+          (fn [steps i]
+            (concatv (:steps ((.get tables i) (:in (first steps)))) steps))
+          (-> (.get tables n-1) first val :steps)
+          (range (dec n-1) -1 -1))))))
 
 (defn- dfs
   [graph start]
@@ -1486,23 +1485,26 @@
     context))
 
 (defn- init-relation
-  [db {:keys [vars val attr range pred know-e?]}]
+  [context db {:keys [vars val attr range pred out know-e? save?]}]
   (let [get-v? (< 1 (count vars))
         e      (first vars)
-        v      (peek vars)]
-    (cond
-      know-e?
-      (r/relation! (cond-> {'_ 0} get-v? (assoc v 1))
-                   (let [tuples (doto (FastList.) (.add (object-array [e])))]
-                     (if get-v?
-                       (db/-eav-scan-v db tuples 0 [attr] [nil] [])
-                       tuples)))
-      (nil? val)
-      (r/relation! (cond-> {e 0} get-v? (assoc v 1))
-                   (db/-init-tuples db attr (or range [:all]) pred get-v?))
-      :else
-      (r/relation! {e 0}
-                   (db/-init-tuples db attr [:closed val val] nil false)))))
+        v      (peek vars)
+        out-rel
+        (cond
+          know-e?
+          (r/relation! (cond-> {'_ 0} get-v? (assoc v 1))
+                       (let [tuples (doto (FastList.) (.add (object-array [e])))]
+                         (if get-v?
+                           (db/-eav-scan-v db tuples 0 [attr] [nil] [])
+                           tuples)))
+          (nil? val)
+          (r/relation! (cond-> {e 0} get-v? (assoc v 1))
+                       (db/-init-tuples db attr (or range [:all]) pred get-v?))
+          :else
+          (r/relation! {e 0}
+                       (db/-init-tuples db attr [:closed val val] nil false)))]
+    (when save? (vswap! (:temps context) assoc out out-rel))
+    out-rel))
 
 (defn- update-attrs
   [attrs vars]
@@ -1512,37 +1514,54 @@
                   (map-indexed (fn [i v] [v (+ n ^long i)]))) vars)))
 
 (defn- eav-scan-v
-  [db rel {:keys [attrs preds vars index skips]}]
-  (->  rel
-       (update :attrs #(update-attrs % vars))
-       (assoc :tuples (db/-eav-scan-v
-                        db (:tuples rel) index attrs preds skips))))
+  [context db rel {:keys [attrs preds vars index skips out save?]}]
+  (let [out-rel
+        (-> rel
+            (update :attrs #(update-attrs % vars))
+            (assoc :tuples (db/-eav-scan-v
+                             db (:tuples rel) index attrs preds skips)))]
+    (when save? (vswap! (:temps context) assoc out out-rel))
+    out-rel))
 
 (defn- vae-scan-e
-  [db rel step]
-  )
+  [context db rel {:keys [attr var index out save?]}]
+  (let [out-rel
+        (-> rel
+            (update :attrs #(update-attrs % [var]))
+            (assoc :tuples (db/-vae-scan-e db (:tuples rel) index attr)))]
+    (when save? (vswap! (:temps context) assoc out out-rel))
+    out-rel))
 
 (defn- ave-scan-e
-  [db rel step]
-  )
+  [context db rel {:keys [attr var index out save?]}]
+  (let [out-rel
+        (-> rel
+            (update :attrs #(update-attrs % [var]))
+            (assoc :tuples (db/-ave-scan-e db (:tuples rel) index attr)))]
+    (when save? (vswap! (:temps context) assoc out out-rel))
+    out-rel))
 
 (defn- hash-join-step
-  [db rel step]
-  )
+  [context db rel1 {:keys [ins out save?]}]
+  (let [[_ base-in] ins
+        rel2        (@(:temps context) base-in)
+        out-rel     (hash-join rel1 rel2)]
+    (when save? (vswap! (:temps context) assoc out out-rel))
+    out-rel))
 
 (defn- execute-step
-  [db {:keys [op] :as step} rel]
+  [context db {:keys [op] :as step} rel]
   (case op
-    :init-tuples (init-relation db step)
-    :eav-scan-v  (eav-scan-v db rel step)
-    :vae-scan-e  (vae-scan-e db rel step)
-    :ave-scan-e  (ave-scan-e db rel step)
-    :hash-join   (hash-join-step db rel step)))
+    :init-tuples (init-relation context db step)
+    :eav-scan-v  (eav-scan-v context db rel step)
+    :vae-scan-e  (vae-scan-e context db rel step)
+    :ave-scan-e  (ave-scan-e context db rel step)
+    :hash-join   (hash-join-step context db rel step)))
 
 (defn- execute-steps
-  [db [f & r]]
-  (reduce (fn [rel step] (execute-step db step rel))
-          (execute-step db f nil) r))
+  [context db [f & r]]
+  (reduce (fn [rel step] (execute-step context db step rel))
+          (execute-step context db f nil) r))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
@@ -1550,21 +1569,15 @@
     (if (= 1 n)
       (update context :rels collapse-rels
               (let [[src components] (first plan)]
-                (execute-steps (sources src) (first components))))
-      (let [new-rels (vec (repeatedly n promise))
-            i        (atom 0)]
-        (doseq [[src components] plan
-                :let             [db (sources src)]]
-          (doseq [steps components]
-            (future
-              (let [rel (execute-steps db steps)]
-                (swap! i (fn [i]
-                           (deliver (nth new-rels i) rel)
-                           (u/long-inc i)))))))
-        (reduce
-          (fn [c j]
-            (update c :rels collapse-rels @(nth new-rels j)))
-          context (range n))))))
+                (execute-steps context (sources src) (first components))))
+      (reduce
+        (fn [c r] (update c :rels collapse-rels r))
+        context
+        (pmap #(apply execute-steps context %)
+              (mapcat (fn [[src components]]
+                        (let [db (sources src)]
+                          (for [steps components] [db steps])))
+                      plan))))))
 
 (defn -q
   [context]
@@ -1572,8 +1585,8 @@
     (as-> context c
       (build-graph c)
       (build-plan c)
-      (spy c)
       (execute-plan c)
+      (spy c)
       (reduce resolve-clause c (:late-clauses c)))))
 
 (defn -collect-tuples
@@ -1756,7 +1769,8 @@
             with              (:qwith parsed-q)
             all-vars          (concatv (dp/find-vars find) (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
-            context           (-> (Context. parsed-q [] {} {} [] nil nil nil)
+            context           (-> (Context. parsed-q [] {} {} []
+                                            nil nil nil (volatile! {}))
                                   (resolve-ins inputs)
                                   (resolve-redudants))
             resultset         (-> (-q context)
