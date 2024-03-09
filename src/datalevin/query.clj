@@ -33,7 +33,7 @@
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
 
-(def ^:dynamic *save-intermediate* :relation)
+(def ^:dynamic *save-intermediate* :count)
 
 (declare -collect -resolve-clause resolve-clause)
 
@@ -240,6 +240,8 @@
 
 (defn hash-join
   [rel1 rel2]
+  (spy (:attrs rel1) "rel1")
+  (spy (:attrs rel2) "rel2")
   (let [tuples1      (:tuples rel1)
         tuples2      (:tuples rel2)
         attrs1       (:attrs rel1)
@@ -1380,13 +1382,11 @@
   (let [in (:out (peek (:steps prev-plan)))]
     {:steps (conj (-> (:steps new-base-plan)
                       (assoc-in [0 :in] in)
-                      (assoc-in [(dec (count (:steps new-base-plan)))
-                                 :save] :relation))
+                      (assoc-in [0 :save-in?] true))
                   {:op   :hash-join
                    :save *save-intermediate*
                    :in   in
                    :out  new-key
-                   :base (:out (peek (:steps new-base-plan)))
                    :cols (hash-cols prev-plan new-base-plan)})
      :cost  (+ ^long (:cost prev-plan)
                ^long (:cost new-base-plan)
@@ -1509,11 +1509,13 @@
   [context save out out-rel]
   (vswap! (:intermediates context) assoc out
           (case save
-            :count    (.size ^List (:tuples out-rel))
+            :count    {:attrs        (:attrs out-rel)
+                       :tuples-count (.size ^List (:tuples out-rel))}
             :relation out-rel)))
 
 (defn- init-relation
-  [context db {:keys [vars val attr range pred out know-e? save]}]
+  [context db rel
+   {:keys [vars val attr range pred in out know-e? save save-in?]}]
   (let [get-v? (< 1 (count vars))
         e      (first vars)
         v      (peek vars)
@@ -1521,7 +1523,8 @@
         (cond
           know-e?
           (r/relation! (cond-> {'_ 0} get-v? (assoc v 1))
-                       (let [tuples (doto (FastList.) (.add (object-array [e])))]
+                       (let [tuples (doto (FastList.)
+                                      (.add (object-array [e])))]
                          (if get-v?
                            (db/-eav-scan-v db tuples 0 [attr] [nil] [])
                            tuples)))
@@ -1531,6 +1534,7 @@
           :else
           (r/relation! {e 0}
                        (db/-init-tuples db attr [:closed val val] nil false)))]
+    (when save-in? (save-intermediates context :relation in rel))
     (save-intermediates context save out out-rel)
     out-rel))
 
@@ -1570,20 +1574,22 @@
     out-rel))
 
 (defn- hash-join-step
-  [context db rel1 {:keys [base out save]}]
-  (let [rel2    (@(:intermediates context) base)
-        out-rel (hash-join rel1 rel2)]
+  [context rel {:keys [out in save]}]
+  (spy (:attrs rel) "rel")
+  (let [rel1    (@(:intermediates context) in)
+        out-rel (hash-join rel1 rel)]
+    (save-intermediates context save in rel1)
     (save-intermediates context save out out-rel)
     out-rel))
 
 (defn- execute-step
   [context db {:keys [op] :as step} rel]
   (case op
-    :init-tuples   (init-relation context db step)
+    :init-tuples   (init-relation context db rel step)
     :eav-scan-v    (eav-scan-v context db rel step)
     :vae-scan-e    (vae-scan-e context db rel step)
     :val-eq-scan-e (val-eq-scan-e context db rel step)
-    :hash-join     (hash-join-step context db rel step)))
+    :hash-join     (hash-join-step context rel step)))
 
 (defn- execute-steps
   [context db [f & r]]
@@ -1612,7 +1618,7 @@
       (build-graph c)
       (build-plan c)
       (execute-plan c)
-      (spy c)
+      ;; (spy c)
       (reduce resolve-clause c (:late-clauses c)))))
 
 (defn -collect-tuples

@@ -37,7 +37,7 @@
                           :f     (rand-int 3)
                           :g     (rand-int 3)
                           :h     (rand-int 3)})))
-        dir  (u/tmp-dir (str "test-instant-" (UUID/randomUUID)))
+        dir  (u/tmp-dir (str "test-many-" (UUID/randomUUID)))
         db   (-> (d/empty-db dir {:a {:db/valueType :db.type/string}
                                   :b {:db/valueType :db.type/string}
                                   :c {:db/valueType :db.type/string}
