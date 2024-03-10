@@ -271,7 +271,7 @@
                              :person/name   "Ivan",
                              :person/age    15
                              :person/aka    ["robot" "ai"]
-                             :person/school "Leland"
+                             :person/school 6
                              :person/city   "San Jose"
                              :person/hobby  ["video games" "chess"]
                              :person/friend 2}
@@ -279,7 +279,7 @@
                              :person/name   "Petr",
                              :person/age    16
                              :person/aka    "fixer"
-                             :person/school "Mission"
+                             :person/school 7
                              :person/city   "Fremont"
                              :person/hobby  ["video games"]
                              :person/friend [1 3]}
@@ -292,18 +292,74 @@
                              :person/friend [1 4 5]}
                             {:db/id         4,
                              :person/name   "John"
-                             :person/school "Mission"
-                             :person/city   "Fremont"
+                             :person/school 7
+                             :person/city   "San Jose"
                              :person/hobby  ["video games" "baseball"]
                              :person/age    15
                              :person/friend 5}
                             {:db/id         5,
                              :person/name   "James"
-                             :person/school "Mission"
+                             :person/school 7
                              :person/city   "Fremont"
                              :person/hobby  ["baseball"]
-                             :person/age    17
-                             :person/friend 4}]))]
+                             :person/age    16
+                             :person/friend 4}
+                            {:db/id       6
+                             :school/city "San Jose"
+                             :school/name "Leland"}
+                            {:db/id       7
+                             :school/city "Fremont"
+                             :school/name "Mission"}]))]
+    (is (= (set (d/q '[:find ?n1 ?n2
+                       :in $ ?c
+                       :where
+                       [?e1 :person/city ?c]
+                       [?e :school/city ?c]
+                       [?e1 :person/name ?n1]
+                       [?e1 :person/age ?a]
+                       [?e2 :person/age ?a]
+                       [?e2 :person/school ?e]
+                       [?e2 :person/name ?n2]
+                       [(not= ?n1 ?n2)]]
+                     db "Fremont"))
+           #{["James" "Petr"] ["Petr" "James"] ["Ivan" "John"]}))
+    (is (= (set (d/q '[:find ?n1
+                       :in $ ?n
+                       :where
+                       [?e :person/school ?s]
+                       [?e :person/name ?n]
+                       [?e :person/city ?c1]
+                       [?e1 :person/name ?n1]
+                       [?e1 :person/school ?s]
+                       [?e1 :person/city ?c2]
+                       [(not= ?c1 ?c2)]
+                       [?e :person/hobby ?h]
+                       [?e1 :person/hobby ?h]]
+                     db "John"))
+           #{["James"] ["Petr"]}))
+    (is (= (set (d/q '[:find ?n1
+                       :in $ ?n
+                       :where
+                       [?e :person/school ?s]
+                       [?e :person/name ?n]
+                       [?e :person/city ?c]
+                       [?e1 :person/name ?n1]
+                       [?e1 :person/school ?s]
+                       [?e1 :person/city ?c]
+                       [?e :person/hobby ?h1]
+                       [?e1 :person/hobby ?h2]
+                       [(not= ?h1 ?h2)]]
+                     db "James"))
+           #{["Petr"]}))
+    (is (= (set (d/q '[:find ?n1
+                       :in $ ?n
+                       :where
+                       [?e :person/school ?s]
+                       [?e :person/name ?n]
+                       [?e1 :person/school ?s]
+                       [?e1 :person/name ?n1]]
+                     db "John"))
+           #{["James"] ["John"] ["Petr"]}))
     (is (= (set (d/q '[:find ?a
                        :in $ ?n
                        :where
@@ -312,28 +368,28 @@
                        [?e1 :person/age ?a]]
                      db "Ivan"))
            #{[16]}))
-    ;; (is (= (d/q '[:find  ?e1 ?e2
-    ;;               :where
-    ;;               [?e1 :name ?n]
-    ;;               [?e2 :name ?n]] db)
-    ;;        #{[1 1] [2 2] [3 3] [4 4] }))
-    ;; (is (= (d/q '[:find  ?e ?e2 ?n
-    ;;               :in $ ?i
-    ;;               :where
-    ;;               [?e :name ?i]
-    ;;               [?e :age ?a]
-    ;;               [?e2 :age ?a]
-    ;;               [?e2 :name ?n]] db "Ivan")
-    ;;        #{[1 1 "Ivan"]
-    ;;          [1 4 "John"]}))
-    ;; (is (= (d/q '[:find ?n
-    ;;               :in $ ?i
-    ;;               :where
-    ;;               [?e :name ?i]
-    ;;               [?e :age ?a]
-    ;;               [?e2 :age ?a2]
-    ;;               [(< ?a ?a2)]
-    ;;               [?e2 :name ?n]] db "Ivan")
-    ;;        #{["Oleg"] ["Petr"]}))
+    (is (= (d/q '[:find  ?e1 ?e2
+                  :where
+                  [?e1 :person/name ?n]
+                  [?e2 :person/name ?n]] db)
+           #{[1 1] [2 2] [3 3] [4 4] [5 5]}))
+    (is (= (d/q '[:find  ?e ?e2 ?n
+                  :in $ ?i
+                  :where
+                  [?e :person/name ?i]
+                  [?e :person/age ?a]
+                  [?e2 :person/age ?a]
+                  [?e2 :person/name ?n]] db "Ivan")
+           #{[1 1 "Ivan"]
+             [1 4 "John"]}))
+    (is (= (d/q '[:find ?n
+                  :in $ ?i
+                  :where
+                  [?e :person/name ?i]
+                  [?e :person/age ?a]
+                  [?e2 :person/age ?a2]
+                  [(< ?a ?a2)]
+                  [?e2 :person/name ?n]] db "Ivan")
+           #{["Oleg"] ["Petr"] ["James"]}))
     (d/close-db db)
     (u/delete-files dir)))

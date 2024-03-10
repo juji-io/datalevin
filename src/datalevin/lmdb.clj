@@ -283,13 +283,14 @@ values;")
 
 (defmulti open-kv (constantly (pick-binding)))
 
+(deftype RangeContext [^boolean forward?
+                       ^boolean include-start?
+                       ^boolean include-stop?
+                       ^ByteBuffer start-bf
+                       ^ByteBuffer stop-bf])
+
 (defn range-table
-  "Produce the following context values for iterator control logic:
-    * forward?
-    * include-start?
-    * include-stop?
-    * start-buffer
-    * stop-buffer"
+  "Produce context for range iterator"
   [range-type k1 k2 b1 b2]
   (let [chk1 #(if k1
                 %1
@@ -297,26 +298,39 @@ values;")
         chk2 #(if (and k1 k2)
                 %1
                 (u/raise "Missing start/end key for range type " %2 {}))]
-    ;; TODO use a deftype for this
     (case range-type
-      :all               [true false false nil nil]
-      :all-back          [false false false nil nil]
-      :at-least          (chk1 [true true false b1 nil] :at-least)
-      :at-most-back      (chk1 [false true false b1 nil] :at-most-back)
-      :at-most           (chk1 [true false true nil b1] :at-most)
-      :at-least-back     (chk1 [false false true nil b1] :at-least-back)
-      :closed            (chk2 [true true true b1 b2] :closed)
-      :closed-back       (chk2 [false true true b1 b2] :closed-back)
-      :closed-open       (chk2 [true true false b1 b2] :closed-open)
-      :closed-open-back  (chk2 [false true false b1 b2] :closed-open-back)
-      :greater-than      (chk1 [true false false b1 nil] :greater-than)
-      :less-than-back    (chk1 [false false false b1 nil] :less-than-back)
-      :less-than         (chk1 [true false false nil b1] :less-than)
-      :greater-than-back (chk1 [false false false nil b1] :greater-than-back)
-      :open              (chk2 [true false false b1 b2] :open)
-      :open-back         (chk2 [false false false b1 b2] :open-back)
-      :open-closed       (chk2 [true false true b1 b2] :open-closed)
-      :open-closed-back  (chk2 [false false true b1 b2] :open-closed-back)
+      :all               (RangeContext. true false false nil nil)
+      :all-back          (RangeContext. false false false nil nil)
+      :at-least          (chk1 (RangeContext. true true false b1 nil)
+                               :at-least)
+      :at-most-back      (chk1 (RangeContext. false true false b1 nil)
+                               :at-most-back)
+      :at-most           (chk1 (RangeContext. true false true nil b1)
+                               :at-most)
+      :at-least-back     (chk1 (RangeContext. false false true nil b1)
+                               :at-least-back)
+      :closed            (chk2 (RangeContext. true true true b1 b2) :closed)
+      :closed-back       (chk2 (RangeContext. false true true b1 b2)
+                               :closed-back)
+      :closed-open       (chk2 (RangeContext. true true false b1 b2)
+                               :closed-open)
+      :closed-open-back  (chk2 (RangeContext. false true false b1 b2)
+                               :closed-open-back)
+      :greater-than      (chk1 (RangeContext. true false false b1 nil)
+                               :greater-than)
+      :less-than-back    (chk1 (RangeContext. false false false b1 nil)
+                               :less-than-back)
+      :less-than         (chk1 (RangeContext. true false false nil b1)
+                               :less-than)
+      :greater-than-back (chk1 (RangeContext. false false false nil b1)
+                               :greater-than-back)
+      :open              (chk2 (RangeContext. true false false b1 b2) :open)
+      :open-back         (chk2 (RangeContext. false false false b1 b2)
+                               :open-back)
+      :open-closed       (chk2 (RangeContext. true false true b1 b2)
+                               :open-closed)
+      :open-closed-back  (chk2 (RangeContext. false false true b1 b2)
+                               :open-closed-back)
       (u/raise "Unknown range type" range-type {}))))
 
 (defn dump-dbis-list

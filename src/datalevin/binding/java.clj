@@ -24,6 +24,7 @@
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
    [clojure.lang IPersistentVector MapEntry IObj]
+   [datalevin.lmdb RangeContext]
    [datalevin.spill SpillableVector]
    [datalevin.compress ICompressor]))
 
@@ -195,8 +196,7 @@
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
   (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
-    (let [ctx (l/list-range-info rtx :all nil nil nil
-                                 v-range-type v1 v2 v-type)]
+    (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
       (->ListRandKeyValIterable this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
@@ -215,15 +215,17 @@
 (deftype KeyIterable [^DBI db
                       ^Cursor cur
                       ^Rtx rtx
-                      ctx]
+                      ^RangeContext ctx]
   Iterable
   (iterator [_]
-    (let [[forward? include-start? include-stop?
-           ^ByteBuffer sk ^ByteBuffer ek] ctx
-
-          started?      (volatile! false)
-          ^ByteBuffer k (.key cur)
-          ^ByteBuffer v (.val cur)]
+    (let [forward?       (.-forward? ctx)
+          include-start? (.-include-start? ctx)
+          include-stop?  (.-include-stop? ctx)
+          ^ByteBuffer sk (.-start-bf ctx)
+          ^ByteBuffer ek (.-stop-bf ctx)
+          started?       (volatile! false)
+          ^ByteBuffer k  (.key cur)
+          ^ByteBuffer v  (.val cur)]
       (letfn [(init []
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
@@ -279,15 +281,22 @@
                        ctx]
   Iterable
   (iterator [_]
-    (let [[[forward-key? include-start-key? include-stop-key?
-            ^ByteBuffer sk ^ByteBuffer ek]
-           [forward-val? include-start-val? include-stop-val?
-            ^ByteBuffer sv ^ByteBuffer ev]] ctx
-
-          key-ended? (volatile! false)
-          started?   (volatile! false)
-          k          (.key cur)
-          v          (.val cur)]
+    (let [[^RangeContext kctx ^RangeContext vctx]
+          ctx
+          forward-key?       (.-forward? kctx)
+          include-start-key? (.-include-start? kctx)
+          include-stop-key?  (.-include-stop? kctx)
+          ^ByteBuffer sk     (.-start-bf kctx)
+          ^ByteBuffer ek     (.-stop-bf kctx)
+          forward-val?       (.-forward? vctx)
+          include-start-val? (.-include-start? vctx)
+          include-stop-val?  (.-include-stop? vctx)
+          ^ByteBuffer sv     (.-start-bf vctx)
+          ^ByteBuffer ev     (.-stop-bf vctx)
+          key-ended?         (volatile! false)
+          started?           (volatile! false)
+          k                  (.key cur)
+          v                  (.val cur)]
       (letfn [(init-key []
                 (if sk
                   (if (.get cur sk GetOp/MDB_SET_RANGE)
@@ -391,13 +400,15 @@
 (deftype ListRandKeyValIterable [^DBI db
                                  ^Cursor cur
                                  ^Rtx rtx
-                                 ctx]
+                                 ^RangeContext ctx]
   IListRandKeyValIterable
   (val-iterator [_]
-    (let [[_ [forward-val? include-start-val? include-stop-val?
-              ^ByteBuffer sv ^ByteBuffer ev]] ctx
-
-          v (.val cur)]
+    (let [forward-val?       (.-forward? ctx)
+          include-start-val? (.-include-start? ctx)
+          include-stop-val?  (.-include-stop? ctx)
+          ^ByteBuffer sv     (.-start-bf ctx)
+          ^ByteBuffer ev     (.-stop-bf ctx)
+          v                  (.val cur)]
       (assert forward-val?
               "Backward iterate is not supported in ListRandKeyValIterable")
       (letfn [(init-val []
