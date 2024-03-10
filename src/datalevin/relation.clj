@@ -29,10 +29,13 @@
 (defn typed-aget [a i] (aget ^objects a ^Long i))
 
 (defn join-tuples
-  ([t1 t2]
-   (let [idxs1 (object-array (range (alength ^objects t1)))
-         idxs2 (object-array (range (alength ^objects t2)))]
-     (join-tuples t1 idxs1 t2 idxs2)))
+  ([^objects t1 ^objects t2]
+   (let [l1  (alength t1)
+         l2  (alength t2)
+         res (object-array (+ l1 l2))]
+     (System/arraycopy t1 0 res 0 l1)
+     (System/arraycopy t2 0 res l1 l2)
+     res))
   ([t1 ^objects idxs1
     t2 ^objects idxs2]
    (let [l1  (alength idxs1)
