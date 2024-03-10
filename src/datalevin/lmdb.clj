@@ -297,6 +297,7 @@ values;")
         chk2 #(if (and k1 k2)
                 %1
                 (u/raise "Missing start/end key for range type " %2 {}))]
+    ;; TODO use a deftype for this
     (case range-type
       :all               [true false false nil nil]
       :all-back          [false false false nil nil]

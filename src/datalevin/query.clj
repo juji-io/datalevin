@@ -240,8 +240,6 @@
 
 (defn hash-join
   [rel1 rel2]
-  (spy (:attrs rel1) "rel1")
-  (spy (:attrs rel2) "rel2")
   (let [tuples1      (:tuples rel1)
         tuples2      (:tuples rel2)
         attrs1       (:attrs rel1)
@@ -1057,28 +1055,36 @@
   (reduce
     (fn [c [src nodes]]
       (let [db (sources src)
-            nc (count nodes)]
-        (reduce
-          (fn [c [e {:keys [free bound]}]]
-            (let [fc (count free)
-                  bc (count bound)]
-              (if (or (< 1 nc) (< 1 (+ fc bc)))
-                (update c :graph
-                        (fn [g]
-                          (cond-> (assoc-in g [src e :mcount] Long/MAX_VALUE)
-                            (< 0 bc)
-                            (update-in [src e] #(datom-n db :bound %))
-                            (< 0 fc)
-                            (update-in [src e] #(datom-n db :free %)))))
-                ;; don't count for single clause
-                (update c :graph
-                        (fn [g]
-                          (cond-> (assoc-in g [src e :mcount] 1)
-                            (< 0 bc)
-                            (update-in [src e] #(datom-1 :bound %))
-                            (< 0 fc)
-                            (update-in [src e] #(datom-1 :free %))))))))
-          c nodes)))
+            nc (count nodes)
+            res
+            (reduce
+              (fn [c [e {:keys [free bound]}]]
+                (let [fc (count free)
+                      bc (count bound)]
+                  (if (or (< 1 nc) (< 1 (+ fc bc)))
+                    (let [c2 (update c :graph
+                                     (fn [g]
+                                       (cond-> (assoc-in g [src e :mcount]
+                                                         Long/MAX_VALUE)
+                                         (< 0 bc)
+                                         (update-in [src e]
+                                                    #(datom-n db :bound %))
+                                         (< 0 fc)
+                                         (update-in [src e]
+                                                    #(datom-n db :free %)))))]
+                      (if (zero? ^long (get-in c2 [:graph src e :mcount]))
+                        (reduced nil)
+                        c2))
+                    ;; don't count for single clause
+                    (update c :graph
+                            (fn [g]
+                              (cond-> (assoc-in g [src e :mcount] 1)
+                                (< 0 bc)
+                                (update-in [src e] #(datom-1 :bound %))
+                                (< 0 fc)
+                                (update-in [src e] #(datom-1 :free %))))))))
+              c nodes)]
+        (if (nil? res) (reduced nil) res)))
     context graph))
 
 (defn- attr-var [[_ {:keys [var]}]] (or var '_))
@@ -1099,7 +1105,8 @@
         :free  {:age {:var ?a :count 10890}}}
    ...}}
 
-  Remaining clauses will be joined after the graph produces a relation"
+  Remaining clauses will be joined after the graph produces a relation.
+  Return nil if there is any clause that matches nothing"
   [context]
   (-> context
       split-clauses
@@ -1131,52 +1138,50 @@
 (defn- init-node-plan
   [db [e clauses]]
   (let [{:keys [bound free mpath]} clauses
-        {:keys [var val range] mcount :count :as clause}
+        {:keys [var val range] :as clause}
         (get-in clauses mpath)
 
         attr    (peek mpath)
         know-e? (int? e)
         schema  (db/-schema db)]
-    (if (zero? ^long mcount)
-      []
-      (let [init (cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}
-                          :save *save-intermediate*}
-                   var     (assoc :pred (attr-pred [attr clause])
-                                  :vars (cond-> [e]
-                                          (not (placeholder? var))
-                                          (conj var))
-                                  :range range)
-                   val     (assoc :val val)
-                   know-e? (assoc :know-e? true)
-                   true    (#(assoc % :cols
-                                    (if (= 1 (count (:vars %))) [e] [e attr]))))
-            cols (:cols init)]
-        (cond-> [init]
-          (< 1 (+ (count bound) (count free)))
-          (conj
-            (let [bound1 (->> (dissoc bound attr)
-                              (mapv (fn [[a {:keys [val] :as b}]]
-                                      [a (-> b
-                                             (update :pred conjv #(= val %))
-                                             (assoc :var (gensym "?bound")))])))
-                  all    (->> (concatv bound1 (dissoc free attr))
-                              (sort-by (fn [[a _]] (-> a schema :db/aid))))
-                  attrs  (mapv first all)
-                  vars   (mapv attr-var all)
-                  skips  (remove nil?
-                                 (map #(when (or (= %2 '_)
-                                                 (placeholder? %2))
-                                         %1) attrs vars))]
-              {:op    :eav-scan-v
-               :save  *save-intermediate*
-               :index 0
-               :attrs attrs
-               :vars  vars
-               :cols  (concatv cols (remove (set skips) attrs))
-               :in    #{e}
-               :out   #{e}
-               :preds (mapv attr-pred all)
-               :skips skips})))))))
+    (let [init (cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}
+                        :save *save-intermediate*}
+                 var     (assoc :pred (attr-pred [attr clause])
+                                :vars (cond-> [e]
+                                        (not (placeholder? var))
+                                        (conj var))
+                                :range range)
+                 val     (assoc :val val)
+                 know-e? (assoc :know-e? true)
+                 true    (#(assoc % :cols
+                                  (if (= 1 (count (:vars %))) [e] [e attr]))))
+          cols (:cols init)]
+      (cond-> [init]
+        (< 1 (+ (count bound) (count free)))
+        (conj
+          (let [bound1 (->> (dissoc bound attr)
+                            (mapv (fn [[a {:keys [val] :as b}]]
+                                    [a (-> b
+                                           (update :pred conjv #(= val %))
+                                           (assoc :var (gensym "?bound")))])))
+                all    (->> (concatv bound1 (dissoc free attr))
+                            (sort-by (fn [[a _]] (-> a schema :db/aid))))
+                attrs  (mapv first all)
+                vars   (mapv attr-var all)
+                skips  (remove nil?
+                               (map #(when (or (= %2 '_)
+                                               (placeholder? %2))
+                                       %1) attrs vars))]
+            {:op    :eav-scan-v
+             :save  *save-intermediate*
+             :index 0
+             :attrs attrs
+             :vars  vars
+             :cols  (concatv cols (remove (set skips) attrs))
+             :in    #{e}
+             :out   #{e}
+             :preds (mapv attr-pred all)
+             :skips skips}))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1313,11 +1318,14 @@
     (if (= 1 (count new-steps))
       [step]
       [step
-       (scan-v-step step (dec (count (:cols step))) new-key new-steps nil)])))
+       (scan-v-step step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- val-eq-plan
-  [last-step {:keys [attrs tgt]} link-e new-key new-steps]
-  (let [index (u/index-of #(= (attrs link-e) %) (:cols last-step))
+  [last-step {:keys [attrs tgt var]} link-e new-key new-steps]
+  (let [cols  (:cols last-step)
+        index (if (= :vae-scan-e (:op last-step))
+                (u/index-of #(= var %) cols)
+                (u/index-of #(= (attrs link-e) %) cols))
         attr  (attrs tgt)
         step  (link-step :val-eq-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
@@ -1500,7 +1508,7 @@
               plan (if (< 1 (count nodes))
                      (build-plan* db nodes)
                      [(init-node-plan db (first nodes))])]
-          (spy plan "plan")
+          ;; (spy plan "plan")
           (assoc-in c [:plan src] plan)))
       context graph)
     context))
@@ -1510,7 +1518,7 @@
   (vswap! (:intermediates context) assoc out
           (case save
             :count    {:attrs        (:attrs out-rel)
-                       :tuples-count (.size ^List (:tuples out-rel))}
+                       :tuples-count (count (:tuples out-rel))}
             :relation out-rel)))
 
 (defn- init-relation
@@ -1575,7 +1583,6 @@
 
 (defn- hash-join-step
   [context rel {:keys [out in save]}]
-  (spy (:attrs rel) "rel")
   (let [rel1    (@(:intermediates context) in)
         out-rel (hash-join rel1 rel)]
     (save-intermediates context save in rel1)
@@ -1614,12 +1621,12 @@
 (defn -q
   [context]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (as-> context c
-      (build-graph c)
-      (build-plan c)
-      (execute-plan c)
-      ;; (spy c)
-      (reduce resolve-clause c (:late-clauses c)))))
+    (when-let [context (build-graph context)]
+      (as-> context c
+        (build-plan c)
+        (execute-plan c)
+        ;; (spy c)
+        (reduce resolve-clause c (:late-clauses c))))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -1666,7 +1673,8 @@
 
 (defn collect
   [context symbols]
-  (into (sp/new-spillable-set) (map vec) (-collect context symbols)))
+  (when context
+    (into (sp/new-spillable-set) (map vec) (-collect context symbols))))
 
 (defprotocol IContextResolve
   (-context-resolve [var context]))
@@ -1792,7 +1800,7 @@
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    (println "----->" q)
+    ;; (println "----->" q)
     ;; (println "parsed-q" parsed-q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
@@ -1807,15 +1815,17 @@
                                   (resolve-redudants))
             resultset         (-> (-q context)
                                   (collect all-vars))]
-        (cond->> resultset
-          with
-          (mapv #(vec (subvec % 0 result-arity)))
+        (if resultset
+          (cond->> resultset
+            with
+            (mapv #(vec (subvec % 0 result-arity)))
 
-          (some dp/aggregate? find-elements)
-          (aggregate find-elements context)
+            (some dp/aggregate? find-elements)
+            (aggregate find-elements context)
 
-          (some dp/pull? find-elements)
-          (pull find-elements context)
+            (some dp/pull? find-elements)
+            (pull find-elements context)
 
-          true
-          (-post-process find (:qreturn-map parsed-q)))))))
+            true
+            (-post-process find (:qreturn-map parsed-q)))
+          #{})))))

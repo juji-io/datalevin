@@ -39,6 +39,7 @@
   (-first-datom [db index c1 c2 c3])
   (-seek-datoms [db index c1 c2 c3])
   (-rseek-datoms [db index c1 c2 c3])
+  (-cardinality [db attr])
   (-index-range [db attr start end])
   (-index-range-size [db attr start end] [db attr start end cap]))
 
@@ -48,7 +49,7 @@
   (-attrs-by [db property])
   (-is-attr? [db attr property])
   (-clear-tx-cache [db])
-  (-cardinality [db attr]))
+  )
 
 (defprotocol ISearchable
   (-searchable? [_]))
@@ -118,14 +119,10 @@
   (-searchable? [_] true)
 
   IDB
-  (-schema [_] (wrap-cache store :schema (s/schema store)))
-  (-rschema [_] (wrap-cache store :rschema (s/rschema store)))
-  (-attrs-by [db property]
-    (wrap-cache store [:attrs-by property]
-      ((-rschema db) property)))
-  (-is-attr? [db attr property]
-    (wrap-cache store [:is-attr? attr property]
-      (contains? (.-attrs-by db property) attr)))
+  (-schema [_] (s/schema store))
+  (-rschema [_] (s/rschema store))
+  (-attrs-by [db property] ((-rschema db) property))
+  (-is-attr? [db attr property] (contains? (-attrs-by db property) attr))
   (-clear-tx-cache
     [db]
     (let [clear #(.clear ^TreeSortedSet %)]
@@ -133,10 +130,6 @@
       (clear avet)
       (clear vaet)
       db))
-  (-cardinality
-    [db attr]
-    (wrap-cache store [:cardinality attr]
-      (s/cardinality store attr)))
 
   ITuples
   (-init-tuples
@@ -303,6 +296,11 @@
       (s/rslice store index
                 (components->pattern db index c1 c2 c3 emax)
                 (datom e0 c1 nil))))
+
+  (-cardinality
+    [db attr]
+    (wrap-cache store [:cardinality attr]
+      (s/cardinality store attr)))
 
   (-index-range
     [db attr start end]

@@ -53,10 +53,7 @@
 (def db100k
   (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query"
                                          (UUID/randomUUID)))
-                         schema
-                         ;; disable cache
-                         ;; {:cache-limit 0}
-                         )
+                         schema)
              core/people20k))
 
 

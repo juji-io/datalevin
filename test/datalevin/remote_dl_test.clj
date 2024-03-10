@@ -478,7 +478,7 @@
 (deftest update-opts-test
   (let [dir  "dtlv://datalevin:datalevin@localhost/update-opts"
         conn (dc/create-conn dir)]
-    (is (= 64 (dc/datalog-index-cache-limit @conn)))
+    (is (= 100 (dc/datalog-index-cache-limit @conn)))
     (dc/datalog-index-cache-limit @conn 0)
     (is (= 0 (dc/datalog-index-cache-limit @conn)))
     (dc/close conn)))

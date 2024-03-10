@@ -249,6 +249,7 @@
     "Return a range of datoms within the given range (inclusive).")
   (rslice [this index high-datom low-datom]
     "Return a range of datoms in reverse within the given range (inclusive)")
+  ;; TODO add get-list based functions to get datoms
   (size-filter [this index pred low-datom high-datom] [this index pred low-datom high-datom cap]
     "Return the number of datoms within the given range (inclusive) that
     return true for (pred x), where x is the datom")
@@ -835,6 +836,7 @@
                         visitor (fn [kv]
                                   (.add es (b/read-buffer (lmdb/v kv) :id)))
                         ki      (b/indexable nil aid v vt nil)]
+                    ;; TODO visit-list instead
                     (lmdb/visit-list-range
                       lmdb c/ave visitor [:closed ki ki] :av [:all] :eg)
                     (let [ts (r/vertical-tuples (.toArray es))]
@@ -1092,7 +1094,7 @@
                       :auto-entity-time? false
                       :closed-schema?    false
                       :db-name           (str (UUID/randomUUID))
-                      :cache-limit       64}
+                      :cache-limit       100}
                      opts0)
            opts2   (merge opts1 opts)
            schema  (init-schema lmdb schema)
