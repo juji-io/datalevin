@@ -52,6 +52,7 @@
       (is (= 1 (sut/datom-count store :eav)))
       (is (= 1 (sut/datom-count store :ave)))
       (is (= 0 (sut/datom-count store :vae)))
+      (is (= [d] (sut/av-datoms store a v)))
       (is (= [d] (sut/fetch store d)))
       (is (= [d] (sut/slice store :eav d d)))
       (is (sut/populated? store :eav d d))

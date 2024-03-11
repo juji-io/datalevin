@@ -327,6 +327,10 @@
       (d/datom e (attrs (.-a r)) (.-v r))
       (gt->datom lmdb g))))
 
+(defn- ae-retrieved->datom
+  [attrs v ^Retrieved r]
+  (d/datom (.-e r) (attrs (.-a r)) v))
+
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
   (fn [kv]
@@ -581,6 +585,16 @@
   (e-datoms [_ e]
     (mapv #(avg-retrieved->datom lmdb attrs e %)
           (lmdb/get-list lmdb c/eav e :id :avg)))
+
+  (av-datoms [_ a v]
+    (mapv #(d/datom % a v)
+          (lmdb/get-list
+            lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false)
+            :av :id)))
+
+  (v-datoms [_ v]
+    (mapv #(ae-retrieved->datom attrs v %)
+          (lmdb/get-list lmdb c/vae v :id :ae)))
 
   (size-filter [store index pred low-datom high-datom]
     (.size-filter store index pred low-datom high-datom nil))

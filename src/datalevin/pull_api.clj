@@ -197,10 +197,7 @@
         [(ResultFrame. (not-empty (persistent! acc)) nil)]
 
         :let [name   (.-name attr)
-              datoms (db/-range-datoms
-                       (.-db ^Context context) :ave
-                       (dd/datom c/e0 name id c/tx0)
-                       (dd/datom c/emax name id c/txmax))]
+              datoms (db/-av-datoms (.-db ^Context context) name id)]
 
         :do (visit context :db.pull/reverse nil name id)
 
@@ -259,9 +256,7 @@
   (let [datoms
         (cond+
           (.-wildcard? pattern)
-          (db/-range-datoms (.-db context) :eav
-                            (dd/datom id nil nil c/tx0)
-                            (dd/datom id nil nil c/txmax))
+          (db/-e-datoms (.-db context) id)
 
           (nil? (.-first-attr pattern))
           nil

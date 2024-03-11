@@ -169,6 +169,12 @@
   (e-datoms [_ e]
     (cl/normal-request client :e-datoms [db-name e] writing?))
 
+  (av-datoms [_ a v]
+    (cl/normal-request client :av-datoms [db-name a v] writing?))
+
+  (v-datoms [_ v]
+    (cl/normal-request client :v-datoms [db-name v] writing?))
+
   (size-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request

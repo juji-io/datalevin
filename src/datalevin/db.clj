@@ -35,6 +35,8 @@
 (defprotocol IIndexAccess
   (-populated? [db index c1 c2 c3])
   (-datoms [db index c1 c2 c3])
+  (-e-datoms [db e])
+  (-av-datoms [db attr v])
   (-range-datoms [db index start-datom end-datom])
   (-first-datom [db index c1 c2 c3])
   (-seek-datoms [db index c1 c2 c3])
@@ -171,8 +173,7 @@
                            (datom e nil nil)
                            (datom e nil nil))  ; e _ v
            (s/e-datoms store e) ; e _ _
-           (mapv #(datom (aget ^objects % 0) a v)
-                 (s/ave-tuples store a [:closed v v])) ; _ a v
+           (s/av-datoms store a v) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
                  (s/ave-tuples store a [:all] nil true)) ; _ a _
            (s/slice-filter store :eav
@@ -266,6 +267,12 @@
       (s/slice store index
                (components->pattern db index c1 c2 c3 e0)
                (components->pattern db index c1 c2 c3 emax))))
+
+  (-e-datoms [db e] (wrap-cache store [:e-datoms e] (s/e-datoms store e)))
+
+  (-av-datoms
+    [db attr v]
+    (wrap-cache store [:av-datoms attr v] (s/av-datoms store attr v)))
 
   (-range-datoms
     [db index start-datom end-datom]
@@ -1274,9 +1281,7 @@
                                     (.subSet ^TreeSortedSet (:vaet db)
                                              (datom e0 nil e tx0)
                                              (datom emax nil e txmax))
-                                    (s/slice (:store db) :vae
-                                             (datom e0 nil e)
-                                             (datom emax nil e)))]
+                                    (s/v-datoms (:store db) e))]
                      (recur (reduce transact-retract-datom report
                                     (u/concatv e-datoms v-datoms))
                             (concat (retract-components db e-datoms) entities)))
