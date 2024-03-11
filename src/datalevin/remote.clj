@@ -166,6 +166,9 @@
     (cl/normal-request
       client :rslice [db-name index high-datom low-datom] writing?))
 
+  (e-datoms [_ e]
+    (cl/normal-request client :e-datoms [db-name e] writing?))
+
   (size-filter [_ index pred low-datom high-datom]
     (let [frozen-pred (b/serialize pred)]
       (cl/normal-request

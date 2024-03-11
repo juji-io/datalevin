@@ -1095,6 +1095,7 @@
    'tail
    'slice
    'rslice
+   'e-datoms
    'size-filter
    'head-filter
    'tail-filter
@@ -1658,6 +1659,17 @@
   (wrap-error
     (let [db-name (nth args 0)
           datoms  (apply st/rslice
+                         (store server skey db-name writing?)
+                         (rest args))]
+      (if (< (count datoms) ^long c/+wire-datom-batch-size+)
+        (write-message skey {:type :command-complete :result datoms})
+        (copy-out skey datoms c/+wire-datom-batch-size+)))))
+
+(defn- e-datoms
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [db-name (nth args 0)
+          datoms  (apply st/e-datoms
                          (store server skey db-name writing?)
                          (rest args))]
       (if (< (count datoms) ^long c/+wire-datom-batch-size+)

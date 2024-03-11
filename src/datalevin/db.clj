@@ -170,7 +170,7 @@
                            (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e nil nil)
                            (datom e nil nil))  ; e _ v
-           (s/slice store :eav (datom e nil nil) (datom e nil nil)) ; e _ _
+           (s/e-datoms store e) ; e _ _
            (mapv #(datom (aget ^objects % 0) a v)
                  (s/ave-tuples store a [:closed v v])) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
@@ -1269,9 +1269,7 @@
                                     (.subSet ^TreeSortedSet (:eavt db)
                                              (datom e nil nil tx0)
                                              (datom e nil nil txmax))
-                                    (s/slice (:store db) :eav
-                                             (datom e nil nil)
-                                             (datom e nil nil)))
+                                    (s/e-datoms (:store db) e))
                          v-datoms (u/concatv
                                     (.subSet ^TreeSortedSet (:vaet db)
                                              (datom e0 nil e tx0)

@@ -431,7 +431,7 @@ values;")
    (if nippy?
      (let [[_ kvs] (nippy/thaw-from-in! in)]
        (open-dbi lmdb dbi)
-       (transact-kv lmdb (map (partial load-kv dbi) kvs)))
+       (transact-kv lmdb (map #(load-kv dbi %) kvs)))
      (load-dbi lmdb dbi in)))
   ([lmdb dbi in]
    (try
@@ -442,7 +442,7 @@ values;")
          (transact-kv lmdb (->> (repeatedly read-form)
                                 (take-while #(not= ::EOF %))
                                 (take entries)
-                                (map (partial load-kv dbi))))))
+                                (map #(load-kv dbi %))))))
      (catch IOException e
        (u/raise "IO error while loading raw data: " (ex-message e) {}))
      (catch RuntimeException e
@@ -455,7 +455,7 @@ values;")
    (if nippy?
      (doseq [[{:keys [dbi]} kvs] (nippy/thaw-from-in! in)]
        (open-dbi lmdb dbi)
-       (transact-kv lmdb (map (partial load-kv dbi) kvs)))
+       (transact-kv lmdb (map #(load-kv dbi %) kvs)))
      (load-all lmdb in)))
   ([lmdb in]
    (try
@@ -468,7 +468,7 @@ values;")
                            (open-dbi lmdb dbi)
                            (->> vs
                                 (take entries)
-                                (map (partial load-kv dbi)))))]
+                                (map #(load-kv dbi %)))))]
          (transact-kv lmdb (->> (repeatedly read-form)
                                 (take-while #(not= ::EOF %))
                                 (partition-by map?)

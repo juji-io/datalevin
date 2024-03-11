@@ -127,6 +127,7 @@
                                    (d/datom c/e0 nil nil))))
       (sut/swap-attr store c merge p2)
       (sut/load-datoms store [d2])
+      (is (= [d d1 d2] (sut/e-datoms store c/e0)))
       (is (= (+ 3 c/tx0) (sut/max-tx store)))
       (is (= s2 (sut/schema store)))
       (is (= 3 (sut/datom-count store c/eav)))

@@ -249,8 +249,12 @@
     "Return a range of datoms within the given range (inclusive).")
   (rslice [this index high-datom low-datom]
     "Return a range of datoms in reverse within the given range (inclusive)")
-  ;; TODO add get-list based functions to get datoms
-  (size-filter [this index pred low-datom high-datom] [this index pred low-datom high-datom cap]
+  (e-datoms [this e] "Return datoms with given e value")
+  (av-datoms [this a v] "Return datoms with given a and v value")
+  (v-datoms [this v] "Return datoms with given v, for ref attribute only")
+  (size-filter
+    [this index pred low-datom high-datom]
+    [this index pred low-datom high-datom cap]
     "Return the number of datoms within the given range (inclusive) that
     return true for (pred x), where x is the datom")
   (head-filter [this index pred low-datom high-datom]
@@ -276,9 +280,9 @@
     "Scan values and merge into tuples using :eav index., assuming attrs are
     already sorted by aid")
   (vae-scan-e [this tuples veid-idx attr]
-    "Return merged tuples with eid as the last column using :vae index")
+    "Return tuples with eid as the last column using :vae index")
   (val-eq-scan-e [this tuples v-idx attr]
-    "Return merged tuples with eid as the last column for equal values"))
+    "Return tuples with eid as the last column for given attribute values"))
 
 (defn e-aid-v->datom
   [store e-aid-v]
@@ -315,6 +319,13 @@
               (nil? e) (d/datom k (attrs a) v)
               (nil? v) (d/datom e (attrs a) k)))
           (gt->datom lmdb g))))))
+
+(defn- avg-retrieved->datom
+  [lmdb attrs e ^Retrieved r]
+  (let [g (.-g r)]
+    (if (= g c/normal)
+      (d/datom e (attrs (.-a r)) (.-v r))
+      (gt->datom lmdb g))))
 
 (defn- datom-pred->kv-pred
   [lmdb attrs index pred]
@@ -462,7 +473,7 @@
         (fulltext-index search-engines ft-ds))))
 
   (fetch [_ datom]
-    (mapv (partial retrieved->datom lmdb attrs)
+    (mapv #(retrieved->datom lmdb attrs %)
           (let [lk (index->k :eav schema datom false)
                 hk (index->k :eav schema datom true)
                 lv (datom->indexable schema datom false)
@@ -545,7 +556,7 @@
         (index->vtype index))))
 
   (slice [_ index low-datom high-datom]
-    (mapv (partial retrieved->datom lmdb attrs)
+    (mapv #(retrieved->datom lmdb attrs %)
           (let [lk (index->k index schema low-datom false)
                 hk (index->k index schema high-datom true)
                 lv (datom->indexable schema low-datom false)
@@ -556,7 +567,7 @@
               [:closed lv hv] (index->vtype index)))))
 
   (rslice [_ index high-datom low-datom]
-    (mapv (partial retrieved->datom lmdb attrs)
+    (mapv #(retrieved->datom lmdb attrs %)
           (lmdb/list-range
             lmdb (index->dbi index)
             [:closed-back (index->k index schema high-datom true)
@@ -566,6 +577,10 @@
              (datom->indexable schema high-datom true)
              (datom->indexable schema low-datom false)]
             (index->vtype index))))
+
+  (e-datoms [_ e]
+    (mapv #(avg-retrieved->datom lmdb attrs e %)
+          (lmdb/get-list lmdb c/eav e :id :avg)))
 
   (size-filter [store index pred low-datom high-datom]
     (.size-filter store index pred low-datom high-datom nil))
