@@ -106,7 +106,7 @@
       (cond
         (= i tc) (.cons this v)
         (< i mc) (.add memory i v)
-        (< i tc) (l/transact-kv @disk [[:put c/tmp-dbi i v :id]])
+        (< i tc) (l/transact-kv @disk [(l/kv-tx :put c/tmp-dbi i v :id)])
         :else    (throw (IndexOutOfBoundsException.))))
     this)
 
@@ -115,7 +115,7 @@
       (if (and (< ^long @memory-pressure spill-threshold) mem?)
         (.add memory v)
         (do (when mem? (.spill this))
-            (l/transact-kv @disk [[:put c/tmp-dbi @total v :id]]))))
+            (l/transact-kv @disk [(l/kv-tx :put c/tmp-dbi @total v :id)]))))
     (vswap! total u/long-inc)
     this)
 
@@ -165,7 +165,7 @@
       (< 0 ^long (disk-count this))
       (let [[lk _] (l/get-first @disk c/tmp-dbi [:all-back]
                                 :id :ignore)]
-        (l/transact-kv @disk [[:del c/tmp-dbi lk :id]]))
+        (l/transact-kv @disk [(l/kv-tx :del c/tmp-dbi lk :id)]))
 
       :else (.remove memory (dec ^long (memory-count this))))
     (vswap! total #(dec ^long %))
@@ -422,7 +422,7 @@
       (.put memory k v)
       (when-not (= (.get memory k) v)
         (when (nil? @disk) (.spill this))
-        (l/transact-kv @disk [[:put c/tmp-dbi k v]]))))
+        (l/transact-kv @disk [(l/kv-tx :put c/tmp-dbi k v)]))))
 
   (get [this k] (.valAt this k))
 
@@ -430,7 +430,7 @@
     (if (.containsKey memory k)
       (.remove memory k)
       (when (and @disk (l/get-value @disk c/tmp-dbi k))
-        (l/transact-kv @disk [[:del c/tmp-dbi k]]))))
+        (l/transact-kv @disk [(l/kv-tx :del c/tmp-dbi k)]))))
 
   (isEmpty [this] (= 0 (count this)))
 

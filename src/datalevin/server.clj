@@ -555,7 +555,7 @@
                   :roles       roles
                   :permissions perms}]
     (d/transact-kv (session-lmdb sys-conn)
-                   [[:put session-dbi client-id session :uuid :data]])
+                   [(l/kv-tx :put session-dbi client-id session :uuid :data)])
     (.put ^Map (.-clients server) client-id session)
     (log/info "Added client " client-id
               "from:" ip
@@ -564,7 +564,7 @@
 (defn- remove-client
   [^Server server client-id]
   (d/transact-kv (session-lmdb (.-sys-conn server))
-                 [[:del session-dbi client-id :uuid]])
+                 [(l/kv-tx :del session-dbi client-id :uuid)])
   (.remove ^Map (.-clients server) client-id)
   (log/info "Removed client:" client-id))
 
@@ -572,7 +572,7 @@
   [^Server server client-id f]
   (let [session (f (get-client server client-id))]
     (d/transact-kv (session-lmdb (.-sys-conn server))
-                   [[:put session-dbi client-id session :uuid :data]])
+                   [(l/kv-tx :put session-dbi client-id session :uuid :data)])
     (.put ^Map (.-clients server) client-id session)))
 
 (defn- get-stores

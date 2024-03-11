@@ -11,6 +11,7 @@
    [datalevin.buffer :as bf]
    [datalevin.constants :as c])
   (:import
+   [clojure.lang IPersistentVector]
    [datalevin.utl BitOps]
    [java.nio ByteBuffer]
    [java.io PushbackReader FileOutputStream FileInputStream DataOutputStream
@@ -177,7 +178,7 @@
     [db dbi-name txs]
     [db dbi-name txs k-type]
     [db dbi-name txs k-type v-type]
-    "Update DB, insert or delete key value pairs.")
+    "Update DB, insert or delete key value pairs. 2-arity variation's txs can be a seq of KVTxData")
   (get-value
     [db dbi-name k]
     [db dbi-name k k-type]
@@ -291,7 +292,7 @@ values;")
 
 (defn range-table
   "Provide context for range iterators"
-  [range-type k1 k2 b1 b2]
+  [range-type b1 b2]
   (case range-type
     :all               (RangeContext. true false false nil nil)
     :all-back          (RangeContext. false false false nil nil)
@@ -312,6 +313,66 @@ values;")
     :open-closed       (RangeContext. true false true b1 b2)
     :open-closed-back  (RangeContext. false false true b1 b2)
     (u/raise "Unknown range type" range-type {})))
+
+(defprotocol IKVTxable (kv-txable? [_]))
+
+(extend-type Object IKVTxable (kv-txable? [_] false))
+(extend-type nil IKVTxable (kv-txable? [_] false))
+
+(deftype KVTxData [op
+                   ^String dbi-name
+                   k
+                   v
+                   kt
+                   vt
+                   flags]
+  IKVTxable
+  (kv-txable? [_] true))
+
+(defn kv-tx
+  ([op dbi k]
+   (KVTxData. op dbi k nil nil nil nil))
+  ([op dbi k v]
+   (if (= op :del)
+     (KVTxData. op dbi k nil v nil nil)
+     (KVTxData. op dbi k v nil nil nil)))
+  ([op dbi k v kt]
+   (KVTxData. op dbi k v kt nil nil))
+  ([op dbi k v kt vt]
+   (KVTxData. op dbi k v kt vt nil))
+  ([op dbi k v kt vt f]
+   (KVTxData. op dbi k v kt vt f)))
+
+(defn ->kv-tx-data
+  ([x]
+   (if (kv-txable? x)
+     x
+     (if (vector? x)
+       (let [tx  ^IPersistentVector x
+             cnt (.length tx)
+             op  (.nth tx 0)]
+         (KVTxData. op
+                    (.nth tx 1)
+                    (.nth tx 2)
+                    (when-not (= :del op) (.nth tx 3))
+                    (if (= :del op)
+                      (when (< 3 cnt) (.nth tx 3))
+                      (when (< 4 cnt) (.nth tx 4)))
+                    (when (< 5 cnt) (.nth tx 5))
+                    (when (< 6 cnt) (.nth tx 6))))
+       (u/raise "Invalid KV transaction data " x {}))))
+  ([x kt vt]
+   (if (vector? x)
+     (let [tx  ^IPersistentVector x
+           cnt (.length tx)]
+       (KVTxData. (.nth tx 0)
+                  nil
+                  (.nth tx 1)
+                  (when (< 2 cnt) (.nth tx 2))
+                  kt
+                  vt
+                  (when (< 3 cnt) (.nth tx 3))))
+     (u/raise "Invalid KV transaction data " x {}))))
 
 (defn dump-dbis-list
   ([lmdb]
@@ -404,7 +465,7 @@ values;")
      (dump-all lmdb))))
 
 (defn- load-kv [dbi [k v]]
-  [:put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw])
+  (kv-tx :put dbi (b/decode-base64 k) (b/decode-base64 v) :raw :raw))
 
 (defn load-dbi
   ([lmdb dbi in nippy?]

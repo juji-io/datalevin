@@ -587,20 +587,20 @@
         positions-dbi (.-positions-dbi engine)
         rawtext-dbi   (.-rawtext-dbi engine)
         cache         (.-cache engine)]
-    (.add txs [:del rawtext-dbi doc-id :int])
+    (.add txs (l/kv-tx :del rawtext-dbi doc-id :int))
     (doseq [term-id (doc-ref->term-ids engine doc-ref)]
       (let [[term [_ mw sl]] (term-id->term-info engine term-id)]
         (when-let [tf (sl/get sl doc-id)]
-          (.add txs [:put terms-dbi term
-                     [term-id
-                      (del-max-weight sl doc-id mw tf norm)
-                      (sl/remove sl doc-id)]
-                     :string :term-info])
+          (.add txs (l/kv-tx :put terms-dbi term
+                             [term-id
+                              (del-max-weight sl doc-id mw tf norm)
+                              (sl/remove sl doc-id)]
+                             :string :term-info))
           (-> cache
               (lru/-del [:get-term-info term])
               (lru/-del [:get-pos-info doc-id term-id]))))
-      (.add txs [:del positions-dbi [doc-id term-id] :int-int]))
-    (.add txs [:del (.-docs-dbi engine) doc-ref :data])
+      (.add txs (l/kv-tx :del positions-dbi [doc-id term-id] :int-int)))
+    (.add txs (l/kv-tx :del (.-docs-dbi engine) doc-ref :data))
     (.remove ^SpillableMap (.-docs engine) doc-id)
     (.remove norms doc-id)
     (l/transact-kv (.-lmdb engine) txs)
@@ -623,8 +623,8 @@
         doc-id          (.incrementAndGet ^AtomicInteger (.-max-doc engine))
         term-set        (IntHashSet.)
         txs             (FastList.)]
-    (when include-text? (.add txs [:put (.-rawtext-dbi engine) doc-id doc-text
-                                   :int :string]))
+    (when include-text? (.add txs (l/kv-tx :put (.-rawtext-dbi engine) doc-id
+                                           doc-text :int :string)))
     (.put ^SpillableMap (.-docs engine) doc-id doc-ref)
     (.put ^IntShortHashMap (.-norms engine) doc-id unique)
     (doseq [^Map$Entry kv (.entrySet new-terms)]
@@ -642,16 +642,16 @@
 
             term-info
             [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)]]
-        (.add txs [:put terms-dbi term term-info :string :term-info])
+        (.add txs (l/kv-tx :put terms-dbi term term-info :string :term-info))
         (if index-position?
           (let [pos-info [(.toArray positions) (.toArray offsets)]]
-            (.add txs [:put positions-dbi [doc-id tid]
-                       pos-info :int-int :pos-info]))
+            (.add txs (l/kv-tx :put positions-dbi [doc-id tid]
+                               pos-info :int-int :pos-info)))
           (.add ^IntHashSet term-set (int tid)))))
     (let [term-ar  (.toArray ^IntHashSet term-set)
           doc-info [doc-id unique term-ar]]
-      (.add txs [:put (.-docs-dbi engine) doc-ref doc-info
-                 :data :doc-info])
+      (.add txs (l/kv-tx :put (.-docs-dbi engine) doc-ref doc-info
+                         :data :doc-info))
       (l/transact-kv (.-lmdb engine) txs)))
   :doc-added)
 
@@ -858,7 +858,7 @@
             term-set  (IntHashSet.)
             batch     (if index-position? 250000 500)]
         (when include-text?
-          (.add txs [:put rawtext-dbi doc-id doc-text :int :string]))
+          (.add txs (l/kv-tx :put rawtext-dbi doc-id doc-text :int :string)))
         (doseq [^Map$Entry kv (.entrySet new-terms)]
           (let [term                                            (.getKey kv)
                 [^IntArrayList positions ^IntArrayList offsets] (.getValue kv)
@@ -873,13 +873,13 @@
             (.put hit-terms term
                   [tid (add-max-weight mw tf unique) (sl/set sl doc-id tf)])
             (if index-position?
-              (.add txs [:put positions-dbi [doc-id tid]
-                         [(.toArray positions) (.toArray offsets)]
-                         :int-int :pos-info])
+              (.add txs (l/kv-tx :put positions-dbi [doc-id tid]
+                                 [(.toArray positions) (.toArray offsets)]
+                                 :int-int :pos-info))
               (.add ^IntHashSet term-set (int tid)))))
-        (.add txs [:put docs-dbi doc-ref
-                   [doc-id unique (.toArray ^IntHashSet term-set)]
-                   :data :doc-info])
+        (.add txs (l/kv-tx :put docs-dbi doc-ref
+                           [doc-id unique (.toArray ^IntHashSet term-set)]
+                           :data :doc-info))
         (when (< batch (.size txs))
           (l/transact-kv lmdb txs)
           (.clear txs)))))
@@ -887,15 +887,15 @@
   (commit [_]
     (l/transact-kv lmdb txs)
     (.clear txs)
-    (l/with-transaction-kv [db lmdb]
-      (let [iter (.iterator (.entrySet hit-terms))]
-        (loop []
-          (when (.hasNext iter)
-            (let [^Map$Entry kv (.next iter)]
-              (.remove iter)
-              (l/transact-kv db [[:put terms-dbi (.getKey kv) (.getValue kv)
-                                  :string :term-info]])
-              (recur))))))))
+    (let [iter (.iterator (.entrySet hit-terms))]
+      (loop []
+        (when (.hasNext iter)
+          (let [^Map$Entry kv (.next iter)]
+            (.remove iter)
+            (.add txs (l/kv-tx :put terms-dbi (.getKey kv)
+                               (.getValue kv) :string :term-info))
+            (recur)))))
+    (l/transact-kv lmdb txs)))
 
 (defn- init-max-id [lmdb dbi]
   (let [max-id (volatile! 0)

@@ -82,10 +82,12 @@
 
 (defn- transact-schema
   [lmdb schema]
-  (lmdb/transact-kv lmdb (conj (for [[attr props] schema]
-                                 [:put c/schema attr props :attr :data])
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv
+    lmdb
+    (conj (for [[attr props] schema]
+            (lmdb/kv-tx :put c/schema attr props :attr :data))
+          (lmdb/kv-tx :put c/meta :last-modified
+                      (System/currentTimeMillis) :attr :long))))
 
 (defn- load-schema
   [lmdb]
@@ -435,9 +437,11 @@
                     (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
       (let [aid (:db/aid (schema attr))]
-        (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
-                                [:put c/meta :last-modified
-                                 (System/currentTimeMillis) :attr :long]])
+        (lmdb/transact-kv
+          lmdb
+          [(lmdb/kv-tx :del c/schema attr :attr)
+           (lmdb/kv-tx :put c/meta :last-modified
+                       (System/currentTimeMillis) :attr :long)])
         (set! schema (dissoc schema attr))
         (set! rschema (schema->rschema schema))
         (set! attrs (dissoc attrs aid))
@@ -445,10 +449,12 @@
 
   (rename-attr [_ attr new-attr]
     (let [props (schema attr)]
-      (lmdb/transact-kv lmdb [[:del c/schema attr :attr]
-                              [:put c/schema new-attr props :attr]
-                              [:put c/meta :last-modified
-                               (System/currentTimeMillis) :attr :long]])
+      (lmdb/transact-kv
+        lmdb
+        [(lmdb/kv-tx :del c/schema attr :attr)
+         (lmdb/kv-tx :put c/schema new-attr props :attr)
+         (lmdb/kv-tx :put c/meta :last-modified
+                     (System/currentTimeMillis) :attr :long)])
       (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
       (set! rschema (schema->rschema schema))
       (set! attrs (assoc attrs (:db/aid props) new-attr))
@@ -470,10 +476,10 @@
             (delete-datom this datom txs ft-ds giants)))
         (lmdb/transact-kv
           lmdb (doto txs
-                 (.add [:put c/meta :max-tx (advance-max-tx this)
-                        :attr :long])
-                 (.add [:put c/meta :last-modified (System/currentTimeMillis)
-                        :attr :long])))
+                 (.add (lmdb/kv-tx :put c/meta :max-tx
+                                   (advance-max-tx this) :attr :long))
+                 (.add (lmdb/kv-tx :put c/meta :last-modified
+                                   (System/currentTimeMillis) :attr :long))))
         (fulltext-index search-engines ft-ds))))
 
   (fetch [_ datom]
@@ -976,15 +982,17 @@
                    (u/raise "Invalid data, expecting" vt " got " v {:input v}))
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)]
-    (.add txs [:put c/ave i i :av :eg])
-    (.add txs [:put c/eav e i :id :avg])
+    (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
+    (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
     (when giant?
       (advance-max-gt store)
       (let [gd [e attr v]]
         (.put giants gd max-gt)
         (.add txs
-              [:put c/giants max-gt (apply d/datom gd) :id :data [:append]])))
-    (when (= :db.type/ref vt) (.add txs [:put c/vae v i :id :ae]))
+              (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
+                          :id :data [:append]))))
+    (when (= :db.type/ref vt)
+      (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
@@ -1017,19 +1025,21 @@
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
-      (.add txs [:del-list c/ave ii [ii] :av :eg])
-      (.add txs [:del-list c/eav e [ii] :id :avg])
+      (.add txs (lmdb/kv-tx :del-list c/ave ii [ii] :av :eg))
+      (.add txs (lmdb/kv-tx :del-list c/eav e [ii] :id :avg))
       (when gt
         (when gt-cur (.remove giants d-eav))
-        (.add txs [:del c/giants gt :id]))
-      (when (= :db.type/ref vt) (.add txs [:del-list c/vae v [ii] :id :ae])))))
+        (.add txs (lmdb/kv-tx :del c/giants gt :id)))
+      (when (= :db.type/ref vt)
+        (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
 
 (defn- transact-opts
   [lmdb opts]
-  (lmdb/transact-kv lmdb (conj (for [[k v] opts]
-                                 [:put c/opts k v :attr :data])
-                               [:put c/meta :last-modified
-                                (System/currentTimeMillis) :attr :long])))
+  (lmdb/transact-kv
+    lmdb (conj (for [[k v] opts]
+                 (lmdb/kv-tx :put c/opts k v :attr :data))
+               (lmdb/kv-tx :put c/meta :last-modified
+                           (System/currentTimeMillis) :attr :long))))
 
 (defn- load-opts
   [lmdb]

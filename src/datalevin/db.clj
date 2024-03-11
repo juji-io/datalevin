@@ -53,11 +53,9 @@
   (-clear-tx-cache [db])
   )
 
-(defprotocol ISearchable
-  (-searchable? [_]))
+(defprotocol ISearchable (-searchable? [_]))
 
 (extend-type Object ISearchable (-searchable? [_] false))
-
 (extend-type nil ISearchable (-searchable? [_] false))
 
 (defprotocol ITuples
