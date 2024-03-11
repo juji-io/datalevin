@@ -290,48 +290,28 @@ values;")
                        ^ByteBuffer stop-bf])
 
 (defn range-table
-  "Produce context for range iterator"
+  "Provide context for range iterators"
   [range-type k1 k2 b1 b2]
-  (let [chk1 #(if k1
-                %1
-                (u/raise "Missing start/end key for range type " %2 {}))
-        chk2 #(if (and k1 k2)
-                %1
-                (u/raise "Missing start/end key for range type " %2 {}))]
-    (case range-type
-      :all               (RangeContext. true false false nil nil)
-      :all-back          (RangeContext. false false false nil nil)
-      :at-least          (chk1 (RangeContext. true true false b1 nil)
-                               :at-least)
-      :at-most-back      (chk1 (RangeContext. false true false b1 nil)
-                               :at-most-back)
-      :at-most           (chk1 (RangeContext. true false true nil b1)
-                               :at-most)
-      :at-least-back     (chk1 (RangeContext. false false true nil b1)
-                               :at-least-back)
-      :closed            (chk2 (RangeContext. true true true b1 b2) :closed)
-      :closed-back       (chk2 (RangeContext. false true true b1 b2)
-                               :closed-back)
-      :closed-open       (chk2 (RangeContext. true true false b1 b2)
-                               :closed-open)
-      :closed-open-back  (chk2 (RangeContext. false true false b1 b2)
-                               :closed-open-back)
-      :greater-than      (chk1 (RangeContext. true false false b1 nil)
-                               :greater-than)
-      :less-than-back    (chk1 (RangeContext. false false false b1 nil)
-                               :less-than-back)
-      :less-than         (chk1 (RangeContext. true false false nil b1)
-                               :less-than)
-      :greater-than-back (chk1 (RangeContext. false false false nil b1)
-                               :greater-than-back)
-      :open              (chk2 (RangeContext. true false false b1 b2) :open)
-      :open-back         (chk2 (RangeContext. false false false b1 b2)
-                               :open-back)
-      :open-closed       (chk2 (RangeContext. true false true b1 b2)
-                               :open-closed)
-      :open-closed-back  (chk2 (RangeContext. false false true b1 b2)
-                               :open-closed-back)
-      (u/raise "Unknown range type" range-type {}))))
+  (case range-type
+    :all               (RangeContext. true false false nil nil)
+    :all-back          (RangeContext. false false false nil nil)
+    :at-least          (RangeContext. true true false b1 nil)
+    :at-most-back      (RangeContext. false true false b1 nil)
+    :at-most           (RangeContext. true false true nil b1)
+    :at-least-back     (RangeContext. false false true nil b1)
+    :closed            (RangeContext. true true true b1 b2)
+    :closed-back       (RangeContext. false true true b1 b2)
+    :closed-open       (RangeContext. true true false b1 b2)
+    :closed-open-back  (RangeContext. false true false b1 b2)
+    :greater-than      (RangeContext. true false false b1 nil)
+    :less-than-back    (RangeContext. false false false b1 nil)
+    :less-than         (RangeContext. true false false nil b1)
+    :greater-than-back (RangeContext. false false false nil b1)
+    :open              (RangeContext. true false false b1 b2)
+    :open-back         (RangeContext. false false false b1 b2)
+    :open-closed       (RangeContext. true false true b1 b2)
+    :open-closed-back  (RangeContext. false false true b1 b2)
+    (u/raise "Unknown range type" range-type {})))
 
 (defn dump-dbis-list
   ([lmdb]

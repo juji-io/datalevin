@@ -849,32 +849,28 @@
              (b/indexable c/emax aid nil :db.type/ref c/gmax)] :ae)
           res))))
 
-  (val-eq-scan-e [this tuples v-idx attr]
+  (val-eq-scan-e [_ tuples v-idx attr]
     (when (and (seq tuples) attr)
       (when-let [props (schema attr)]
         (let [vt   (value-type props)
               aid  (props :db/aid)
               nt   (.size ^List tuples)
               seen (UnifiedMap. nt)
-              res  (FastList. nt)
-              scan-e
-              (fn [tuple v]
-                (if-let [ts (not-empty (.get seen v))]
-                  (.addAll res (r/prod-tuples (r/single-tuples tuple) ts))
-                  (let [es      (LongArrayList.)
-                        visitor (fn [kv]
-                                  (.add es (b/read-buffer (lmdb/v kv) :id)))
-                        ki      (b/indexable nil aid v vt nil)]
-                    ;; TODO visit-list instead
-                    (lmdb/visit-list-range
-                      lmdb c/ave visitor [:closed ki ki] :av [:all] :eg)
-                    (let [ts (r/vertical-tuples (.toArray es))]
-                      (.put seen v ts)
-                      (.addAll res (r/prod-tuples
-                                     (r/single-tuples tuple) ts))))))]
+              res  (FastList. nt)]
           (dotimes [i nt]
-            (let [tuple ^objects (.get ^List tuples i)]
-              (scan-e tuple (aget tuple v-idx))))
+            (let [tuple ^objects (.get ^List tuples i)
+                  v     (aget tuple v-idx)]
+              (if-let [ts (not-empty (.get seen v))]
+                (.addAll res (r/prod-tuples (r/single-tuples tuple) ts))
+                (let [es      (LongArrayList.)
+                      visitor (fn [kv]
+                                (.add es (b/read-buffer (lmdb/v kv) :id)))]
+                  (lmdb/visit-list
+                    lmdb c/ave visitor (b/indexable nil aid v vt nil) :av)
+                  (let [ts (r/vertical-tuples (.toArray es))]
+                    (.put seen v ts)
+                    (.addAll res (r/prod-tuples
+                                   (r/single-tuples tuple) ts)))))))
           res)))))
 
 (defn fulltext-index

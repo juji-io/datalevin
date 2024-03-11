@@ -516,10 +516,9 @@
     (let [^SpillableVector holder
           (sp/new-spillable-vector nil (:spill-opts (l/opts lmdb)))]
       (.seek cur SeekOp/MDB_FIRST_DUP)
-      (.cons holder (b/read-buffer (.val cur) vt))
-      (dotimes [_ (dec (.count cur))]
-        (.seek cur SeekOp/MDB_NEXT_DUP)
-        (.cons holder (b/read-buffer (.val cur) vt)))
+      (dotimes [_ (.count cur)]
+        (.cons holder (b/read-buffer (.val cur) vt))
+        (.seek cur SeekOp/MDB_NEXT_DUP))
       holder)))
 
 (defn- visit-list*
@@ -534,10 +533,9 @@
     (.put-key rtx k kt)
     (when (.get cur (.-kb rtx) GetOp/MDB_SET)
       (.seek cur SeekOp/MDB_FIRST_DUP)
-      (vs)
-      (dotimes [_ (dec (.count cur))]
-        (.seek cur SeekOp/MDB_NEXT_DUP)
-        (vs)))))
+      (dotimes [_ (.count cur)]
+        (vs)
+        (.seek cur SeekOp/MDB_NEXT_DUP)))))
 
 (defn- list-count*
   [^Rtx rtx ^Cursor cur k kt]

@@ -107,15 +107,15 @@
   (range-info [_ range-type k1 k2 kt]
     (put-bufval start-kp k1 kt)
     (put-bufval stop-kp k2 kt)
-    (l/range-table range-type k1 k2 start-kp stop-kp))
+    (l/range-table range-type start-kp stop-kp))
 
   (list-range-info [_ k-range-type k1 k2 kt v-range-type v1 v2 vt]
     (put-bufval start-kp k1 kt)
     (put-bufval stop-kp k2 kt)
     (put-bufval start-vp v1 vt)
     (put-bufval stop-vp v2 vt)
-    [(l/range-table k-range-type k1 k2 start-kp stop-kp)
-     (l/range-table v-range-type v1 v2 start-vp stop-vp)])
+    [(l/range-table k-range-type start-kp stop-kp)
+     (l/range-table v-range-type start-vp stop-vp)])
 
   IRtx
   (read-only? [_] (.isReadOnly txn))
