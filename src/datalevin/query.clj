@@ -25,10 +25,6 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List]))
 
-(defn spy
-  ([x] (pp/pprint x) x)
-  ([x msg] (print msg "--> ") (pp/pprint x) x))
-
 ;; ----------------------------------------------------------------------------
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
@@ -39,15 +35,13 @@
 
 ;; Records
 
-(defrecord Context
-    [parsed-q rels sources rules opt-clauses late-clauses graph plan
-     intermediates])
+(defrecord Context [parsed-q rels sources rules opt-clauses late-clauses
+                    graph plan intermediates])
 
 (defrecord Plan [steps cost size])
 
-(defrecord Step
-    [op save index attr range attrs vars cols in out pred preds skips
-     val know-e?])
+(defrecord Step [op save index range attr attrs vars cols in out pred
+                 preds skips val know-e? save-in?])
 
 (defrecord Node [links mpath mcount bound free])
 
@@ -130,9 +124,10 @@
       (empty? coll)
       (empty-rel binding)
       :else
-      (->> coll
-           (map #(in->rel (:binding binding) %))
-           (reduce r/sum-rel))))
+      (transduce
+        (map #(in->rel (:binding binding) %))
+        r/sum-rel
+        coll)))
 
   BindTuple
   (in->rel [binding coll]
@@ -145,8 +140,7 @@
              (dp/source binding)
              {:error :query/binding, :value coll, :binding (dp/source binding)})
       :else
-      (reduce r/prod-rel
-              (map #(in->rel %1 %2) (:bindings binding) coll)))))
+      (reduce r/prod-rel (map #(in->rel %1 %2) (:bindings binding) coll)))))
 
 (defn resolve-in
   [context [binding value]]
@@ -315,9 +309,9 @@
   (let [search-pattern (mapv #(if (or (= % '_) (free-var? %)) nil %)
                              pattern)
         datoms         (db/-search db search-pattern)
-        attr->prop     (->> (map vector pattern ["e" "a" "v"])
-                            (filter (fn [[s _]] (free-var? s)))
-                            (into {}))]
+        attr->prop     (into {}
+                             (filter (fn [[s _]] (free-var? s)))
+                             (map vector pattern ["e" "a" "v"]))]
     (r/relation! attr->prop datoms)))
 
 (defn matches-pattern?
@@ -335,9 +329,9 @@
 (defn lookup-pattern-coll
   [coll pattern]
   (let [data      (filter #(matches-pattern? pattern %) coll)
-        attr->idx (->> (map vector pattern (range))
-                       (filter (fn [[s _]] (free-var? s)))
-                       (into {}))]
+        attr->idx (into {}
+                        (filter (fn [[s _]] (free-var? s)))
+                        (map vector pattern (range)))]
     (r/relation! attr->idx (u/map-fl to-array data))))
 
 (defn normalize-pattern-clause
@@ -354,14 +348,15 @@
 
 (defn collapse-rels
   [rels new-rel]
-  (loop [rels    rels
-         new-rel new-rel
-         acc     []]
-    (if-some [rel (first rels)]
-      (if (not-empty (intersect-keys (:attrs new-rel) (:attrs rel)))
-        (recur (next rels) (hash-join rel new-rel) acc)
-        (recur (next rels) new-rel (conj acc rel)))
-      (conj acc new-rel))))
+  (persistent!
+    (loop [rels    rels
+           new-rel new-rel
+           acc     (transient [])]
+      (if-some [rel (first rels)]
+        (if (not-empty (intersect-keys (:attrs new-rel) (:attrs rel)))
+          (recur (next rels) (hash-join rel new-rel) acc)
+          (recur (next rels) new-rel (conj! acc rel)))
+        (conj! acc new-rel)))))
 
 (defn- rel-with-attr
   [context sym]
@@ -536,10 +531,11 @@
 
 (defn remove-pairs
   [xs ys]
-  (let [pairs (->> (map vector xs ys)
-                   (remove (fn [[x y]] (= x y))))]
+  (let [pairs (sequence (comp (map vector)
+                           (remove (fn [[x y]] (= x y))))
+                        xs ys)]
     [(map first pairs)
-     (map second pairs)]))
+     (map peek pairs)]))
 
 (defn rule-gen-guards
   [rule-clause used-args]
@@ -656,7 +652,7 @@
 
 (defn bound-vars
   [context]
-  (into (sp/new-spillable-set) (mapcat #(keys (:attrs %)) (:rels context))))
+  (into #{} (mapcat #(keys (:attrs %))) (:rels context)))
 
 (defn check-bound
   [bound vars form]
@@ -816,7 +812,6 @@
                           s (:symbol v)]
                       (when (and (instance? BindScalar qin)
                                  (instance? Variable v)
-                                 ;; (not (fn? (nth inputs i)))
                                  (not (some #(= s %) finds))
                                  (not (some #(or-join-var? % s) owheres)))
                         [i s])))
@@ -958,13 +953,12 @@
   [context]
   (let [patterns (:opt-clauses context)
         sources  (:sources context)]
-    (assoc context :graph
-           (into {}
-                 (comp
-                   (map remove-src)
-                   (map #(resolve-lookup-refs sources %))
-                   (map make-nodes))
-                 (group-by get-src patterns)))))
+    (assoc context :graph (into {}
+                                (comp
+                                  (map remove-src)
+                                  (map #(resolve-lookup-refs sources %))
+                                  (map make-nodes))
+                                (group-by get-src patterns)))))
 
 (defn- pushdownable
   "predicates that can be pushed down involve only one free variable"
@@ -1131,10 +1125,11 @@
       count-clause-datoms))
 
 (defn- add-pred
-  [old-pred new-pred]
-  (if old-pred
-    (fn [x] (and (old-pred x) (new-pred x)))
-    new-pred))
+  ([pred] pred)
+  ([old-pred new-pred]
+   (if old-pred
+     (fn [x] (and (old-pred x) (new-pred x)))
+     new-pred)))
 
 (defn- activate-pred
   [var clause]
@@ -1149,7 +1144,7 @@
 
 (defn- attr-pred
   [[_ {:keys [var pred]}]]
-  (reduce add-pred nil (mapv #(activate-pred var %) pred)))
+  (transduce (map #(activate-pred var %)) add-pred nil pred))
 
 (defn- init-node-plan
   [db [e clauses]]
@@ -1185,16 +1180,16 @@
                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
               attrs  (mapv first all)
               vars   (mapv attr-var all)
-              skips  (remove nil?
-                             (map #(when (or (= %2 '_)
-                                             (placeholder? %2))
-                                     %1) attrs vars))]
+              skips  (sequence
+                       (comp (map #(when (or (= %2 '_) (placeholder? %2)) %1))
+                          (remove nil?))
+                       attrs vars)]
           (map->Step {:op    :eav-scan-v
                       :save  *save-intermediate*
                       :index 0
                       :attrs attrs
                       :vars  vars
-                      :cols  (concatv cols (remove (set skips) attrs))
+                      :cols  (into cols (remove (set skips)) attrs)
                       :in    #{e}
                       :out   #{e}
                       :preds (mapv attr-pred all)
@@ -1286,7 +1281,7 @@
            :vars  [v]
            :skips []
            :preds [(add-back-range v s)]
-           :cols  (concatv (:cols last-step) [a])})
+           :cols  (conj (:cols last-step) a)})
         (let [[s1 s2] new-steps
               skips   (:skips s2)
               attr    (:attr s1)
@@ -1310,7 +1305,7 @@
            :vars  vars
            :skips skips
            :preds preds
-           :cols  (concatv (:cols last-step) (remove (set skips) attrs))})))))
+           :cols  (into (:cols last-step) (remove (set skips)) attrs)})))))
 
 (defn- ref-plan
   [last-step {:keys [attr]} new-key new-steps]
@@ -1487,7 +1482,7 @@
         (if (visited v)
           (recur stack visited)
           (let [neighbors (mapv :tgt (:links (graph v)))]
-            (recur (into stack neighbors) (conj visited v))))))))
+            (recur (concatv stack neighbors) (conj visited v))))))))
 
 (defn- connected-components
   [graph]
@@ -1521,12 +1516,11 @@
   (if graph
     (reduce
       (fn [c [src nodes]]
-        (let [db   (sources src)
-              plan (if (< 1 (count nodes))
-                     (build-plan* db nodes)
-                     [(init-node-plan db (first nodes))])]
-          ;; (spy plan "plan")
-          (assoc-in c [:plan src] plan)))
+        (let [db (sources src)]
+          (assoc-in c [:plan src]
+                    (if (< 1 (count nodes))
+                      (build-plan* db nodes)
+                      [(init-node-plan db (first nodes))]))))
       context graph)
     context))
 
@@ -1568,7 +1562,8 @@
   (let [n (count attrs)]
     (into attrs (comp
                   (remove #{'_})
-                  (map-indexed (fn [i v] [v (+ n ^long i)]))) vars)))
+                  (map-indexed (fn [i v] [v (+ n ^long i)])))
+          vars)))
 
 (defn- eav-scan-v
   [context db rel {:keys [attrs preds vars index skips out save]}]
@@ -1622,18 +1617,19 @@
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
-  (if (= 1 (reduce + (map (fn [[_ components]] (count components)) plan)))
+  (if (= 1 (transduce (map (fn [[_ components]] (count components))) + plan))
     (update context :rels collapse-rels
             (let [[src components] (first plan)]
               (execute-steps context (sources src) (first components))))
     (reduce
       (fn [c r] (update c :rels collapse-rels r))
       context
-      (pmap #(apply execute-steps context %)
-            (mapcat (fn [[src components]]
-                      (let [db (sources src)]
-                        (for [steps components] [db steps])))
-                    plan)))))
+      (->> plan
+           (mapcat (fn [[src components]]
+                     (let [db (sources src)]
+                       (for [steps components] [db steps]))))
+           (pmap #(apply execute-steps context %))
+           (sort-by #(count (:tuples %)))))))
 
 (defn -q
   [context]
@@ -1642,14 +1638,13 @@
       (as-> context c
         (build-plan c)
         (execute-plan c)
-        ;; (spy c)
         (reduce resolve-clause c (:late-clauses c))))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
   (->Eduction
     (comp
-      (map (fn [^{:tag "[[Ljava.lang.Object;"} t1]
+      (map (fn [^objects t1]
              (->Eduction
                (map (fn [t2]
                       (let [res (aclone t1)]
@@ -1716,10 +1711,10 @@
   (mapv (fn [element fixed-value i]
           (if (dp/aggregate? element)
             (let [f    (-context-resolve (:fn element) context)
-                  args (map #(-context-resolve % context)
-                            (butlast (:args element)))
+                  args (mapv #(-context-resolve % context)
+                             (butlast (:args element)))
                   vals (map #(nth % i) tuples)]
-              (apply f (concatv args [vals])))
+              (apply f (conj args vals)))
             fixed-value))
         find-elements
         (first tuples)
@@ -1740,10 +1735,10 @@
   [return-map tuples]
   (let [symbols (:symbols return-map)
         idxs    (range 0 (count symbols))]
-    (map* (fn [tuple]
+    (map* (fn [^objects tuple]
             (persistent!
               (reduce
-                (fn [m i] (assoc! m (nth symbols i) (nth tuple i)))
+                (fn [m i] (assoc! m (nth symbols i) (aget tuple i)))
                 (transient {}) idxs)))
           tuples)))
 
@@ -1806,24 +1801,24 @@
                             (r/relation! {(:symbol (get-v pattern)) 0}
                                          (doto (FastList.)
                                            (.add (object-array [v]))))))))
-            c (filter #(instance? Variable (get-v %)) patterns))))
+            c (eduction (filter #(instance? Variable (get-v %))) patterns))))
       context
       (->> qwhere
-           (filter #(instance? Pattern %))
+           (eduction (filter #(instance? Pattern %)))
            (group-by (fn [{:keys [source pattern]}]
                        [source (first pattern) (second pattern)]))
-           (filter #(< 1 (count (val %))))))))
+           (eduction (filter #(< 1 (count (val %)))))))))
 
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
-    ;; (println "----->" q)
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [find              (:qfind parsed-q)
             find-elements     (dp/find-elements find)
             result-arity      (count find-elements)
             with              (:qwith parsed-q)
-            all-vars          (concatv (dp/find-vars find) (map :symbol with))
+            all-vars          (concatv (dp/find-vars find)
+                                       (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
             context           (-> (Context. parsed-q [] {} {} []
                                             nil nil nil (volatile! {}))
@@ -1834,7 +1829,7 @@
         (if resultset
           (cond->> resultset
             with
-            (mapv #(vec (subvec % 0 result-arity)))
+            (mapv #(subvec % 0 result-arity))
 
             (some dp/aggregate? find-elements)
             (aggregate find-elements context)

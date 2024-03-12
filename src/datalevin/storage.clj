@@ -722,7 +722,7 @@
     (let [attr->aid #(-> % schema :db/aid)
           aids      (mapv attr->aid as)]
       (when (and (seq tuples) (seq aids) (not-any? nil? aids))
-        (let [skip-aids (set (map attr->aid skip-as))
+        (let [skip-aids (set (mapv attr->aid skip-as))
               na        (count aids)
               aid->pred (zipmap aids vpreds)
               many      (set (filterv #(= (-> % attrs schema :db/cardinality)

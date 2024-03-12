@@ -514,9 +514,8 @@
 (defn- proximity-score
   [engine max-dist tids did wqs norms]
   (when-let [spans (segment-doc engine did tids max-dist)]
-    (->> tids
-         (map #(proximity-score* max-dist did spans wqs norms %))
-         (reduce + 0.0))))
+    (transduce (map #(proximity-score* max-dist did spans wqs norms %))
+               + 0.0 tids)))
 
 (defn- proximity-scoring
   [engine max-dist tids wqs norms pq0 pq]

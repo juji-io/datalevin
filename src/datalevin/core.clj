@@ -800,9 +800,10 @@ Only usable for debug output.
    (let [report (db/map->TxReport
                   {:db-before @conn
                    :db-after  db
-                   :tx-data   (u/concatv
-                                 (map #(assoc % :added false) (datoms @conn :eav))
-                                 (datoms db :eav))
+                   :tx-data   (let [ds (datoms db :eav)]
+                                (u/concatv
+                                  (mapv #(assoc % :added false) ds)
+                                  ds))
                    :tx-meta   tx-meta})]
      (reset! conn db)
      (doseq [[_ callback] (some-> (:listeners (meta conn)) (deref))]

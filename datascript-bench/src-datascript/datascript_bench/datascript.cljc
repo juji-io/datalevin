@@ -52,7 +52,7 @@
 
 
 (defn ^:export add-1 []
-  (core/bench-once
+  (core/bench-10
     (reduce
       (fn [db p]
         (-> db
@@ -66,14 +66,14 @@
 
 
 (defn ^:export add-5 []
-  (core/bench-once
+  (core/bench-10
     (reduce (fn [db p] (-> db (d/db-with [p])))
             (d/empty-db schema)
             core/people20k)))
 
 
 (defn ^:export add-all []
-  (core/bench-once
+  (core/bench-10
     (-> (d/db-with
           (d/empty-db schema)
           core/people20k))))
@@ -94,7 +94,7 @@
   (let [db   (-> (d/empty-db schema)
                  (d/db-with core/people20k))
         eids (->> (d/datoms db :aevt :name) (map :e) (shuffle))]
-    (core/bench-once
+    (core/bench-10
       (reduce (fn [db eid]
                 (-> db
                     (d/db-with [[:db.fn/retractEntity eid]])))

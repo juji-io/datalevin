@@ -3,9 +3,8 @@
 ## WIP
 
 ### Added
-- [Datalog] New query engine with an optimizer to improve query performance,
-  reulting in orders of magnitude speed up for complex queries. See
-  [details](doc/query.md). #11
+- [Datalog] Query optimizer to improve query performance, particularly for
+  complex queries. See [details](doc/query.md). #11
 - [Datalog] More space efficient storage format, leveraging LMDB's
   dupsort feature, resulting in about 20% space reduction and faster counting of
   data entries.
@@ -34,8 +33,6 @@
 - [KV] `visit-key-range` function that visit keys in a range for side effects.
 - [KV] `range-some` function that is similar to `some` for a given range.
 - [KV] `range-keep` function that is similar to `keep` for a given range.
-- [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as
-  well as information about each dbi, as flags, key-size, etc. #184
 
 ### Changed
 - [Datalog] Change VEA index back to VAE.
@@ -48,13 +45,14 @@
 - [KV] Upgrade LMDB to the latest version, now tracking mdb.master branch,
   as it includes important fixes for dupsort, such as
   https://bugs.openldap.org/show_bug.cgi?id=9723
+- [KV] `datalevin/kv-info` dbi to keep meta information about the databases, as
+  well as information about each dbi, as flags, key-size, etc. #184
 - [KV] Functions that take a predicate have a new argument `raw-pred?` to
   indicate whether the predicate takes a raw KV object (default), or a pair of
   decoded values of k and v (more convenient).
 
 ### Improved
 - [Datalog] Query results is now spillable to disk. #166
-- [Datalog] More robust handling of multiple concurrent transactions.
 - [Search] Functions in `search-utils` namespace are now compiled instead of
   being interpreted to improve performance.
 

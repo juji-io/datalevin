@@ -73,35 +73,37 @@
                  tuples-b))))
 
 (defn sum-rel
-  [a b]
-  (let [{attrs-a :attrs, tuples-a :tuples} a
-        {attrs-b :attrs, tuples-b :tuples} b]
+  ([] (relation! {} (FastList.)))
+  ([a] a)
+  ([a b]
+   (let [{attrs-a :attrs, tuples-a :tuples} a
+         {attrs-b :attrs, tuples-b :tuples} b]
 
-    (cond
-      (= attrs-a attrs-b)
-      (relation! attrs-a (if (vector? tuples-a)
-                           (into tuples-a tuples-b)
-                           (do (.addAll ^List tuples-a tuples-b)
-                               tuples-a)))
+     (cond
+       (= attrs-a attrs-b)
+       (relation! attrs-a (if (vector? tuples-a)
+                            (into tuples-a tuples-b)
+                            (do (.addAll ^List tuples-a tuples-b)
+                                tuples-a)))
 
-      (empty? tuples-a) b
-      (empty? tuples-b) a
+       (empty? tuples-a) b
+       (empty? tuples-b) a
 
-      (not (same-keys? attrs-a attrs-b))
-      (raise
-        "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
-        {:error :query/where})
+       (not (same-keys? attrs-a attrs-b))
+       (raise
+         "Can’t sum relations with different attrs: " attrs-a " and " attrs-b
+         {:error :query/where})
 
-      (every? number? (vals attrs-a))
-      (sum-rel* attrs-a tuples-a attrs-b tuples-b)
+       (every? number? (vals attrs-a))
+       (sum-rel* attrs-a tuples-a attrs-b tuples-b)
 
-      :else
-      (let [number-attrs (zipmap (keys attrs-a) (range))
-            size-a       (.size ^List tuples-a)
-            size-b       (.size ^List tuples-b)]
-        (-> (sum-rel* number-attrs (FastList. (+ size-a size-b))
-                      attrs-a tuples-a)
-            (sum-rel b))))))
+       :else
+       (let [number-attrs (zipmap (keys attrs-a) (range))
+             size-a       (.size ^List tuples-a)
+             size-b       (.size ^List tuples-b)]
+         (-> (sum-rel* number-attrs (FastList. (+ size-a size-b))
+                       attrs-a tuples-a)
+             (sum-rel b)))))))
 
 (defn prod-tuples
   ([] (doto (FastList.) (.add (object-array []))))
@@ -118,6 +120,7 @@
 
 (defn prod-rel
   ([] (relation! {} (doto (FastList.) (.add (make-array Object 0)))))
+  ([rel1] rel1)
   ([rel1 rel2]
    (let [attrs1  (keys (:attrs rel1))
          attrs2  (keys (:attrs rel2))

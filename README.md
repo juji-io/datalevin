@@ -29,7 +29,7 @@ database. Here's what a Datalog query looks like:
               [?sales :sales/total ?total]
               [?sales :sales/customer ?customer]
               [?customer :customers/name ?name]]
-      (d/db conn) 2023)
+      (d/db conn) 2024)
 ```
 
 The rationale is to have a simple, fast and open source Datalog query engine
@@ -48,12 +48,11 @@ deleted, they are gone.
 
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
-[Lightning Memory-Mapped Database
-(LMDB)](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). It
-retains the library property of Datascript, and it is meant to be embedded in
-applications to manage state. Because data is persistent on disk in Datalevin,
-application state can survive application restarts, and data size can be larger
-than memory.
+[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), with an
+additional [query optimizer](doc/query.md) and other features. It retains the
+library property of Datascript, and it is meant to be embedded in applications
+to manage state. Because data is persistent on disk in Datalevin, application
+state can survive application restarts, and data size can be larger than memory.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,
@@ -370,8 +369,9 @@ adjust the priorities based on feedback.
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
-* 0.9.0 Option to store data in compressed form, and a new Datalog query engine with improved performance.
-* 0.10.0 As a vector DB: dense numeric vector indexing.
+* 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
+* 0.10.0 Option to store data in compressed form.
+* 0.11.0 As a vector DB: dense numeric vector indexing and similarity search.
 * 1.0.0 Transaction log storage and access API.
 * 1.1.0 Read-only replicas for server.
 * 1.2.0 As a document store: automatic indexing and incremental updates.
@@ -380,39 +380,6 @@ adjust the priorities based on feedback.
 * 2.2.0 Fully automatic schema migration on write.
 * 3.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
 * 4.0.0 Distributed mode.
-
-## :rocket: Status
-
-Both Datascript and LMDB are mature and stable libraries. Building on top of
-them, Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io).
-
-Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
-
-<p align="center">
-<img src="bench/datalevin-bench-query-04-27-2023.png" alt="query benchmark" height="300"></img>
-<img src="bench/datalevin-bench-write-04-27-2023.png" alt="write benchmark" height="300"></img>
-</p>
-
-In this benchmark, Datomic is running in in-memory mode, as it requires another
-database for persistence. Also, the `init` write condition, i.e. bulk loading
-prepared datoms, is not available.
-
-In all benchmarked queries, Datalevin is faster than Datascript and Datomic.
-Considering that we are comparing a disk store with memory stores, this result
-may be counter-intuitive. One possible reason is that Datalevin caches more
-aggressively, whereas Datascript chose not to do so (e.g. see [this
-issue](https://github.com/tonsky/datascript/issues/6)). In addition, we
-implemented more query optimizations.
-
-Writes are slower, as expected, as Datalevin is writing to disk while others are
-in memory. The bulk loading speed is good, writing 100K datoms to disk in less
-than 0.2 seconds; the same data can also be transacted with all the integrity
-checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
-one datom at a time, it takes longer time. Therefore, it is preferable to have
-batch transactions.
-
-In short, Datalevin is quite capable for small or medium projects right now.
 
 ## :floppy_disk: Differences from Datascript
 
@@ -458,6 +425,37 @@ than just the difference in data durability and running mode:
 
 * Has no features that are applicable only for in-memory DBs, such as DB as an
   immutable data structure, DB pretty print, etc.
+
+## :rocket: Status
+
+Both Datascript and LMDB are mature and stable libraries. Building on top of
+them, Datalevin is extensively tested with property-based testing. It is also used
+in production at [Juji](https://juji.io).
+
+Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
+
+<p align="center">
+<img src="bench/datalevin-bench-query-04-27-2023.png" alt="query benchmark" height="300"></img>
+<img src="bench/datalevin-bench-write-04-27-2023.png" alt="write benchmark" height="300"></img>
+</p>
+
+In this benchmark, both Datomic and Datascript are running in in-memory mode, as
+they require another database for persistence. The `init` write condition, i.e.
+bulk loading prepared datoms, is not available in Datomic. Datalevin write here
+is configured with LMDB `nosync` mode to better match the in-memory conditions,
+i.e. the operating system is responsible for flushing data to disk.
+
+In all benchmarked queries, Datalevin is the fastest among the three tested
+systems, as Datalevin has a cost based query optimizer while Datascript and
+Datomic do not. Datalevin also has a caching layer for index access.
+
+Writes are slower, as expected, as Datalevin does write to disk even though sync
+is not explicitly called, while others are purely
+in memory. The bulk loading speed is good, writing 100K datoms to disk in less
+than 0.2 seconds; the same data can also be transacted with all the integrity
+checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
+one datom at a time, it takes longer time. Therefore, it is preferable to have
+batch transactions.
 
 ## :baby: Limitations
 
@@ -511,6 +509,6 @@ You can talk to us in the `#datalevin` channel on [Clojurians Slack](http://cloj
 
 ## License
 
-Copyright © 2020-2023 [Juji, Inc.](https://juji.io).
+Copyright © 2020-2024 [Juji, Inc.](https://juji.io).
 
 Licensed under Eclipse Public License (see [LICENSE](LICENSE)).

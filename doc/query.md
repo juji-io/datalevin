@@ -1,6 +1,6 @@
 # Datalevin Query Engine
 
-Datalevin has an advanced Datalog query engine that handles complex queries on
+Datalevin has an advanced query engine that handles complex queries on
 large data sets with ease.
 
 ## Motivation
@@ -29,7 +29,7 @@ databases in its design choices.
 RDF stores often have a limited number of properties even for huge datasets,
 whereas Datomic-like stores may have many attributes, and they are
 often specialized to a class of entities.  Therefore, filtering by
-attribute values are often very efficient.
+attribute values can be very efficient.
 
 In Datomic-like stores, entities have explicit integer IDs, which makes the
 filtering by entity IDs efficient. The entity vs. entity relationship is also
@@ -42,84 +42,139 @@ brings more benefits.
 
 Datalevin search engine exploits these design choices to maximize query performance.
 
-
-## Compressed Triple Storage
+## Nested Triple Storage
 
 Literal representation of triples in an index introduces significant redundant
 storage. For example, in `:eav` index, there are many repeated values of `e`,
-and in `:ave` index, there are many repeated values of `a`. These repetitions of
-head elements not just increase the storage size, but also add processing
-overhead during query.
+and in `:ave` index, there are many repeated values of `a` and `v`. These
+repetitions of head elements increase not just the storage size, but also
+processing overhead during query.
 
-Taking advantage of LMDB's dupsort capability (i.e. a key can be mapped to a list of
-values, and the list of values are also sorted), we store the head element value
-only once, by treating them as keys. The values are the remaining two elements
-of the triple, plus a reference to the full datom if the datom is larger than
-the maximal key size allowed by LMDB.
+Taking advantage of LMDB's dupsort capability (i.e. a key can be mapped to a
+list of values, and this list of values are also sorted, essentially it is a two level
+nested B+ trees of B+ trees), we store the head elements only once, by
+treating them as keys. The values are the remaining one or two elements of the
+triple as a list of values mapped to by a key. This nested storage produces
+about 20% space reduction, depending on the data.
 
-This list based triple storage also facilitate counting of elements, as the list
-count can be immediately read from the index, without performing actual
-count, e.g. the number of datoms matching `[?e :attr ?x]` pattern is read directly from the `:ave` index.
+The main advantage of this list based triple storage is to facilitate counting
+of elements, which is the most important input for query planning. Some list
+counts can be immediately read from the index, without performing actual
+range scan to count them. For example, in our storage schema, the number of
+datoms matching `[?e :an-attr "bound value"]` pattern can be obtained from the
+`:ave` index in constant time. Other counts can also be cheaply counted. For
+example, cardinality (number of distinct values) of an attribute can be obtained
+by counting the number of keys only. There is no need to maintain expensive and
+often inaccurate statistics.
 
 ## Query Optimizations
 
-We built a cost based query optimizer that uses the dynamic programming for query planning [10]. The query engine employs multiple optimization strategies.
+The query engine employs multiple optimization strategies.
 
 ### Predicates push-down
 
 As mentioned above, we take advantage of the opportunities to push selection
 predicates down to index scan in order to minimize unnecessary intermediate
-results. This is done to predicates involving one attribute only.
+results. Currently, two types of predicates are pushed down: 1. inequality
+predicates involving one variable and one or two constants are converted to
+range boundary in range scan; 2. other predicates involving one attributes are
+pushed down to operations that scan the attribute values.
+
+These predicates push-downs are implemented as query rewrites. We also plug the
+constant query parameters into the query itself in order to avoid expensive
+joins with these bindings turned relations. More query rewrite cases will be
+considered in the future.
 
 ### Merge scan
 
-For star-like attributes, we borrow the idea of pivot scan [2] that returns
-multiple attribute values with a single index scan on `:eav` index. This single
-scan takes an ordered list of entity IDs, an ordered list of attributes needed,
-and conditions on attributes, to produce a relation. This avoids performing
-joins within the same entity class to obtain the same relation. The input entity
-IDs may come from a search on `:ave` index that returns the smallest result set,
-or a set of linking references from a relation produced in the previous steps.
-This scan also double as a merge join between the outer relation (sorted by the
-entity ids of the inner) and new entities to be scanned as the inner relation.
+For star-like attributes, we utilize an idea similar to pivot scan [2], which returns
+multiple attribute values with a single index scan using `:eav` index. This single
+scan takes an list of entity IDs, an ordered list of attributes needed,
+and corresponding predicates for each attribute, to produce a relation. This avoids performing
+joins within the same entity class to obtain the same relation. The bulk of query execution time is spent on this operation.
+
+The input list of entity IDs may come from a search on `:ave` index that returns
+an entity ID list, a set of linking references from a relation produced
+in the previous step, or the reverse references from the previous step, and so on.
 
 ### Query graph simplification
 
-Since star-like attributes are already handled by pivot scan, the optimizer
+Since star-like attributes are already handled by merge scan, the optimizer
 works mainly on the simplified graph that consists of stars and the links
 between them [3] [7], this significantly reduces the size of optimizer search
 space.
 
 ### Left-deep join tree
 
-Our planner generates left-deep join trees, which may not be optimal [8], but work
-well for our simplified query graph, since stars are already turned into meta
-nodes and mostly chains remain. This also reduces the cost of cost estimation,
-which dominates the cost of planning.
+Our planner generates left-deep join trees, which may not be optimal [8], but
+work well for our simplified query graph, since stars are already turned into
+meta nodes and mostly chains remain. This also reduces the cost of cost
+estimation, which dominates the cost of planning. The impact of the loss of search space is relatively small, compared with the impact of cardinality estimation inaccuracy.
+
+### Direct counting for cardinality estimation (new)
+
+As mentioned, the main advantage of our system is having more accurate
+cardinality estimation. Instead of relying on estimations based on statistics
+such as histograms, we count elements directly, because counts in our list based
+triple storage are cheap to obtain. Since the planner is only interested in
+smallest count within one entity class, the counting is capped by the current
+minimum, so the time spent in counting is minimized. Compared with statistics based estimation, counting is simple, accurate
+and always up to date. For those cases that cannot be counted, we use magic
+numbers. In the future, we will add sampling based estimations.
 
 ### Join methods
 
+Currently, we consider four join methods.
+
 For two sets of where clauses involving two classes of entities respectively,
-e.g. `?e` and `?f`, we consider three possible methods of joining them. If there
+e.g. `?e` and `?f`, we currently consider the following possible cases. If there
 is a reference attribute in the clauses to connect these two classes of entities
-e.g. `[?e :a/ref ?f]`, "forward merge" or "backward merge" method can be
-considered, and for other cases, only hash join is considered. The forward merge
-method first sorts the `e?` relation by value of `?f`, then merge scan `?f`
-entities. Backward method has an extra step, it starts with `?f` relation and
-reverse merge scan `:vae` index to merge in corresponding `?e`, sort the
-relation by `?e`, then merge scan `?e` entities. The choice of the method is
-determined by cost estimation.
+e.g. `[?e :a/ref ?f]`, "forward ref" or "reverse ref" method can be considered.
+The forward ref method takes the list of `f?` in an existing relation, then
+merge scan values of `?f` entities. Reverse ref method has an extra step, it
+starts with `?f` relation and scan `:vae` index to obtain corresponding list of
+`?e`, then merge scan values of `?e` entities. The third case is the value
+equality case, where `e` and `f` are linked due to unification of attribute
+values, then `:ave` index is scanned to find the target's entity IDs.
 
-### Direct count for cardinality (new)
+The above three methods are essentially scanning indices for a list of entity
+IDs. Other attribute values then need to be merge scanned to obtain a full
+relation. The forth method instead does merge scan first, then attempt to join
+two relations using hash join afterwards. The choice of probing and building
+side of the hash join is determined during execution, instead of being
+predetermined by the planner. This avoids the possibility of building the hash
+table on the wrong side due to inaccurate cardinality estimation. This property
+also makes our join tree more like a zig-zag one, rather than a pure
+left-deep join tree.
 
-Instead of relying on estimation, we count elements directly if possible,
-because counts in our list based triple storage is cheap to obtain. For those cases that cannot be counted, we use magic number.
+The choice of these methods is determined by the optimizer based on its cost estimation.
+
+### Cost based query optimizer
+
+We built a Selinger style query optimizer that uses dynamic programming for
+query planning [10]. Instead of consider all possible combinations of join
+orders, the plan enumeration is based on connected components of the query
+graph. Each connected component has its own plan and its own execution sequence.
+Multiple connected components are processed concurrently. The resulting
+relations are joined afterwards using hash joins, and the order of which is
+based on result size.
+
+As mentioned, we do not consider bushy join trees, as our join methods are mainly
+scanning indices, so a base relation is needed for each join. Since we
+also count in base relations, the cardinality estimation obtained there is quite
+accurate, so we want to leverage that accuracy by keeping at least one base relation in each join.
+
+## Limitation
+
+Currently, the query optimizer handles normal where clauses only: triple
+patterns and predicates. We will gradually improve the optimizer to consider
+more clause types in the future.
 
 ## Remark
 
 The more granular and redundant storage format of triple stores brings some
 challenges to query processing due to its greater demand on storage access, but
-it also offer some opportunities to help with query.
+it also offer some opportunities to help with query processing.
 
 We found that the opportunities lie precisely in the "Achilles Heel" of RDBMS
 optimizer: cardinality estimation [6]. It is hard to have good cardinality
@@ -169,10 +224,3 @@ estimation for RDF queries with multiple joins." ICDE. 2011.
 
 [10] Selinger, P. Griffiths, et al. "Access path selection in a relational
 database management system." SIGMOD. 1979.
-
-[11] Bancilhon, Francois, et al. "Magic sets and other strange ways to implement
-logic programs." Proceedings of the fifth ACM SIGACT-SIGMOD symposium on
-Principles of database systems. 1985.
-
-[12] Seshadri, Praveen, et al. "Cost-based optimization for magic: Algebra and
-implementation." SIGMOD 1996.
