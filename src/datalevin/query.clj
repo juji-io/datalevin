@@ -43,6 +43,18 @@
     [parsed-q rels sources rules opt-clauses late-clauses graph plan
      intermediates])
 
+(defrecord Plan [steps cost size])
+
+(defrecord Step
+    [op save index attr range attrs vars cols in out pred preds skips
+     val know-e?])
+
+(defrecord Node [links mpath mcount bound free])
+
+(defrecord Link [type tgt var attrs attr])
+
+(defrecord Clause [val var range count attrs attr pred])
+
 ;; Utilities
 
 (defn single
@@ -406,7 +418,7 @@
             (aset static-args i source)
             (aset tuples-args i (get attrs arg)))
           (aset static-args i arg))))
-    (fn [tuple]
+    (fn call-fn [tuple]
       ;; TODO raise if not all args are bound
       (dotimes [i len]
         (when-some [tuple-idx (aget tuples-args i)]
@@ -879,10 +891,10 @@
                (let [attr (second pattern)]
                  (if-let [v (get-v pattern)]
                    (if (free-var? v)
-                     (assoc-in m [:free attr] {:var v})
-                     (assoc-in m [:bound attr] {:val v}))
-                   (assoc-in m [:free attr] {}))))
-             {} patterns)])
+                     (assoc-in m [:free attr] (map->Clause {:var v}))
+                     (assoc-in m [:bound attr] (map->Clause {:val v})))
+                   (assoc-in m [:free attr] (map->Clause {})))))
+             (map->Node {}) patterns)])
 
 (defn- link-refs
   [graph]
@@ -893,8 +905,10 @@
           (fn [g [k {:keys [var]}]]
             (if (es var)
               (-> g
-                  (update-in [e :links] conjv {:type :ref :tgt var :attr k})
-                  (update-in [var :links] conjv {:type :_ref :tgt e :attr k}))
+                  (update-in [e :links] conjv
+                             (map->Link {:type :ref :tgt var :attr k}))
+                  (update-in [var :links] conjv
+                             (map->Link {:type :_ref :tgt e :attr k})))
               g))
           g free))
       graph graph)))
@@ -908,10 +922,12 @@
           (fn [g [[e1 k1] [e2 k2]]]
             (let [attrs {e1 k1 e2 k2}]
               (-> g
-                  (update-in [e1 :links] conjv
-                             {:type :val-eq :tgt e2 :var v :attrs attrs})
-                  (update-in [e2 :links] conjv
-                             {:type :val-eq :tgt e1 :var v :attrs attrs}))))
+                  (update-in
+                    [e1 :links] conjv
+                    (map->Link {:type :val-eq :tgt e2 :var v :attrs attrs}))
+                  (update-in
+                    [e2 :links] conjv
+                    (map->Link {:type :val-eq :tgt e1 :var v :attrs attrs})))))
           g (u/combinations lst 2))
         g))
     graph (reduce (fn [m [e {:keys [free]}]]
@@ -1129,7 +1145,7 @@
             f1         (resolve-pred f nil clause)
             i          (u/index-of #(= var %) args)
             args-arr   (object-array args)]
-        (fn [x] (make-call f1 (do (aset args-arr i x) args-arr)))))))
+        (fn pred [x] (make-call f1 (do (aset args-arr i x) args-arr)))))))
 
 (defn- attr-pred
   [[_ {:keys [var pred]}]]
@@ -1143,45 +1159,46 @@
 
         attr    (peek mpath)
         know-e? (int? e)
-        schema  (db/-schema db)]
-    (let [init (cond-> {:op :init-tuples :attr attr :vars [e] :out #{e}
-                        :save *save-intermediate*}
-                 var     (assoc :pred (attr-pred [attr clause])
-                                :vars (cond-> [e]
-                                        (not (placeholder? var))
-                                        (conj var))
-                                :range range)
-                 val     (assoc :val val)
-                 know-e? (assoc :know-e? true)
-                 true    (#(assoc % :cols
-                                  (if (= 1 (count (:vars %))) [e] [e attr]))))
-          cols (:cols init)]
-      (cond-> [init]
-        (< 1 (+ (count bound) (count free)))
-        (conj
-          (let [bound1 (->> (dissoc bound attr)
-                            (mapv (fn [[a {:keys [val] :as b}]]
-                                    [a (-> b
-                                           (update :pred conjv #(= val %))
-                                           (assoc :var (gensym "?bound")))])))
-                all    (->> (concatv bound1 (dissoc free attr))
-                            (sort-by (fn [[a _]] (-> a schema :db/aid))))
-                attrs  (mapv first all)
-                vars   (mapv attr-var all)
-                skips  (remove nil?
-                               (map #(when (or (= %2 '_)
-                                               (placeholder? %2))
-                                       %1) attrs vars))]
-            {:op    :eav-scan-v
-             :save  *save-intermediate*
-             :index 0
-             :attrs attrs
-             :vars  vars
-             :cols  (concatv cols (remove (set skips) attrs))
-             :in    #{e}
-             :out   #{e}
-             :preds (mapv attr-pred all)
-             :skips skips}))))))
+        schema  (db/-schema db)
+        init    (cond-> (map->Step
+                          {:op :init-tuples :attr attr :vars [e]
+                           :out #{e} :save *save-intermediate*})
+                  var     (assoc :pred (attr-pred [attr clause])
+                                 :vars (cond-> [e]
+                                         (not (placeholder? var))
+                                         (conj var))
+                                 :range range)
+                  val     (assoc :val val)
+                  know-e? (assoc :know-e? true)
+                  true    (#(assoc % :cols
+                                   (if (= 1 (count (:vars %))) [e] [e attr]))))
+        cols    (:cols init)]
+    (cond-> [init]
+      (< 1 (+ (count bound) (count free)))
+      (conj
+        (let [bound1 (->> (dissoc bound attr)
+                          (mapv (fn [[a {:keys [val] :as b}]]
+                                  [a (-> b
+                                         (update :pred conjv #(= val %))
+                                         (assoc :var (gensym "?bound")))])))
+              all    (->> (concatv bound1 (dissoc free attr))
+                          (sort-by (fn [[a _]] (-> a schema :db/aid))))
+              attrs  (mapv first all)
+              vars   (mapv attr-var all)
+              skips  (remove nil?
+                             (map #(when (or (= %2 '_)
+                                             (placeholder? %2))
+                                     %1) attrs vars))]
+          (map->Step {:op    :eav-scan-v
+                      :save  *save-intermediate*
+                      :index 0
+                      :attrs attrs
+                      :vars  vars
+                      :cols  (concatv cols (remove (set skips) attrs))
+                      :in    #{e}
+                      :out   #{e}
+                      :preds (mapv attr-pred all)
+                      :skips skips}))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1233,9 +1250,8 @@
                [#{e}
                 (let [[_ node :as kv] (find nodes e)
                       steps           (init-node-plan db kv)]
-                  {:steps steps
-                   :cost  (estimate-base-cost node steps)
-                   :size  (estimate-scan-v-size db (:mcount node) steps)})]))
+                  (Plan. steps (estimate-base-cost node steps)
+                         (estimate-scan-v-size db (:mcount node) steps)))]))
         component))
 
 (defn- add-back-range
@@ -1255,45 +1271,46 @@
 
 (defn- scan-v-step
   [last-step index new-key new-steps skip-attr]
-  (merge
-    {:op    :eav-scan-v
-     :save  *save-intermediate*
-     :index index
-     :in    (:out last-step)
-     :out   new-key}
-    (if (= 1 (count new-steps))
-      (let [s (first new-steps)
-            v (peek (:vars s))
-            a (:attr s)]
-        {:attrs [a]
-         :vars  [v]
-         :skips []
-         :preds [(add-back-range v s)]
-         :cols  (concatv (:cols last-step) [a])})
-      (let [[s1 s2] new-steps
-            skips   (:skips s2)
-            attr    (:attr s1)
-            v       (peek (:vars s1))
-            attrs2  (:attrs s2)
-            vars2   (:vars s2)
-            preds2  (:preds s2)
-            [attrs vars preds]
-            (if skip-attr
-              (if (= attr skip-attr)
-                [attrs2 vars2 preds2]
-                (let [idx #{(u/index-of #(= skip-attr %) attrs2)}]
-                  [(concatv [attr] (u/remove-idxs idx attrs2))
-                   (concatv [v] (u/remove-idxs idx vars2))
-                   (concatv [(add-back-range v s1)]
-                            (u/remove-idxs idx preds2))]))
-              [(concatv [attr] attrs2)
-               (concatv [v] vars2)
-               (concatv [(add-back-range v s1)] preds2)])]
-        {:attrs attrs
-         :vars  vars
-         :skips skips
-         :preds preds
-         :cols  (concatv (:cols last-step) (remove (set skips) attrs))}))))
+  (map->Step
+    (merge
+      {:op    :eav-scan-v
+       :save  *save-intermediate*
+       :index index
+       :in    (:out last-step)
+       :out   new-key}
+      (if (= 1 (count new-steps))
+        (let [s (first new-steps)
+              v (peek (:vars s))
+              a (:attr s)]
+          {:attrs [a]
+           :vars  [v]
+           :skips []
+           :preds [(add-back-range v s)]
+           :cols  (concatv (:cols last-step) [a])})
+        (let [[s1 s2] new-steps
+              skips   (:skips s2)
+              attr    (:attr s1)
+              v       (peek (:vars s1))
+              attrs2  (:attrs s2)
+              vars2   (:vars s2)
+              preds2  (:preds s2)
+              [attrs vars preds]
+              (if skip-attr
+                (if (= attr skip-attr)
+                  [attrs2 vars2 preds2]
+                  (let [idx #{(u/index-of #(= skip-attr %) attrs2)}]
+                    [(concatv [attr] (u/remove-idxs idx attrs2))
+                     (concatv [v] (u/remove-idxs idx vars2))
+                     (concatv [(add-back-range v s1)]
+                              (u/remove-idxs idx preds2))]))
+                [(concatv [attr] attrs2)
+                 (concatv [v] vars2)
+                 (concatv [(add-back-range v s1)] preds2)])]
+          {:attrs attrs
+           :vars  vars
+           :skips skips
+           :preds preds
+           :cols  (concatv (:cols last-step) (remove (set skips) attrs))})))))
 
 (defn- ref-plan
   [last-step {:keys [attr]} new-key new-steps]
@@ -1302,14 +1319,14 @@
 
 (defn- link-step
   [op last-step index attr tgt new-key]
-  {:op    op
-   :save  *save-intermediate*
-   :index index
-   :in    (:out last-step)
-   :out   new-key
-   :attr  attr
-   :var   tgt
-   :cols  (conj (:cols last-step) tgt)})
+  (map->Step {:op    op
+              :save  *save-intermediate*
+              :index index
+              :in    (:out last-step)
+              :out   new-key
+              :attr  attr
+              :var   tgt
+              :cols  (conj (:cols last-step) tgt)}))
 
 (defn- rev-ref-plan
   [last-step link-e {:keys [attr tgt]} new-key new-steps]
@@ -1367,10 +1384,10 @@
           :ref    (ref-plan last-step link new-key new-steps)
           :_ref   (rev-ref-plan last-step link-e link new-key new-steps)
           :val-eq (val-eq-plan last-step link link-e new-key new-steps))]
-    {:steps cur-steps
-     :cost  (+ ^long (:cost prev-plan)
-               ^long (estimate-e-plan-cost prev-plan cur-steps result-size))
-     :size  result-size}))
+    (Plan. cur-steps
+           (+ ^long (:cost prev-plan)
+              ^long (estimate-e-plan-cost prev-plan cur-steps result-size))
+           result-size)))
 
 (defn- estimate-hash-cost
   [prev-plan new-base-plan]
@@ -1388,18 +1405,18 @@
 (defn- h-plan
   [prev-plan new-base-plan new-key size]
   (let [in (:out (peek (:steps prev-plan)))]
-    {:steps (conj (-> (:steps new-base-plan)
-                      (assoc-in [0 :in] in)
-                      (assoc-in [0 :save-in?] true))
-                  {:op   :hash-join
-                   :save *save-intermediate*
-                   :in   in
-                   :out  new-key
-                   :cols (hash-cols prev-plan new-base-plan)})
-     :cost  (+ ^long (:cost prev-plan)
-               ^long (:cost new-base-plan)
-               ^long (estimate-hash-cost prev-plan new-base-plan))
-     :size  size}))
+    (Plan. (conj (-> (:steps new-base-plan)
+                     (assoc-in [0 :in] in)
+                     (assoc-in [0 :save-in?] true))
+                 (map->Step {:op   :hash-join
+                             :save *save-intermediate*
+                             :in   in
+                             :out  new-key
+                             :cols (hash-cols prev-plan new-base-plan)}))
+           (+ ^long (:cost prev-plan)
+              ^long (:cost new-base-plan)
+              ^long (estimate-hash-cost prev-plan new-base-plan))
+           size)))
 
 (defn- binary-plan
   [db nodes new-base-plan prev-plan link-e new-e new-key]

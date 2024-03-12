@@ -1,4 +1,4 @@
-(def version "0.8.25")
+(def version "0.8.29")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -8,23 +8,22 @@
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
    [cheshire "5.12.0"]
-   [com.clojure-goes-fast/clj-memory-meter "0.3.0"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.fasterxml.jackson.core/jackson-core "2.15.3"]
    [com.fasterxml.jackson.core/jackson-databind "2.15.3"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.15"]
    [com.taoensso/nippy "3.4.0-beta1"]
-   [com.taoensso/timbre "6.3.1"]
+   [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.12.5"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
    [org.babashka/sci "0.8.41"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
-   [org.clojure/clojure "1.11.1"]
-   [org.clojure/tools.cli "1.0.219"]
+   [org.clojure/clojure "1.11.2"]
+   [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
-   [org.clojure/data.csv "1.0.1"]
+   [org.clojure/data.csv "1.1.0"]
    [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.8.9"]
    [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.8.9"]
    [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.8.9"]
@@ -38,7 +37,7 @@
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
    [org.lmdbjava/lmdbjava "0.8.3"]
-   [org.roaringbitmap/RoaringBitmap "1.0.1"]]
+   [org.roaringbitmap/RoaringBitmap "1.0.5"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
@@ -86,7 +85,6 @@
                     :dependencies
                     [[org.clojure/test.check]
                      [joda-time/joda-time]
-                     [com.clojure-goes-fast/clj-memory-meter]
                      [org.graalvm.nativeimage/svm]]
                     :global-vars
                     {*print-namespace-maps* false

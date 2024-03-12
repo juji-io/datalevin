@@ -7,7 +7,8 @@
    [datalevin.util :as u]
    [datalevin.lmdb :as l]
    [taoensso.nippy :as nippy]
-   [clojure.set :as set])
+   [clojure.set :as set]
+   [datalevin.bits :as b])
   (:import
    [java.util Iterator List UUID NoSuchElementException Map Set Collection]
    [java.io DataInput DataOutput]
@@ -524,7 +525,7 @@
 
   (contains[_ o] (.containsKey impl o))
 
-  (cons [this o] (.put impl o o) this)
+  (cons [this o] (.put impl o c/slash) this)
 
   (empty [this] (.empty impl) this)
 
@@ -543,7 +544,7 @@
 
   (seq ^ISeq [_] (seq (.keySet impl)))
 
-  (get [_ o] (.valAt impl o))
+  (get [_ o] (when (.valAt impl o) o))
 
   Set
 
@@ -553,7 +554,7 @@
 
   IFn
 
-  (invoke [_ arg1] (.valAt impl arg1))
+  (invoke [_ arg1] (when (.valAt impl arg1) arg1))
 
   IObj
 
@@ -593,7 +594,7 @@
                              (UnifiedMap.)
                              (volatile! nil)
                              nil)]
-     (doseq [e s] (.put impl e e))
+     (doseq [e s] (.put impl e c/slash))
      (SpillableSet. impl nil))))
 
 (nippy/extend-freeze

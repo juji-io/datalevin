@@ -138,7 +138,7 @@
 
 (defn- value-type
   [props]
-  (if-let [vt (:db/valueType props)]
+  (if-let [vt (props :db/valueType)]
     (if (= vt :db.type/tuple)
       (if-let [tts (:db/tupleTypes props)]
         tts
@@ -727,6 +727,7 @@
               aid->pred (zipmap aids vpreds)
               many      (set (filterv #(= (-> % attrs schema :db/cardinality)
                                           :db.cardinality/many) aids))
+              no-many?  (empty? many)
               aids      (int-array aids)
               nt        (.size ^List tuples)
               res       (FastList. nt)
@@ -741,7 +742,7 @@
                         (.addAll res (r/prod-tuples
                                        (r/single-tuples tuple) ts))
                         (let [vs (FastList. na)]
-                          (if (empty? many)
+                          (if no-many?
                             (loop [next? (lmdb/seek-key iter te :id)
                                    ai    0]
                               (if next?
