@@ -80,7 +80,7 @@
              (= "latest" version)
              (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
-                  org.clojure/clojure   {:mvn/version \"1.11.1\"}
+                  org.clojure/clojure   {:mvn/version \"1.11.2\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.8.3\"}
                   com.taoensso/nippy    {:mvn/version \"3.4.0-beta1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}

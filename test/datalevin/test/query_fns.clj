@@ -280,7 +280,7 @@
                   {:db/id 2 :name "Ivan" :age 20}
                   {:db/id 3 :name "Oleg" :age 10}
                   {:db/id 4 :name "Oleg" :age 20}]
-        dir      (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
+        dir      (u/tmp-dir (str "query-predicates-" (UUID/randomUUID)))
         db       (d/db-with (d/empty-db dir) entities)]
     (are [q res] (= (d/q (quote q) db) res)
       ;; plain predicate
