@@ -79,6 +79,12 @@ since the transaction logic involves a great many number of reads and checks.
 
 Datalevin and Datomic have similar transaction speed, with the former being a little faster. Datascript is over 2X faster than both.
 
+|DB|Add-1 Latency (ms)|
+|---|---|
+|Datomic|2601.8|
+|Datascript|1027.5|
+|Datalevin|2437.9|
+
 Notice that the difference ratio between Datalevin and Datascript reduces from
 4X to 2X, which suggests that Datalevin's transaction process is more efficient.
 This is likely due to faster reads, as Datalevin and Datascript use the same
@@ -105,6 +111,12 @@ time compared with Add-1 condition.
 
 Datascript is the fastest, but the improvement compared with Add-1 is relatively unremarkable.
 
+|DB|Add-5 Latency (ms)|
+|---|---|
+|Datomic|1072.8|
+|Datascript|824.3|
+|Datalevin|1385.6|
+
 #### Add-all
 
 This transacts all 100K datoms in one go.
@@ -125,6 +137,12 @@ Datomic again improves greatly, now actually becomes faster than Datascript.
 Datalevin is about 2x slower, but it does write data to disk, even though force
 flush is not performed.
 
+|DB|Add-all Latency (ms)|
+|---|---|
+|Datomic|680.0|
+|Datascript|795.5|
+|Datalevin|1244.8|
+
 #### Retract-5
 
 This retracts one entity at a time.
@@ -136,6 +154,12 @@ This retracts one entity at a time.
 Datalevin is the fastest in retracting data, more than 5X faster than Datomic.
 
 Datascript is close to 2X faster than Datomic.
+
+|DB|Retract-5 Latency (ms)|
+|---|---|
+|Datomic|680.0|
+|Datascript|795.5|
+|Datalevin|1244.8|
 
 ### Read
 
@@ -156,6 +180,12 @@ returning about 4K IDs.
 ```
 Datalevin and Datascript have almost the same speed for this query. Datomic is almost an order of magnitude slower.
 
+|DB|Q1 Latency (ms)|
+|---|---|
+|Datomic|6.1|
+|Datascript|0.66|
+|Datalevin|0.67|
+
 #### q2
 
 This adds an unbound attribute to the results.
@@ -171,6 +201,12 @@ performs a merge scan on the index instead of a hash join to get the values of `
 
 Datomic is over 10X slower than Datalevin for this query.
 
+|DB|Q2 Latency (ms)|
+|---|---|
+|Datomic|10.7|
+|Datascript|2.9|
+|Datalevin|0.76|
+
 #### q2-switch
 
 This is the same query as q2, just switched the order of the two where clauses.
@@ -183,6 +219,12 @@ This is the same query as q2, just switched the order of the two where clauses.
 ```
 In this query, Datalevin has the same speed as q2, and is actually a little
 faster. The query optimizer generates identical plans for q2 and q2-switch, so the performance difference is perhaps due to better JVM warmness as this benchmark runs latter. Switching the running order confirmed this suspicion.
+
+|DB|Q2-switch Latency (ms)|
+|---|---|
+|Datomic|38.0|
+|Datascript|6.4|
+|Datalevin|0.72|
 
 Now Datascript slows down more than 2X compared with q2. Datomic is even worse,
 slows down close to 4X. The reason is that these databases do not have a query
@@ -209,6 +251,12 @@ into a predicate `(= ?bound1024 :male)`, and running a predicate on a value
 during merge scan is more expensive than just scanning a value. Since
 this bound attribute is not very selective, this is not a bad choice.
 
+|DB|Q3 Latency (ms)|
+|---|---|
+|Datomic|14.6|
+|Datascript|4.3|
+|Datalevin|2.6|
+
 Datalevin manages to be 1.5X faster than Datascript and over 5X faster than
 Datomic for this query.
 
@@ -225,16 +273,21 @@ This adds one more unbound attribute.
            [?e :sex :male]]
          db100k)
 ```
-An additional unbound attribute adds relatively little overhead in Datalevin,
+An additional unbound attribute adds relatively small overhead in Datalevin,
 while it costs a little more for Datomic and Datascript. Datalevin is now 2X
 and 6X faster than Datascript and Datomic, respectively.
+
+|DB|Q4 Latency (ms)|
+|---|---|
+|Datomic|18.4|
+|Datascript|6.5|
+|Datalevin|3.2|
 
 #### q5
 
 This is a join on equal values. The selectivity of the joining attribute is
 about 0.01, so it is not too bad, but it is still a tough query, because
-something close to a Cartesian product is likely to be performed for such a
-join.
+something close to a Cartesian product of all values is likely to be performed for such a join.
 
 ```Clojure
     (d/q '[:find ?e1 ?l ?a
@@ -248,6 +301,12 @@ Not surprisingly, across the board, the speed for this query is over an order of
 
 Datalevin is the fastest, 1.4X faster than Datomic. Datascript fares the
 worst in this query, close to be 2.8X slower than Datalevin.
+
+|DB|Q5 Latency (ms)|
+|---|---|
+|Datomic|178.7|
+|Datascript|352.1|
+|Datalevin|126.0|
 
 There's not much an optimizer can do for this one, because the selectivity of the
 join attribute is not high enough to afford an better plan than brute-forcily
@@ -270,6 +329,12 @@ predicate into a range boundary for range scan on `:salary`. This query is
 essentially turned into a single range scan in the `:ave` index, so even though
 half of all entity IDs are returned, the speed is still fast.
 
+|DB|QPred1 Latency (ms)|
+|---|---|
+|Datomic|22.7|
+|Datascript|7.3|
+|Datalevin|2.5|
+
 #### qpred2
 
 This is essentially the same query as qpred1, but the lower limit of `:salary`
@@ -285,6 +350,12 @@ is passed in as a parameter.
 Datalevin performs exactly the same as qpred1 for this one. The reason is
 because the optimizer plugs the parameter into the query directly, so it becomes
 identical to qpred1.
+
+|DB|QPred2 Latency (ms)|
+|---|---|
+|Datomic|25.1|
+|Datascript|17.6|
+|Datalevin|2.5|
 
 Datascript performs over 2X worse in this one than in qpred1, the reason is that
 Datascript treats each input parameter as an additional relations to be joined,
