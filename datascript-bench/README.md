@@ -157,9 +157,9 @@ Datascript is close to 2X faster than Datomic.
 
 |DB|Retract-5 Latency (ms)|
 |---|---|
-|Datomic|680.0|
-|Datascript|795.5|
-|Datalevin|1244.8|
+|Datomic|2010.3|
+|Datascript|531.5|
+|Datalevin|397.1|
 
 ### Read
 

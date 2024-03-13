@@ -168,7 +168,18 @@ accurate, so we want to leverage that accuracy by keeping at least one base rela
 
 Currently, the query optimizer handles normal where clauses only: triple
 patterns and predicates. We will gradually improve the optimizer to consider
-more clause types in the future.
+more clause types in the future. In addition, only binary relations are
+considered at the moment. Future work will consider relations on a hypergraph
+[8].
+
+## Benchmarks
+
+Right now, only an existing benchmark developed in Datascript is performed. The details can
+be found
+[here](https://github.com/juji-io/datalevin/tree/index/datascript-bench).
+
+Queries in this benchmarks are fairly simple, so we plan to port the join order
+benchmark (JOB) from SQL in order to properly exercise the query optimizer.
 
 ## Remark
 
