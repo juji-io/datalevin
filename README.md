@@ -48,8 +48,8 @@ deleted, they are gone.
 
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
-[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database), with an
-additional [query optimizer](doc/query.md) and other features. It retains the
+[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). We then
+added an [query optimizer](doc/query.md) and many other features. It retains the
 library property of Datascript, and it is meant to be embedded in applications
 to manage state. Because data is persistent on disk in Datalevin, application
 state can survive application restarts, and data size can be larger than memory.
@@ -445,7 +445,7 @@ is configured with LMDB `nosync` mode to better match the in-memory conditions,
 i.e. the operating system is responsible for flushing data to disk.
 
 In all benchmarked queries, Datalevin is the fastest among the three tested
-systems, as Datalevin has a cost based query optimizer while Datascript and
+systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
 Datomic do not. Datalevin also has a caching layer for index access.
 
 Writes are slower, as expected, as Datalevin does write to disk even though sync
