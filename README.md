@@ -15,6 +15,11 @@ alt="datalevin linux/macos amd64 build status"></img></a>
 alt="datalevin apple silicon build status"></img></a>
 </p>
 
+## :truck: [Installation](doc/install.md)
+
+As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
+project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
+
 ## :hear_no_evil: What and why
 
 > I love Datalog, why hasn't everyone used this already?
@@ -85,11 +90,11 @@ client/server mode. The same set of core functions work in both modes. In
 addition, full-fledged role-based access control (RBAC) is provided on the
 server.
 
-In addition, Datalevin has a [built-in full-text search
+Moreover, Datalevin has a [built-in full-text search
 engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
 [competitive](https://github.com/juji-io/datalevin/tree/master/search-bench)
-search performance. It integrates nicely with other database features, and works in
-all modes of Datalevin operation: embedded library, client/server, native
+search performance. It integrates nicely with other database features, and works
+in all modes of Datalevin operation: embedded library, client/server, native
 command line, and as a [Babashka](https://github.com/babashka/babashka) Pod.
 
 Our goal is to simplify data storage and access by supporting diverse use cases
@@ -100,18 +105,13 @@ coherent and elegant manner.
 
 Using one data store for different use cases simplifies and reduces the cost of
 software development, deployment and maintenance. Therefore, we plan to
-implement necessary extensions to make Datalevin also a production rule engine,
-a graph database, and a document database, since the storage and index structure
-of Datalevin is already compatible with all of them.
+implement necessary extensions to make Datalevin also a vector database, a
+production rule engine, a graph database, and a document database, since the
+storage and index structure of Datalevin is already compatible with all of them.
 
 Presentation:
 
 * [2020 London Clojurians Meetup](https://youtu.be/-5SrIUK6k5g)
-
-## :truck: [Installation](doc/install.md)
-
-As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
-project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
 
 ## :tada: Usage
 

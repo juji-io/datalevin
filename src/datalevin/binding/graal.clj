@@ -7,8 +7,9 @@
    [datalevin.util :refer [raise] :as u]
    [datalevin.constants :as c]
    [datalevin.scan :as scan]
-   [datalevin.lmdb :as l :refer [open-kv IBuffer IRange IRtx IDB IKV
-                                 IList ILMDB IWriting IAdmin]])
+   [datalevin.lmdb :as l
+    :refer [open-kv IBuffer IRange IRtx IDB IKV IList ILMDB IWriting IAdmin
+            IListRandKeyValIterable IListRandKeyValIterator]])
   (:import
    [datalevin.ni BufVal Lib Env Txn Dbi Cursor Stat Info
     Lib$BadReaderLockException Lib$MDB_cursor_op Lib$MDB_envinfo
@@ -17,7 +18,8 @@
    [java.util.concurrent ConcurrentLinkedQueue]
    [java.util Iterator]
    [java.nio BufferOverflowException]
-   [clojure.lang IPersistentVector]
+   [clojure.lang IObj]
+   [datalevin.lmdb RangeContext KVTxData]
    [datalevin.spill SpillableVector]))
 
 (deftype KV [^BufVal kp ^BufVal vp]
@@ -139,7 +141,7 @@
    :overflow-pages (.ms_overflow_pages ^Lib$MDB_stat (.get stat))
    :entries        (.ms_entries ^Lib$MDB_stat (.get stat))})
 
-(declare ->KeyIterable ->ListIterable)
+(declare ->KeyIterable ->ListIterable ->ListRandKeyValIterable)
 
 (deftype DBI [^Dbi db
               ^ConcurrentLinkedQueue curs
@@ -197,6 +199,9 @@
     (let [ctx (l/list-range-info rtx k-range-type k1 k2 k-type
                                  v-range-type v1 v2 v-type)]
       (->ListIterable this cur rtx ctx)))
+  (iterate-list-val [this rtx cur [v-range-type v1 v2] v-type]
+    (let [ctx (l/range-info rtx v-range-type v1 v2 v-type)]
+      (->ListRandKeyValIterable this cur rtx ctx)))
   (iterate-kv [this rtx cur k-range k-type v-type]
     (if dupsort?
       (.iterate-list this rtx cur k-range k-type [:all] v-type)
@@ -215,15 +220,17 @@
 (deftype KeyIterable [^DBI db
                       ^Cursor cur
                       ^Rtx rtx
-                      ctx]
+                      ^RangeContext ctx]
   Iterable
   (iterator [_]
-    (let [[forward? include-start? include-stop?
-           ^BufVal sk ^BufVal ek] ctx
-
-          started?  (volatile! false)
-          ^BufVal k (.key cur)
-          ^BufVal v (.val cur)]
+    (let [forward?       (.-forward? ctx)
+          include-start? (.-include-start? ctx)
+          include-stop?  (.-include-stop? ctx)
+          ^BufVal sk     (.-start-bf ctx)
+          ^BufVal ek     (.-stop-bf ctx)
+          started?       (volatile! false)
+          ^BufVal k      (.key cur)
+          ^BufVal v      (.val cur)]
       (letfn [(init []
                 (if sk
                   (if (.get cur sk Lib$MDB_cursor_op/MDB_SET_RANGE)
@@ -279,15 +286,22 @@
                        ctx]
   Iterable
   (iterator [_]
-    (let [[[forward-key? include-start-key? include-stop-key?
-            ^BufVal sk ^BufVal ek]
-           [forward-val? include-start-val? include-stop-val?
-            ^BufVal sv ^BufVal ev]] ctx
-
-          key-ended? (volatile! false)
-          started?   (volatile! false)
-          k          (.key cur)
-          v          (.val cur)]
+    (let [[^RangeContext kctx ^RangeContext vctx]
+          ctx
+          forward-key?       (.-forward? kctx)
+          include-start-key? (.-include-start? kctx)
+          include-stop-key?  (.-include-stop? kctx)
+          ^BufVal sk         (.-start-bf kctx)
+          ^BufVal ek         (.-stop-bf kctx)
+          forward-val?       (.-forward? vctx)
+          include-start-val? (.-include-start? vctx)
+          include-stop-val?  (.-include-stop? vctx)
+          ^BufVal sv         (.-start-bf vctx)
+          ^BufVal ev         (.-stop-bf vctx)
+          key-ended?         (volatile! false)
+          started?           (volatile! false)
+          k                  (.key cur)
+          v                  (.val cur)]
       (letfn [(init-key []
                 (if sk
                   (if (.get cur sk Lib$MDB_cursor_op/MDB_SET_RANGE)
@@ -389,68 +403,87 @@
               (if forward-val? (advance-val) (advance-val-back))))
           (next [_] (KV. k v)))))))
 
+(deftype ListRandKeyValIterable [^DBI db
+                                 ^Cursor cur
+                                 ^Rtx rtx
+                                 ^RangeContext ctx]
+  IListRandKeyValIterable
+  (val-iterator [_]
+    (let [forward-val?       (.-forward? ctx)
+          include-start-val? (.-include-start? ctx)
+          include-stop-val?  (.-include-stop? ctx)
+          ^BufVal sv         (.-start-bf ctx)
+          ^BufVal ev         (.-stop-bf ctx)
+          v                  (.val cur)]
+      (assert forward-val?
+              "Backward iterate is not supported in ListRandKeyValIterable")
+      (letfn [(init-val []
+                (if sv
+                  (if (.get cur (.-kp rtx) sv
+                            Lib$MDB_cursor_op/MDB_GET_BOTH_RANGE)
+                    (if include-start-val?
+                      (val-continue?)
+                      (if (zero? (bf/compare-buffer (.outBuf v) (.outBuf sv)))
+                        (check-val Lib$MDB_cursor_op/MDB_NEXT_DUP)
+                        (val-continue?)))
+                    false)
+                  (if (.get cur (.-kp rtx) Lib$MDB_cursor_op/MDB_SET_RANGE)
+                    (check-val Lib$MDB_cursor_op/MDB_FIRST_DUP)
+                    false)))
+              (val-continue? []
+                (if ev
+                  (let [r (bf/compare-buffer (.outBuf v) (.outBuf ev))]
+                    (if (= r 0)
+                      (if include-stop-val? true false)
+                      (if (> r 0) false true)))
+                  true))
+              (check-val [op]
+                (if (.seek cur op) (val-continue?) false))
+              (advance-val []
+                (check-val Lib$MDB_cursor_op/MDB_NEXT_DUP))]
+        (reify
+          IListRandKeyValIterator
+          (seek-key [_ k kt]
+            (l/put-key rtx k kt)
+            (init-val))
+          (has-next-val [_] (advance-val))
+          (next-val [_] (.outBuf v)))))))
+
+(defn- put-tx
+  [^DBI dbi txn ^KVTxData tx]
+  (case (.-op tx)
+    :put      (do (.put-key dbi (.-k tx) (.-kt tx))
+                  (.put-val dbi (.-v tx) (.-vt tx))
+                  (if-let [f (.-flags tx)]
+                    (.put dbi txn f)
+                    (.put dbi txn)))
+    :del      (do (.put-key dbi (.-k tx) (.-kt tx))
+                  (.del dbi txn))
+    :put-list (let [vs (.-v tx)]
+                (.put-key dbi (.-k tx) (.-kt tx))
+                (doseq [v vs]
+                  (.put-val dbi v (.-vt tx))
+                  (.put dbi txn)))
+    :del-list (let [vs (.-v tx)]
+                (.put-key dbi (.-k tx) (.-kt tx))
+                (doseq [v vs]
+                  (.put-val dbi v (.-vt tx))
+                  (.del dbi txn false)))
+    (raise "Unknown kv transact operator: " (.-op tx) {})))
+
 (defn- transact1*
   [txs ^DBI dbi txn kt vt]
-  (doseq [^IPersistentVector tx txs]
-    (let [cnt (.length tx)
-          op  (.nth tx 0)
-          k   (.nth tx 1)]
-      (case op
-        :put      (let [v     (.nth tx 2)
-                        flags (when (< 3 cnt) (.nth tx 3))]
-                    (.put-key dbi k kt)
-                    (.put-val dbi v vt)
-                    (if flags (.put dbi txn flags) (.put dbi txn)))
-        :del      (do (.put-key dbi k kt) (.del dbi txn))
-        :put-list (let [vs (.nth tx 2)]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.put dbi txn)))
-        :del-list (let [vs (.nth tx 2)]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.del dbi txn false)))
-        (raise "Unknown kv operator: " op {})))))
+  (doseq [t txs]
+    (put-tx dbi txn (l/->kv-tx-data t kt vt))))
 
 (defn- transact*
   [txs ^UnifiedMap dbis txn]
-  (doseq [^IPersistentVector tx txs]
-    (let [cnt      (.length tx)
-          op       (.nth tx 0)
-          dbi-name (.nth tx 1)
-          k        (.nth tx 2)
-          ^DBI dbi (or (.get dbis dbi-name)
-                       (raise dbi-name " is not open" {}))]
-      (case op
-        :put      (let [v     (.nth tx 3)
-                        kt    (when (< 4 cnt) (.nth tx 4))
-                        vt    (when (< 5 cnt) (.nth tx 5))
-                        flags (when (< 6 cnt) (.nth tx 6))]
-                    (.put-key dbi k kt)
-                    (.put-val dbi v vt)
-                    (if flags
-                      (.put dbi txn flags)
-                      (.put dbi txn)))
-        :del      (let [kt (when (< 3 cnt) (.nth tx 3)) ]
-                    (.put-key dbi k kt)
-                    (.del dbi txn))
-        :put-list (let [vs (.nth tx 3)
-                        kt (when (< 4 cnt) (.nth tx 4))
-                        vt (when (< 5 cnt) (.nth tx 5))]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.put dbi txn)))
-        :del-list (let [vs (.nth tx 3)
-                        kt (when (< 4 cnt) (.nth tx 4))
-                        vt (when (< 5 cnt) (.nth tx 5))]
-                    (.put-key dbi k kt)
-                    (doseq [v vs]
-                      (.put-val dbi v vt)
-                      (.del dbi txn false)))
-        (raise "Unknown kv operator: " op {})))))
+  (doseq [t txs]
+    (let [^KVTxData tx (l/->kv-tx-data t)
+          dbi-name     (.-dbi-name tx)
+          ^DBI dbi     (or (.get dbis dbi-name)
+                           (raise dbi-name " is not open" {}))]
+      (put-tx dbi txn tx))))
 
 (defn- get-list*
   [lmdb ^Rtx rtx ^Cursor cur k kt vt]
@@ -489,6 +522,26 @@
     (.count cur)
     0))
 
+(defn- key-range-list-count*
+  [^DBI dbi ^Rtx rtx ^Cursor cur k-range k-type cap]
+  (let [^Iterable iterable (.iterate-key dbi rtx cur k-range k-type)
+        ^Iterator iter     (.iterator iterable)]
+    (if cap
+      (loop [c 0]
+        (if (<= ^long cap c)
+          c
+          (if (.hasNext iter)
+            (let [n (.count cur)]
+              (.next iter)
+              (recur (+ c n)))
+            c)))
+      (loop [c 0]
+        (if (.hasNext iter)
+          (let [n (.count cur)]
+            (.next iter)
+            (recur (+ c n)))
+          c)))))
+
 (defn- in-list?*
   [^Rtx rtx ^Cursor cur k kt v vt]
   (l/list-range-info rtx :at-least k nil kt :at-least v nil vt)
@@ -514,7 +567,8 @@
                ^BufVal start-vp-w
                ^BufVal stop-vp-w
                write-txn
-               writing?]
+               writing?
+               ^:unsynchronized-mutable meta]
 
   IWriting
   (writing? [_] writing?)
@@ -524,7 +578,11 @@
   (mark-write [_]
     (->LMDB
       env info pool dbis kp-w vp-w start-kp-w
-      stop-kp-w start-vp-w stop-vp-w write-txn true))
+      stop-kp-w start-vp-w stop-vp-w write-txn true meta))
+
+  IObj
+  (withMeta [this m] (set! meta m) this)
+  (meta [_] meta)
 
   ILMDB
   (close-kv [_]
@@ -585,8 +643,8 @@
                          dupsort? validate-data?)]
           (when (not= dbi-name c/kv-info)
             (vswap! info assoc-in [:dbis dbi-name] opts)
-            (l/transact-kv this [[:put c/kv-info [:dbis dbi-name] opts
-                                  [:keyword :string]]]))
+            (l/transact-kv this [(l/kv-tx :put c/kv-info [:dbis dbi-name] opts
+                                          [:keyword :string])]))
           (.put dbis dbi-name db)
           db)
         (u/raise (str "Reached maximal number of DBI: " max-dbis) {}))))
@@ -799,6 +857,20 @@
   (key-range [this dbi-name k-range k-type]
     (scan/key-range this dbi-name k-range k-type))
 
+  (visit-key-range [this dbi-name visitor k-range]
+    (.visit-key-range this dbi-name visitor k-range :data true))
+  (visit-key-range [this dbi-name visitor k-range k-type]
+    (.visit-key-range this dbi-name visitor k-range k-type true))
+  (visit-key-range [this dbi-name visitor k-range k-type raw-pred?]
+    (scan/visit-key-range this dbi-name visitor k-range k-type raw-pred?))
+
+  (key-range-count [this dbi-name k-range]
+    (.key-range-count this dbi-name k-range :data))
+  (key-range-count [this dbi-name k-range k-type]
+    (.key-range-count this dbi-name k-range k-type nil))
+  (key-range-count [this dbi-name k-range k-type cap]
+    (scan/key-range-count this dbi-name k-range k-type cap))
+
   (range-seq [this dbi-name k-range]
     (.range-seq this dbi-name k-range :data :data false nil))
   (range-seq [this dbi-name k-range k-type]
@@ -889,12 +961,12 @@
 
   IList
   (put-list-items [this dbi-name k vs kt vt]
-    (.transact-kv this [[:put-list dbi-name k vs kt vt]]))
+    (.transact-kv this [(l/kv-tx :put-list dbi-name k vs kt vt)]))
 
   (del-list-items [this dbi-name k kt]
-    (.transact-kv this [[:del dbi-name k kt]]))
+    (.transact-kv this [(l/kv-tx :del dbi-name k kt)]))
   (del-list-items [this dbi-name k vs kt vt]
-    (.transact-kv this [[:del-list dbi-name k vs kt vt]]))
+    (.transact-kv this [(l/kv-tx :del-list dbi-name k vs kt vt)]))
 
   (get-list [this dbi-name k kt vt]
     (.check-ready this)
@@ -925,6 +997,15 @@
           (raise "Fail to count list: " e {:dbi dbi-name :k k})))
       0))
 
+  (key-range-list-count [lmdb dbi-name k-range k-type]
+    (.key-range-list-count lmdb dbi-name k-range k-type nil))
+  (key-range-list-count [lmdb dbi-name k-range k-type cap]
+    (.check-ready lmdb)
+    (scan/scan
+      (key-range-list-count* dbi rtx cur k-range k-type cap)
+      (raise "Fail to count list in key range: " e
+             {:dbi dbi-name :k-range k-range})))
+
   (in-list? [this dbi-name k v kt vt]
     (.check-ready this)
     (if (and k v)
@@ -939,7 +1020,9 @@
     (scan/list-range this dbi-name k-range kt v-range vt))
 
   (list-range-count [this dbi-name k-range kt v-range vt]
-    (scan/list-range-count this dbi-name k-range kt v-range vt))
+    (.list-range-count this dbi-name k-range kt v-range vt nil))
+  (list-range-count [this dbi-name k-range kt v-range vt cap]
+    (scan/list-range-count this dbi-name k-range kt v-range vt cap))
 
   (list-range-first [this dbi-name k-range kt v-range vt]
     (scan/list-range-first this dbi-name k-range kt v-range vt))
@@ -963,11 +1046,15 @@
   (list-range-filter-count
     [this list-name pred k-range k-type v-range v-type]
     (.list-range-filter-count this list-name pred k-range k-type v-range
-                              v-type true))
+                              v-type true nil))
   (list-range-filter-count
     [this dbi-name pred k-range kt v-range vt raw-pred?]
+    (.list-range-filter-count this dbi-name pred k-range kt v-range
+                              vt raw-pred? nil))
+  (list-range-filter-count
+    [this dbi-name pred k-range kt v-range vt raw-pred? cap]
     (scan/list-range-filter-count this dbi-name pred k-range kt v-range
-                                  vt raw-pred?))
+                                  vt raw-pred? cap))
 
   (visit-list-range
     [this list-name visitor k-range k-type v-range v-type]
@@ -977,6 +1064,10 @@
     [this dbi-name visitor k-range kt v-range vt raw-pred?]
     (scan/visit-list-range this dbi-name visitor k-range kt v-range
                            vt raw-pred?))
+
+  (operate-list-val-range
+    [this dbi-name operator v-range vt]
+    (scan/operate-list-val-range this dbi-name operator v-range vt))
 
   IAdmin
   (re-index [this opts] (l/re-index* this opts)))
@@ -1060,7 +1151,8 @@
                             (BufVal/create c/+max-key-size+)
                             (BufVal/create c/+max-key-size+)
                             (volatile! nil)
-                            false)]
+                            false
+                            nil)]
        (l/open-dbi lmdb c/kv-info)
        (if temp?
          (u/delete-on-exit file)

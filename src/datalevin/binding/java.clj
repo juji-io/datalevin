@@ -23,7 +23,7 @@
    [java.nio ByteBuffer BufferOverflowException]
    [java.io File InputStream OutputStream]
    [java.nio.file Files OpenOption]
-   [clojure.lang IPersistentVector MapEntry IObj]
+   [clojure.lang MapEntry IObj]
    [datalevin.lmdb RangeContext KVTxData]
    [datalevin.spill SpillableVector]
    [datalevin.compress ICompressor]))

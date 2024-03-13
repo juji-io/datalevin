@@ -1,6 +1,6 @@
 # Datalevin Query Engine
 
-Datalevin has an advanced query engine that handles complex queries on
+Datalevin has an innovative query engine that handles complex Datalog queries on
 large data sets with ease.
 
 ## Motivation
@@ -12,9 +12,9 @@ language query translation.
 
 The simple and elegant query language is often backed by a flexible triple
 store. However, it is a well-know problem that querying a triple store is much
-slower than querying RDBMS that stores data in rows (or columns).
+slower than querying RDBMS that stores data in rows (or columns). [1]
 
-Datalevin solves the problem by developing an innovative query engine based on
+Datalevin solves the problem by developing an advanced query engine based on
 the latest research findings and some innovations of our own. We leverage some
 unique properties of Datomic-like triple stores to achieve the goal of bringing
 triple store query performance to a level competitive with RDBMS.
@@ -27,7 +27,7 @@ maximally general and open, Datomic-like stores are closer to traditional
 databases in its design choices.
 
 RDF stores often have a limited number of properties even for huge datasets,
-whereas Datomic-like stores may have many attributes, and they are
+whereas Datomic-like stores normally have many attributes, and they are
 often specialized to a class of entities.  Therefore, filtering by
 attribute values can be very efficient.
 
@@ -36,11 +36,12 @@ filtering by entity IDs efficient. The entity vs. entity relationship is also
 explicitly marked by `:db.type/ref` value type. The cost of resolving entity
 relationship becomes lower.
 
-Conversely, in Datomic-like stores, the values are stored as they are, rather than as
-integer IDs, therefore, pushing selection predicates down to index scan methods
-brings more benefits.
+Conversely, in Datomic-like stores, the data values are stored as they are,
+rather than as integer IDs, therefore, pushing selection predicates down to
+index scan methods brings more benefits.
 
-Datalevin search engine exploits these design choices to maximize query performance.
+Datalevin search engine exploits these design choices to maximize query
+performance.
 
 ## Nested Triple Storage
 
@@ -51,14 +52,14 @@ repetitions of head elements increase not just the storage size, but also
 processing overhead during query.
 
 Taking advantage of LMDB's dupsort capability (i.e. a key can be mapped to a
-list of values, and this list of values are also sorted, essentially it is a two level
-nested B+ trees of B+ trees), we store the head elements only once, by
+list of values, and this list of values are also sorted, essentially it is a two
+level nested B+ trees of B+ trees), we store the head elements only once, by
 treating them as keys. The values are the remaining one or two elements of the
-triple as a list of values mapped to by a key. This nested storage produces
-about 20% space reduction, depending on the data.
+triple as a list of values mapped to by a key. This nested triple storage
+results in about 20% space reduction, depending on the data.
 
 The main advantage of this list based triple storage is to facilitate counting
-of elements, which is the most important input for query planning. Some list
+of elements, which is the most critical input for query planning. Some list
 counts can be immediately read from the index, without performing actual
 range scan to count them. For example, in our storage schema, the number of
 datoms matching `[?e :an-attr "bound value"]` pattern can be obtained from the
@@ -69,7 +70,7 @@ often inaccurate statistics.
 
 ## Query Optimizations
 
-The query engine employs multiple optimization strategies.
+Datalevin query engine employs multiple optimization strategies.
 
 ### Predicates push-down
 
@@ -87,40 +88,45 @@ considered in the future.
 
 ### Merge scan
 
-For star-like attributes, we utilize an idea similar to pivot scan [2], which returns
-multiple attribute values with a single index scan using `:eav` index. This single
-scan takes an list of entity IDs, an ordered list of attributes needed,
-and corresponding predicates for each attribute, to produce a relation. This avoids performing
-joins within the same entity class to obtain the same relation. The bulk of query execution time is spent on this operation.
+For star-like attributes, we utilize an idea similar to pivot scan [2], which
+returns multiple attribute values with a single index scan using `:eav` index.
+This single scan takes an list of entity IDs, an ordered list of attributes
+needed, and corresponding predicates for each attribute, to produce a relation.
+This avoids performing joins within the same entity class to obtain the same
+relation. The bulk of query execution time is spent on this operation.
 
 The input list of entity IDs may come from a search on `:ave` index that returns
 an entity ID list, a set of linking references from a relation produced
-in the previous step, or the reverse references from the previous step, and so on.
+in the previous step, or the reverse references from the previous step, and so
+on.
 
 ### Query graph simplification
 
 Since star-like attributes are already handled by merge scan, the optimizer
 works mainly on the simplified graph that consists of stars and the links
-between them [3] [7], this significantly reduces the size of optimizer search
-space.
+between them [3] [7] [9], this significantly reduces the size of optimizer
+search space.
 
 ### Left-deep join tree
 
 Our planner generates left-deep join trees, which may not be optimal [8], but
 work well for our simplified query graph, since stars are already turned into
 meta nodes and mostly chains remain. This also reduces the cost of cost
-estimation, which dominates the cost of planning. The impact of the loss of search space is relatively small, compared with the impact of cardinality estimation inaccuracy.
+estimation, which dominates the cost of planning. The impact of the loss of
+search space is relatively small, compared with the impact of inaccuracy in
+cardinality estimation. [5]
 
 ### Direct counting for cardinality estimation (new)
 
 As mentioned, the main advantage of our system is having more accurate
-cardinality estimation. Instead of relying on estimations based on statistics
-such as histograms, we count elements directly, because counts in our list based
+cardinality estimation. Instead of relying on statistics based estimations
+using histograms, we count elements directly, because counts in our list based
 triple storage are cheap to obtain. Since the planner is only interested in
 smallest count within one entity class, the counting is capped by the current
-minimum, so the time spent in counting is minimized. Compared with statistics based estimation, counting is simple, accurate
-and always up to date. For those cases that cannot be counted, we use magic
-numbers. In the future, we will add sampling based estimations.
+minimum, so the time spent in counting is minimized. Compared with statistics
+based estimation, counting is simple, accurate and always up to date. For those
+cases that cannot be counted, we use magic numbers. In the future, we will add
+sampling based estimations.
 
 ### Join methods
 
@@ -147,7 +153,8 @@ table on the wrong side due to inaccurate cardinality estimation. This property
 also makes our join tree more like a zig-zag one, rather than a pure
 left-deep join tree.
 
-The choice of these methods is determined by the optimizer based on its cost estimation.
+The choice of these methods is determined by the optimizer based on its cost
+estimation.
 
 ### Cost based query optimizer
 
@@ -162,24 +169,24 @@ based on result size.
 As mentioned, we do not consider bushy join trees, as our join methods are mainly
 scanning indices, so a base relation is needed for each join. Since we
 also count in base relations, the cardinality estimation obtained there is quite
-accurate, so we want to leverage that accuracy by keeping at least one base relation in each join.
+accurate, so we want to leverage that accuracy by keeping at least one base
+relation in each join.
 
 ## Limitation
 
 Currently, the query optimizer handles normal where clauses only: triple
-patterns and predicates. We will gradually improve the optimizer to consider
+patterns and predicates. We will gradually extend the optimizer to consider
 more clause types in the future. In addition, only binary relations are
 considered at the moment. Future work will consider relations on a hypergraph
 [8].
 
 ## Benchmarks
 
-Right now, only an existing benchmark developed in Datascript is performed. The details can
-be found
+Right now, only an existing benchmark developed in Datascript is performed. The
+details can be found
 [here](https://github.com/juji-io/datalevin/tree/index/datascript-bench).
-
 Queries in this benchmarks are fairly simple, so we plan to port the join order
-benchmark (JOB) from SQL in order to properly exercise the query optimizer.
+benchmark (JOB) [5] from SQL in order to properly exercise the query optimizer.
 
 ## Remark
 
