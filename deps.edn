@@ -1,23 +1,23 @@
 {:paths ["src" "target/classes"]
  :deps  {
-         com.github.jnr/jnr-ffi                      {:mvn/version "2.2.13"}
-         org.lmdbjava/lmdbjava                       {:mvn/version "0.8.2"}
-         com.taoensso/nippy                          {:mvn/version "3.2.0"}
-         org.babashka/sci                            {:mvn/version "0.4.33"}
-         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.13.4"}
-         org.roaringbitmap/RoaringBitmap             {:mvn/version "0.9.32"}
+         com.github.jnr/jnr-ffi                      {:mvn/version "2.2.15"}
+         org.lmdbjava/lmdbjava                       {:mvn/version "0.8.3"}
+         com.taoensso/nippy                          {:mvn/version "3.4.0-RC2"}
+         org.babashka/sci                            {:mvn/version "0.8.41"}
+         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.15.3"}
+         org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.5"}
          org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
-         com.cognitect/transit-clj                   {:mvn/version "1.0.329"}
+         com.cognitect/transit-clj                   {:mvn/version "1.0.333"}
 
          org.clojars.huahaiy/dtlvnative-macos-aarch64-shared
-         {:mvn/version "0.8.3"}
+         {:mvn/version "0.8.9"}
          org.clojars.huahaiy/dtlvnative-windows-amd64-shared
-         {:mvn/version "0.8.3"}
+         {:mvn/version "0.8.9"}
          org.clojars.huahaiy/dtlvnative-linux-amd64-shared
-         {:mvn/version "0.8.3"}
+         {:mvn/version "0.8.9"}
          org.clojars.huahaiy/dtlvnative-macos-amd64-shared
-         {:mvn/version "0.8.3"}
+         {:mvn/version "0.8.9"}
          }
 
  :deps/prep-lib {:alias  :build
@@ -36,7 +36,7 @@
                                org.clojure/clojure {:mvn/version "1.10.0"}
                                }
                   }
-           :1.11 {:extra-deps {org.clojure/clojure {:mvn/version "1.11.0"}}}
+           :1.11 {:extra-deps {org.clojure/clojure {:mvn/version "1.11.2"}}}
 
            :dev {
                  :extra-paths ["dev" "target/classes"]
@@ -65,7 +65,7 @@
 
            :datomic {
                      :extra-deps {
-                                  com.datomic/datomic-free {:mvn/version "0.9.5697"}
+                                  com.datomic/peer {:mvn/version "1.0.7075"}
                                   }
                      }
            :build   {:deps       {io.github.clojure/tools.build {:git/tag "v0.8.3" :git/sha "0d20256"}}
