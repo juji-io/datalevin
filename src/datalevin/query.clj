@@ -1171,6 +1171,8 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
+        ;; TODO consider hash join as alternative if there are many
+        ;; bound values.
         (let [bound1 (->> (dissoc bound attr)
                           (mapv (fn [[a {:keys [val] :as b}]]
                                   [a (-> b

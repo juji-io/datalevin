@@ -122,17 +122,26 @@
 (defn ^:export q2 []
   (core/bench
     (d/q '[:find ?e ?a
-           :where [?e :name "Ivan"]
-                  [?e :age ?a]]
-      db100k)))
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?a]]
+         db100k)))
+
+(defn ^:export q2-switch []
+  (core/bench
+    (d/q '[:find ?e ?a
+           :where
+           [?e :age ?a]
+           [?e :name "Ivan"]]
+         db100k)))
 
 (defn ^:export q3 []
   (core/bench
     (d/q '[:find ?e ?a
            :where [?e :name "Ivan"]
-                  [?e :age ?a]
-                  [?e :sex :male]]
-      db100k)))
+           [?e :age ?a]
+           [?e :sex :male]]
+         db100k)))
 
 (defn ^:export q4 []
   (core/bench

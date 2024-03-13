@@ -50,12 +50,52 @@
             :name    "Ivan"}]))))
 
 
-(def db100k
-  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query"
+(def db100k-1
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query1"
                                          (UUID/randomUUID)))
                          schema)
              core/people20k))
 
+(def db100k-2
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query2"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
+
+(def db100k-2s
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query2s"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
+
+(def db100k-3
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query3"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
+
+(def db100k-4
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query4"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
+
+(def db100k-5
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-query5"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
+
+(def db100k-p1
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-queryp1"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
+(def db100k-p2
+  (d/db-with (d/empty-db (u/tmp-dir (str "datalevin-bench-queryp2"
+                                         (UUID/randomUUID)))
+                         schema)
+             core/people20k))
 
 (defn ^:export add-1 []
   (core/bench-10
@@ -122,21 +162,29 @@
     (core/bench-10
       (reduce (fn [db eid] (d/db-with db [[:db.fn/retractEntity eid]])) db eids))))
 
+;; each query gets an identical DB, to remove caching effect
 
 (defn ^:export q1 []
   (core/bench
     (d/q '[:find ?e
            :where [?e :name "Ivan"]]
-      db100k)))
-
+         db100k-1)))
 
 (defn ^:export q2 []
   (core/bench
     (d/q '[:find ?e ?a
-           :where [?e :name "Ivan"]
-                  [?e :age ?a]]
-      db100k)))
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?a]]
+         db100k-2)))
 
+(defn ^:export q2-switch []
+  (core/bench
+    (d/q '[:find ?e ?a
+           :where
+           [?e :age ?a]
+           [?e :name "Ivan"]]
+         db100k-2s)))
 
 (defn ^:export q3 []
   (core/bench
@@ -144,7 +192,7 @@
            :where [?e :name "Ivan"]
            [?e :age ?a]
            [?e :sex :male]]
-         db100k)))
+         db100k-3)))
 
 
 (defn ^:export q4 []
@@ -154,34 +202,32 @@
            [?e :last-name ?l]
            [?e :age ?a]
            [?e :sex :male]]
-         db100k)))
+         db100k-4)))
 
 (defn ^:export q5 []
   (core/bench
     (d/q '[:find ?e1 ?l ?a
            :where [?e :name "Ivan"]
-                  [?e :age ?a]
-                  [?e1 :age ?a]
-                  [?e1 :last-name ?l]]
-      db100k)))
+           [?e :age ?a]
+           [?e1 :age ?a]
+           [?e1 :last-name ?l]]
+         db100k-5)))
 
 
 (defn ^:export qpred1 []
   (core/bench
     (d/q '[:find ?e ?s
            :where [?e :salary ?s]
-                  [(> ?s 50000)]]
-      db100k)))
-
+           [(> ?s 50000)]]
+         db100k-p1)))
 
 (defn ^:export qpred2 []
   (core/bench
     (d/q '[:find ?e ?s
            :in   $ ?min_s
            :where [?e :salary ?s]
-                  [(> ?s ?min_s)]]
-      db100k 50000)))
-
+           [(> ?s ?min_s)]]
+         db100k-p2 50000)))
 
 (defn ^:export bench-rules []
   (doseq [[id db] [["wide 3×3" (wide-db 3 3)]
@@ -192,15 +238,15 @@
                    ["long 30×3" (long-db 30 3)]
                    ["long 30×5" (long-db 30 5)]]]
     (core/bench {:test "rules" :form id}
-      (d/q '[:find ?e ?e2
-             :in   $ %
-             :where (follows ?e ?e2)]
-           db
-           '[[(follows ?x ?y)
-              [?x :follows ?y]]
-             [(follows ?x ?y)
-              [?x :follows ?t]
-              (follows ?t ?y)]]))))
+                (d/q '[:find ?e ?e2
+                       :in   $ %
+                       :where (follows ?e ?e2)]
+                     db
+                     '[[(follows ?x ?y)
+                        [?x :follows ?y]]
+                       [(follows ?x ?y)
+                        [?x :follows ?t]
+                        (follows ?t ?y)]]))))
 
 
 #?(:clj

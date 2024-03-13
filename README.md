@@ -428,8 +428,7 @@ than just the difference in data durability and running mode:
 
 ## :rocket: Status
 
-Both Datascript and LMDB are mature and stable libraries. Building on top of
-them, Datalevin is extensively tested with property-based testing. It is also used
+Datalevin is extensively tested with property-based testing. It is also used
 in production at [Juji](https://juji.io).
 
 Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
