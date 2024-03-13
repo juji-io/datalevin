@@ -1,4 +1,4 @@
-(def version "0.8.25")
+(def version "0.8.29")
 
 (defproject test-jar version
   :description "Test jar for Datalevin GraalVM native image compile"

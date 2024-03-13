@@ -184,7 +184,7 @@ considered at the moment. Future work will consider relations on a hypergraph
 
 Right now, only an existing benchmark developed in Datascript is performed. The
 details can be found
-[here](https://github.com/juji-io/datalevin/tree/index/datascript-bench).
+[here](https://github.com/juji-io/datalevin/tree/master/datascript-bench).
 Queries in this benchmarks are fairly simple, so we plan to port the join order
 benchmark (JOB) [5] from SQL in order to properly exercise the query optimizer.
 
