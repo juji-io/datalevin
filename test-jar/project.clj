@@ -1,9 +1,9 @@
-(def version "0.8.29")
+(def version "0.9.0")
 
 (defproject test-jar version
   :description "Test jar for Datalevin GraalVM native image compile"
   :dependencies [[org.clojure/clojure "1.11.2"]
-                 [org.clojars.huahaiy/datalevin-native "0.8.29"]]
+                 [org.clojars.huahaiy/datalevin-native "0.9.0"]]
   :jvm-opts ["--add-opens" "java.base/java.nio=ALL-UNNAMED"
              "--add-opens" "java.base/sun.nio.ch=ALL-UNNAMED"
              "--illegal-access=permit"

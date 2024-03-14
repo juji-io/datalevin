@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.0 (2024-03-13)
 
 ### Added
 - [Datalog] Query optimizer to improve query performance, particularly for
