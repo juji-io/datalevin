@@ -29,7 +29,7 @@
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
 
-(def ^:dynamic *save-intermediate* :count)
+(def ^:dynamic *save-intermediate* :count)  ;; or :relation
 
 (declare -collect -resolve-clause resolve-clause)
 
@@ -40,13 +40,16 @@
 
 (defrecord Plan [steps cost size])
 
+;; TODO separate into different step types to dispatch on type
 (defrecord Step [op save index range attr attrs vars cols in out pred
                  preds skips val know-e? save-in?])
 
 (defrecord Node [links mpath mcount bound free])
 
+;; TODO separate into different link types to dispatch on type
 (defrecord Link [type tgt var attrs attr])
 
+;; TODO separate into different clause types to dispatch on type
 (defrecord Clause [val var range count attrs attr pred])
 
 ;; Utilities
