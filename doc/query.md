@@ -140,7 +140,7 @@ estimation.
 ### Cost based query optimizer
 
 We built a Selinger style query optimizer that uses dynamic programming for
-query planning [10]. Instead of consider all possible combinations of join
+query planning [10]. Instead of considering all possible combinations of join
 orders, the plan enumeration is based on connected components of the query
 graph. Each connected component has its own plan and its own execution sequence.
 Multiple connected components are processed concurrently. The resulting
