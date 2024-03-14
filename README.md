@@ -8,7 +8,7 @@
 </p>
 <p align="center">
 <a href="https://github.com/juji-io/datalevin/actions"><img
-src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.2"
+src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.3"
 alt="datalevin linux/macos amd64 build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 <a href="https://cirrus-ci.com/github/juji-io/datalevin"><img src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg"
@@ -369,7 +369,7 @@ adjust the priorities based on feedback.
 * 0.6.0 ~~As a search engine: full-text search across database.~~ [Done 2022/03/10]
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
-* 0.9.2 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
+* 0.9.3 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
 * 0.10.0 Option to store data in compressed form.
 * 0.11.0 As a vector DB: dense numeric vector indexing and similarity search.
 * 1.0.0 Transaction log storage and access API.
