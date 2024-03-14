@@ -1164,11 +1164,13 @@
     (try
       (u/create-dirs dir)
       (.deleteOnExit file)
+      (println "Extraction path: " fpath)
       (System/setProperty "lmdbjava.native.lib" fpath)
       (with-open [^InputStream in   (.getResourceAsStream cl resource)
                   ^OutputStream out (Files/newOutputStream
                                       path (into-array OpenOption []))]
         (io/copy in out))
+      (println "Extraction successful!")
       (catch Exception e
         (u/raise "Failed to extract LMDB library: " e
                  {:resource resource :path fpath})))))

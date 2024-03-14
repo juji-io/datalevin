@@ -3,9 +3,9 @@
   ["Installation" {:file "doc/install.md"}]
   ["Changelog" {:file "CHANGELOG.md"}]
   ["Command Line Tool" {:file "doc/dtlv.md"}]
-  ["Search Engine" {:file "doc/search.md"}]
   ["Database Upgrade" {:file "doc/upgrade.md"}]
   ["Server/Client" {:file "doc/server.md"}]
-  ["Benchmark" {:file "bench/README.md"}]
+  ["Query Engine" {:file "doc/query.md"}]
+  ["Search Engine" {:file "doc/search.md"}]
   ["Graal Native" {:file "native/README.md"}]]
  :cljdoc/languages ["clj"]}
