@@ -37,8 +37,8 @@ explicitly marked by `:db.type/ref` value type. The cost of resolving entity
 relationship becomes lower.
 
 Conversely, in Datomic-like stores, the data values are stored as they are,
-rather than as integer IDs, therefore, pushing selection predicates down to
-index scan methods brings more benefits.
+rather than being represented by integer IDs, therefore, pushing selection
+predicates down to index scan methods brings more benefits.
 
 Datalevin search engine exploits these design choices to maximize query
 performance.
@@ -65,8 +65,8 @@ range scan to count them. For example, in our storage schema, the number of
 datoms matching `[?e :an-attr "bound value"]` pattern can be obtained from the
 `:ave` index in constant time. Other counts can also be cheaply counted. For
 example, cardinality (number of distinct values) of an attribute can be obtained
-by counting the number of keys only. There is no need to maintain expensive and
-often inaccurate statistics.
+by counting only the number of keys in an `ave` range. There is no need to
+maintain expensive and often inaccurate statistics.
 
 ## Query Optimizations
 
@@ -107,45 +107,26 @@ works mainly on the simplified graph that consists of stars and the links
 between them [3] [7] [9], this significantly reduces the size of optimizer
 search space.
 
-### Left-deep join tree
-
-Our planner generates left-deep join trees, which may not be optimal [8], but
-work well for our simplified query graph, since stars are already turned into
-meta nodes and mostly chains remain. This also reduces the cost of cost
-estimation, which dominates the cost of planning. The impact of the loss of
-search space is relatively small, compared with the impact of inaccuracy in
-cardinality estimation. [5]
-
-### Direct counting for cardinality estimation (new)
-
-As mentioned, the main advantage of our system is having more accurate
-cardinality estimation. Instead of relying on statistics based estimations
-using histograms, we count elements directly, because counts in our list based
-triple storage are cheap to obtain. Since the planner is only interested in
-smallest count within one entity class, the counting is capped by the current
-minimum, so the time spent in counting is minimized. Compared with statistics
-based estimation, counting is simple, accurate and always up to date. For those
-cases that cannot be counted, we use magic numbers. In the future, we will add
-sampling based estimations.
-
 ### Join methods
 
 Currently, we consider four join methods.
 
 For two sets of where clauses involving two classes of entities respectively,
-e.g. `?e` and `?f`, we currently consider the following possible cases. If there
-is a reference attribute in the clauses to connect these two classes of entities
-e.g. `[?e :a/ref ?f]`, "forward ref" or "reverse ref" method can be considered.
+e.g. `?e` and `?f`, we currently consider the following cases. If there
+is a reference attribute in the clauses that connects these two classes of entities
+e.g. `[?e :a/ref ?f]`, "forward ref" or "reverse ref" method will be considered.
 The forward ref method takes the list of `f?` in an existing relation, then
 merge scan values of `?f` entities. Reverse ref method has an extra step, it
 starts with `?f` relation and scan `:vae` index to obtain corresponding list of
-`?e`, then merge scan values of `?e` entities. The third case is the value
-equality case, where `e` and `f` are linked due to unification of attribute
-values, then `:ave` index is scanned to find the target's entity IDs.
+`?e`, then merge scan values of `?e` entities.
 
-The above three methods are essentially scanning indices for a list of entity
-IDs. Other attribute values then need to be merge scanned to obtain a full
-relation. The forth method instead does merge scan first, then attempt to join
+The third case is the value equality case, where `e` and `f` are linked due to
+unification of attribute values, then `:ave` index is scanned to find the
+target's entity IDs. The above three methods are essentially scanning indices
+for a list of entity IDs. Other attribute values then need to be merge scanned
+to obtain a full relation.
+
+The forth method instead does merge scan first, then attempt to join
 two relations using hash join afterwards. The choice of probing and building
 side of the hash join is determined during execution, instead of being
 predetermined by the planner. This avoids the possibility of building the hash
@@ -166,11 +147,32 @@ Multiple connected components are processed concurrently. The resulting
 relations are joined afterwards using hash joins, and the order of which is
 based on result size.
 
-As mentioned, we do not consider bushy join trees, as our join methods are mainly
+### Left-deep join tree
+
+Our planner generates left-deep join trees, which may not be optimal [8], but
+work well for our simplified query graph, since stars are already turned into
+meta nodes and mostly chains remain. This also reduces the cost of cost
+estimation, which dominates the cost of planning. The impact of the loss of
+search space is relatively small, compared with the impact of inaccuracy in
+cardinality estimation. [5]
+
+We do not consider bushy join trees, as our join methods are mainly
 scanning indices, so a base relation is needed for each join. Since we
 also count in base relations, the cardinality estimation obtained there is quite
 accurate, so we want to leverage that accuracy by keeping at least one base
 relation in each join.
+
+### Direct counting for cardinality estimation (new)
+
+As mentioned, the main advantage of our system is having more accurate
+cardinality estimation. Instead of relying on statistics based estimations
+using histograms, we count elements directly, because counts in our list based
+triple storage are cheap to obtain. Since the planner is only interested in
+smallest count within one entity class, the counting is capped by the current
+minimum, so the time spent in counting is minimized. Compared with statistics
+based estimation, counting is simple, accurate and always up to date. For those
+cases that cannot be counted, we use magic numbers. In the future, we will add
+sampling based estimations.
 
 ## Limitation
 

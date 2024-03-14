@@ -153,7 +153,7 @@ This retracts one entity at a time.
 
 Datalevin is the fastest in retracting data, more than 5X faster than Datomic.
 
-Datascript is close to 2X faster than Datomic.
+Datascript is close to 4X faster than Datomic.
 
 |DB|Retract-5 Latency (ms)|
 |---|---|
@@ -245,11 +245,11 @@ the number of tuples in half.
          db100k)
 ```
 
-Compred with q3, this additional bound attribute slows down Datalevin more than
+Compared with q3, this additional bound attribute slows down Datalevin more than
 3X. The reason is that the optimizer rewrites the additional bound attribute `:sex`
-into a predicate `(= ?bound1024 :male)`, and running a predicate on a value
+into a predicate `[= ?bound1024 :male]`, and running a predicate on a value
 during merge scan is more expensive than just scanning a value. Since
-this bound attribute is not very selective, this is not a bad choice.
+this bound attribute is not very selective, this is actually not a bad choice.
 
 |DB|Q3 Latency (ms)|
 |---|---|
@@ -314,7 +314,7 @@ hash-joining them. Apparently, Datalevin hash-joins better than the other two.
 
 #### qpred1
 
-This is query with a predicate that limits the values of an attribute to about
+This is a query with a predicate that limits the values of an attribute to about
 half of the value range, returning about 10K tuples.
 
 ```Clojure
@@ -348,8 +348,8 @@ is passed in as a parameter.
       db100k 50000)
 ```
 Datalevin performs exactly the same as qpred1 for this one. The reason is
-because the optimizer plugs the parameter into the query directly, so it becomes
-identical to qpred1.
+because the optimizer plugs the input parameter into the query directly, so it
+becomes identical to qpred1.
 
 |DB|QPred2 Latency (ms)|
 |---|---|
@@ -362,3 +362,11 @@ Datascript treats each input parameter as an additional relations to be joined,
 often performing Cartesian product due to a lack of shared attributes. Datomic
 performs this one a little worse than qpred1, for unknown reasons, as the code
 is not available.
+
+## Conclusion
+
+The queries in this benchmark are fairly simple. To better test the systems, a
+benchmark with more complex queries and larger data size need to be developed.
+
+The plan is to port join order benchmarks (JOB) from SQL to Datalog.
+Contributors are welcome and will be appreciated.

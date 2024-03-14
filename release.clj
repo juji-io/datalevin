@@ -130,7 +130,7 @@
         "https://api.github.com/repos/juji-io/datalevin/releases")))
 
 (defn -main []
-  ;; (run-tests)
+  (run-tests)
   (update-version)
   (make-commit)
   (github-release)
