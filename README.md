@@ -15,11 +15,6 @@ alt="datalevin linux/macos amd64 build status"></img></a>
 alt="datalevin apple silicon build status"></img></a>
 </p>
 
-## :truck: [Installation](doc/install.md)
-
-As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
-project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
-
 ## :hear_no_evil: What and why
 
 > I love Datalog, why hasn't everyone used this already?
@@ -112,6 +107,11 @@ storage and index structure of Datalevin is already compatible with all of them.
 Presentation:
 
 * [2020 London Clojurians Meetup](https://youtu.be/-5SrIUK6k5g)
+
+## :truck: [Installation](doc/install.md)
+
+As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
+project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
 
 ## :tada: Usage
 
