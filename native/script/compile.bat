@@ -33,7 +33,7 @@ REM native\dtlv-test0 -Xmx5g
 
 REM if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM cd native
+cd native
 
 REM del dtlv-test0
 
