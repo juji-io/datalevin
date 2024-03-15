@@ -245,7 +245,7 @@ the number of tuples in half.
          db100k)
 ```
 
-Compared with q3, this additional bound attribute slows down Datalevin more than
+Compared with q2, this additional bound attribute slows down Datalevin more than
 3X. The reason is that the optimizer rewrites the additional bound attribute `:sex`
 into a predicate `[= ?bound1024 :male]`, and running a predicate on a value
 during merge scan is more expensive than just scanning a value. Since
