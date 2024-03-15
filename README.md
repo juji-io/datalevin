@@ -383,11 +383,12 @@ adjust the priorities based on feedback.
 ## :floppy_disk: Differences from Datascript
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
-totally from scratch and is not related by any means to" Datomic®. Although
-a port, Datalevin differs from Datascript in more significant ways
+totally from scratch and is not related by any means to" Datomic®. Datalevin started out as a port of Datascript to LMDB, but differs from Datascript in more significant ways
 than just the difference in data durability and running mode:
 
-* As mentioned, Datalevin is not an immutable database, and there is no
+* Datalevin has a cost based query optimizer, so qureies are truly declarative and clause ordering does not affect query performance.
+
+* Datalevin is not an immutable database, and there is no
   "database as a value" feature.  Since history is not kept, transaction ids are
   not stored.
 
