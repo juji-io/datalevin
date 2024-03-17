@@ -40,7 +40,7 @@ Conversely, in Datomic-like stores, the data values are stored as they are,
 rather than being represented by integer IDs, therefore, pushing selection
 predicates down to index scan methods brings more benefits.
 
-Datalevin search engine exploits these design choices to maximize query
+Datalevin query engine exploits these design choices to maximize query
 performance.
 
 ## Nested Triple Storage
@@ -90,7 +90,7 @@ considered in the future.
 
 For star-like attributes, we utilize an idea similar to pivot scan [2], which
 returns multiple attribute values with a single index scan using `:eav` index.
-This single scan takes an list of entity IDs, an ordered list of attributes
+This single scan takes a list of entity IDs, an ordered list of attributes
 needed, and corresponding predicates for each attribute, to produce a relation.
 This avoids performing joins within the same entity class to obtain the same
 relation. The bulk of query execution time is spent on this operation.
