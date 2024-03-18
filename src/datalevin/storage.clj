@@ -989,9 +989,8 @@
       (advance-max-gt store)
       (let [gd [e attr v]]
         (.put giants gd max-gt)
-        (.add txs
-              (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
-                          :id :data [:append]))))
+        (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
+                              :id :data [:append]))))
     (when (= :db.type/ref vt)
       (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when (props :db/fulltext)

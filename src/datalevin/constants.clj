@@ -173,30 +173,30 @@
 
 ;; kv
 (def ^:const kv-info
-  "dbi name for kv store system information is `datalevin/kv-info"
+  "dbi name for kv store system information is `datalevin/kv-info`"
   "datalevin/kv-info")
 
 ;; dl
 (def ^:const eav
-  "dbi name for Datalog EAV index is `datalevin/eav"
+  "dbi name for Datalog EAV index is `datalevin/eav`"
   "datalevin/eav")
 (def ^:const ave
-  "dbi name for Datalog AVE index is `datalevin/ave"
+  "dbi name for Datalog AVE index is `datalevin/ave`"
   "datalevin/ave")
 (def ^:const vae
-  "dbi name for Datalog VAE index is `datalevin/vae"
+  "dbi name for Datalog VAE index is `datalevin/vae`"
   "datalevin/vae")
 (def ^:const giants
-  "dbi name for Datalog large datoms is `datalevin/giants"
+  "dbi name for Datalog large datoms is `datalevin/giants`"
   "datalevin/giants")
 (def ^:const schema
-  "dbi name for Datalog schema is `datalevin/schema"
+  "dbi name for Datalog schema is `datalevin/schema`"
   "datalevin/schema")
 (def ^:const meta
-  "dbi name for Datalog runtime meta information is `datalevin/meta"
+  "dbi name for Datalog runtime meta information is `datalevin/meta`"
   "datalevin/meta")
 (def ^:const opts
-  "dbi name for Datalog options is `datalevin/opts"
+  "dbi name for Datalog options is `datalevin/opts`"
   "datalevin/opts")
 
 ;; compression

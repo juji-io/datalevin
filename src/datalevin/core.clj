@@ -147,7 +147,7 @@ Only usable for debug output.
 
   Supported opts:
 
-   `:visitor` a fn of 4 arguments, will be called for every entity/attribute pull touches
+   `:visitor` a fn of 4 arguments, `pattern`, `e`, `a`, and `v`. It will be called for every entity/attribute pull touches, for side effect.
 
    `(:db.pull/attr e a nil)` when pulling a normal attribute, no matter if it has value or not
 
@@ -947,8 +947,8 @@ Only usable for debug output.
   this call. If a database needs to be kept open, use `create-conn` and
   hold onto the returned connection. See also [[create-conn]] and [[get-conn]]
 
-  `spec` is a vector of an identifier of the database connection, a path or
-  dtlv URI string, and optionally a schema map.
+  `spec` is a vector of an identifier of new database connection, a path or
+  dtlv URI string, a schema map and a option map. The last two are optional.
 
   Example:
 
@@ -959,14 +959,14 @@ Only usable for debug output.
             ;; body)
   "
   [spec & body]
-  `(let [dir#    ~(second spec)
-         schema# ~(second (rest spec))
-         opts#   ~(second (rest (rest spec)))
+  `(let [r#      (list ~@(rest spec))
+         dir#    (first r#)
+         schema# (second r#)
+         opts#   (second (rest r#))
          conn#   (get-conn dir# schema# opts#)]
      (try
        (let [~(first spec) conn#] ~@body)
-       (finally
-         (close conn#)))))
+       (finally (close conn#)))))
 
 (defn transact
   "Same as [[transact!]], but returns an immediately realized future.
@@ -1296,7 +1296,7 @@ If value is to be ignored, put `:ignore` as `v-type`.
                    [db dbi-name k-range k-type])
        :doc      "Returns a seq of keys in the specified key range in the key-value store. This does not read the values, so it is faster than [[get-range]].
 
-This function is eager and attempts to load all data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]]. See [[range-seq]] for a lazy version of this function.
+This function is eager and attempts to load all data in range into memory. When the memory pressure is high, the remaining data is spilled on to a temporary disk file. The spill-to-disk mechanism is controlled by `:spill-opts` map passed to [[open-kv]].
 
 `k-range` is a vector `[range-type k1 k2]`, `range-type` can be one of `:all`, `:at-least`, `:at-most`, `:closed`, `:closed-open`, `:greater-than`, `:less-than`, `:open`, `:open-closed`, plus backward variants that put a `-back` suffix to each of the above, e.g. `:all-back`.
 

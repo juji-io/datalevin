@@ -7,5 +7,4 @@
   ["Server/Client" {:file "doc/server.md"}]
   ["Query Engine" {:file "doc/query.md"}]
   ["Search Engine" {:file "doc/search.md"}]
-  ["Graal Native" {:file "native/README.md"}]]
- :cljdoc/languages ["clj"]}
+  ["Graal Native" {:file "native/README.md"}]]}
