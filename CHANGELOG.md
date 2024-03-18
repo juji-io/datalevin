@@ -1,6 +1,10 @@
 # Change Log
 
-## 0.9.0 (2024-03-13)
+## WIP
+### Improved
+- [Datalog] avoid unnecessary evals in `with-conn`
+
+## 0.9.3 (2024-03-13)
 
 ### Added
 - [Datalog] Query optimizer to improve query performance, particularly for
