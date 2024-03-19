@@ -247,7 +247,7 @@ the number of tuples in half.
 
 Compared with q2, this additional bound attribute slows down Datalevin more than
 3X. The reason is that the optimizer rewrites the additional bound attribute `:sex`
-into a predicate `[= ?bound1024 :male]`, and running a predicate on a value
+into a predicate `[(= ?bound1024 :male)]`, and running a predicate on a value
 during merge scan is more expensive than just scanning a value. Since
 this bound attribute is not very selective, this is actually not a bad choice.
 
@@ -287,7 +287,8 @@ and 6X faster than Datascript and Datomic, respectively.
 
 This is a join on equal values. The selectivity of the joining attribute is
 about 0.01, so it is not too bad, but it is still a tough query, because
-something close to a Cartesian product of all values is likely to be performed for such a join.
+something close to a Cartesian product of all values is likely to be performed
+for such a join.
 
 ```Clojure
     (d/q '[:find ?e1 ?l ?a
@@ -297,7 +298,8 @@ something close to a Cartesian product of all values is likely to be performed f
                   [?e1 :last-name ?l]]
       db100k)
 ```
-Not surprisingly, across the board, the speed for this query is over an order of magnitude slower compared with other queries.
+Not surprisingly, across the board, the speed for this query is over an order of
+magnitude slower compared with other queries.
 
 Datalevin is the fastest, 1.4X faster than Datomic. Datascript fares the
 worst in this query, close to be 2.8X slower than Datalevin.
@@ -365,8 +367,10 @@ is not available.
 
 ## Conclusion
 
-The queries in this benchmark are fairly simple. To better test the systems, a
-benchmark with more complex queries and larger data size need to be developed.
+Using this benchmark, Datalevin query engine is found to be faster than Datomic
+and Datascript with a relatively large margin.
 
+However, the queries in this benchmark are fairly simple. To better test the systems, a
+benchmark with more complex queries and a larger data size need to be developed.
 The plan is to port join order benchmarks (JOB) from SQL to Datalog.
 Contributors are welcome and will be appreciated.
