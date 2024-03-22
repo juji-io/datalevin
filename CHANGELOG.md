@@ -1,8 +1,10 @@
 # Change Log
 
 ## WIP
-### Improved
-- [Datalog] avoid unnecessary evals in `with-conn`
+### Added
+- Embedded library for new platforms: Linux on Aarch64 and FreeBSD on Amd64
+### Fixed
+- [KV] broken embedded library on Windows
 
 ## 0.9.3 (2024-03-13)
 

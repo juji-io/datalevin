@@ -370,15 +370,16 @@ adjust the priorities based on feedback.
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
-* 0.10.0 Option to store data in compressed form.
-* 0.11.0 As a vector DB: dense numeric vector indexing and similarity search.
-* 1.0.0 As a production rule engine with truth maintenance.
-* 1.1.0 Transaction log storage and access API.
-* 1.2.0 Read-only replicas for server.
-* 2.0.0 As a document store: automatic indexing and incremental updates.
-* 2.1.0 Fully automatic schema migration on write.
-* 3.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
-* 4.0.0 Distributed mode.
+* 1.0.0 Documentation in a book form.
+* 1.1.0 Option to store data in compressed form.
+* 1.2.0 As a vector DB: dense numeric vector indexing and similarity search.
+* 2.0.0 As a production rule engine with truth maintenance.
+* 2.1.0 Transaction log storage and access API.
+* 2.2.0 Read-only replicas for server.
+* 3.0.0 As a document store: automatic indexing and incremental updates.
+* 3.1.0 Fully automatic schema migration on write.
+* 4.0.0 As a graph database: implementing [loom](https://github.com/aysylu/loom) graph protocols.
+* 5.0.0 Distributed mode.
 
 ## :floppy_disk: Differences from Datascript
 

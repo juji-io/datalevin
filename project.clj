@@ -12,7 +12,7 @@
    [com.fasterxml.jackson.core/jackson-core "2.15.3"]
    [com.fasterxml.jackson.core/jackson-databind "2.15.3"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
-   [com.github.jnr/jnr-ffi "2.2.15"]
+   [com.github.jnr/jnr-ffi "2.2.16"]
    [com.taoensso/nippy "3.4.0-RC2"]
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.12.5"]
@@ -36,7 +36,7 @@
    [org.graalvm.sdk/graal-sdk "22.3.1"]
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
-   [org.lmdbjava/lmdbjava "0.8.3"]
+   [org.lmdbjava/lmdbjava "0.9.0"]
    [org.roaringbitmap/RoaringBitmap "1.0.5"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
