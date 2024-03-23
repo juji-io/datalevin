@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.query
+  "Datalog query engine"
   (:require
    [clojure.edn :as edn]
    [clojure.set :as set]
@@ -25,27 +26,13 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.util List]))
 
-;; ----------------------------------------------------------------------------
-
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
 
 (def ^:dynamic *save-intermediate* :count)  ;; or :relation
 
-(defn- save-intermediates
-  [context save out out-rel]
-  (vswap! (:intermediates context) assoc out
-          (case save
-            :count    {:attrs        (:attrs out-rel)
-                       :tuples-count (count (:tuples out-rel))}
-            :relation out-rel)))
+(def ^:dynamic *explain* nil)
 
-(defn- update-attrs
-  [attrs vars]
-  (let [n (count attrs)]
-    (into attrs (comp
-                  (remove #{'_})
-                  (map-indexed (fn [i v] [v (+ n ^long i)])))
-          vars)))
+(def ^:dynamic *start-time* nil)
 
 (declare -collect -resolve-clause resolve-clause hash-join)
 
@@ -57,6 +44,14 @@
 (defrecord Plan [steps cost size])
 
 (defprotocol IStep (execute [step context db rel]))
+
+(defn- save-intermediates
+  [context save out out-rel]
+  (vswap! (:intermediates context) assoc out
+          (case save
+            :count    {:attrs        (:attrs out-rel)
+                       :tuples-count (count (:tuples out-rel))}
+            :relation out-rel)))
 
 (defrecord InitStep
     [attr pred val range vars in out know-e? cols save save-in?]
@@ -87,13 +82,21 @@
       (save-intermediates context save out out-rel)
       out-rel)))
 
+(defn- update-attrs
+  [attrs vars]
+  (let [n (count attrs)]
+    (into attrs (comp
+                  (remove #{'_})
+                  (map-indexed (fn [i v] [v (+ n ^long i)])))
+          vars)))
+
 (defrecord MergeScanStep [index attrs vars preds skips in out cols save]
 
   IStep
   (execute [_ context db rel]
     (let [out-rel
           (-> rel
-              (update :attrs #(update-attrs % vars))
+              (update :attrs update-attrs vars)
               (assoc :tuples (db/-eav-scan-v
                                db (:tuples rel) index attrs preds skips)))]
       (save-intermediates context save out out-rel)
@@ -105,7 +108,7 @@
   (execute [_ context db rel]
     (let [out-rel
           (-> rel
-              (update :attrs #(update-attrs % [var]))
+              (update :attrs update-attrs [var])
               (assoc :tuples (db/-vae-scan-e db (:tuples rel) index attr)))]
       (save-intermediates context save out out-rel)
       out-rel)))
@@ -116,7 +119,7 @@
   (execute [_ context db rel]
     (let [out-rel
           (-> rel
-              (update :attrs #(update-attrs % [var]))
+              (update :attrs update-attrs [var])
               (assoc :tuples (db/-val-eq-scan-e db (:tuples rel) index attr)))]
       (save-intermediates context save out out-rel)
       out-rel)))
@@ -1274,15 +1277,9 @@
                        (comp (map #(when (or (= %2 '_) (placeholder? %2)) %1))
                           (remove nil?))
                        attrs vars)]
-          (map->MergeScanStep {:save  *save-intermediate*
-                               :index 0
-                               :attrs attrs
-                               :vars  vars
-                               :cols  (into cols (remove (set skips)) attrs)
-                               :in    #{e}
-                               :out   #{e}
-                               :preds (mapv attr-pred all)
-                               :skips skips}))))))
+          (MergeScanStep. 0 attrs vars (mapv attr-pred all) skips #{e}
+                          #{e} (into cols (remove (set skips)) attrs)
+                          *save-intermediate*))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1353,65 +1350,62 @@
                                        :closed       (list '<= c v c1)))))
       p)))
 
-(defn- scan-v-step
+(defn- merge-scan-step
   [last-step index new-key new-steps skip-attr]
   (map->MergeScanStep
-    (merge
-      {:save  *save-intermediate*
-       :index index
-       :in    (:out last-step)
-       :out   new-key}
-      (if (= 1 (count new-steps))
-        (let [s (first new-steps)
-              v (peek (:vars s))
-              a (:attr s)]
-          {:attrs [a]
-           :vars  [v]
-           :skips []
-           :preds [(add-back-range v s)]
-           :cols  (conj (:cols last-step) a)})
-        (let [[s1 s2] new-steps
-              skips   (:skips s2)
-              attr    (:attr s1)
-              v       (peek (:vars s1))
-              attrs2  (:attrs s2)
-              vars2   (:vars s2)
-              preds2  (:preds s2)
-              [attrs vars preds]
-              (if skip-attr
-                (if (= attr skip-attr)
-                  [attrs2 vars2 preds2]
-                  (let [idx #{(u/index-of #(= skip-attr %) attrs2)}]
-                    [(concatv [attr] (u/remove-idxs idx attrs2))
-                     (concatv [v] (u/remove-idxs idx vars2))
-                     (concatv [(add-back-range v s1)]
-                              (u/remove-idxs idx preds2))]))
-                [(concatv [attr] attrs2)
-                 (concatv [v] vars2)
-                 (concatv [(add-back-range v s1)] preds2)])]
-          {:attrs attrs
-           :vars  vars
-           :skips skips
-           :preds preds
-           :cols  (into (:cols last-step) (remove (set skips)) attrs)})))))
+    (apply assoc {:save  *save-intermediate*
+                  :index index
+                  :in    (:out last-step)
+                  :out   new-key}
+           (if (= 1 (count new-steps))
+             (let [s (first new-steps)
+                   v (peek (:vars s))
+                   a (:attr s)]
+               [:attrs [a]
+                :vars  [v]
+                :skips []
+                :preds [(add-back-range v s)]
+                :cols  (conj (:cols last-step) a)])
+             (let [[s1 s2] new-steps
+                   skips   (:skips s2)
+                   attr    (:attr s1)
+                   v       (peek (:vars s1))
+                   attrs2  (:attrs s2)
+                   vars2   (:vars s2)
+                   preds2  (:preds s2)
+                   [attrs vars preds]
+                   (if skip-attr
+                     (if (= attr skip-attr)
+                       [attrs2 vars2 preds2]
+                       (let [idx #{(u/index-of #(= skip-attr %) attrs2)}]
+                         [(concatv [attr] (u/remove-idxs idx attrs2))
+                          (concatv [v] (u/remove-idxs idx vars2))
+                          (concatv [(add-back-range v s1)]
+                                   (u/remove-idxs idx preds2))]))
+                     [(concatv [attr] attrs2)
+                      (concatv [v] vars2)
+                      (concatv [(add-back-range v s1)] preds2)])]
+               [:attrs attrs
+                :vars  vars
+                :skips skips
+                :preds preds
+                :cols  (into (:cols last-step)
+                             (remove (set skips)) attrs)])))))
 
 (defn- ref-plan
   [last-step {:keys [attr]} new-key new-steps]
   (let [index (u/index-of #(= attr %) (:cols last-step))]
-    [(scan-v-step last-step index new-key new-steps nil)]))
+    [(merge-scan-step last-step index new-key new-steps nil)]))
 
 (defn- link-step
   [op last-step index attr tgt new-key]
-  (let [m {:save  *save-intermediate*
-           :index index
-           :in    (:out last-step)
-           :out   new-key
-           :attr  attr
-           :var   tgt
-           :cols  (conj (:cols last-step) tgt)}]
+  (let [in   (:out last-step)
+        cols (conj (:cols last-step) tgt)]
     (case op
-      :vae-scan-e    (map->RevRefStep m)
-      :val-eq-scan-e (map->ValEqStep m))))
+      :vae-scan-e    (RevRefStep. index attr tgt (:out last-step)
+                                  new-key cols *save-intermediate*)
+      :val-eq-scan-e (ValEqStep. index attr tgt (:out last-step)
+                                 new-key cols *save-intermediate*))))
 
 (defn- rev-ref-plan
   [last-step link-e {:keys [attr tgt]} new-key new-steps]
@@ -1420,7 +1414,8 @@
     (if (= 1 (count new-steps))
       [step]
       [step
-       (scan-v-step step (dec (count (:cols step))) new-key new-steps attr)])))
+       (merge-scan-step
+         step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- val-eq-plan
   [last-step {:keys [attrs tgt var]} link-e new-key new-steps]
@@ -1433,7 +1428,8 @@
     (if (= 1 (count new-steps))
       [step]
       [step
-       (scan-v-step step (dec (count (:cols step))) new-key new-steps attr)])))
+       (merge-scan-step
+         step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- max-domain-cardinality
   [db {:keys [attr attrs]}]
@@ -1493,11 +1489,9 @@
     (Plan. (conj (-> (:steps new-base-plan)
                      (assoc-in [0 :in] in)
                      (assoc-in [0 :save-in?] true))
-                 (map->HashJoinStep
-                   {:save *save-intermediate*
-                    :in   in
-                    :out  new-key
-                    :cols (hash-cols prev-plan new-base-plan)}))
+                 (HashJoinStep.
+                   in new-key (hash-cols prev-plan new-base-plan)
+                   *save-intermediate*))
            (+ ^long (:cost prev-plan)
               ^long (:cost new-base-plan)
               ^long (estimate-hash-cost prev-plan new-base-plan))
@@ -1637,14 +1631,21 @@
            (pmap #(apply execute-steps context %))
            (sort-by #(count (:tuples %)))))))
 
+(defn- plan-explain
+  []
+  (when *explain*
+    (vswap! *explain* assoc :planning-time
+            (- (System/nanoTime) ^long *start-time*))))
+
 (defn -q
-  [context]
+  [context run?]
   (binding [*implicit-source* (get (:sources context) '$)]
     (when-let [context (build-graph context)]
       (as-> context c
         (build-plan c)
-        (execute-plan c)
-        (reduce resolve-clause c (:late-clauses c))))))
+        (do (plan-explain) c)
+        (when run? (execute-plan c))
+        (when run? (reduce resolve-clause c (:late-clauses c)))))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -1815,6 +1816,20 @@
                        [source (first pattern) (second pattern)]))
            (eduction (filter #(< 1 (count (val %)))))))))
 
+(defn- result-explain
+  [resultset]
+  (when *explain*
+    (let [{:keys [^long planning-time]} @*explain*
+
+          et (double (/ (- ^long (System/nanoTime)
+                           (+ ^long *start-time* planning-time))
+                        1000000))
+          pt (double (/ planning-time 1000000))]
+      (vswap! *explain* assoc
+              :result-size (count resultset)
+              :planning-time (str (format "%.3f" pt) " ms")
+              :execution-time (str (format "%.3f" et) " ms")))))
+
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
@@ -1830,8 +1845,9 @@
                                             nil nil nil (volatile! {}))
                                   (resolve-ins inputs)
                                   (resolve-redudants))
-            resultset         (-> (-q context)
+            resultset         (-> (-q context true)
                                   (collect all-vars))]
+        (result-explain resultset)
         (if resultset
           (cond->> resultset
             with
@@ -1846,3 +1862,24 @@
             true
             (-post-process find (:qreturn-map parsed-q)))
           #{})))))
+
+(defn- plan-only
+  [q & inputs]
+  (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
+    (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
+      (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)
+            context           (-> (Context. parsed-q [] {} {} []
+                                            nil nil nil (volatile! {}))
+                                  (resolve-ins inputs)
+                                  (resolve-redudants))]
+        (-q context false)
+        (result-explain nil)))))
+
+(defn explain
+  [{:keys [run?] :or {run? true}} & args]
+  (binding [*start-time* (System/nanoTime)
+            *explain*    (volatile! {})]
+    (if run?
+      (do (apply q args) @*explain*)
+      (do (apply plan-only args)
+          (dissoc @*explain* :result-size :execution-time)))))
