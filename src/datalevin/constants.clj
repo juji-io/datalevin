@@ -359,8 +359,8 @@
   magic-number-many 2.0)
 
 (def ^{:dynamic true
-       :doc     "Cost associated with running predicate during scan"}
-  magic-cost-pred 1.5)
+       :doc     "Cost associated with running a predicate during scan"}
+  magic-cost-pred 3.0)
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}

@@ -39,11 +39,13 @@
 ;; Records
 
 (defrecord Context [parsed-q rels sources rules opt-clauses late-clauses
-                    graph plan intermediates])
+                    graph plan intermediates result-set])
 
 (defrecord Plan [steps cost size])
 
-(defprotocol IStep (execute [step context db rel]))
+(defprotocol IStep
+  (-execute [step context db rel] "execute the query step")
+  (-explain [step context] "explain the query step"))
 
 (defn- save-intermediates
   [context save out out-rel]
@@ -57,7 +59,7 @@
     [attr pred val range vars in out know-e? cols save save-in?]
 
   IStep
-  (execute [_ context db rel]
+  (-execute [_ context db rel]
     (let [get-v? (< 1 (count vars))
           e      (first vars)
           v      (peek vars)
@@ -80,7 +82,19 @@
               (db/-init-tuples db attr [:closed val val] nil false)))]
       (when save-in? (save-intermediates context :relation in rel))
       (save-intermediates context save out out-rel)
-      out-rel)))
+      out-rel))
+
+  (-explain [_ context]
+    (apply str
+           (cond-> ["Initialize " vars " "]
+             know-e? (conj "by a known entity id.")
+             (nil? val)
+             (conj
+               (if range
+                 (str "by range " range " on " attr ".")
+                 (str "by " attr ".")))
+             (some? val)
+             (conj (str "by " attr " = " val "."))))))
 
 (defn- update-attrs
   [attrs vars]
@@ -93,46 +107,58 @@
 (defrecord MergeScanStep [index attrs vars preds skips in out cols save]
 
   IStep
-  (execute [_ context db rel]
+  (-execute [_ context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs vars)
               (assoc :tuples (db/-eav-scan-v
                                db (:tuples rel) index attrs preds skips)))]
       (save-intermediates context save out out-rel)
-      out-rel)))
+      out-rel))
+
+  (-explain [_ context]
+    (str "Merge " vars " by scanning " attrs ".")))
 
 (defrecord RevRefStep [index attr var in out cols save]
 
   IStep
-  (execute [_ context db rel]
+  (-execute [_ context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
               (assoc :tuples (db/-vae-scan-e db (:tuples rel) index attr)))]
       (save-intermediates context save out out-rel)
-      out-rel)))
+      out-rel))
+
+  (-explain [_ context]
+    (str "Merge " var " by scanning reverse reference of " attr ".")) )
 
 (defrecord ValEqStep [index attr var in out cols save]
 
   IStep
-  (execute [_ context db rel]
+  (-execute [_ context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
               (assoc :tuples (db/-val-eq-scan-e db (:tuples rel) index attr)))]
       (save-intermediates context save out out-rel)
-      out-rel)))
+      out-rel))
+
+  (-explain [_ context]
+    (str "Merge " var " by equal values of " attr ".")))
 
 (defrecord HashJoinStep [in out cols save]
 
   IStep
-  (execute [_ context _ rel]
+  (-execute [_ context _ rel]
     (let [rel1    (@(:intermediates context) in)
           out-rel (hash-join rel1 rel)]
       (save-intermediates context save in rel1)
       (save-intermediates context save out out-rel)
-      out-rel)))
+      out-rel))
+
+  (-explain [_ context]
+    (str "Hash join with the relation of " in)))
 
 (defrecord Node [links mpath mcount bound free])
 
@@ -249,8 +275,6 @@
   [context values]
   (let [bindings (get-in context [:parsed-q :qin])]
     (reduce resolve-in context (zipmap bindings values))))
-
-;;
 
 (def ^{:dynamic true
        :doc     "List of symbols in current pattern that might potentiall be resolved to refs"}
@@ -484,11 +508,7 @@
                    (invoke obj (into-array Object as))))]
     (when (not= res false) res)))
 
-(defn- make-call
-  [f args]
-  (if (dot-form f)
-    (dot-call f args)
-    (apply f args)))
+(defn- make-call [f args] (if (dot-form f) (dot-call f args) (apply f args)))
 
 (defn -call-fn
   [context rel f args]
@@ -1185,7 +1205,9 @@
                                 (< 0 fc)
                                 (update-in [src e] #(datom-1 :free %))))))))
               c nodes)]
-        (if (nil? res) (reduced nil) res)))
+        (if (nil? res)
+          (reduced (assoc c :result-set #{}))
+          res)))
     context graph))
 
 (defn- attr-var [[_ {:keys [var]}]] (or var '_))
@@ -1206,8 +1228,8 @@
         :free  {:age {:var ?a :count 10890}}}
    ...}}
 
-  Remaining clauses will be joined after the graph produces a relation.
-  Return nil if there is any clause that matches nothing"
+  Remaining clauses are in :late-clauses.
+  :result-set will be #{} if there is any clause that matches nothing."
   [context]
   (-> context
       split-clauses
@@ -1237,7 +1259,7 @@
   [[_ {:keys [var pred]}]]
   (transduce (map #(activate-pred var %)) add-pred nil pred))
 
-(defn- init-node-plan
+(defn- init-node-steps
   [db [e clauses]]
   (let [{:keys [bound free mpath]} clauses
         {:keys [var val range] :as clause}
@@ -1262,8 +1284,7 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        ;; TODO consider hash join as alternative if there are many
-        ;; bound values.
+        ;; TODO consider hash join as alternative for bound values.
         (let [bound1 (->> (dissoc bound attr)
                           (mapv (fn [[a {:keys [val] :as b}]]
                                   [a (-> b
@@ -1324,16 +1345,17 @@
          ^long (estimate-scan-v-cost (peek steps) mcount))
       init-cost)))
 
+(defn- base-plan
+  [db nodes e]
+  (let [[_ node :as kv] (find nodes e)
+        steps           (init-node-steps db kv)]
+    (Plan. steps
+           (estimate-base-cost node steps)
+           (estimate-scan-v-size db (:mcount node) steps))))
+
 (defn- build-base-plans
   [db nodes component]
-  (into {}
-        (map (fn [e]
-               [#{e}
-                (let [[_ node :as kv] (find nodes e)
-                      steps           (init-node-plan db kv)]
-                  (Plan. steps (estimate-base-cost node steps)
-                         (estimate-scan-v-size db (:mcount node) steps)))]))
-        component))
+  (into {} (map (fn [e] [#{e} (base-plan db nodes e)])) component))
 
 (defn- add-back-range
   [v step]
@@ -1542,7 +1564,7 @@
   [db nodes component]
   (let [n (count component)]
     (if (= n 1)
-      (init-node-plan db (find nodes (first component)))
+      [(base-plan db nodes (first component))]
       (let [connected (connected-pairs nodes component)
             tables    (FastList. n)
             n-1       (dec n)
@@ -1551,9 +1573,10 @@
         (dotimes [i n-1]
           (.add tables (plans db nodes connected base-ps (.get tables i))))
         (reduce
-          (fn [steps i]
-            (concatv (:steps ((.get tables i) (:in (first steps)))) steps))
-          (-> (.get tables n-1) first val :steps)
+          (fn [plans i]
+            (cons ((.get tables i) (:in (first (:steps (first plans)))))
+                  plans))
+          [(-> (.get tables n-1) first val)]
           (range (dec n-1) -1 -1))))))
 
 (defn- dfs
@@ -1606,28 +1629,30 @@
           (assoc-in c [:plan src]
                     (if (< 1 (count nodes))
                       (build-plan* db nodes)
-                      [(init-node-plan db (first nodes))]))))
+                      [[(base-plan db nodes (ffirst nodes))]]))))
       context graph)
     context))
 
 (defn- execute-steps
   [context db [f & r]]
-  (reduce (fn [rel step] (execute step context db rel))
-          (execute f context db nil) r))
+  (reduce (fn [rel step] (-execute step context db rel))
+          (-execute f context db nil) r))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
   (if (= 1 (transduce (map (fn [[_ components]] (count components))) + plan))
     (update context :rels collapse-rels
             (let [[src components] (first plan)]
-              (execute-steps context (sources src) (first components))))
+              (execute-steps context (sources src)
+                             (mapcat :steps (first components)))))
     (reduce
       (fn [c r] (update c :rels collapse-rels r))
       context
       (->> plan
            (mapcat (fn [[src components]]
                      (let [db (sources src)]
-                       (for [steps components] [db steps]))))
+                       (for [plans components]
+                         [db (mapcat :steps plans)]))))
            (pmap #(apply execute-steps context %))
            (sort-by #(count (:tuples %)))))))
 
@@ -1640,12 +1665,14 @@
 (defn -q
   [context run?]
   (binding [*implicit-source* (get (:sources context) '$)]
-    (when-let [context (build-graph context)]
-      (as-> context c
-        (build-plan c)
-        (do (plan-explain) c)
-        (when run? (execute-plan c))
-        (when run? (reduce resolve-clause c (:late-clauses c)))))))
+    (let [{:keys [result-set] :as context} (build-graph context)]
+      (if (= result-set #{})
+        context
+        (as-> context c
+          (build-plan c)
+          (do (plan-explain) c)
+          (if run? (execute-plan c) c)
+          (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
 (defn -collect-tuples
   [acc rel ^long len copy-map]
@@ -1691,9 +1718,11 @@
      (recur (-collect-tuples acc rel len copy-map) (next rels) symbols))))
 
 (defn collect
-  [context symbols]
-  (when context
-    (into (sp/new-spillable-set) (map vec) (-collect context symbols))))
+  [{:keys [result-set] :as context} symbols]
+  (if (= result-set #{})
+    context
+    (assoc context :result-set (into (sp/new-spillable-set) (map vec)
+                                     (-collect context symbols)))))
 
 (defprotocol IContextResolve
   (-context-resolve [var context]))
@@ -1817,7 +1846,7 @@
            (eduction (filter #(< 1 (count (val %)))))))))
 
 (defn- result-explain
-  [resultset]
+  [{:keys [result-set plan opt-clauses late-clauses] :as context}]
   (when *explain*
     (let [{:keys [^long planning-time]} @*explain*
 
@@ -1826,9 +1855,17 @@
                         1000000))
           pt (double (/ planning-time 1000000))]
       (vswap! *explain* assoc
-              :result-size (count resultset)
+              :actual-result-size (count result-set)
               :planning-time (str (format "%.3f" pt) " ms")
-              :execution-time (str (format "%.3f" et) " ms")))))
+              :execution-time (str (format "%.3f" et) " ms")
+              :opt-clauses opt-clauses
+              :late-clauses late-clauses
+              :opt-steps (walk/postwalk (fn [e]
+                                          (if (satisfies? IStep e)
+                                            (-explain e context)
+                                            e))
+                                        plan))))
+  context)
 
 (defn q
   [q & inputs]
@@ -1841,39 +1878,36 @@
             all-vars          (concatv (dp/find-vars find)
                                        (map :symbol with))
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
-            context           (-> (Context. parsed-q [] {} {} []
-                                            nil nil nil (volatile! {}))
+            context           (-> (Context. parsed-q [] {} {} [] nil nil
+                                            nil (volatile! {}) nil)
                                   (resolve-ins inputs)
-                                  (resolve-redudants))
-            resultset         (-> (-q context true)
-                                  (collect all-vars))]
-        (result-explain resultset)
-        (if resultset
-          (cond->> resultset
-            with
-            (mapv #(subvec % 0 result-arity))
+                                  (resolve-redudants)
+                                  (-q true)
+                                  (collect all-vars)
+                                  (result-explain))]
+        (cond->> (:result-set context)
+          with
+          (mapv #(subvec % 0 result-arity))
 
-            (some dp/aggregate? find-elements)
-            (aggregate find-elements context)
+          (some dp/aggregate? find-elements)
+          (aggregate find-elements context)
 
-            (some dp/pull? find-elements)
-            (pull find-elements context)
+          (some dp/pull? find-elements)
+          (pull find-elements context)
 
-            true
-            (-post-process find (:qreturn-map parsed-q)))
-          #{})))))
+          true
+          (-post-process find (:qreturn-map parsed-q)))))))
 
 (defn- plan-only
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
-      (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)
-            context           (-> (Context. parsed-q [] {} {} []
-                                            nil nil nil (volatile! {}))
-                                  (resolve-ins inputs)
-                                  (resolve-redudants))]
-        (-q context false)
-        (result-explain nil)))))
+      (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)]
+        (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {}) nil)
+            (resolve-ins inputs)
+            (resolve-redudants)
+            (-q false)
+            (result-explain))))))
 
 (defn explain
   [{:keys [run?] :or {run? true}} & args]
@@ -1882,4 +1916,4 @@
     (if run?
       (do (apply q args) @*explain*)
       (do (apply plan-only args)
-          (dissoc @*explain* :result-size :execution-time)))))
+          (dissoc @*explain* :actual-result-size :execution-time)))))

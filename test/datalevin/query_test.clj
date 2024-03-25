@@ -391,15 +391,16 @@
                   [(< ?a ?a2)]
                   [?e2 :person/name ?n]] db "Ivan")
            #{["Oleg"] ["Petr"] ["James"]}))
-    (is (= (:result-size (sut/explain {:run? true}
-                                      '[:find ?n
-                                        :in $ ?i
-                                        :where
-                                        [?e :person/name ?i]
-                                        [?e :person/age ?a]
-                                        [?e2 :person/age ?a2]
-                                        [(< ?a ?a2)]
-                                        [?e2 :person/name ?n]] db "Ivan"))
+    (is (= (:actual-result-size
+            (sut/explain {:run? true}
+                         '[:find ?n
+                           :in $ ?i
+                           :where
+                           [?e :person/name ?i]
+                           [?e :person/age ?a]
+                           [?e2 :person/age ?a2]
+                           [(< ?a ?a2)]
+                           [?e2 :person/name ?n]] db "Ivan"))
            3))
     (d/close-db db)
     (u/delete-files dir)))

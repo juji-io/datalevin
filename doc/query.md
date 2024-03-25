@@ -126,7 +126,7 @@ target's entity IDs. The above three methods are essentially scanning indices
 for a list of entity IDs. Other attribute values then need to be merge scanned
 to obtain a full relation.
 
-The forth method instead does merge scan first, then attempt to join
+The fourth method instead does merge scan first, then attempt to join
 two relations using hash join afterwards. The choice of probing and building
 side of the hash join is determined during execution, instead of being
 predetermined by the planner. This avoids the possibility of building the hash
