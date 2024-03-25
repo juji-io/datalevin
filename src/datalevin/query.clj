@@ -837,7 +837,7 @@
            bound                            (bound-vars context)]
        (check-bound bound req-vars orig-clause)
        (check-free-subset bound vars branches)
-       (recur context (list* 'or-join (concat req-vars vars) branches) clause))
+       (recur context (list* 'or-join (concatv req-vars vars) branches) clause))
 
      '[or-join [*] *] ;; (or-join [vars] ...)
      (let [[_ vars & branches] clause
@@ -1011,10 +1011,8 @@
           (fn [g [k {:keys [var]}]]
             (if (es var)
               (-> g
-                  (update-in [e :links] conjv
-                             (map->Link {:type :ref :tgt var :attr k}))
-                  (update-in [var :links] conjv
-                             (map->Link {:type :_ref :tgt e :attr k})))
+                  (update-in [e :links] conjv (Link. :ref var nil nil k))
+                  (update-in [var :links] conjv (Link. :_ref e nil nil k)))
               g))
           g free))
       graph graph)))
@@ -1029,11 +1027,9 @@
             (let [attrs {e1 k1 e2 k2}]
               (-> g
                   (update-in
-                    [e1 :links] conjv
-                    (map->Link {:type :val-eq :tgt e2 :var v :attrs attrs}))
+                    [e1 :links] conjv (Link. :val-eq e2 v attrs nil))
                   (update-in
-                    [e2 :links] conjv
-                    (map->Link {:type :val-eq :tgt e1 :var v :attrs attrs})))))
+                    [e2 :links] conjv (Link. :val-eq e1 v attrs nil)))))
           g (u/combinations lst 2))
         g))
     graph (reduce (fn [m [e {:keys [free]}]]

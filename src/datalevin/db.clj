@@ -9,7 +9,7 @@
    [datalevin.datom :as d
     :refer [datom datom-added datom?]]
    [datalevin.util :as u
-    :refer [case-tree raise defrecord-updatable cond+ conjv]]
+    :refer [case-tree raise defrecord-updatable cond+ conjv concatv]]
    [datalevin.storage :as s]
    [datalevin.spill :as sp]
    [datalevin.lmdb :as l]
@@ -835,7 +835,7 @@
 (defn- explode [db entity]
   (let [eid  (:db/id entity)
         ;; sort tuple attrs after non-tuple
-        a+vs (apply concat
+        a+vs (apply concatv
                     (reduce
                       (fn [acc [a vs]]
                         (update acc (if (tuple-attr? db a) 1 0) conj [a vs]))
@@ -961,7 +961,7 @@
         (recur entities new-es)
 
         (@de-entity? entity)
-        (recur (u/concatv entities (reverse (@de-entity->txs entity))) new-es)
+        (recur (concatv entities (reverse (@de-entity->txs entity))) new-es)
 
         (map? entity)
         (recur entities (conj! new-es (assoc entity :db/updated-at tx-time)))
@@ -1039,12 +1039,12 @@
              (if (contains? report ::queued-tuples)
                (recur
                  (dissoc report ::queued-tuples)
-                 (concat (flush-tuples report) entities))
+                 (concatv (flush-tuples report) entities))
                (recur report entities))
 
              (@de-entity? entity)
              (recur report
-                    (u/concatv entities (reverse (@de-entity->txs entity))))
+                    (concatv entities (reverse (@de-entity->txs entity))))
 
 
              :let [^DB db      (:db-after report)
@@ -1077,7 +1077,7 @@
                    (recur (-> (allocate-eid tx-time report old-eid upserted-eid)
                               (update ::tx-redundant conjv
                                       (datom upserted-eid nil nil tx0)))
-                          (concat (explode db (assoc entity' :db/id upserted-eid)) entities)))
+                          (concatv (explode db (assoc entity' :db/id upserted-eid)) entities)))
 
                  ;; resolved | allocated-tempid | tempid | nil => explode
                  (or (number? old-eid)
@@ -1090,7 +1090,7 @@
                                     :else             old-eid)
                        new-entity (assoc entity :db/id new-eid)]
                    (recur (allocate-eid tx-time report old-eid new-eid)
-                          (concat (explode db new-entity) entities)))
+                          (concatv (explode db new-entity) entities)))
 
                  ;; trash => error
                  :else
@@ -1102,7 +1102,7 @@
                (cond
                  (= op :db.fn/call)
                  (let [[_ f & args] entity]
-                   (recur report (concat (apply f db args) entities)))
+                   (recur report (concatv (apply f db args) entities)))
 
                  (and (keyword? op)
                       (not (builtin-fn? op)))
@@ -1118,7 +1118,7 @@
                                   (:v (-first db [ident :db/fn])))
                          args (next entity)]
                      (if (fn? fun)
-                       (recur report (concat (apply fun db args) entities))
+                       (recur report (concatv (apply fun db args) entities))
                        (raise "Entity " op " expected to have :db/fn attribute with fn? value"
                               {:error :transact/syntal, :operation :db.fn/call, :tx-data entity})))
                    (raise "Can’t find entity for transaction fn " op
@@ -1256,7 +1256,7 @@
                      (= op :db/retract))
                  (if-some [e (entid db e)]
                    (let [_      (validate-attr a entity)
-                         datoms (u/concatv
+                         datoms (concatv
                                   (s/slice (:store db) :eav
                                            (datom e a c/v0)
                                            (datom e a c/vmax))
@@ -1264,25 +1264,25 @@
                                            (datom e a nil tx0)
                                            (datom e a nil txmax)))]
                      (recur (reduce transact-retract-datom report datoms)
-                            (concat (retract-components db datoms) entities)))
+                            (concatv (retract-components db datoms) entities)))
                    (recur report entities))
 
                  (or (= op :db.fn/retractEntity)
                      (= op :db/retractEntity))
                  (if-some [e (entid db e)]
-                   (let [e-datoms (u/concatv
+                   (let [e-datoms (concatv
                                     (s/e-datoms (:store db) e)
                                     (.subSet ^TreeSortedSet (:eavt db)
                                              (datom e nil nil tx0)
                                              (datom e nil nil txmax)))
-                         v-datoms (u/concatv
+                         v-datoms (concatv
                                     (s/v-datoms (:store db) e)
                                     (.subSet ^TreeSortedSet (:vaet db)
                                              (datom e0 nil e tx0)
                                              (datom emax nil e txmax)))]
                      (recur (reduce transact-retract-datom report
-                                    (u/concatv e-datoms v-datoms))
-                            (concat (retract-components db e-datoms) entities)))
+                                    (concatv e-datoms v-datoms))
+                            (concatv (retract-components db e-datoms) entities)))
                    (recur report entities))
 
                  :else

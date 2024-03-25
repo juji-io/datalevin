@@ -335,14 +335,30 @@
 
 (def conjv (fnil conj []))
 
-(defn combinations [coll ^long r]
-  (cond
-    (= r 0)       '(())
-    (empty? coll) '()
-    :else
-    (concat
-      (map #(cons (first coll) %) (combinations (rest coll) (dec r)))
-      (combinations (rest coll) r))))
+(defn bit-count
+  ^long [^long v]
+  (let [v (- v (bit-and (bit-shift-right v 1) 0x55555555))
+        v (+ (bit-and v 0x33333333)
+             (bit-and (bit-shift-right v 2) 0x33333333))]
+    (bit-shift-right
+      (* (bit-and (+ v (bit-shift-right v 4)) 0xF0F0F0F) 0x1010101)
+      24)))
+
+(defn combinations
+  [coll ^long n]
+  (let [arr    (object-array coll)
+        len    (count coll)
+        result (volatile! [])]
+    (when (<= n len)
+      (dotimes [i (bit-shift-left 1 len)] ;; max-index
+        (when (== n (bit-count i))
+          (vswap! result conj
+                  (for [^long j (range 0 len)
+                        :when   (not (zero? (bit-and
+                                              (bit-shift-left 1 j)
+                                              i)))]
+                    (aget arr j))))))
+    @result))
 
 (defn index-of
   [pred xs]

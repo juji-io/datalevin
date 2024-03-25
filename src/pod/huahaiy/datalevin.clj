@@ -4,6 +4,7 @@
    [bencode.core :as bencode]
    [sci.core :as sci]
    [datalevin.core :as d]
+   [datalevin.util :as u]
    [datalevin.lmdb :as l]
    [datalevin.interpret :as i]
    [datalevin.protocol :as p]
@@ -819,18 +820,17 @@
           (vals exposed-vars)))
 
 (defn- all-vars []
-  (concat (mapv (fn [k] {"name" (name k)})
-                (keys exposed-vars))
-          [{"name" "defpodfn"
-            "code"
-            "(defmacro defpodfn
+  (u/concatv (mapv (fn [k] {"name" (name k)}) (keys exposed-vars))
+             [{"name" "defpodfn"
+               "code"
+               "(defmacro defpodfn
               [fn-name args & body]
               `(pod-fn '~fn-name
                       '~args
                       '~@body))"}
-           {"name" "with-transaction-kv"
-            "code"
-            "(defmacro with-transaction-kv
+              {"name" "with-transaction-kv"
+               "code"
+               "(defmacro with-transaction-kv
               [binding & body]
               `(let [db# ~(second binding)]
                 (try
@@ -843,9 +843,9 @@
                           (throw ~'e)))))
                   (finally
                     (close-transact-kv db#)))))"}
-           {"name" "with-transaction"
-            "code"
-            "(defmacro with-transaction
+              {"name" "with-transaction"
+               "code"
+               "(defmacro with-transaction
                [binding & body]
                `(let [conn# ~(second binding)]
                   (try

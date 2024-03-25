@@ -567,14 +567,14 @@
 
   (slice [_ index low-datom high-datom]
     (mapv #(retrieved->datom lmdb attrs %)
-          (let [lk (index->k index schema low-datom false)
-                hk (index->k index schema high-datom true)
-                lv (datom->indexable schema low-datom false)
-                hv (datom->indexable schema high-datom true)]
-            (lmdb/list-range
-              lmdb (index->dbi index)
-              [:closed lk hk] (index->ktype index)
-              [:closed lv hv] (index->vtype index)))))
+          (lmdb/list-range
+            lmdb (index->dbi index)
+            [:closed (index->k index schema low-datom false)
+             (index->k index schema high-datom true)]
+            (index->ktype index)
+            [:closed (datom->indexable schema low-datom false)
+             (datom->indexable schema high-datom true)]
+            (index->vtype index))))
 
   (rslice [_ index high-datom low-datom]
     (mapv #(retrieved->datom lmdb attrs %)
