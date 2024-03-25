@@ -1,6 +1,5 @@
 (ns datalevin.query-test
   (:require
-   [datalevin.query :as sut]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test :refer [deftest is use-fixtures]]
    [datalevin.core :as d]
@@ -42,6 +41,15 @@
                        [?e :name "Oleg"]]
                      db ))
            #{[37]}))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?a
+                                             :in $
+                                             :where
+                                             [?e :age ?a]
+                                             [?e :aka "bigmac"]
+                                             [?e :name "Oleg"]]
+                                           db ))
+           1))
     (is (= (set (d/q '[:find ?a
                        :in $ ?n
                        :where
@@ -91,6 +99,14 @@
              [:school :ny/union]
              [:aka "robot"]
              [:aka "ai"]}))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find  ?a ?v
+                                             :in    $db ?e ?k
+                                             :where
+                                             [$db ?e ?a ?v]
+                                             [$db ?e :aka ?k]]
+                                           db 1 "ai"))
+           6))
     (is (= (d/q '[:find ?e
                   :where [?e :aka "ai"]] db)
            #{[1] [2]}))
@@ -108,6 +124,14 @@
                   [(>= ?a1 22)]
                   [(odd? ?a1)]] db)
            #{[37]}))
+    (is (= (:actual-result-size
+            (d/explain {:run? true}
+                       '[:find  ?a1
+                         :where
+                         [_ :age ?a1]
+                         [(>= ?a1 22)]
+                         [(odd? ?a1)]] db))
+           1))
     (is (= (d/q '[:find  ?n ?a
                   :in ?k $
                   :where
@@ -120,11 +144,30 @@
                  [1 :aka  "dragon_saver_94"]
                  [1 :aka  "-=autobot=-"]])
            #{["Ivan" 19]}))
+    (is (nil? (:plan (d/explain {:run? true}
+                                '[:find  ?n ?a
+                                  :in ?k $
+                                  :where
+                                  [?e :aka ?k]
+                                  [?e :name ?n]
+                                  [?e :age  ?a]]
+                                "dragon_saver_94"
+                                [[1 :name "Ivan"]
+                                 [1 :age  19]
+                                 [1 :aka  "dragon_saver_94"]
+                                 [1 :aka  "-=autobot=-"]]))))
     (is (= #{[3 :age 37] [2 :age 37] [4 :age 15] [1 :school :ny/union]}
            (d/q '[:find ?e ?a ?v
                   :where
                   [?e :name _]
                   [(get-some $ ?e :school :age) [?a ?v]]] db)))
+    (is (= (:actual-result-size
+            (d/explain {:run? true}
+                       '[:find ?e ?a ?v
+                         :where
+                         [?e :name _]
+                         [(get-some $ ?e :school :age) [?a ?v]]] db))
+           4))
     (is (= (d/q '[:find  ?e ?a
                   :where
                   [?e :age ?a]
@@ -137,6 +180,13 @@
                   [(?adult ?a)]]
                 db #(> ^long % 18))
            #{[2] [3]}))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find  ?e
+                                             :in    $ ?adult
+                                             :where [?e :age ?a]
+                                             [(?adult ?a)]]
+                                           db #(> ^long % 18)))
+           2))
     (is (= #{}
            (d/q '[:find ?name
                   :in $ ?my-fn
@@ -145,6 +195,14 @@
                   [(?my-fn) ?result]
                   [(< ?result 3)]]
                 db (fn [] 5))))
+    (is (= 0
+           (:actual-result-size (d/explain {:run? true} '[:find ?name
+                                                          :in $ ?my-fn
+                                                          :where
+                                                          [?e :name ?name]
+                                                          [(?my-fn) ?result]
+                                                          [(< ?result 3)]]
+                                           db (fn [] 5)))))
 
     (is (= (set (d/q '[:find ?a
                        :in $ ?n
@@ -234,6 +292,18 @@
                 db "datalevin")
            [[{:permission/obj :datalevin.query-test/server,
               :permission/act :datalevin.query-test/control}]]))
+    (is (= (:actual-result-size
+            (d/explain {:run? true}
+                       '[:find (pull ?p [:permission/act :permission/obj])
+                         :in $ ?uname
+                         :where
+                         [?u :user/name ?uname]
+                         [?ur :user-role/user ?u]
+                         [?ur :user-role/role ?r]
+                         [?rp :role-perm/role ?r]
+                         [?rp :role-perm/perm ?p]]
+                       db "datalevin"))
+           1))
     (is (= (d/q '[:find (pull ?p [:permission/act :permission/obj])
                   :in $ ?rk
                   :where
@@ -244,6 +314,17 @@
                 db :datalevin.role/datalevin)
            [[{:permission/obj :datalevin.query-test/server,
               :permission/act :datalevin.query-test/control}]]))
+    (is (= (:actual-result-size
+            (d/explain {:run? true}
+                       '[:find (pull ?p [:permission/act :permission/obj])
+                         :in $ ?rk
+                         :where
+                         [?r :role/key ?rk]
+                         [?ur :user-role/role ?r]
+                         [?rp :role-perm/role ?r]
+                         [?rp :role-perm/perm ?p]]
+                       db :datalevin.role/datalevin))
+           1))
     (d/close-db db)
     (u/delete-files dir)))
 
@@ -323,20 +404,19 @@
                        [(not= ?n1 ?n2)]]
                      db "Fremont"))
            #{["James" "Petr"] ["Petr" "James"] ["Ivan" "John"]}))
-    (is (= (:actual-result-size
-            (sut/explain {:run? true}
-                         '[:find ?n1 ?n2
-                           :in $ ?c
-                           :where
-                           [?e1 :person/city ?c]
-                           [?e :school/city ?c]
-                           [?e1 :person/name ?n1]
-                           [?e1 :person/age ?a]
-                           [?e2 :person/age ?a]
-                           [?e2 :person/school ?e]
-                           [?e2 :person/name ?n2]
-                           [(not= ?n1 ?n2)]]
-                         db "Fremont"))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?n1 ?n2
+                                             :in $ ?c
+                                             :where
+                                             [?e1 :person/city ?c]
+                                             [?e :school/city ?c]
+                                             [?e1 :person/name ?n1]
+                                             [?e1 :person/age ?a]
+                                             [?e2 :person/age ?a]
+                                             [?e2 :person/school ?e]
+                                             [?e2 :person/name ?n2]
+                                             [(not= ?n1 ?n2)]]
+                                           db "Fremont"))
            3))
     (is (= (set (d/q '[:find ?n1
                        :in $ ?n
@@ -383,27 +463,25 @@
                        [?e1 :person/age ?a]]
                      db "Ivan"))
            #{[16]}))
-    (is (= (:actual-result-size
-            (sut/explain {:run? true}
-                         '[:find ?a
-                           :in $ ?n
-                           :where
-                           [?e :person/friend ?e1]
-                           [?e :person/name ?n]
-                           [?e1 :person/age ?a]]
-                         db "Ivan"))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?a
+                                             :in $ ?n
+                                             :where
+                                             [?e :person/friend ?e1]
+                                             [?e :person/name ?n]
+                                             [?e1 :person/age ?a]]
+                                           db "Ivan"))
            1))
     (is (= (d/q '[:find  ?e1 ?e2
                   :where
                   [?e1 :person/name ?n]
                   [?e2 :person/name ?n]] db)
            #{[1 1] [2 2] [3 3] [4 4] [5 5]}))
-    (is (nil? (:actual-result-size
-               (sut/explain {}
-                            '[:find  ?e1 ?e2
-                              :where
-                              [?e1 :person/name ?n]
-                              [?e2 :person/name ?n]] db))))
+    (is (nil? (:actual-result-size (d/explain {}
+                                              '[:find  ?e1 ?e2
+                                                :where
+                                                [?e1 :person/name ?n]
+                                                [?e2 :person/name ?n]] db))))
     (is (= (d/q '[:find  ?e ?e2 ?n
                   :in $ ?i
                   :where
@@ -413,15 +491,14 @@
                   [?e2 :person/name ?n]] db "Ivan")
            #{[1 1 "Ivan"]
              [1 4 "John"]}))
-    (is (= (:late-clauses
-            (sut/explain {:run? true}
-                         '[:find  ?e ?e2 ?n
-                           :in $ ?i
-                           :where
-                           [?e :person/name ?i]
-                           [?e :person/age ?a]
-                           [?e2 :person/age ?a]
-                           [?e2 :person/name ?n]] db "Ivan"))
+    (is (= (:late-clauses (d/explain {:run? true}
+                                     '[:find  ?e ?e2 ?n
+                                       :in $ ?i
+                                       :where
+                                       [?e :person/name ?i]
+                                       [?e :person/age ?a]
+                                       [?e2 :person/age ?a]
+                                       [?e2 :person/name ?n]] db "Ivan"))
            []))
     (is (= (d/q '[:find ?n
                   :in $ ?i
@@ -432,16 +509,15 @@
                   [(< ?a ?a2)]
                   [?e2 :person/name ?n]] db "Ivan")
            #{["Oleg"] ["Petr"] ["James"]}))
-    (is (= (:actual-result-size
-            (sut/explain {:run? true}
-                         '[:find ?n
-                           :in $ ?i
-                           :where
-                           [?e :person/name ?i]
-                           [?e :person/age ?a]
-                           [?e2 :person/age ?a2]
-                           [(< ?a ?a2)]
-                           [?e2 :person/name ?n]] db "Ivan"))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?n
+                                             :in $ ?i
+                                             :where
+                                             [?e :person/name ?i]
+                                             [?e :person/age ?a]
+                                             [?e2 :person/age ?a2]
+                                             [(< ?a ?a2)]
+                                             [?e2 :person/name ?n]] db "Ivan"))
            3))
     (d/close-db db)
     (u/delete-files dir)))

@@ -5,7 +5,6 @@
    [clojure.set :as set]
    [clojure.string :as str]
    [clojure.walk :as walk]
-   [clojure.pprint :as pp]
    [datalevin.db :as db]
    [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
@@ -84,17 +83,19 @@
       (save-intermediates context save out out-rel)
       out-rel))
 
-  (-explain [_ context]
-    (apply str
-           (cond-> ["Initialize " vars " "]
-             know-e? (conj "by a known entity id.")
+  (-explain [_ _]
+    (str
+      (str "Initialize " vars " "
+           (cond
+             know-e? "by a known entity id."
+
              (nil? val)
-             (conj
-               (if range
-                 (str "by range " range " on " attr ".")
-                 (str "by " attr ".")))
+             (if range
+               (str "by range " range " on " attr ".")
+               (str "by " attr "."))
+
              (some? val)
-             (conj (str "by " attr " = " val "."))))))
+             (str "by " attr " = " val "."))))))
 
 (defn- update-attrs
   [attrs vars]
@@ -116,7 +117,7 @@
       (save-intermediates context save out out-rel)
       out-rel))
 
-  (-explain [_ context]
+  (-explain [_ _]
     (str "Merge " vars " by scanning " attrs ".")))
 
 (defrecord RevRefStep [index attr var in out cols save]
@@ -130,7 +131,7 @@
       (save-intermediates context save out out-rel)
       out-rel))
 
-  (-explain [_ context]
+  (-explain [_ _]
     (str "Merge " var " by scanning reverse reference of " attr ".")) )
 
 (defrecord ValEqStep [index attr var in out cols save]
@@ -144,7 +145,7 @@
       (save-intermediates context save out out-rel)
       out-rel))
 
-  (-explain [_ context]
+  (-explain [_ _]
     (str "Merge " var " by equal values of " attr ".")))
 
 (defrecord HashJoinStep [in out cols save]
@@ -157,7 +158,7 @@
       (save-intermediates context save out out-rel)
       out-rel))
 
-  (-explain [_ context]
+  (-explain [_ _]
     (str "Hash join with the relation of " in)))
 
 (defrecord Node [links mpath mcount bound free])
@@ -1101,17 +1102,17 @@
             (let [ac (count args)
                   i  ^long (u/index-of #(= % v) args)]
               (condp = f
-                '<       (set-range i m args ac :less-than :greater-than
-                                    :open false)
-                     '<= (set-range i m args ac :at-most :at-least
-                                    :closed false)
-                     '>  (set-range i m args ac :greater-than :less-than
-                                    :open true)
-                     '>= (set-range i m args ac :at-least :at-most
-                                    :closed true)
-                     '=  (let [c (some #(when-not (free-var? %) %) args)]
-                           (assoc m :range [:closed c c]))
-                     (update m :pred conjv pred)))))
+                '<  (set-range i m args ac :less-than :greater-than
+                               :open false)
+                '<= (set-range i m args ac :at-most :at-least
+                               :closed false)
+                '>  (set-range i m args ac :greater-than :less-than
+                               :open true)
+                '>= (set-range i m args ac :at-least :at-most
+                               :closed true)
+                '=  (let [c (some #(when-not (free-var? %) %) args)]
+                      (assoc m :range [:closed c c]))
+                (update m :pred conjv pred)))))
         m))
     graph))
 
@@ -1536,9 +1537,8 @@
                     new-e    (set/difference pair link-e)
                     cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
                     {:keys [cost] :as new-plan}
-                    (binary-plan db nodes (base-plans new-e)
-                                 prev-plan (first link-e)
-                                 (first new-e) new-key)]
+                    (binary-plan db nodes (base-plans new-e) prev-plan
+                                 (first link-e) (first new-e) new-key)]
                 (if (< ^long cost ^long cur-cost)
                   (assoc t new-key new-plan)
                   t))
@@ -1855,7 +1855,6 @@
               :planning-time (str (format "%.3f" pt) " ms")
               :execution-time (str (format "%.3f" et) " ms")
               :opt-clauses opt-clauses
-              :late-clauses late-clauses
               :plan (walk/postwalk
                       (fn [e]
                         (if (instance? Plan e)
@@ -1868,7 +1867,8 @@
                                                   [(:out (last steps))
                                                    :tuples-count]))))
                           e))
-                      plan)))))
+                      plan)
+              :late-clauses late-clauses))))
 
 (defn q
   [q & inputs]
