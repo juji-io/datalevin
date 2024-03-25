@@ -418,6 +418,63 @@ Only usable for debug output.
     (r/q store query inputs')
     (apply dq/q query inputs)))
 
+(defn explain
+  "Explain the query plan for a Datalog query.
+
+    `opts` is a map, with these keys:
+
+      * `:run?` indicate whether to actually run the query. Default is `false`, so only query plan is produced.
+
+    `query` and `inputs` are the same as that of [[q]]
+
+     Return a map looks like this:
+
+          {:planning-time \"0.983 ms\",
+           :actual-result-size 30,
+           :execution-time \"0.150 ms\",
+           :opt-clauses
+           [[?e1 :person/city \"Fremont\"]
+            [?e :school/city \"Fremont\"]
+            [?e1 :person/name ?n1]
+            [?e1 :person/age ?a]
+            [?e2 :person/age ?a]
+            [?e2 :person/school ?e]
+            [?e2 :person/name ?n2]],
+           :late-clauses [[(not= ?n1 ?n2)]],
+           :plan
+           {$
+            [({:steps [\"Initialize [?e] by :school/city = Fremont.\"],
+               :cost 10,
+               :size 10,
+               :actual-size 10}
+              {:steps
+               [\"Merge ?e2 by scanning reverse reference of :person/school.\"
+                \"Merge [?a ?n2] by scanning [:person/age :person/name].\"],
+               :cost 70,
+               :size 20,
+               :actual-size 30}
+              {:steps
+               [\"Merge ?e1 by equal values of :person/age.\"
+                \"Merge [?e1 ?n1] by scanning [:person/city :person/name].\"],
+               :cost 130,
+               :size 20,
+               :actual-size 60})]}}
+
+  * `:planning-time` includes all the time spent up to when the plan is generated.
+  * `:execution-time` is the time between the generated plan and result return.
+  * `:actual-result-size` is the number of tuples generated.
+  * `:opt-cluases` includes all the clauses that the optimizer worked on.
+  * `:late-clauses` are the clauses that are ignored by the optimizer and are processed afterwards.
+  * `:plan` are grouped by data sources, then by the connected component of the query graph.
+      - `:steps` are the descriptions of the processing steps planned.
+      - `:cost` is the accumulated estimated cost, which determines the plan.
+      - `:size` is the estimated number of resulting tuples for the steps.
+      - `:actual-size` is the actual number of resulting tuples after the steps are executed. "
+  [opts query & inputs]
+  (if-let [[store inputs'] (only-remote-db inputs)]
+    (r/explain store opts query inputs')
+    (apply dq/explain opts query inputs)))
+
 
 ;; Index lookups
 
@@ -509,7 +566,6 @@ Only usable for debug output.
    "
   [db e a v]             {:pre [(db/db? db)]}
   (db/-search db [e a v]))
-
 
 (defn seek-datoms
   "Similar to [[datoms]], but will return datoms starting from specified components.

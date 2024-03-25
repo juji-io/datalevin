@@ -39,7 +39,7 @@
 ;; Records
 
 (defrecord Context [parsed-q rels sources rules opt-clauses late-clauses
-                    graph plan intermediates result-set])
+                    graph plan intermediates run? result-set])
 
 (defrecord Plan [steps cost size])
 
@@ -1846,7 +1846,7 @@
            (eduction (filter #(< 1 (count (val %)))))))))
 
 (defn- result-explain
-  [{:keys [result-set plan opt-clauses late-clauses] :as context}]
+  [{:keys [result-set plan opt-clauses late-clauses run?] :as context}]
   (when *explain*
     (let [{:keys [^long planning-time]} @*explain*
 
@@ -1860,59 +1860,68 @@
               :execution-time (str (format "%.3f" et) " ms")
               :opt-clauses opt-clauses
               :late-clauses late-clauses
-              :opt-steps (walk/postwalk (fn [e]
-                                          (if (satisfies? IStep e)
-                                            (-explain e context)
-                                            e))
-                                        plan))))
-  context)
+              :plan (walk/postwalk
+                      (fn [e]
+                        (if (instance? Plan e)
+                          (let [{:keys [steps] :as plan} e]
+                            (cond->
+                                (assoc plan :steps
+                                       (mapv #(-explain % context) steps))
+                              run? (assoc :actual-size
+                                          (get-in @(:intermediates context)
+                                                  [(:out (last steps))
+                                                   :tuples-count]))))
+                          e))
+                      plan)))))
 
 (defn q
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
-      (let [find              (:qfind parsed-q)
-            find-elements     (dp/find-elements find)
-            result-arity      (count find-elements)
-            with              (:qwith parsed-q)
-            all-vars          (concatv (dp/find-vars find)
-                                       (map :symbol with))
+      (let [find          (:qfind parsed-q)
+            find-elements (dp/find-elements find)
+            result-arity  (count find-elements)
+            with          (:qwith parsed-q)
+            all-vars      (concatv (dp/find-vars find) (map :symbol with))
+
             [parsed-q inputs] (plugin-inputs parsed-q inputs)
-            context           (-> (Context. parsed-q [] {} {} [] nil nil
-                                            nil (volatile! {}) nil)
-                                  (resolve-ins inputs)
-                                  (resolve-redudants)
-                                  (-q true)
-                                  (collect all-vars)
-                                  (result-explain))]
-        (cond->> (:result-set context)
-          with
-          (mapv #(subvec % 0 result-arity))
 
-          (some dp/aggregate? find-elements)
-          (aggregate find-elements context)
+            context
+            (-> (Context. parsed-q [] {} {} [] nil nil nil
+                          (volatile! {}) true nil)
+                (resolve-ins inputs)
+                (resolve-redudants)
+                (-q true)
+                (collect all-vars))
+            result
+            (cond->> (:result-set context)
+              with (mapv #(subvec % 0 result-arity))
 
-          (some dp/pull? find-elements)
-          (pull find-elements context)
+              (some dp/aggregate? find-elements)
+              (aggregate find-elements context)
 
-          true
-          (-post-process find (:qreturn-map parsed-q)))))))
+              (some dp/pull? find-elements) (pull find-elements context)
+
+              true (-post-process find (:qreturn-map parsed-q)))]
+        (result-explain context)
+        result))))
 
 (defn- plan-only
   [q & inputs]
   (let [parsed-q (lru/-get *query-cache* q #(dp/parse-query q))]
     (binding [timeout/*deadline* (timeout/to-deadline (:qtimeout parsed-q))]
       (let [[parsed-q inputs] (plugin-inputs parsed-q inputs)]
-        (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {}) nil)
+        (-> (Context. parsed-q [] {} {} [] nil nil nil (volatile! {})
+                      false nil)
             (resolve-ins inputs)
             (resolve-redudants)
             (-q false)
             (result-explain))))))
 
 (defn explain
-  [{:keys [run?] :or {run? true}} & args]
-  (binding [*start-time* (System/nanoTime)
-            *explain*    (volatile! {})]
+  [{:keys [run?] :or {run? false}} & args]
+  (binding [*explain*    (volatile! {})
+            *start-time* (System/nanoTime)]
     (if run?
       (do (apply q args) @*explain*)
       (do (apply plan-only args)

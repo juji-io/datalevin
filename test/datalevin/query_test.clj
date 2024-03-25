@@ -2,7 +2,7 @@
   (:require
    [datalevin.query :as sut]
    [datalevin.test.core :as tdc :refer [db-fixture]]
-   [clojure.test :refer [deftest testing is use-fixtures]]
+   [clojure.test :refer [deftest is use-fixtures]]
    [datalevin.core :as d]
    [datalevin.constants :as c]
    [datalevin.util :as u])
@@ -323,6 +323,21 @@
                        [(not= ?n1 ?n2)]]
                      db "Fremont"))
            #{["James" "Petr"] ["Petr" "James"] ["Ivan" "John"]}))
+    (is (= (:actual-result-size
+            (sut/explain {:run? true}
+                         '[:find ?n1 ?n2
+                           :in $ ?c
+                           :where
+                           [?e1 :person/city ?c]
+                           [?e :school/city ?c]
+                           [?e1 :person/name ?n1]
+                           [?e1 :person/age ?a]
+                           [?e2 :person/age ?a]
+                           [?e2 :person/school ?e]
+                           [?e2 :person/name ?n2]
+                           [(not= ?n1 ?n2)]]
+                         db "Fremont"))
+           3))
     (is (= (set (d/q '[:find ?n1
                        :in $ ?n
                        :where
@@ -368,11 +383,27 @@
                        [?e1 :person/age ?a]]
                      db "Ivan"))
            #{[16]}))
+    (is (= (:actual-result-size
+            (sut/explain {:run? true}
+                         '[:find ?a
+                           :in $ ?n
+                           :where
+                           [?e :person/friend ?e1]
+                           [?e :person/name ?n]
+                           [?e1 :person/age ?a]]
+                         db "Ivan"))
+           1))
     (is (= (d/q '[:find  ?e1 ?e2
                   :where
                   [?e1 :person/name ?n]
                   [?e2 :person/name ?n]] db)
            #{[1 1] [2 2] [3 3] [4 4] [5 5]}))
+    (is (nil? (:actual-result-size
+               (sut/explain {}
+                            '[:find  ?e1 ?e2
+                              :where
+                              [?e1 :person/name ?n]
+                              [?e2 :person/name ?n]] db))))
     (is (= (d/q '[:find  ?e ?e2 ?n
                   :in $ ?i
                   :where
@@ -382,6 +413,16 @@
                   [?e2 :person/name ?n]] db "Ivan")
            #{[1 1 "Ivan"]
              [1 4 "John"]}))
+    (is (= (:late-clauses
+            (sut/explain {:run? true}
+                         '[:find  ?e ?e2 ?n
+                           :in $ ?i
+                           :where
+                           [?e :person/name ?i]
+                           [?e :person/age ?a]
+                           [?e2 :person/age ?a]
+                           [?e2 :person/name ?n]] db "Ivan"))
+           []))
     (is (= (d/q '[:find ?n
                   :in $ ?i
                   :where

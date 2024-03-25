@@ -108,6 +108,9 @@
 (defn q [q & inputs]
   (apply d/q q (w/postwalk #(if (::db %) (get-db %) %) inputs)))
 
+(defn explain [opts q & inputs]
+  (apply d/explain opts q (w/postwalk #(if (::db %) (get-db %) %) inputs)))
+
 (defn empty-db
   ([] (empty-db nil nil))
   ([dir] (empty-db dir nil))
@@ -724,6 +727,7 @@
    'update-schema             update-schema
    'get-conn                  get-conn
    'q                         q
+   'explain                   explain
    'open-kv                   open-kv
    'close-kv                  close-kv
    'closed-kv?                closed-kv?

@@ -1144,6 +1144,7 @@
    'list-range-filter-count
    'visit-list-range
    'q
+   'explain
    'fulltext-datoms
    'new-search-engine
    'add-doc
@@ -2154,6 +2155,16 @@
           (write-message skey {:type :command-complete :result data})
           (copy-out skey data c/+wire-datom-batch-size+))
         (write-message skey {:type :command-complete :result data})))))
+
+(defn- explain
+  [^Server server ^SelectionKey skey {:keys [args writing?]}]
+  (wrap-error
+    (let [[db-name opts query inputs] args
+
+          db     (get-db server db-name writing?)
+          inputs (replace {:remote-db-placeholder db} inputs)
+          data   (apply q/explain opts query inputs)]
+      (write-message skey {:type :command-complete :result data}))))
 
 (defn- fulltext-datoms
   [^Server server ^SelectionKey skey {:keys [args writing?]}]

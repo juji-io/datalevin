@@ -220,4 +220,10 @@
                      [_ :hello ?w]]
                    @conn)
              "world"))
+      (is (= (:actual-result-size (dc/explain {:run? true}
+                                              '[:find ?w .
+                                                :where
+                                                [_ :hello ?w]]
+                                              @conn))
+             1))
       (dc/close conn))))
