@@ -1,7 +1,29 @@
 {:paths ["src"]
- :deps {io.github.juji-io/datalevin #_{:git/tag "0.6.21"
+ :deps {datalevin/datalevin #_{:git/tag "0.6.21"
                                        :git/sha "41d1915eb67b1606aab4807058ff24bb41fdb8e8"}
-        {:local/root "../.."}
+        #_{:local/root "../.."}
+        {:mvn/version "0.8.14"}
+        babashka/fs {:mvn/version "0.4.18"}
         com.cognitect/transit-clj {:mvn/version "1.0.329"}}
- :aliases {:dev {:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
-                            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}}}
+ :aliases {:dev {:extra-paths ["test"]
+                 :extra-deps {com.google.guava/guava-testlib {:mvn/version "31.1-jre"}
+                              com.rpl/proxy-plus {:mvn/version "0.0.9"}
+                              com.amperity/dialog {:mvn/version "2.0.115"}
+                              org.clojure/tools.logging {:mvn/version "1.2.4"}}
+                 :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                            "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}
+           :test {:extra-paths ["test"]
+                  :extra-deps {com.google.guava/guava-testlib {:mvn/version "31.1-jre"}
+                               com.rpl/proxy-plus {:mvn/version "0.0.9"}
+                               com.amperity/dialog {:mvn/version "2.0.115"}
+                               org.clojure/tools.logging {:mvn/version "1.2.4"}
+                               lambdaisland/kaocha {:mvn/version "1.83.1314"}
+                               ;; allow us to run junit tests.
+                               ;; https://github.com/junit-team/junit5-samples/blob/main/junit5-migration-gradle/README.md
+                               ;;    org.junit.jupiter/junit-jupiter {:mvn/version "5.9.3"}
+                               ;; guave testlib uses junit3 style of tests
+                               ;;    org.junit.vintage/junit-vintage-engine {:mvn/version "5.9.3"}
+                               junit/junit {:mvn/version "4.13.2"}}
+                  :main-opts ["-m" "kaocha.runner"]
+                  :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                             "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}}}

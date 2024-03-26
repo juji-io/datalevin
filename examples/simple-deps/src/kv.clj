@@ -1,4 +1,5 @@
-(ns kv)
+(ns kv 
+  (:require [datalevin.core :as d]))
 
 (require '[datalevin.core :as d])
 (import '[java.util Date])
