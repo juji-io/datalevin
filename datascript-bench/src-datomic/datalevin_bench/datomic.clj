@@ -174,8 +174,47 @@
     (d/q '[:find ?e ?s
            :in   $ ?min_s
            :where [?e :salary ?s]
-                  [(> ?s ?min_s)]]
-      db100k 50000)))
+           [(> ?s ?min_s)]]
+         db100k 50000)))
+
+(defn bench-rules [db]
+  (d/q '[:find ?e ?e2
+         :in   $ %
+         :where (follows ?e ?e2)]
+       db
+       '[[(follows ?x ?y)
+          [?x :follows ?y]]
+         [(follows ?x ?y)
+          [?x :follows ?t]
+          (follows ?t ?y)]]))
+
+(defn ^:export rules-wide-3x3 []
+  (let [db (wide-db 3 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-wide-5x3 []
+  (let [db (wide-db 5 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-wide-7x3 []
+  (let [db (wide-db 7 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-wide-4x6 []
+  (let [db (wide-db 4 6)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-long-10x3 []
+  (let [db (long-db 10 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-long-30x3 []
+  (let [db (long-db 30 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-long-30x5 []
+  (let [db (long-db 30 5)]
+    (core/bench (bench-rules db))))
 
 
 (defn ^:export -main [& names]

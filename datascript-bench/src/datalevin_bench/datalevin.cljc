@@ -23,31 +23,56 @@
 
 
 (defn- wide-db
+  "depth = 3 width = 2
+
+   1
+   ├ 2
+   │ ├ 4
+   │ │ ├ 8
+   │ │ └ 9
+   │ └ 5
+   │   ├ 10
+   │   └ 11
+   └ 3
+     ├ 6
+     │ ├ 12
+     │ └ 13
+     └ 7
+       ├ 14
+       └ 15"
   ([depth width] (d/db-with (d/empty-db nil schema) (wide-db 1 depth width)))
   ([id depth width]
-    (if (pos? depth)
-      (let [children (map #(+ (* id width) %) (range width))]
-        (concat
-          (map #(array-map
-                  :db/add  id
-                  :name    "Ivan"
-                  :follows %) children)
-          (mapcat #(wide-db % (dec depth) width) children)))
-      [{:db/id id :name "Ivan"}])))
+   (if (pos? depth)
+     (let [children (map #(+ (* id width) %) (range width))]
+       (concat
+         (map #(array-map
+                 :db/add  id
+                 :name    "Ivan"
+                 :follows %) children)
+         (mapcat #(wide-db % (dec depth) width) children)))
+     [{:db/id id :name "Ivan"}])))
 
 
-(defn- long-db [depth width]
+(defn- long-db
+  "depth = 3 width = 5
+
+   1  4  7  10  13
+   ↓  ↓  ↓  ↓   ↓
+   2  5  8  11  14
+   ↓  ↓  ↓  ↓   ↓
+   3  6  9  12  15"
+  [depth width]
   (d/db-with (d/empty-db nil schema)
-    (apply concat
-      (for [x (range width)
-            y (range depth)
-            :let [from (+ (* x (inc depth)) y)
-                  to   (+ (* x (inc depth)) y 1)]]
-        [{:db/id     from
-            :name    "Ivan"
-            :follows to}
-           {:db/id   to
-            :name    "Ivan"}]))))
+             (apply concat
+                    (for [x    (range width)
+                          y    (range depth)
+                          :let [from (+ (* x (inc depth)) y)
+                                to   (+ (* x (inc depth)) y 1)]]
+                      [{:db/id   from
+                        :name    "Ivan"
+                        :follows to}
+                       {:db/id to
+                        :name  "Ivan"}]))))
 
 
 (def db100k-1
@@ -229,25 +254,44 @@
            [(> ?s ?min_s)]]
          db100k-p2 50000)))
 
-(defn ^:export bench-rules []
-  (doseq [[id db] [["wide 3×3" (wide-db 3 3)]
-                   ["wide 5×3" (wide-db 5 3)]
-                   ["wide 7×3" (wide-db 7 3)]
-                   ["wide 4×6" (wide-db 4 6)]
-                   ["long 10×3" (long-db 10 3)]
-                   ["long 30×3" (long-db 30 3)]
-                   ["long 30×5" (long-db 30 5)]]]
-    (core/bench {:test "rules" :form id}
-                (d/q '[:find ?e ?e2
-                       :in   $ %
-                       :where (follows ?e ?e2)]
-                     db
-                     '[[(follows ?x ?y)
-                        [?x :follows ?y]]
-                       [(follows ?x ?y)
-                        [?x :follows ?t]
-                        (follows ?t ?y)]]))))
+(defn bench-rules [db]
+  (d/q '[:find ?e ?e2
+         :in   $ %
+         :where (follows ?e ?e2)]
+       db
+       '[[(follows ?x ?y)
+          [?x :follows ?y]]
+         [(follows ?x ?y)
+          [?x :follows ?t]
+          (follows ?t ?y)]]))
 
+(defn ^:export rules-wide-3x3 []
+  (let [db (wide-db 3 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-wide-5x3 []
+  (let [db (wide-db 5 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-wide-7x3 []
+  (let [db (wide-db 7 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-wide-4x6 []
+  (let [db (wide-db 4 6)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-long-10x3 []
+  (let [db (long-db 10 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-long-30x3 []
+  (let [db (long-db 30 3)]
+    (core/bench (bench-rules db))))
+
+(defn ^:export rules-long-30x5 []
+  (let [db (long-db 30 5)]
+    (core/bench (bench-rules db))))
 
 #?(:clj
    (defn ^:export -main [& names]
