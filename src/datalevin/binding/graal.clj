@@ -72,7 +72,7 @@
     (let [flag (Flag.)]
       (reduce (fn [r f] (bit-or ^int r ^int f))
               0
-              (map #(value ^Flag flag %) (set flags))))
+              (map #(value ^Flag flag %) flags)))
     (int 0)))
 
 (defn- put-bufval
@@ -1131,7 +1131,7 @@
                                (c/pick-mapsize dir)))
                        1024 1024)
            flags    (if temp?
-                      (set (conj flags :nosync))
+                      (conj flags :nosync)
                       flags)
            ^Env env (Env/create dir mapsize max-readers max-dbs
                                 (kv-flags flags))

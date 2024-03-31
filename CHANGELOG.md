@@ -7,6 +7,7 @@
 ### Fixed
 - [KV] broken embedded library on Windows
 ### Improved
+- [KV] flags are sets.
 - Update deps
 
 ## 0.9.3 (2024-03-13)

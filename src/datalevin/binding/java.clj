@@ -86,7 +86,7 @@
   (let [t (flag-type type)]
     (if (empty? flags)
       (make-array t 0)
-      (into-array t (mapv flag (set flags))))))
+      (into-array t (mapv flag flags)))))
 
 (deftype Rtx [lmdb
               ^Txn txn
@@ -386,8 +386,7 @@
                 (if (.seek cur op) (val-continue?) (val-end)))
               (check-val-back [op]
                 (if (.seek cur op) (val-continue-back?) (val-end)))
-              (advance-val []
-                (check-val SeekOp/MDB_NEXT_DUP))
+              (advance-val [] (check-val SeekOp/MDB_NEXT_DUP))
               (advance-val-back [] (check-val-back SeekOp/MDB_PREV_DUP))]
         (reify
           Iterator
@@ -676,7 +675,7 @@
   (copy [_ dest compact?]
     (let [d (u/file dest)]
       (if (u/empty-dir? d)
-        (.copy env d (kv-flags :copy (if compact? [:cp-compact] [])))
+        (.copy env d (kv-flags :copy (if compact? #{:cp-compact} #{})))
         (raise "Destination directory is not empty." {}))))
 
   (get-rtx [this]
@@ -1104,7 +1103,7 @@
                         (.setMaxReaders max-readers)
                         (.setMaxDbs max-dbs))
            flags      (if temp?
-                        (set (conj flags :nosync))
+                        (conj flags :nosync)
                         flags)
            ^Env env   (.open builder file (kv-flags :env flags))
            info       (merge opts {:dir         dir

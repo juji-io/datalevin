@@ -1098,7 +1098,7 @@ Only usable for debug output.
   * `:max-dbs` specifies the maximal number of sub-databases (DBIs) allowed
    for the db file. Default is 128. It may induce slowness if too big a
    number of DBIs are created, as a linear scan is used to look up a DBI.
-  * `:flags` is a vector of keywords corresponding to LMDB environment flags,
+  * `:flags` is a set of keywords corresponding to LMDB environment flags,
    e.g. `:rdonly-env` for MDB_RDONLY_ENV, `:nosubdir` for MDB_NOSUBDIR, and so
    on. See [LMDB Documentation](http://www.lmdb.tech/doc/group__mdb__env.html)
   * `:temp?` a boolean, indicating if this db is temporary, if so, the file
@@ -1162,7 +1162,7 @@ Only usable for debug output.
 
       * `:val-size` is the default size of the value in bytes, Datalevin will automatically increase the size if a larger value is transacted.
 
-      * `:flags` is a vector of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `[:create]`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
+      * `:flags` is a set of LMDB Dbi flag keywords, may include `:reversekey`, `:dupsort`, `integerkey`, `dupfixed`, `integerdup`, `reversedup`, or `create`, default is `#{:create}`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__dbi__open.html)."}
   open-dbi l/open-dbi)
 
 (def ^{:arglists '([db dbi-name])
@@ -1218,7 +1218,7 @@ Only usable for debug output.
   `k-type` indicates the data type of `k`, and `v-type` indicates the data type
   of `v`. The allowed data types are described in [[put-buffer]].
 
-  `:flags` is a vector of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
+  `:flags` is a set of LMDB Write flag keywords, may include `:nooverwrite`, `:nodupdata`, `:current`, `:reserve`, `:append`, `:appenddup`, `:multiple`, see [LMDB documentation](http://www.lmdb.tech/doc/group__mdb__put.html).
        Pass in `:append` when the data is sorted to gain better write performance.
 
   Example:

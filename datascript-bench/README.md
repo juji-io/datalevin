@@ -44,7 +44,7 @@ option.
 ```Clojure
       (d/init-db datoms (u/tmp-dir (str "bench-init" (UUID/randomUUID)))
                  schema {:kv-opts
-                         {:flags [:nordahead :notls :writemap :nosync]}})
+                 {:flags #{:nordahead :notls :writemap :nosync}}})
 ```
 Unsurprisingly, Datalevin loads datoms into a DB file on disk slower
 than Datascript loads the same data into memory. The difference ratio is about 4X.
@@ -69,8 +69,8 @@ This transacts one datom at a time.
             (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
             (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
       (d/empty-db (u/tmp-dir (str "bench-add-1" (UUID/randomUUID)))
-                  schema {:kv-opts
-                          {:flags [:nordahead :notls :writemap :nosync]}})
+                  schema
+                  {:kv-opts {:flags #{:nordahead :notls :writemap :nosync}}})
       core/people20k)
 ```
 
@@ -98,8 +98,7 @@ This transacts one entity (5 datoms) at a time.
           (reduce (fn [db p] (d/db-with db [p]))
             (d/empty-db (u/tmp-dir (str "bench-add-5" (UUID/randomUUID)))
                         schema
-                        {:kv-opts
-                         {:flags [:nordahead :notls :writemap :nosync]}})
+                        {:kv-opts {:flags #{:nordahead :notls :writemap :nosync}}})
             core/people20k)
 ```
 
@@ -125,8 +124,7 @@ This transacts all 100K datoms in one go.
     (d/db-with
       (d/empty-db (u/tmp-dir (str "bench-add-all" (UUID/randomUUID)))
                   schema
-                  {:kv-opts
-                   {:flags [:nordahead :notls :writemap :nosync]}})
+                  {:kv-opts {:flags #{:nordahead :notls :writemap :nosync}}})
       core/people20k)
 ```
 
