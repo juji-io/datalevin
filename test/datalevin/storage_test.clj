@@ -258,7 +258,7 @@
       (sut/load-datoms store' [d1])
       (is (= 1 (sut/init-max-eid store')))
       (is (= [d1] (sut/fetch store' d1)))
-      (sut/close store))
+      (sut/close store'))
     (u/delete-files dir)))
 
 (deftest false-value-test
