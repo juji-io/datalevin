@@ -3,7 +3,8 @@
 ## WIP
 ### Added
 - [Datalog] `explain` function to show query plan.
-- [Platform] Embedded library for Linux on Aarch64.
+- [Platform] Embedded library for Linux on Aarch64, which is crossed compiled
+  using zig.
 ### Fixed
 - [KV] Broken embedded library on Windows.
 ### Improved
