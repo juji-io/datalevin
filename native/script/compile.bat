@@ -10,32 +10,32 @@ set USE_NATIVE_IMAGE_JAVA_PLATFORM_MODULE_SYSTEM=false
 
 cd ..
 
-REM call lein.bat run
+call lein.bat run
 
 call %GRAALVM_HOME%\bin\gu.cmd install --file native.jar
 
-REM cd native
+cd native
 
-REM call ..\lein.bat with-profile test0-uberjar do clean, uberjar
-REM if %errorlevel% neq 0 exit /b %errorlevel%
+call ..\lein.bat with-profile test0-uberjar do clean, uberjar
+if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM call %GRAALVM_HOME%\bin\native-image.cmd ^
-REM   "-R:MaxHeapSize=5g" ^
-REM   "-jar" "target/test0.uberjar.jar" ^
-REM   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
-REM   dtlv-test0
+call %GRAALVM_HOME%\bin\native-image.cmd ^
+   "-R:MaxHeapSize=5g" ^
+   "-jar" "target/test0.uberjar.jar" ^
+   "-H:NativeLinkerOption=legacy_stdio_definitions.lib" ^
+   dtlv-test0
 
-REM if %errorlevel% neq 0 exit /b %errorlevel%
+if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM cd ..
+cd ..
 
-REM native\dtlv-test0 -Xmx5g
+native\dtlv-test0 -Xmx5g
 
-REM if %errorlevel% neq 0 exit /b %errorlevel%
+if %errorlevel% neq 0 exit /b %errorlevel%
 
 cd native
 
-REM del dtlv-test0
+del dtlv-test0
 
 call ..\lein.bat with-profile native-uberjar uberjar
 if %errorlevel% neq 0 exit /b %errorlevel%
