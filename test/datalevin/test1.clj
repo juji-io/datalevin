@@ -8,6 +8,7 @@
    datalevin.hu-test
    datalevin.concurrent-test
    datalevin.withtxn-test
+   datalevin.map-resize-test
    datalevin.bits-test
    datalevin.protocol-test
    datalevin.test.core
@@ -59,6 +60,7 @@
           'datalevin.hu-test
           'datalevin.concurrent-test
           'datalevin.withtxn-test
+          'datalevin.map-resize-test
           'datalevin.search-utils-test
           'datalevin.bits-test
           'datalevin.protocol-test

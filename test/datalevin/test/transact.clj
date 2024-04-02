@@ -754,24 +754,6 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-(deftest million-txns-map-resize-test
-  (let [dir  (u/tmp-dir (str "million-txns-test-" (UUID/randomUUID)))
-        conn (d/create-conn
-               dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-
-    (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
-    (is (= 1000000 (count (d/datoms @conn :eav))))
-
-    ;; TODO this will segfault in native when close db in graalvm
-    (when-not (u/graal?)
-      ;; this will blow through 100 MiB boundary
-      (dotimes [i 1000000] (d/transact! conn [{:foo i}]))
-      (is (= 2000000 (count (d/datoms @conn :eav)))))
-
-    (d/close conn)
-    (u/delete-files dir)))
-
 (deftest unchanged-datoms-test
   (let [dir  (u/tmp-dir (str "unchanged-datoms-" (UUID/randomUUID)))
         conn (d/create-conn
