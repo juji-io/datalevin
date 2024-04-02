@@ -2,12 +2,12 @@
 
 ## WIP
 ### Added
-- [Datalog] `explain` function to show the query plan.
-- [Platform] Embedded library for Linux on Aarch64 and FreeBSD on Amd64
+- [Datalog] `explain` function to show query plan.
+- [Platform] Embedded library for Linux on Aarch64.
 ### Fixed
-- [KV] broken embedded library on Windows
+- [KV] Broken embedded library on Windows.
 ### Improved
-- [KV] flags are sets.
+- [KV] Flags are now sets instead of vectors.
 - Update deps
 
 ## 0.9.3 (2024-03-13)

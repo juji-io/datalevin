@@ -1134,25 +1134,29 @@
      (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 
 (defn extract-lmdb []
-  (let [os-arch         (System/getProperty "os.arch")
-        amd64?          (#{"x64" "amd64" "x86_64"} os-arch)
-        aarch64?        (= "aarch64" os-arch)
-        os-name         (s/lower-case (System/getProperty "os.name"))
-        linux?          (s/starts-with? os-name "linux")
-        windows?        (s/starts-with? os-name "windows")
-        osx?            (s/starts-with? os-name "mac os x")
+  (let [os-arch  (System/getProperty "os.arch")
+        amd64?   (#{"x64" "amd64" "x86_64"} os-arch)
+        aarch64? (= "aarch64" os-arch)
+        os-name  (s/lower-case (System/getProperty "os.name"))
+        linux?   (s/starts-with? os-name "linux")
+        windows? (s/starts-with? os-name "windows")
+        osx?     (s/starts-with? os-name "mac os x")
+
         [lib-name platform]
         (cond
-          (and amd64?
-               linux?)   ["liblmdb.so" "ubuntu-latest-amd64-shared"]
-          (and amd64?
-               windows?) ["lmdb.dll" "windows-amd64-shared"]
-          (and amd64?
-               osx?)     ["liblmdb.dylib" "macos-latest-amd64-shared"]
-          (and aarch64?
-               osx?)     ["liblmdb.dylib"  "macos-latest-aarch64-shared"]
-          :else          (u/raise "Unsupported platform: " os-name
-                                  " on " os-arch))
+          amd64?   (cond
+                     linux?   ["liblmdb.so" "ubuntu-latest-amd64-shared"]
+                     windows? ["liblmdb.dll" "x86_64-windows-gnu"]
+                     osx?     ["liblmdb.dylib" "macos-latest-amd64-shared"]
+                     :else    (u/raise "Unsupported OS " os-name " on amd64"
+                                       {}))
+          aarch64? (cond
+                     osx?   ["liblmdb.dylib" "macos-latest-aarch64-shared"]
+                     linux? ["liblmdb.so" "aarch64-linux-gnu"]
+                     :else  (u/raise "Unsupported OS " os-name " on aarch64"
+                                     {}))
+          :else    (u/raise "Unsupported architecture: " os-arch {}))
+
         resource        (str "dtlvnative/" platform "/" lib-name)
         ^String dir     (u/tmp-dir (str "lmdbjava-native-lib-"
                                         (UUID/randomUUID)))

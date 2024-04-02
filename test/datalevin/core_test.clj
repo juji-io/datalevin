@@ -675,15 +675,14 @@
       (sut/close conn1))))
 
 (deftest large-data-concurrent-write-test
-  ;; TODO graalvm version will segment fault on Windows
-  (when-not (and (u/windows?) (u/graal?))
-    (let [dir  (u/tmp-dir (str "large-concurrent-" (UUID/randomUUID)))
-          conn (sut/get-conn dir)
-          d1   (apply str (repeat 1000 \a))
-          d2   (apply str (repeat 1000 \a))
-          tx1  [{:a d1 :b 1}]
-          tx2  [{:a d2 :b 2}]]
-      (future (sut/transact! conn tx1))
-      @(future (sut/transact! conn tx2))
-      (is (#{2 4} (count (sut/datoms @conn :eav))))
-      (sut/close conn))))
+  (let [dir  (u/tmp-dir (str "large-concurrent-" (UUID/randomUUID)))
+        conn (sut/get-conn dir)
+        d1   (apply str (repeat 1000 \a))
+        d2   (apply str (repeat 1000 \a))
+        tx1  [{:a d1 :b 1}]
+        tx2  [{:a d2 :b 2}]
+        f1   (future (sut/transact! conn tx1))]
+    @(future (sut/transact! conn tx2))
+    @f1
+    (is (= 4 (count (sut/datoms @conn :eav))))
+    (sut/close conn)))
