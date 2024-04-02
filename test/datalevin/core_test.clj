@@ -499,33 +499,6 @@
           (is (sut/closed? conn1)))))
     (u/delete-files dir)))
 
-(deftest with-txn-map-resize-test
-  (let [dir   (u/tmp-dir (str "with-tx-resize-test-" (UUID/randomUUID)))
-        conn  (sut/create-conn
-                dir nil
-                {:kv-opts {:mapsize 1
-                           :flags   (conj c/default-env-flags :nosync)}})
-        query '[:find ?e .
-                :in $ ?d
-                :where [?e :content ?d]]
-        prior "prior data"
-        big   "bigger than 10 MB"]
-
-    (sut/with-transaction [cn conn]
-      (sut/transact! cn [{:content prior :numbers [1 2]}])
-      (is (= 1 (sut/q query @cn prior)))
-      (sut/transact! cn [{:content big
-                          :numbers (range 10000000)}])
-      (is (= 2 (sut/q query @cn big))))
-
-    (is (= 1 (sut/q query @conn prior)))
-    (is (= 2 (sut/q query @conn big)))
-
-    (is (= 4 (count (sut/datoms @conn :eav))))
-
-    (sut/close conn)
-    (u/delete-files dir)))
-
 (deftest simulated-tx-test
   (let [dir  (u/tmp-dir (str "sim-tx-test-" (UUID/randomUUID)))
         conn (sut/create-conn

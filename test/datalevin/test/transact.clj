@@ -37,60 +37,6 @@
     (d/close conn)
     (u/delete-files dir)))
 
-(deftest test-multi-threads-transact
-  ;; we serialize writes, so as not to violate uniqueness constraint
-  (let [dir  (u/tmp-dir (str "multi-" (UUID/randomUUID)))
-        conn (d/create-conn
-               dir
-               {:instance/id
-                #:db{:valueType   :db.type/long
-                     :unique      :db.unique/identity
-                     :cardinality :db.cardinality/one}}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
-    (dorun (pmap #(d/transact! conn [{:instance/id %}])
-                 (range 100)))
-    (is (= 100 (d/q '[:find (max ?e) . :where [?e :instance/id]] @conn)))
-    (let [res (d/q '[:find ?e ?a ?v :where [?e ?a ?v]] @conn)]
-      (is (thrown-with-msg? Exception #"unique constraint"
-                            (d/transact! conn [(into [:db/add 3]
-                                                     (next (first res)))]))))
-    (d/close conn)
-    (u/delete-files dir)))
-
-(deftest test-multi-threads-reads-writes
-  (let [dir     (u/tmp-dir (str "multi-rw-" (UUID/randomUUID)))
-        conn    (d/create-conn dir {} {:validate-data?    true
-                                       :auto-entity-time? true
-                                       :kv-opts
-                                       {:flags
-                                        (conj c/default-env-flags :nosync)}})
-        q+      '[:find ?i+j .
-                  :in $ ?i ?j
-                  :where [?e :i+j ?i+j] [?e :i ?i] [?e :j ?j]]
-        q*      '[:find ?i*j .
-                  :in $ ?i ?j
-                  :where [?e :i*j ?i*j] [?e :i ?i] [?e :j ?j]]
-        trials  (atom 0)
-        futures (mapv (fn [^long i]
-                        (future
-                          (dotimes [j 100]
-                            (d/transact! conn [{:i+j (+ i j) :i i :j j}])
-                            (d/with-transaction [cn conn]
-                              (is (= (+ i j) (d/q q+ (d/db cn) i j)))
-                              (swap! trials u/long-inc)
-                              (d/transact! cn [{:i*j (* i j) :i i :j j}])
-                              (is (= (* i j) (d/q q* (d/db cn) i j)))))))
-                      (range 5))]
-    (doseq [f futures] @f)
-    (is (= 500 @trials))
-    (is (= 5000 (count (d/datoms @conn :eav))))
-    (dorun (for [i (range 5) j (range 100)]
-             (is (= (+ ^long i ^long j) (d/q q+ (d/db conn) i j)))))
-    (dorun (for [i (range 5) j (range 100)]
-             (is (= (* ^long i ^long j) (d/q q* (d/db conn) i j)))))
-    (d/close conn)
-    (u/delete-files dir)))
-
 (deftest test-with-1
   (let [dir (u/tmp-dir (str "with-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:aka {:db/cardinality :db.cardinality/many}})

@@ -7,6 +7,7 @@
    datalevin.spill-test
    datalevin.hu-test
    datalevin.concurrent-test
+   datalevin.withtxn-test
    datalevin.bits-test
    datalevin.protocol-test
    datalevin.test.core
@@ -57,6 +58,7 @@
           'datalevin.spill-test
           'datalevin.hu-test
           'datalevin.concurrent-test
+          'datalevin.withtxn-test
           'datalevin.search-utils-test
           'datalevin.bits-test
           'datalevin.protocol-test
