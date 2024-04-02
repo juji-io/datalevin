@@ -1,11 +1,12 @@
 (ns datalevin.test1
   "more extensive tests"
   (:require
-   [clojure.test :as t :refer        [is are deftest testing]]
+   [clojure.test :as t]
    datalevin.interpret-test
    datalevin.search-utils-test
    datalevin.spill-test
    datalevin.hu-test
+   datalevin.concurrent-test
    datalevin.bits-test
    datalevin.protocol-test
    datalevin.test.core
@@ -55,6 +56,7 @@
         (t/run-tests
           'datalevin.spill-test
           'datalevin.hu-test
+          'datalevin.concurrent-test
           'datalevin.search-utils-test
           'datalevin.bits-test
           'datalevin.protocol-test

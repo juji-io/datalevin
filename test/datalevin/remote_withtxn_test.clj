@@ -15,7 +15,7 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/new-value"
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/with-transaction [cn conn]
       (is (nil? (d/q query @cn 1)))
       (d/transact! cn [{:db/id 1 :counter 1}])
@@ -28,7 +28,7 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/abort"
         conn (d/create-conn
                dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [{:db/id 1 :counter 1}])
     (d/with-transaction [cn conn]
       (d/transact! cn [{:db/id 1 :counter 2}])
@@ -57,7 +57,7 @@
   (let [dir  "dtlv://datalevin:datalevin@localhost/diff-client"
         conn (d/create-conn
                dir nil
-               {:kv-opts {:flags (conj c/default-env-flags :mapasync)}})]
+               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
     (d/transact! conn [{:db/id 1 :counter 4}])
     (let [count-f
           #(d/with-transaction [cn (d/create-conn
@@ -79,7 +79,7 @@
         conn   (d/create-conn
                  dir nil
                  {:kv-opts {:mapsize 1
-                            :flags   (conj c/default-env-flags :mapasync)}})
+                            :flags   (conj c/default-env-flags :nosync)}})
         query1 '[:find ?d .
                  :in $ ?e
                  :where [?e :content ?d]]

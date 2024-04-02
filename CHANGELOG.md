@@ -7,6 +7,7 @@
 ### Fixed
 - [KV] Broken embedded library on Windows.
 ### Improved
+- [Datalog] more robust concurrent writes on server.
 - [KV] Flags are now sets instead of vectors.
 - Update deps
 

@@ -465,42 +465,6 @@
     (sut/close-kv lmdb)
     (u/delete-files dir)))
 
-(deftest with-transaction-test
-  (let [dir   (u/tmp-dir (str "with-tx-test-" (UUID/randomUUID)))
-        conn  (sut/create-conn
-                dir {}
-                {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
-        query '[:find ?c .
-                :in $ ?e
-                :where [?e :counter ?c]]]
-    (is (nil? (sut/q query @conn 1)))
-
-    (testing "new value is invisible to outside readers"
-      (sut/with-transaction [cn conn]
-        (is (nil? (sut/q query @cn 1)))
-        (sut/transact! cn [{:db/id 1 :counter 1}])
-        (is (= 1 (sut/q query @cn 1)))
-        (is (nil? (sut/q query @conn 1))))
-      (is (= 1 (sut/q query @conn 1))))
-
-    (testing "abort"
-      (sut/with-transaction [cn conn]
-        (sut/transact! cn [{:db/id 1 :counter 2}])
-        (is (= 2 (sut/q query @cn 1)))
-        (sut/abort-transact cn))
-      (is (= 1 (sut/q query @conn 1))))
-
-    (testing "concurrent writes do not overwrite each other"
-      (let [count-f
-            #(sut/with-transaction [cn conn]
-               (let [^long now (sut/q query @cn 1)]
-                 (sut/transact! cn [{:db/id 1 :counter (inc now)}])
-                 (sut/q query @cn 1)))]
-        (is (= (set [2 3 4])
-               (set (pcalls count-f count-f count-f))))))
-    (sut/close conn)
-    (u/delete-files dir)))
-
 (deftest map-resize-clear-test
   (let [dir (u/tmp-dir (str "clear-test-" (UUID/randomUUID)))]
     (dotimes [_ 10]
@@ -673,16 +637,3 @@
                     "fred")))
       (is (= 1 (count (sut/fulltext-datoms @conn1 "peirce"))))
       (sut/close conn1))))
-
-(deftest large-data-concurrent-write-test
-  (let [dir  (u/tmp-dir (str "large-concurrent-" (UUID/randomUUID)))
-        conn (sut/get-conn dir)
-        d1   (apply str (repeat 1000 \a))
-        d2   (apply str (repeat 1000 \a))
-        tx1  [{:a d1 :b 1}]
-        tx2  [{:a d2 :b 2}]
-        f1   (future (sut/transact! conn tx1))]
-    @(future (sut/transact! conn tx2))
-    @f1
-    (is (= 4 (count (sut/datoms @conn :eav))))
-    (sut/close conn)))
