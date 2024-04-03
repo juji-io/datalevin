@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.4 (2024-04-02)
 ### Added
 - [Datalog] `explain` function to show query plan.
 - [Platform] Embedded library for Linux on Aarch64, which is crossed compiled
