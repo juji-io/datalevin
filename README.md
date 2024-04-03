@@ -49,10 +49,11 @@ deleted, they are gone.
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
 [LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). We then
-added an [query optimizer](doc/query.md) and many other features. It retains the
-library property of Datascript, and it is meant to be embedded in applications
-to manage state. Because data is persistent on disk in Datalevin, application
-state can survive application restarts, and data size can be larger than memory.
+added a [cost based query optimizer](doc/query.md) and many other features. It
+retains the library property of Datascript, and it is meant to be embedded in
+applications to manage state. Because data is persistent on disk in Datalevin,
+application state can survive application restarts, and data size can be larger
+than memory.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
 Designed for concurrent read intensive workloads, LMDB is used in many projects,
