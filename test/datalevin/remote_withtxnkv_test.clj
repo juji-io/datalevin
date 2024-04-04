@@ -53,7 +53,7 @@
                  (d/transact-kv db [[:put "a" :counter (inc now)]])
                  (d/get-value db "a" :counter)))
             read-f (fn []
-                     (Thread/sleep (rand-int 1000))
+                     (Thread/sleep (long (rand-int 1000)))
                      (d/get-value lmdb "a" :counter))]
         (is (#{(set [4 5 6]) (set [3 4 5 6])}
               (set (pcalls count-f read-f  read-f
