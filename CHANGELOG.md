@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Added
+- [Datalog] new rule solving algorithm
+- [Datalog] materialized views that are automatically maintained
+
 ## 0.9.4 (2024-04-02)
 ### Added
 - [Datalog] `explain` function to show query plan.
