@@ -13,8 +13,9 @@
    [datalevin.db DB]))
 
 (defn- -differ? [& xs]
-  (let [l (count xs)]
-    (not= (take (/ l 2) xs) (drop (/ l 2) xs))))
+  (let [l  (count xs)
+        hl (/ l 2)]
+    (not= (take hl xs) (drop hl xs))))
 
 (defn- -get-else
   [db e a else-val]

@@ -178,7 +178,6 @@
                              [?e1 :ref ?e2]]]))))
   )
 
-;; https://github.com/tonsky/datascript/issues/218
 (deftest test-false-arguments
   (let [dir   (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
         db    (d/db-with (d/empty-db dir)
@@ -190,10 +189,9 @@
                   :where (is ?id true)]
                 db rules)
            #{[1]}))
-    ;; TODO figure out why this fails
-    #_(is (= (d/q '[:find ?id :in $ %
-                    :where (is ?id false)] db rules)
-             #{[2]}))
+    (is (= (d/q '[:find ?id :in $ %
+                  :where (is ?id false)] db rules)
+           #{[2]}))
     (d/close-db db)
     (u/delete-files dir)))
 
