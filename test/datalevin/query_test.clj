@@ -27,6 +27,14 @@
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
+    (is (= 0 (get-in (d/explain {:run? false}
+                                '[:find ?e
+                                  :in $
+                                  :where
+                                  [?e :name "Ivan"]
+                                  [?e :age 17]]
+                                db)
+                     [:query-graph '$ '?e :mcount])))
     (is (empty? (d/q '[:find ?e
                        :in $
                        :where

@@ -1191,7 +1191,7 @@
                                          (update-in [src e]
                                                     #(datom-n db :free %)))))]
                       (if (zero? ^long (get-in c2 [:graph src e :mcount]))
-                        (reduced nil)
+                        (reduced (assoc c2 :result-set #{}))
                         c2))
                     ;; don't count for single clause
                     (update c :graph
@@ -1202,8 +1202,8 @@
                                 (< 0 fc)
                                 (update-in [src e] #(datom-1 :free %))))))))
               c nodes)]
-        (if (nil? res)
-          (reduced (assoc c :result-set #{}))
+        (if (= #{} (:result-set res))
+          (reduced res)
           res)))
     context graph))
 
@@ -1842,7 +1842,7 @@
            (eduction (filter #(< 1 (count (val %)))))))))
 
 (defn- result-explain
-  [{:keys [result-set plan opt-clauses late-clauses run?] :as context}]
+  [{:keys [graph result-set plan opt-clauses late-clauses run?] :as context}]
   (when *explain*
     (let [{:keys [^long planning-time]} @*explain*
 
@@ -1855,6 +1855,7 @@
               :planning-time (str (format "%.3f" pt) " ms")
               :execution-time (str (format "%.3f" et) " ms")
               :opt-clauses opt-clauses
+              :query-graph graph
               :plan (walk/postwalk
                       (fn [e]
                         (if (instance? Plan e)
