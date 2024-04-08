@@ -1663,7 +1663,7 @@
   (binding [*implicit-source* (get (:sources context) '$)]
     (let [{:keys [result-set] :as context} (build-graph context)]
       (if (= result-set #{})
-        context
+        (do (plan-explain) context)
         (as-> context c
           (build-plan c)
           (do (plan-explain) c)
