@@ -8,7 +8,7 @@
    [clojure.java.io :as io]
    [sci.core :as sci]
    [taoensso.nippy :as nippy]
-   [datalevin.query :as q]
+   [datalevin.query-util :as qu]
    [datalevin.util :as u]
    [datalevin.core]
    [datalevin.analyzer]
@@ -81,7 +81,7 @@
 (defn- qualify-fn [x]
   (if (list? x)
     (let [[f & args] x]
-      (if-let [var (when-not (q/rule-head f) (resolve-var f))]
+      (if-let [var (when-not (qu/rule-head f) (resolve-var f))]
         (apply list (symbol var) args)
         x))
     x))
