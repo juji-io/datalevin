@@ -27,6 +27,14 @@
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?e
+                                             :in $
+                                             :where
+                                             [?e :name "Non-existent"]
+                                             [?e :age 15]]
+                                           db ))
+           0))
     (is (empty? (d/q '[:find ?e
                        :in $
                        :where
@@ -41,6 +49,7 @@
                        [?e :name "Oleg"]]
                      db ))
            #{[37]}))
+    ()
     (is (= (:actual-result-size (d/explain {:run? true}
                                            '[:find ?a
                                              :in $
