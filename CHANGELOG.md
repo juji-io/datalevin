@@ -1,6 +1,17 @@
 # Change Log
 
+## WIP
+
+### Fixed
+- [Datalog] planner generates incorrect step when bound variable is involved in
+  certain cases.
+- [Datalog] `explain` throw when zero result is determined prior to actual
+  planning. [Thx @algoflora]
+### Improved
+- [Datalog] added query graph to `explain` result map.
+
 ## 0.9.4 (2024-04-02)
+
 ### Added
 - [Datalog] `explain` function to show query plan.
 - [Platform] Embedded library for Linux on Aarch64, which is crossed compiled

@@ -529,3 +529,30 @@
            3))
     (d/close-db db)
     (u/delete-files dir)))
+
+#_(deftest extra-bound-var-test
+    (let [dir (u/tmp-dir (str "extra-bound-" (UUID/randomUUID)))
+          db  (-> (d/empty-db
+                    dir
+                    {:user/id {:db/valueType :db.type/long
+                               :db/unique    :db.unique/identity}
+
+                     :entity/uuid {:db/valueType :db.type/uuid
+                                   :db/unique    :db.unique/identity}
+
+                     :entity/user {:db/valueType :db.type/ref}
+
+                     :entity/item {:db/valueType :db.type/long}})
+                  (d/db-with [{:db/id 1 :user/id 1}
+                              {:entity/uuid (UUID/randomUUID)
+                               :entity/user [:user/id 1] :entity/item 5}
+                              {:entity/uuid (UUID/randomUUID)
+                               :entity/user [:user/id 1] :entity/item 5}]))]
+      (is (= #{[2] [3]} (d/q '[:find ?e
+                               :where
+                               [?u :user/id 1]
+                               [?e :entity/user ?u]
+                               [?e :entity/item 5]]
+                             db)))
+      (d/close-db db)
+      (u/delete-files dir)))

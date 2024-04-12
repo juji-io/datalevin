@@ -3,6 +3,7 @@
   (:require
    [clojure.edn :as edn]
    [clojure.set :as set]
+   [clojure.pprint :as pp]
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
@@ -16,7 +17,7 @@
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c])
   (:import
-   [clojure.lang ILookup LazilyPersistentVector]
+   [clojure.lang ILookup LazilyPersistentVector MapEntry]
    [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
@@ -1421,13 +1422,15 @@
   (let [in   (:out last-step)
         cols (conj (:cols last-step) tgt)]
     (case op
-      :vae-scan-e    (RevRefStep. index attr tgt (:out last-step)
-                                  new-key cols *save-intermediate*)
-      :val-eq-scan-e (ValEqStep. index attr tgt (:out last-step)
-                                 new-key cols *save-intermediate*))))
+      :vae-scan-e    (RevRefStep. index attr tgt in new-key
+                                  cols *save-intermediate*)
+      :val-eq-scan-e (ValEqStep. index attr tgt in new-key
+                                 cols *save-intermediate*))))
 
 (defn- rev-ref-plan
   [last-step link-e {:keys [attr tgt]} new-key new-steps]
+  ;; (print "base steps -->")
+  ;; (pp/pprint new-steps)
   (let [index (u/index-of #(= link-e %) (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
@@ -1855,7 +1858,13 @@
               :planning-time (str (format "%.3f" pt) " ms")
               :execution-time (str (format "%.3f" et) " ms")
               :opt-clauses opt-clauses
-              :query-graph graph
+              :query-graph (walk/postwalk
+                             (fn [e]
+                               (if (map? e)
+                                 (apply dissoc e
+                                        (for [[k v] e
+                                              :when (nil? v)] k))
+                                 e)) graph)
               :plan (walk/postwalk
                       (fn [e]
                         (if (instance? Plan e)
@@ -1867,8 +1876,7 @@
                                           (get-in @(:intermediates context)
                                                   [(:out (last steps))
                                                    :tuples-count]))))
-                          e))
-                      plan)
+                          e)) plan)
               :late-clauses late-clauses))))
 
 (defn q
@@ -1890,6 +1898,7 @@
                 (resolve-redudants)
                 (-q true)
                 (collect all-vars))
+            ;; _ (pp/pprint context)
             result
             (cond->> (:result-set context)
               with (mapv #(subvec % 0 result-arity))

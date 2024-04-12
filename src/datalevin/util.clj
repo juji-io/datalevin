@@ -325,9 +325,7 @@
 
 (defn map-fl
   [f coll]
-  (reduce (fn [^FastList acc e]
-            (.add acc (f e))
-            acc)
+  (reduce (fn [^FastList acc e] (.add acc (f e)) acc)
           (FastList.)
           coll))
 
@@ -354,9 +352,8 @@
         (when (== n (bit-count i))
           (vswap! result conj
                   (for [^long j (range 0 len)
-                        :when   (not (zero? (bit-and
-                                              (bit-shift-left 1 j)
-                                              i)))]
+                        :when   (not (zero? (bit-and (bit-shift-left 1 j)
+                                                     i)))]
                     (aget arr j))))))
     @result))
 
@@ -366,25 +363,24 @@
 
 (defn idxs-of
   [pred coll]
-  (->> (map #(when (pred %1) %2) coll (range))
-       (remove nil?)))
+  (sequence (comp (map #(when (pred %1) %2))
+               (remove nil?))
+            coll (range)))
 
 (defn keep-idxs
   "take a set of idxs to keep"
   [kp-idxs-set coll]
   (into []
-        (comp
-          (map-indexed #(when (kp-idxs-set %1) %2))
-          (remove nil?))
+        (comp (map-indexed #(when (kp-idxs-set %1) %2))
+           (remove nil?))
         coll))
 
 (defn remove-idxs
   "take a set of idxs to remove"
   [rm-idxs-set coll]
   (into []
-        (comp
-          (map-indexed #(when-not (rm-idxs-set %1) %2))
-          (remove nil?))
+        (comp (map-indexed #(when-not (rm-idxs-set %1) %2))
+           (remove nil?))
         coll))
 
 (defn array? [^Object x] (some-> x .getClass .isArray))
