@@ -35,6 +35,14 @@
                                   [?e :age 17]]
                                 db)
                      [:query-graph '$ '?e :mcount])))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?e
+                                             :in $
+                                             :where
+                                             [?e :name "Non-existent"]
+                                             [?e :age 15]]
+                                           db ))
+           0))
     (is (empty? (d/q '[:find ?e
                        :in $
                        :where
@@ -49,6 +57,7 @@
                        [?e :name "Oleg"]]
                      db ))
            #{[37]}))
+    ()
     (is (= (:actual-result-size (d/explain {:run? true}
                                            '[:find ?a
                                              :in $
