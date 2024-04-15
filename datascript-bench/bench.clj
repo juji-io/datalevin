@@ -81,16 +81,17 @@
              (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.2\"}
-                  org.lmdbjava/lmdbjava {:mvn/version \"0.8.3\"}
-                  com.taoensso/nippy    {:mvn/version \"3.4.0-beta1\"}
+                  org.lmdbjava/lmdbjava {:mvn/version \"0.9.0\"}
+                  com.taoensso/nippy    {:mvn/version \"3.4.0-RC2\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
-                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.1\"}
-                  org.eclipse.collections/eclipse-collections {:mvn/version \"12.0.0.M3\"}
-                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.8.8\"}
-                  org.clojars.huahaiy/dtlvnative-windows-amd64-shared {:mvn/version \"0.8.8\"}
-                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.8.8\"}
-                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.8.8\"}
+                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.5\"}
+                  org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
+                  org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.9.1\"}
+                  org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu {:mvn/version \"0.9.1\"}
+                  org.clojars.huahaiy/dtlvnative-linux-amd64-shared {:mvn/version \"0.9.1\"}
+                  org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu {:mvn/version \"0.9.1\"}
+                  org.clojars.huahaiy/dtlvnative-macos-amd64-shared {:mvn/version \"0.9.1\"}
                   }}"
                   )
 
@@ -126,11 +127,11 @@
 
 (def default-benchmarks
   [
-   "add-1"
-   "add-5"
-   "add-all"
-   "init"
-   "retract-5"
+   ;; "add-1"
+   ;; "add-5"
+   ;; "add-all"
+   ;; "init"
+   ;; "retract-5"
    "q1"
    "q2"
    "q2-switch"
@@ -151,9 +152,9 @@
 
 (def default-versions
   [
-   ["latest" "datomic"]
-   ["latest" "datascript"]
-   ;; ["0.9.4" "datalevin"]
+   ;; ["latest" "datomic"]
+   ;; ["latest" "datascript"]
+   ["0.9.4" "datalevin"]
    ["latest" "datalevin"]])
 
 

@@ -400,6 +400,12 @@
                           {:kv-opts
                            {:flags (conj c/default-env-flags :nosync)}})]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
+    (is (= [[5 1]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a]
+                                     [#(< ^long % 5)] []))))
+    (is (= [[5]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a]
+                                     [#(< ^long % 5)] [:a]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
                                      [(constantly true)

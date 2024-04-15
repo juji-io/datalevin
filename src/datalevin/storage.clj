@@ -749,19 +749,19 @@
                                 (let [vb (lmdb/next-val iter)
                                       a  (b/read-buffer vb :int)]
                                   (if (= a (aget aids ai))
-                                    (if (skip-aids a)
-                                      (recur (lmdb/has-next-val iter)
-                                             (u/long-inc ai))
-                                      (let [v    (retrieved->v
-                                                   lmdb (b/avg->r vb))
-                                            pred (aid->pred a)]
-                                        (when (or (nil? pred) (pred v))
-                                          (.add vs v)
-                                          (recur (lmdb/has-next-val iter)
-                                                 (u/long-inc ai)))))
+                                    (let [v    (retrieved->v
+                                                 lmdb (b/avg->r vb))
+                                          pred (aid->pred a)]
+                                      (when (or (nil? pred) (pred v))
+                                        (when-not (skip-aids a) (.add vs v))
+                                        (recur (lmdb/has-next-val iter)
+                                               (u/long-inc ai))))
                                     (recur (lmdb/has-next-val iter) ai)))
                                 (when (= ai na)
-                                  (when-not (.isEmpty vs)
+                                  (if (.isEmpty vs)
+                                    (do (.put seen te (r/single-tuples
+                                                        (object-array [])))
+                                        (.add res tuple))
                                     (let [vst (object-array vs)
                                           new (r/join-tuples tuple vst)]
                                       (.put seen te (r/single-tuples vst))
@@ -773,28 +773,24 @@
                                 (let [vb ^ByteBuffer (lmdb/next-val iter)
                                       a  (b/read-buffer (.rewind vb) :int)]
                                   (if (= a (aget aids ai))
-                                    (if (skip-aids a)
+                                    (let [v    (retrieved->v
+                                                 lmdb (b/avg->r vb))
+                                          pred (aid->pred a)
+                                          go?  (or (nil? pred) (pred v))]
                                       (if (many a)
                                         (recur (lmdb/has-next-val iter)
-                                               ai true)
-                                        (recur (lmdb/has-next-val iter)
-                                               (u/long-inc ai) nil))
-                                      (let [v    (retrieved->v
-                                                   lmdb (b/avg->r vb))
-                                            pred (aid->pred a)
-                                            go?  (or (nil? pred) (pred v))]
-                                        (if (many a)
-                                          (recur (lmdb/has-next-val iter)
-                                                 ai
-                                                 (when go?
+                                               ai
+                                               (when go?
+                                                 (if (skip-aids a)
+                                                   true
                                                    ((fnil u/list-add
                                                           (FastList.))
-                                                    dups v)))
-                                          (when go?
-                                            (.add vs v)
-                                            (recur (lmdb/has-next-val iter)
-                                                   (u/long-inc ai)
-                                                   nil)))))
+                                                    dups v))))
+                                        (when go?
+                                          (when-not (skip-aids a) (.add vs v))
+                                          (recur (lmdb/has-next-val iter)
+                                                 (u/long-inc ai)
+                                                 nil))))
                                     (if dups
                                       (do
                                         (when-not (true? dups) (.add vs dups))
