@@ -259,7 +259,7 @@
     (d/transact! conn [{:dev-id "bar"}])
     (d/transact! conn [(assoc (d/entity @conn [:dev-id "foo"])
                               :a-ref [:dev-id "bar"])])
-    (is (= {:db/id 2}
+    (is (= #{(d/entity @conn 2)}
            (:a-ref (d/entity @conn [:dev-id "foo"]))))
     (d/close conn)
     (u/delete-files dir)))
