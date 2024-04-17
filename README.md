@@ -503,7 +503,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 ## :arrows_clockwise: Contact
 
-We appreciate and welcome your contribution or suggestion. Please feel free to
+We appreciate and welcome your contributions or suggestions. Please feel free to
 file issues or pull requests.
 
 If commercial support is needed for Datalevin, talk to us.
