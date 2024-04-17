@@ -960,9 +960,6 @@
         (nil? entity)
         (recur entities new-es)
 
-        (@de-entity? entity)
-        (recur (concatv entities (reverse (@de-entity->txs entity))) new-es)
-
         (map? entity)
         (recur entities (conj! new-es (assoc entity :db/updated-at tx-time)))
 
@@ -1044,7 +1041,7 @@
 
              (@de-entity? entity)
              (recur report
-                    (concatv entities (reverse (@de-entity->txs entity))))
+                    (concatv entities (@de-entity->txs entity)))
 
 
              :let [^DB db      (:db-after report)
