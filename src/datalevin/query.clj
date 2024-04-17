@@ -119,7 +119,7 @@
       out-rel))
 
   (-explain [_ _]
-    (str "Merge " vars " by scanning " attrs ".")))
+    (str "Merge " (vec vars) " by scanning " (vec attrs) ".")))
 
 (defrecord RevRefStep [index attr var in out cols save]
 
