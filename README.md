@@ -207,7 +207,7 @@ for EDN data.
   db
   [[:put misc-table :datalevin "Hello, world!"]
    [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
-                       :source "The Hitchhiker's Guide to the Galaxy"}]
+                        :source "The Hitchhiker's Guide to the Galaxy"}]
    [:put date-table #inst "1991-12-25" "USSR broke apart" :instant]
    [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
 
@@ -276,8 +276,8 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 (require '[datalevin.core :as d])
 
 (def db
-  (-> (d/empty-db nil {:user/handle  #:db {:valueType :db.type/string
-                                           :unique    :db.unique/identity}
+  (-> (d/empty-db nil {:user/handle  #:db{:valueType :db.type/string
+                                          :unique    :db.unique/identity}
                        :user/friends #:db{:valueType   :db.type/ref
                                           :cardinality :db.cardinality/many}})
       (d/db-with [{:user/handle  "ava"
