@@ -5,8 +5,9 @@
 ### Fixed
 - [Datalog] planner generates incorrect step when bound variable is involved in
   certain cases.
-- [Datalog] `explain` throw when zero result is determined prior to actual
-  planning. [Thx @algoflora]
+- [Datalog] `explain` throws when zero result is determined prior to actual
+  planning. [Thx @aldebogdanov]
+- [Datalog] regression in staged entity transactions for refs, #244, [Thx @den1k]
 ### Improved
 - [Datalog] added query graph to `explain` result map.
 
