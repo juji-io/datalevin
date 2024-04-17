@@ -406,6 +406,18 @@
     (is (= [[5]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a]
                                      [#(< ^long % 5)] [:a]))))
+    (is (= [[5 1] [8 7]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
+                                     [(constantly true)
+                                      (constantly true)] [:b]))))
+    (is (= [[8 7]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
+                                     [(constantly true)
+                                      #(s/starts-with? % "8")] [:b]))))
+    (is (= [[5] [8]]
+           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
+                                     [(constantly true)
+                                      (constantly true)] [:a :b]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
            (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
                                      [(constantly true)

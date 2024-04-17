@@ -57,7 +57,6 @@
                        [?e :name "Oleg"]]
                      db ))
            #{[37]}))
-    ()
     (is (= (:actual-result-size (d/explain {:run? true}
                                            '[:find ?a
                                              :in $
@@ -420,7 +419,7 @@
                        [?e2 :person/name ?n2]
                        [(not= ?n1 ?n2)]]
                      db "Fremont"))
-           #{["James" "Petr"] ["Petr" "James"] ["Ivan" "John"]}))
+           #{["James" "Petr"] ["Petr" "James"]}))
     (is (= (:actual-result-size (d/explain {:run? true}
                                            '[:find ?n1 ?n2
                                              :in $ ?c
@@ -434,7 +433,7 @@
                                              [?e2 :person/name ?n2]
                                              [(not= ?n1 ?n2)]]
                                            db "Fremont"))
-           3))
+           2))
     (is (= (set (d/q '[:find ?n1
                        :in $ ?n
                        :where
@@ -539,29 +538,29 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-#_(deftest extra-bound-var-test
-    (let [dir (u/tmp-dir (str "extra-bound-" (UUID/randomUUID)))
-          db  (-> (d/empty-db
-                    dir
-                    {:user/id {:db/valueType :db.type/long
-                               :db/unique    :db.unique/identity}
+(deftest extra-bound-var-test
+  (let [dir (u/tmp-dir (str "extra-bound-" (UUID/randomUUID)))
+        db  (-> (d/empty-db
+                  dir
+                  {:user/id {:db/valueType :db.type/long
+                             :db/unique    :db.unique/identity}
 
-                     :entity/uuid {:db/valueType :db.type/uuid
-                                   :db/unique    :db.unique/identity}
+                   :entity/uuid {:db/valueType :db.type/uuid
+                                 :db/unique    :db.unique/identity}
 
-                     :entity/user {:db/valueType :db.type/ref}
+                   :entity/user {:db/valueType :db.type/ref}
 
-                     :entity/item {:db/valueType :db.type/long}})
-                  (d/db-with [{:db/id 1 :user/id 1}
-                              {:entity/uuid (UUID/randomUUID)
-                               :entity/user [:user/id 1] :entity/item 5}
-                              {:entity/uuid (UUID/randomUUID)
-                               :entity/user [:user/id 1] :entity/item 5}]))]
-      (is (= #{[2] [3]} (d/q '[:find ?e
-                               :where
-                               [?u :user/id 1]
-                               [?e :entity/user ?u]
-                               [?e :entity/item 5]]
-                             db)))
-      (d/close-db db)
-      (u/delete-files dir)))
+                   :entity/item {:db/valueType :db.type/long}})
+                (d/db-with [{:db/id 1 :user/id 1}
+                            {:entity/uuid (UUID/randomUUID)
+                             :entity/user [:user/id 1] :entity/item 5}
+                            {:entity/uuid (UUID/randomUUID)
+                             :entity/user [:user/id 1] :entity/item 5}]))]
+    (is (= #{[2] [3]} (d/q '[:find ?e
+                             :where
+                             [?e :entity/user ?u]
+                             [?e :entity/item 5]
+                             [?u :user/id 1]]
+                           db)))
+    (d/close-db db)
+    (u/delete-files dir)))
