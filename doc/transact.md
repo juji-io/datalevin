@@ -51,7 +51,7 @@ transactions actually slow writes down significantly due to the thread switching
 overhead.
 
 However, transacting Datalog data involves a great number of data transformation
-and integrity checks, hence it can be slow. When initialize a DB with data, it
+and integrity checks, hence it can be slow. When initializing a DB with data, it
 may not be necessary to pay the price of this overhead.
 
 ### By `init-db`
