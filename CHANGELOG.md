@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.5 (2024-04-17)
 
 ### Fixed
 - [Datalog] planner generates incorrect step when bound variable is involved in
