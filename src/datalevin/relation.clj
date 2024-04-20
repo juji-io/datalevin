@@ -1,6 +1,7 @@
 (ns ^:no-doc datalevin.relation
   (:require
    [clojure.pprint :as pp]
+   [datalevin.parser :as dp]
    [datalevin.util :as u :refer [raise]]
    [datalevin.timeout :as timeout])
   (:import
@@ -25,6 +26,12 @@
   (Relation. attrs tuples))
 
 ;; Relation algebra
+
+(defn empty-rel
+  ^Relation [binding]
+  (let [vars (->> (dp/collect-vars-distinct binding)
+                  (map :symbol))]
+    (relation! (zipmap vars (range)) (FastList.))))
 
 (defn typed-aget [a i] (aget ^objects a ^Long i))
 

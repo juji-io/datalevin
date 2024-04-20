@@ -1,10 +1,21 @@
 (ns ^:no-doc datalevin.rules
-  "Bottom-up rule evaluation engine"
+  "Rules evaluation engine"
   (:require
+   [clojure.edn :as edn]
    [clojure.walk :as walk]
+   [datalevin.parser :as dp]
    [datalevin.query-util :as qu]
    [datalevin.util :as u :refer [raise cond+ conjv concatv]]
    [datalevin.relation :as r]))
+
+(defn parse-rules
+  [rules]
+  (let [rules (if (string? rules) (edn/read-string rules) rules)]
+    (dp/parse-rules rules) ;; validation
+    (group-by ffirst rules)))
+
+(defn solve-rule
+  [context clause])
 
 ;; (def rule-seqid (atom 0))
 
@@ -110,6 +121,3 @@
                                  (next stack))
                                rel))))))))
           rel))))
-
-(defn solve-rule
-  [context clause])

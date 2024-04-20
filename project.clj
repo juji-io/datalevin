@@ -7,10 +7,10 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
-   [cheshire "5.12.0"]
+   [cheshire "5.13.0"]
    [com.cognitect/transit-clj "1.0.333"]
-   [com.fasterxml.jackson.core/jackson-core "2.15.3"]
-   [com.fasterxml.jackson.core/jackson-databind "2.15.3"]
+   [com.fasterxml.jackson.core/jackson-core "2.17.0"]
+   [com.fasterxml.jackson.core/jackson-databind "2.17.0"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.16"]
    [com.taoensso/nippy "3.4.0-RC2"]
@@ -38,7 +38,7 @@
    [org.graalvm.nativeimage/svm "22.3.1"]
    [org.graalvm.nativeimage/library-support "22.3.1"]
    [org.lmdbjava/lmdbjava "0.9.0"]
-   [org.roaringbitmap/RoaringBitmap "1.0.5"]]
+   [org.roaringbitmap/RoaringBitmap "1.0.6"]]
   :dependencies
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]

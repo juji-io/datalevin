@@ -1,9 +1,7 @@
 (ns ^:no-doc datalevin.query
   "Datalog query engine"
   (:require
-   [clojure.edn :as edn]
    [clojure.set :as set]
-   [clojure.pprint :as pp]
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
@@ -170,20 +168,7 @@
 
 (defrecord Clause [val var range count attrs attr pred])
 
-
-;;
-
-(defn parse-rules
-  [rules]
-  (let [rules (if (string? rules) (edn/read-string rules) rules)]
-    (dp/parse-rules rules) ;; validation
-    (group-by ffirst rules)))
-
-(defn empty-rel
-  ^Relation [binding]
-  (let [vars (->> (dp/collect-vars-distinct binding)
-                  (map :symbol))]
-    (r/relation! (zipmap vars (range)) (FastList.))))
+;; binding
 
 (defprotocol IBinding
   ^Relation (in->rel [binding value]))
@@ -205,7 +190,7 @@
       (raise "Cannot bind value " coll " to collection " (dp/source binding)
              {:error :query/binding, :value coll, :binding (dp/source binding)})
       (empty? coll)
-      (empty-rel binding)
+      (r/empty-rel binding)
       :else
       (transduce
         (map #(in->rel (:binding binding) %))
@@ -233,7 +218,7 @@
     (update context :sources assoc (get-in binding [:variable :symbol]) value)
     (and (instance? BindScalar binding)
          (instance? RulesVar (:variable binding)))
-    (assoc context :rules (parse-rules value))
+    (assoc context :rules (rl/parse-rules value))
     :else
     (update context :rels conj (in->rel binding value))))
 
@@ -249,6 +234,8 @@
 (def ^{:dynamic true
        :doc     "Default pattern source. Lookup refs, patterns, rules will be resolved with it"}
   *implicit-source* nil)
+
+;; hash join
 
 (defn getter-fn
   [attrs attr]
@@ -554,9 +541,9 @@
                                           (doto (FastList.) (.add tuple)))
                              (in->rel binding val)))]
             (if (empty? rels)
-              (r/prod-rel production (empty-rel binding))
+              (r/prod-rel production (r/empty-rel binding))
               (reduce r/sum-rel rels)))
-          (r/prod-rel (assoc production :tuples []) (empty-rel binding)))]
+          (r/prod-rel (assoc production :tuples []) (r/empty-rel binding)))]
     (update context :rels collapse-rels new-rel)))
 
 (defn resolve-pattern-lookup-refs
@@ -736,6 +723,8 @@
           (resolve-clause context (next clause)))
         (update context :rels collapse-rels (rl/solve-rule context clause)))
       (-resolve-clause context clause))))
+
+;; optimizer
 
 (defn- or-join-var?
   [clause s]
@@ -1256,8 +1245,6 @@
 
 (defn- rev-ref-plan
   [db last-step link-e {:keys [attr tgt]} new-key new-steps]
-  ;; (print "base steps -->")
-  ;; (pp/pprint new-steps)
   (let [index (u/index-of #(= link-e %) (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
@@ -1725,7 +1712,6 @@
                 (resolve-redudants)
                 (-q true)
                 (collect all-vars))
-            ;; _ (pp/pprint context)
             result
             (cond->> (:result-set context)
               with (mapv #(subvec % 0 result-arity))
