@@ -231,7 +231,7 @@
     (u/delete-files dir)))
 
 (deftest entity-as-value-test
-  (let [dir  (u/tmp-dir (str "comparison-test-" (UUID/randomUUID)))
+  (let [dir  (u/tmp-dir (str "entity-as-value-test-" (UUID/randomUUID)))
         conn (d/create-conn dir
                             {:id {:db/unique    :db.unique/identity
                                   :db/valueType :db.type/string}})]
@@ -244,5 +244,22 @@
     (d/transact! conn [{:id "ent-b" :some-edn :replace}])
     (is (= 3 (count (d/datoms @conn :eav))))
     (is (= :replace (:some-edn (d/entity @conn [:id "ent-b"]))))
+    (d/close conn)
+    (u/delete-files dir)))
+
+(deftest staged-entity-refs-test
+  (let [dir  (u/tmp-dir (str "staged-entity-ref-test-" (UUID/randomUUID)))
+        conn (d/create-conn dir
+                            {:dev-id {:db/valueType :db.type/string
+                                      :db/unique    :db.unique/identity}
+                             :a-ref  {:db/valueType   :db.type/ref
+                                      :db/cardinality :db.cardinality/many}})]
+
+    (d/transact! conn [{:dev-id "foo"}])
+    (d/transact! conn [{:dev-id "bar"}])
+    (d/transact! conn [(assoc (d/entity @conn [:dev-id "foo"])
+                              :a-ref [:dev-id "bar"])])
+    (is (= #{(d/entity @conn 2)}
+           (:a-ref (d/entity @conn [:dev-id "foo"]))))
     (d/close conn)
     (u/delete-files dir)))

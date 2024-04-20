@@ -8,7 +8,7 @@
 </p>
 <p align="center">
 <a href="https://github.com/juji-io/datalevin/actions"><img
-src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.4"
+src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.5"
 alt="datalevin linux/macos amd64 build status"></img></a>
 <a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
 <a href="https://cirrus-ci.com/github/juji-io/datalevin"><img src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg"
@@ -207,7 +207,7 @@ for EDN data.
   db
   [[:put misc-table :datalevin "Hello, world!"]
    [:put misc-table 42 {:saying "So Long, and thanks for all the fish"
-                       :source "The Hitchhiker's Guide to the Galaxy"}]
+                        :source "The Hitchhiker's Guide to the Galaxy"}]
    [:put date-table #inst "1991-12-25" "USSR broke apart" :instant]
    [:put date-table #inst "1989-11-09" "The fall of the Berlin Wall" :instant]])
 
@@ -276,8 +276,8 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 (require '[datalevin.core :as d])
 
 (def db
-  (-> (d/empty-db nil {:user/handle  #:db {:valueType :db.type/string
-                                           :unique    :db.unique/identity}
+  (-> (d/empty-db nil {:user/handle  #:db{:valueType :db.type/string
+                                          :unique    :db.unique/identity}
                        :user/friends #:db{:valueType   :db.type/ref
                                           :cardinality :db.cardinality/many}})
       (d/db-with [{:user/handle  "ava"
@@ -354,6 +354,39 @@ documentation](https://cljdoc.org/d/datalevin/datalevin) for more details.
 You may also consult online materials for Datascript or Datomic®, as the Datalog API is
 similar.
 
+## :rocket: Status
+
+Datalevin is extensively tested with property-based testing. It is also used
+in production at [Juji](https://juji.io).
+
+Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/datascript-bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
+
+<p align="center">
+<img src="datascript-bench/Read.png" alt="query benchmark" height="300"></img>
+<img src="datascript-bench/Write.png" alt="write benchmark" height="300"></img>
+</p>
+
+In this benchmark, both Datomic and Datascript are running in in-memory mode, as
+they require another database for persistence. The `init` write condition, i.e.
+bulk loading prepared datoms, is not available in Datomic. Datalevin write here
+is configured with LMDB `nosync` mode to better match the in-memory conditions,
+i.e. the operating system is responsible for flushing data to disk.
+
+In all benchmarked queries, Datalevin is the fastest among the three tested
+systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
+Datomic do not. Datalevin also has a caching layer for index access.
+
+Writes are slower, as expected, as Datalevin does write to disk even though sync
+is not explicitly called, while others are purely
+in memory. The bulk loading speed is good, writing 100K datoms to disk in less
+than 0.2 seconds; the same data can also be transacted with all the integrity
+checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
+one datom at a time, it takes longer time. Therefore, it is preferable to have
+batch transactions.
+
+See [here](https://github.com/juji-io/datalevin/tree/master/datascript-bench)
+for a detailed analysis of the results.
+
 ## :birthday: Upgrade
 
 Please read
@@ -371,7 +404,7 @@ adjust the priorities based on feedback.
 * 0.7.0 ~~Explicit transactions, lazy results loading, and results spill to disk when memory is low.~~ [Done 2022/12/15]
 * 0.8.0 ~~Long ids; composite tuples; enhanced search engine ingestion speed.~~ [Done 2023/01/19]
 * 0.9.0 ~~New Datalog query engine with improved performance.~~ [Done 2024/03/09]
-* 1.0.0 New rule algorithm, incremental view maintenance, documentation in book form.
+* 1.0.0 New rule evaluation algorithm, incremental view maintenance, documentation in book form.
 * 1.1.0 Option to store data in compressed form.
 * 2.0.0 Dense numeric vector indexing and similarity search.
 * 2.1.0 Transaction log storage and access API.
@@ -384,10 +417,12 @@ adjust the priorities based on feedback.
 ## :floppy_disk: Differences from Datascript
 
 Datascript is developed by [Nikita Prokopov](https://tonsky.me/) that "is built
-totally from scratch and is not related by any means to" Datomic®. Datalevin started out as a port of Datascript to LMDB, but differs from Datascript in more significant ways
-than just the difference in data durability and running mode:
+totally from scratch and is not related by any means to" Datomic®. Datalevin
+started out as a port of Datascript to LMDB, but differs from Datascript in more
+significant ways than just the difference in data durability and running mode:
 
-* Datalevin has a cost based query optimizer, so qureies are truly declarative and clause ordering does not affect query performance.
+* Datalevin has a cost based query optimizer, so queries are truly declarative
+  and clause ordering does not affect query performance.
 
 * Datalevin is not an immutable database, and there is no
   "database as a value" feature.  Since history is not kept, transaction ids are
@@ -426,39 +461,6 @@ than just the difference in data durability and running mode:
 
 * Has no features that are applicable only for in-memory DBs, such as DB as an
   immutable data structure, DB pretty print, etc.
-
-## :rocket: Status
-
-Datalevin is extensively tested with property-based testing. It is also used
-in production at [Juji](https://juji.io).
-
-Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/datascript-bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
-
-<p align="center">
-<img src="datascript-bench/Read.png" alt="query benchmark" height="300"></img>
-<img src="datascript-bench/Write.png" alt="write benchmark" height="300"></img>
-</p>
-
-In this benchmark, both Datomic and Datascript are running in in-memory mode, as
-they require another database for persistence. The `init` write condition, i.e.
-bulk loading prepared datoms, is not available in Datomic. Datalevin write here
-is configured with LMDB `nosync` mode to better match the in-memory conditions,
-i.e. the operating system is responsible for flushing data to disk.
-
-In all benchmarked queries, Datalevin is the fastest among the three tested
-systems, as Datalevin has a [cost based query optimizer](doc/query.md) while Datascript and
-Datomic do not. Datalevin also has a caching layer for index access.
-
-Writes are slower, as expected, as Datalevin does write to disk even though sync
-is not explicitly called, while others are purely
-in memory. The bulk loading speed is good, writing 100K datoms to disk in less
-than 0.2 seconds; the same data can also be transacted with all the integrity
-checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
-one datom at a time, it takes longer time. Therefore, it is preferable to have
-batch transactions.
-
-See [here](https://github.com/juji-io/datalevin/tree/master/datascript-bench)
-for a detailed analysis of the results.
 
 ## :baby: Limitations
 
@@ -503,7 +505,7 @@ If you are interested in using the dialect of Datalog pioneered by Datomic®, he
 
 ## :arrows_clockwise: Contact
 
-We appreciate and welcome your contribution or suggestion. Please feel free to
+We appreciate and welcome your contributions or suggestions. Please feel free to
 file issues or pull requests.
 
 If commercial support is needed for Datalevin, talk to us.

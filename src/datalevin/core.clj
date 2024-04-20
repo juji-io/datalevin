@@ -430,9 +430,9 @@ Only usable for debug output.
 
      Return a map looks like this:
 
-          {:planning-time \"0.983 ms\",
-           :actual-result-size 30,
-           :execution-time \"0.150 ms\",
+          {:planning-time \"1.384 ms\",
+           :actual-result-size 2,
+           :execution-time \"0.202 ms\",
            :opt-clauses
            [[?e1 :person/city \"Fremont\"]
             [?e :school/city \"Fremont\"]
@@ -441,31 +441,64 @@ Only usable for debug output.
             [?e2 :person/age ?a]
             [?e2 :person/school ?e]
             [?e2 :person/name ?n2]],
-           :late-clauses [[(not= ?n1 ?n2)]],
+           :query-graph
+           {$
+            {?e1
+             {:links
+              [{:type :val-eq,
+                :tgt ?e2,
+                :var ?a,
+                :attrs {?e1 :person/age, ?e2 :person/age}}],
+              :mpath [:bound :person/city],
+              :mcount 2,
+              :bound #:person{:city {:val \"Fremont\", :count 2}},
+              :free
+              #:person{:name {:var ?n1, :count 3}, :age {:var ?a, :count 3}}},
+             ?e
+             {:links [{:type :_ref, :tgt ?e2, :attr :person/school}],
+              :mpath [:bound :school/city],
+              :mcount 1,
+              :bound #:school{:city {:val \"Fremont\", :count 1}}},
+             ?e2
+             {:links
+              [{:type :ref, :tgt ?e, :attr :person/school}
+               {:type :val-eq,
+                :tgt ?e1,
+                :var ?a,
+                :attrs {?e1 :person/age, ?e2 :person/age}}],
+              :mpath [:free :person/school],
+              :mcount 4,
+              :free
+              #:person{:age {:var ?a, :count 5},
+                       :school {:var ?e, :count 4},
+                       :name {:var ?n2, :count 5}}}}},
            :plan
            {$
-            [({:steps [\"Initialize [?e] by :school/city = Fremont.\"],
-               :cost 10,
-               :size 10,
-               :actual-size 10}
+            [({:steps
+               [\"Initialize [?e1] by :person/city = Fremont.\"
+                \"Merge [?a ?n1] by scanning [:person/age :person/name].\"],
+               :cost 6,
+               :size 2,
+               :actual-size 2}
               {:steps
-               [\"Merge ?e2 by scanning reverse reference of :person/school.\"
-                \"Merge [?a ?n2] by scanning [:person/age :person/name].\"],
-               :cost 70,
-               :size 20,
-               :actual-size 30}
-              {:steps
-               [\"Merge ?e1 by equal values of :person/age.\"
-                \"Merge [?e1 ?n1] by scanning [:person/city :person/name].\"],
-               :cost 130,
-               :size 20,
-               :actual-size 60})]}}
+               [\"Merge ?e2 by equal values of :person/age.\"
+                \"Merge [?e ?n2] by scanning [:person/school :person/name].\"],
+               :cost 15,
+               :size 3,
+               :actual-size 4}
+              {:steps [\"Merge [?e] by scanning [:school/city].\"],
+               :cost 18,
+               :size 3,
+               :actual-size 4})]},
+           :late-clauses [[(not= ?n1 ?n2)]]}
+
 
   * `:planning-time` includes all the time spent up to when the plan is generated.
   * `:execution-time` is the time between the generated plan and result return.
   * `:actual-result-size` is the number of tuples generated.
   * `:opt-cluases` includes all the clauses that the optimizer worked on.
   * `:late-clauses` are the clauses that are ignored by the optimizer and are processed afterwards.
+  * `:query-graph` is a graph data structure parsed from the query, annotated with `:count`, i.e. estimated number of datoms matching a query clause. The optimizer builds its plan using this graph.
   * `:plan` are grouped by data sources, then by the connected component of the query graph.
       - `:steps` are the descriptions of the processing steps planned.
       - `:cost` is the accumulated estimated cost, which determines the plan.

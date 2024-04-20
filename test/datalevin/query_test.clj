@@ -27,6 +27,22 @@
                             { :db/id 3, :name "Oleg", :age 37
                              :aka    ["bigmac"]}
                             { :db/id 4, :name "John" :age 15 }]))]
+    (is (= 0 (get-in (d/explain {:run? false}
+                                '[:find ?e
+                                  :in $
+                                  :where
+                                  [?e :name "Ivan"]
+                                  [?e :age 17]]
+                                db)
+                     [:query-graph '$ '?e :mcount])))
+    (is (= (:actual-result-size (d/explain {:run? true}
+                                           '[:find ?e
+                                             :in $
+                                             :where
+                                             [?e :name "Non-existent"]
+                                             [?e :age 15]]
+                                           db ))
+           0))
     (is (empty? (d/q '[:find ?e
                        :in $
                        :where
@@ -403,7 +419,7 @@
                        [?e2 :person/name ?n2]
                        [(not= ?n1 ?n2)]]
                      db "Fremont"))
-           #{["James" "Petr"] ["Petr" "James"] ["Ivan" "John"]}))
+           #{["James" "Petr"] ["Petr" "James"]}))
     (is (= (:actual-result-size (d/explain {:run? true}
                                            '[:find ?n1 ?n2
                                              :in $ ?c
@@ -417,7 +433,7 @@
                                              [?e2 :person/name ?n2]
                                              [(not= ?n1 ?n2)]]
                                            db "Fremont"))
-           3))
+           2))
     (is (= (set (d/q '[:find ?n1
                        :in $ ?n
                        :where
@@ -519,5 +535,32 @@
                                              [(< ?a ?a2)]
                                              [?e2 :person/name ?n]] db "Ivan"))
            3))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest extra-bound-var-test
+  (let [dir (u/tmp-dir (str "extra-bound-" (UUID/randomUUID)))
+        db  (-> (d/empty-db
+                  dir
+                  {:user/id {:db/valueType :db.type/long
+                             :db/unique    :db.unique/identity}
+
+                   :entity/uuid {:db/valueType :db.type/uuid
+                                 :db/unique    :db.unique/identity}
+
+                   :entity/user {:db/valueType :db.type/ref}
+
+                   :entity/item {:db/valueType :db.type/long}})
+                (d/db-with [{:db/id 1 :user/id 1}
+                            {:entity/uuid (UUID/randomUUID)
+                             :entity/user [:user/id 1] :entity/item 5}
+                            {:entity/uuid (UUID/randomUUID)
+                             :entity/user [:user/id 1] :entity/item 5}]))]
+    (is (= #{[2] [3]} (d/q '[:find ?e
+                             :where
+                             [?e :entity/user ?u]
+                             [?e :entity/item 5]
+                             [?u :user/id 1]]
+                           db)))
     (d/close-db db)
     (u/delete-files dir)))

@@ -1,11 +1,24 @@
 # Change Log
 
 ## WIP
+
 ### Added
 - [Datalog] new rule solving algorithm
 - [Datalog] materialized views that are automatically maintained
 
+## 0.9.5 (2024-04-17)
+
+### Fixed
+- [Datalog] planner generates incorrect step when bound variable is involved in
+  certain cases.
+- [Datalog] `explain` throws when zero result is determined prior to actual
+  planning. [Thx @aldebogdanov]
+- [Datalog] regression in staged entity transactions for refs, #244, [Thx @den1k]
+### Improved
+- [Datalog] added query graph to `explain` result map.
+
 ## 0.9.4 (2024-04-02)
+
 ### Added
 - [Datalog] `explain` function to show query plan.
 - [Platform] Embedded library for Linux on Aarch64, which is crossed compiled

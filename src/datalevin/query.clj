@@ -3,6 +3,7 @@
   (:require
    [clojure.edn :as edn]
    [clojure.set :as set]
+   [clojure.pprint :as pp]
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
@@ -18,7 +19,7 @@
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c])
   (:import
-   [clojure.lang ILookup LazilyPersistentVector]
+   [clojure.lang ILookup LazilyPersistentVector MapEntry]
    [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
@@ -120,7 +121,7 @@
       out-rel))
 
   (-explain [_ _]
-    (str "Merge " vars " by scanning " attrs ".")))
+    (str "Merge " (vec vars) " by scanning " (vec attrs) ".")))
 
 (defrecord RevRefStep [index attr var in out cols save]
 
@@ -1020,7 +1021,7 @@
                                          (update-in [src e]
                                                     #(datom-n db :free %)))))]
                       (if (zero? ^long (get-in c2 [:graph src e :mcount]))
-                        (reduced nil)
+                        (reduced (assoc c2 :result-set #{}))
                         c2))
                     ;; don't count for single clause
                     (update c :graph
@@ -1031,8 +1032,8 @@
                                 (< 0 fc)
                                 (update-in [src e] #(datom-1 :free %))))))))
               c nodes)]
-        (if (nil? res)
-          (reduced (assoc c :result-set #{}))
+        (if (= #{} (:result-set res))
+          (reduced res)
           res)))
     context graph))
 
@@ -1110,7 +1111,6 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        ;; TODO consider hash join as alternative for bound values.
         (let [bound1 (->> (dissoc bound attr)
                           (mapv (fn [[a {:keys [val] :as b}]]
                                   [a (-> b
@@ -1199,7 +1199,7 @@
       p)))
 
 (defn- merge-scan-step
-  [last-step index new-key new-steps skip-attr]
+  [db last-step index new-key new-steps skip-attr]
   (map->MergeScanStep
     (apply assoc {:save  *save-intermediate*
                   :index index
@@ -1215,58 +1215,59 @@
                 :preds [(add-back-range v s)]
                 :cols  (conj (:cols last-step) a)])
              (let [[s1 s2] new-steps
-                   skips   (:skips s2)
-                   attr    (:attr s1)
-                   v       (peek (:vars s1))
+                   attr1   (:attr s1)
+                   val1    (:val s1)
+                   bound?  (some? val1)
+                   v1      (peek (:vars s1))
                    attrs2  (:attrs s2)
-                   vars2   (:vars s2)
-                   preds2  (:preds s2)
-                   [attrs vars preds]
-                   (if skip-attr
-                     (if (= attr skip-attr)
-                       [attrs2 vars2 preds2]
-                       (let [idx #{(u/index-of #(= skip-attr %) attrs2)}]
-                         [(concatv [attr] (u/remove-idxs idx attrs2))
-                          (concatv [v] (u/remove-idxs idx vars2))
-                          (concatv [(add-back-range v s1)]
-                                   (u/remove-idxs idx preds2))]))
-                     [(concatv [attr] attrs2)
-                      (concatv [v] vars2)
-                      (concatv [(add-back-range v s1)] preds2)])]
+                   vars-m  (let [m (zipmap attrs2 (:vars s2))]
+                             (if bound? m (assoc m attr1 v1)))
+                   preds-m (assoc (zipmap attrs2 (:preds s2))
+                                  attr1
+                                  (cond-> (add-back-range v1 s1)
+                                    bound? (add-pred #(= % val1))))
+                   schema  (db/-schema db)
+                   attrs   (->> (conj (:attrs s2) attr1)
+                                (sort-by #(-> % schema :db/aid))
+                                (remove #{(:attr last-step)}))
+                   skips   (cond-> (conj (:skips s2) skip-attr)
+                             bound? (conj attr1))]
                [:attrs attrs
-                :vars  vars
+                :vars  (->> attrs (replace vars-m) (remove keyword?))
+                :preds (->> attrs (replace preds-m) )
                 :skips skips
-                :preds preds
                 :cols  (into (:cols last-step)
                              (remove (set skips)) attrs)])))))
 
 (defn- ref-plan
-  [last-step {:keys [attr]} new-key new-steps]
+  [db last-step {:keys [attr]} new-key new-steps]
   (let [index (u/index-of #(= attr %) (:cols last-step))]
-    [(merge-scan-step last-step index new-key new-steps nil)]))
+    [(merge-scan-step db last-step index new-key new-steps nil)]))
 
 (defn- link-step
   [op last-step index attr tgt new-key]
   (let [in   (:out last-step)
         cols (conj (:cols last-step) tgt)]
     (case op
-      :vae-scan-e    (RevRefStep. index attr tgt (:out last-step)
-                                  new-key cols *save-intermediate*)
-      :val-eq-scan-e (ValEqStep. index attr tgt (:out last-step)
-                                 new-key cols *save-intermediate*))))
+      :vae-scan-e    (RevRefStep. index attr tgt in new-key
+                                  cols *save-intermediate*)
+      :val-eq-scan-e (ValEqStep. index attr tgt in new-key
+                                 cols *save-intermediate*))))
 
 (defn- rev-ref-plan
-  [last-step link-e {:keys [attr tgt]} new-key new-steps]
+  [db last-step link-e {:keys [attr tgt]} new-key new-steps]
+  ;; (print "base steps -->")
+  ;; (pp/pprint new-steps)
   (let [index (u/index-of #(= link-e %) (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step
        (merge-scan-step
-         step (dec (count (:cols step))) new-key new-steps attr)])))
+         db step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- val-eq-plan
-  [last-step {:keys [attrs tgt var]} link-e new-key new-steps]
+  [db last-step {:keys [attrs tgt var]} link-e new-key new-steps]
   (let [cols  (:cols last-step)
         index (if (instance? RevRefStep last-step)
                 (u/index-of #(= var %) cols)
@@ -1277,7 +1278,7 @@
       [step]
       [step
        (merge-scan-step
-         step (dec (count (:cols step))) new-key new-steps attr)])))
+         db step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- max-domain-cardinality
   [db {:keys [attr attrs]}]
@@ -1305,14 +1306,14 @@
            ^long (estimate-scan-v-cost (peek cur-steps) res-size))))))
 
 (defn- e-plan
-  [prev-plan link-e link new-key new-base-plan result-size]
+  [db prev-plan link-e link new-key new-base-plan result-size]
   (let [new-steps (:steps new-base-plan)
         last-step (peek (:steps prev-plan))
         cur-steps
         (case (:type link)
-          :ref    (ref-plan last-step link new-key new-steps)
-          :_ref   (rev-ref-plan last-step link-e link new-key new-steps)
-          :val-eq (val-eq-plan last-step link link-e new-key new-steps))]
+          :ref    (ref-plan db last-step link new-key new-steps)
+          :_ref   (rev-ref-plan db last-step link-e link new-key new-steps)
+          :val-eq (val-eq-plan db last-step link link-e new-key new-steps))]
     (Plan. cur-steps
            (+ ^long (:cost prev-plan)
               ^long (estimate-e-plan-cost prev-plan cur-steps result-size))
@@ -1350,7 +1351,7 @@
   (let [link   (some #(when (= new-e (:tgt %)) %)
                      (get-in nodes [link-e :links]))
         size   (estimate-join-size db link (:size prev-plan) new-base-plan)
-        e-plan (e-plan prev-plan link-e link new-key new-base-plan size)
+        e-plan (e-plan db prev-plan link-e link new-key new-base-plan size)
         h-plan (h-plan prev-plan new-base-plan new-key size)]
     (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
@@ -1492,7 +1493,7 @@
   (binding [*implicit-source* (get (:sources context) '$)]
     (let [{:keys [result-set] :as context} (build-graph context)]
       (if (= result-set #{})
-        context
+        (do (plan-explain) context)
         (as-> context c
           (build-plan c)
           (do (plan-explain) c)
@@ -1671,7 +1672,7 @@
            (eduction (filter #(< 1 (count (val %)))))))))
 
 (defn- result-explain
-  [{:keys [result-set plan opt-clauses late-clauses run?] :as context}]
+  [{:keys [graph result-set plan opt-clauses late-clauses run?] :as context}]
   (when *explain*
     (let [{:keys [^long planning-time]} @*explain*
 
@@ -1684,6 +1685,13 @@
               :planning-time (str (format "%.3f" pt) " ms")
               :execution-time (str (format "%.3f" et) " ms")
               :opt-clauses opt-clauses
+              :query-graph (walk/postwalk
+                             (fn [e]
+                               (if (map? e)
+                                 (apply dissoc e
+                                        (for [[k v] e
+                                              :when (nil? v)] k))
+                                 e)) graph)
               :plan (walk/postwalk
                       (fn [e]
                         (if (instance? Plan e)
@@ -1695,8 +1703,7 @@
                                           (get-in @(:intermediates context)
                                                   [(:out (last steps))
                                                    :tuples-count]))))
-                          e))
-                      plan)
+                          e)) plan)
               :late-clauses late-clauses))))
 
 (defn q
@@ -1718,6 +1725,7 @@
                 (resolve-redudants)
                 (-q true)
                 (collect all-vars))
+            ;; _ (pp/pprint context)
             result
             (cond->> (:result-set context)
               with (mapv #(subvec % 0 result-arity))
