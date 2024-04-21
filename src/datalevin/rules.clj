@@ -51,7 +51,6 @@
 ;;           :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
 ;;       [(concatv ['-differ?] call-args prev-args)])))
 
-
 ;; (defn split-guards
 ;;   [clauses guards]
 ;;   (let [bound-vars (collect-vars clauses)
