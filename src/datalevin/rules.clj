@@ -8,6 +8,70 @@
    [datalevin.util :as u :refer [raise cond+ conjv concatv]]
    [datalevin.relation :as r]))
 
+;; stratification
+
+(defprotocol INode
+  (lowlink [this])
+  (index [this])
+  (on-stack [this])
+  (set-lowlink [this l])
+  (set-index [this i])
+  (set-on-stack [this s]))
+
+(deftype Node [value
+               ^:unsynchronized-mutable index
+               ^:unsynchronized-mutable lowlink
+               ^:unsynchronized-mutable on-stack]
+  INode
+  (lowlink [_] lowlink)
+  (index [_] index)
+  (on-stack [_] on-stack)
+  (set-lowlink [_ l] (set! lowlink l))
+  (set-index [_ i] (set! index i))
+  (set-on-stack [_ s] (set! on-stack s)))
+
+(defn- init-nodes
+  [graph]
+  (let [vs      (keys graph)
+        v->node (zipmap vs (map #(Node. % nil nil false) vs))]
+    (reduce (fn [m [v node]] (assoc m node (map v->node (graph v))))
+            {} v->node)))
+
+(defn tarjans-scc
+  [graph]
+  (let [nodes (init-nodes graph)
+        cur   (volatile! 0)
+        stack (volatile! '())
+        sccs  (volatile! [])
+        connect
+        (fn connect [^Node node]
+          (set-index node @cur)
+          (set-lowlink node @cur)
+          (vswap! cur u/long-inc)
+          (vswap! stack conj node)
+          (set-on-stack node true)
+          (doseq [^Node tgt (nodes node)]
+            (if (nil? (index tgt))
+              (do (connect tgt)
+                  (set-lowlink node (min ^long (lowlink node)
+                                         ^long (lowlink tgt))))
+              (when (on-stack tgt)
+                (set-lowlink node (min ^long (lowlink node)
+                                       ^long (index tgt))))))
+          (when (= (lowlink node) (index node))
+            (let [w   (volatile! nil)
+                  scc (volatile! #{})]
+              (while (not= @w node)
+                (let [^Node n (peek @stack)]
+                  (vswap! stack pop)
+                  (set-on-stack n false)
+                  (vswap! scc conj (.-value n))
+                  (vreset! w n)))
+              (vswap! sccs conj @scc))))]
+    (doseq [node (keys nodes)]
+      (when (nil? (index node)) (connect node)))
+    (reverse @sccs)))
+
 (defn parse-rules
   [rules]
   (let [rules (if (string? rules) (edn/read-string rules) rules)]

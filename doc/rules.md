@@ -10,7 +10,7 @@ Datomic flavor of Datalog is interesting, not just in term of its Clojuristic
 syntax, but more so in its marrying the traditional SQL-like structure with the
 logic based traditional Datalog syntax. The latter may feel alien and hard to
 understand for many developers. By using the SQL-like syntax as the basis and
-treating traditional Datalog syntax as a special rule clause, users are
+treating traditional Datalog syntax as special rule clauses, users are
 gradually introduced to this logic view of Datalog, a win in ergonomics.
 
 The previous implementation of rule clause evaluation inherited from Datascript
