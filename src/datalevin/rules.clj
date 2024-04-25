@@ -42,7 +42,7 @@
   (let [nodes (init-nodes graph)
         cur   (volatile! 0)
         stack (volatile! '())
-        sccs  (volatile! [])
+        sccs  (volatile! '())
         connect
         (fn connect [^Node node]
           (set-index node @cur)
@@ -70,7 +70,7 @@
               (vswap! sccs conj @scc))))]
     (doseq [node (keys nodes)]
       (when (nil? (index node)) (connect node)))
-    (reverse @sccs)))
+    @sccs))
 
 (defn parse-rules
   [rules]
