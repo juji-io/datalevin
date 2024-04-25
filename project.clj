@@ -20,7 +20,7 @@
    [nrepl/bencode "1.1.0"]
    [org.babashka/sci "0.8.41"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
-   [org.clojure/clojure "1.11.2"]
+   [org.clojure/clojure "1.11.3"]
    [org.clojure/tools.cli "1.1.230"]
    [org.clojure/test.check "1.1.1"]
    [org.clojure/data.csv "1.1.0"]

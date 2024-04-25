@@ -132,28 +132,28 @@
    ;; "add-all"
    ;; "init"
    ;; "retract-5"
-   "q1"
-   "q2"
-   "q2-switch"
-   "q3"
-   "q4"
-   "q5"
-   "qpred1"
-   "qpred2"
-   ;; "rules-wide-3x3"
-   ;; "rules-wide-5x3"
-   ;; "rules-wide-7x3"
-   ;; "rules-wide-4x6"
-   ;; "rules-long-10x3"
-   ;; "rules-long-30x3"
-   ;; "rules-long-30x5"
+   ;; "q1"
+   ;; "q2"
+   ;; "q2-switch"
+   ;; "q3"
+   ;; "q4"
+   ;; "q5"
+   ;; "qpred1"
+   ;; "qpred2"
+   "rules-wide-3x3"
+   "rules-wide-5x3"
+   "rules-wide-7x3"
+   "rules-wide-4x6"
+   "rules-long-10x3"
+   "rules-long-30x3"
+   "rules-long-30x5"
    ])
 
 
 (def default-versions
   [
-   ;; ["latest" "datomic"]
-   ;; ["latest" "datascript"]
+   ["latest" "datomic"]
+   ["latest" "datascript"]
    ["0.9.5" "datalevin"]
    ["latest" "datalevin"]])
 
