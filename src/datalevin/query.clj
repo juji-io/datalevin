@@ -750,15 +750,16 @@
         rm-idxs (set (map first to-rm))
         smap    (reduce (fn [m [i s]] (assoc m s (nth inputs i))) {} to-rm)]
     [(assoc parsed-q
-            :qwhere (reduce (fn [ws [s v]]
-                              (walk/postwalk
-                                (fn [e]
-                                  (if (and (instance? Variable e)
-                                           (= s (:symbol e)))
-                                    (Constant. v)
-                                    e))
-                                ws))
-                            (:qwhere parsed-q) smap)
+            :qwhere (reduce-kv
+                      (fn [ws s v]
+                        (walk/postwalk
+                          (fn [e]
+                            (if (and (instance? Variable e)
+                                     (= s (:symbol e)))
+                              (Constant. v)
+                              e))
+                          ws))
+                      (:qwhere parsed-q) smap)
             :qorig-where (walk/postwalk-replace smap owheres)
             :qin (u/remove-idxs rm-idxs qins))
      (u/remove-idxs rm-idxs inputs)]))
@@ -825,10 +826,10 @@
 (defn- link-refs
   [graph]
   (let [es (set (keys graph))]
-    (reduce
-      (fn [g [e {:keys [free]}]]
-        (reduce
-          (fn [g [k {:keys [var]}]]
+    (reduce-kv
+      (fn [g e {:keys [free]}]
+        (reduce-kv
+          (fn [g k {:keys [var]}]
             (if (es var)
               (-> g
                   (update-in [e :links] conjv (Link. :ref var nil nil k))
@@ -839,8 +840,8 @@
 
 (defn- link-eqs
   [graph]
-  (reduce
-    (fn [g [v lst]]
+  (reduce-kv
+    (fn [g v lst]
       (if (< 1 (count lst))
         (reduce
           (fn [g [[e1 k1] [e2 k2]]]
@@ -852,11 +853,11 @@
                     [e2 :links] conjv (Link. :val-eq e1 v attrs nil)))))
           g (u/combinations lst 2))
         g))
-    graph (reduce (fn [m [e {:keys [free]}]]
-                    (reduce (fn [m [k {:keys [var]}]]
-                              (if var (update m var conjv [e k]) m))
-                            m free))
-                  {} graph)))
+    graph (reduce-kv (fn [m e {:keys [free]}]
+                       (reduce (fn [m [k {:keys [var]}]]
+                                 (if var (update m var conjv [e k]) m))
+                               m free))
+                     {} graph)))
 
 (defn- make-nodes
   [[src patterns]]
@@ -964,8 +965,8 @@
 
 (defn- datom-n
   [db k node]
-  (reduce
-    (fn [{:keys [mcount] :as node} [attr {:keys [val range pred]}]]
+  (reduce-kv
+    (fn [{:keys [mcount] :as node} attr {:keys [val range pred]}]
       (let [c (cond->
                   (cond
                     (some? val) (db/-count db [nil attr val] mcount)
@@ -989,13 +990,13 @@
 
 (defn- count-clause-datoms
   [{:keys [sources graph] :as context}]
-  (reduce
-    (fn [c [src nodes]]
+  (reduce-kv
+    (fn [c src nodes]
       (let [db (sources src)
             nc (count nodes)
             res
-            (reduce
-              (fn [c [e {:keys [free bound]}]]
+            (reduce-kv
+              (fn [c e {:keys [free bound]}]
                 (let [fc (count free)
                       bc (count bound)]
                   (if (or (< 1 nc) (< 1 (+ fc bc)))
@@ -1344,8 +1345,8 @@
 
 (defn- plans
   [db nodes connected base-plans prev-table]
-  (reduce
-    (fn [table [prev-key prev-plan]]
+  (reduce-kv
+    (fn [table prev-key prev-plan]
       (reduce
         (fn [t pair]
           (if-let [link-e (not-empty (set/intersection prev-key pair))]
@@ -1436,8 +1437,8 @@
   :op here means step type"
   [{:keys [graph sources] :as context}]
   (if graph
-    (reduce
-      (fn [c [src nodes]]
+    (reduce-kv
+      (fn [c src nodes]
         (let [db (sources src)]
           (assoc-in c [:plan src]
                     (if (< 1 (count nodes))
