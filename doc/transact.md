@@ -88,7 +88,7 @@ We do not support bulk loading prepared datoms into a DB that is not
 empty, because it would be dangerous to bypass data integrity checks.
 
 
-### Entities with staged transactions in Datalog store
+## Transactable Entities in Datalog store
 
 In other Datalog DBs (Datomic®, DataScript, and Datahike) `d/entity` returns a type
 that errors on associative updates. This makes sense because Entity represents
