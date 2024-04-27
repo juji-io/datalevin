@@ -63,3 +63,94 @@ is performed.
 
 We do not support bulk loading prepared datoms into a DB that is not
 empty, because it would be dangerous to bypass data integrity checks.
+
+
+### Entities with staged transactions in Datalog store
+
+In other Datalog DBs (Datomic®, DataScript, and Datahike) `d/entity` returns a type
+that errors on associative updates. This makes sense because Entity represents
+a snapshot state of a DB Entity and `d/transact` demarcates transactions.
+However, this API leads to a cumbersome developer experience, especially
+for the removal of fields where vectors of `[:db/retract <eid> <attr> <optional eid>]`
+must be used in transactions because `nil` values are not allowed.
+
+Datalevin ships with a special Entity type that allows for associative updates
+while remaining immutable until expanded during transaction time (`d/transact`).
+This type works the same in either local or remote mode.
+
+Below are some examples. Look for the `:<STAGED>` keyword in the printed entities
+
+```clojure
+(require '[datalevin.core :as d])
+
+(def db
+  (-> (d/empty-db nil {:user/handle  #:db{:valueType :db.type/string
+                                          :unique    :db.unique/identity}
+                       :user/friends #:db{:valueType   :db.type/ref
+                                          :cardinality :db.cardinality/many}})
+      (d/db-with [{:user/handle  "ava"
+                   :user/friends [{:user/handle "fred"}
+                                  {:user/handle "jane"}]}])))
+
+(def ava (d/entity db [:user/handle "ava"]))
+
+(d/touch ava)
+; => {:user/handle ava, :user/friends #{#:db{:id 3} #:db{:id 2}}, :db/id 1}
+(assoc ava :user/age 42)
+; => {:user/handle  ava
+;     :user/friends #{#:db{:id 3} #:db{:id 2}},
+;     :db/id        1,
+;     :<STAGED>     #:user{:age [{:op :assoc} 42]}} <-- staged transaction!
+
+(d/touch (d/entity db [:user/handle "ava"]))
+; => {:user/handle ava, :user/friends #{#:db{:id 3} #:db{:id 2}}, :db/id 1}
+; immutable! – db entity remains unchanged
+
+(def db2 (d/db-with db [(assoc ava :user/age 42)]))
+
+(def ava-with-age (d/entity db [:user/handle "ava"]))
+
+(d/touch ava-with-age)
+;=> {:user/handle "ava",
+;    :user/friends #{#:db{:id 3} #:db{:id 2}},
+;    :user/age 42, <-- age was transacted!
+;    :db/id 1}
+
+(def db3
+  (d/db-with db2 [(-> ava-with-age
+                      (update :user/age inc)
+                      (d/add :user/friends {:user/handle "eve"}))]))
+
+;; eve exists
+(d/touch (d/entity db3 [:user/handle "eve"]))
+;; => {:user/handle "eve", :db/id 4}
+
+; eve is a friend of ada
+(d/touch (d/entity db3 [:user/handle "ava"]))
+;=> {:user/handle "ava",
+;    :user/friends #{#:db{:id 4} <-- that's eve!
+;                    #:db{:id 3}
+;                    #:db{:id 2}},
+;    :user/age 43,
+;    :db/id 1}
+
+; Oh no! That was a short-lived friendship.
+; eve and ava got into an argument 😔
+
+(def db4
+  (d/db-with
+    db3
+    [(d/retract (d/entity db3 [:user/handle "ava"]) :user/friends [{:db/id 4}])]))
+
+(d/touch (d/entity db4 [:user/handle "ava"]))
+;=> {:user/handle "ava",
+;    :user/friends #{#:db{:id 3} #:db{:id 2}}, ; <-- eve is not a friend anymore
+;    :user/age 43,
+;    :db/id 1}
+```
+
+For more examples have a look at the [tests](https://github.com/juji-io/datalevin/blob/master/test/datalevin/test/entity.clj#L42-L109).
+
+This Entity API is new and can be improved. For example, it does not currently resolve
+lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel free to reach out to
+@den1k.
