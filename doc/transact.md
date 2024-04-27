@@ -39,7 +39,7 @@ or babashka pod. For usage examples, see tests in `datalevin.withtxn-test` or `d
 Rollback from within the transaction can be done with `abort-transact-kv` and
 `abort-transact`.
 
-Datalog function such as `transact!` use `with-transaction` internally.
+Datalog functions such as `transact!` use `with-transaction` internally.
 
 ## Transaction Functions in Datalog Store
 
@@ -67,7 +67,7 @@ For usage examples, see tests in `datalevin.test.transact`.
 ### By Transaction
 
 The most straightforward method of transacting bulk data at a time using
-`transact!` works quite well. `transact!` uses `with-transaction` internally.
+`transact!` works quite well.
 
 Because Datalevin supports only a single write thread at a time, parallel
 transactions actually slow writes down significantly due to the thread switching
@@ -172,7 +172,7 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 ;    :db/id 1}
 ```
 
-For more examples have a look at the [tests](https://github.com/juji-io/datalevin/blob/master/test/datalevin/test/entity.clj#L42-L109).
+For more examples have a look at the [tests](https://github.com/juji-io/datalevin/blob/master/test/datalevin/test/entity.clj#L45-L116).
 
 This Entity API is new and can be improved. For example, it does not currently
 resolve lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel
