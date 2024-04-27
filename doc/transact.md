@@ -1,7 +1,7 @@
 # Transactions in Datalevin
 
 Datalevin relies on the transaction mechanism of the underlying key-value store,
-LMDB to achieve ACID.
+LMDB, to achieve ACID.
 
 In LMDB, read and write are independent and do not block each other. Read
 requires a read transaction. Write requires a read-write transaction. These are
@@ -34,10 +34,33 @@ For key-value API, `with-transaction-kv` macro is used for explicit transaction.
 `with-transaction` macro is used for Datalog API. Basically, all the code in the
 body of the macros run inside a single read/write transaction with a single
 thread. These work the same in all modes of Datalevin: embedded, client/server,
-or babashka pod.
+or babashka pod. For usage examples, see tests in `datalevin.withtxn-test` or `datalevin.remote-withtxnkv-test`.
 
 Rollback from within the transaction can be done with `abort-transact-kv` and
 `abort-transact`.
+
+Datalog function such as `transact!` use `with-transaction` internally.
+
+## Transaction Functions in Datalog Store
+
+In addition to `with-transaction`, transaction functions can be used in Datalog
+store for atomic actions. Two types of transaction functions can be used.
+
+`:db/fn` allows stored transaction functions. Such functions need to be defined
+using `inter-fn` or `definterfn`.  This is necessary in order to support
+de-serialization of functions without calling Clojure `eval`. This requirement
+is needed to accommodate GraalVM native image, because `eval `cannot be used in
+native image, which has a closed world assumption.  This way of defining a
+function is also necessary when a function needs to be passed over the wire to
+server or babashka. The source code of the function will be interpreted by
+[sci](https://github.com/babashka/sci) instead, so there's currently some
+limitations, e.g. except for built-in ones, normal Clojure vars are not
+accessible. We will address these limitations in the future.
+
+`:db.fn/coll` is another way to call a transaction function, which does not
+store the function in the database, so this is usable in embedded mode, where that function is available in user code to call and that function can be a regular Clojure function.
+
+For usage examples, see tests in `datalevin.test.transact`.
 
 ## Bulk Load Data into Datalog Store
 
@@ -151,6 +174,6 @@ Below are some examples. Look for the `:<STAGED>` keyword in the printed entitie
 
 For more examples have a look at the [tests](https://github.com/juji-io/datalevin/blob/master/test/datalevin/test/entity.clj#L42-L109).
 
-This Entity API is new and can be improved. For example, it does not currently resolve
-lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel free to reach out to
-@den1k.
+This Entity API is new and can be improved. For example, it does not currently
+resolve lookup refs like `[:user/handle "eve"]`. If you'd like to help, feel
+free to reach out to @den1k.
