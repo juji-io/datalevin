@@ -1,27 +1,41 @@
 # Datalevin Rules Engine
 
-Datalevin's rule engine implements an efficient Datalog rules evaluation
-strategy. It also includes a novel provenance based mechanism for incremental
-maintenance.
+Datalevin has an innovative rule engine that implements an efficient rules
+evaluation strategy that leverage the cost based query optimizer. It also
+includes a novel provenance based mechanism for incremental maintenance.
 
 ## Motivation
 
-Datomic flavor of Datalog is interesting, not just in term of its Clojuristic
-syntax, but more so in its marrying the traditional SQL-like structure with the
-logic based traditional Datalog syntax. The latter may feel alien and hard to
-understand for many developers. By using the SQL-like syntax as the basis and
-treating traditional Datalog syntax as special rule clauses, users are
+The power of Datalog compared to a relational query language lies in the
+expressiveness in handling logical rules that can be recursively defined.
+However, the logic syntax of traditional Datalog may feel alien and hard to
+grasp for some developers. Datomic flavor of Datalog is beneficial, not just in
+term of its Clojuristic syntax, but more so in its marrying the traditional
+SQL-like structure with traditional Datalog. By using the SQL-like syntax as the
+basis and treating traditional Datalog syntax as special rule clauses, users are
 gradually introduced to this logic view of Datalog, a win in ergonomics.
 
-The previous implementation of rule clause evaluation inherited from Datascript
-uses a top-down evaluation strategy, which can be less efficient than the
-bottom-up strategy [4]. To address this deficiency, also to leverage the
-performance gains of our new query engine, we re-implement the rules evaluation
-engine using the latest research advances in bottom-up rule evaluation strategy,
-with stratified negation and aggregation [1] [2] and subsumptive demand
-transformation [3].
+The previous implementation of rule clause evaluation algorithm inherited from
+Datascript uses a top-down evaluation strategy, which can be less efficient than
+a bottom-up strategy [4]. More importantly, this implementation cannot take
+advantage of our cost based query optimizer. To address this deficiency, we
+developed a new rules evaluation engine using the latest research advances in
+bottom-up Datalog evaluation strategy, with some innovation of our own.
 
+## Rule Evaluation
 
+Datalevin rule engine implements semi-naive Datalog evaluation algorithm with
+stratified negation and aggregation [1] [2]. It also conduct subsumptive demand
+transformation[3].
+
+### Pull-out of non-recursive rule clauses (new)
+
+As an innovation of our implementation, we identify the clauses that are not
+involved in recursive rule resolution, pull them out and add to the regular
+query clauses to allow the query optimizer to work on them. This optimization
+not just simplifies the rules, but also reduces the number of datoms the rule
+engine has to process. It enjoys the benefits of the well known magic sets
+transformation, while avoiding potential slow-down due to un-beneficial transformations.
 
 ## References
 

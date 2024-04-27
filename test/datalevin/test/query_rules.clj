@@ -196,40 +196,45 @@
     (u/delete-files dir)))
 
 (deftest test-rule-performance-on-larger-datasets
-  (let [now     (fn [] (/ (System/nanoTime) 1000000.0))
-        inline  (fn [db]
-                  (d/q '[:find ?e
-                         :where [?e :item/status ?status]
-                         [(ground "pending") ?status]]
-                       db))
-        rule    (fn [db]
-                  (d/q '[:find ?e
-                         :in $ %
-                         :where [?e :item/status ?status]
-                         (pending? ?status)]
-                       db
-                       '[[(pending? ?status)
-                          [(ground "pending") ?status]]]))
-        measure (fn [f & args]
-                  (let [start  (now)
-                        result (apply f args)]
-                    [(- ^long (now) ^long start) result]))
-        dir     (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
-        db      (-> (d/empty-db dir)
-                    (d/db-with
-                      (for [x (range 1 50000)]
-                        {:db/id       (- ^long x)
-                         :item/id     x
-                         :item/status (rand-nth
-                                        ["started" "pending" "stopped"])})))
+  (let [now        (fn [] (/ (System/nanoTime) 1000000.0))
+        inline     (fn [db]
+                     (d/q '[:find ?e
+                            :where [?e :item/status ?status]
+                            [(ground "pending") ?status]]
+                          db))
+        rule       (fn [db]
+                     (d/q '[:find ?e
+                            :in $ %
+                            :where [?e :item/status ?status]
+                            (pending? ?status)]
+                          db
+                          '[[(pending? ?status)
+                             [(ground "pending") ?status]]]))
+        measure    (fn [f & args]
+                     (let [start  (now)
+                           result (apply f args)]
+                       [(- ^long (now) ^long start) result]))
+        txs        (for [x (range 1 50000)]
+                     {:db/id       (- ^long x)
+                      :item/id     x
+                      :item/status (rand-nth
+                                     ["started" "pending" "stopped"])})
+        dir-inline (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
+        db-inline  (-> (d/empty-db dir-inline)
+                       (d/db-with txs))
+        dir-rule   (u/tmp-dir (str "rule-test-" (UUID/randomUUID)))
+        db-rule    (-> (d/empty-db dir-rule)
+                       (d/db-with txs))
 
-        [inline-time inline-result] (measure inline db)
-        [rule-time rule-result]     (measure rule db)]
+        [inline-time inline-result] (measure inline db-inline)
+        [rule-time rule-result]     (measure rule db-rule)]
     ;; (println "inline-time" inline-time "ms, rule-time" rule-time "ms")
     (is (= inline-result rule-result))
     ;; show that rule performance continues to be within an order of
     ;; magnitude of inline performance
     (is (<= 0 rule-time (* 10 ^long inline-time)))
 
-    (d/close-db db)
-    (u/delete-files dir)))
+    (d/close-db db-inline)
+    (u/delete-files dir-inline)
+    (d/close-db db-rule)
+    (u/delete-files dir-rule)))
