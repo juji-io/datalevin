@@ -1,23 +1,25 @@
 {:paths ["src" "target/classes"]
  :deps  {
-         com.github.jnr/jnr-ffi                      {:mvn/version "2.2.15"}
-         org.lmdbjava/lmdbjava                       {:mvn/version "0.8.3"}
-         com.taoensso/nippy                          {:mvn/version "3.4.0-RC2"}
+         com.github.jnr/jnr-ffi                      {:mvn/version "2.2.16"}
+         org.lmdbjava/lmdbjava                       {:mvn/version "0.9.0"}
+         com.taoensso/nippy                          {:mvn/version "3.4.0-RC3"}
          org.babashka/sci                            {:mvn/version "0.8.41"}
-         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.15.3"}
-         org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.5"}
+         com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.17.0"}
+         org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.6"}
          org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
          me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
          com.cognitect/transit-clj                   {:mvn/version "1.0.333"}
 
          org.clojars.huahaiy/dtlvnative-macos-aarch64-shared
-         {:mvn/version "0.8.9"}
-         org.clojars.huahaiy/dtlvnative-windows-amd64-shared
-         {:mvn/version "0.8.9"}
+         {:mvn/version "0.9.1"}
          org.clojars.huahaiy/dtlvnative-linux-amd64-shared
          {:mvn/version "0.8.9"}
          org.clojars.huahaiy/dtlvnative-macos-amd64-shared
          {:mvn/version "0.8.9"}
+         org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu
+         {:mvn/version "0.9.1"}
+         org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu
+         {:mvn/version "0.9.1"}
          }
 
  :deps/prep-lib {:alias  :build
@@ -36,7 +38,7 @@
                                org.clojure/clojure {:mvn/version "1.10.0"}
                                }
                   }
-           :1.11 {:extra-deps {org.clojure/clojure {:mvn/version "1.11.2"}}}
+           :1.11 {:extra-deps {org.clojure/clojure {:mvn/version "1.11.3"}}}
 
            :dev {
                  :extra-paths ["dev" "target/classes"]

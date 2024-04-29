@@ -1,13 +1,13 @@
 # Datascript Benchmark
 
-## Run benchmarks
-
 This directory contains the original benchmarks from
 [Datascript](https://github.com/tonsky/datascript), with code for Datalevin
 added, and related software updated to the latest versions.
 
 The data consists of 20K entities of random person information, each entity has
 5 attributes, totaling 100K datoms. The benchmarks load and query the data.
+
+## Run benchmarks
 
 To run the benchmarks, you need to have both [leiningen](https://leiningen.org/) and [Clojure CLI](https://clojure.org/guides/deps_and_cli) installed on your system already. Then run these commands in the project root directory.
 

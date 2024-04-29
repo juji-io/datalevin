@@ -2,10 +2,7 @@
   "Datalog query engine"
   (:require
    [clojure.set :as set]
-<<<<<<< HEAD
    [clojure.edn :as edn]
-=======
->>>>>>> master
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
@@ -726,7 +723,7 @@
                {:error :query/where :form branch :vars missing})))))
 
 (defn substitute-constant [context pattern-el]
-  (when (free-var? pattern-el)
+  (when (qu/free-var? pattern-el)
     (when-some [rel (rel-with-attr context pattern-el)]
       (when-some [tuple (first (:tuples rel))]
         (when (nil? (fnext (:tuples rel)))
