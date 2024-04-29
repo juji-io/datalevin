@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+### Improved
+- [Datalog] port applicable fixes from Datascript 1.6.4
+- update deps
+
 ## 0.9.5 (2024-04-17)
 
 ### Fixed

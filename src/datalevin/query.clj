@@ -3,7 +3,6 @@
   (:require
    [clojure.edn :as edn]
    [clojure.set :as set]
-   [clojure.pprint :as pp]
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
@@ -793,6 +792,17 @@
                missing " not bound in " branch
                {:error :query/where :form branch :vars missing})))))
 
+(defn substitute-constant [context pattern-el]
+  (when (free-var? pattern-el)
+    (when-some [rel (rel-with-attr context pattern-el)]
+      (when-some [tuple (first (:tuples rel))]
+        (when (nil? (fnext (:tuples rel)))
+          (let [idx (get (:attrs rel) pattern-el)]
+            (get tuple idx)))))))
+
+(defn substitute-constants [context pattern]
+  (mapv #(or (substitute-constant context %) %) pattern))
+
 (defn -resolve-clause
   ([context clause]
    (-resolve-clause context clause clause))
@@ -890,7 +900,9 @@
 
      '[*] ;; pattern
      (let [source   *implicit-source*
-           pattern  (resolve-pattern-lookup-refs source clause)
+           pattern  (->> clause
+                         (substitute-constants context)
+                         (resolve-pattern-lookup-refs source))
            relation (lookup-pattern source pattern)]
        (binding [*lookup-attrs* (if (db/-searchable? source)
                                   (dynamic-lookup-attrs source pattern)
@@ -1428,8 +1440,6 @@
 
 (defn- rev-ref-plan
   [db last-step link-e {:keys [attr tgt]} new-key new-steps]
-  ;; (print "base steps -->")
-  ;; (pp/pprint new-steps)
   (let [index (u/index-of #(= link-e %) (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
@@ -1897,7 +1907,6 @@
                 (resolve-redudants)
                 (-q true)
                 (collect all-vars))
-            ;; _ (pp/pprint context)
             result
             (cond->> (:result-set context)
               with (mapv #(subvec % 0 result-arity))

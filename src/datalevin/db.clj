@@ -741,10 +741,18 @@
   [db entity]
   (if-some [idents (not-empty (-attrs-by db :db.unique/identity))]
     (let [resolve (fn [a v]
-                    (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
-                                         (d/datom e0 a v tx0)
-                                         (d/datom emax a v txmax))))
-                        (:e (-first-datom db :ave a v nil))))
+                    (cond
+                      (not (ref? db a))
+                      (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
+                                           (d/datom e0 a v tx0)
+                                           (d/datom emax a v txmax))))
+                          (:e (-first-datom db :ave a v nil)))
+                      (not (tempid? v))
+                      (let [rv (entid db v)]
+                        (or (:e (sf (.subSet ^TreeSortedSet (:avet db)
+                                             (d/datom e0 a rv tx0)
+                                             (d/datom emax a rv txmax))))
+                            (:e (-first-datom db :ave a rv nil))))))
 
           split (fn [a vs]
                   (reduce
