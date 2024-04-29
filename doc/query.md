@@ -139,13 +139,13 @@ estimation.
 
 ### Cost based query optimizer
 
-We built a Selinger style query optimizer that uses dynamic programming for
-query planning [10]. Instead of considering all possible combinations of join
-orders, the plan enumeration is based on connected components of the query
-graph. Each connected component has its own plan and its own execution sequence.
-Multiple connected components are processed concurrently. The resulting
-relations are joined afterwards using hash joins, and the order of which is
-based on result size.
+We built a Selinger style cost-based query optimizer that uses dynamic
+programming for query planning [10], which is used in almost all RDBMS. Instead
+of considering all possible combinations of join orders, the plan enumeration is
+based on connected components of the query graph. Each connected component has
+its own plan and its own execution sequence. Multiple connected components are
+processed concurrently. The resulting relations are joined afterwards using hash
+joins, and the order of which is based on result size.
 
 ### Left-deep join tree
 
@@ -156,7 +156,7 @@ estimation, which dominates the cost of planning. The impact of the loss of
 search space is relatively small, compared with the impact of inaccuracy in
 cardinality estimation. [5]
 
-We do not consider bushy join trees, as our join methods are mainly
+We do not consider bushy join trees, as our join methods are mainly based on
 scanning indices, so a base relation is needed for each join. Since we
 also count in base relations, the cardinality estimation obtained there is quite
 accurate, so we want to leverage that accuracy by keeping at least one base

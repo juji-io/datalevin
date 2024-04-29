@@ -1,10 +1,14 @@
 # Change Log
 
-## WIP
 
 ### Added
 - [Datalog] new rule solving algorithm
 - [Datalog] materialized views that are automatically maintained
+
+## WIP
+### Improved
+- [Datalog] port applicable fixes from Datascript 1.6.4
+- update deps
 
 ## 0.9.5 (2024-04-17)
 

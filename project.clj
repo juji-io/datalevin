@@ -15,7 +15,7 @@
    [com.github.jnr/jnr-ffi "2.2.16"]
    [com.taoensso/nippy "3.4.0-RC2"]
    [com.taoensso/timbre "6.5.0"]
-   [joda-time/joda-time "2.12.5"]
+   [joda-time/joda-time "2.12.7"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
    [nrepl/bencode "1.1.0"]
    [org.babashka/sci "0.8.41"]
