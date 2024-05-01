@@ -1,0 +1,36 @@
+{:paths ["src"]
+ :deps  {
+         com.cognitect/transit-clj                   {:mvn/version "1.0.333"}
+         metosin/jsonista                            {:mvn/version "0.3.8"}
+         ;; com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.17.0"}
+         ;; com.fasterxml.jackson.core/jackson-databind {:mvn/version "2.17.0"}
+         com.taoensso/nippy                          {:mvn/version "3.4.0"}
+         datalevin/datalevin                         {:local/root ".."}
+         ;; datalevin/datalevin                         {:mvn/version "0.9.5"}
+         me.lemire.integercompression/JavaFastPFOR   {:mvn/version "0.1.12"}
+         org.clojure/clojure                         {:mvn/version "1.11.2"}
+         org.lmdbjava/lmdbjava                       {:mvn/version "0.9.0"}
+         org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.6"}
+         org.eclipse.collections/eclipse-collections {:mvn/version "11.1.0"}
+         }
+
+ :aliases {
+           :datalevin {
+                       :exec-fn  datalevin.bench/-main
+                       :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                  "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                  "-Dclojure.compiler.direct-linking=true"]
+                       }
+           ;; :lucene    {
+           ;;             :exec-fn  lucene.bench/-main
+           ;;             :jvm-opts ["-Dclojure.compiler.direct-linking=true"
+           ;;                        "-Xmx24G"
+           ;;                        "-Xms24G"]
+           ;;             }
+           :dev       {
+                       :extra-paths ["target/classes"]
+                       :jvm-opts    ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                                     "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+                                     "-Dclojure.compiler.direct-linking=true"
+                                     ]
+                       }}}

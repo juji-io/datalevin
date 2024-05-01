@@ -1,5 +1,4 @@
-(ns datalevin-bench.core
-  #?(:cljs (:require-macros datalevin-bench.core)))
+(ns datalevin-bench.core)
 
 (def next-eid (volatile! 0))
 
