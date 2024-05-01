@@ -15,8 +15,6 @@ alt="datalevin linux/macos amd64 build status"></img></a>
 alt="datalevin apple silicon build status"></img></a>
 </p>
 
-## :hear_no_evil: What and why
-
 > I love Datalog, why hasn't everyone used this already?
 
 Datalevin is a simple durable [Datalog](https://en.wikipedia.org/wiki/Datalog)
@@ -32,78 +30,49 @@ database. Here's what a Datalog query looks like:
       (d/db conn) 2024)
 ```
 
+## :question: Why
+
 The rationale is to have a simple, fast and open source Datalog query engine
-running on durable storage.  It is our observation that many developers prefer
+running on durable storage.
+
+It is our observation that many developers prefer
 the flavor of Datalog popularized by [Datomic®](https://www.datomic.com) over
 any flavor of SQL, once they get to use it. Perhaps it is because Datalog is
 more declarative and composable than SQL, e.g. the automatic implicit joins seem
-to be its killer feature.
+to be its killer feature. In addition, the recursive rules feature of Datalog
+makes it suitable for graph processing and deductive reasoning.
 
-The feature set of Datomic®  may be an overkill for some use cases. One thing
+The feature set of Datomic® may be an overkill for some use cases. One thing
 that may confuse casual users is its [temporal
 features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To
-keep things simple and familiar, Datalevin does not store transaction ids along
-with the datoms, and behaves the same way as most other databases: when data are
-deleted, they are gone.
+keep things simple and familiar, Datalevin behaves the same way as most other
+databases: when data are deleted, they are gone.
 
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
-[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database). We then
-added a [cost based query optimizer](doc/query.md) and many other features. It
-retains the library property of Datascript, and it is meant to be embedded in
-applications to manage state. Because data is persistent on disk in Datalevin,
-application state can survive application restarts, and data size can be larger
-than memory.
+[LMDB](https://en.wikipedia.org/wiki/Lightning_Memory-Mapped_Database) for
+persistence. We then added a [cost-based query optimizer](doc/query.md) to
+enhance query performance.
+
+Datalevin can be used as a library, embedded in applications to manage state, e.g.
+used like SQLite; or it can run in a networked
+[client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
+mode (default port is 8898) with full-fledged role-based access control (RBAC)
+on the server, e.g. used like Postgres.
 
 Datalevin relies on the robust ACID transactional database features of LMDB.
-Designed for concurrent read intensive workloads, LMDB is used in many projects,
-e.g.
-[Cloudflare](https://blog.cloudflare.com/introducing-quicksilver-configuration-distribution-at-internet-scale/)
-global configuration distribution. LMDB also [performs
+Designed for concurrent read intensive workloads, LMDB also [performs
 well](http://www.lmdb.tech/bench/ondisk/) in writing large values (> 2KB).
 Therefore, it is fine to store documents in Datalevin.
 
-Datalevin uses a covering index and has no write-ahead log, so once the data are
-written, they are indexed. There are no separate processes or threads for
-indexing, compaction or doing any database maintenance work that compete with
-your applications for resources. Since Datalog is simply a more ergonomic query
-language than SQL, Datalevin can serve the role of an easier-to-use and
-more lightweight relational database (RDBMS), e.g. where SQLite or Firebird is
-called for.
-
-Independent from Datalog, Datalevin can be used as a fast key-value store for
-[EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data, with support
-for range queries, predicate filtering and more. The native EDN data capability
-of Datalevin should be beneficial for Clojure programs. One can use this feature
-in situations where something like Redis is called for, for instance.
-
-Datalevin can also run in an event-driven networked
-[client/server](https://github.com/juji-io/datalevin/blob/master/doc/server.md)
-mode (default port is 8898). The mode change is transparent. In the local mode,
-a data directory path, e.g. `/data/mydb`, is needed for database location,
-whereas a URI, e.g. `dtlv://myname:secret@myhost.in.cloud/mydb` is used in the
-client/server mode. The same set of core functions work in both modes. In
-addition, full-fledged role-based access control (RBAC) is provided on the
-server.
+Datalevin can be used as a fast key-value store for
+[EDN](https://en.wikipedia.org/wiki/Extensible_Data_Notation) data. The native
+EDN data capability of Datalevin should be beneficial for Clojure programs.
 
 Moreover, Datalevin has a [built-in full-text search
 engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
 [competitive](https://github.com/juji-io/datalevin/tree/master/search-bench)
-search performance. It integrates nicely with other database features, and works
-in all modes of Datalevin operation: embedded library, client/server, native
-command line, and as a [Babashka](https://github.com/babashka/babashka) Pod.
-
-Our goal is to simplify data storage and access by supporting diverse use cases
-and paradigms, because maximal flexibility is the core strength of a Datalog
-store. Datalevin may not be the fastest or the most scalable solution for one
-particular use case, but it would surely support the most number of them in a
-coherent and elegant manner.
-
-Using one data store for different use cases simplifies and reduces the cost of
-software development, deployment and maintenance. Therefore, we plan to
-implement necessary extensions to make Datalevin also a vector database, a
-production rule engine, a graph database, and a document database, since the
-storage and index structure of Datalevin is already compatible with all of them.
+search performance.
 
 Presentation:
 
@@ -331,7 +300,7 @@ totally from scratch and is not related by any means to" Datomic®. Datalevin
 started out as a port of Datascript to LMDB, but differs from Datascript in more
 significant ways than just the difference in data durability and running mode:
 
-* Datalevin has a cost based query optimizer, so queries are truly declarative
+* Datalevin has a cost-based query optimizer, so queries are truly declarative
   and clause ordering does not affect query performance.
 
 * Datalevin is not an immutable database, and there is no
