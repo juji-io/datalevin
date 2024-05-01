@@ -12,10 +12,10 @@ queries in this benchmark are all based on Datalog rules.
 The data was originally from [Mathematics Genealogy
 Project](https://genealogy.math.ndsu.nodak.edu/), scraped by [this
 project](https://github.com/j2kun/math-genealogy-scraper). We directly use their
-`data.json` result file, scraped on 2019/6/17.
+`data.json` result file  (90MiB, gzipped to 18MiB), scraped on 2019/6/17.
 
-The data consist of 256769 Ph.D. dissertations titles, student
-names, advisor names, years, schools, subjects, and other meta information.
+The data consist of 256769 mathematics thesis titles, student names, advisor
+names, years, schools, subjects, and other meta information.
 
 ## Run benchmarks
 
