@@ -19,7 +19,8 @@ If you use [Clojure CLI](https://clojure.org/guides/deps_and_cli) and
 
 ```Clojure
 {:deps {datalevin/datalevin {:mvn/version "0.9.5"}
-        com.cognitect/transit-clj {:mvn/version "1.0.329"}}}
+        com.cognitect/transit-clj {:mvn/version "1.0.333"}
+        io.airlift/aircompressor {:mvn/version "0.26"}}}
 ```
 
 This library supports Java 8 and above.
