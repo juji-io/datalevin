@@ -1,9 +1,7 @@
 (ns datalevin-bench.datomic
   (:require
-    [clojure.string :as str]
-    [datomic.api :as d]
-    [datomic.btset :as btset]
-    [datalevin-bench.core :as core]))
+   [datomic.api :as d]
+   [datalevin-bench.core :as core]))
 
 ;; test-db
 
