@@ -576,6 +576,25 @@
     (l/close-kv lmdb)
     (u/delete-files dir)))
 
+(deftest open-again-resized-test
+  (let [dir  (u/tmp-dir (str "again-resize-" (UUID/randomUUID)))
+        lmdb (l/open-kv dir {:mapsize 1
+                             :flags   (conj c/default-env-flags :nosync)})
+        data {:description "this is normal data"}]
+
+    (l/open-dbi lmdb "a")
+    (l/transact-kv lmdb [[:put "a" 0 data]])
+    (is (= data (l/get-value lmdb "a" 0)))
+    (l/close-kv lmdb)
+
+    (let [lmdb1 (l/open-kv dir {:mapsize 10})]
+      (l/open-dbi lmdb1 "a")
+      (is (= data (l/get-value lmdb1 "a" 0)))
+      (l/transact-kv lmdb1 [[:put "a" 1000 "good"]])
+      (is (= "good" (l/get-value lmdb1 "a" 1000)))
+      (l/close-kv lmdb1))
+    (u/delete-files dir)))
+
 (deftest with-transaction-kv-test
   (let [dir  (u/tmp-dir (str "with-tx-kv-test-" (UUID/randomUUID)))
         lmdb (l/open-kv dir {:flags (conj c/default-env-flags :nosync)})]
