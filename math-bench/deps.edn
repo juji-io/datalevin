@@ -1,6 +1,7 @@
 {:paths ["src"]
  :deps  {
          datalevin/datalevin                         {:local/root ".."}
+         datascript/datascript                       {:mvn/version "1.6.4"}
          com.cognitect/transit-clj                   {:mvn/version "1.0.333"}
          metosin/jsonista                            {:mvn/version "0.3.8"}
          com.taoensso/nippy                          {:mvn/version "3.4.0"}
