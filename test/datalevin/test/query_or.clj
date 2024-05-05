@@ -211,3 +211,50 @@
     (d/close-db db2)
     (u/delete-files dir1)
     (u/delete-files dir2)))
+
+(deftest  test-const-substitution
+  (let [dir (u/tmp-dir (str "test-const-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:parent {:db/valueType :db.type/ref}})
+                (d/db-with [{:db/id "Ivan" :name "Ivan"}
+                            {:db/id "Oleg" :name "Oleg" :parent "Ivan"}
+                            {:db/id "Petr" :name "Petr" :parent "Oleg"}]))]
+    (is (= #{["Ivan" 1 2]}
+           (d/q '[:find ?name ?x ?y
+                  :in $ ?name
+                  :where
+                  [?x :name ?name]
+                  (or-join [?x ?y]
+                           (and
+                             [?x :parent ?z]
+                             [?z :parent ?y])
+                           [?y :parent ?x])]
+                db "Ivan")))
+
+    (is (= #{}
+           (d/q '[:find ?name ?x ?y
+                  :in $ ?name
+                  :where
+                  [?x :name ?name]
+                  (or-join [?x ?y]
+                           (and
+                             [?x :parent ?z]
+                             [?z :parent ?y])
+                           [?x :parent ?y])]
+                db "Ivan")))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-errors
+  (let [dir     (u/tmp-dir (str "test-err-" (UUID/randomUUID)))
+        test-db (d/db-with (d/empty-db dir) test-data)]
+    (is (thrown-with-msg? ExceptionInfo #"All clauses in 'or' must use same set of free vars, had \[#\{\?e\} #\{(\?a \?e|\?e \?a)\}\] in \(or \[\?e :name _\] \[\?e :age \?a\]\)"
+                          (d/q '[:find ?e
+                                 :where (or [?e :name _]
+                                            [?e :age ?a])]
+                               test-db)))
+
+    (is (thrown-msg? "Insufficient bindings: #{?e} not bound in (or-join [[?e]] [?e :name \"Ivan\"])"
+                     (d/q '[:find ?e
+                            :where (or-join [[?e]]
+                                            [?e :name "Ivan"])]
+                          test-db)))))

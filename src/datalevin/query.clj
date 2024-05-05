@@ -20,6 +20,7 @@
    [datalevin.query :as q])
   (:import
    [clojure.lang ILookup LazilyPersistentVector]
+   [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
@@ -485,10 +486,44 @@
     (assoc a :tuples
            (filterv #(nil? (.get ^UnifiedMap hash (key-fn-a %))) tuples-a))))
 
+(defn- rel-with-attr [context sym]
+  (some #(when (contains? (:attrs %) sym) %) (:rels context)))
+
+(defn substitute-constant [context pattern-el]
+  (when (free-var? pattern-el)
+    (when-some [rel (rel-with-attr context pattern-el)]
+      (when-some [tuple (first (:tuples rel))]
+        (when (nil? (fnext (:tuples rel)))
+          (let [idx (get (:attrs rel) pattern-el)]
+            (get tuple idx)))))))
+
+(defn substitute-constants [context pattern]
+  (mapv #(or (substitute-constant context %) %) pattern))
+
+(defn resolve-pattern-lookup-refs [source pattern]
+  (if (db/-searchable? source)
+    (let [[e a v tx] pattern
+          e'         (if (or (lookup-ref? e) (keyword? e))
+                       (db/entid-strict source e)
+                       e)
+          v'         (if (and v
+                              (keyword? a)
+                              (db/ref? source a)
+                              (or (lookup-ref? v) (keyword? v)))
+                       (db/entid-strict source v)
+                       v)
+          tx'        (if (lookup-ref? tx)
+                       (db/entid-strict source tx)
+                       tx)]
+      (subvec [e' a v' tx'] 0 (count pattern)))
+    pattern))
+
 (defn lookup-pattern-db
-  [db pattern]
-  (let [search-pattern (mapv #(if (or (= % '_) (qu/free-var? %)) nil %)
-                             pattern)
+  [context db pattern]
+  (let [search-pattern (->> pattern
+                            (substitute-constants context)
+                            (resolve-pattern-lookup-refs db)
+                            (mapv #(if (or (= % '_) (free-var? %)) nil %)))
         datoms         (db/-search db search-pattern)
         attr->prop     (into {}
                              (filter (fn [[s _]] (qu/free-var? s)))
@@ -522,9 +557,9 @@
     (into ['$] clause)))
 
 (defn lookup-pattern
-  [source pattern]
+  [context source pattern]
   (if (db/-searchable? source)
-    (lookup-pattern-db source pattern)
+    (lookup-pattern-db context source pattern)
     (lookup-pattern-coll source pattern)))
 
 (defn collapse-rels
@@ -539,9 +574,9 @@
           (recur (next rels) new-rel (conj! acc rel)))
         (conj! acc new-rel)))))
 
-(defn- rel-with-attr
-  [context sym]
-  (some #(when (contains? (:attrs %) sym) %) (:rels context)))
+;; (defn- rel-with-attr
+;;   [context sym]
+;;   (some #(when (contains? (:attrs %) sym) %) (:rels context)))
 
 (defn- context-resolve-val
   [context sym]
@@ -659,17 +694,140 @@
           (r/prod-rel (assoc production :tuples []) (r/empty-rel binding)))]
     (update context :rels collapse-rels new-rel)))
 
-(defn resolve-pattern-lookup-refs
-  [source pattern]
-  (if (db/-searchable? source)
-    (let [[e a v] pattern]
-      [(if (or (qu/lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
-       a
-       (if (and v (keyword? a) (db/ref? source a)
-                (or (qu/lookup-ref? v) (keyword? v)))
-         (db/entid-strict source v)
-         v)])
-    pattern))
+;;; RULES
+
+(def rule-head #{'_ 'or 'or-join 'and 'not 'not-join})
+
+(defn rule?
+  [context clause]
+  (cond+
+    (not (sequential? clause))
+    false
+
+    :let [head (if (source? (first clause))
+                 (second clause)
+                 (first clause))]
+
+    (not (symbol? head))
+    false
+
+    (free-var? head)
+    false
+
+    (contains? rule-head head)
+    false
+
+    (not (contains? (:rules context) head))
+    (raise "Unknown rule '" head " in " clause
+           {:error :query/where :form clause})
+
+    :else true))
+
+(def rule-seqid (atom 0))
+
+(defn expand-rule
+  [clause context]
+  (let [[rule & call-args] clause
+        seqid              (swap! rule-seqid inc)
+        branches           (get (:rules context) rule)]
+    (for [branch branches
+          :let   [[[_ & rule-args] & clauses] branch
+                  replacements (zipmap rule-args call-args)]]
+      (walk/postwalk
+        #(if (free-var? %)
+           (u/some-of
+             (replacements %)
+             (symbol (str (name %) "__auto__" seqid)))
+           %)
+        clauses))))
+
+(defn remove-pairs
+  [xs ys]
+  (let [pairs (sequence (comp (map vector)
+                           (remove (fn [[x y]] (= x y))))
+                        xs ys)]
+    [(map first pairs)
+     (map peek pairs)]))
+
+(defn rule-gen-guards
+  [rule-clause used-args]
+  (let [[rule & call-args] rule-clause
+        prev-call-args     (get used-args rule)]
+    (for [prev-args prev-call-args
+          :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
+      [(concatv ['-differ?] call-args prev-args)])))
+
+(defn collect-vars [clause] (set (u/walk-collect clause free-var?)))
+
+(defn split-guards
+  [clauses guards]
+  (let [bound-vars (collect-vars clauses)
+        pred       (fn [[[_ & vars]]] (every? bound-vars vars))]
+    [(filter pred guards)
+     (remove pred guards)]))
+
+(defn solve-rule
+  [context clause]
+  (let [final-attrs     (filter free-var? clause)
+        final-attrs-map (zipmap final-attrs (range))
+        ;;         clause-cache    (atom {}) ;; TODO
+        solve           (fn [prefix-context clauses]
+                          (reduce -resolve-clause prefix-context clauses))
+        empty-rels?     (fn [context]
+                          (some #(empty? (:tuples %)) (:rels context)))]
+    (loop [stack (list {:prefix-clauses []
+                        :prefix-context context
+                        :clauses        [clause]
+                        :used-args      {}
+                        :pending-guards {}})
+           rel   (r/relation! final-attrs-map (FastList.))]
+      (if-some [frame (first stack)]
+        (let [[clauses [rule-clause & next-clauses]]
+              (split-with #(not (rule? context %)) (:clauses frame))]
+          (if (nil? rule-clause)
+
+            ;; no rules -> expand, collect, sum
+            (let [context (solve (:prefix-context frame) clauses)
+                  tuples  (u/distinct-by vec (-collect context final-attrs))
+                  new-rel (r/relation! final-attrs-map tuples)]
+              (recur (next stack) (r/sum-rel rel new-rel)))
+
+            ;; has rule -> add guards -> check if dead -> expand rule -> push to stack, recur
+            (let [[rule & call-args] rule-clause
+                  guards
+                  (rule-gen-guards rule-clause (:used-args frame))
+                  [active-gs pending-gs]
+                  (split-guards (concatv (:prefix-clauses frame) clauses)
+                                (concatv guards (:pending-guards frame)))]
+              (if (some #(= % '[(-differ?)]) active-gs) ;; trivial always false case like [(not= [?a ?b] [?a ?b])]
+
+                ;; this branch has no data, just drop it from stack
+                (recur (next stack) rel)
+
+                (let [prefix-clauses (concatv clauses active-gs)
+                      prefix-context (solve (:prefix-context frame)
+                                            prefix-clauses)]
+                  (if (empty-rels? prefix-context)
+
+                    ;; this branch has no data, just drop it from stack
+                    (recur (next stack) rel)
+
+                    ;; need to expand rule to branches
+                    (let [used-args (assoc (:used-args frame) rule
+                                           (conj (get (:used-args frame)
+                                                      rule [])
+                                                 call-args))
+                          branches  (expand-rule rule-clause context)]
+                      (recur (concatv
+                               (for [branch branches]
+                                 {:prefix-clauses prefix-clauses
+                                  :prefix-context prefix-context
+                                  :clauses        (concatv branch next-clauses)
+                                  :used-args      used-args
+                                  :pending-guards pending-gs})
+                               (next stack))
+                             rel))))))))
+        rel))))
 
 (defn dynamic-lookup-attrs
   [source pattern]
@@ -721,17 +879,6 @@
         (raise "All clauses in 'or' must use same set of free vars, had "
                missing " not bound in " branch
                {:error :query/where :form branch :vars missing})))))
-
-(defn substitute-constant [context pattern-el]
-  (when (qu/free-var? pattern-el)
-    (when-some [rel (rel-with-attr context pattern-el)]
-      (when-some [tuple (first (:tuples rel))]
-        (when (nil? (fnext (:tuples rel)))
-          (let [idx (get (:attrs rel) pattern-el)]
-            (get tuple idx)))))))
-
-(defn substitute-constants [context pattern]
-  (mapv #(or (substitute-constant context %) %) pattern))
 
 (defn -resolve-clause
   ([context clause]
@@ -830,12 +977,10 @@
 
      '[*] ;; pattern
      (let [source   *implicit-source*
-           pattern  (->> clause
-                         (substitute-constants context)
-                         (resolve-pattern-lookup-refs source))
-           relation (lookup-pattern source pattern)]
+           pattern' (resolve-pattern-lookup-refs source clause)
+           relation (lookup-pattern context source pattern')]
        (binding [*lookup-attrs* (if (db/-searchable? source)
-                                  (dynamic-lookup-attrs source pattern)
+                                  (dynamic-lookup-attrs source pattern')
                                   *lookup-attrs*)]
          (update context :rels collapse-rels relation))))))
 

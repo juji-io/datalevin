@@ -7,7 +7,7 @@
 
 ## WIP
 ### Improved
-- [Datalog] port applicable fixes from Datascript 1.6.4
+- [Datalog] port applicable fixes from Datascript 1.6.5
 - update deps
 
 ## 0.9.5 (2024-04-17)
