@@ -508,10 +508,6 @@
           (recur (next rels) new-rel (conj! acc rel)))
         (conj! acc new-rel)))))
 
-;; (defn- rel-with-attr
-;;   [context sym]
-;;   (some #(when (contains? (:attrs %) sym) %) (:rels context)))
-
 (defn- context-resolve-val
   [context sym]
   (when-some [rel (rel-with-attr context sym)]
@@ -763,18 +759,6 @@
                              rel))))))))
         rel))))
 
-;; (defn resolve-pattern-lookup-refs
-;;   [source pattern]
-;;   (if (db/-searchable? source)
-;;     (let [[e a v] pattern]
-;;       [(if (or (lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
-;;        a
-;;        (if (and v (keyword? a) (db/ref? source a)
-;;                 (or (lookup-ref? v) (keyword? v)))
-;;          (db/entid-strict source v)
-;;          v)])
-;;     pattern))
-
 (defn dynamic-lookup-attrs
   [source pattern]
   (let [[e a v] pattern]
@@ -825,17 +809,6 @@
         (raise "All clauses in 'or' must use same set of free vars, had "
                missing " not bound in " branch
                {:error :query/where :form branch :vars missing})))))
-
-;; (defn substitute-constant [context pattern-el]
-;;   (when (free-var? pattern-el)
-;;     (when-some [rel (rel-with-attr context pattern-el)]
-;;       (when-some [tuple (first (:tuples rel))]
-;;         (when (nil? (fnext (:tuples rel)))
-;;           (let [idx (get (:attrs rel) pattern-el)]
-;;             (get tuple idx)))))))
-
-;; (defn substitute-constants [context pattern]
-;;   (mapv #(or (substitute-constant context %) %) pattern))
 
 (defn -resolve-clause
   ([context clause]
