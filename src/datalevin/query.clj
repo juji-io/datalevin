@@ -490,7 +490,7 @@
   (some #(when (contains? (:attrs %) sym) %) (:rels context)))
 
 (defn substitute-constant [context pattern-el]
-  (when (free-var? pattern-el)
+  (when (qu/free-var? pattern-el)
     (when-some [rel (rel-with-attr context pattern-el)]
       (when-some [tuple (first (:tuples rel))]
         (when (nil? (fnext (:tuples rel)))
@@ -503,16 +503,16 @@
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
     (let [[e a v tx] pattern
-          e'         (if (or (lookup-ref? e) (keyword? e))
+          e'         (if (or (qu/lookup-ref? e) (keyword? e))
                        (db/entid-strict source e)
                        e)
           v'         (if (and v
                               (keyword? a)
                               (db/ref? source a)
-                              (or (lookup-ref? v) (keyword? v)))
+                              (or (qu/lookup-ref? v) (keyword? v)))
                        (db/entid-strict source v)
                        v)
-          tx'        (if (lookup-ref? tx)
+          tx'        (if (qu/lookup-ref? tx)
                        (db/entid-strict source tx)
                        tx)]
       (subvec [e' a v' tx'] 0 (count pattern)))
@@ -523,7 +523,7 @@
   (let [search-pattern (->> pattern
                             (substitute-constants context)
                             (resolve-pattern-lookup-refs db)
-                            (mapv #(if (or (= % '_) (free-var? %)) nil %)))
+                            (mapv #(if (or (= % '_) (qu/free-var? %)) nil %)))
         datoms         (db/-search db search-pattern)
         attr->prop     (into {}
                              (filter (fn [[s _]] (qu/free-var? s)))
@@ -704,14 +704,14 @@
     (not (sequential? clause))
     false
 
-    :let [head (if (source? (first clause))
+    :let [head (if (qu/source? (first clause))
                  (second clause)
                  (first clause))]
 
     (not (symbol? head))
     false
 
-    (free-var? head)
+    (qu/free-var? head)
     false
 
     (contains? rule-head head)
@@ -734,7 +734,7 @@
           :let   [[[_ & rule-args] & clauses] branch
                   replacements (zipmap rule-args call-args)]]
       (walk/postwalk
-        #(if (free-var? %)
+        #(if (qu/free-var? %)
            (u/some-of
              (replacements %)
              (symbol (str (name %) "__auto__" seqid)))
@@ -757,7 +757,7 @@
           :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
       [(concatv ['-differ?] call-args prev-args)])))
 
-(defn collect-vars [clause] (set (u/walk-collect clause free-var?)))
+(defn collect-vars [clause] (set (u/walk-collect clause qu/free-var?)))
 
 (defn split-guards
   [clauses guards]
@@ -768,7 +768,7 @@
 
 (defn solve-rule
   [context clause]
-  (let [final-attrs     (filter free-var? clause)
+  (let [final-attrs     (filter qu/free-var? clause)
         final-attrs-map (zipmap final-attrs (range))
         ;;         clause-cache    (atom {}) ;; TODO
         solve           (fn [prefix-context clauses]
