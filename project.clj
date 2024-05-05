@@ -13,7 +13,7 @@
    [com.fasterxml.jackson.core/jackson-databind "2.17.0"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.16"]
-   [com.taoensso/nippy "3.4.0-RC2"]
+   [com.taoensso/nippy "3.4.1"]
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.12.7"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]

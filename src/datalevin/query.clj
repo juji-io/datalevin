@@ -16,7 +16,7 @@
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c])
   (:import
-   [clojure.lang ILookup LazilyPersistentVector MapEntry]
+   [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
@@ -420,10 +420,44 @@
     (assoc a :tuples
            (filterv #(nil? (.get ^UnifiedMap hash (key-fn-a %))) tuples-a))))
 
+(defn- rel-with-attr [context sym]
+  (some #(when (contains? (:attrs %) sym) %) (:rels context)))
+
+(defn substitute-constant [context pattern-el]
+  (when (free-var? pattern-el)
+    (when-some [rel (rel-with-attr context pattern-el)]
+      (when-some [tuple (first (:tuples rel))]
+        (when (nil? (fnext (:tuples rel)))
+          (let [idx (get (:attrs rel) pattern-el)]
+            (get tuple idx)))))))
+
+(defn substitute-constants [context pattern]
+  (mapv #(or (substitute-constant context %) %) pattern))
+
+(defn resolve-pattern-lookup-refs [source pattern]
+  (if (db/-searchable? source)
+    (let [[e a v tx] pattern
+          e'         (if (or (lookup-ref? e) (keyword? e))
+                       (db/entid-strict source e)
+                       e)
+          v'         (if (and v
+                              (keyword? a)
+                              (db/ref? source a)
+                              (or (lookup-ref? v) (keyword? v)))
+                       (db/entid-strict source v)
+                       v)
+          tx'        (if (lookup-ref? tx)
+                       (db/entid-strict source tx)
+                       tx)]
+      (subvec [e' a v' tx'] 0 (count pattern)))
+    pattern))
+
 (defn lookup-pattern-db
-  [db pattern]
-  (let [search-pattern (mapv #(if (or (= % '_) (free-var? %)) nil %)
-                             pattern)
+  [context db pattern]
+  (let [search-pattern (->> pattern
+                            (substitute-constants context)
+                            (resolve-pattern-lookup-refs db)
+                            (mapv #(if (or (= % '_) (free-var? %)) nil %)))
         datoms         (db/-search db search-pattern)
         attr->prop     (into {}
                              (filter (fn [[s _]] (free-var? s)))
@@ -457,9 +491,9 @@
     (into ['$] clause)))
 
 (defn lookup-pattern
-  [source pattern]
+  [context source pattern]
   (if (db/-searchable? source)
-    (lookup-pattern-db source pattern)
+    (lookup-pattern-db context source pattern)
     (lookup-pattern-coll source pattern)))
 
 (defn collapse-rels
@@ -474,9 +508,9 @@
           (recur (next rels) new-rel (conj! acc rel)))
         (conj! acc new-rel)))))
 
-(defn- rel-with-attr
-  [context sym]
-  (some #(when (contains? (:attrs %) sym) %) (:rels context)))
+;; (defn- rel-with-attr
+;;   [context sym]
+;;   (some #(when (contains? (:attrs %) sym) %) (:rels context)))
 
 (defn- context-resolve-val
   [context sym]
@@ -729,17 +763,17 @@
                              rel))))))))
         rel))))
 
-(defn resolve-pattern-lookup-refs
-  [source pattern]
-  (if (db/-searchable? source)
-    (let [[e a v] pattern]
-      [(if (or (lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
-       a
-       (if (and v (keyword? a) (db/ref? source a)
-                (or (lookup-ref? v) (keyword? v)))
-         (db/entid-strict source v)
-         v)])
-    pattern))
+;; (defn resolve-pattern-lookup-refs
+;;   [source pattern]
+;;   (if (db/-searchable? source)
+;;     (let [[e a v] pattern]
+;;       [(if (or (lookup-ref? e) (keyword? e)) (db/entid-strict source e) e)
+;;        a
+;;        (if (and v (keyword? a) (db/ref? source a)
+;;                 (or (lookup-ref? v) (keyword? v)))
+;;          (db/entid-strict source v)
+;;          v)])
+;;     pattern))
 
 (defn dynamic-lookup-attrs
   [source pattern]
@@ -792,16 +826,16 @@
                missing " not bound in " branch
                {:error :query/where :form branch :vars missing})))))
 
-(defn substitute-constant [context pattern-el]
-  (when (free-var? pattern-el)
-    (when-some [rel (rel-with-attr context pattern-el)]
-      (when-some [tuple (first (:tuples rel))]
-        (when (nil? (fnext (:tuples rel)))
-          (let [idx (get (:attrs rel) pattern-el)]
-            (get tuple idx)))))))
+;; (defn substitute-constant [context pattern-el]
+;;   (when (free-var? pattern-el)
+;;     (when-some [rel (rel-with-attr context pattern-el)]
+;;       (when-some [tuple (first (:tuples rel))]
+;;         (when (nil? (fnext (:tuples rel)))
+;;           (let [idx (get (:attrs rel) pattern-el)]
+;;             (get tuple idx)))))))
 
-(defn substitute-constants [context pattern]
-  (mapv #(or (substitute-constant context %) %) pattern))
+;; (defn substitute-constants [context pattern]
+;;   (mapv #(or (substitute-constant context %) %) pattern))
 
 (defn -resolve-clause
   ([context clause]
@@ -900,12 +934,10 @@
 
      '[*] ;; pattern
      (let [source   *implicit-source*
-           pattern  (->> clause
-                         (substitute-constants context)
-                         (resolve-pattern-lookup-refs source))
-           relation (lookup-pattern source pattern)]
+           pattern' (resolve-pattern-lookup-refs source clause)
+           relation (lookup-pattern context source pattern')]
        (binding [*lookup-attrs* (if (db/-searchable? source)
-                                  (dynamic-lookup-attrs source pattern)
+                                  (dynamic-lookup-attrs source pattern')
                                   *lookup-attrs*)]
          (update context :rels collapse-rels relation))))))
 
