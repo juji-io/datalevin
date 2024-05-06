@@ -144,8 +144,8 @@ programming for query planning [10], which is used in almost all RDBMS. Instead
 of considering all possible combinations of join orders, the plan enumeration is
 based on connected components of the query graph. Each connected component has
 its own plan and its own execution sequence. Multiple connected components are
-processed concurrently. The resulting relations are joined afterwards using hash
-joins, and the order of which is based on result size.
+processed concurrently. The resulting relations are joined afterwards, and the 
+order of which is based on result size.
 
 ### Left-deep join tree
 
@@ -179,13 +179,13 @@ sampling based estimations.
 Currently, the query optimizer handles normal where clauses only: triple
 patterns and predicates. We will gradually extend the optimizer to consider
 more clause types in the future. In addition, only binary relations are
-considered at the moment. Future work will consider relations on a hypergraph
+considered at the moment, future work may consider relations on a hypergraph
 [8].
 
 ## Benchmarks
 
-Right now, only an existing benchmark developed in Datascript is performed. The
-details can be found
+Right now, only an existing benchmark developed in Datascript is performed. The 
+speedup compared with Datascript engine is substantial. The details can be found
 [here](https://github.com/juji-io/datalevin/tree/master/datascript-bench).
 Queries in this benchmarks are fairly simple, so we plan to port the join order
 benchmark (JOB) [5] from SQL in order to properly exercise the query optimizer.

@@ -1,7 +1,10 @@
-{:paths ["src"]
- :deps {io.github.juji-io/datalevin #_{:git/tag "0.6.21"
-                                       :git/sha "41d1915eb67b1606aab4807058ff24bb41fdb8e8"}
-        {:local/root "../.."}
-        com.cognitect/transit-clj {:mvn/version "1.0.329"}}
+{:paths   ["src"]
+ :deps    {io.github.juji-io/datalevin
+           #_                        {:git/tag "0.6.21"
+                                      :git/sha "41d1915eb67b1606aab4807058ff24bb41fdb8e8"}
+           #_                        {:mvn/version "0.9.5"}
+           {:local/root "../.."}
+           com.cognitect/transit-clj {:mvn/version "1.0.333"}
+           io.airlift/aircompressor  {:mvn/version "0.26"}}
  :aliases {:dev {:jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                             "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"]}}}
