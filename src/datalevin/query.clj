@@ -502,20 +502,17 @@
 
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
-    (let [[e a v tx] pattern
-          e'         (if (or (qu/lookup-ref? e) (keyword? e))
-                       (db/entid-strict source e)
-                       e)
-          v'         (if (and v
-                              (keyword? a)
-                              (db/ref? source a)
-                              (or (qu/lookup-ref? v) (keyword? v)))
-                       (db/entid-strict source v)
-                       v)
-          tx'        (if (qu/lookup-ref? tx)
-                       (db/entid-strict source tx)
-                       tx)]
-      (subvec [e' a v' tx'] 0 (count pattern)))
+    (let [[e a v] pattern
+          e'      (if (or (lookup-ref? e) (keyword? e))
+                    (db/entid-strict source e)
+                    e)
+          v'      (if (and v
+                           (keyword? a)
+                           (db/ref? source a)
+                           (or (lookup-ref? v) (keyword? v)))
+                    (db/entid-strict source v)
+                    v)]
+      (subvec [e' a v'] 0 (count pattern)))
     pattern))
 
 (defn lookup-pattern-db
@@ -573,10 +570,6 @@
           (recur (next rels) (hash-join rel new-rel) acc)
           (recur (next rels) new-rel (conj! acc rel)))
         (conj! acc new-rel)))))
-
-;; (defn- rel-with-attr
-;;   [context sym]
-;;   (some #(when (contains? (:attrs %) sym) %) (:rels context)))
 
 (defn- context-resolve-val
   [context sym]

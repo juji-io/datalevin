@@ -7,7 +7,6 @@
             :url  "https://www.eclipse.org/legal/epl-1.0/"}
   :managed-dependencies
   [[babashka/babashka.pods "0.2.0"]
-   [metosin/jsonista "0.3.8"]
    [com.cognitect/transit-clj "1.0.333"]
    [com.github.clj-easy/graal-build-time "0.1.4"]
    [com.github.jnr/jnr-ffi "2.2.16"]
@@ -15,6 +14,7 @@
    [com.taoensso/timbre "6.5.0"]
    [joda-time/joda-time "2.12.7"]
    [me.lemire.integercompression/JavaFastPFOR "0.1.12"]
+   [metosin/jsonista "0.3.8"]
    [nrepl/bencode "1.1.0"]
    [org.babashka/sci "0.8.41"]
    [org.bouncycastle/bcprov-jdk15on "1.70"]
