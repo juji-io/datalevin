@@ -503,13 +503,13 @@
 (defn resolve-pattern-lookup-refs [source pattern]
   (if (db/-searchable? source)
     (let [[e a v] pattern
-          e'      (if (or (lookup-ref? e) (keyword? e))
+          e'      (if (or (qu/lookup-ref? e) (keyword? e))
                     (db/entid-strict source e)
                     e)
           v'      (if (and v
                            (keyword? a)
                            (db/ref? source a)
-                           (or (lookup-ref? v) (keyword? v)))
+                           (or (qu/lookup-ref? v) (keyword? v)))
                     (db/entid-strict source v)
                     v)]
       (subvec [e' a v'] 0 (count pattern)))
