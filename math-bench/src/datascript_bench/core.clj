@@ -21,7 +21,8 @@
         cids     (into #{} (map :id) nodes)
         clean    #(remove (complement cids) %)]
     (sequence
-      (comp (map #(update % :advisors clean))
+      (comp (remove #(nil? (:name %)))
+         (map #(update % :advisors clean))
          (mapcat
            (fn [{:keys [id name thesis school country year subject advisors]}]
              (let [did (vswap! dcounter inc)]

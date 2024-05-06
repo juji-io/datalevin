@@ -107,7 +107,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.4" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.5" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.core"
            benchmarks)
@@ -115,10 +115,10 @@
     "datomic"
     (apply run "clojure" "-Sdeps"
            (str "{"
-                " :paths [\"src\" \"src-datomic\"]"
+                " :paths [\"src\"]"
                 " :deps {com.datomic/peer {:mvn/version \"" (if (= "latest" version) "1.0.7075" version) "\"}}"
                 "}")
-           "-M" "-m" "datalevin-bench.datomic"
+           "-M" "-m" "datomic-bench.core"
            benchmarks)
     ))
 
@@ -134,9 +134,9 @@
 
 (def default-versions
   [
-   ;; ["latest" "datomic"]
+   ["latest" "datomic"]
    ["latest" "datascript"]
-   ;; ["0.9.5" "datalevin"]
+   ["0.9.5" "datalevin"]
    ["latest" "datalevin"]])
 
 
@@ -157,4 +157,4 @@
         (run-benchmarks version vm benchmarks)))))
 
 (shutdown-agents)
-(System/exit 0)
+;; (System/exit 0)

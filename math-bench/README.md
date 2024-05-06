@@ -44,29 +44,33 @@ Four queries are proposed in the benchmark.
 ## Run benchmarks
 
 ```
+gzip -d data.json.gz
 ./bench.clj
 ```
 
 ## Results
 
+Tests were conducted on a machine with Intel Core i7 3.6GHz and 64GB RAM. The
+table below list the query latency results in milliseconds.
 
 | System    | Q1 | Q2 | Q3 | Q4
 | -------- | ------- | -------- | -------- | -------- |
-| Datalevin 0.9.5  | 170 | 1545 | 1280 | 643 |
-| Datalevin latest | | | | |
+| Datomic 1.0.7057   | 3127 | 2884 | 2235 | 3908 |
+| Datascript 1.6.5  | 302 | 1784 | 1546 | 676 |
+| Datalevin 0.9.5  | 199 | 1644 | 1309 | 639 |
+| Datalevin latest | TBD | TBD | TBD | TBD |
 
 For reference, as described in the book chapter [1], the best results after
-manually tweaking queries and adding indices for XSB and LogicBlox, using a slightly smaller data set
-(202505 dissertations, 198962 people, and 211107 advising facts), but on a
-slower machine (Intel Core i5 2.8 GHz with 8GB RAM) are the following:
+manually tweaking queries and adding indices for XSB and LogicBlox, using a
+smaller data set (202505 dissertations, 198962 people, and 211107 advising
+facts), but on a slower machine (Intel Core i5 2.8 GHz with 8GB RAM) are the
+following:
 
 | System    | Q1 | Q2 | Q3 | Q4
 | -------- | ------- | -------- | -------- | -------- |
 | XSB  | 238 | 511 | 325 | 181 |
 | LogicBlox | 944 | 2140 | 1740 | 1140 |
 
-LogicBlox is no longer available. A comparison with the latest version of XSB
-will be a future work.
 
 ## References
 
