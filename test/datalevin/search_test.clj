@@ -12,7 +12,7 @@
    [clojure.data.csv :as csv]
    [clojure.java.io :as io]
    [clojure.string :as s]
-   [cheshire.core :as json]
+   [jsonista.core :as json]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
@@ -376,7 +376,8 @@
                                   :db/unique    :db.unique/identity}
                     :description {:db/valueType :db.type/string
                                   :db/fulltext  true}})
-        data (json/parse-string (slurp "test/data/data.json") true)]
+        data (json/read-value (slurp "test/data/data.json")
+                              json/keyword-keys-object-mapper)]
     (d/transact! conn data)
     (is (= 1 (count (d/fulltext-datoms (d/db conn) "GraphstatsR"))))
     (is (= (update (d/q '[:find [?i ?d]

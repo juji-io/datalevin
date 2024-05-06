@@ -32,6 +32,7 @@
                  [org.lmdbjava/lmdbjava]
                  [org.clojure/test.check]
                  [org.clojure/data.csv]
+                 [metosin/jsonista]
                  [org.bouncycastle/bcprov-jdk15on]
                  [com.github.clj-easy/graal-build-time]
                  [joda-time/joda-time]
