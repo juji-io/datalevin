@@ -1,24 +1,37 @@
-<p align="center"><img src="logo.png" alt="datalevin logo" height="140"></img></p>
+<p align="center"><img src="logo.png" alt="datalevin logo"
+height="140"></img></p>
 <h1 align="center">Datalevin</h1>
-<p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone 💽 </p>
+<p align="center"> 🧘 Simple, fast and versatile Datalog database for everyone
+💽 </p>
 <p align="center">
-<a href="https://cljdoc.org/d/datalevin/datalevin"><img src="https://cljdoc.org/badge/datalevin/datalevin" alt="datalevin on cljdoc"></img></a>
-<a href="https://clojars.org/datalevin"><img src="https://img.shields.io/clojars/v/datalevin.svg?color=success" alt="datalevin on clojars"></img></a>
-<a href="https://github.com/juji-io/datalevin/blob/master/doc/install.md#babashka-pod"><img src="https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg" alt="bb compatible"></img></a>
+<a href="https://cljdoc.org/d/datalevin/datalevin"><img
+src="https://cljdoc.org/badge/datalevin/datalevin" alt="datalevin on
+cljdoc"></img></a>
+<a href="https://clojars.org/datalevin"><img
+src="https://img.shields.io/clojars/v/datalevin.svg?color=success"
+alt="datalevin on clojars"></img></a>
+<a
+href="https://github.com/juji-io/datalevin/blob/master/doc/install.md#babashka-pod"><img
+src="https://raw.githubusercontent.com/babashka/babashka/master/logo/badge.svg"
+alt="bb compatible"></img></a>
 </p>
 <p align="center">
 <a href="https://github.com/juji-io/datalevin/actions"><img
 src="https://github.com/juji-io/datalevin/actions/workflows/release.binaries.yml/badge.svg?branch=0.9.5"
 alt="datalevin linux/macos amd64 build status"></img></a>
-<a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true" alt="datalevin windows build status"></img></a>
-<a href="https://cirrus-ci.com/github/juji-io/datalevin"><img src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg"
-alt="datalevin apple silicon build status"></img></a>
+<a href="https://ci.appveyor.com/project/huahaiy/datalevin"><img
+src="https://ci.appveyor.com/api/projects/status/github/juji-io/datalevin?svg=true"
+alt="datalevin windows build status"></img></a>
+<a href="https://cirrus-ci.com/github/juji-io/datalevin"><img
+src="https://api.cirrus-ci.com/github/juji-io/datalevin.svg" alt="datalevin
+apple silicon build status"></img></a>
 </p>
+
 
 > I love Datalog, why hasn't everyone used this already?
 
 Datalevin is a simple durable [Datalog](https://en.wikipedia.org/wiki/Datalog)
-database. Here's what a Datalog query looks like:
+database. Here's what a Datalog query looks like in Datalevin:
 
 ```Clojure
 (d/q '[:find  ?name ?total
@@ -81,7 +94,8 @@ Presentation:
 ## :truck: [Installation](doc/install.md)
 
 As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
-project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
+project. There are also several other options. Please see details in
+[Installation Documentation](doc/install.md)
 
 ## :tada: Usage
 
@@ -238,7 +252,11 @@ similar.
 Datalevin is extensively tested with property-based testing. It is also used
 in production at [Juji](https://juji.io).
 
-Running the [benchmark suite adopted from Datascript](https://github.com/juji-io/datalevin/tree/master/datascript-bench), which write 100K random datoms in several conditions, and run several queries on them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive, here is how it looks.
+Running the [benchmark suite adopted from
+Datascript](https://github.com/juji-io/datalevin/tree/master/datascript-bench),
+which write 100K random datoms in several conditions, and run several queries on
+them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive,
+here is how it looks.
 
 <p align="center">
 <img src="datascript-bench/Read.png" alt="query benchmark" height="300"></img>
@@ -368,21 +386,33 @@ significant ways than just the difference in data durability and running mode:
 
 ## :shopping: Alternatives
 
-If you are interested in using the dialect of Datalog pioneered by Datomic®, here are your current options:
+If you are interested in using the dialect of Datalog pioneered by Datomic®,
+here are your current options:
 
-* If you need time travel and features backed by the authors of Clojure, you should use [Datomic®](https://www.datomic.com).
+* If you need time travel and cloud features backed by the company that
+  maintains Clojure, and there is no need to see the source code, you may try
+  [Datomic®](https://www.datomic.com).
 
-* If you need an in-memory store that has almost the same API as Datomic®, [Datascript](https://github.com/tonsky/datascript) is for you.
+* If you need mainly an in-memory store with optional durability, that has
+  almost the same API as Datomic®, you may try
+  [Datascript](https://github.com/tonsky/datascript).
 
-* If you need a graph database, you may try [Asami](https://github.com/threatgrid/asami).
+* If you need a simple, fast and versatile store with a battle tested backend
+  and almost the same Datalog API as the above two, you may try
+  [Datalevin](https://github.com/juji-io/datalevin), this project.
 
-* If you need features such as bi-temporal graph queries, you may try [XTDB](https://github.com/xtdb/xtdb).
+* If you need features such as bi-temporal models and SQL, you may try
+  [XTDB](https://github.com/xtdb/xtdb).
 
-* If you need a durable store with some storage choices, you may try [Datahike](https://github.com/replikativ/datahike).
+* If you need a graph database with an open world assumption, you may try
+  [Asami](https://github.com/threatgrid/asami).
 
-* There was also [Eva](https://github.com/Workiva/eva/), a distributed store, but it is no longer in active development.
+* If you need a durable store with some storage choices, you may try
+  [Datahike](https://github.com/replikativ/datahike).
 
-* If you need a simple, fast and versatile durable store with a battle tested backend, give [Datalevin](https://github.com/juji-io/datalevin) a try.
+* There was also [Eva](https://github.com/Workiva/eva/), a distributed store,
+  but it is no longer in active development.
+
 
 ## :arrows_clockwise: Contact
 
