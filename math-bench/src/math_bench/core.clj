@@ -10,14 +10,14 @@
 (defn to-fixed [n places]
   (format (str "%." places "f") (double n)))
 
-(defn round [n]
+(defn round [^long n]
   (cond
     (> n 1)     (to-fixed n 1)
     (> n 0.1)   (to-fixed n 2)
     (> n 0.001) (to-fixed n 2)
     :else       n))
 
-(defn percentile [xs n]
+(defn percentile [xs ^long n]
   (->
     (sort xs)
     (nth (min (dec (count xs))
@@ -40,3 +40,36 @@
                           (dotime *bench-t* ~@body)))
          med#     (percentile results# 0.5)]
      med#))
+
+(defmacro bench-once [& body]
+  `(let [start-t# (now)]
+     ~@body
+     (- (now) start-t#)))
+
+;; rules
+
+(def rule-author '[[(author ?d ?c)
+                    [?d :dissertation/cid ?c]]])
+
+(def rule-adv '[[(adv ?x ?y)
+                 [?x :person/advised ?d]
+                 (author ?d ?y)]])
+
+(def rule-area '[[(area ?c ?a)
+                  [?d :dissertation/cid ?c]
+                  [?d :dissertation/area ?a]]])
+
+(def rule-univ '[[(univ ?c ?u)
+                  [?d :dissertation/cid ?c]
+                  [?d :dissertation/univ ?u]]])
+
+(def rule-anc '[[(anc ?x ?y)
+                 (adv ?x ?y)]
+                [(anc ?x ?y)
+                 (adv ?x ?z)
+                 (anc ?z ?y)]])
+
+(def rule-q1 (into rule-author rule-adv))
+(def rule-q2 (into rule-q1 rule-univ))
+(def rule-q3 (into rule-q1 rule-area))
+(def rule-q4 (into rule-q1 rule-anc))

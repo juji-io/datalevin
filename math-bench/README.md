@@ -41,7 +41,7 @@ Four queries are proposed in the benchmark, based on the following rules:
                  (adv ?x ?y)]
                 [(anc ?x ?y)
                  (adv ?x ?z)
-                 (adv ?z ?y)]])
+                 (anc ?z ?y)]])
 
 (def rule-q1 (into rule-author rule-adv))
 
@@ -123,15 +123,22 @@ gzip -d data.json.gz
 
 ## Results
 
-Tests were conducted on a machine with Intel Core i7 3.6GHz and 64GB RAM. The
-table below list the query latency results in milliseconds.
+Tests were conducted on Ubuntu 22.04 with Intel Core i7 3.6GHz and 64GB RAM,
+using OpenJDK 17.0.10, Clojure 1.11.2.
+
+The table below list the query latency results in milliseconds.
 
 | System    | Q1 | Q2 | Q3 | Q4
 | -------- | ------- | -------- | -------- | -------- |
-| Datomic 1.0.7057   | 3127 | 2884 | 2235 | 3908 |
-| Datascript 1.6.5  | 302 | 1784 | 1546 | 676 |
-| Datalevin 0.9.5  | 199 | 1644 | 1309 | 639 |
+| Datomic 1.0.7057   | 3153 | 2926 | 2297 | 112016 |
+| Datascript 1.6.5  | 302 | 1784 | 1546 | Out of Memory |
+| Datalevin 0.9.5  | 186 | 1527 | 1343 | Out of Memory |
 | Datalevin latest | TBD | TBD | TBD | TBD |
+
+Notice that Q4 is particularly challenging. It is a recursive query that
+computes progressively larger transitive closures. Datomic took close to 2
+minutes to finish. Datascript and Datalevin 0.9.5, sharing the same
+implementation, both ran out of memory.
 
 For reference, as described in the book chapter [1], the best results after
 manually tweaking queries and adding indices for XSB and LogicBlox, using a

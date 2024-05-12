@@ -49,32 +49,6 @@
 (def q3-conn (load-data (str "/tmp/math-q3-" (UUID/randomUUID))))
 (def q4-conn (load-data (str "/tmp/math-q4-" (UUID/randomUUID))))
 
-(def rule-author '[[(author ?d ?c)
-                    [?d :dissertation/cid ?c]]])
-
-(def rule-adv '[[(adv ?x ?y)
-                 [?x :person/advised ?d]
-                 (author ?d ?y)]])
-
-(def rule-area '[[(area ?c ?a)
-                  [?d :dissertation/cid ?c]
-                  [?d :dissertation/area ?a]]])
-
-(def rule-univ '[[(univ ?c ?u)
-                  [?d :dissertation/cid ?c]
-                  [?d :dissertation/univ ?u]]])
-
-(def rule-anc '[[(anc ?x ?y)
-                 (adv ?x ?y)]
-                [(anc ?x ?y)
-                 (adv ?x ?z)
-                 (adv ?z ?y)]])
-
-(def rule-q1 (into rule-author rule-adv))
-(def rule-q2 (into rule-q1 rule-univ))
-(def rule-q3 (into rule-q1 rule-area))
-(def rule-q4 (into rule-q1 rule-anc))
-
 (defn q1 []
   (core/bench
     (d/q '[:find [?n ...]
@@ -84,7 +58,7 @@
            (adv ?x ?d)
            (adv ?y ?x)
            [?y :person/name ?n]]
-         (d/db q1-conn) rule-q1)))
+         (d/db q1-conn) core/rule-q1)))
 
 (defn q2 []
   (core/bench
@@ -95,7 +69,7 @@
            (univ ?x ?u)
            (univ ?y ?u)
            [?y :person/name ?n]]
-         (d/db q2-conn) rule-q2)))
+         (d/db q2-conn) core/rule-q2)))
 
 (defn q3 []
   (core/bench
@@ -107,17 +81,17 @@
            (area ?y ?a2)
            [(!= ?a1 ?a2)]
            [?y :person/name ?n]]
-         (d/db q3-conn) rule-q3)))
+         (d/db q3-conn) core/rule-q3)))
 
 (defn q4 []
-  (core/bench
+  (core/bench-once
     (d/q '[:find [?n ...]
            :in $ %
            :where
            [?x :person/name "David Scott Warren"]
            (anc ?y ?x)
            [?y :person/name ?n]]
-         (d/db q4-conn) rule-q4)))
+         (d/db q4-conn) core/rule-q4)))
 
 (defn ^:export -main [& names]
   (doseq [n names]
