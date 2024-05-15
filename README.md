@@ -31,6 +31,7 @@ apple silicon build status"></img></a>
 > I love Datalog, why hasn't everyone used this already?
 
 Datalevin is a simple durable [Datalog](https://en.wikipedia.org/wiki/Datalog)
+
 database. Here's what a Datalog query looks like in Datalevin:
 
 ```Clojure
