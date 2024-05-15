@@ -31,6 +31,8 @@
 
 ## 0.9.3 (2024-03-13)
 
+[DB Upgrade](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) is required.
+
 ### Added
 - [Datalog] Query optimizer to improve query performance, particularly for
   complex queries. See [details](doc/query.md). #11
@@ -314,6 +316,9 @@ large transactions.
 - [Datalog] intermittent `:db/fulltext` values transaction error. #177
 
 ## 0.8.0 (2023-01-19)
+
+[DB Upgrade](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) is required.
+
 ### Changed
 - [Search] **Breaking** search index storage format change. Data re-indexing is
   necessary.
@@ -397,6 +402,9 @@ large transactions.
 - [KV] clean up spill files
 
 ## 0.7.0
+
+[DB Upgrade](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) is required.
+
 ### Added
 - [Platform] embedded library support for Apple Silicon.
 - [KV] A new range function `range-seq` that has similar signature as
@@ -600,6 +608,9 @@ large transactions.
 - `open-kv` function allows LMDB flags, #100
 
 ## 0.6.0
+
+[DB Upgrade](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) is required.
+
 ### Added
 - Built-in full-text search engine, #27
 - Key-value database `visit` function to do arbitrary things upon seeing a
@@ -750,6 +761,9 @@ large transactions.
 - Expose all LMDB flags in JVM version of kv store
 
 ## 0.5.3
+
+[DB Upgrade](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) is required.
+
 ### Added
 - Transparent networked client/server mode with role based access control. #46
   and #61
@@ -838,6 +852,9 @@ large transactions.
 - Consolidated all user facing functions to `datalevin.core`, so users don't have to understand and require different namespaces in order to use all features.
 
 ## 0.4.0
+
+[DB Upgrade](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) is required.
+
 ### Changed
 - [**Breaking**] Removed AEV index, as it is not used in query. This reduces storage
   and improves write speed.
@@ -925,6 +942,7 @@ large transactions.
 - Add value type for `:db/ident` in implicit schema
 
 ## 0.3.1
+
 ### Changed
 - [**Breaking**] Change argument order of `core/create-conn`, `db/empty-db`
   etc., and put `dir` in front, since it is more likely to be specified than
