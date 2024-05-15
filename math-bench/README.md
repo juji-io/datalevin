@@ -131,9 +131,9 @@ The table below list the query latency results in milliseconds.
 | System    | Q1 | Q2 | Q3 | Q4
 | -------- | ------- | -------- | -------- | -------- |
 | Datomic 1.0.7057   | 3153 | 2926 | 2297 | 112016 |
+| Datalevin latest | TBD | TBD | TBD | TBD |
 | Datascript 1.6.5  | 302 | 1784 | 1546 | Out of Memory |
 | Datalevin 0.9.5  | 186 | 1527 | 1343 | Out of Memory |
-| Datalevin latest | TBD | TBD | TBD | TBD |
 
 Notice that Q4 is particularly challenging. It is a recursive query that
 computes progressively larger transitive closures. Datomic took close to 2

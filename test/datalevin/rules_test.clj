@@ -1,6 +1,6 @@
 (ns datalevin.rules-test
   (:require
-   [clojure.test :refer [deftest testing are is use-fixtures]]
+   [clojure.test :refer [deftest are is use-fixtures]]
    [datalevin.test.core :as tdc :refer [db-fixture]]
    [datalevin.rules :as sut]
    [datalevin.core :as d]
