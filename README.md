@@ -83,7 +83,16 @@ Presentation:
 ## :truck: [Installation](doc/install.md)
 
 As a Clojure library, Datalevin is simple to add as a dependency to your Clojure
-project. There are also several other options. Please see details in [Installation Documentation](doc/install.md)
+project. There are also several other options. Please see details in
+[Installation Documentation](doc/install.md)
+
+## :birthday: Upgrade
+
+Please read
+[Upgrade
+Documentation](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md)
+for information regarding upgrading your existing Datalevin database from older
+versions.
 
 ## :tada: Usage
 
@@ -267,12 +276,6 @@ batch transactions.
 
 See [here](https://github.com/juji-io/datalevin/tree/master/datascript-bench)
 for a detailed analysis of the results.
-
-## :birthday: Upgrade
-
-Please read
-[this](https://github.com/juji-io/datalevin/blob/master/doc/upgrade.md) for
-information regarding upgrading your existing database from older versions.
 
 ## :earth_americas: Roadmap
 
