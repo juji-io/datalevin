@@ -46,7 +46,9 @@ The feature set of Datomic® may be an overkill for some use cases. One thing
 that may confuse casual users is its [temporal
 features](https://docs.datomic.com/cloud/whatis/data-model.html#time-model). To
 keep things simple and familiar, Datalevin behaves the same way as most other
-databases: when data are deleted, they are gone.
+databases: when data are deleted, they are gone. Datalevin also follows the widely
+accepted principles of ACID, instead of introducing [unusual
+semantics](https://jepsen.io/analyses/datomic-pro-1.0.7075).
 
 Datalevin started out as a port of
 [Datascript](https://github.com/tonsky/datascript) in-memory Datalog database to
