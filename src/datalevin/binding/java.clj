@@ -1133,7 +1133,8 @@
        lmdb)
      (catch Exception e (raise "Fail to open database: " e {:dir dir})))))
 
-(defn extract-lmdb []
+(defn access-lmdb
+  []
   (let [os-arch  (System/getProperty "os.arch")
         amd64?   (#{"x64" "amd64" "x86_64"} os-arch)
         aarch64? (= "aarch64" os-arch)
@@ -1141,6 +1142,7 @@
         linux?   (s/starts-with? os-name "linux")
         windows? (s/starts-with? os-name "windows")
         osx?     (s/starts-with? os-name "mac os x")
+        freebsd? (s/starts-with? os-name "freebsd")
 
         [lib-name platform]
         (cond
@@ -1148,42 +1150,40 @@
                      linux?   ["liblmdb.so" "ubuntu-latest-amd64-shared"]
                      windows? ["liblmdb.dll" "x86_64-windows-gnu"]
                      osx?     ["liblmdb.dylib" "macos-latest-amd64-shared"]
+                     freebsd? ["liblmdb.so" "freebsd-os-provided-local-lib"]
                      :else    (u/raise "Unsupported OS " os-name " on amd64"
                                        {}))
           aarch64? (cond
-                     osx?   ["liblmdb.dylib" "macos-latest-aarch64-shared"]
-                     linux? ["liblmdb.so" "aarch64-linux-gnu"]
-                     :else  (u/raise "Unsupported OS " os-name " on aarch64"
-                                     {}))
-          :else    (u/raise "Unsupported architecture: " os-arch {}))
+                     osx?     ["liblmdb.dylib" "macos-latest-aarch64-shared"]
+                     linux?   ["liblmdb.so" "aarch64-linux-gnu"]
+                     freebsd? ["liblmdb.so" "freebsd-os-provided-local-lib"]
+                     :else    (u/raise "Unsupported OS " os-name " on aarch64"
+                                       {}))
+          :else    (u/raise "Unsupported architecture " os-arch {}))]
+    (if (= platform "freebsd-os-provided-local-lib")
+      (let [fpath (str "/usr/local/lib/" lib-name)]
+        (if (.exists (File. fpath))
+          (System/setProperty "lmdbjava.native.lib" fpath)
+          (u/raise (str "liblmdb.so not found at " fpath
+                        ", have you installed the package?"))))
+      ;; extract lmdb binary from jar
+      (let [resource        (str "dtlvnative/" platform "/" lib-name)
+            ^String dir     (u/tmp-dir (str "lmdbjava-native-lib-"
+                                            (UUID/randomUUID)))
+            ^File file      (File. dir ^String lib-name)
+            path            (.toPath file)
+            fpath           (.getAbsolutePath file)
+            ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
+        (try
+          (u/create-dirs dir)
+          (.deleteOnExit file)
+          (System/setProperty "lmdbjava.native.lib" fpath)
+          (with-open [^InputStream in   (.getResourceAsStream cl resource)
+                      ^OutputStream out (Files/newOutputStream
+                                          path (into-array OpenOption []))]
+            (io/copy in out))
+          (catch Exception e
+            (u/raise "Failed to extract LMDB library: " e
+                     {:resource resource :path fpath})))))))
 
-        resource        (str "dtlvnative/" platform "/" lib-name)
-        ^String dir     (u/tmp-dir (str "lmdbjava-native-lib-"
-                                        (UUID/randomUUID)))
-        ^File file      (File. dir ^String lib-name)
-        path            (.toPath file)
-        fpath           (.getAbsolutePath file)
-        ^ClassLoader cl (.getContextClassLoader (Thread/currentThread))]
-    (try
-      (u/create-dirs dir)
-      (.deleteOnExit file)
-      (System/setProperty "lmdbjava.native.lib" fpath)
-      (with-open [^InputStream in   (.getResourceAsStream cl resource)
-                  ^OutputStream out (Files/newOutputStream
-                                      path (into-array OpenOption []))]
-        (io/copy in out))
-      (catch Exception e
-        (u/raise "Failed to extract LMDB library: " e
-                 {:resource resource :path fpath})))))
-
-(defn use-os-package []
-  (let [fpath "/usr/local/lib/liblmdb.so"]
-    (if (.exists  (File. fpath))
-      (System/setProperty "lmdbjava.native.lib" fpath)
-      (u/raise (str "liblmdb.so not found at " fpath
-                    ", have you installed the package?")))))
-
-(if (s/starts-with? (s/lower-case (System/getProperty "os.name")) "freebsd")
-  (use-os-package)
-  (extract-lmdb))
-
+(access-lmdb)

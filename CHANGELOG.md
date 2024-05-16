@@ -2,6 +2,7 @@
 
 ## WIP
 ### Improved
+- [Platform] Use local LMDB library on freebsd if available (thx @markusalbertgraf)
 - [Datalog] port applicable fixes from Datascript 1.6.5
 - update deps
 
