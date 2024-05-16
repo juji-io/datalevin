@@ -1176,4 +1176,14 @@
         (u/raise "Failed to extract LMDB library: " e
                  {:resource resource :path fpath})))))
 
-(extract-lmdb)
+(defn use-os-package []
+  (let [fpath "/usr/local/lib/liblmdb.so"]
+    (if (.exists  (File. fpath))
+      (System/setProperty "lmdbjava.native.lib" fpath)
+      (u/raise (str "liblmdb.so not found at " fpath
+                    ", have you installed the package?")))))
+
+(if (s/starts-with? (s/lower-case (System/getProperty "os.name")) "freebsd")
+  (use-os-package)
+  (extract-lmdb))
+
