@@ -7,8 +7,14 @@
 
 ## WIP
 ### Improved
-- [Platform] Use local LMDB library on freebsd if available (thx @markusalbertgraf)
+- [Datalog] Faster cardinality estimation using CVM algorithm, with configurable
+  trade-off between storage and accuracy by option: `:cvm-sample-size`, which
+  specifies the number of in-memory/stored sampled keys for an attribute. This
+  reduces planning time for queries involving attributes with huge number of
+  distinct values . **Note**, re-index is needed to take advantage of this
+  feature for existing DBs.
 - [Datalog] port applicable fixes from Datascript 1.6.5
+- [Platform] Use local LMDB library on FreeBSD if available (thx @markusalbertgraf)
 - update deps
 
 ## 0.9.5 (2024-04-17)
