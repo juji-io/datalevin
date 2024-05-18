@@ -1,11 +1,11 @@
 # Change Log
 
+## WIP
 
 ### Added
 - [Datalog] new rule solving algorithm
 - [Datalog] materialized views that are automatically maintained
 
-## WIP
 ### Improved
 - [Datalog] Faster cardinality estimation using CVM algorithm, with configurable
   trade-off between storage and accuracy by option: `:cvm-sample-size`, which
