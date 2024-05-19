@@ -80,12 +80,12 @@
              (= "latest" version)
              (str "{:paths [\"src\"]"
                   ":deps {datalevin/datalevin {:local/root \"..\"}
-                  org.clojure/clojure   {:mvn/version \"1.11.2\"}
+                  org.clojure/clojure   {:mvn/version \"1.11.3\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.9.0\"}
-                  com.taoensso/nippy    {:mvn/version \"3.4.0-RC2\"}
+                  com.taoensso/nippy    {:mvn/version \"3.4.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
-                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.5\"}
+                  org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.6\"}
                   org.eclipse.collections/eclipse-collections {:mvn/version \"11.1.0\"}
                   org.clojars.huahaiy/dtlvnative-macos-aarch64-shared {:mvn/version \"0.9.1\"}
                   org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu {:mvn/version \"0.9.1\"}
@@ -109,7 +109,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src-datascript\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.3" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.5" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.datascript"
            benchmarks)
@@ -152,8 +152,8 @@
 
 (def default-versions
   [
-   ;; ["latest" "datomic"]
-   ;; ["latest" "datascript"]
+   ["latest" "datomic"]
+   ["latest" "datascript"]
    ["0.9.5" "datalevin"]
    ["latest" "datalevin"]])
 
