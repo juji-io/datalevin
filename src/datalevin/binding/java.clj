@@ -1164,8 +1164,8 @@
       (let [fpath (str "/usr/local/lib/" lib-name)]
         (if (.exists (File. fpath))
           (System/setProperty "lmdbjava.native.lib" fpath)
-          (u/raise (str "liblmdb.so not found at " fpath
-                        ", have you installed the package?"))))
+          (u/raise "liblmdb.so not found at " fpath
+                   ", have you installed the package?" {})))
       ;; extract lmdb binary from jar
       (let [resource        (str "dtlvnative/" platform "/" lib-name)
             ^String dir     (u/tmp-dir (str "lmdbjava-native-lib-"
