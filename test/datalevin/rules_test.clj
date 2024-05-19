@@ -198,3 +198,49 @@
                      db rule-q4))))
     (d/close-db db)
     (u/delete-files dir)))
+
+;; Need to extend the Datalog syntax to allow aggregation function in
+;; the rule head
+#_(deftest single-linear-regression-test
+    (let [dir (u/tmp-dir (str "single-regression-test-" (UUID/randomUUID)))
+          db  (-> (d/empty-db
+                    dir
+                    {:time {:db/valueType :db.type/long}
+                     :mass {:db/valueType :db.type/long}}
+                    {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
+                  (d/db-with [{:time 5 :mass 40}
+                              {:time 7 :mass 120}
+                              {:time 12 :mass 180}
+                              {:time 16 :mass 210}
+                              {:time 20 :mass 240}]))]
+      (is (< 10
+             (d/q '[:find ?p .
+                    :in $ %
+                    :where
+                    (linear-regression ?p)]
+                  db '[[(xtrain ?id ?v)
+                        [?id :time ?v]]
+                       [(ytrain ?id ?y)
+                        [?id :mass ?y]]
+                       [(predict ?t ?id (sum ?y))
+                        (model ?t ?p)
+                        (xtrain ?id ?v)
+                        [(* ?v ?p) ?y]]
+                       [(gradient ?t (sum ?g))
+                        (ytrain ?id ?y)
+                        (predict ?t ?id ?y')
+                        (xtrain ?id ?v)
+                        [(* 2 (- ?y' ?y) v?) ?g]]
+                       [(model ?t ?p)
+                        [(ground 0) ?t]
+                        [(ground 0.01 ?p)]]
+                       [(model ?t+1 ?p')
+                        [(inc ?t) ?t+1]
+                        (model ?t ?p)
+                        (gradient ?t ?g)
+                        [(- ?p (/ (* 0.1 ?g) 5)) ?p']
+                        [(< ?t 100)]]
+                       ])
+             13))
+      (d/close-db db)
+      (u/delete-files dir)))

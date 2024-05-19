@@ -3,7 +3,12 @@
 ## WIP
 
 ### Added
-- [Datalog] new rule solving algorithm
+- [Datalog] Extended rule syntax to allow aggregation function in rule head,
+  increasing expressiveness to enable applications such as machine learning.
+- [Datalog] Special rule argument `:datalevin/last-iter` to indicate interest in
+  only the result of last iteration, enabling optimization in evaluation of
+  recursive rules.
+- [Datalog] new rule evaluation algorithm.
 - [Datalog] materialized views that are automatically maintained
 
 ### Improved

@@ -1,8 +1,9 @@
 # Datalevin Rules Engine
 
-Datalevin has an innovative rule engine that implements an efficient rules
-evaluation strategy that leverage the cost based query optimizer. It also
-includes a novel provenance based mechanism for incremental maintenance.
+Datalevin has an innovative rule engine that has more expressive powerful than
+normal Datalog, and implements an efficient rules evaluation strategy that
+leverage the cost based query optimizer. It also includes a novel provenance
+based mechanism for incremental maintenance.
 
 ## Motivation
 
@@ -23,7 +24,26 @@ competitive. To address this deficiency, we developed a new rules evaluation
 engine using the latest research advances in bottom-up Datalog evaluation
 strategy, with some innovation of our own.
 
+In addition, we extended the rule syntax to support more powerful applications,
+e.g. to implement algorithm for machine learning, statistics, graph analytics,
+and so on, enabling in-database data analytics. Examples of such analytics
+include gradient descent (hence all types of regressions, SVM, etc.), K-means,
+page-rank, and so on.
+
+## Extensions
+
+The primary extension to the rule syntax is to allow aggregation functions, eg.
+`sum`, `count`, etc. to appear in the rule head. This extension allows free
+mixing of aggregations in recursions, thus increases the expressiveness of
+Datalevin rule language significantly.
+
+A special rule argument `:datalevin/last-iter` is introduced to indicate that
+only the results of the last iteration of recursion is needed, so that the
+recursive process can be optimized to avoid storing intermediate results.
+
 ## Rule Evaluation
+
+To support the extended rule syntax, a new rule evaluation strategy is implemented.
 
 ### Pull-out of non-recursive rule clauses (new)
 
@@ -36,15 +56,13 @@ This enjoys the benefits of the rule rewrite algorithms such as magic sets,
 while avoiding potential slow-down due to increased number of rules brought by
 the rewrite.
 
-### Recursive rule resolution
+### Recursive rule evaluation
 
-Datalevin rule engine uses the semi-naive Datalog evaluation strategy as the
-basis [1] [2]. It mainly follows the abstraction proposed in Temporel [3], which
-supports free mixing of negation/aggregation within recursions. This allows
-efficient processing of highly expressive rules, e.g. Datalog can now be used to
-implement sophisticated machine learning algorithms, beyond the traditional
-logical and graph processing tasks.
-
+To handle recursion with freely mixed aggregation and negation, we mainly follow
+the framework proposed in Temporel [3], which is based on a concept of
+T-stratification, where a time index is identified and associated with each
+stratum. The time index ensures that aggregation/negation happens in one
+stratum. This generalizes the semi-naive Datalog evaluation strategy [1] [2].
 
 ## References
 
