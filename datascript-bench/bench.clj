@@ -82,7 +82,7 @@
                   ":deps {datalevin/datalevin {:local/root \"..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.3\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.9.0\"}
-                  com.taoensso/nippy    {:mvn/version \"3.4.0-RC3\"}
+                  com.taoensso/nippy    {:mvn/version \"3.4.1\"}
                   com.cognitect/transit-clj {:mvn/version \"1.0.333\"}
                   me.lemire.integercompression/JavaFastPFOR {:mvn/version \"0.1.12\"}
                   org.roaringbitmap/RoaringBitmap {:mvn/version \"1.0.6\"}
@@ -109,7 +109,7 @@
     (apply run "clojure" "-Sdeps"
            (str "{"
                 " :paths [\"src-datascript\"]"
-                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.4" version) "\"}}"
+                " :deps {datascript/datascript {:mvn/version \"" (if (= "latest" version) "1.6.5" version) "\"}}"
                 "}")
            "-M" "-m" "datascript-bench.datascript"
            benchmarks)
