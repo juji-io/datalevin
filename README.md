@@ -402,8 +402,8 @@ here are your current options:
   almost the same API as Datomic®, you may try
   [Datascript](https://github.com/tonsky/datascript).
 
-* If you need a simple, fast and versatile store with a battle tested backend
-  and almost the same Datalog API as the above two, you may try
+* If you need a simple and versatile store with almost the same Datalog API as
+  the above two and with a much greater query performance, you may try
   [Datalevin](https://github.com/juji-io/datalevin), this project.
 
 * If you need features such as bi-temporal models and SQL, you may try
@@ -417,6 +417,7 @@ here are your current options:
 
 * There was also [Eva](https://github.com/Workiva/eva/), a distributed store,
   but it is no longer in active development.
+
 
 
 ## :arrows_clockwise: Contact
