@@ -87,7 +87,7 @@ EDN data capability of Datalevin should be beneficial for Clojure programs.
 
 Moreover, Datalevin has a [built-in full-text search
 engine](https://github.com/juji-io/datalevin/blob/master/doc/search.md) that has
-[competitive](https://github.com/juji-io/datalevin/tree/master/search-bench)
+[competitive](https://github.com/juji-io/datalevin/tree/master/benchmarks/search-bench)
 search performance.
 
 Presentation:
@@ -264,14 +264,14 @@ Datalevin is extensively tested with property-based testing. It is also used
 in production at [Juji](https://juji.io).
 
 Running the [benchmark suite adopted from
-Datascript](https://github.com/juji-io/datalevin/tree/master/datascript-bench),
+Datascript](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench),
 which write 100K random datoms in several conditions, and run several queries on
 them, on a Ubuntu Linux server with an Intel i7 3.6GHz CPU and a 1TB SSD drive,
 here is how it looks.
 
 <p align="center">
-<img src="datascript-bench/Read.png" alt="query benchmark" height="300"></img>
-<img src="datascript-bench/Write.png" alt="write benchmark" height="300"></img>
+<img src="benchmarks/datascript-bench/Read.png" alt="query benchmark" height="300"></img>
+<img src="benchmarks/datascript-bench/Write.png" alt="write benchmark" height="300"></img>
 </p>
 
 In this benchmark, both Datomic and Datascript are running in in-memory mode, as
@@ -292,7 +292,7 @@ checks as a whole or five datoms at a time in less than 1.5 seconds. Transacting
 one datom at a time, it takes longer time. Therefore, it is preferable to have
 batch transactions.
 
-See [here](https://github.com/juji-io/datalevin/tree/master/datascript-bench)
+See [here](https://github.com/juji-io/datalevin/tree/master/benchmarks/datascript-bench)
 for a detailed analysis of the results.
 
 ## :earth_americas: Roadmap

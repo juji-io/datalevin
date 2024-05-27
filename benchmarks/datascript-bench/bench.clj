@@ -79,7 +79,7 @@
            (cond
              (= "latest" version)
              (str "{:paths [\"src\"]"
-                  ":deps {datalevin/datalevin {:local/root \"..\"}
+                  ":deps {datalevin/datalevin {:local/root \"../..\"}
                   org.clojure/clojure   {:mvn/version \"1.11.3\"}
                   org.lmdbjava/lmdbjava {:mvn/version \"0.9.0\"}
                   com.taoensso/nippy    {:mvn/version \"3.4.1\"}
@@ -152,9 +152,9 @@
 
 (def default-versions
   [
-   ["latest" "datomic"]
-   ["latest" "datascript"]
-   ["0.9.5" "datalevin"]
+   ;; ["latest" "datomic"]
+   ;; ["latest" "datascript"]
+   ;; ["0.9.5" "datalevin"]
    ["latest" "datalevin"]])
 
 
@@ -162,7 +162,7 @@
           sh/*sh-dir* "."]
   (let [{:keys [rebuild benchmarks versions]} opts]
     (when rebuild
-      (binding [sh/*sh-dir* ".."]
+      (binding [sh/*sh-dir* "../.."]
         (run "lein" "do" "clean," "javac")))
     (let [benchmarks (if (empty? benchmarks) default-benchmarks benchmarks)
           versions   (if (empty? versions)   default-versions    versions)]
