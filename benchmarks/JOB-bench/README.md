@@ -51,11 +51,12 @@ Then copy the CSV data into tables, e.g. in psql:
 
 ```
 
-Finally create indices: `psql -f data/fkindexes.sql`
+Finally create foreign key indices: `psql -f data/fkindexes.sql`
 
 
 ### Datalevin
 
+The clojure-csv library used to load CSV files into Datalevin has some problems dealing with escaped quotation marks mixed with commas in strings, and some manual edits of CSV files are needed.
 
 ## Queries
 

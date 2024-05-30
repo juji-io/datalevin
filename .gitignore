@@ -1,7 +1,10 @@
-search-bench/data
-search-bench/*.json
-search-bench/*.txt
-search-bench/target
+*/JOB-bench/data/*.csv
+*/JOB-bench/*.dat
+*/math-bench/*.json
+*/search-bench/data
+*/search-bench/*.json
+*/search-bench/*.txt
+*/search-bench/target
 /test-jar/tmp
 /test-jar/target
 /target
