@@ -1,9 +1,7 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
-   [clojure.string :as s]
-   [clojure-csv.core :as csv]
-   ))
+   [clojure.string :as s]))
 
 (def schema
   {:aka-name/person        {:db/valueType :db.type/ref}
@@ -135,37 +133,37 @@
   (reduce (fn [ds [id content]]
             (conj! ds (d/datom (+ comp-cast-type-base (Long/parseLong id))
                                :comp-cast-type/kind content)))
-          datoms (csv/parse-csv (slurp "data/comp_cast_type.csv"))))
+          datoms (d/read-csv (slurp "data/comp_cast_type.csv"))))
 
 (defn- add-company-type [datoms]
   (reduce (fn [ds [id content]]
             (conj! ds (d/datom (+ company-type-base (Long/parseLong id))
                                :company-type/kind content)))
-          datoms (csv/parse-csv (slurp  "data/company_type.csv"))))
+          datoms (d/read-csv (slurp  "data/company_type.csv"))))
 
 (defn- add-kind-type [datoms]
   (reduce (fn [ds [id content]]
             (conj! ds (d/datom (+ kind-type-base (Long/parseLong id))
                                :kind-type/kind content)))
-          datoms (csv/parse-csv (slurp "data/kind_type.csv"))))
+          datoms (d/read-csv (slurp "data/kind_type.csv"))))
 
 (defn- add-link-type [datoms]
   (reduce (fn [ds [id content]]
             (conj! ds (d/datom (+ link-type-base (Long/parseLong id))
                                :link-type/link content)))
-          datoms (csv/parse-csv (slurp "data/link_type.csv"))))
+          datoms (d/read-csv (slurp "data/link_type.csv"))))
 
 (defn- add-role-type [datoms]
   (reduce (fn [ds [id content]]
             (conj! ds (d/datom (+ role-type-base (Long/parseLong id))
                                :role-type/role content)))
-          datoms (csv/parse-csv (slurp "data/role_type.csv"))))
+          datoms (d/read-csv (slurp "data/role_type.csv"))))
 
 (defn- add-info-type [datoms]
   (reduce (fn [ds [id content]]
             (conj! ds (d/datom (+ info-type-base (Long/parseLong id))
                                :info-type/info content)))
-          datoms (csv/parse-csv (slurp "data/info_type.csv"))))
+          datoms (d/read-csv (slurp "data/info_type.csv"))))
 
 (defn- add-movie-link [datoms]
   (reduce
@@ -178,7 +176,7 @@
                             (+ title-base (Long/parseLong linked-movie))))
             (conj! (d/datom eid :movie-link/link-type
                             (+ link-type-base (Long/parseLong link-type)))))))
-    datoms (csv/parse-csv (slurp "data/movie_link.csv"))))
+    datoms (d/read-csv (slurp "data/movie_link.csv"))))
 
 (defn- add-aka-name [datoms]
   (reduce
@@ -197,7 +195,7 @@
           (conj! (d/datom eid :aka-name/name-pcode-nf name-pcode-nf))
           (not (s/blank? surname-pcode))
           (conj! (d/datom eid :aka-name/surname-pcode surname-pcode)))))
-    datoms (csv/parse-csv (slurp "data/aka_name.csv"))))
+    datoms (d/read-csv (slurp "data/aka_name.csv"))))
 
 (defn- add-aka-title [datoms]
   (reduce
@@ -227,7 +225,7 @@
           (conj! (d/datom eid :aka-title/episode-nr (Long/parseLong episode-nr)))
           (not (s/blank? note))
           (conj! (d/datom eid :aka-title/note note)))))
-    datoms (csv/parse-csv (slurp "data/aka_title.csv"))))
+    datoms (d/read-csv (slurp "data/aka_title.csv"))))
 
 (defn- add-company-name [datoms]
   (reduce
@@ -242,7 +240,7 @@
           (conj! (d/datom eid :company-name/name-pcode-nf name-pcode-nf))
           (not (s/blank? name-pcode-sf))
           (conj! (d/datom eid :company-name/name-pcode-sf name-pcode-sf)))))
-    datoms (csv/parse-csv (slurp "data/company_name.csv"))))
+    datoms (d/read-csv (slurp "data/company_name.csv"))))
 
 (defn- add-complete-cast [datoms]
   (reduce
@@ -255,7 +253,7 @@
                             (+ comp-cast-type-base (Long/parseLong subject))))
             (conj! (d/datom eid :complete-cast/status
                             (+ comp-cast-type-base (Long/parseLong status)))))))
-    datoms (csv/parse-csv (slurp "data/complete_cast.csv"))))
+    datoms (d/read-csv (slurp "data/complete_cast.csv"))))
 
 (defn- add-keyword [datoms]
   (reduce
@@ -264,7 +262,7 @@
         (-> ds
             (conj! (d/datom eid :keyword/keyword keyword))
             (conj! (d/datom eid :keyword/phonetic-code phonetic-code)))))
-    datoms (csv/parse-csv (slurp "data/keyword.csv"))))
+    datoms (d/read-csv (slurp "data/keyword.csv"))))
 
 (defn- add-char-name [datoms]
   (reduce
@@ -279,7 +277,7 @@
           (conj! (d/datom eid :char-name/name-pcode-nf name-pcode-nf))
           (not (s/blank? surname-pcode))
           (conj! (d/datom eid :char-name/surname-pcode surname-pcode)))))
-    datoms (csv/parse-csv (slurp "data/char_name.csv"))))
+    datoms (d/read-csv (slurp "data/char_name.csv"))))
 
 (persistent! (-> (transient [])
                  ;; add-comp-cast-type

@@ -88,7 +88,6 @@ air, moon roof, loaded\",4799.00")
     (is (= (last csv)
            ["1996" "Jeep" "Grand Cherokee", "MUST SELL!\nair, moon roof, loaded" "4799.00"]))))
 
-
 (deftest reading-and-writing-test
   (let [string-writer (StringWriter.)]
     (->> simple sut/read-csv (sut/write-csv string-writer))

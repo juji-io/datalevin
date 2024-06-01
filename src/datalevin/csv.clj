@@ -6,76 +6,69 @@
    [org.eclipse.collections.impl.list.mutable FastList]
    [java.io Reader Writer StringReader]))
 
-(def ^:const lf  \newline)
-(def ^:const cr  \return)
-(def ^:const esc \\)
-(def ^:const eof -1)
-
 (defprotocol IReadCSV
-  (read-csv* [input sep quo cb-size]))
+  (read-csv* [input sep quo]))
 
 (extend-protocol IReadCSV
   String
-  (read-csv* [s sep quo cb-size]
-    (read-csv* (StringReader. s) sep quo cb-size))
+  (read-csv* [s sep quo]
+    (read-csv* (StringReader. s) sep quo))
 
   Reader
-  (read-csv* [^Reader reader sep quo cb-size]
-    (let [cb      (char-array cb-size)
-          res     (FastList.)
+  (read-csv* [^Reader reader sep quo]
+    (let [res     (FastList.)
           add-rec (fn [rec ^StringBuilder sb]
                     (.add res (persistent! (conj! rec (.toString sb)))))]
-      (loop [len 0
-             i   0
+      (loop [c   (.read reader)
              rec (transient [])
              sb  (StringBuilder.)
              nl? false
              q?  false
              e?  false]
-        (if (zero? len)
-          (let [readn (.read reader cb 0 cb-size)]
-            (if (= readn eof)
-              (if (zero? (.length sb)) res (do (add-rec rec sb) res))
-              (recur readn 0 rec sb nl? q? e?)))
-          (if (< i len)
-            (let [c (aget cb i)]
-              (condp = c
-                sep (if q?
-                      (recur len (inc i) rec (.append sb c) false q? false)
-                      (recur len (inc i) (conj! rec (.toString sb))
-                             (StringBuilder.) false q? false))
-                lf  (if q?
-                      (recur len (inc i) rec (.append sb c) false q? false)
-                      (if nl?
-                        (recur len (inc i) rec sb false q? false)
-                        (do (add-rec rec sb)
-                            (recur len (inc i) (transient []) (StringBuilder.)
-                                   false q? false))))
-                cr  (if q?
-                      (recur len (inc i) rec (.append sb c) false q? false)
-                      (if nl?
-                        (recur len (inc i) rec sb false q? false)
-                        (do (add-rec rec sb)
-                            (recur len (inc i) (transient []) (StringBuilder.)
-                                   true q? false))))
-                quo (if q?
-                      (if e?
-                        (recur len (inc i) rec (.append sb c) false q? false)
-                        (recur len (inc i) rec sb false false false))
-                      (if (zero? (.length sb))
-                        (recur len (inc i) rec sb false true false)
-                        (recur len (inc i) rec (.append sb c) false q? false)))
-                esc (if q?
-                      (recur len (inc i) rec sb false q? true)
-                      (recur len (inc i) rec (.append sb c) false q? false))
-                (recur len (inc i) rec (.append sb c) false q? false)))
-            (recur 0 0 rec sb nl? q? e?)))))))
+        (if (== c -1)
+          (if (zero? (.length sb)) res (do (add-rec rec sb) res))
+          (let [cc (char c)
+                nc (.read reader)]
+            (condp == c
+              sep (if q?
+                    (recur nc rec (.append sb cc) false q? false)
+                    (recur nc (conj! rec (.toString sb))
+                           (StringBuilder.) false q? false))
+              quo (if q?
+                    (if e?
+                      (recur nc rec (.append sb cc) false q? false)
+                      (recur nc rec sb false false false))
+                    (if (zero? (.length sb))
+                      (recur nc rec sb false true false)
+                      (recur nc rec (.append sb cc) false q? false)))
+              (case cc
+                \newline
+                (if q?
+                  (recur nc rec (.append sb cc) false q? false)
+                  (if nl?
+                    (recur nc rec sb false q? false)
+                    (do (add-rec rec sb)
+                        (recur nc (transient []) (StringBuilder.)
+                               false q? false))))
+                \return
+                (if q?
+                  (recur nc rec (.append sb cc) false q? false)
+                  (if nl?
+                    (recur nc rec sb false q? false)
+                    (do (add-rec rec sb)
+                        (recur nc (transient []) (StringBuilder.)
+                               true q? false))))
+                \\
+                (if q?
+                  (recur nc rec sb false q? true)
+                  (recur nc rec (.append sb cc) false q? false))
+                (recur nc rec (.append sb cc) false q? false)))))))))
 
 (defn read-csv
   [input & options]
-  (let [{:keys [separator quote cb-size]
-         :or   {separator \, quote \" cb-size 4096}} options]
-    (read-csv* input separator quote cb-size)))
+  (let [{:keys [separator quote]
+         :or   {separator \, quote \"}} options]
+    (read-csv* input (int separator) (int quote))))
 
 ;; minor modification from clojure.data.csv, included for convenience
 

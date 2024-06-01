@@ -4,7 +4,8 @@
 
 ### Added
 - `read-csv` and `write-csv` functions similar to that of `clojure.data.csv`.
-  The CSV parser is eager, faster and more robust in handling quoted content .
+  Our CSV parser is eager, about 1.5X faster and much more robust in handling
+  quoted content.
 
 ### Improved
 - [Datalog] port applicable fixes from Datascript 1.6.5
