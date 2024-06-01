@@ -9,7 +9,7 @@
    [datalevin.analyzer :as a]
    [datalevin.sparselist :as sl]
    [datalevin.util :as u]
-   [clojure.data.csv :as csv]
+   [datalevin.csv :as csv]
    [clojure.java.io :as io]
    [clojure.string :as s]
    [jsonista.core :as json]
@@ -349,7 +349,7 @@
                                   :db/fulltext  true}})
         data (rows->maps
                (with-open [reader (io/reader "test/data/data.csv")]
-                 (doall (csv/read-csv reader))))]
+                 (csv/read-csv reader)))]
     (d/transact! conn data)
     (is (= 36 (count (d/fulltext-datoms (d/db conn) "Memorex" {:top 100}))))
     (is (= (d/q '[:find (count ?e) .

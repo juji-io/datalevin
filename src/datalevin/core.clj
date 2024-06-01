@@ -5,6 +5,7 @@
    [clojure.edn :as edn]
    [taoensso.nippy :as nippy]
    [datalevin.util :as u]
+   [datalevin.csv :as csv]
    [datalevin.remote :as r]
    [datalevin.search :as sc]
    [datalevin.db :as db]
@@ -2101,6 +2102,24 @@ one of the following scalar data types, a vector of these scalars to indicate a 
   - `:instant`, timestamp, same as `java.util.Date`
   - `:uuid`, UUID, same as `java.util.UUID`"}
   read-buffer b/read-buffer)
+
+(def ^{:arglists '([input & opts])
+       :doc      "Reads CSV-data from input (String or java.io.Reader) into a list of vectors of strings. This function is eager and faster than clojure.data.csv/read-csv. The parser is also more robust in dealing with quoted data.
+
+   Valid options are
+     :separator (default \\,)
+     :quote (default \\\")"}
+  read-csv csv/read-csv)
+
+(def ^{:arglists '([writer data & opts])
+       :doc      "Writes data to writer in CSV-format. Same as clojure.data.csv/write-csv.
+
+   Valid options are
+     :separator (Default \\,)
+     :quote (Default \\\")
+     :quote? (A predicate function which determines if a string should be quoted. Defaults to quoting only when necessary.)
+     :newline (:lf (default) or :cr+lf)"}
+  write-csv csv/write-csv)
 
 (def ^{:arglists '([s])
        :doc      "Turn a string into a hexified string"}

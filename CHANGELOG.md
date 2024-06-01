@@ -3,21 +3,10 @@
 ## WIP
 
 ### Added
-- [Datalog] Extended rule syntax to allow aggregation function in rule head,
-  increasing expressiveness to enable applications such as machine learning.
-- [Datalog] Special rule argument `:datalevin/last-iter` to indicate interest in
-  only the result of last iteration, enabling optimization in evaluation of
-  recursive rules.
-- [Datalog] new rule evaluation algorithm.
-- [Datalog] materialized views that are automatically maintained
+- `read-csv` and `write-csv` functions similar to that of `clojure.data.csv`.
+  The CSV parser is eager, faster and more robust in handling quoted content .
 
 ### Improved
-- [Datalog] Faster cardinality estimation using CVM algorithm, with configurable
-  trade-off between storage and accuracy by option: `:cvm-sample-size`, which
-  specifies the number of in-memory/stored sampled keys for an attribute. This
-  reduces planning time for queries involving attributes with huge number of
-  distinct values . **Note**, re-index is needed to take advantage of this
-  feature for existing DBs.
 - [Datalog] port applicable fixes from Datascript 1.6.5
 - [Platform] Use local LMDB library on FreeBSD if available (thx @markusalbertgraf)
 - update deps
