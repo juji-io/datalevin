@@ -327,8 +327,8 @@
   *max-readers* 126)
 
 (def ^{:dynamic true
-       :doc     "Initial db file size is 100 megabytes, automatically grown"}
-  *init-db-size* 100)
+       :doc     "Initial db file size is 1000 MiB, automatically grown"}
+  *init-db-size* 1000)
 
 (def ^{:dynamic true
        :doc     "Initial maximal value size is 16384 bytes, automatically grown"}

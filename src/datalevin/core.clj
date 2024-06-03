@@ -2104,7 +2104,7 @@ one of the following scalar data types, a vector of these scalars to indicate a 
   read-buffer b/read-buffer)
 
 (def ^{:arglists '([input & opts])
-       :doc      "Reads CSV-data from input (String or java.io.Reader) into a list of vectors of strings. This function is eager and faster than clojure.data.csv/read-csv. The parser is also more robust in dealing with quoted data.
+       :doc      "Reads CSV-data from input (String or java.io.Reader) into a lazy sequence of vectors of strings. This function is faster than clojure.data.csv/read-csv, and is more robust in dealing with quoted data.
 
    Valid options are
      :separator (default \\,)

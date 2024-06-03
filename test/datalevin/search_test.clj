@@ -349,7 +349,7 @@
                                   :db/fulltext  true}})
         data (rows->maps
                (with-open [reader (io/reader "test/data/data.csv")]
-                 (csv/read-csv reader)))]
+                 (doall (csv/read-csv reader))))]
     (d/transact! conn data)
     (is (= 36 (count (d/fulltext-datoms (d/db conn) "Memorex" {:top 100}))))
     (is (= (d/q '[:find (count ?e) .

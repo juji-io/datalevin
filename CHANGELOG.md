@@ -3,9 +3,12 @@
 ## WIP
 
 ### Added
-- `read-csv` and `write-csv` functions similar to that of `clojure.data.csv`.
-  Our CSV parser is eager, about 1.5X faster and much more robust in handling
-  quoted content.
+- `read-csv` drop-in replacement for `clojure.data.csv/read-csv`. This CSV
+  parser is about 1.5X faster and is more robust in handling quoted content.
+- same `write-csv` for completeness.
+
+### Changed
+- [Datalog] Change initial DB size to 1 GiB.
 
 ### Improved
 - [Datalog] port applicable fixes from Datascript 1.6.5

@@ -2,7 +2,7 @@
  :deps  {
          com.github.jnr/jnr-ffi                      {:mvn/version "2.2.16"}
          org.lmdbjava/lmdbjava                       {:mvn/version "0.9.0"}
-         com.taoensso/nippy                          {:mvn/version "3.4.0-RC3"}
+         com.taoensso/nippy                          {:mvn/version "3.4.2"}
          org.babashka/sci                            {:mvn/version "0.8.41"}
          com.fasterxml.jackson.core/jackson-core     {:mvn/version "2.17.0"}
          org.roaringbitmap/RoaringBitmap             {:mvn/version "1.0.6"}

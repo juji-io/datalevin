@@ -4,9 +4,9 @@
    [datalevin.csv :as sut]
    [clojure.test :refer [deftest is are]])
   (:import
-   [java.io Reader StringReader StringWriter EOFException]))
+   [java.io StringWriter]))
 
-(deftest buffer-size-test
+(deftest base-test
   (let [input  "1,movie\n2,tv series\n3,tv movie\n4,video movie\n5,tv mini series\n6,video game\n7,episode"
         output [["1","movie"]
                 ["2","tv series"]
@@ -15,8 +15,7 @@
                 ["5","tv mini series"]
                 ["6","video game"]
                 ["7","episode"]]]
-    (are [size] (= output (sut/read-csv input {:cb-size size}))
-      1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24)))
+    (is (= output (doall (sut/read-csv input))))))
 
 (deftest line-ending-test
   (let [lf-end    "1,actor\n2,actress\n3,producer\n4,writer\n5,cinematographer\n6,composer\n7,costume designer\n8,director\n9,editor\n10,miscellaneous crew\n11,production designer\n12,guest\n"
@@ -35,7 +34,7 @@
                    ["10","miscellaneous crew"]
                    ["11","production designer"]
                    ["12","guest"]]]
-    (are [input] (= output (sut/read-csv input))
+    (are [input] (= output (doall (sut/read-csv input)))
       lf-end cr-end crlf-end mixed-end)))
 
 (deftest quotation-test
@@ -46,7 +45,7 @@
                 ["831" "Bob \"danger\" Smith" "" "" "O869" "T928"]]]
     (is (= output
            (with-open [reader (io/reader "test/data/test.csv")]
-             (sut/read-csv reader))))))
+             (doall (sut/read-csv reader)))))))
 
 ;; minor modification from tests of clojure.data.csv
 
@@ -70,17 +69,17 @@
 air, moon roof, loaded\",4799.00")
 
 (deftest reading-test
-  (let [csv (sut/read-csv simple)]
+  (let [csv (doall (sut/read-csv simple))]
     (is (= (count csv) 3))
     (is (= (count (first csv)) 3))
     (is (= (first csv) ["Year" "Make" "Model"]))
     (is (= (last csv) ["2000" "Mercury" "Cougar"])))
-  (let [csv (sut/read-csv simple-alt-sep :separator \;)]
+  (let [csv (doall (sut/read-csv simple-alt-sep :separator \;))]
     (is (= (count csv) 3))
     (is (= (count (first csv)) 3))
     (is (= (first csv) ["Year" "Make" "Model"]))
     (is (= (last csv) ["2000" "Mercury" "Cougar"])))
-  (let [csv (sut/read-csv complicated)]
+  (let [csv (doall (sut/read-csv complicated))]
     (is (= (count csv) 4))
     (is (= (count (first csv)) 5))
     (is (= (first csv)
@@ -94,19 +93,19 @@ air, moon roof, loaded\",4799.00")
     (is (= simple (str string-writer)))))
 
 (deftest parse-line-endings-test
-  (let [csv (sut/read-csv "Year,Make,Model\n1997,Ford,E350")]
+  (let [csv (doall (sut/read-csv "Year,Make,Model\n1997,Ford,E350"))]
     (is (= 2 (count csv)))
     (is (= ["Year" "Make" "Model"] (first csv)))
     (is (= ["1997" "Ford" "E350"] (second csv))))
-  (let [csv (sut/read-csv "Year,Make,Model\r\n1997,Ford,E350")]
+  (let [csv (doall (sut/read-csv "Year,Make,Model\r\n1997,Ford,E350"))]
     (is (= 2 (count csv)))
     (is (= ["Year" "Make" "Model"] (first csv)))
     (is (= ["1997" "Ford" "E350"] (second csv))))
-  (let [csv (sut/read-csv "Year,Make,Model\r1997,Ford,E350")]
+  (let [csv (doall (sut/read-csv "Year,Make,Model\r1997,Ford,E350"))]
     (is (= 2 (count csv)))
     (is (= ["Year" "Make" "Model"] (first csv)))
     (is (= ["1997" "Ford" "E350"] (second csv))))
-  (let [csv (sut/read-csv "Year,Make,\"Model\"\r1997,Ford,E350")]
+  (let [csv (doall (sut/read-csv "Year,Make,\"Model\"\r1997,Ford,E350"))]
     (is (= 2 (count csv)))
     (is (= ["Year" "Make" "Model"] (first csv)))
     (is (= ["1997" "Ford" "E350"] (second csv)))))
