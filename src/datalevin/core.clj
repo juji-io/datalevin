@@ -248,7 +248,7 @@ Only usable for debug output.
   datom-v dd/datom-v)
 
 (def ^{:arglists '([datoms] [datoms dir] [datoms dir schema] [datoms dir schema opts])
-       :doc      "Low-level function for creating a Datalog database quickly from a trusted sequence of datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+       :doc      "Low-level function for creating a Datalog database quickly from a sequence of trusted datoms, useful for bulk data loading. `dir` could be a local directory path or a dtlv connection URI string. Does no validation on inputs, so `datoms` must be well-formed and match schema.
 
  `opts` map has keys:
 
@@ -264,6 +264,12 @@ Only usable for debug output.
 
  See also [[datom]], [[new-search-engine]]."}
   init-db db/init-db)
+
+(def ^{:arglists '([db datoms])
+       :doc      "Low-level function for filling a Datalog database quickly with a sequence of trusted datoms, useful for bulk data loading. Does no validation on inputs, so `datoms` must be well-formed and match schema.
+
+ See also [[datom]], [[init-db]]."}
+  fill-db db/fill-db)
 
 (def ^{:arglists '([db])
        :doc      "Close the Datalog database"}

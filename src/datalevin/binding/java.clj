@@ -84,9 +84,9 @@
 (defn- kv-flags
   [type flags]
   (let [t (flag-type type)]
-    (if (empty? flags)
-      (make-array t 0)
-      (into-array t (mapv flag flags)))))
+    (if (seq flags)
+      (into-array t (mapv flag flags))
+      (make-array t 0))))
 
 (deftype Rtx [lmdb
               ^Txn txn

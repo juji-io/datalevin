@@ -348,6 +348,12 @@
        :doc     "The number of samples considered when build the key compression dictionary is 65536"}
   *compress-sample-size* 65536)
 
+;; datalog db
+
+(def ^{:dynamic true
+       :doc     "batch size (# of datoms) when filling DB"}
+  *fill-db-batch-size* 1048576)
+
 ;; datalog query engine
 
 (def ^{:dynamic true

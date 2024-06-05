@@ -134,9 +134,12 @@
 
   (let [schema { :aka { :db/cardinality :db.cardinality/many :db/aid 1}}
         datoms #{(d/datom 1 :age  17)
-                 (d/datom 1 :name "Ivan")}
+                 (d/datom 1 :name "Ivan")
+                 (d/datom 1 :aka "danger")
+                 (d/datom 1 :aka "fun")}
         dir    (u/tmp-dir (str "test-" (UUID/randomUUID)))
-        conn   (d/conn-from-db (d/init-db datoms dir schema))]
+        conn   (d/conn-from-db (-> (d/empty-db dir schema)
+                                   (d/fill-db datoms)))]
     (is (= datoms (set (d/datoms @conn :eav))))
     (is (= (d/schema conn) (db/-schema @conn)))
     (d/close conn)

@@ -3,6 +3,7 @@
 ## WIP
 
 ### Added
+- [Datalog] `fill-db` to bulk-load a collection of trusted datoms.
 - `read-csv` drop-in replacement for `clojure.data.csv/read-csv`. This CSV
   parser is about 1.5X faster and is more robust in handling quoted content.
 - same `write-csv` for completeness.

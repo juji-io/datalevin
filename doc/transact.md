@@ -66,8 +66,8 @@ For usage examples, see tests in `datalevin.test.transact`.
 
 ### By Transaction
 
-The most straightforward method of transacting bulk data at a time using
-`transact!` works quite well.
+The most straightforward method of transacting data at a time using `transact!`
+works quite well for many cases.
 
 Because Datalevin supports only a single write thread at a time, parallel
 transactions actually slow writes down significantly due to the thread switching
@@ -75,18 +75,19 @@ overhead.
 
 However, transacting Datalog data involves a great number of data transformation
 and integrity checks, hence it can be slow. When initializing a DB with data, it
-may not be necessary to pay the price of this overhead.
+may not be necessary to pay the price of this overhead. Also, out of memory
+errors may be encountered if the amount of data to be transacted is too large.
 
-### By `init-db`
+### By `init-db` and `fill-db`
 
 If it is possible, a much faster way of bulk loading data into an empty DB is to
-directly load a list of prepared datoms using `init-db` function. However, it is
-the caller's responsibility to ensure these datoms are correct because no check
-is performed.
+directly load a collection of prepared datoms using `init-db` function. However,
+it is the caller's responsibility to ensure these datoms are correct because data
+integrity checks and temporary entity ID resolution are not performed.
 
-We do not support bulk loading prepared datoms into a DB that is not
-empty, because it would be dangerous to bypass data integrity checks.
-
+Similarly, `fill-db` can be used to bulk load additional collections of prepared
+datoms into a DB that is not empty. The same caution on datoms preparation need
+to apply.
 
 ## Transactable Entities in Datalog store
 

@@ -476,8 +476,16 @@
             {:error :init-db}))
    (validate-schema schema)
    (let [store (open-store dir schema opts)]
-     (s/load-datoms store datoms)
+     (doseq [batch (sequence (partition-all c/*fill-db-batch-size*) datoms)]
+       (s/load-datoms store batch))
      (new-db store))))
+
+(defn fill-db
+  [db datoms]
+  (let [store (.-store ^DB db)]
+    (doseq [batch (sequence (partition-all c/*fill-db-batch-size*) datoms)]
+      (s/load-datoms store batch))
+    (new-db store)))
 
 (defn close-db [^DB db]
   (let [store ^IStore (.-store db)]

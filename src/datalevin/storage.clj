@@ -962,7 +962,8 @@
   [^Store store ^Datom d ^FastList ft-ds ^UnifiedMap giants]
   (let [attr   (.-a d)
         schema (schema store)
-        _      (or (not ((opts store) :closed-schema?))
+        opts   (opts store)
+        _      (or (not (opts :closed-schema?))
                    (schema attr)
                    (u/raise "Attribute is not defined in schema when
 `:closed-schema?` is true: " attr {:attr attr :value (.-v d)}))
@@ -973,7 +974,7 @@
         v      (.-v d)
         aid    (props :db/aid)
         max-gt (max-gt store)
-        _      (or (not (:validate-data? (opts store)))
+        _      (or (not (opts :validate-data?))
                    (b/valid-data? v vt)
                    (u/raise "Invalid data, expecting" vt " got " v {:input v}))
         i      (b/indexable e aid v vt max-gt)
