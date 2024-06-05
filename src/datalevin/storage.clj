@@ -140,9 +140,9 @@
   [props]
   (if-let [vt (props :db/valueType)]
     (if (= vt :db.type/tuple)
-      (if-let [tts (:db/tupleTypes props)]
+      (if-let [tts (props :db/tupleTypes)]
         tts
-        (if-let [tt (:db/tupleType props)] [tt] :data))
+        (if-let [tt (props :db/tupleType)] [tt] :data))
       vt)
     :data))
 
@@ -150,13 +150,12 @@
   [schema ^Datom d high?]
   (let [e  (if-some [e (.-e d)] e (if high? c/emax c/e0))
         vm (if high? c/vmax c/v0)
-
         gm (if high? c/gmax c/g0)]
     (if-let [a (.-a d)]
       (if-let [p (schema a)]
         (if-some [v (.-v d)]
-          (b/indexable e (:db/aid p) v (value-type p) gm)
-          (b/indexable e (:db/aid p) vm (value-type p) gm))
+          (b/indexable e (p :db/aid) v (value-type p) gm)
+          (b/indexable e (p :db/aid) vm (value-type p) gm))
         (b/indexable e c/a0 c/v0 nil gm))
       (let [am (if high? c/amax c/a0)]
         (if-some [v (.-v d)]
@@ -468,19 +467,19 @@
       (let [;; fulltext [:a d [e aid v]], [:d d [e aid v]],
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (FastList.)
-            txs    (FastList. (* 2 (count datoms)))
-            giants (UnifiedMap.)]
-        (doseq [datom datoms]
-          (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds giants)
-            (delete-datom this datom txs ft-ds giants)))
+            giants (UnifiedMap.)
+            expand #(if (d/datom-added %)
+                      (insert-datom this % ft-ds giants)
+                      (delete-datom this % ft-ds giants))]
         (lmdb/transact-kv
-          lmdb (doto txs
-                 (.add (lmdb/kv-tx :put c/meta :max-tx
-                                   (advance-max-tx this) :attr :long))
-                 (.add (lmdb/kv-tx :put c/meta :last-modified
-                                   (System/currentTimeMillis) :attr :long))))
-        (fulltext-index search-engines ft-ds))))
+          lmdb
+          (-> (sequence (comp (map expand) cat) datoms)
+              (conj (lmdb/kv-tx :put c/meta :max-tx (advance-max-tx this)
+                                :attr :long))
+              (conj (lmdb/kv-tx :put c/meta :last-modified
+                                (System/currentTimeMillis) :attr :long))))
+        (fulltext-index search-engines ft-ds)))
+    this)
 
   (fetch [_ datom]
     (mapv #(retrieved->datom lmdb attrs %)
@@ -960,10 +959,10 @@
            op])))
 
 (defn- insert-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
+  [^Store store ^Datom d ^FastList ft-ds ^UnifiedMap giants]
   (let [attr   (.-a d)
         schema (schema store)
-        _      (or (not (:closed-schema? (opts store)))
+        _      (or (not ((opts store) :closed-schema?))
                    (schema attr)
                    (u/raise "Attribute is not defined in schema when
 `:closed-schema?` is true: " attr {:attr attr :value (.-v d)}))
@@ -979,23 +978,23 @@
                    (u/raise "Invalid data, expecting" vt " got " v {:input v}))
         i      (b/indexable e aid v vt max-gt)
         giant? (b/giant? i)]
-    (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
-    (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
-    (when giant?
-      (advance-max-gt store)
-      (let [gd [e attr v]]
-        (.put giants gd max-gt)
-        (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
-                              :id :data [:append]))))
-    (when (= :db.type/ref vt)
-      (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
-                          (if giant? [:g [max-gt v]] [:a [e aid v]]))))))
+                          (if giant? [:g [max-gt v]] [:a [e aid v]]))))
+    (cond-> [(lmdb/kv-tx :put c/ave i i :av :eg)
+             (lmdb/kv-tx :put c/eav e i :id :avg)]
+      giant?
+      (conj (do (advance-max-gt store)
+                (let [gd [e attr v]]
+                  (.put giants gd max-gt)
+                  (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
+                              :id :data [:append]))))
+      (= :db.type/ref vt)
+      (conj (lmdb/kv-tx :put c/vae v i :id :ae)))))
 
 (defn- delete-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
+  [^Store store ^Datom d ^FastList ft-ds ^UnifiedMap giants]
   (let [e      (.-e d)
         attr   (.-a d)
         v      (.-v d)
@@ -1021,13 +1020,13 @@
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))
     (let [ii (Indexable. e aid v (.-f i) (.-b i) (or gt c/normal))]
-      (.add txs (lmdb/kv-tx :del-list c/ave ii [ii] :av :eg))
-      (.add txs (lmdb/kv-tx :del-list c/eav e [ii] :id :avg))
-      (when gt
-        (when gt-cur (.remove giants d-eav))
-        (.add txs (lmdb/kv-tx :del c/giants gt :id)))
-      (when (= :db.type/ref vt)
-        (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
+      (cond-> [(lmdb/kv-tx :del-list c/ave ii [ii] :av :eg)
+               (lmdb/kv-tx :del-list c/eav e [ii] :id :avg)]
+        gt
+        (conj (do (when gt-cur (.remove giants d-eav))
+                  (lmdb/kv-tx :del c/giants gt :id)))
+        (= :db.type/ref vt)
+        (conj (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
 
 (defn- transact-opts
   [lmdb opts]

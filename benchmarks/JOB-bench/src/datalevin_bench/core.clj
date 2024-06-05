@@ -1,6 +1,7 @@
 (ns datalevin-bench.core
   (:require
    [datalevin.core :as d]
+   [datalevin.storage :as st]
    [clojure.java.io :as io]
    [clojure.string :as s]))
 
@@ -166,8 +167,10 @@
                   :info-type/info content))
        (d/read-csv (slurp "data/info_type.csv"))))
 
+(defn lazy-mapcat [f coll] (for [x coll, fx (f x)] fx))
+
 (defn- add-movie-link []
-  (mapcat
+  (lazy-mapcat
     (fn [[id movie linked-movie link-type]]
       (let [eid (+ movie-link-base (Long/parseLong id))]
         [(d/datom eid :movie-link/movie
@@ -179,7 +182,7 @@
     (d/read-csv (slurp "data/movie_link.csv"))))
 
 (defn- add-aka-name []
-  (mapcat
+  (lazy-mapcat
     (fn [[id person name imdb-index name-pcode-cf
          name-pcode-nf surname-pcode]]
       (let [eid (+ aka-name-base (Long/parseLong id))]
@@ -197,7 +200,7 @@
     (d/read-csv (slurp "data/aka_name.csv"))))
 
 (defn- add-aka-title []
-  (mapcat
+  (lazy-mapcat
     (fn [[id movie title imdb-index kind production-year phonetic-code
          episode-of season-nr episode-nr note]]
       (let [eid (+ aka-title-base (Long/parseLong id))]
@@ -226,7 +229,7 @@
     (d/read-csv (slurp "data/aka_title.csv"))))
 
 (defn- add-company-name []
-  (mapcat
+  (lazy-mapcat
     (fn [[id name country-code imdb-id name-pcode-nf name-pcode-sf]]
       (let [eid (+ company-name-base (Long/parseLong id))]
         (cond-> [(d/datom eid :company-name/name name)]
@@ -241,7 +244,7 @@
     (d/read-csv (slurp "data/company_name.csv"))))
 
 (defn- add-complete-cast []
-  (mapcat
+  (lazy-mapcat
     (fn [[id movie subject status]]
       (let [eid (+ complete-cast-base (Long/parseLong id))]
         [(d/datom eid :complete-cast/movie
@@ -253,7 +256,7 @@
     (d/read-csv (slurp "data/complete_cast.csv"))))
 
 (defn- add-keyword []
-  (mapcat
+  (lazy-mapcat
     (fn [[id keyword phonetic-code]]
       (let [eid (+ keyword-base (Long/parseLong id))]
         [(d/datom eid :keyword/keyword keyword)
@@ -261,7 +264,7 @@
     (d/read-csv (slurp "data/keyword.csv"))))
 
 (defn- add-char-name []
-  (mapcat
+  (lazy-mapcat
     (fn [[id name imdb-index imdb-id name-pcode-nf surname-pcode]]
       (let [eid (+ char-name-base (Long/parseLong id))]
         (cond-> [(d/datom eid :char-name/name name)]
@@ -276,7 +279,7 @@
     (d/read-csv (slurp "data/char_name.csv"))))
 
 (defn- add-movie-companies []
-  (mapcat
+  (lazy-mapcat
     (fn [[id movie company company-type note]]
       (let [eid (+ movie-companies-base (Long/parseLong id))]
         (cond-> [(d/datom eid :movie-companies/movie
@@ -292,21 +295,23 @@
     (d/read-csv (slurp "data/movie_companies.csv"))))
 
 (defn- add-movie-info [reader]
-  (mapcat
-    (fn [[id movie info-type info note]]
-      (let [eid (+ movie-info-base (Long/parseLong id))]
-        (cond-> [(d/datom eid :movie-info/movie
-                          (+ title-base (Long/parseLong movie)))
-                 (d/datom eid :movie-info/info-type
-                          (+ info-type-base
-                             (Long/parseLong info-type)))
-                 (d/datom eid :movie-info/info info)]
-          (not (s/blank? note))
-          (conj (d/datom eid :movie-info/note note)))))
+  (sequence
+    (comp
+      (map (fn [[id movie info-type info note]]
+             (let [eid (+ movie-info-base (Long/parseLong id))]
+               (cond-> [(d/datom eid :movie-info/movie
+                                 (+ title-base (Long/parseLong movie)))
+                        (d/datom eid :movie-info/info-type
+                                 (+ info-type-base
+                                    (Long/parseLong info-type)))
+                        (d/datom eid :movie-info/info info)]
+                 (not (s/blank? note))
+                 (conj (d/datom eid :movie-info/note note))))))
+      cat)
     (d/read-csv reader)))
 
 (defn- add-movie-info-idx [reader]
-  (mapcat
+  (lazy-mapcat
     (fn [[id movie info-type info note]]
       (let [eid (+ movie-info-idx-base (Long/parseLong id))]
         (cond-> [(d/datom eid :movie-info-idx/movie
@@ -319,7 +324,7 @@
     (d/read-csv reader)))
 
 (defn- add-movie-keyword [reader]
-  (mapcat
+  (lazy-mapcat
     (fn [[id movie keyword]]
       (let [eid (+ movie-keyword-base (Long/parseLong id))]
         [(d/datom eid :movie-keyword/movie
@@ -329,7 +334,7 @@
     (d/read-csv reader)))
 
 (defn- add-name [reader]
-  (mapcat
+  (lazy-mapcat
     (fn [[id name imdb-index imdb-id gender name-pcode-cf name-pcode-nf
          surname-pcode]]
       (let [eid (+ name-base (Long/parseLong id))]
@@ -349,7 +354,7 @@
     (d/read-csv reader)))
 
 (defn- add-person-info [reader]
-  (mapcat
+  (lazy-mapcat
     (fn [[id person info-type info note]]
       (let [eid (+ person-info-base (Long/parseLong id))]
         (cond-> [(d/datom eid :person-info/person
@@ -362,82 +367,94 @@
     (d/read-csv reader)))
 
 (defn- add-title [reader]
-  (mapcat
-    (fn [[id title imdb-index kind production-year imdb-id phonetic-code
-         episode-of season-nr episode-nr series-years]]
-      (let [eid (+ title-base (Long/parseLong id))]
-        (cond-> [(d/datom eid :title/title title)
-                 (d/datom eid :title/kind
-                          (+ kind-type-base (Long/parseLong kind)))]
-          (not (s/blank? imdb-index))
-          (conj (d/datom eid :title/imdb-index imdb-index))
-          (not (s/blank? production-year))
-          (conj (d/datom eid :title/production-year
-                         (Long/parseLong production-year)))
-          (not (s/blank? imdb-id))
-          (conj (d/datom eid :title/imdb-id (Long/parseLong imdb-id)))
-          (not (s/blank? phonetic-code))
-          (conj (d/datom eid :title/phonetic-code phonetic-code))
-          (not (s/blank? episode-of))
-          (conj (d/datom eid :title/episode-of
-                         (+ title-base (Long/parseLong episode-of))))
-          (not (s/blank? season-nr))
-          (conj (d/datom eid :title/season-nr (Long/parseLong season-nr)))
-          (not (s/blank? episode-nr))
-          (conj (d/datom eid :title/episode-nr (Long/parseLong episode-nr)))
-          (not (s/blank? series-years))
-          (conj (d/datom eid :title/series-years series-years)))))
+  (sequence
+    (comp
+      (map (fn [[id title imdb-index kind production-year imdb-id phonetic-code
+                episode-of season-nr episode-nr series-years]]
+             (let [eid (+ title-base (Long/parseLong id))]
+               (cond-> [(d/datom eid :title/title title)
+                        (d/datom eid :title/kind
+                                 (+ kind-type-base (Long/parseLong kind)))]
+                 (not (s/blank? imdb-index))
+                 (conj (d/datom eid :title/imdb-index imdb-index))
+                 (not (s/blank? production-year))
+                 (conj (d/datom eid :title/production-year
+                                (Long/parseLong production-year)))
+                 (not (s/blank? imdb-id))
+                 (conj (d/datom eid :title/imdb-id (Long/parseLong imdb-id)))
+                 (not (s/blank? phonetic-code))
+                 (conj (d/datom eid :title/phonetic-code phonetic-code))
+                 (not (s/blank? episode-of))
+                 (conj (d/datom eid :title/episode-of
+                                (+ title-base (Long/parseLong episode-of))))
+                 (not (s/blank? season-nr))
+                 (conj (d/datom eid :title/season-nr (Long/parseLong season-nr)))
+                 (not (s/blank? episode-nr))
+                 (conj (d/datom eid :title/episode-nr (Long/parseLong episode-nr)))
+                 (not (s/blank? series-years))
+                 (conj (d/datom eid :title/series-years series-years))))))
+      cat)
     (d/read-csv reader)))
 
 (defn- add-cast-info [reader]
-  (mapcat
-    (fn [[id person movie person-role note nr-order role]]
-      (let [eid (+ cast-info-base (Long/parseLong id))]
-        (cond-> [(d/datom eid :cast-info/person
-                          (+ name-base (Long/parseLong person)))
-                 (d/datom eid :cast-info/movie
-                          (+ title-base (Long/parseLong movie)))
-                 (d/datom eid :cast-info/role
-                          (+ role-type-base (Long/parseLong role)))]
-          (not (s/blank? person-role))
-          (conj (d/datom eid :cast-info/person-role
-                         (+ char-name-base (Long/parseLong person-role))))
-          (not (s/blank? note))
-          (conj (d/datom eid :cast-info/note note))
-          (not (s/blank? nr-order))
-          (conj (d/datom eid :cast-info/nr-order
-                         (Long/parseLong nr-order))))))
+  (sequence
+    (comp
+      (map (fn [[id person movie person-role note nr-order role]]
+             (let [eid (+ cast-info-base (Long/parseLong id))]
+               (cond-> [(d/datom eid :cast-info/person
+                                 (+ name-base (Long/parseLong person)))
+
+                        (d/datom eid :cast-info/movie
+                                 (+ title-base (Long/parseLong movie)))
+                        (d/datom eid :cast-info/role
+                                 (+ role-type-base (Long/parseLong role)))]
+                 (not (s/blank? person-role))
+                 (conj (d/datom eid :cast-info/person-role
+                                (+ char-name-base (Long/parseLong person-role))))
+                 (not (s/blank? note))
+                 (conj (d/datom eid :cast-info/note note))
+                 (not (s/blank? nr-order))
+                 (conj (d/datom eid :cast-info/nr-order
+                                (Long/parseLong nr-order)))))))
+      cat)
     (d/read-csv reader)))
 
-(def db (with-open [movie-info-rdr     (io/reader "data/movie_info.csv")
-                    movie-info-idx-rdr (io/reader "data/movie_info_idx.csv")
-                    movie-keyword-rdr  (io/reader "data/movie_keyword.csv")
-                    name-rdr           (io/reader "data/name.csv")
-                    person-info-rdr    (io/reader "data/person_info.csv")
-                    title-rdr          (io/reader "data/title.csv")
-                    cast-info-rdr      (io/reader "data/cast_info.csv")]
-          (time (d/init-db
-                  (concat
-                    (add-comp-cast-type)
-                    (add-company-type)
-                    (add-kind-type)
-                    (add-link-type)
-                    (add-role-type)
-                    (add-info-type)
-                    (add-movie-link)
-                    (add-aka-name)
-                    (add-aka-title)
-                    (add-company-name)
-                    (add-complete-cast)
-                    (add-keyword)
-                    (add-char-name)
-                    (add-movie-companies)
-                    (add-movie-info movie-info-rdr)
-                    (add-movie-info-idx movie-info-idx-rdr)
-                    (add-movie-keyword movie-keyword-rdr)
-                    (add-name name-rdr)
-                    (add-person-info person-info-rdr)
-                    (add-title title-rdr)
-                    (add-cast-info cast-info-rdr))
-                  "db" schema {:closed-schema? true
-                               :kv-opts        {:mapsize 20000}}))))
+(def db
+  (with-open [
+              ;; movie-info-rdr (io/reader "data/movie_info.csv")
+              ;; movie-info-idx-rdr (io/reader "data/movie_info_idx.csv")
+              ;; movie-keyword-rdr  (io/reader "data/movie_keyword.csv")
+              ;; name-rdr           (io/reader "data/name.csv")
+              ;; person-info-rdr    (io/reader "data/person_info.csv")
+              ;; title-rdr          (io/reader "data/title.csv")
+              cast-info-rdr (io/reader "data/cast_info.csv")
+              ]
+    (time
+      (let [db (d/init-db (add-cast-info cast-info-rdr)
+                          "db" schema {:closed-schema? true
+                                       :kv-opts        {:mapsize 300000}})]
+
+        db
+        #_(-> (.-store db)
+              (st/load-datoms (add-cast-info cast-info-rdr))
+              (st/load-datoms (add-title title-rdr))
+              (st/load-datoms (add-person-info person-info-rdr))
+              (st/load-datoms (add-movie-info movie-info-rdr))
+              (st/load-datoms (add-movie-info-idx movie-info-idx-rdr))
+              (st/load-datoms (add-movie-keyword movie-keyword-rdr))
+              (st/load-datoms (add-name name-rdr))
+              (st/load-datoms (add-comp-cast-type))
+              (st/load-datoms (add-company-type))
+              (st/load-datoms (add-kind-type))
+              (st/load-datoms (add-link-type))
+              (st/load-datoms (add-role-type))
+              (st/load-datoms (add-info-type))
+              (st/load-datoms (add-movie-link))
+              (st/load-datoms (add-aka-name))
+              (st/load-datoms (add-aka-title))
+              (st/load-datoms (add-company-name))
+              (st/load-datoms (add-complete-cast))
+              (st/load-datoms (add-keyword))
+              (st/load-datoms (add-char-name))
+              (st/load-datoms (add-movie-companies))
+              )))))
