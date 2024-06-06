@@ -116,6 +116,20 @@
        (greater-equal y (first more)))
      false)))
 
+(defn- smallest
+  ([x] x)
+  ([x y]
+   (if (neg? ^long (dd/compare-with-type x y)) x y))
+  ([x y & more]
+   (reduce smallest (smallest x y) more)))
+
+(defn- largest
+  ([x] x)
+  ([x y]
+   (if (pos? ^long (dd/compare-with-type x y)) x y))
+  ([x y & more]
+   (reduce largest (largest x y) more)))
+
 (def query-fns {'=                           =,
                 '==                          ==,
                 'not=                        not=,
@@ -133,8 +147,8 @@
                 'mod                         mod,
                 'inc                         inc,
                 'dec                         dec,
-                'max                         max,
-                'min                         min,
+                'max                         largest,
+                'min                         smallest,
                 'zero?                       zero?,
                 'pos?                        pos?,
                 'neg?                        neg?,

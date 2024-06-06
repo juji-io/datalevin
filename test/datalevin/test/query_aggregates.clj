@@ -12,7 +12,7 @@
                   ["Cyclops" 1]
                   ["Chimera" 1] ]]
     (testing "with"
-      (is (= (d/q '[ :find ?heads
+      (is (= (d/q '[:find ?heads
                     :with ?monster
                     :in   [[?monster ?heads]] ]
                   [ ["Medusa" 1]
@@ -25,6 +25,12 @@
                     :in   [[?monster ?heads]] ]
                   monsters)
              [[4]])))
+
+    (testing "aggregate on strings"
+      (is (= (d/q '[:find (max ?monster)
+                    :in [[?monster ?heads]]]
+                  monsters)
+             [["Medusa"]])))
 
     (testing "Multiple aggregates, correct grouping with :with"
       (is (= (d/q '[ :find (sum ?heads) (min ?heads) (max ?heads) (count ?heads) (count-distinct ?heads)
