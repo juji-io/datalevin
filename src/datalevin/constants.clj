@@ -227,8 +227,6 @@
 
 (def default-doc-filter (constantly true))
 
-
-
 (def ^:const terms
   "dbi name suffix for search engine terms index is `terms`"
   "terms")
@@ -352,7 +350,7 @@
 
 (def ^{:dynamic true
        :doc     "batch size (# of datoms) when filling DB"}
-  *fill-db-batch-size* 1048576)
+  *fill-db-batch-size* 3145728)
 
 ;; datalog query engine
 
@@ -396,3 +394,11 @@ Used in English analyzer."}
                \| \< \> \& \@ \# \^ \* \\ \~ \`]]
       (.add s c))
     s))
+
+(def ^{:dynamic true
+       :doc     "batch size when using search index writer and `:index-position?` is `false`"}
+  *index-writer-batch-size* 500)
+
+(def ^{:dynamic true
+       :doc     "batch size  when using search index writer and `:index-position?` is `true`"}
+  *index-writer-batch-size-pos* 200000)

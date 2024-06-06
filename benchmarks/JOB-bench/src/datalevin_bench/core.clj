@@ -439,7 +439,6 @@
           (let [eid (+ cast-info-base (Long/parseLong id))]
             (cond-> [(d/datom eid :cast-info/person
                               (+ name-base (Long/parseLong person)))
-
                      (d/datom eid :cast-info/movie
                               (+ title-base (Long/parseLong movie)))
                      (d/datom eid :cast-info/role
@@ -456,7 +455,7 @@
       cat)
     (d/read-csv reader)))
 
-;; initial loading of data, can take up to an hour
+;; initial loading of data, can take up to half an hour
 
 #_(def db
     (with-open [movie-info-rdr     (io/reader "data/movie_info.csv")
@@ -473,7 +472,7 @@
                       (reset! start now))
                     db)]
         (-> (d/empty-db "db" schema {:closed-schema? true
-                                     :kv-opts        {:mapsize 300000}})
+                                     :kv-opts        {:mapsize 50000}})
             (show "empty db")
             (d/fill-db (add-comp-cast-type))
             (show "comp-cast-type")
@@ -519,7 +518,7 @@
             (show "cast-info")
             ))))
 
-;; data is already loaded into db
+data is already loaded into db
 (def conn (d/get-conn "db"))
 
 (def q-1a (d/q '[:find [?k ...]

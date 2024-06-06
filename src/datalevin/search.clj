@@ -855,7 +855,9 @@
             unique    (.size new-terms)
             doc-id    (.incrementAndGet ^AtomicInteger max-doc)
             term-set  (IntHashSet.)
-            batch     (if index-position? 250000 500)]
+            batch     (if index-position?
+                        c/*index-writer-batch-size-pos*
+                        c/*index-writer-batch-size*)]
         (when include-text?
           (.add txs (l/kv-tx :put rawtext-dbi doc-id doc-text :int :string)))
         (doseq [^Map$Entry kv (.entrySet new-terms)]
