@@ -27,25 +27,37 @@
               [?e :text ?t]
               [(like ?t ?pat)]]]
     (are [pattern ids] (= (set (d/q q db pattern)) (set ids))
-      "M%"     [2 3]
-      "M%y"    [2 3]
-      "M__y"   [2 3]
-      "M_y"    nil
-      "%litt%" [2]
-      "lit%"   [2]
-      "l%it%"  [2]
-      "l%i%t"  [2]
-      "l%%t"   [2]
-      "li%e"   [2]
-      "lit%e"  [2]
-      "litt%e" [2]
-      "li_t_e" [2]
-      "obse%tion"     nil
-      "boy"    [1]
-      "b%y"    [1 3]
-      "b_y"    [1]
-      "好"     [1]
-      "好__oy" [1])
+      "M%"         [2 3]
+      "M%y%"       [2 3]
+      "M__y%"      [2 3]
+      "M_y%"       nil
+      "obs%"       nil
+      "_M%y%"      nil
+      "M%y_"       nil
+      "_o%y%"      [3]
+      "%?"         [3]
+      "%lamb%"     [2]
+      "%fire_"     [2]
+      "%fire."     [2]
+      "%fire%"     [2]
+      "%litt%"     [2]
+      "%lit%"      [2]
+      "%l%it%"     [2]
+      "%l%i%t%"    [2]
+      "%l%%t%"     [2]
+      "%li%e%"     [2]
+      "%lit%e%"    [2]
+      "%litt%e%"   [2]
+      "%li_t_e%"   [2]
+      "%obse%tion" nil
+      "%boy"       [1]
+      "%boy%"      [1]
+      "%bo_"       [1]
+      "%b%y%"      [1 3]
+      "%b_y"       [1]
+      "%好%"       [1]
+      "%好__oy"    [1]
+      )
     (d/close-db db)
     (u/delete-files dir)))
 
