@@ -518,7 +518,7 @@
             (show "cast-info")
             ))))
 
-data is already loaded into db
+;; assume data is already loaded into db
 (def conn (d/get-conn "db"))
 
 (def q-1a (d/q '[:find [?k ...]

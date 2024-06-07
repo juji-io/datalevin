@@ -3,6 +3,11 @@
 ## WIP
 
 ### Added
+- [Datalog] `like` function that is similar to LIKE operator in SQL, implemented
+  as state machines, which may be further optimized by rewriting into index
+  range boundary whenever appropriate.
+- [Datalog] `in` function that is similar to IN operator in SQL, which is
+  optimized by special index scan operations.
 - [Datalog] `fill-db` to bulk-load a collection of trusted datoms,
   `*fill-db-batch-size*` dynamic var to control the batch size (default 3
   million datoms). The same var also control `init-db` batch size.

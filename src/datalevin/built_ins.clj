@@ -8,11 +8,18 @@
    [datalevin.entity :as de]
    [datalevin.util :as u :refer [raise]])
   (:import
+   [datalevin.utl LikeFSM]
    [datalevin.storage Store]
    [datalevin.search SearchEngine]
    [datalevin.db DB]))
 
-(defn- -differ? [& xs]
+;; TODO precompile during query parsing
+(defn- like
+  [^String input ^String pattern]
+  (.match (LikeFSM. (.getBytes pattern)) (.getBytes input)))
+
+(defn- -differ?
+  [& xs]
   (let [l  (count xs)
         hl (/ l 2)]
     (not= (take hl xs) (drop hl xs))))
@@ -201,6 +208,7 @@
                 'fulltext                    fulltext,
                 'tuple                       vector,
                 'untuple                     identity
+                'like                        like
                 'clojure.string/blank?       str/blank?,
                 'clojure.string/includes?    str/includes?,
                 'clojure.string/starts-with? str/starts-with?,

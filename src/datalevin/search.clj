@@ -881,7 +881,7 @@
         (.add txs (l/kv-tx :put docs-dbi doc-ref
                            [doc-id unique (.toArray ^IntHashSet term-set)]
                            :data :doc-info))
-        (when (< batch (.size txs))
+        (when (< ^long batch (.size txs))
           (l/transact-kv lmdb txs)
           (.clear txs)))))
 

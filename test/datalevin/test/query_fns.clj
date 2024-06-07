@@ -9,6 +9,46 @@
 
 (use-fixtures :each db-fixture)
 
+(deftest test-like-fn
+  (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
+                (d/db-with
+                  [{:db/id 1,
+                    :text  "is 好 boy"}
+                   {:db/id 2,
+                    :text
+                    "Mary had a little lamb whose fleece was red as fire."}
+                   {:db/id 3,
+                    :text
+                    "Moby Dick is a story of a whale and a man obsessed?"}]))
+        q   '[:find [?e ...]
+              :in $ ?pat
+              :where
+              [?e :text ?t]
+              [(like ?t ?pat)]]]
+    (are [pattern ids] (= (set (d/q q db pattern)) (set ids))
+      "M%"     [2 3]
+      "M%y"    [2 3]
+      "M__y"   [2 3]
+      "M_y"    nil
+      "%litt%" [2]
+      "lit%"   [2]
+      "l%it%"  [2]
+      "l%i%t"  [2]
+      "l%%t"   [2]
+      "li%e"   [2]
+      "lit%e"  [2]
+      "litt%e" [2]
+      "li_t_e" [2]
+      "obse%tion"     nil
+      "boy"    [1]
+      "b%y"    [1 3]
+      "b_y"    [1]
+      "好"     [1]
+      "好__oy" [1])
+    (d/close-db db)
+    (u/delete-files dir)))
+
 (deftest test-string-fn
   (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
@@ -323,6 +363,7 @@
        [?e :age 20]
        [(= ?e 1)]]
       #{})
+
     (let [pred (fn [db e a]
                  (= a (:age (d/entity db e))))]
       (is (= (d/q '[:find ?e
