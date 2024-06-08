@@ -19,6 +19,7 @@
    [datalevin.constants :as c]
    [datalevin.query :as q])
   (:import
+   [java.util Arrays]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
    [datalevin.relation Relation]
@@ -1174,6 +1175,16 @@
                       switch?    [o3 (nth args i+1) (nth args i-1)]
                       :else      [o3 (nth args i-1) (nth args i+1)]))))
 
+(defn- max-string
+  [^String prefix]
+  (let [n (alength (.getBytes prefix))]
+    (if (< n c/+val-bytes-wo-hdr+)
+      (let [l  (- c/+val-bytes-wo-hdr+ n)
+            ba (byte-array l)]
+        (Arrays/fill ba (unchecked-byte 0xFF))
+        (str prefix (String. ba)))
+      prefix)))
+
 (def ^:const wildm (int \%))
 (def ^:const wilds (int \_))
 
@@ -1190,8 +1201,8 @@
         (let [min-s  (min wm-s ws-s)
               end    (if (== min-s -1) (max wm-s ws-s) min-s)
               prefix (subs pattern 0 end)]
-          (set-range 0 m ['v prefix] 2 :at-least :at-most
-                     :closed true))))))
+          (set-range 1 m [prefix :dummy (max-string prefix)] 3
+                     :at-most :at-least :closed false))))))
 
 (defn- optimize-like
   [m ^String pattern]
