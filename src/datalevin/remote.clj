@@ -33,8 +33,8 @@
    (load-datoms* client db-name datoms datom-type simulated? false))
   ([client db-name datoms datom-type simulated? writing?]
    (let [t (if (= datom-type :txs)
-             :tx-data
-             :load-datoms)
+                  :tx-data
+                  :load-datoms)
          {:keys [type message result err-data]}
          (if (< (count datoms) ^long c/+wire-datom-batch-size+)
            (cl/request client {:type     t

@@ -34,8 +34,12 @@
       "obs%"       nil
       "_M%y%"      nil
       "M%y_"       nil
+      "is%"        [1]
+      "is%boy"     [1]
+      "%is%"       [1 3]
       "_o%y%"      [3]
       "%?"         [3]
+      "%red%fire%" [2]
       "%lamb%"     [2]
       "%fire_"     [2]
       "%fire."     [2]
