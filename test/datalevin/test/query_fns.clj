@@ -57,6 +57,8 @@
       "%b_y"       [1]
       "%好%"       [1]
       "%好__oy"    [1]
+      "is 好 boy"  [1]
+      "好 boy"     nil
       )
     (d/close-db db)
     (u/delete-files dir)))

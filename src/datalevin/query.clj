@@ -20,6 +20,7 @@
    [datalevin.query :as q])
   (:import
    [clojure.lang ILookup LazilyPersistentVector]
+   [datalevin.utl LikeFSM]
    [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
@@ -1173,6 +1174,32 @@
                       switch?    [o3 (nth args i+1) (nth args i-1)]
                       :else      [o3 (nth args i-1) (nth args i+1)]))))
 
+(def ^:const wildm (int \%))
+(def ^:const wilds (int \_))
+
+(defn- convert-like
+  [m ^String pattern]
+  ;; TODO combine ranges
+  (if (:range m)
+    m
+    (let [wm-s (.indexOf pattern wildm)
+          ws-s (.indexOf pattern wilds)]
+      (if (or (zero? wm-s) (zero? ws-s))
+        m
+        ;; wildcard in middle, convert to range [:at-least prefix]
+        (let [min-s  (min wm-s ws-s)
+              end    (if (== min-s -1) (max wm-s ws-s) min-s)
+              prefix (subs pattern 0 end)]
+          (set-range 0 m ['v prefix] 2 :at-least :at-most
+                     :closed true))))))
+
+(defn- optimize-like
+  [m ^String pattern]
+  (let [fsm     (LikeFSM. (.getBytes pattern))
+        matcher (fn [^String input] (.match fsm (.getBytes input)))
+        m       (update m :pred concatv [matcher])]
+    (convert-like m pattern)))
+
 (defn- add-pred-clause
   [graph clause v]
   (walk/postwalk
@@ -1186,17 +1213,44 @@
             (let [ac (count args)
                   i  ^long (u/index-of #(= % v) args)]
               (condp = f
-                '<  (set-range i m args ac :less-than :greater-than
-                               :open false)
-                '<= (set-range i m args ac :at-most :at-least
-                               :closed false)
-                '>  (set-range i m args ac :greater-than :less-than
-                               :open true)
-                '>= (set-range i m args ac :at-least :at-most
-                               :closed true)
-                '=  (let [c (some #(when-not (qu/free-var? %) %) args)]
-                      (assoc m :range [:closed c c]))
+                '<    (set-range i m args ac :less-than :greater-than
+                                 :open false)
+                '<=   (set-range i m args ac :at-most :at-least
+                                 :closed false)
+                '>    (set-range i m args ac :greater-than :less-than
+                                 :open true)
+                '>=   (set-range i m args ac :at-least :at-most
+                                 :closed true)
+                '=    (let [c (some #(when-not (qu/free-var? %) %) args)]
+                        (assoc m :range [:closed c c]))
+                'like (optimize-like m (peek args))
                 (update m :pred conjv pred)))))
+        m))
+    graph))
+
+(defn- free->bound
+  "cases where free var is actually bound.
+  * like pattern is free of wildcards"
+  [graph clause v]
+  (walk/postwalk
+    (fn [m]
+      (if-let [free (:free m)]
+        (if-let [[k pattern]
+                 (some
+                   (fn [[k props]]
+                     (when (= v (:var props))
+                       (let [[f & args :as pred] (first clause)
+                             args                (vec args)]
+                         (when (= f 'like)
+                           (let [pattern (peek args)]
+                             (when-not (or (str/includes? pattern "%")
+                                           (str/includes? pattern "_"))
+                               [k pattern]))))))
+                   free)]
+          (-> m
+              (assoc-in [:bound k] {:val pattern})
+              (update :free dissoc k))
+          m)
         m))
     graph))
 
@@ -1211,6 +1265,7 @@
             (-> c
                 (update :late-clauses #(remove #{clause} %))
                 (update :opt-clauses conj clause)
+                (update :graph #(free->bound % clause v))
                 (update :graph #(add-pred-clause % clause v))))
           c))
       context (:qwhere parsed-q))))

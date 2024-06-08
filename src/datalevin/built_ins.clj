@@ -13,7 +13,7 @@
    [datalevin.search SearchEngine]
    [datalevin.db DB]))
 
-;; TODO precompile during query parsing
+;; for test, as optimizer will pre-compile and optimize this away
 (defn- like
   [^String input ^String pattern]
   (.match (LikeFSM. (.getBytes pattern)) (.getBytes input)))
