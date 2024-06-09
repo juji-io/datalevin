@@ -133,11 +133,13 @@
                   :where [(> 2 1)]] [:a :b :c])
            #{[:a] [:b] [:c]})))
 
-  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
+  (let [dir (u/tmp-dir (str "query-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:parent {:db/valueType :db.type/ref}})
-                (d/db-with [ { :db/id 1, :name "Ivan", :age 15 }
-                            { :db/id 2, :name "Petr", :age 22, :height 240, :parent 1}
-                            { :db/id 3, :name "Slava", :age 37, :parent 2}]))]
+                (d/db-with
+                  [{ :db/id 1, :name "Ivan", :age 15 }
+                   { :db/id 2, :name "Petr", :age 22, :height 240, :parent 1}
+                   { :db/id 3, :name "Slava", :age 37, :parent 2}]))]
+
     (testing "ground"
       (is (= (d/q '[:find ?vowel
                     :where [(ground [:a :e :i :o :u]) [?vowel ...]]])

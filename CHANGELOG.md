@@ -5,9 +5,9 @@
 ### Added
 - [Datalog] `like` function that is similar to LIKE operator in SQL, which is
   compiled into FSM, and is further optimized by rewriting into index range
-  boundary whenever appropriate.
+  boundary whenever appropriate. Similarly, `not-like`.
 - [Datalog] `in` function that is similar to IN operator in SQL, which is
-  optimized by special index scan operations.
+  optimized by special index scan operations. Similarly, `not-in`.
 - [Datalog] `fill-db` to bulk-load a collection of trusted datoms,
   `*fill-db-batch-size*` dynamic var to control the batch size (default 4
   million datoms). The same var also control `init-db` batch size.

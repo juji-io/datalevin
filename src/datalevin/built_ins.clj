@@ -13,11 +13,6 @@
    [datalevin.search SearchEngine]
    [datalevin.db DB]))
 
-;; for test, as optimizer will pre-compile and optimize this away
-(defn- like
-  [^String input ^String pattern]
-  (.match (LikeFSM. (.getBytes pattern)) (.getBytes input)))
-
 (defn- -differ?
   [& xs]
   (let [l  (count xs)
@@ -137,82 +132,83 @@
   ([x y & more]
    (reduce largest (largest x y) more)))
 
-(def query-fns {'=                           =,
-                '==                          ==,
-                'not=                        not=,
-                '!=                          not=,
-                '<                           less
-                '>                           greater
-                '<=                          less-equal
-                '>=                          greater-equal
-                '+                           +,
-                '-                           -,
-                '*                           *,
-                '/                           /,
-                'quot                        quot,
-                'rem                         rem,
-                'mod                         mod,
-                'inc                         inc,
-                'dec                         dec,
-                'max                         largest,
-                'min                         smallest,
-                'zero?                       zero?,
-                'pos?                        pos?,
-                'neg?                        neg?,
-                'even?                       even?,
-                'odd?                        odd?,
-                'compare                     compare,
-                'rand                        rand,
-                'rand-int                    rand-int,
-                'true?                       true?,
-                'false?                      false?,
-                'nil?                        nil?,
-                'some?                       some?,
-                'not                         not,
-                'and                         and-fn,
-                'or                          or-fn,
-                'complement                  complement,
-                'identical?                  identical?,
-                'identity                    identity,
-                'keyword                     keyword,
-                'meta                        meta,
-                'name                        name,
-                'namespace                   namespace,
-                'type                        type,
-                'vector                      vector,
-                'list                        list,
-                'set                         set,
-                'hash-map                    hash-map,
-                'array-map                   array-map,
-                'count                       count,
-                'range                       range,
-                'not-empty                   not-empty,
-                'empty?                      empty?,
-                'contains?                   contains?,
-                'str                         str,
-                'pr-str                      pr-str,
-                'print-str                   print-str,
-                'println-str                 println-str,
-                'prn-str                     prn-str,
-                'subs                        subs,
-                'get                         get
-                're-find                     re-find,
-                're-matches                  re-matches,
-                're-seq                      re-seq,
-                're-pattern                  re-pattern,
-                '-differ?                    -differ?,
-                'get-else                    -get-else,
-                'get-some                    -get-some,
-                'missing?                    -missing?,
-                'ground                      identity,
-                'fulltext                    fulltext,
-                'tuple                       vector,
-                'untuple                     identity
-                'like                        like
-                'clojure.string/blank?       str/blank?,
-                'clojure.string/includes?    str/includes?,
-                'clojure.string/starts-with? str/starts-with?,
-                'clojure.string/ends-with?   str/ends-with?})
+;; These are directly called
+(def query-fns
+  {'=                           =,
+   '==                          ==,
+   'not=                        not=,
+   '!=                          not=,
+   '<                           less
+   '>                           greater
+   '<=                          less-equal
+   '>=                          greater-equal
+   '+                           +,
+   '-                           -,
+   '*                           *,
+   '/                           /,
+   'quot                        quot,
+   'rem                         rem,
+   'mod                         mod,
+   'inc                         inc,
+   'dec                         dec,
+   'max                         largest,
+   'min                         smallest,
+   'zero?                       zero?,
+   'pos?                        pos?,
+   'neg?                        neg?,
+   'even?                       even?,
+   'odd?                        odd?,
+   'compare                     compare,
+   'rand                        rand,
+   'rand-int                    rand-int,
+   'true?                       true?,
+   'false?                      false?,
+   'nil?                        nil?,
+   'some?                       some?,
+   'not                         not,
+   'and                         and-fn,
+   'or                          or-fn,
+   'complement                  complement,
+   'identical?                  identical?,
+   'identity                    identity,
+   'keyword                     keyword,
+   'meta                        meta,
+   'name                        name,
+   'namespace                   namespace,
+   'type                        type,
+   'vector                      vector,
+   'list                        list,
+   'set                         set,
+   'hash-map                    hash-map,
+   'array-map                   array-map,
+   'count                       count,
+   'range                       range,
+   'not-empty                   not-empty,
+   'empty?                      empty?,
+   'contains?                   contains?,
+   'str                         str,
+   'pr-str                      pr-str,
+   'print-str                   print-str,
+   'println-str                 println-str,
+   'prn-str                     prn-str,
+   'subs                        subs,
+   'get                         get
+   're-find                     re-find,
+   're-matches                  re-matches,
+   're-seq                      re-seq,
+   're-pattern                  re-pattern,
+   '-differ?                    -differ?,
+   'get-else                    -get-else,
+   'get-some                    -get-some,
+   'missing?                    -missing?,
+   'ground                      identity,
+   'fulltext                    fulltext,
+   'tuple                       vector,
+   'untuple                     identity
+   'clojure.string/blank?       str/blank?,
+   'clojure.string/includes?    str/includes?,
+   'clojure.string/starts-with? str/starts-with?,
+   'clojure.string/ends-with?   str/ends-with?})
 
 ;; Aggregates
 

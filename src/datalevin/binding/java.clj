@@ -271,8 +271,7 @@
                 (if forward? (init) (init-back)))]
         (reify
           Iterator
-          (hasNext [_]
-            (if (not @started?) (init-k) (advance)))
+          (hasNext [_] (if @started? (advance) (init-k)))
           (next [_] (MapEntry. k v)))))))
 
 (deftype ListIterable [^DBI db
@@ -391,9 +390,9 @@
         (reify
           Iterator
           (hasNext [_]
-            (if (not @started?)
-              (init-kv)
-              (if forward-val? (advance-val) (advance-val-back))))
+            (if @started?
+              (if forward-val? (advance-val) (advance-val-back))
+              (init-kv)))
           (next [_] (MapEntry. k v)))))))
 
 (deftype ListRandKeyValIterable [^DBI db

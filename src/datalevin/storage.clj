@@ -16,7 +16,6 @@
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
-   [org.eclipse.collections.impl.set.mutable UnifiedSet]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -338,6 +337,140 @@
     (let [k (b/read-buffer (lmdb/k kv) (index->ktype index))
           v (b/read-buffer (lmdb/v kv) (index->vtype index))]
       (pred (retrieved->datom lmdb attrs [k v])))))
+
+(defn- ave-key-range
+  [val-range aid vt]
+  (let [[op lv hv] val-range]
+    (case op
+      :all          [:closed (b/indexable nil aid c/v0 vt nil)
+                     (b/indexable nil aid c/vmax vt nil)]
+      :at-least     [:closed (b/indexable nil aid lv vt nil)
+                     (b/indexable nil aid c/vmax vt nil)]
+      :at-most      [:closed (b/indexable nil aid c/v0 vt nil)
+                     (b/indexable nil aid lv vt nil)]
+      :closed       [op (b/indexable nil aid lv vt nil)
+                     (b/indexable nil aid hv vt nil)]
+      :closed-open  [op (b/indexable nil aid lv vt nil)
+                     (b/indexable nil aid hv vt nil)]
+      :greater-than [:open-closed (b/indexable nil aid lv vt nil)
+                     (b/indexable nil aid c/vmax vt nil)]
+      :less-than    [:closed-open (b/indexable nil aid c/v0 vt nil)
+                     (b/indexable nil aid lv vt nil)]
+      :open         [op (b/indexable nil aid lv vt nil)
+                     (b/indexable nil aid hv vt nil)]
+      :open-closed  [op (b/indexable nil aid lv vt nil)
+                     (b/indexable nil aid hv vt nil)])))
+
+(defn- ave-tuples-scan-need-v-many
+  [lmdb ^FastList res k-range]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (let [seen (UnifiedMap.)]
+      (fn [kv]
+        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+              k  [(.-e r) (.-v r)]]
+          (when-not (.get seen k)
+            (let [oa (object-array k)]
+              (.put seen k oa)
+              (.add res oa))))))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-need-v
+  [lmdb ^FastList res k-range]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (fn [kv]
+      (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+            eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+            r  ^Retrieved (ave-kv->retrieved lmdb [av eg])]
+        (.add res (object-array [(.-e r) (.-v r)]))))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-need-v-vpred-many
+  [lmdb ^FastList res k-range vpred]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (let [seen (UnifiedMap.)]
+      (fn [kv]
+        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+              v  (.-v r)
+              k  [(.-e r) v]]
+          (when-not (.get seen k)
+            (when (vpred v)
+              (let [oa (object-array k)]
+                (.put seen k oa)
+                (.add res oa)))))))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-need-v-vpred
+  [lmdb ^FastList res k-range vpred]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (fn [kv]
+      (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+            eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+            r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+            v  (.-v r)]
+        (when (vpred v)
+          (.add res (object-array [(.-e r) v])))))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-no-v-many
+  [lmdb ^FastList res k-range]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (let [seen (LongObjectHashMap.)]
+      (fn [kv]
+        (let [e (b/read-buffer (lmdb/v kv) :id)]
+          (when-not (.get seen e)
+            (let [oa (object-array [e])]
+              (.put seen e oa)
+              (.add res oa))))))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-no-v
+  [lmdb ^FastList res k-range]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (fn [kv]
+      (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-no-v-vpred-many
+  [lmdb ^FastList res k-range vpred]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (let [seen (LongObjectHashMap.)]
+      (fn [kv]
+        (let [bv ^ByteBuffer (lmdb/v kv)
+              e  (b/read-buffer bv :id)]
+          (when-not (.get seen e)
+            (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+                  eg ^Retrieved (b/read-buffer (.rewind bv) :eg)
+                  r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+                  v  (.-v r)]
+              (when (vpred v)
+                (let [oa (object-array [e])]
+                  (.put seen e oa)
+                  (.add res oa))))))))
+    k-range :av [:all] :eg))
+
+(defn- ave-tuples-scan-no-v-vpred
+  [lmdb ^FastList res k-range vpred]
+  (lmdb/visit-list-range
+    lmdb c/ave
+    (fn [kv]
+      (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+            eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+            r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+            v  (.-v r)]
+        (when (vpred v)
+          (.add res (object-array [(.-e r)])))))
+    k-range :av [:all] :eg))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts)
 
@@ -669,50 +802,28 @@
     (.ave-tuples store attr val-range vpred false))
   (ave-tuples [_ attr val-range vpred get-v?]
     (when-let [props (schema attr)]
-      (let [vt  (value-type props)
-            aid (props :db/aid)
-            res (UnifiedSet.)
-            visitor
-            (fn [kv]
-              (if (or vpred get-v?)
-                (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-                      eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-                      r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-                      v  (.-v r)
-                      e  (.-e r)]
-                  (if get-v?
-                    (if vpred
-                      (when (vpred v) (.add res [e v]))
-                      (.add res [e v]))
-                    (when (vpred v) (.add res [e]))))
-                (.add res [(b/read-buffer (lmdb/v kv) :id)])))]
-        (lmdb/visit-list-range
-          lmdb c/ave visitor
-          (let [[op lv hv] val-range]
-            (case op
-              :all          [:closed (b/indexable nil aid c/v0 vt nil)
-                             (b/indexable nil aid c/vmax vt nil)]
-              :at-least     [:closed (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid c/vmax vt nil)]
-              :at-most      [:closed (b/indexable nil aid c/v0 vt nil)
-                             (b/indexable nil aid lv vt nil)]
-              :closed       [op (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid hv vt nil)]
-              :closed-open  [op (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid hv vt nil)]
-              :greater-than [:open-closed (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid c/vmax vt nil)]
-              :less-than    [:closed-open (b/indexable nil aid c/v0 vt nil)
-                             (b/indexable nil aid lv vt nil)]
-              :open         [op (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid hv vt nil)]
-              :open-closed  [op (b/indexable nil aid lv vt nil)
-                             (b/indexable nil aid hv vt nil)])) :av
-          [:all] :eg)
-        (let [ret  (FastList. (.size res))
-              iter (.iterator res)]
-          (while (.hasNext iter) (.add ret (object-array (.next iter))))
-          ret))))
+      (let [k-range (ave-key-range val-range (props :db/aid)
+                                   (value-type props))
+            many?   (= :db.cardinality/many (props :db/cardinality))
+            res     (FastList.)]
+        (cond
+          (and get-v? vpred)
+          (if many?
+            (ave-tuples-scan-need-v-vpred-many lmdb res k-range vpred)
+            (ave-tuples-scan-need-v-vpred lmdb res k-range vpred))
+          vpred
+          (if many?
+            (ave-tuples-scan-no-v-vpred-many lmdb res k-range vpred)
+            (ave-tuples-scan-no-v-vpred lmdb res k-range vpred))
+          get-v?
+          (if many?
+            (ave-tuples-scan-need-v-many lmdb res k-range)
+            (ave-tuples-scan-need-v lmdb res k-range))
+          :else
+          (if many?
+            (ave-tuples-scan-no-v-many lmdb res k-range)
+            (ave-tuples-scan-no-v lmdb res k-range)))
+        res)))
 
   (eav-scan-v [store tuples eid-idx as vpreds]
     (.eav-scan-v store tuples eid-idx as vpreds []))
@@ -730,8 +841,10 @@
               aids      (int-array aids)
               nt        (.size ^List tuples)
               res       (FastList. nt)
-              seen      (LongObjectHashMap. nt)
-              operator
+              seen      (LongObjectHashMap. nt)]
+          (lmdb/operate-list-val-range
+            lmdb c/eav
+            (if no-many?
               (fn [iterable]
                 (let [iter (lmdb/val-iterator iterable)]
                   (dotimes [i nt]
@@ -741,72 +854,78 @@
                         (.addAll res (r/prod-tuples
                                        (r/single-tuples tuple) ts))
                         (let [vs (FastList. na)]
-                          (if no-many?
-                            (loop [next? (lmdb/seek-key iter te :id)
-                                   ai    0]
-                              (if next?
-                                (let [vb (lmdb/next-val iter)
-                                      a  (b/read-buffer vb :int)]
-                                  (if (= a (aget aids ai))
-                                    (let [v    (retrieved->v
-                                                 lmdb (b/avg->r vb))
-                                          pred (aid->pred a)]
-                                      (when (or (nil? pred) (pred v))
+                          (loop [next? (lmdb/seek-key iter te :id)
+                                 ai    0]
+                            (if next?
+                              (let [vb (lmdb/next-val iter)
+                                    a  (b/read-buffer vb :int)]
+                                (if (= a (aget aids ai))
+                                  (let [v    (retrieved->v
+                                               lmdb (b/avg->r vb))
+                                        pred (aid->pred a)]
+                                    (when (or (nil? pred) (pred v))
+                                      (when-not (skip-aids a) (.add vs v))
+                                      (recur (lmdb/has-next-val iter)
+                                             (u/long-inc ai))))
+                                  (recur (lmdb/has-next-val iter) ai)))
+                              (when (= ai na)
+                                (if (.isEmpty vs)
+                                  (do (.put seen te (r/single-tuples
+                                                      (object-array [])))
+                                      (.add res tuple))
+                                  (let [vst (object-array vs)
+                                        new (r/join-tuples tuple vst)]
+                                    (.put seen te (r/single-tuples vst))
+                                    (.add res new))))))))))))
+              (fn [iterable]
+                (let [iter (lmdb/val-iterator iterable)]
+                  (dotimes [i nt]
+                    (let [tuple ^objects (.get ^List tuples i)
+                          te    ^long (aget tuple eid-idx)]
+                      (if-let [ts (.get seen te)]
+                        (.addAll res (r/prod-tuples
+                                       (r/single-tuples tuple) ts))
+                        (let [vs (FastList. na)]
+                          (loop [next? (lmdb/seek-key iter te :id)
+                                 ai    0
+                                 dups  nil]
+                            (if next?
+                              (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                    a  (b/read-buffer (.rewind vb) :int)]
+                                (if (= a (aget aids ai))
+                                  (let [v    (retrieved->v
+                                               lmdb (b/avg->r vb))
+                                        pred (aid->pred a)
+                                        go?  (or (nil? pred) (pred v))]
+                                    (if (many a)
+                                      (recur (lmdb/has-next-val iter)
+                                             ai
+                                             (when go?
+                                               (if (skip-aids a)
+                                                 true
+                                                 ((fnil u/list-add
+                                                        (FastList.))
+                                                  dups v))))
+                                      (when go?
                                         (when-not (skip-aids a) (.add vs v))
                                         (recur (lmdb/has-next-val iter)
-                                               (u/long-inc ai))))
-                                    (recur (lmdb/has-next-val iter) ai)))
+                                               (u/long-inc ai)
+                                               nil))))
+                                  (if dups
+                                    (do
+                                      (when-not (true? dups) (.add vs dups))
+                                      (recur true (u/long-inc ai) nil))
+                                    (recur (lmdb/has-next-val iter)
+                                           ai nil))))
+                              (let [ai (if dups (u/long-inc ai) ai)]
+                                (when (and dups (not (true? dups)))
+                                  (.add vs dups))
                                 (when (= ai na)
-                                  (if (.isEmpty vs)
-                                    (do (.put seen te (r/single-tuples
-                                                        (object-array [])))
-                                        (.add res tuple))
-                                    (let [vst (object-array vs)
-                                          new (r/join-tuples tuple vst)]
-                                      (.put seen te (r/single-tuples vst))
-                                      (.add res new))))))
-                            (loop [next? (lmdb/seek-key iter te :id)
-                                   ai    0
-                                   dups  nil]
-                              (if next?
-                                (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                      a  (b/read-buffer (.rewind vb) :int)]
-                                  (if (= a (aget aids ai))
-                                    (let [v    (retrieved->v
-                                                 lmdb (b/avg->r vb))
-                                          pred (aid->pred a)
-                                          go?  (or (nil? pred) (pred v))]
-                                      (if (many a)
-                                        (recur (lmdb/has-next-val iter)
-                                               ai
-                                               (when go?
-                                                 (if (skip-aids a)
-                                                   true
-                                                   ((fnil u/list-add
-                                                          (FastList.))
-                                                    dups v))))
-                                        (when go?
-                                          (when-not (skip-aids a) (.add vs v))
-                                          (recur (lmdb/has-next-val iter)
-                                                 (u/long-inc ai)
-                                                 nil))))
-                                    (if dups
-                                      (do
-                                        (when-not (true? dups) (.add vs dups))
-                                        (recur true (u/long-inc ai) nil))
-                                      (recur (lmdb/has-next-val iter)
-                                             ai nil))))
-                                (let [ai (if dups (u/long-inc ai) ai)]
-                                  (when (and dups (not (true? dups)))
-                                    (.add vs dups))
-                                  (when (= ai na)
-                                    (let [vst (r/many-tuples vs)
-                                          new (r/prod-tuples
-                                                (r/single-tuples tuple) vst)]
-                                      (.put seen te vst)
-                                      (.addAll res new)))))))))))))]
-          (lmdb/operate-list-val-range
-            lmdb c/eav operator
+                                  (let [vst (r/many-tuples vs)
+                                        new (r/prod-tuples
+                                              (r/single-tuples tuple) vst)]
+                                    (.put seen te vst)
+                                    (.addAll res new)))))))))))))
             [:closed
              (b/indexable nil (aget aids 0) c/v0 nil c/g0)
              (b/indexable nil (aget aids (dec (alength aids)))
@@ -981,14 +1100,14 @@
         giant? (b/giant? i)]
     (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
     (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
+    (when (= :db.type/ref vt)
+      (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when giant?
       (advance-max-gt store)
       (let [gd [e attr v]]
         (.put giants gd max-gt)
         (.add txs (lmdb/kv-tx :put c/giants max-gt (apply d/datom gd)
                               :id :data [:append]))))
-    (when (= :db.type/ref vt)
-      (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v
@@ -1104,8 +1223,7 @@
   (reduce-kv
     (fn [m domain opts]
       (assoc m domain (s/new-search-engine lmdb opts)))
-    {}
-    domains))
+    {} domains))
 
 (defn open
   "Open and return the storage."
