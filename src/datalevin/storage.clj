@@ -16,6 +16,8 @@
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
+   [org.eclipse.collections.impl.set.mutable UnifiedSet]
+   [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
    [datalevin.datom Datom]
    [datalevin.bits Retrieved Indexable]))
 
@@ -270,9 +272,9 @@
     "Return a range of datoms in reverse for the given range (inclusive)
     that return true for (pred x), where x is the datom")
   (ave-tuples
-    [this attr val-range]
-    [this attr val-range vpred]
-    [this attr val-range vpred get-v?]
+    [this attr mcount val-range]
+    [this attr mcount val-range vpred]
+    [this attr mcount val-range vpred get-v?]
     "Return tuples of e or e and v using :ave index")
   (eav-scan-v
     [this tuples eid-idx attrs vpreds]
@@ -362,115 +364,117 @@
                      (b/indexable nil aid hv vt nil)])))
 
 (defn- ave-tuples-scan-need-v-many
-  [lmdb ^FastList res k-range]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (let [seen (UnifiedMap.)]
+  [lmdb ^long mcount k-range]
+  (let [res (UnifiedSet. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
       (fn [kv]
         (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
               eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-              k  [(.-e r) (.-v r)]]
-          (when-not (.get seen k)
-            (let [oa (object-array k)]
-              (.put seen k oa)
-              (.add res oa))))))
-    k-range :av [:all] :eg))
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])]
+          (.add res [(.-e r) (.-v r)])))
+      k-range :av [:all] :eg)
+    (let [ret  (FastList. (.size res))
+          iter (.iterator res)]
+      (while (.hasNext iter) (.add ret (object-array (.next iter))))
+      ret)))
 
 (defn- ave-tuples-scan-need-v
-  [lmdb ^FastList res k-range]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (fn [kv]
-      (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-            eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-            r  ^Retrieved (ave-kv->retrieved lmdb [av eg])]
-        (.add res (object-array [(.-e r) (.-v r)]))))
-    k-range :av [:all] :eg))
+  [lmdb ^long mcount k-range]
+  (let [res (FastList. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
+      (fn [kv]
+        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])]
+          (.add res (object-array [(.-e r) (.-v r)]))))
+      k-range :av [:all] :eg)
+    res))
 
 (defn- ave-tuples-scan-need-v-vpred-many
-  [lmdb ^FastList res k-range vpred]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (let [seen (UnifiedMap.)]
+  [lmdb ^long mcount k-range vpred]
+  (let [res (UnifiedSet. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
       (fn [kv]
         (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
               eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
               r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-              v  (.-v r)
-              k  [(.-e r) v]]
-          (when-not (.get seen k)
-            (when (vpred v)
-              (let [oa (object-array k)]
-                (.put seen k oa)
-                (.add res oa)))))))
-    k-range :av [:all] :eg))
+              v  (.-v r)]
+          (when (vpred v) (.add res [(.-e r) v]))))
+      k-range :av [:all] :eg)
+    (let [ret  (FastList. (.size res))
+          iter (.iterator res)]
+      (while (.hasNext iter) (.add ret (object-array (.next iter))))
+      ret)))
 
 (defn- ave-tuples-scan-need-v-vpred
-  [lmdb ^FastList res k-range vpred]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (fn [kv]
-      (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-            eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-            r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-            v  (.-v r)]
-        (when (vpred v)
-          (.add res (object-array [(.-e r) v])))))
-    k-range :av [:all] :eg))
+  [lmdb ^long mcount k-range vpred]
+  (let [res (FastList. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
+      (fn [kv]
+        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+              v  (.-v r)]
+          (when (vpred v) (.add res (object-array [(.-e r) v])))))
+      k-range :av [:all] :eg)
+    res))
 
 (defn- ave-tuples-scan-no-v-many
-  [lmdb ^FastList res k-range]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (let [seen (LongObjectHashMap.)]
-      (fn [kv]
-        (let [e (b/read-buffer (lmdb/v kv) :id)]
-          (when-not (.get seen e)
-            (let [oa (object-array [e])]
-              (.put seen e oa)
-              (.add res oa))))))
-    k-range :av [:all] :eg))
+  [lmdb ^long mcount k-range]
+  (let [res (LongHashSet. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
+      (fn [kv] (.add res (b/read-buffer (lmdb/v kv) :id)))
+      k-range :av [:all] :eg)
+    (let [ret  (FastList. (.size res))
+          iter (.longIterator res)]
+      (while (.hasNext iter) (.add ret (object-array [(.next iter)])))
+      ret)))
 
 (defn- ave-tuples-scan-no-v
-  [lmdb ^FastList res k-range]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (fn [kv]
-      (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
-    k-range :av [:all] :eg))
+  [lmdb ^long mcount k-range]
+  (let [res (FastList. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
+      (fn [kv]
+        (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
+      k-range :av [:all] :eg)
+    res))
 
 (defn- ave-tuples-scan-no-v-vpred-many
-  [lmdb ^FastList res k-range vpred]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (let [seen (LongObjectHashMap.)]
+  [lmdb ^long mcount k-range vpred]
+  (let [res (LongHashSet. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
       (fn [kv]
-        (let [bv ^ByteBuffer (lmdb/v kv)
-              e  (b/read-buffer bv :id)]
-          (when-not (.get seen e)
-            (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-                  eg ^Retrieved (b/read-buffer (.rewind bv) :eg)
-                  r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-                  v  (.-v r)]
-              (when (vpred v)
-                (let [oa (object-array [e])]
-                  (.put seen e oa)
-                  (.add res oa))))))))
-    k-range :av [:all] :eg))
+        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+              v  (.-v r)]
+          (when (vpred v) (.add res (.-e r)))))
+      k-range :av [:all] :eg)
+    (let [ret  (FastList. (.size res))
+          iter (.longIterator res)]
+      (while (.hasNext iter) (.add ret (object-array [(.next iter)])))
+      ret)))
 
 (defn- ave-tuples-scan-no-v-vpred
-  [lmdb ^FastList res k-range vpred]
-  (lmdb/visit-list-range
-    lmdb c/ave
-    (fn [kv]
-      (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-            eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-            r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-            v  (.-v r)]
-        (when (vpred v)
-          (.add res (object-array [(.-e r)])))))
-    k-range :av [:all] :eg))
+  [lmdb ^long mcount k-range vpred]
+  (let [res (FastList. mcount)]
+    (lmdb/visit-list-range
+      lmdb c/ave
+      (fn [kv]
+        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
+              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
+              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
+              v  (.-v r)]
+          (when (vpred v) (.add res (object-array [(.-e r)])))))
+      k-range :av [:all] :eg)
+    res))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts)
 
@@ -796,34 +800,33 @@
        (datom->indexable schema low-datom false)]
       (index->vtype index)))
 
-  (ave-tuples [store attr val-range]
-    (.ave-tuples store attr val-range nil false))
-  (ave-tuples [store attr val-range vpred]
-    (.ave-tuples store attr val-range vpred false))
-  (ave-tuples [_ attr val-range vpred get-v?]
+  (ave-tuples [store attr mcount val-range]
+    (.ave-tuples store attr mcount val-range nil false))
+  (ave-tuples [store attr mcount val-range vpred]
+    (.ave-tuples store attr mcount val-range vpred false))
+  (ave-tuples [_ attr mcount val-range vpred get-v?]
     (when-let [props (schema attr)]
       (let [k-range (ave-key-range val-range (props :db/aid)
-                                   (value-type props))
-            many?   (= :db.cardinality/many (props :db/cardinality))
-            res     (FastList.)]
-        (cond
-          (and get-v? vpred)
-          (if many?
-            (ave-tuples-scan-need-v-vpred-many lmdb res k-range vpred)
-            (ave-tuples-scan-need-v-vpred lmdb res k-range vpred))
-          vpred
-          (if many?
-            (ave-tuples-scan-no-v-vpred-many lmdb res k-range vpred)
-            (ave-tuples-scan-no-v-vpred lmdb res k-range vpred))
-          get-v?
-          (if many?
-            (ave-tuples-scan-need-v-many lmdb res k-range)
-            (ave-tuples-scan-need-v lmdb res k-range))
-          :else
-          (if many?
-            (ave-tuples-scan-no-v-many lmdb res k-range)
-            (ave-tuples-scan-no-v lmdb res k-range)))
-        res)))
+                                   (value-type props))]
+        (if (= :db.cardinality/many (props :db/cardinality))
+          (cond
+            (and get-v? vpred)
+            (ave-tuples-scan-need-v-vpred-many lmdb mcount k-range vpred)
+            vpred
+            (ave-tuples-scan-no-v-vpred-many lmdb mcount k-range vpred)
+            get-v?
+            (ave-tuples-scan-need-v-many lmdb mcount k-range)
+            :else
+            (ave-tuples-scan-no-v-many lmdb mcount k-range))
+          (cond
+            (and get-v? vpred)
+            (ave-tuples-scan-need-v-vpred lmdb mcount k-range vpred)
+            vpred
+            (ave-tuples-scan-no-v-vpred lmdb mcount k-range vpred)
+            get-v?
+            (ave-tuples-scan-need-v lmdb mcount k-range)
+            :else
+            (ave-tuples-scan-no-v lmdb mcount k-range))))))
 
   (eav-scan-v [store tuples eid-idx as vpreds]
     (.eav-scan-v store tuples eid-idx as vpreds []))
@@ -983,11 +986,11 @@
                   v     (aget tuple v-idx)]
               (if-let [ts (not-empty (.get seen v))]
                 (.addAll res (r/prod-tuples (r/single-tuples tuple) ts))
-                (let [es      (LongArrayList.)
-                      visitor (fn [kv]
-                                (.add es (b/read-buffer (lmdb/v kv) :id)))]
+                (let [es (LongArrayList.)]
                   (lmdb/visit-list
-                    lmdb c/ave visitor (b/indexable nil aid v vt nil) :av)
+                    lmdb c/ave
+                    (fn [kv] (.add es (b/read-buffer (lmdb/v kv) :id)))
+                    (b/indexable nil aid v vt nil) :av)
                   (let [ts (r/vertical-tuples (.toArray es))]
                     (.put seen v ts)
                     (.addAll res (r/prod-tuples

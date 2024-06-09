@@ -60,7 +60,7 @@
             :relation out-rel)))
 
 (defrecord InitStep
-    [attr pred val range vars in out know-e? cols save save-in?]
+    [attr pred val range vars in out know-e? cols save save-in? mcount]
 
   IStep
   (-execute [_ context db rel]
@@ -79,11 +79,11 @@
             (nil? val)
             (r/relation!
               (cond-> {e 0} get-v? (assoc v 1))
-              (db/-init-tuples db attr (or range [:all]) pred get-v?))
+              (db/-init-tuples db attr mcount (or range [:all]) pred get-v?))
             :else
             (r/relation!
               {e 0}
-              (db/-init-tuples db attr [:closed val val] nil false)))]
+              (db/-init-tuples db attr mcount [:closed val val] nil false)))]
       (when save-in? (save-intermediates context :relation in rel))
       (save-intermediates context save out out-rel)
       out-rel))
@@ -1417,6 +1417,7 @@
         schema  (db/-schema db)
         init    (cond-> (map->InitStep
                           {:attr attr :vars [e] :out #{e}
+                           :mcount (:count clause)
                            :save *save-intermediate*})
                   var     (assoc :pred (attr-pred [attr clause])
                                  :vars (cond-> [e]
