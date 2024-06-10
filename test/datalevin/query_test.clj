@@ -1,8 +1,12 @@
 (ns datalevin.query-test
   (:require
    [datalevin.test.core :as tdc :refer [db-fixture]]
-   [clojure.test :refer [deftest is use-fixtures]]
+   [clojure.test :refer [deftest is are use-fixtures testing]]
+   [clojure.test.check.generators :as gen]
+   [clojure.test.check.clojure-test :as test]
+   [clojure.test.check.properties :as prop]
    [datalevin.core :as d]
+   [datalevin.query :as sut]
    [datalevin.constants :as c]
    [datalevin.util :as u])
   (:import
@@ -564,3 +568,44 @@
                            db)))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest combine-range-test
+  (testing "range combinations"
+    (are [input output] (= (sut/combine-ranges input) output)
+      [[1 4] [2 3] [7 8]]           [[1 4] [7 8]]
+      [[1 2] [3 4] [5 7]]           [[1 2] [3 4] [5 7]]
+      [[2 9][1 4] [2 5]]            [[1 9]]
+      [[3 7][1 4] [4 5]]            [[1 7]]
+      [[6 6][1 4] [2 4]]            [[1 4] [6 6]]
+      [[1 3] [1 4][2 7]]            [[1 7]]
+      [[1 5] [3 3] [1 4]]           [[1 5]]
+      [[6 6] [1 4] [4 5]]           [[1 5] [6 6]]
+      [[1 3] [4 7] [2 4] [3 5]]     [[1 7]]
+      [[1 2] [3 4] [3 5]]           [[1 2] [3 5]]
+      [[3 5] [2 7] [4 7] [8 9]]     [[2 7] [8 9]]
+      [[4 5] [1 2] [1 4]]           [[1 5]]
+      [[1 2] [1 2] [4 5] [1 5]]     [[1 5]]
+      [[7 9] [3 4] [1 2] [2 3]]     [[1 4] [7 9]]
+      [["abc" "jfk"] ["egg" "pop"]] [["abc" "pop"]]
+      ))
+  (testing "wrong ranges"
+    (is (thrown-with-msg?
+          AssertionError #"[smal big]"
+          (sut/combine-ranges
+            [["abc" "point"] ["of" "course"] ["ok" "ok"]])))))
+
+(test/defspec random-combine-ranges-test
+  100
+  (prop/for-all
+    [bases (gen/vector (gen/large-integer* {:min 1 :max 100}) 5)
+     offsets (gen/vector (gen/large-integer* {:min 1 :max 50}) 5)
+     targets (gen/vector-distinct gen/nat {:num-elements 10})]
+    (let [n         (count bases)
+          ranges    (mapv (fn [b o] [b (+ ^long b ^long o)]) bases offsets)
+          combined  (sut/combine-ranges ranges)
+          in-range? (fn [ranges target]
+                      (some (fn [[l h]] (<= l target h)) ranges))]
+      (is (every? true?
+                  (mapv (fn [x y] (= x y))
+                        (mapv #(in-range? ranges %) targets)
+                        (mapv #(in-range? combined %) targets)))))))

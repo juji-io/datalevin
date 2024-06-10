@@ -1175,6 +1175,41 @@
                       switch?    [o3 (nth args i+1) (nth args i-1)]
                       :else      [o3 (nth args i-1) (nth args i+1)]))))
 
+(defn- combine-ranges*
+  [ranges]
+  (let [orig-from (apply list (sort (map first ranges)))]
+    (loop [intervals []
+           from      (pop orig-from)
+           to        (apply list (sort (map peek ranges)))
+           thread    [(peek orig-from)]]
+      (if (seq to)
+        (let [fc (peek from)
+              tc (peek to)]
+          (if (= (count from) (count to))
+            (recur (conj intervals thread) (pop from) to [fc])
+            (if fc
+              (if (< (compare fc tc) 0)
+                (recur intervals (pop from) to (conj thread fc))
+                (recur intervals from (pop to) (conj thread tc)))
+              (recur intervals from (pop to) (conj thread tc)))))
+        (mapv (fn [t] [(first t) (peek t)]) (conj intervals thread))))))
+
+(defn combine-ranges
+  "ranges is a vector of ascending two element vectors"
+  [ranges]
+  (assert (every? (fn [[l r]] (<= (compare l r) 0)) ranges)
+          "range must be [small big]")
+  (let [rngs (combine-ranges* ranges)]
+    ;; use transient when peek and pop are supported
+    ;; https://clojure.atlassian.net/browse/CLJ-2464
+    (reduce
+      (fn [vs [l r :as n]]
+        (let [[pl pr] (peek vs)]
+          (if (= pr l)
+            (conj (pop vs) [pl r])
+            (conj vs n))))
+      [(first rngs)] (rest rngs))))
+
 (defn- max-string
   [^String prefix]
   (let [n (alength (.getBytes prefix))]
@@ -1197,7 +1232,7 @@
           ws-s (.indexOf pattern wilds)]
       (if (or (zero? wm-s) (zero? ws-s))
         m
-        ;; wildcard in middle, convert to range [:at-least prefix]
+        ;; prefix in front of wildcard, convert to range
         (let [min-s  (min wm-s ws-s)
               end    (if (== min-s -1) (max wm-s ws-s) min-s)
               prefix (subs pattern 0 end)]

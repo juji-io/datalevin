@@ -240,7 +240,9 @@
   (av-size [this a v]
     "Return the numbers of datoms with the given a and v value")
   (av-range-size [this a lv hv] [this a lv hv cap]
-    "Return the numbers of datoms with the given a and v range")
+    "Return the numbers of datoms with given a and v range")
+  (multi-av-range-size [this a ends] [this a ends cap]
+    "Return the numbers of datoms with given a and multiple v ranges")
   (cardinality [this a]
     "Return the number of distinct values of an attribute")
   (head [this index low-datom high-datom]
@@ -275,6 +277,11 @@
     [this attr mcount val-range]
     [this attr mcount val-range vpred]
     [this attr mcount val-range vpred get-v?]
+    "Return tuples of e or e and v using :ave index")
+  (multi-ave-tuples
+    [this attr mcount val-ranges]
+    [this attr mcount val-ranges vpred]
+    [this attr mcount val-ranges vpred get-v?]
     "Return tuples of e or e and v using :ave index")
   (eav-scan-v
     [this tuples eid-idx attrs vpreds]
@@ -676,6 +683,20 @@
        (datom->indexable schema (d/datom c/e0 a lv) false)
        (datom->indexable schema (d/datom c/emax a hv) true)]
       :av cap))
+
+  (multi-av-range-size [this a ends]
+    (.multi-av-range-size this a ends nil))
+  (multi-av-range-size [_ a ends cap]
+    (reduce
+      (fn [^long s [lv hv]]
+        (+ s
+           ^long (lmdb/key-range-list-count
+                   lmdb c/ave
+                   [:closed
+                    (datom->indexable schema (d/datom c/e0 a lv) false)
+                    (datom->indexable schema (d/datom c/emax a hv) true)]
+                   :av cap))
+        0 ends)))
 
   (cardinality [_ a]
     (lmdb/key-range-count
