@@ -5,16 +5,74 @@ public class LikeFSM {
     static final int ALPH_SIZE = 256;
     static final byte S_WILD_BYTE = (byte)95; // _
     static final byte M_WILD_BYTE = (byte)37; // %
+    static final byte DEFAULT_ESC = (byte)33; // !
+
+    static final byte ESC_S_WILD = (byte)-64;
+    static final byte ESC_M_WILD = (byte)-63;
+    static final byte ESC_ESC = (byte)-11;
+
+    byte esc;
 
     byte[] pat;
     int M;
     int[][] TF;
 
+    public LikeFSM(byte[] pattern, char escapeCharacter) {
+        esc = (byte)escapeCharacter;
+        init(pattern);
+    }
+
     public LikeFSM(byte[] pattern) {
-        pat = pattern;
-        M = pattern.length;
+        esc = DEFAULT_ESC;
+        init(pattern);
+    }
+
+    void init(byte[] pattern) {
+        pat = escape(pattern);
+        M = pat.length;
         TF = new int[M + 1][ALPH_SIZE];
         compile();
+    }
+
+    byte[] escape(byte[] pattern) {
+        int n = pattern.length;
+        byte[] dst = new byte[n];
+
+        int i, j = 0;
+        boolean inESC = false;
+
+        for (i = 0; i < n; i++) {
+            byte cur = pattern[i];
+            if (cur == esc) {
+                if (inESC) {
+                    dst[j++] = ESC_ESC;
+                    inESC = false;
+                } else inESC = true;
+            } else {
+                switch (cur) {
+                case S_WILD_BYTE:
+                    if (inESC) {
+                        dst[j++] = ESC_S_WILD;
+                        inESC = false;
+                    } else dst[j++] = cur;
+                    break;
+                case M_WILD_BYTE:
+                    if (inESC) {
+                        dst[j++] = ESC_M_WILD;
+                        inESC = false;
+                    } else dst[j++] = cur;
+                    break;
+                default:
+                    if (inESC) {
+                        throw new IllegalStateException("Can only escape %, _, and escape character itself in like pattern");
+                    } else dst[j++] = cur;
+                }
+            }
+        }
+
+        byte[] ret = new byte[j];
+        System.arraycopy(dst, 0, ret, 0, j);
+        return ret;
     }
 
     void compile() {
@@ -45,7 +103,21 @@ public class LikeFSM {
                     for (x = 0; x < ALPH_SIZE; x++) TF[i][x] = i;
                 else
                     for (x = 0; x < ALPH_SIZE; x++) TF[i][x] = TF[lps][x];
-                TF[i][iInt] = next;
+
+                switch (iByte) {
+                case ESC_ESC:
+                    TF[i][esc & 0xFF] = next;
+                    break;
+                case ESC_M_WILD:
+                    TF[i][M_WILD_BYTE & 0xFF] = next;
+                    break;
+                case ESC_S_WILD:
+                    TF[i][S_WILD_BYTE & 0xFF] = next;
+                    break;
+                default:
+                    TF[i][iInt] = next;
+                }
+
                 isMWild = false;
             }
 
@@ -67,8 +139,8 @@ public class LikeFSM {
 
         int pLast = M - 1;
         byte eByte = pat[pLast];
-        int N = txt.length;
 
+        int N = txt.length;
         for (int i = iStart; i < N; i++) {
             j = TF[j][txt[i] & 0xFF];
 
@@ -81,13 +153,13 @@ public class LikeFSM {
                     if (i == tLast) return true;
                     else return false;
                 default:
-                    if (eByte == txt[tLast]) return true;
+                    if (i == tLast) return true;
                     else return false;
                 }
             }
         }
 
-        if ((eByte == M_WILD_BYTE) && (j == pLast)) return true;
+        if ((j == pLast) && (eByte == M_WILD_BYTE)) return true;
 
         return false;
     }

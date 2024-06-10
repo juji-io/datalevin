@@ -3,9 +3,12 @@
 ## WIP
 
 ### Added
-- [Datalog] `like` function that is similar to LIKE operator in SQL, which is
-  compiled into FSM, and is further optimized by rewriting into index range
-  boundary whenever appropriate. Similarly, `not-like`.
+- [Datalog] `like` function similar to LIKE operator in SQL: `(like input
+  pattern)` or `(like input pattern opts)`. Match pattern accepts wildcards `%`
+  and `_`. `opts` map has key `:escape` that takes an escape character, default
+  is `!`. Pattern is compiled into FSM, and is further optimized by rewriting
+  into index scan range boundary whenever appropriate. Similarly, `not-like`
+  function.
 - [Datalog] `in` function that is similar to IN operator in SQL, which is
   optimized by special index scan operations. Similarly, `not-in`.
 - [Datalog] `fill-db` to bulk-load a collection of trusted datoms,

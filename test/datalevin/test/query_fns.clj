@@ -20,13 +20,23 @@
                     "Mary had a little lamb whose fleece was red as fire."}
                    {:db/id 3,
                     :text
-                    "Moby Dick is a story of a whale and a man obsessed?"}]))
+                    "Moby Dick is a story of a whale and a man obsessed?"}
+                   {:db/id 4
+                    :text  "testing escaping wildcards _, %, and !"}]))
         q   '[:find [?e ...]
               :in $ ?pat
               :where
               [?e :text ?t]
               [(like ?t ?pat)]]]
     (are [pattern ids] (= (set (d/q q db pattern)) (set ids))
+      "testing%"   [4]
+      "%esc%!_%"   [4]
+      "%!%%"       [4]
+      "%!!%"       [4]
+      "%!!"        [4]
+      "%!%, and%"  [4]
+      "%and_!!"    [4]
+      "%and_!"     nil
       "M%"         [2 3]
       "M%y%"       [2 3]
       "M__y%"      [2 3]
@@ -62,8 +72,30 @@
       "%好%"       [1]
       "%好__oy"    [1]
       "is 好 boy"  [1]
-      "好 boy"     nil
-      )
+      "好 boy"     nil)
+    (testing "escape character"
+      (is (thrown-with-msg?
+            Exception #"Can only escape"
+            (d/q q db
+                 "%What?! this throws for ! can only escape %, _ and !")))
+      (let [q-e '[:find [?e ...]
+                  :in $ ?pat ?esc
+                  :where
+                  [?e :text ?t]
+                  [(like ?t ?pat {:escape ?esc})]]
+            db  (-> db
+                    (d/db-with
+                      [{:db/id 5
+                        :text  "home_value increases 25% in a year!"}]))]
+        (is (= [4] (d/q q-e db "%cards |_%" \|)))
+        (is (= [4 5] (d/q q-e db "%|%%" \|)))
+        (is (= [5] (d/q q-e db "%year!" \|)))
+        (is (= [5] (d/q q-e db "%25|%%" \|)))
+        (is (= [5] (d/q q-e db "home_value%" \|)))
+        (is (= [5] (d/q q-e db "%home|_value%" \|)))
+        (is (= [5] (d/q q-e db "home|_value%" \|)))
+        (is (empty? (d/q q-e db "home-value%" \|)))
+        ))
     (d/close-db db)
     (u/delete-files dir)))
 

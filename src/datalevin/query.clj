@@ -19,7 +19,8 @@
    [datalevin.constants :as c]
    [datalevin.query :as q])
   (:import
-   [java.util Arrays]
+   [java.util Arrays List]
+   [java.nio.charset StandardCharsets]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
    [datalevin.relation Relation]
@@ -27,8 +28,7 @@
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
-   [org.eclipse.collections.impl.list.mutable FastList]
-   [java.util List]))
+   [org.eclipse.collections.impl.list.mutable FastList]))
 
 (def ^:dynamic *query-cache* (lru/cache 32 :constant))
 
@@ -1178,21 +1178,23 @@
 (defn- combine-ranges*
   [ranges]
   (let [orig-from (apply list (sort (map first ranges)))]
-    (loop [intervals []
+    (loop [intervals (transient [])
            from      (pop orig-from)
            to        (apply list (sort (map peek ranges)))
-           thread    [(peek orig-from)]]
+           thread    (transient [(peek orig-from)])]
       (if (seq to)
         (let [fc (peek from)
               tc (peek to)]
           (if (= (count from) (count to))
-            (recur (conj intervals thread) (pop from) to [fc])
+            (recur (conj! intervals (persistent! thread)) (pop from) to
+                   (transient [fc]))
             (if fc
               (if (< (compare fc tc) 0)
-                (recur intervals (pop from) to (conj thread fc))
-                (recur intervals from (pop to) (conj thread tc)))
-              (recur intervals from (pop to) (conj thread tc)))))
-        (mapv (fn [t] [(first t) (peek t)]) (conj intervals thread))))))
+                (recur intervals (pop from) to (conj! thread fc))
+                (recur intervals from (pop to) (conj! thread tc)))
+              (recur intervals from (pop to) (conj! thread tc)))))
+        (mapv (fn [t] [(first t) (peek t)])
+              (persistent! (conj! intervals (persistent! thread))))))))
 
 (defn combine-ranges
   "ranges is a vector of ascending two element vectors"
@@ -1240,11 +1242,13 @@
                      :at-most :at-least :closed false))))))
 
 (defn- optimize-like
-  [m ^String pattern]
-  (let [fsm     (LikeFSM. (.getBytes pattern))
+  [m [_ ^String pattern {:keys [escape]}]]
+  (let [pb      (.getBytes pattern StandardCharsets/UTF_8)
+        fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
+        pattern (if escape (str/replace pattern (str escape) "") pattern)
         matcher (fn [^String input] (.match fsm (.getBytes input)))
         m       (update m :pred concatv [matcher])]
-    (convert-like m pattern)))
+    (convert-like m  pattern)))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1269,7 +1273,7 @@
                                  :closed true)
                 '=    (let [c (some #(when-not (qu/free-var? %) %) args)]
                         (assoc m :range [:closed c c]))
-                'like (optimize-like m (peek args))
+                'like (optimize-like m args)
                 (update m :pred conjv pred)))))
         m))
     graph))
@@ -1285,10 +1289,10 @@
                  (some
                    (fn [[k props]]
                      (when (= v (:var props))
-                       (let [[f & args :as pred] (first clause)
-                             args                (vec args)]
+                       (let [[f & args] (first clause)
+                             args       (vec args)]
                          (when (= f 'like)
-                           (let [pattern (peek args)]
+                           (let [pattern (second args)]
                              (when-not (or (str/includes? pattern "%")
                                            (str/includes? pattern "_"))
                                [k pattern]))))))
