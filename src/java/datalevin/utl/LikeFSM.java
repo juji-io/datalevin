@@ -173,20 +173,12 @@ public class LikeFSM {
 
         int N = txt.length;
         for (int i = iStart; i < N; i++) {
+
             j = TF[j][txt[i] & 0xFF];
 
             if (j == M) {
-                int tLast = N - 1;
-
-                switch (eByte) {
-                case M_WILD_BYTE: return true;
-                case S_WILD_BYTE:
-                    if (i == tLast) return true;
-                    else return false;
-                default:
-                    if (i == tLast) return true;
-                    else return false;
-                }
+                if ((eByte == M_WILD_BYTE) || (i == N - 1)) return true;
+                else continue;
             }
         }
 

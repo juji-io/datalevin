@@ -13,7 +13,8 @@
   (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
                 (d/db-with
-                  [{:db/id 1,
+                  [
+                   {:db/id 1,
                     :text  "is 好 boy"}
                    {:db/id 2,
                     :text
@@ -22,7 +23,8 @@
                     :text
                     "Moby Dick is a story of a whale and a man obsessed?"}
                    {:db/id 4
-                    :text  "testing escaping wildcards _, %, and !"}]))
+                    :text  "testing escaping wildcards _, %, and !"}
+                   ]))
         q   '[:find [?e ...]
               :in $ ?pat
               :where
@@ -34,9 +36,15 @@
       "%!%%"       [4]
       "%!!%"       [4]
       "%!!"        [4]
+      "%!_%!!"     [4]
+      "t%!_%!!"    [4]
+      "%t%!_%!!"   [4]
       "%!%, and%"  [4]
       "%and_!!"    [4]
       "%and_!"     nil
+      "%a%a%a%"    [2 3 4]
+      "%M%"        [2 3]
+      "%M%a%"      [2 3]
       "M%"         [2 3]
       "M%y%"       [2 3]
       "M__y%"      [2 3]
@@ -82,7 +90,8 @@
                   [(like ?t ?pat {:escape ?esc})]]
             db  (-> db
                     (d/db-with
-                      [{:db/id 5
+                      [
+                       {:db/id 5
                         :text  "home_value increases 25% in a year!"}
                        {:db/id 6
                         :text  "home value"}
@@ -94,8 +103,18 @@
                         :text  "%_%"}
                        {:db/id 10
                         :text  "_1000_"}
+                       {:db/id 11
+                        :text  "|title|"}
                        ]))]
-        (are [ids pattern ] (= (set ids) (set (d/q q-e db pattern \|)))
+        (are [ids pattern] (= (set ids) (set (d/q q-e db pattern \|)))
+          [11]         "||%||"
+          [11]         "||%||%"
+          [11]         "||%"
+          [8 11]       "%||"
+          [8]          "%||%||%"
+          [8]          "%||%||"
+          [8 11]       "%||%|"
+          [8 11]       "%||%"
           [10]         "%0|_%"
           [10]         "|_%"
           [4 5 7 9 10] "%|_%"
@@ -110,15 +129,19 @@
           [5]          "%year!"
           [5]          "%25|%%"
           [8]          "%||No%||"
-          [8]          "%||%||%"
-          [8]          "%||%||"
-          [8]          "%||%|"
-          [8]          "%||%"
           [8]          "book ||No. 1||%"
           [8]          "book ||No. 1||"
           [8]          "book ||No. 1_"
           [8]          "book ||No. %"
           [8]          "book ||%"
+          [8]          "book %||%"
+          [8]          "book %||"
+          nil          "%book%||"
+          nil          "%book_||"
+          [8]          "%book%||%||"
+          [8]          "%book%||%||%"
+          [8]          "%book%||%"
+          [8]          "%book ||%"
           [8]          "_ook ||%"
           [5 6 7]      "home_value%"
           [5 7]        "%home|_value%"
@@ -127,14 +150,13 @@
           [6]          "home value"
           [6 7]        "home_value"
           [6 7]        "%value"
+          nil          "book |%"
+          nil          "home-value%"
           )
         (is (thrown-with-msg?
               Exception #"Can only escape"
               (d/q q db
                    "What?! this throws for ! can only escape %, _ and !")))
-        (is (empty? (d/q q-e db "book |%" \|)))
-        (is (empty? (d/q q-e db "%||" \|)))
-        (is (empty? (d/q q-e db "home-value%" \|)))
         (is (thrown-with-msg?
               Exception #"Can only escape" (d/q q-e db "book |N%" \|)))
         (is (thrown-with-msg?

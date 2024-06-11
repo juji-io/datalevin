@@ -6,9 +6,10 @@
 - [Datalog] `like` function similar to LIKE operator in SQL: `(like input
   pattern)` or `(like input pattern opts)`. Match pattern accepts wildcards `%`
   and `_`. `opts` map has key `:escape` that takes an escape character, default
-  is `!`. Pattern is compiled into FSM, and is further optimized by rewriting
-  into index scan range boundary whenever appropriate. Similarly, `not-like`
-  function.
+  is `\!`. Pattern is compiled into a finite state machine that does non-greedy
+  (lazy) matching, as oppose to the default in Clojure/Java regex. This function
+  is further optimized by rewritten into index scan range boundary for patterns
+  that have non-wildcard prefix. Similarly, `not-like` function is provided.
 - [Datalog] `in` function that is similar to IN operator in SQL, which is
   optimized by special index scan operations. Similarly, `not-in`.
 - [Datalog] `fill-db` to bulk-load a collection of trusted datoms,
