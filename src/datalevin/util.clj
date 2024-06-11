@@ -279,6 +279,17 @@
    :post [(string? %)]}
   (s/join "-" (map s/lower-case (split-words s))))
 
+(defn count-substrings
+  "assuming needles do not overlap"
+  [^String haystack ^String needle]
+  (let [len (.length needle)]
+    (loop [c 0
+           i 0]
+      (let [pos (.indexOf haystack needle i)]
+        (if (= pos -1)
+          c
+          (recur (inc c) (+ pos len)))))))
+
 (defn keyword->string [k] (subs (str k) 1))
 
 ;;

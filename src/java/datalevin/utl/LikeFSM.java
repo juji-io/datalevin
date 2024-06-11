@@ -27,6 +27,34 @@ public class LikeFSM {
         init(pattern);
     }
 
+    public static boolean isValid(byte[] pattern, char escape) {
+        boolean inESC = false;
+        int n = pattern.length;
+
+        for (int i = 0; i < n; i++) {
+            byte cur = pattern[i];
+            if (cur == escape) {
+                if (inESC) inESC = false;
+                else inESC = true;
+            } else {
+                switch (cur) {
+                case S_WILD_BYTE:
+                    if (inESC) inESC = false;
+                    break;
+                case M_WILD_BYTE:
+                    if (inESC) inESC = false;
+                    break;
+                default:
+                    if (inESC) {
+                        throw new IllegalStateException("Can only escape %, _, and escape character itself in like pattern");
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+
     void init(byte[] pattern) {
         pat = escape(pattern);
         M = pat.length;
@@ -132,7 +160,10 @@ public class LikeFSM {
         if ((sByte == M_WILD_BYTE) || (sByte == S_WILD_BYTE)) {
             iStart = 0;
             j = 0;
-        } else if (sByte == txt[0]) {
+        } else if ((sByte == txt[0]) ||
+                   (sByte == ESC_S_WILD) && (txt[0] == S_WILD_BYTE) ||
+                   (sByte == ESC_M_WILD) && (txt[0] == M_WILD_BYTE) ||
+                   (sByte == ESC_ESC) && (txt[0] == esc)) {
             iStart = 1;
             j = 1;
         } else return false;

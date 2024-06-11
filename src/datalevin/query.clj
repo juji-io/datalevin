@@ -1241,14 +1241,30 @@
           (set-range 1 m [prefix :dummy (max-string prefix)] 3
                      :at-most :at-least :closed false))))))
 
+(defn- like-pattern-as-string
+  "Used for plain text matching, e.g. as bounded val or range, not as FSM"
+  [^String pattern escape]
+  (let [esc (str (or escape \!))]
+    (-> pattern
+        (str/replace (str esc esc) esc)
+        (str/replace (str esc "%") "%")
+        (str/replace (str esc "_") "_"))))
+
+(defn- wildcard-free-like-pattern
+  [^String pattern {:keys [escape] :as opts}]
+  (LikeFSM/isValid (.getBytes pattern) (or escape \!))
+  (let [pstring (like-pattern-as-string pattern escape)]
+    (when (and (not (str/includes? pstring "%"))
+               (not (str/includes? pstring "_")))
+      pstring)))
+
 (defn- optimize-like
   [m [_ ^String pattern {:keys [escape]}]]
-  (let [pb      (.getBytes pattern StandardCharsets/UTF_8)
+  (let [pb      (.getBytes pattern)
         fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-        pattern (if escape (str/replace pattern (str escape) "") pattern)
         matcher (fn [^String input] (.match fsm (.getBytes input)))
-        m       (update m :pred concatv [matcher])]
-    (convert-like m  pattern)))
+        pstring (like-pattern-as-string pattern escape)]
+    (convert-like (update m :pred concatv [matcher]) pstring)))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1278,27 +1294,30 @@
         m))
     graph))
 
+(defn- like-pattern-for-bound
+  []
+  )
+
 (defn- free->bound
-  "cases where free var is actually bound.
+  "cases where free var can be rewritten as bound.
   * like pattern is free of wildcards"
   [graph clause v]
   (walk/postwalk
     (fn [m]
       (if-let [free (:free m)]
-        (if-let [[k pattern]
+        (if-let [[k pstring]
                  (some
                    (fn [[k props]]
                      (when (= v (:var props))
-                       (let [[f & args] (first clause)
-                             args       (vec args)]
+                       (let [[f & args] (first clause)]
                          (when (= f 'like)
-                           (let [pattern (second args)]
-                             (when-not (or (str/includes? pattern "%")
-                                           (str/includes? pattern "_"))
-                               [k pattern]))))))
+                           (let [[_ pattern opts] args]
+                             (when-let [ps (wildcard-free-like-pattern
+                                             pattern opts)]
+                               [k ps]))))))
                    free)]
           (-> m
-              (assoc-in [:bound k] {:val pattern})
+              (assoc-in [:bound k] {:val pstring})
               (update :free dissoc k))
           m)
         m))

@@ -72,12 +72,9 @@
       "%好%"       [1]
       "%好__oy"    [1]
       "is 好 boy"  [1]
-      "好 boy"     nil)
+      "好 boy"     nil
+      "好"         nil)
     (testing "escape character"
-      (is (thrown-with-msg?
-            Exception #"Can only escape"
-            (d/q q db
-                 "%What?! this throws for ! can only escape %, _ and !")))
       (let [q-e '[:find [?e ...]
                   :in $ ?pat ?esc
                   :where
@@ -86,15 +83,62 @@
             db  (-> db
                     (d/db-with
                       [{:db/id 5
-                        :text  "home_value increases 25% in a year!"}]))]
-        (is (= [4] (d/q q-e db "%cards |_%" \|)))
-        (is (= [4 5] (d/q q-e db "%|%%" \|)))
-        (is (= [5] (d/q q-e db "%year!" \|)))
-        (is (= [5] (d/q q-e db "%25|%%" \|)))
-        (is (= [5] (d/q q-e db "home_value%" \|)))
-        (is (= [5] (d/q q-e db "%home|_value%" \|)))
-        (is (= [5] (d/q q-e db "home|_value%" \|)))
+                        :text  "home_value increases 25% in a year!"}
+                       {:db/id 6
+                        :text  "home value"}
+                       {:db/id 7
+                        :text  "home_value"}
+                       {:db/id 8
+                        :text  "book |No. 1|"}
+                       {:db/id 9
+                        :text  "%_%"}
+                       {:db/id 10
+                        :text  "_1000_"}
+                       ]))]
+        (are [ids pattern ] (= (set ids) (set (d/q q-e db pattern \|)))
+          [10]         "%0|_%"
+          [10]         "|_%"
+          [4 5 7 9 10] "%|_%"
+          [10]         "%|_"
+          [10]         "|_%|_"
+          [9]          "|%|_|%"
+          [9]          "|%_|%"
+          [9]          "|%%|%"
+          [9]          "|%%"
+          [4]          "%cards |_%"
+          [4 5 9]      "%|%%"
+          [5]          "%year!"
+          [5]          "%25|%%"
+          [8]          "%||No%||"
+          [8]          "%||%||%"
+          [8]          "%||%||"
+          [8]          "%||%|"
+          [8]          "%||%"
+          [8]          "book ||No. 1||%"
+          [8]          "book ||No. 1||"
+          [8]          "book ||No. 1_"
+          [8]          "book ||No. %"
+          [8]          "book ||%"
+          [8]          "_ook ||%"
+          [5 6 7]      "home_value%"
+          [5 7]        "%home|_value%"
+          [5 7]        "home|_value%"
+          [7]          "home|_value"
+          [6]          "home value"
+          [6 7]        "home_value"
+          [6 7]        "%value"
+          )
+        (is (thrown-with-msg?
+              Exception #"Can only escape"
+              (d/q q db
+                   "What?! this throws for ! can only escape %, _ and !")))
+        (is (empty? (d/q q-e db "book |%" \|)))
+        (is (empty? (d/q q-e db "%||" \|)))
         (is (empty? (d/q q-e db "home-value%" \|)))
+        (is (thrown-with-msg?
+              Exception #"Can only escape" (d/q q-e db "book |N%" \|)))
+        (is (thrown-with-msg?
+              Exception #"Can only escape" (d/q q-e db "book |||N%" \|)))
         ))
     (d/close-db db)
     (u/delete-files dir)))
@@ -479,8 +523,9 @@
 (defn sample-query-fn [] 42)
 
 (deftest test-symbol-resolution
-  (is (= 42 (d/q '[:find ?x .
-                   :where [(datalevin.test.query-fns/sample-query-fn) ?x]]))))
+  (is (= 42
+         (d/q '[:find ?x .
+                :where [(datalevin.test.query-fns/sample-query-fn) ?x]]))))
 
 (deftest test-issue-445
   (let [dir (u/tmp-dir (str "query-fns-" (UUID/randomUUID)))
