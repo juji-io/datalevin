@@ -133,10 +133,10 @@
 
   ITuples
   (-init-tuples
-    [db a mcount v-range pred get-v?]
+    [db a mcount v-ranges pred get-v?]
     (wrap-cache
-        store [:init-tuples a v-range pred get-v?]
-      (s/ave-tuples store a mcount v-range pred get-v?)))
+        store [:init-tuples a v-ranges pred get-v?]
+      (s/ave-tuples store a mcount v-ranges pred get-v?)))
 
   (-eav-scan-v
     [db tuples eid-idx attrs preds skips]
@@ -173,7 +173,9 @@
            (s/e-datoms store e) ; e _ _
            (s/av-datoms store a v) ; _ a v
            (mapv #(datom (aget ^objects % 0) a (aget ^objects % 1))
-                 (s/ave-tuples store a 1024 [:all] nil true)) ; _ a _
+                 (s/ave-tuples
+                   store a 1024 [[[:closed c/v0] [:closed c/vmax]]]
+                   nil true)) ; _ a _
            (s/slice-filter store :eav
                            (fn [^Datom d] (when ((vpred v) (.-v d)) d))
                            (datom e0 nil nil)

@@ -569,30 +569,30 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-(deftest combine-range-test
-  (testing "range combinations"
-    (are [input output] (= (sut/combine-ranges input) output)
-      [[1 4] [2 3] [7 8]]           [[1 4] [7 8]]
-      [[1 2] [3 4] [5 7]]           [[1 2] [3 4] [5 7]]
-      [[2 9][1 4] [2 5]]            [[1 9]]
-      [[3 7][1 4] [4 5]]            [[1 7]]
-      [[6 6][1 4] [2 4]]            [[1 4] [6 6]]
-      [[1 3] [1 4][2 7]]            [[1 7]]
-      [[1 5] [3 3] [1 4]]           [[1 5]]
-      [[6 6] [1 4] [4 5]]           [[1 5] [6 6]]
-      [[1 3] [4 7] [2 4] [3 5]]     [[1 7]]
-      [[1 2] [3 4] [3 5]]           [[1 2] [3 5]]
-      [[3 5] [2 7] [4 7] [8 9]]     [[2 7] [8 9]]
-      [[4 5] [1 2] [1 4]]           [[1 5]]
-      [[1 2] [1 2] [4 5] [1 5]]     [[1 5]]
-      [[7 9] [3 4] [1 2] [2 3]]     [[1 4] [7 9]]
-      [["abc" "jfk"] ["egg" "pop"]] [["abc" "pop"]]
-      ))
-  (testing "wrong ranges"
-    (is (thrown-with-msg?
-          AssertionError #"[smal big]"
-          (sut/combine-ranges
-            [["abc" "point"] ["of" "course"] ["ok" "ok"]])))))
+(deftest combine-ranges-test
+  (let [vs       (vec (range 10))
+        select   #(into []
+                        (comp (map (fn [[[_ l] [_ r]]] (subvec vs l r)))
+                           cat)
+                        %)
+        to-range #(mapv (fn [[l r]] [[:closed l] [:closed r]]) %)]
+    (testing "range combinations"
+      (are [ranges] (= (set (select (to-range ranges)))
+                       (set (select (sut/combine-ranges (to-range ranges)))))
+        [[1 4] [2 3] [7 8]]
+        [[1 2] [3 4] [5 7]]
+        [[2 9] [1 4] [2 5]]
+        [[3 7] [1 4] [4 5]]
+        [[6 6] [1 4] [2 4]]
+        [[1 3] [1 4] [2 7]]
+        [[1 5] [3 3] [1 4]]
+        [[6 6] [1 4] [4 5]]
+        [[1 3] [4 7] [2 4] [3 5]]
+        [[1 2] [3 4] [3 5]]
+        [[3 5] [2 7] [4 7] [8 9]]
+        [[4 5] [1 2] [1 4]]
+        [[1 2] [1 2] [4 5] [1 5]]
+        [[7 9] [3 4] [1 2] [2 3]]))))
 
 (test/defspec random-combine-ranges-test
   100
@@ -601,10 +601,11 @@
      offsets (gen/vector (gen/large-integer* {:min 1 :max 50}) 5)
      targets (gen/vector-distinct gen/nat {:num-elements 10})]
     (let [n         (count bases)
-          ranges    (mapv (fn [b o] [b (+ ^long b ^long o)]) bases offsets)
+          ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
+                          bases offsets)
           combined  (sut/combine-ranges ranges)
           in-range? (fn [ranges target]
-                      (some (fn [[l h]] (<= l target h)) ranges))]
+                      (some (fn [[[_ l] [_ h]]] (<= l target h)) ranges))]
       (is (every? true?
                   (mapv (fn [x y] (= x y))
                         (mapv #(in-range? ranges %) targets)

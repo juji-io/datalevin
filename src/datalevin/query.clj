@@ -79,11 +79,15 @@
             (nil? val)
             (r/relation!
               (cond-> {e 0} get-v? (assoc v 1))
-              (db/-init-tuples db attr mcount (or range [:all]) pred get-v?))
+              (db/-init-tuples
+                db attr mcount (or range [[[:closed c/v0] [:closed c/vmax]]])
+                pred get-v?))
             :else
             (r/relation!
               {e 0}
-              (db/-init-tuples db attr mcount [:closed val val] nil false)))]
+              (db/-init-tuples
+                db attr mcount [[[:closed val] [:closed val]]]
+                nil false)))]
       (when save-in? (save-intermediates context :relation in rel))
       (save-intermediates context save out out-rel)
       out-rel))
@@ -1163,24 +1167,14 @@
         (let [s (:symbol (first vars))]
           (some #(when (= s (:var %)) s) gseq))))))
 
-(defn- set-range
-  [i m args ac o1 o2 o3 switch?]
-  (let [ac-1 (dec ^long ac)
-        i    ^long i
-        i-1  (dec i)
-        i+1  (inc i)]
-    (assoc m :range (cond
-                      (= i 0)    [o1 (second args)]
-                      (= i ac-1) [o2 (nth args i-1)]
-                      switch?    [o3 (nth args i+1) (nth args i-1)]
-                      :else      [o3 (nth args i-1) (nth args i+1)]))))
+(defn- icompare [[_ i] [_ j]] (compare i j))
 
 (defn- combine-ranges*
   [ranges]
-  (let [orig-from (apply list (sort (map first ranges)))]
+  (let [orig-from (apply list (sort icompare (map first ranges)))]
     (loop [intervals (transient [])
            from      (pop orig-from)
-           to        (apply list (sort (map peek ranges)))
+           to        (apply list (sort icompare (map peek ranges)))
            thread    (transient [(peek orig-from)])]
       (if (seq to)
         (let [fc (peek from)
@@ -1197,20 +1191,21 @@
               (persistent! (conj! intervals (persistent! thread))))))))
 
 (defn combine-ranges
-  "ranges is a vector of ascending two element vectors"
   [ranges]
-  (assert (every? (fn [[l r]] (<= (compare l r) 0)) ranges)
-          "range must be [small big]")
-  (let [rngs (combine-ranges* ranges)]
-    ;; use transient when peek and pop are supported
-    ;; https://clojure.atlassian.net/browse/CLJ-2464
-    (reduce
-      (fn [vs [l r :as n]]
-        (let [[pl pr] (peek vs)]
-          (if (= pr l)
-            (conj (pop vs) [pl r])
-            (conj vs n))))
-      [(first rngs)] (rest rngs))))
+  ;; use transient when peek and pop are supported
+  ;; https://clojure.atlassian.net/browse/CLJ-2464
+  (reduce
+    (fn [vs [[cl l] [cr r] :as n]]
+      (let [[[pcl pl] [pcr pr]] (peek vs)]
+        (if (and (= pr l) (not (and (identical? pcr :open)
+                                    (identical? cl :open))))
+          (conj (pop vs) [[pcl pl] [cr r]])
+          (conj vs n))))
+    [] (combine-ranges* ranges)))
+
+(defn- add-range
+  [m & rs]
+  (update m :range #(combine-ranges (concatv % rs))))
 
 (defn- max-string
   [^String prefix]
@@ -1225,21 +1220,21 @@
 (def ^:const wildm (int \%))
 (def ^:const wilds (int \_))
 
-(defn- convert-like
-  [m ^String pattern]
-  ;; TODO combine ranges
-  (if (:range m)
-    m
-    (let [wm-s (.indexOf pattern wildm)
-          ws-s (.indexOf pattern wilds)]
-      (if (or (zero? wm-s) (zero? ws-s))
-        m
-        ;; prefix in front of wildcard, convert to range
-        (let [min-s  (min wm-s ws-s)
-              end    (if (== min-s -1) (max wm-s ws-s) min-s)
-              prefix (subs pattern 0 end)]
-          (set-range 1 m [prefix :dummy (max-string prefix)] 3
-                     :at-most :at-least :closed false))))))
+(defn- like-convert-range
+  "turn wildcard-free prefix into range"
+  [m ^String pattern not?]
+  (let [wm-s (.indexOf pattern wildm)
+        ws-s (.indexOf pattern wilds)]
+    (if (or (zero? wm-s) (zero? ws-s))
+      m
+      (let [min-s    (min wm-s ws-s)
+            end      (if (== min-s -1) (max wm-s ws-s) min-s)
+            prefix-s (subs pattern 0 end)
+            prefix-e (max-string prefix-s)]
+        (if not?
+          (add-range m [[:closed c/v0] [:open prefix-s]]
+                     [[:open prefix-e] [:closed c/vmax]])
+          (add-range m [[:closed prefix-s] [:closed prefix-e]]))))))
 
 (defn- like-pattern-as-string
   "Used for plain text matching, e.g. as bounded val or range, not as FSM"
@@ -1259,12 +1254,13 @@
       pstring)))
 
 (defn- optimize-like
-  [m [_ ^String pattern {:keys [escape]}]]
+  [m [_ ^String pattern {:keys [escape]}] not?]
   (let [pb      (.getBytes pattern)
         fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-        matcher (fn [^String input] (.match fsm (.getBytes input)))
+        match   #(.match fsm (.getBytes ^String %))
+        matcher (if not? #(not (match %)) #(match %))
         pstring (like-pattern-as-string pattern escape)]
-    (convert-like (update m :pred concatv [matcher]) pstring)))
+    (like-convert-range (update m :pred concatv [matcher]) pstring not?)))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1272,31 +1268,40 @@
     (fn [m]
       (if (= (:var m) v)
         (let [[f & args :as pred] (first clause)
-              args                (vec args)]
-          (if (:range m)
-            ;; TODO merge multiple range predicates
-            (update m :pred conjv pred)
-            (let [ac (count args)
-                  i  ^long (u/index-of #(= % v) args)]
-              (condp = f
-                '<    (set-range i m args ac :less-than :greater-than
-                                 :open false)
-                '<=   (set-range i m args ac :at-most :at-least
-                                 :closed false)
-                '>    (set-range i m args ac :greater-than :less-than
-                                 :open true)
-                '>=   (set-range i m args ac :at-least :at-most
-                                 :closed true)
-                '=    (let [c (some #(when-not (qu/free-var? %) %) args)]
-                        (assoc m :range [:closed c c]))
-                'like (optimize-like m args)
-                (update m :pred conjv pred)))))
+              args                (vec args)
+              ac-1                (dec (count args))
+              i                   ^long (u/index-of #(= % v) args)
+              fa                  (first args)
+              pa                  (peek args)]
+          (condp = f
+            '<
+            (cond
+              (zero? i)  (add-range m [[:closed c/v0] [:open pa]])
+              (= i ac-1) (add-range m [[:open fa] [:closed c/vmax]])
+              :else      (add-range m [[:open fa] [:open pa]]))
+            '<=
+            (cond
+              (zero? i)  (add-range m [[:closed c/v0] [:closed pa]])
+              (= i ac-1) (add-range m [[:closed fa] [:closed c/vmax]])
+              :else      (add-range m [[:closed fa] [:closed pa]]))
+            '>
+            (cond
+              (zero? i)  (add-range m [[:open pa] [:closed c/vmax]])
+              (= i ac-1) (add-range m [[:closed c/v0] [:open fa]])
+              :else      (add-range m [[:open pa] [:open fa]]))
+            '>=
+            (cond
+              (zero? i)  (add-range m [[:closed pa] [:closed c/vmax]])
+              (= i ac-1) (add-range m [[:closed c/v0] [:closed fa]])
+              :else      (add-range m [[:closed pa] [:closed fa]]))
+            '=
+            (let [c (some #(when-not (qu/free-var? %) %) args)]
+              (add-range m [[:closed c] [:closed c]]))
+            'like     (optimize-like m args false)
+            'not-like (optimize-like m args true)
+            (update m :pred conjv pred)))
         m))
     graph))
-
-(defn- like-pattern-for-bound
-  []
-  )
 
 (defn- free->bound
   "cases where free var can be rewritten as bound.
@@ -1339,17 +1344,23 @@
           c))
       context (:qwhere parsed-q))))
 
-(defn- range->start-end
-  [[op lv hv]]
-  (case op
-    (:at-least :greater-than) [lv nil]
-    (:at-most :less-than)     [nil lv]
-    (:closed :open)           [lv hv]))
-
 (defn- estimate-round [x] (long (Math/ceil x)))
 
 ;; TODO sample instead
 (defn- pred-count [^long n] (estimate-round (* ^double c/magic-number-pred n)))
+
+(defn- nillify [v] (if (or (identical? v c/v0) (identical? v c/vmax)) nil v))
+
+(defn- range->start-end [[[_ lv] [_ hv]]] [(nillify lv) (nillify hv)])
+
+(defn- range-count
+  [db attr ^long cap ranges]
+  (reduce
+    (fn [^long sum range]
+      (let [s (+ sum (let [[lv hv] (range->start-end range)]
+                       ^long (db/-index-range-size db attr lv hv)))]
+        (if (< s cap) s (reduced cap))))
+    0 ranges))
 
 (defn- datom-n
   [db k node]
@@ -1358,8 +1369,7 @@
       (let [c (cond->
                   (cond
                     (some? val) (db/-count db [nil attr val] mcount)
-                    range       (let [[lv hv] (range->start-end range)]
-                                  (db/-index-range-size db attr lv hv mcount))
+                    range       (range-count db attr mcount range)
                     :else       (db/-count db [nil attr nil] mcount))
                 pred (pred-count))]
         (if (< ^long c ^long mcount)
@@ -1425,7 +1435,7 @@
                 {:type :val-eq :tgt ?e1 :var ?a :attrs {?e :age ?e1 :age}}]
         :mpath [:bound :name]
         :bound {:name {:val \"Tom\" :count 5}}
-        :free  {:age    {:var ?a :range [:less-than 18] :count 1089}
+        :free  {:age    {:var ?a :range [[:less-than 18]] :count 1089}
                 :school {:var ?s :count 108 :pred [(.startsWith ?s \"New\")]}
                 :friend {:var ?e0 :count 2500}}}
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
@@ -1565,16 +1575,20 @@
 (defn- add-back-range
   [v step]
   (let [p (:pred step)]
-    (if-let [[f & r] (:range step)]
-      (let [c  (first r)
-            c1 (second r)]
-        (add-pred p (activate-pred v (case f
-                                       :less-than    (list '< v c)
-                                       :greater-than (list '> v c)
-                                       :at-most      (list '<= v c)
-                                       :at-least     (list '>= v c)
-                                       :open         (list '< c v c1)
-                                       :closed       (list '<= c v c1)))))
+    (if-let [ranges (:range step)]
+      (reduce
+        (fn [p range]
+          (let [[f & r] range
+                c       (first r)
+                c1      (second r)]
+            (add-pred p (activate-pred v (case f
+                                           :less-than    (list '< v c)
+                                           :greater-than (list '> v c)
+                                           :at-most      (list '<= v c)
+                                           :at-least     (list '>= v c)
+                                           :open         (list '< c v c1)
+                                           :closed       (list '<= c v c1))))))
+        p ranges)
       p)))
 
 (defn- merge-scan-step

@@ -30,16 +30,16 @@
     :db.unique/identity  [:db/unique :db.unique/identity]
     :db.unique/value     [:db/unique :db.unique/value]
     :db.cardinality/many [:db.cardinality/many]
-    (cond
-      (and (= :db/valueType k) (= :db.type/ref v)) [:db.type/ref]
-      (and (= :db/isComponent k) (true? v))        [:db/isComponent]
-      (= :db/tupleAttrs k)                         [:db.type/tuple
-                                                    :db/tupleAttrs]
-      (= :db/tupleType k)                          [:db.type/tuple
-                                                    :db/tupleType]
-      (= :db/tupleTypes k)                         [:db.type/tuple
-                                                    :db/tupleTypes]
-      :else                                        [])))
+    (case k
+      :db/tupleAttrs [:db.type/tuple :db/tupleAttrs]
+      :db/tupleType  [:db.type/tuple :db/tupleType]
+      :db/tupleTypes [:db.type/tuple :db/tupleTypes]
+      (cond
+        (and (identical? :db/valueType k)
+             (identical? :db.type/ref v)) [:db.type/ref]
+        (and (identical? :db/isComponent k)
+             (true? v))                   [:db/isComponent]
+        :else                             []))))
 
 (defn attr-tuples
   "e.g. :reg/semester => #{:reg/semester+course+student ...}"
@@ -49,10 +49,8 @@
       (u/reduce-indexed
         (fn [m src-attr idx] ;; e.g. :reg/semester
           (update m src-attr assoc tuple-attr idx))
-        m
-        (-> schema tuple-attr :db/tupleAttrs)))
-    {}
-    (:db/tupleAttrs rschema)))
+        m ((schema tuple-attr) :db/tupleAttrs)))
+    {} (rschema :db/tupleAttrs)))
 
 (def conjs (fnil conj #{}))
 
@@ -118,12 +116,12 @@
   (when schema
     (transact-schema lmdb (update-schema (load-schema lmdb) schema)))
   (let [now (load-schema lmdb)]
-    (when-not (:db/created-at now)
+    (when-not (now :db/created-at)
       (transact-schema lmdb (update-schema now c/entity-time-schema))))
   (load-schema lmdb))
 
 (defn- init-attrs [schema]
-  (into {} (map (fn [[k v]] [(:db/aid v) k])) schema))
+  (into {} (map (fn [[k v]] [(v :db/aid) k])) schema))
 
 (defn- init-max-gt
   [lmdb]
@@ -140,7 +138,7 @@
 (defn- value-type
   [props]
   (if-let [vt (props :db/valueType)]
-    (if (= vt :db.type/tuple)
+    (if (identical? vt :db.type/tuple)
       (if-let [tts (props :db/tupleTypes)]
         tts
         (if-let [tt (props :db/tupleType)] [tt] :data))
@@ -298,7 +296,7 @@
       (d/datom-v (gt->datom lmdb g)))))
 
 (defn- ave-kv->retrieved
-  [lmdb [^Retrieved av ^Retrieved eg]]
+  [lmdb ^Retrieved av ^Retrieved eg]
   (let [e     (.-e eg)
         a     (.-a av)
         g     (.-g eg)
@@ -310,7 +308,7 @@
   [lmdb attrs [k ^Retrieved r :as kv]]
   (when kv
     (if (instance? Retrieved k)
-      (let [^Retrieved r (ave-kv->retrieved lmdb kv)]
+      (let [^Retrieved r (ave-kv->retrieved lmdb k r)]
         (d/datom (.-e r) (attrs (.-a r)) (.-v r)))
       (let [g (.-g r)]
         (if (or (nil? g) (= g c/normal))
@@ -318,8 +316,8 @@
                 a (.-a r)
                 v (.-v r)]
             (cond
-              (nil? e) (d/datom k (attrs a) v)
-              (nil? v) (d/datom e (attrs a) k)))
+              (nil? v) (d/datom e (attrs a) k)
+              (nil? e) (d/datom k (attrs a) v)))
           (gt->datom lmdb g))))))
 
 (defn- avg-retrieved->datom
@@ -341,139 +339,123 @@
       (pred (retrieved->datom lmdb attrs [k v])))))
 
 (defn- ave-key-range
-  [val-range aid vt]
-  (let [[op lv hv] val-range]
-    (case op
-      :all          [:closed (b/indexable nil aid c/v0 vt nil)
-                     (b/indexable nil aid c/vmax vt nil)]
-      :at-least     [:closed (b/indexable nil aid lv vt nil)
-                     (b/indexable nil aid c/vmax vt nil)]
-      :at-most      [:closed (b/indexable nil aid c/v0 vt nil)
-                     (b/indexable nil aid lv vt nil)]
-      :closed       [op (b/indexable nil aid lv vt nil)
-                     (b/indexable nil aid hv vt nil)]
-      :closed-open  [op (b/indexable nil aid lv vt nil)
-                     (b/indexable nil aid hv vt nil)]
-      :greater-than [:open-closed (b/indexable nil aid lv vt nil)
-                     (b/indexable nil aid c/vmax vt nil)]
-      :less-than    [:closed-open (b/indexable nil aid c/v0 vt nil)
-                     (b/indexable nil aid lv vt nil)]
-      :open         [op (b/indexable nil aid lv vt nil)
-                     (b/indexable nil aid hv vt nil)]
-      :open-closed  [op (b/indexable nil aid lv vt nil)
-                     (b/indexable nil aid hv vt nil)])))
+  [aid vt val-range]
+  (let [[[cl lv] [ch hv]] val-range
+        op                (cond
+                            (and (identical? cl :closed)
+                                 (identical? ch :closed)) :closed
+                            (identical? ch :closed)       :open-closed
+                            (identical? cl :closed)       :closed-open
+                            :else                         :open)]
+    [op (b/indexable nil aid lv vt nil) (b/indexable nil aid hv vt nil)]))
+
+(defn- retrieve-ave
+  [lmdb kv]
+  (ave-kv->retrieved
+    lmdb (b/read-buffer (lmdb/k kv) :av) (b/read-buffer (lmdb/v kv) :eg)))
 
 (defn- ave-tuples-scan-need-v-many
-  [lmdb ^long mcount k-range]
-  (let [res (UnifiedSet. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])]
-          (.add res [(.-e r) (.-v r)])))
-      k-range :av [:all] :eg)
+  [lmdb mcount aid vt val-ranges]
+  (let [res (UnifiedSet. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave (fn [kv]
+                     (let [^Retrieved r (retrieve-ave lmdb kv)]
+                       (.add res [(.-e r) (.-v r)])))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.iterator res)]
       (while (.hasNext iter) (.add ret (object-array (.next iter))))
       ret)))
 
 (defn- ave-tuples-scan-need-v
-  [lmdb ^long mcount k-range]
-  (let [res (FastList. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])]
-          (.add res (object-array [(.-e r) (.-v r)]))))
-      k-range :av [:all] :eg)
+  [lmdb mcount aid vt val-ranges]
+  (let [res (FastList. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave (fn [kv]
+                     (let [^Retrieved r (retrieve-ave lmdb kv)]
+                       (.add res (object-array [(.-e r) (.-v r)]))))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (defn- ave-tuples-scan-need-v-vpred-many
-  [lmdb ^long mcount k-range vpred]
-  (let [res (UnifiedSet. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-              v  (.-v r)]
-          (when (vpred v) (.add res [(.-e r) v]))))
-      k-range :av [:all] :eg)
+  [lmdb mcount vpred aid vt val-ranges]
+  (let [res (UnifiedSet. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave (fn [kv]
+                     (let [^Retrieved r (retrieve-ave lmdb kv)
+                           v            (.-v r)]
+                       (when (vpred v) (.add res [(.-e r) v]))))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.iterator res)]
       (while (.hasNext iter) (.add ret (object-array (.next iter))))
       ret)))
 
 (defn- ave-tuples-scan-need-v-vpred
-  [lmdb ^long mcount k-range vpred]
-  (let [res (FastList. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-              v  (.-v r)]
-          (when (vpred v) (.add res (object-array [(.-e r) v])))))
-      k-range :av [:all] :eg)
+  [lmdb mcount vpred aid vt val-ranges]
+  (let [res (FastList. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave (fn [kv]
+                     (let [^Retrieved r (retrieve-ave lmdb kv)
+                           v            (.-v r)]
+                       (when (vpred v)
+                         (.add res (object-array [(.-e r) v])))))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (defn- ave-tuples-scan-no-v-many
-  [lmdb ^long mcount k-range]
-  (let [res (LongHashSet. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv] (.add res (b/read-buffer (lmdb/v kv) :id)))
-      k-range :av [:all] :eg)
+  [lmdb mcount aid vt val-ranges]
+  (let [res (LongHashSet. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave (fn [kv] (.add res (b/read-buffer (lmdb/v kv) :id)))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.longIterator res)]
       (while (.hasNext iter) (.add ret (object-array [(.next iter)])))
       ret)))
 
 (defn- ave-tuples-scan-no-v
-  [lmdb ^long mcount k-range]
-  (let [res (FastList. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
-      k-range :av [:all] :eg)
+  [lmdb mcount aid vt val-ranges]
+  (let [res (FastList. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave
+        (fn [kv]
+          (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (defn- ave-tuples-scan-no-v-vpred-many
-  [lmdb ^long mcount k-range vpred]
-  (let [res (LongHashSet. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-              v  (.-v r)]
-          (when (vpred v) (.add res (.-e r)))))
-      k-range :av [:all] :eg)
+  [lmdb mcount vpred aid vt val-ranges]
+  (let [res (LongHashSet. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave (fn [kv]
+                     (let [^Retrieved r (retrieve-ave lmdb kv)
+                           v            (.-v r)]
+                       (when (vpred v) (.add res (.-e r)))))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.longIterator res)]
       (while (.hasNext iter) (.add ret (object-array [(.next iter)])))
       ret)))
 
 (defn- ave-tuples-scan-no-v-vpred
-  [lmdb ^long mcount k-range vpred]
-  (let [res (FastList. mcount)]
-    (lmdb/visit-list-range
-      lmdb c/ave
-      (fn [kv]
-        (let [av ^Retrieved (b/read-buffer (lmdb/k kv) :av)
-              eg ^Retrieved (b/read-buffer (lmdb/v kv) :eg)
-              r  ^Retrieved (ave-kv->retrieved lmdb [av eg])
-              v  (.-v r)]
-          (when (vpred v) (.add res (object-array [(.-e r)])))))
-      k-range :av [:all] :eg)
+  [lmdb mcount vpred aid vt val-ranges]
+  (let [res (FastList. ^int mcount)]
+    (doseq [val-range val-ranges]
+      (lmdb/visit-list-range
+        lmdb c/ave
+        (fn [kv]
+          (let [^Retrieved r (retrieve-ave lmdb kv)
+                v            (.-v r)]
+            (when (vpred v) (.add res (object-array [(.-e r)])))))
+        (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts)
@@ -565,19 +547,18 @@
       (transact-schema lmdb {attr p})
       (set! schema (assoc schema attr p))
       (set! rschema (schema->rschema schema))
-      (set! attrs (assoc attrs (:db/aid p) attr))
+      (set! attrs (assoc attrs (p :db/aid) attr))
       p))
 
   (del-attr [this attr]
-    (if (populated? this :ave
-                    (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
+    (if (populated?
+          this :ave (d/datom c/e0 attr c/v0) (d/datom c/emax attr c/vmax))
       (u/raise "Cannot delete attribute with datoms" {})
-      (let [aid (:db/aid (schema attr))]
+      (let [aid ((schema attr) :db/aid)]
         (lmdb/transact-kv
-          lmdb
-          [(lmdb/kv-tx :del c/schema attr :attr)
-           (lmdb/kv-tx :put c/meta :last-modified
-                       (System/currentTimeMillis) :attr :long)])
+          lmdb [(lmdb/kv-tx :del c/schema attr :attr)
+                (lmdb/kv-tx :put c/meta :last-modified
+                            (System/currentTimeMillis) :attr :long)])
         (set! schema (dissoc schema attr))
         (set! rschema (schema->rschema schema))
         (set! attrs (dissoc attrs aid))
@@ -586,14 +567,13 @@
   (rename-attr [_ attr new-attr]
     (let [props (schema attr)]
       (lmdb/transact-kv
-        lmdb
-        [(lmdb/kv-tx :del c/schema attr :attr)
-         (lmdb/kv-tx :put c/schema new-attr props :attr)
-         (lmdb/kv-tx :put c/meta :last-modified
-                     (System/currentTimeMillis) :attr :long)])
+        lmdb [(lmdb/kv-tx :del c/schema attr :attr)
+              (lmdb/kv-tx :put c/schema new-attr props :attr)
+              (lmdb/kv-tx :put c/meta :last-modified
+                          (System/currentTimeMillis) :attr :long)])
       (set! schema (-> schema (dissoc attr) (assoc new-attr props)))
       (set! rschema (schema->rschema schema))
-      (set! attrs (assoc attrs (:db/aid props) new-attr))
+      (set! attrs (assoc attrs (props :db/aid) new-attr))
       attrs))
 
   (datom-count [_ index]
@@ -668,8 +648,8 @@
     (lmdb/list-count
       lmdb c/ave (datom->indexable schema (d/datom c/e0 a v) false) :av))
 
-  (av-range-size [this a lv hv] (.av-range-size this a lv hv nil))
-  (av-range-size [_ a lv hv cap]
+  (av-range-size ^long [this a lv hv] (.av-range-size this a lv hv nil))
+  (av-range-size ^long [_ a lv hv cap]
     (lmdb/key-range-list-count
       lmdb c/ave
       [:closed
@@ -804,29 +784,31 @@
     (.ave-tuples store attr mcount val-range nil false))
   (ave-tuples [store attr mcount val-range vpred]
     (.ave-tuples store attr mcount val-range vpred false))
-  (ave-tuples [_ attr mcount val-range vpred get-v?]
+  (ave-tuples [_ attr mcount val-ranges vpred get-v?]
     (when-let [props (schema attr)]
-      (let [k-range (ave-key-range val-range (props :db/aid)
-                                   (value-type props))]
-        (if (= :db.cardinality/many (props :db/cardinality))
+      (let [aid (props :db/aid)
+            vt  (value-type props)]
+        (if (identical? :db.cardinality/many (props :db/cardinality))
           (cond
             (and get-v? vpred)
-            (ave-tuples-scan-need-v-vpred-many lmdb mcount k-range vpred)
+            (ave-tuples-scan-need-v-vpred-many
+              lmdb mcount vpred aid vt val-ranges)
             vpred
-            (ave-tuples-scan-no-v-vpred-many lmdb mcount k-range vpred)
+            (ave-tuples-scan-no-v-vpred-many
+              lmdb mcount vpred aid vt val-ranges)
             get-v?
-            (ave-tuples-scan-need-v-many lmdb mcount k-range)
+            (ave-tuples-scan-need-v-many lmdb mcount aid vt val-ranges)
             :else
-            (ave-tuples-scan-no-v-many lmdb mcount k-range))
+            (ave-tuples-scan-no-v-many lmdb mcount aid vt val-ranges))
           (cond
             (and get-v? vpred)
-            (ave-tuples-scan-need-v-vpred lmdb mcount k-range vpred)
+            (ave-tuples-scan-need-v-vpred lmdb mcount vpred aid vt val-ranges)
             vpred
-            (ave-tuples-scan-no-v-vpred lmdb mcount k-range vpred)
+            (ave-tuples-scan-no-v-vpred lmdb mcount vpred aid vt val-ranges)
             get-v?
-            (ave-tuples-scan-need-v lmdb mcount k-range)
+            (ave-tuples-scan-need-v lmdb mcount aid vt val-ranges)
             :else
-            (ave-tuples-scan-no-v lmdb mcount k-range))))))
+            (ave-tuples-scan-no-v lmdb mcount aid vt val-ranges))))))
 
   (eav-scan-v [store tuples eid-idx as vpreds]
     (.eav-scan-v store tuples eid-idx as vpreds []))
@@ -939,7 +921,7 @@
   (vae-scan-e [_ tuples veid-idx attr]
     (when (and (seq tuples) attr)
       (when-let [props (schema attr)]
-        (assert (= :db.type/ref (props :db/valueType))
+        (assert (identical? :db.type/ref (props :db/valueType))
                 (str attr " is not a :db.type/ref"))
         (let [nt   (.size ^List tuples)
               aid  (props :db/aid)
@@ -1012,7 +994,8 @@
 
 (defn- check-cardinality
   [^Store store attr old new]
-  (when (and (= old :db.cardinality/many) (= new :db.cardinality/one))
+  (when (and (identical? old :db.cardinality/many)
+             (identical? new :db.cardinality/one))
     (let [low-datom  (d/datom c/e0 attr c/v0)
           high-datom (d/datom c/emax attr c/vmax)]
       (when (populated? store :ave low-datom high-datom)
@@ -1076,8 +1059,7 @@
   (when-not (str/blank? v)
     (.add ft-ds
           [(cond-> (or (props :db.fulltext/domains) [c/default-domain])
-             (props :db.fulltext/autoDomain)
-             (conj (u/keyword->string attr)))
+             (props :db.fulltext/autoDomain) (conj (u/keyword->string attr)))
            op])))
 
 (defn- insert-datom
@@ -1103,7 +1085,7 @@
         giant? (b/giant? i)]
     (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
     (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
-    (when (= :db.type/ref vt)
+    (when (identical? :db.type/ref vt)
       (.add txs (lmdb/kv-tx :put c/vae v i :id :ae)))
     (when giant?
       (advance-max-gt store)
@@ -1148,7 +1130,7 @@
       (when gt
         (when gt-cur (.remove giants d-eav))
         (.add txs (lmdb/kv-tx :del c/giants gt :id)))
-      (when (= :db.type/ref vt)
+      (when (identical? :db.type/ref vt)
         (.add txs (lmdb/kv-tx :del-list c/vae v [ii] :id :ae))))))
 
 (defn- transact-opts

@@ -111,9 +111,12 @@
                                    (d/datom c/e0 nil nil)
                                    (d/datom c/e0 nil nil))))
       (is (= [c/e0] (map #(aget ^objects % 0)
-                         (sut/ave-tuples store a 1 [:all] (constantly true)))))
+                         (sut/ave-tuples
+                           store a 1 [[[:closed c/v0] [:closed c/vmax]]]
+                           (constantly true)))))
       (is (= [c/e0] (map #(aget ^objects % 0)
-                         (sut/ave-tuples store b 1 [:closed v1 v1]))))
+                         (sut/ave-tuples
+                           store b 1 [[[:closed v1] [:closed v1]]]))))
       (is (= [d1 d] (sut/rslice store :ave d1 d)))
       (is (= [d d1] (sut/slice store :ave
                                (d/datom c/e0 a nil)
@@ -330,39 +333,58 @@
     (is (= 3 (sut/av-range-size store :b 2 4 2)))
 
     (is (= (set [[8] [10]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:at-least 11])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed 11] [:closed c/vmax]]])))))
     (is (= (set [[8 11] [10 15] [10 20]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:at-least 11] nil true)))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed 11] [:closed c/vmax]]]
+                            nil true)))))
     (is (= (set [[15] [20] [10] [0] [8]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:at-most 11])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed c/v0] [:closed 11]]])))))
     (is (= (set [[15] [0] [8] [20]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:at-most 11] odd?)))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed c/v0] [:closed 11]]] odd?)))))
     (is (= (set [[8] [10]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:closed-open 11 20])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed 11] [:open 20]]])))))
     (is (= (set [[10]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:greater-than 11])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:open 11] [:closed c/vmax]]])))))
     (is (= (set [[15] [20] [10] [0]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:less-than 11])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed c/v0] [:open 11]]])))))
     (is (= (set [[15 1] [0 7] [20 7]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:less-than 11] odd? true)))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:closed c/v0] [:open 11]]]
+                            odd? true)))))
     (is (= (set [[10] [0] [20]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:open 2 11])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:open 2] [:oen 11]]])))))
     (is (= (set [[10] [0] [8] [20]])
-           (set (mapv vec (sut/ave-tuples store :b 1 [:open-closed 2 11])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :b 1 [[[:open 2] [:closed 11]]])))))
     (is (= (set [[8]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:at-least "8"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:closed "8"] [:closed c/vmax]]])))))
     (is (= (set [[0] [10]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:at-most "10a"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:closed c/v0] [:closed "10a"]]])))))
     (is (= (set [[10]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:closed-open "10a" "15a"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:closed "10a"][:open "15a"]]])))))
     (is (= (set [[15] [8]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:greater-than "10a"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:open "10a"] [:closed c/vmax]]])))))
     (is (= (set [[0]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:less-than "10a"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:closed c/v0] [:open "10a"]]])))))
     (is (= (set [[0] [10]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:open "0a0" "15a"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:open "0a0"] [:open "15a"]]])))))
     (is (= (set [[0] [10] [15]])
-           (set (mapv vec (sut/ave-tuples store :a 1 [:open-closed "0a0" "15a"])))))
+           (set (mapv vec (sut/ave-tuples
+                            store :a 1 [[[:open "0a0"] [:closed "15a"]]])))))
     (sut/close store)
     (u/delete-files dir)))
 
