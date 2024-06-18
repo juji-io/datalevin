@@ -17,7 +17,8 @@
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c]
-   [datalevin.query :as q])
+   [datalevin.query :as q]
+   [datalevin.bits :as b])
   (:import
    [java.util Arrays List]
    [java.nio.charset StandardCharsets]
@@ -1207,7 +1208,7 @@
   [m & rs]
   (update m :range #(combine-ranges (concatv % rs))))
 
-(defn- max-string
+(defn- prefix-max-string
   [^String prefix]
   (let [n (alength (.getBytes prefix))]
     (if (< n c/+val-bytes-wo-hdr+)
@@ -1219,21 +1220,27 @@
 
 (def ^:const wildm (int \%))
 (def ^:const wilds (int \_))
+(def ^:const max-string (b/text-ba->str c/max-bytes))
 
 (defn- like-convert-range
   "turn wildcard-free prefix into range"
   [m ^String pattern not?]
   (let [wm-s (.indexOf pattern wildm)
         ws-s (.indexOf pattern wilds)]
-    (if (or (zero? wm-s) (zero? ws-s))
-      m
+    (cond
+      (or (zero? wm-s) (zero? ws-s)) m
+      ;; not-like w/ a wildcard-free pattern
+      (== wm-s ws-s -1)
+      (add-range m [[:closed ""] [:open pattern]]
+                 [[:open pattern] [:closed max-string]])
+      :else
       (let [min-s    (min wm-s ws-s)
             end      (if (== min-s -1) (max wm-s ws-s) min-s)
             prefix-s (subs pattern 0 end)
-            prefix-e (max-string prefix-s)]
+            prefix-e (prefix-max-string prefix-s)]
         (if not?
-          (add-range m [[:closed c/v0] [:open prefix-s]]
-                     [[:open prefix-e] [:closed c/vmax]])
+          (add-range m [[:closed ""] [:open prefix-s]]
+                     [[:open prefix-e] [:closed max-string]])
           (add-range m [[:closed prefix-s] [:closed prefix-e]]))))))
 
 (defn- like-pattern-as-string

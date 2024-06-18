@@ -29,83 +29,148 @@
               :in $ ?pat
               :where
               [?e :text ?t]
-              [(like ?t ?pat)]]]
-    (are [pattern ids] (= (set (d/q q db pattern)) (set ids))
-      "testing%"   [4]
-      "%esc%!_%"   [4]
-      "%!%%"       [4]
-      "%!!%"       [4]
-      "%!!"        [4]
-      "%!_%!!"     [4]
-      "t%!_%!!"    [4]
-      "%t%!_%!!"   [4]
-      "%!%, and%"  [4]
-      "%and_!!"    [4]
-      "%and_!"     nil
-      "%a%a%a%"    [2 3 4]
-      "%M%"        [2 3]
-      "%M%a%"      [2 3]
-      "M%"         [2 3]
-      "M%y%"       [2 3]
-      "M__y%"      [2 3]
-      "M_y%"       nil
-      "obs%"       nil
-      "_M%y%"      nil
-      "M%y_"       nil
-      "is%"        [1]
-      "is%boy"     [1]
-      "%is%"       [1 3]
-      "_o%y%"      [3]
-      "%?"         [3]
-      "%red%fire%" [2]
-      "%lamb%"     [2]
-      "%fire_"     [2]
-      "%fire."     [2]
-      "%fire%"     [2]
-      "%litt%"     [2]
-      "%lit%"      [2]
-      "%l%it%"     [2]
-      "%l%i%t%"    [2]
-      "%l%%t%"     [2]
-      "%li%e%"     [2]
-      "%lit%e%"    [2]
-      "%litt%e%"   [2]
-      "%li_t_e%"   [2]
-      "%obse%tion" nil
-      "%boy"       [1]
-      "%boy%"      [1]
-      "%bo_"       [1]
-      "%b%y%"      [1 3]
-      "%b_y"       [1]
-      "%好%"       [1]
-      "%好__oy"    [1]
-      "is 好 boy"  [1]
-      "好 boy"     nil
-      "好"         nil)
+              [(like ?t ?pat)]]
+        q-n '[:find [?e ...]
+              :in $ ?pat
+              :where
+              [?e :text ?t]
+              [(not-like ?t ?pat)]]]
+    (testing "like"
+      (are [pattern ids] (= (set (d/q q db pattern)) (set ids))
+        "testing%"   [4]
+        "%esc%!_%"   [4]
+        "%!%%"       [4]
+        "%!!%"       [4]
+        "%!!"        [4]
+        "%!_%!!"     [4]
+        "t%!_%!!"    [4]
+        "%t%!_%!!"   [4]
+        "%!%, and%"  [4]
+        "%and_!!"    [4]
+        "%and_!"     nil
+        "%a%a%a%"    [2 3 4]
+        "%M%"        [2 3]
+        "%M%a%"      [2 3]
+        "M%"         [2 3]
+        "M%y%"       [2 3]
+        "M__y%"      [2 3]
+        "M_y%"       nil
+        "obs%"       nil
+        "_M%y%"      nil
+        "M%y_"       nil
+        "is%"        [1]
+        "is%boy"     [1]
+        "%is%"       [1 3]
+        "_o%y%"      [3]
+        "%?"         [3]
+        "%red%fire%" [2]
+        "%lamb%"     [2]
+        "%fire_"     [2]
+        "%fire."     [2]
+        "%fire%"     [2]
+        "%litt%"     [2]
+        "%lit%"      [2]
+        "%l%it%"     [2]
+        "%l%i%t%"    [2]
+        "%l%%t%"     [2]
+        "%li%e%"     [2]
+        "%lit%e%"    [2]
+        "%litt%e%"   [2]
+        "%li_t_e%"   [2]
+        "%obse%tion" nil
+        "%boy"       [1]
+        "%boy%"      [1]
+        "%bo_"       [1]
+        "%b%y%"      [1 3]
+        "%b_y"       [1]
+        "%好%"       [1]
+        "%好__oy"    [1]
+        "is 好 boy"  [1]
+        "好 boy"     nil
+        "好"         nil))
+    (testing "not-like"
+      (are [pattern ids] (= (set (d/q q-n db pattern)) (set ids))
+        "testing%"   [1 2 3]
+        "%esc%!_%"   [1 2 3]
+        "%!%%"       [1 2 3]
+        "%!!%"       [1 2 3]
+        "%!!"        [1 2 3]
+        "%!_%!!"     [1 2 3]
+        "t%!_%!!"    [1 2 3]
+        "%t%!_%!!"   [1 2 3]
+        "%!%, and%"  [1 2 3]
+        "%and_!!"    [1 2 3]
+        "%and_!"     [1 2 3 4]
+        "%a%a%a%"    [1]
+        "%M%"        [1 4]
+        "%M%a%"      [1 4]
+        "M%"         [1 4]
+        "M%y%"       [1 4]
+        "M__y%"      [1 4]
+        "M_y%"       [1 4]
+        "obs%"       [1 2 3 4]
+        "_M%y%"      [1 2 3 4]
+        "M%y_"       [1 4]
+        "is%"        [2 3 4]
+        "is%boy"     [2 3 4]
+        "%is%"       [2 4]
+        "_o%y%"      [1 2 4]
+        "%?"         [1 2 4]
+        "%red%fire%" [1 3 4]
+        "%lamb%"     [1 3 4]
+        "%fire_"     [1 3 4]
+        "%fire."     [1 3 4]
+        "%fire%"     [1 3 4]
+        "%litt%"     [1 3 4]
+        "%lit%"      [1 3 4]
+        "%l%it%"     [1 3 4]
+        "%l%i%t%"    [1 3 4]
+        "%l%%t%"     [1 3 4]
+        "%li%e%"     [1 3 4]
+        "%lit%e%"    [1 3 4]
+        "%litt%e%"   [1 3 4]
+        "%li_t_e%"   [1 3 4]
+        "%obse%tion" [1 2 3 4]
+        "%boy"       [2 3 4]
+        "%boy%"      [2 3 4]
+        "%bo_"       [2 3 4]
+        "%b%y%"      [2 4]
+        "%b_y"       [2 3 4]
+        "%好%"       [2 3 4]
+        "%好__oy"    [2 3 4]
+        "is 好 boy"  [2 3 4]
+        "好 boy"     [1 2 3 4]
+        "好"         [1 2 3 4]
+        ))
     (testing "escape character"
-      (let [q-e '[:find [?e ...]
-                  :in $ ?pat ?esc
-                  :where
-                  [?e :text ?t]
-                  [(like ?t ?pat {:escape ?esc})]]
-            db  (-> db
-                    (d/db-with
-                      [
-                       {:db/id 5
-                        :text  "home_value increases 25% in a year!"}
-                       {:db/id 6
-                        :text  "home value"}
-                       {:db/id 7
-                        :text  "home_value"}
-                       {:db/id 8
-                        :text  "book |No. 1|"}
-                       {:db/id 9
-                        :text  "%_%"}
-                       {:db/id 10
-                        :text  "_1000_"}
-                       {:db/id 11
-                        :text  "|title|"}
-                       ]))]
+      (let [q-e   '[:find [?e ...]
+                    :in $ ?pat ?esc
+                    :where
+                    [?e :text ?t]
+                    [(like ?t ?pat {:escape ?esc})]]
+            q-e-n '[:find [?e ...]
+                    :in $ ?pat ?esc
+                    :where
+                    [?e :text ?t]
+                    [(not-like ?t ?pat {:escape ?esc})]]
+            db    (-> db
+                      (d/db-with
+                        [
+                         {:db/id 5
+                          :text  "home_value increases 25% in a year!"}
+                         {:db/id 6
+                          :text  "home value"}
+                         {:db/id 7
+                          :text  "home_value"}
+                         {:db/id 8
+                          :text  "book |No. 1|"}
+                         {:db/id 9
+                          :text  "%_%"}
+                         {:db/id 10
+                          :text  "_1000_"}
+                         {:db/id 11
+                          :text  "|title|"}
+                         ]))]
         (are [ids pattern] (= (set ids) (set (d/q q-e db pattern \|)))
           [11]         "||%||"
           [11]         "||%||%"
@@ -152,6 +217,53 @@
           [6 7]        "%value"
           nil          "book |%"
           nil          "home-value%"
+          )
+        (are [ids pattern] (= (set ids) (set (d/q q-e-n db pattern \|)))
+          [1 2 3 4 5 6 7 8 9 10]    "||%||"
+          [1 2 3 4 5 6 7 8 9 10]    "||%||%"
+          [1 2 3 4 5 6 7 8 9 10]    "||%"
+          [1 2 3 4 5 6 7 9 10]      "%||"
+          [1 2 3 4 5 6 7 9 10 11]   "%||%||%"
+          [1 2 3 4 5 6 7 9 10 11]   "%||%||"
+          [1 2 3 4 5 6 7 9 10]      "%||%|"
+          [1 2 3 4 5 6 7 9 10]      "%||%"
+          [1 2 3 4 5 6 7 8 9 11]    "%0|_%"
+          [1 2 3 4 5 6 7 8 9 11]    "|_%"
+          [1 2 3 6 8 11]            "%|_%"
+          [1 2 3 4 5 6 7 8 9 11]    "%|_"
+          [1 2 3 4 5 6 7 8 9 11]    "|_%|_"
+          [1 2 3 4 5 6 7 8 10 11]   "|%|_|%"
+          [1 2 3 4 5 6 7 8 10 11]   "|%_|%"
+          [1 2 3 4 5 6 7 8 10 11]   "|%%|%"
+          [1 2 3 4 5 6 7 8 10 11]   "|%%"
+          [1 2 3 5 6 7 8 9 10 11]   "%cards |_%"
+          [1 2 3 6 7 8 10 11]       "%|%%"
+          [1 2 3 4 6 7 8 9 10 11]   "%year!"
+          [1 2 3 4 6 7 8 9 10 11]   "%25|%%"
+          [1 2 3 4 5 6 7 9 10 11]   "%||No%||"
+          [1 2 3 4 5 6 7 9 10 11]   "book ||No. 1||%"
+          [1 2 3 4 5 6 7 9 10 11]   "book ||No. 1||"
+          [1 2 3 4 5 6 7 9 10 11]   "book ||No. 1_"
+          [1 2 3 4 5 6 7 9 10 11]   "book ||No. %"
+          [1 2 3 4 5 6 7 9 10 11]   "book ||%"
+          [1 2 3 4 5 6 7 9 10 11]   "book %||%"
+          [1 2 3 4 5 6 7 9 10 11]   "book %||"
+          [1 2 3 4 5 6 7 8 9 10 11] "%book%||"
+          [1 2 3 4 5 6 7 8 9 10 11] "%book_||"
+          [1 2 3 4 5 6 7 9 10 11]   "%book%||%||"
+          [1 2 3 4 5 6 7 9 10 11]   "%book%||%||%"
+          [1 2 3 4 5 6 7 9 10 11]   "%book%||%"
+          [1 2 3 4 5 6 7 9 10 11]   "%book ||%"
+          [1 2 3 4 5 6 7 9 10 11]   "_ook ||%"
+          [1 2 3 4 8 9 10 11]       "home_value%"
+          [1 2 3 4 6 8 9 10 11]     "%home|_value%"
+          [1 2 3 4 8 9 10 11]       "home|_value%"
+          [1 2 3 4 8 9 10 11]       "home|_value"
+          [1 2 3 4 5 7 8 9 10 11]   "home value"
+          [1 2 3 4 8 9 10 11]       "home_value"
+          [1 2 3 4 5 8 9 10 11]     "%value"
+          [1 2 3 4 5 6 7 9 10 11]   "book |%"
+          [1 2 3 4 5 6 7 8 9 10 11] "home-value%"
           )
         (is (thrown-with-msg?
               Exception #"Can only escape"
