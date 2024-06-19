@@ -384,9 +384,9 @@
 (defmacro wrap-extrema
   [v vmin vmax b]
   `(if (keyword? ~v)
-     (condp = ~v
-       c/v0   ~vmin
-       c/vmax ~vmax
+     (case ~v
+       :db.value/sysMin ~vmin
+       :db.value/sysMax ~vmax
        (u/raise "Expect other data types, got keyword instead: " ~v {}))
      ~b))
 
@@ -414,9 +414,9 @@
 
 (defn- keyword-bytes
   [x]
-  (condp = x
-    c/v0   c/min-bytes
-    c/vmax c/max-bytes
+  (case x
+    :db.value/sysMin c/min-bytes
+    :db.value/sysMax c/max-bytes
     (key-sym-bytes x)))
 
 (defn- symbol-bytes
@@ -425,9 +425,9 @@
 
 (defn- data-bytes
   [v]
-  (condp = v
-    c/v0   c/min-bytes
-    c/vmax c/max-bytes
+  (case v
+    :db.value/sysMin c/min-bytes
+    :db.value/sysMax c/max-bytes
     (serialize v)))
 
 (defn- bigint-bytes
@@ -454,9 +454,9 @@
 (defn- long-header
   [v]
   (if (keyword? v)
-    (condp = v
-      c/v0   c/type-long-neg
-      c/vmax c/type-long-pos
+    (case v
+      :db.value/sysMin c/type-long-neg
+      :db.value/sysMax c/type-long-pos
       (u/raise "Expecting long, got keyword" v {}))
     (if (neg? ^long v) c/type-long-neg c/type-long-pos)))
 
@@ -502,9 +502,9 @@
     -2  (put-bytes bf (wrap-extrema v c/min-bytes c/tuple-max-bytes v))
     -4  (put-bytes bf (wrap-extrema v c/min-bytes c/tuple-max-bytes
                                     (key-sym-bytes v)))
-    -5  (put-bytes bf (condp = v
-                        c/v0   c/min-bytes
-                        c/vmax c/tuple-max-bytes
+    -5  (put-bytes bf (case v
+                        :db.value/sysMin c/min-bytes
+                        :db.value/sysMax c/tuple-max-bytes
                         (key-sym-bytes v)))
     -6  (put-bytes bf (wrap-extrema
                         v c/min-bytes c/tuple-max-bytes

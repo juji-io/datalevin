@@ -5,6 +5,8 @@
    [clojure.test.check.generators :as gen]
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
+   [clojure.set :as set]
+   [clojure.walk :as walk]
    [datalevin.core :as d]
    [datalevin.query :as sut]
    [datalevin.constants :as c]
@@ -569,16 +571,27 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-(deftest combine-ranges-test
+(deftest ranges-test
   (let [vs       (vec (range 10))
-        select   #(into []
+        vset     (set vs)
+        select   #(into #{}
                         (comp (map (fn [[[_ l] [_ r]]] (subvec vs l r)))
                            cat)
                         %)
         to-range #(mapv (fn [[l r]] [[:closed l] [:closed r]]) %)]
     (testing "range combinations"
-      (are [ranges] (= (set (select (to-range ranges)))
-                       (set (select (sut/combine-ranges (to-range ranges)))))
+      (are [intervals]
+          (let [ranges (to-range intervals)
+                combined (sut/combine-ranges ranges)
+                flipped (walk/postwalk
+                          #(case %
+                             :db.value/sysMax 10
+                             :db.value/sysMin 0
+                             %)
+                          (sut/flip-ranges combined))]
+            (= (select ranges)
+               (select combined)
+               (set/difference vset (select flipped))))
         [[1 4] [2 3] [7 8]]
         [[1 2] [3 4] [5 7]]
         [[2 9] [1 4] [2 5]]
@@ -594,7 +607,7 @@
         [[1 2] [1 2] [4 5] [1 5]]
         [[7 9] [3 4] [1 2] [2 3]]))))
 
-(test/defspec random-combine-ranges-test
+(test/defspec random-ranges-test
   100
   (prop/for-all
     [bases (gen/vector (gen/large-integer* {:min 1 :max 100}) 5)
@@ -604,9 +617,25 @@
           ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
                           bases offsets)
           combined  (sut/combine-ranges ranges)
+          ;; flipped       (walk/postwalk
+          ;;                 #(case %
+          ;;                    :db.value/sysMax 1000
+          ;;                    :db.value/sysMin -1
+          ;;                    %)
+          ;;                 (sut/flip-ranges combined))
           in-range? (fn [ranges target]
-                      (some (fn [[[_ l] [_ h]]] (<= l target h)) ranges))]
+                      (some (fn [[[_ l] [_ h]]] (<= l target h)) ranges))
+          ;; not-in-range? (fn [ranges target]
+          ;;                 (some (fn [[[_ l] [_ h]]]
+          ;;                         (or (> ^long l ^long target)
+          ;;                             (> ^long target ^long h)))
+          ;;                       ranges))
+          ]
       (is (every? true?
                   (mapv (fn [x y] (= x y))
                         (mapv #(in-range? ranges %) targets)
-                        (mapv #(in-range? combined %) targets)))))))
+                        (mapv #(in-range? combined %) targets))))
+      #_(is (every? true?
+                    (mapv (fn [x y] (not= x y))
+                          (mapv #(in-range? flipped %) targets)
+                          (mapv #(in-range? combined %) targets)))))))

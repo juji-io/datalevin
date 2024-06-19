@@ -10,13 +10,13 @@
   (lazy) matching, as oppose to the default in Clojure/Java regex. This function
   is further optimized by rewritten into index scan range boundary for patterns
   that have non-wildcard prefix. Similarly, `not-like` function is provided.
-- [Datalog] `in` function that is similar to IN operator in SQL, which is
-  optimized by special index scan operations. Similarly, `not-in`.
-- [Datalog] `fill-db` to bulk-load a collection of trusted datoms,
+- [Datalog] `in` function that is similar to IN operator in SQL: `(in input coll)` which is optimized as index scan boundaries. Similarly, `not-in`.
+- [Datalog] `fill-db` function to bulk-load a collection of trusted datoms,
   `*fill-db-batch-size*` dynamic var to control the batch size (default 4
   million datoms). The same var also control `init-db` batch size.
-- `read-csv` drop-in replacement for `clojure.data.csv/read-csv`. This CSV
-  parser is about 1.5X faster and is more robust in handling quoted content.
+- `read-csv` function, a drop-in replacement for `clojure.data.csv/read-csv`.
+  This CSV parser is about 1.5X faster and is more robust in handling quoted
+  content.
 - Same `write-csv` for completeness.
 
 ### Changed

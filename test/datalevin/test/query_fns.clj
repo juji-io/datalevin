@@ -277,6 +277,33 @@
     (d/close-db db)
     (u/delete-files dir)))
 
+(deftest test-in-fn
+  (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:key {:db/valueType :db.type/long}})
+                (d/db-with [{:db/id 1, :key 1}
+                            {:db/id 2, :key 2}
+                            {:db/id 3, :key 3}
+                            {:db/id 4, :key 4}
+                            {:db/id 5, :key 5}
+                            {:db/id 6, :key 6}
+                            {:db/id 7, :key 7}
+                            {:db/id 8, :key 8}
+                            {:db/id 9, :key 9}]))]
+    (is (= (set [2 5 7]) (set (d/q '[:find [?e ...]
+                                     :in $ ?coll
+                                     :where
+                                     [?e :key ?v]
+                                     [(in ?v ?coll)]]
+                                   db [5 7 2]))))
+    (is (= (set [3 4 5 9]) (set (d/q '[:find [?e ...]
+                                       :in $ ?coll
+                                       :where
+                                       [?e :key ?v]
+                                       [(not-in ?v ?coll)]]
+                                     db [1 7 8 2 6]))))
+    (d/close-db db)
+    (u/delete-files dir)))
+
 (deftest test-string-fn
   (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})

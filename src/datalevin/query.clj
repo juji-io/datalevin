@@ -1168,7 +1168,15 @@
         (let [s (:symbol (first vars))]
           (some #(when (= s (:var %)) s) gseq))))))
 
-(defn- icompare [[_ i] [_ j]] (compare i j))
+(defn- icompare
+  [[_ i] [_ j]]
+  (case i
+    :db.value/sysMin -1
+    :db.value/sysMax 1
+    (case j
+      :db.value/sysMax -1
+      :db.value/sysMin 1
+      (compare i j))))
 
 (defn- combine-ranges*
   [ranges]
@@ -1184,7 +1192,7 @@
             (recur (conj! intervals (persistent! thread)) (pop from) to
                    (transient [fc]))
             (if fc
-              (if (< (compare fc tc) 0)
+              (if (< ^long (icompare fc tc) 0)
                 (recur intervals (pop from) to (conj! thread fc))
                 (recur intervals from (pop to) (conj! thread tc)))
               (recur intervals from (pop to) (conj! thread tc)))))
@@ -1193,20 +1201,30 @@
 
 (defn combine-ranges
   [ranges]
-  ;; use transient when peek and pop are supported
-  ;; https://clojure.atlassian.net/browse/CLJ-2464
   (reduce
     (fn [vs [[cl l] [cr r] :as n]]
       (let [[[pcl pl] [pcr pr]] (peek vs)]
-        (if (and (= pr l) (not (and (identical? pcr :open)
-                                    (identical? cl :open))))
+        (if (and (= pr l) (not (= pcr cl :open)))
           (conj (pop vs) [[pcl pl] [cr r]])
           (conj vs n))))
     [] (combine-ranges* ranges)))
 
-(defn- add-range
-  [m & rs]
-  (update m :range #(combine-ranges (concatv % rs))))
+(defn- flip [c] (if (identical? c :open) :closed :open))
+
+(defn flip-ranges
+  ([ranges] (flip-ranges ranges c/v0 c/vmax))
+  ([ranges v0 vmax]
+   (let [vs (reduce
+              (fn [vs [[cl l] [cr r]]]
+                (-> vs
+                    (assoc-in [(dec (count vs)) (count (peek vs))]
+                              [(if (= l v0) cl (flip cl)) l])
+                    (conj [[(if (= r vmax) cr (flip cr)) r]])))
+              [[[:closed v0]]] ranges)]
+     (assoc-in vs [(dec (count vs)) (count (peek vs))]
+               [:closed vmax]))))
+
+(defn- add-range [m & rs] (update m :range #(combine-ranges (concatv % rs))))
 
 (defn- prefix-max-string
   [^String prefix]
@@ -1237,11 +1255,11 @@
       (let [min-s    (min wm-s ws-s)
             end      (if (== min-s -1) (max wm-s ws-s) min-s)
             prefix-s (subs pattern 0 end)
-            prefix-e (prefix-max-string prefix-s)]
+            prefix-e (prefix-max-string prefix-s)
+            range    [[:closed prefix-s] [:closed prefix-e]]]
         (if not?
-          (add-range m [[:closed ""] [:open prefix-s]]
-                     [[:open prefix-e] [:closed max-string]])
-          (add-range m [[:closed prefix-s] [:closed prefix-e]]))))))
+          (apply add-range m (flip-ranges [range] "" max-string))
+          (add-range m range))))))
 
 (defn- like-pattern-as-string
   "Used for plain text matching, e.g. as bounded val or range, not as FSM"
@@ -1269,43 +1287,51 @@
         pstring (like-pattern-as-string pattern escape)]
     (like-convert-range (update m :pred concatv [matcher]) pstring not?)))
 
+(defn- inequality->range
+  [m f args v]
+  (let [args (vec args)
+        ac-1 (dec (count args))
+        i    ^long (u/index-of #(= % v) args)
+        fa   (first args)
+        pa   (peek args)]
+    (case f
+      <  (cond
+           (zero? i)  (add-range m [[:closed c/v0] [:open pa]])
+           (= i ac-1) (add-range m [[:open fa] [:closed c/vmax]])
+           :else      (add-range m [[:open fa] [:open pa]]))
+      <= (cond
+           (zero? i)  (add-range m [[:closed c/v0] [:closed pa]])
+           (= i ac-1) (add-range m [[:closed fa] [:closed c/vmax]])
+           :else      (add-range m [[:closed fa] [:closed pa]]))
+      >  (cond
+           (zero? i)  (add-range m [[:open pa] [:closed c/vmax]])
+           (= i ac-1) (add-range m [[:closed c/v0] [:open fa]])
+           :else      (add-range m [[:open pa] [:open fa]]))
+      >= (cond
+           (zero? i)  (add-range m [[:closed pa] [:closed c/vmax]])
+           (= i ac-1) (add-range m [[:closed c/v0] [:closed fa]])
+           :else      (add-range m [[:closed pa] [:closed fa]])))))
+
+(defn- in-convert-range
+  [m [_ coll] not?]
+  (apply add-range m
+         (let [ranges (map (fn [v] [[:closed v] [:closed v]]) (sort coll))]
+           (if not? (flip-ranges ranges) ranges))))
+
 (defn- add-pred-clause
   [graph clause v]
   (walk/postwalk
     (fn [m]
       (if (= (:var m) v)
-        (let [[f & args :as pred] (first clause)
-              args                (vec args)
-              ac-1                (dec (count args))
-              i                   ^long (u/index-of #(= % v) args)
-              fa                  (first args)
-              pa                  (peek args)]
-          (condp = f
-            '<
-            (cond
-              (zero? i)  (add-range m [[:closed c/v0] [:open pa]])
-              (= i ac-1) (add-range m [[:open fa] [:closed c/vmax]])
-              :else      (add-range m [[:open fa] [:open pa]]))
-            '<=
-            (cond
-              (zero? i)  (add-range m [[:closed c/v0] [:closed pa]])
-              (= i ac-1) (add-range m [[:closed fa] [:closed c/vmax]])
-              :else      (add-range m [[:closed fa] [:closed pa]]))
-            '>
-            (cond
-              (zero? i)  (add-range m [[:open pa] [:closed c/vmax]])
-              (= i ac-1) (add-range m [[:closed c/v0] [:open fa]])
-              :else      (add-range m [[:open pa] [:open fa]]))
-            '>=
-            (cond
-              (zero? i)  (add-range m [[:closed pa] [:closed c/vmax]])
-              (= i ac-1) (add-range m [[:closed c/v0] [:closed fa]])
-              :else      (add-range m [[:closed pa] [:closed fa]]))
-            '=
-            (let [c (some #(when-not (qu/free-var? %) %) args)]
-              (add-range m [[:closed c] [:closed c]]))
-            'like     (optimize-like m args false)
-            'not-like (optimize-like m args true)
+        (let [[f & args :as pred] (first clause)]
+          (case f
+            (< <= > >=) (inequality->range m f args v)
+            =           (let [c (some #(when-not (qu/free-var? %) %) args)]
+                          (add-range m [[:closed c] [:closed c]]))
+            like        (optimize-like m args false)
+            not-like    (optimize-like m args true)
+            in          (in-convert-range m args false)
+            not-in      (in-convert-range m args true)
             (update m :pred conjv pred)))
         m))
     graph))
