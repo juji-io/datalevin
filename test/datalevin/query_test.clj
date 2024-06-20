@@ -617,25 +617,30 @@
           ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
                           bases offsets)
           combined  (sut/combine-ranges ranges)
-          ;; flipped       (walk/postwalk
-          ;;                 #(case %
-          ;;                    :db.value/sysMax 1000
-          ;;                    :db.value/sysMin -1
-          ;;                    %)
-          ;;                 (sut/flip-ranges combined))
           in-range? (fn [ranges target]
-                      (some (fn [[[_ l] [_ h]]] (<= l target h)) ranges))
-          ;; not-in-range? (fn [ranges target]
-          ;;                 (some (fn [[[_ l] [_ h]]]
-          ;;                         (or (> ^long l ^long target)
-          ;;                             (> ^long target ^long h)))
-          ;;                       ranges))
-          ]
+                      (some (fn [[[_ l] [_ h]]] (<= l target h)) ranges))]
       (is (every? true?
                   (mapv (fn [x y] (= x y))
                         (mapv #(in-range? ranges %) targets)
-                        (mapv #(in-range? combined %) targets))))
-      #_(is (every? true?
-                    (mapv (fn [x y] (not= x y))
-                          (mapv #(in-range? flipped %) targets)
-                          (mapv #(in-range? combined %) targets)))))))
+                        (mapv #(in-range? combined %) targets)))))))
+
+#_(deftest issue-259-test
+    (let [dir (u/tmp-dir (str "issue-259-" (UUID/randomUUID)))
+          db  (-> (d/empty-db
+                    dir {:user/name  {:db/valueType :db.type/string}
+                         :user/items {:db/valueType   :db.type/ref
+                                      :db/cardinality :db.cardinality/many
+                                      :db/isComponent true}
+                         :item/name  {:db/valueType :db.type/string}})
+                  (d/db-with [{:user/name  "joe"
+                               :user/items [{:item/name "pen"}]}
+                              {:user/name  "larry"
+                               :user/items [{:item/name "pen"}]}]))]
+      (is (= 2 (d/q '[:find ?e .
+                      :where
+                      [?u :user/name "joe"]
+                      [?u :user/items ?e]
+                      [?e :item/name "pen"]]
+                    db)))
+      (d/close-db db)
+      (u/delete-files dir)))

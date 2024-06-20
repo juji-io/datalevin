@@ -19,12 +19,16 @@
   content.
 - Same `write-csv` for completeness.
 
+### Fixed
+- [Datalog] Wrong variable may be returned when bounded variables are
+  involved. #259
+
 ### Changed
 - [Datalog] Change initial DB size to 1 GiB.
 
 ### Improved
 - [Datalog] `min` and `max` query predicates handle all comparable data.
-- [Datalog] port applicable fixes from Datascript 1.6.5.
+- [Datalog] port applicable fixes from Datascript 1.7.0.
 - [Platform] Use local LMDB library on FreeBSD if available (thx @markusalbertgraf).
 - update deps.
 

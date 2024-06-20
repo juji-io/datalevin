@@ -440,11 +440,11 @@
                   dir {:name {:db/unique :db.unique/identity}}
                   {:kv-opts {:flags (conj c/default-env-flags :nosync)}})
         inc-age (i/inter-fn [db name]
-                            (if-some [ent (d/entity db [:name name])]
-                              [{:db/id (:db/id ent)
-                                :age   (inc ^long (:age ent))}
-                               [:db/add (:db/id ent) :had-birthday true]]
-                              (throw (ex-info (str "No entity with name: " name) {}))))]
+                  (if-some [ent (d/entity db [:name name])]
+                    [{:db/id (:db/id ent)
+                      :age   (inc ^long (:age ent))}
+                     [:db/add (:db/id ent) :had-birthday true]]
+                    (throw (ex-info (str "No entity with name: " name) {}))))]
     (d/transact! conn [{:db/id    1
                         :name     "Petr"
                         :age      31

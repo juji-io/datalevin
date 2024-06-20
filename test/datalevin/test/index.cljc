@@ -1,13 +1,34 @@
 (ns datalevin.test.index
   (:require
    [datalevin.test.core :as tdc :refer [db-fixture]]
-   [clojure.test :refer [deftest testing is use-fixtures]]
+   [clojure.test :refer [deftest testing is are use-fixtures]]
    [datalevin.util :as u]
    [datalevin.core :as d])
   (:import
    [java.util UUID]))
 
 (use-fixtures :each db-fixture)
+
+(deftest sequence-compare-test
+  (let [dir (u/tmp-dir (str "sequence-test-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir)
+                (d/db-with [{:db/id 1 :path [1 2]}
+                            {:db/id 2 :path [1 2 3]}])) ]
+    (are [value result] (= result (mapv :e (d/datoms db :ave :path value)))
+      [1]                 []
+      [1 1]               []
+      [1 2]               [1]
+      (list 1 2)          [1]
+      (butlast [1 2 3])   [1]
+      [1 3]               []
+      [1 2 2]             []
+      [1 2 3]             [2]
+      (list 1 2 3)        [2]
+      (butlast [1 2 3 4]) [2]
+      [1 2 4]             []
+      [1 2 3 4]           [])
+    (d/close-db db)
+    (u/delete-files dir)))
 
 (deftest test-datoms
   (let [dir  (u/tmp-dir (str "reset-test-" (UUID/randomUUID)))

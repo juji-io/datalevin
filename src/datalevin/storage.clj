@@ -1,8 +1,10 @@
 (ns ^:no-doc datalevin.storage
   "Storage layer of Datalog store"
+  (:refer-clojure :exclude [update assoc])
   (:require
    [datalevin.lmdb :as lmdb :refer [IWriting]]
-   [datalevin.util :as u]
+   [datalevin.inline :refer [update assoc]]
+   [datalevin.util :as u :refer [conjs]]
    [datalevin.relation :as r]
    [datalevin.bits :as b]
    [datalevin.search :as s]
@@ -51,8 +53,6 @@
           (update m src-attr assoc tuple-attr idx))
         m ((schema tuple-attr) :db/tupleAttrs)))
     {} (rschema :db/tupleAttrs)))
-
-(def conjs (fnil conj #{}))
 
 (defn schema->rschema
   ":db/unique           => #{attr ...}

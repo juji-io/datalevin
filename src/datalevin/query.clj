@@ -1,7 +1,9 @@
 (ns ^:no-doc datalevin.query
   "Datalog query engine"
+  (:refer-clojure :exclude [update assoc])
   (:require
    [clojure.set :as set]
+   [clojure.pprint :as pp]
    [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.walk :as walk]
@@ -11,6 +13,7 @@
    [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
    [datalevin.util :as u :refer [raise cond+ conjv concatv]]
+   [datalevin.inline :refer [update assoc]]
    [datalevin.lru :as lru]
    [datalevin.spill :as sp]
    [datalevin.parser :as dp]
@@ -2148,6 +2151,7 @@
                 (resolve-redudants)
                 (-q true)
                 (collect all-vars))
+            ;; _ (pp/pprint context)
             result
             (cond->> (:result-set context)
               with (mapv #(subvec % 0 result-arity))

@@ -23,14 +23,6 @@
            (instance? Iterable x)
            (instance? java.util.Map x))))
 
-(defn unchunk
-  "Unchunked lazy seq, one item at a time"
-  [s]
-  (when (seq s)
-    (lazy-seq
-      (cons (first s)
-            (unchunk (next s))))))
-
 (defmacro cond+ [& clauses]
   (when-some [[test expr & rest] clauses]
     (case test
@@ -279,17 +271,6 @@
    :post [(string? %)]}
   (s/join "-" (map s/lower-case (split-words s))))
 
-(defn count-substrings
-  "assuming needles do not overlap"
-  [^String haystack ^String needle]
-  (let [len (.length needle)]
-    (loop [c 0
-           i 0]
-      (let [pos (.indexOf haystack needle i)]
-        (if (= pos -1)
-          c
-          (recur (inc c) (+ pos len)))))))
-
 (defn keyword->string [k] (subs (str k) 1))
 
 ;;
@@ -318,8 +299,7 @@
           (if (reduced? res)
             (reduced [res idx])
             [res (inc idx)])))
-      [init 0]
-      xs)))
+      [init 0] xs)))
 
 (defn distinct-by
   [f coll]
@@ -343,6 +323,7 @@
 (defn long-inc ^long [^long x] (inc x))
 
 (def conjv (fnil conj []))
+(def conjs (fnil conj #{}))
 
 (defn bit-count
   ^long [^long v]
@@ -401,21 +382,6 @@
   (or (= x y 0)
       (and (< x 0) (< y 0))
       (and (> x 0) (> y 0))))
-
-(defn approximate-factorial
-  "https://www.luschny.de/math/factorial/approx/SimpleCases.html"
-  [^long x]
-  (let [[y p] (loop [y (inc x) p 1]
-                (if (< y 7)
-                  (recur (inc y) (* p y))
-                  [y p]))
-        y     (double y)
-        p     (double p)
-        r     (Math/exp
-                (+ (* y (- (Math/log y) 1))
-                   (/ 1 (* 2 (+ (* 6 y) (/ 1 (* 5 (+ y (/ 1 (* 4 y))))))))))
-        r     (if (< x 7) (/ r p) r)]
-    (long (* r (Math/sqrt (/ (* 2 Math/PI) y))))))
 
 (defn n-bits-mask ^long [^long n] (dec (bit-shift-left 1 n)))
 

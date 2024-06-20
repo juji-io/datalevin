@@ -245,9 +245,8 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-;; https://github.com/tonsky/datascript/issues/403
 (deftest test-upsert-string-tempid-ref
-  (let [dir      (u/tmp-dir (str "retry-or-" (UUID/randomUUID)))
+  (let [dir      (u/tmp-dir (str "upsert-string-" (UUID/randomUUID)))
         db       (-> (d/empty-db dir {:name {:db/unique :db.unique/identity}
                                       :ref  {:db/valueType :db.type/ref}})
                      (d/db-with [{:name "Alice"}]))
@@ -268,6 +267,25 @@
                                      {:age 36, :ref -1}]))))
     (d/close-db db)
     (u/delete-files dir)))
+
+(deftest test-two-tempids-two-retries
+  (let [dir      (u/tmp-dir (str "twice-" (UUID/randomUUID)))
+        schema   {:name {:db/unique :db.unique/identity}
+                  :ref  {:db/valueType :db.type/ref}}
+        db       (d/db-with (d/empty-db dir schema)
+                            [{:name "Alice"}
+                             {:name "Bob"}])
+        expected #{[1 :name "Alice"]
+                   [2 :name "Bob"]
+                   [3 :ref 1]
+                   [4 :ref 2]}]
+    (is (= expected
+           (tdc/all-datoms
+             (d/db-with db
+                        [{:db/id 3, :ref "A"}
+                         {:db/id 4, :ref "B"}
+                         {:db/id "A", :name "Alice"}
+                         {:db/id "B", :name "Bob"}]))))))
 
 (deftest test-vector-upsert
   (let [dir (u/tmp-dir (str "vector-or-" (UUID/randomUUID)))
