@@ -25,7 +25,7 @@
   involved. #259
 
 ### Changed
-- [KV] Change initial DB size to 1 GiB.
+- [KV] Change default initial DB size to 1 GiB.
 
 ### Improved
 - [Platform] Use local LMDB library on FreeBSD if available (thx @markusalbertgraf).

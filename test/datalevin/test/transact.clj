@@ -783,7 +783,9 @@
   (let [dir  (u/tmp-dir (str "db-fn-" (UUID/randomUUID)))
         conn (d/create-conn dir)]
     (d/transact! conn [[:db.fn/call (fn [_] [{:foo "bar"}])]])
-    (is (= #{[1 :foo "bar"]} (tdc/all-datoms @conn)))))
+    (is (= #{[1 :foo "bar"]} (tdc/all-datoms @conn)))
+    (d/close conn)
+    (u/delete-files dir)))
 
 ;; TODO
 #_(deftest test-transitive-type-compare-386
