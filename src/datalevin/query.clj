@@ -1629,44 +1629,70 @@
 
 (defn- merge-scan-step
   [db last-step index new-key new-steps skip-attr]
-  (map->MergeScanStep
-    (apply assoc {:save  *save-intermediate*
-                  :index index
-                  :in    (:out last-step)
-                  :out   new-key}
-           (if (= 1 (count new-steps))
-             (let [s (first new-steps)
-                   v (peek (:vars s))
-                   a (:attr s)]
-               [:attrs [a]
-                :vars  [v]
-                :skips []
-                :preds [(add-back-range v s)]
-                :cols  (conj (:cols last-step) a)])
-             (let [[s1 s2] new-steps
-                   attr1   (:attr s1)
-                   val1    (:val s1)
-                   bound?  (some? val1)
-                   v1      (peek (:vars s1))
-                   attrs2  (:attrs s2)
-                   vars-m  (let [m (zipmap attrs2 (:vars s2))]
-                             (if bound? m (assoc m attr1 v1)))
-                   preds-m (assoc (zipmap attrs2 (:preds s2))
-                                  attr1
-                                  (cond-> (add-back-range v1 s1)
-                                    bound? (add-pred #(= % val1))))
-                   schema  (db/-schema db)
-                   attrs   (->> (conj (:attrs s2) attr1)
-                                (sort-by #(-> % schema :db/aid))
-                                (remove #{(:attr last-step)}))
-                   skips   (cond-> (conj (:skips s2) skip-attr)
-                             bound? (conj attr1))]
-               [:attrs attrs
-                :vars  (->> attrs (replace vars-m) (remove keyword?))
-                :preds (->> attrs (replace preds-m) )
-                :skips skips
-                :cols  (into (:cols last-step)
-                             (remove (set skips)) attrs)])))))
+  (let [[s1 s2] new-steps
+        attr1   (:attr s1)
+        val1    (:val s1)
+        bound?  (some? val1)
+        v1      (peek (:vars s1))
+        attrs2  (:attrs s2)
+        vars-m  (let [m (zipmap attrs2 (:vars s2))]
+                  (if bound? m (assoc m attr1 v1)))
+        preds-m (assoc (zipmap attrs2 (:preds s2))
+                       attr1 (cond-> (add-back-range v1 s1)
+                               bound? (add-pred #(= % val1))))
+        schema  (db/-schema db)
+        attrs   (->> (conj attrs2 attr1)
+                     (sort-by #((schema %) :db/aid))
+                     (remove #{(:attr last-step)}))
+        skips   (remove nil? (cond-> (conj (:skips s2) skip-attr)
+                               bound? (conj attr1)))]
+    (map->MergeScanStep {:attrs attrs
+                         :vars  (->> attrs (replace vars-m) (remove keyword?))
+                         :preds (replace preds-m attrs)
+                         :skips skips
+                         :cols  (into (:cols last-step) (remove (set skips)) attrs)
+                         :save  *save-intermediate*
+                         :index index
+                         :in    (:out last-step)
+                         :out   new-key}))
+  #_(map->MergeScanStep
+      (apply assoc {:save  *save-intermediate*
+                    :index index
+                    :in    (:out last-step)
+                    :out   new-key}
+             (if (= 1 (count new-steps))
+               (let [s (first new-steps)
+                     v (peek (:vars s))
+                     a (:attr s)]
+                 [:attrs [a]
+                  :vars  [v]
+                  :skips []
+                  :preds [(add-back-range v s)]
+                  :cols  (conj (:cols last-step) a)])
+               (let [[s1 s2] new-steps
+                     attr1   (:attr s1)
+                     val1    (:val s1)
+                     bound?  (some? val1)
+                     v1      (peek (:vars s1))
+                     attrs2  (:attrs s2)
+                     vars-m  (let [m (zipmap attrs2 (:vars s2))]
+                               (if bound? m (assoc m attr1 v1)))
+                     preds-m (assoc (zipmap attrs2 (:preds s2))
+                                    attr1
+                                    (cond-> (add-back-range v1 s1)
+                                      bound? (add-pred #(= % val1))))
+                     schema  (db/-schema db)
+                     attrs   (->> (conj (:attrs s2) attr1)
+                                  (sort-by #(-> % schema :db/aid))
+                                  (remove #{(:attr last-step)}))
+                     skips   (cond-> (conj (:skips s2) skip-attr)
+                               bound? (conj attr1))]
+                 [:attrs attrs
+                  :vars  (->> attrs (replace vars-m) (remove keyword?))
+                  :preds (->> attrs (replace preds-m) )
+                  :skips skips
+                  :cols  (into (:cols last-step)
+                               (remove (set skips)) attrs)])))))
 
 (defn- ref-plan
   [db last-step {:keys [attr]} new-key new-steps]
@@ -1922,7 +1948,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (plan-explain) c)
+          (do  (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
@@ -2151,7 +2177,6 @@
                 (resolve-redudants)
                 (-q true)
                 (collect all-vars))
-            ;; _ (pp/pprint context)
             result
             (cond->> (:result-set context)
               with (mapv #(subvec % 0 result-arity))

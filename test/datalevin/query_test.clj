@@ -544,33 +544,6 @@
     (d/close-db db)
     (u/delete-files dir)))
 
-(deftest extra-bound-var-test
-  (let [dir (u/tmp-dir (str "extra-bound-" (UUID/randomUUID)))
-        db  (-> (d/empty-db
-                  dir
-                  {:user/id {:db/valueType :db.type/long
-                             :db/unique    :db.unique/identity}
-
-                   :entity/uuid {:db/valueType :db.type/uuid
-                                 :db/unique    :db.unique/identity}
-
-                   :entity/user {:db/valueType :db.type/ref}
-
-                   :entity/item {:db/valueType :db.type/long}})
-                (d/db-with [{:db/id 1 :user/id 1}
-                            {:entity/uuid (UUID/randomUUID)
-                             :entity/user [:user/id 1] :entity/item 5}
-                            {:entity/uuid (UUID/randomUUID)
-                             :entity/user [:user/id 1] :entity/item 5}]))]
-    (is (= #{[2] [3]} (d/q '[:find ?e
-                             :where
-                             [?e :entity/user ?u]
-                             [?e :entity/item 5]
-                             [?u :user/id 1]]
-                           db)))
-    (d/close-db db)
-    (u/delete-files dir)))
-
 (deftest ranges-test
   (let [vs       (vec (range 10))
         vset     (set vs)
@@ -624,23 +597,44 @@
                         (mapv #(in-range? ranges %) targets)
                         (mapv #(in-range? combined %) targets)))))))
 
-#_(deftest issue-259-test
-    (let [dir (u/tmp-dir (str "issue-259-" (UUID/randomUUID)))
-          db  (-> (d/empty-db
-                    dir {:user/name  {:db/valueType :db.type/string}
-                         :user/items {:db/valueType   :db.type/ref
-                                      :db/cardinality :db.cardinality/many
-                                      :db/isComponent true}
-                         :item/name  {:db/valueType :db.type/string}})
-                  (d/db-with [{:user/name  "joe"
-                               :user/items [{:item/name "pen"}]}
-                              {:user/name  "larry"
-                               :user/items [{:item/name "pen"}]}]))]
-      (is (= 2 (d/q '[:find ?e .
-                      :where
-                      [?u :user/name "joe"]
-                      [?u :user/items ?e]
-                      [?e :item/name "pen"]]
-                    db)))
-      (d/close-db db)
-      (u/delete-files dir)))
+(deftest issue-259-test
+  (let [dir (u/tmp-dir (str "issue-259-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:user/name  {:db/valueType :db.type/string}
+                                 :user/items {:db/valueType   :db.type/ref
+                                              :db/cardinality :db.cardinality/many
+                                              :db/isComponent true}
+                                 :item/name  {:db/valueType :db.type/string}})
+                (d/db-with [{:user/name  "joe"
+                             :user/items [{:item/name "pen"}]}
+                            {:user/name  "larry"
+                             :user/items [{:item/name "pen"}]}]))]
+    (is (= 2 (d/q '[:find ?e .
+                    :where
+                    [?u :user/name "joe"]
+                    [?u :user/items ?e]
+                    [?e :item/name "pen"]]
+                  db)))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest extra-bound-var-test
+  (let [dir (u/tmp-dir (str "extra-bound-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:user/id     {:db/valueType :db.type/long
+                                               :db/unique    :db.unique/identity}
+                                 :entity/uuid {:db/valueType :db.type/uuid
+                                               :db/unique    :db.unique/identity}
+                                 :entity/user {:db/valueType :db.type/ref}
+                                 :entity/item {:db/valueType :db.type/long}})
+                (d/db-with [{:db/id 1 :user/id 1}
+                            {:entity/uuid (UUID/randomUUID)
+                             :entity/user [:user/id 1] :entity/item 5}
+                            {:entity/uuid (UUID/randomUUID)
+                             :entity/user [:user/id 1] :entity/item 5}]))]
+    (is (= #{[2] [3]} (d/q '[:find ?e
+                             :where
+                             [?e :entity/user ?u]
+                             [?e :entity/item 5]
+                             [?u :user/id 1]]
+                           db)))
+    (d/close-db db)
+    (u/delete-files dir)))

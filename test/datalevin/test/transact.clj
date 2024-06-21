@@ -772,13 +772,18 @@
 (deftest unthawable-datoms-test
   (let [dir  (u/tmp-dir (str "unthawable-datoms-" (UUID/randomUUID)))
         conn (d/create-conn
-               dir {}
-               {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
+               dir {} {:kv-opts {:flags (conj c/default-env-flags :nosync)}})]
 
     (is (thrown? Exception (d/transact! conn [{:bar (defn bar [] :bar)}])))
 
     (d/close conn)
     (u/delete-files dir)))
+
+(deftest test-db-fn-returning-entity-without-db-id-issue-474
+  (let [dir  (u/tmp-dir (str "db-fn-" (UUID/randomUUID)))
+        conn (d/create-conn dir)]
+    (d/transact! conn [[:db.fn/call (fn [_] [{:foo "bar"}])]])
+    (is (= #{[1 :foo "bar"]} (tdc/all-datoms @conn)))))
 
 ;; TODO
 #_(deftest test-transitive-type-compare-386

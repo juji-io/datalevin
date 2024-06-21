@@ -10,7 +10,8 @@
   (lazy) matching, as oppose to the default in Clojure/Java regex. This function
   is further optimized by rewritten into index scan range boundary for patterns
   that have non-wildcard prefix. Similarly, `not-like` function is provided.
-- [Datalog] `in` function that is similar to IN operator in SQL: `(in input coll)` which is optimized as index scan boundaries. Similarly, `not-in`.
+- [Datalog] `in` function that is similar to IN operator in SQL: `(in input
+  coll)` which is optimized as index scan boundaries. Similarly, `not-in`.
 - [Datalog] `fill-db` function to bulk-load a collection of trusted datoms,
   `*fill-db-batch-size*` dynamic var to control the batch size (default 4
   million datoms). The same var also control `init-db` batch size.
@@ -24,12 +25,12 @@
   involved. #259
 
 ### Changed
-- [Datalog] Change initial DB size to 1 GiB.
+- [KV] Change initial DB size to 1 GiB.
 
 ### Improved
-- [Datalog] `min` and `max` query predicates handle all comparable data.
-- [Datalog] port applicable fixes from Datascript 1.7.0.
 - [Platform] Use local LMDB library on FreeBSD if available (thx @markusalbertgraf).
+- [Datalog] `min` and `max` query predicates handle all comparable data.
+- [Datalog] Port applicable fixes from Datascript up to 1.7.1.
 - update deps.
 
 ## 0.9.5 (2024-04-17)
