@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.6 (2024-06-21)
 
 ### Added
 - [Datalog] `like` function similar to LIKE operator in SQL: `(like input
