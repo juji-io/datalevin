@@ -3,7 +3,6 @@
   (:refer-clojure :exclude [update assoc])
   (:require
    [clojure.set :as set]
-   [clojure.pprint :as pp]
    [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.walk :as walk]
@@ -1654,45 +1653,7 @@
                          :save  *save-intermediate*
                          :index index
                          :in    (:out last-step)
-                         :out   new-key}))
-  #_(map->MergeScanStep
-      (apply assoc {:save  *save-intermediate*
-                    :index index
-                    :in    (:out last-step)
-                    :out   new-key}
-             (if (= 1 (count new-steps))
-               (let [s (first new-steps)
-                     v (peek (:vars s))
-                     a (:attr s)]
-                 [:attrs [a]
-                  :vars  [v]
-                  :skips []
-                  :preds [(add-back-range v s)]
-                  :cols  (conj (:cols last-step) a)])
-               (let [[s1 s2] new-steps
-                     attr1   (:attr s1)
-                     val1    (:val s1)
-                     bound?  (some? val1)
-                     v1      (peek (:vars s1))
-                     attrs2  (:attrs s2)
-                     vars-m  (let [m (zipmap attrs2 (:vars s2))]
-                               (if bound? m (assoc m attr1 v1)))
-                     preds-m (assoc (zipmap attrs2 (:preds s2))
-                                    attr1
-                                    (cond-> (add-back-range v1 s1)
-                                      bound? (add-pred #(= % val1))))
-                     schema  (db/-schema db)
-                     attrs   (->> (conj (:attrs s2) attr1)
-                                  (sort-by #(-> % schema :db/aid))
-                                  (remove #{(:attr last-step)}))
-                     skips   (cond-> (conj (:skips s2) skip-attr)
-                               bound? (conj attr1))]
-                 [:attrs attrs
-                  :vars  (->> attrs (replace vars-m) (remove keyword?))
-                  :preds (->> attrs (replace preds-m) )
-                  :skips skips
-                  :cols  (into (:cols last-step)
-                               (remove (set skips)) attrs)])))))
+                         :out   new-key})))
 
 (defn- ref-plan
   [db last-step {:keys [attr]} new-key new-steps]
