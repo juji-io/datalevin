@@ -3,6 +3,7 @@
   (:refer-clojure :exclude [update assoc])
   (:require
    [clojure.set :as set]
+   [clojure.pprint :as pp]
    [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.walk :as walk]
@@ -20,7 +21,8 @@
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c]
    [datalevin.query :as q]
-   [datalevin.bits :as b])
+   [datalevin.bits :as b]
+   [clojure.pprint :as pp])
   (:import
    [java.util Arrays List]
    [java.nio.charset StandardCharsets]
@@ -96,18 +98,17 @@
       out-rel))
 
   (-explain [_ _]
-    (str
-      (str "Initialize " vars " "
-           (cond
-             know-e? "by a known entity id."
+    (str "Initialize " vars " "
+         (cond
+           know-e? "by a known entity id."
 
-             (nil? val)
-             (if range
-               (str "by range " range " on " attr ".")
-               (str "by " attr "."))
+           (nil? val)
+           (if range
+             (str "by range " range " on " attr ".")
+             (str "by " attr "."))
 
-             (some? val)
-             (str "by " attr " = " val "."))))))
+           (some? val)
+           (str "by " attr " = " val ".")))))
 
 (defn- update-attrs
   [attrs vars]
@@ -139,7 +140,10 @@
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
-              (assoc :tuples (db/-vae-scan-e db (:tuples rel) index attr)))]
+              (assoc :tuples
+                     (if (int? var)
+                       (db/-vae-scan-e db (:tuples rel) index attr var)
+                       (db/-vae-scan-e db (:tuples rel) index attr))))]
       (save-intermediates context save out out-rel)
       out-rel))
 
@@ -153,7 +157,10 @@
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
-              (assoc :tuples (db/-val-eq-scan-e db (:tuples rel) index attr)))]
+              (assoc :tuples
+                     (if (int? var)
+                       (db/-val-eq-scan-e db (:tuples rel) index attr var)
+                       (db/-val-eq-scan-e db (:tuples rel) index attr))))]
       (save-intermediates context save out out-rel)
       out-rel))
 
@@ -1389,7 +1396,7 @@
 (defn- range->start-end [[[_ lv] [_ hv]]] [(nillify lv) (nillify hv)])
 
 (defn- range-count
-  [db attr ^long cap ranges]
+  [db attr ranges ^long cap]
   (reduce
     (fn [^long sum range]
       (let [s (+ sum (let [[lv hv] (range->start-end range)]
@@ -1397,67 +1404,64 @@
         (if (< s cap) s (reduced cap))))
     0 ranges))
 
-(defn- datom-n
-  [db k node]
+(defn- count-k-datoms
+  [node db k]
   (reduce-kv
     (fn [{:keys [mcount] :as node} attr {:keys [val range pred]}]
-      (let [c (cond->
-                  (cond
-                    (some? val) (db/-count db [nil attr val] mcount)
-                    range       (range-count db attr mcount range)
-                    :else       (db/-count db [nil attr nil] mcount))
-                pred (pred-count))]
-        (if (< ^long c ^long mcount)
-          (-> node
-              (assoc-in [k attr :count] c)
-              (assoc :mcount c :mpath [k attr]))
-          (assoc-in node [k attr :count] (u/long-inc c)))))
+      (let [^long c (cond->
+                        (cond
+                          (some? val) (db/-count db [nil attr val] mcount)
+                          range       (range-count db attr range mcount)
+                          :else       (db/-count db [nil attr nil] mcount))
+                      pred (pred-count))]
+        (cond
+          (zero? c)          (reduced (assoc node :mcount 0))
+          (< c ^long mcount) (-> node
+                                 (assoc-in [k attr :count] c)
+                                 (assoc :mcount c :mpath [k attr]))
+          :else              (assoc-in node [k attr :count] c))))
     node (k node)))
 
-(defn- datom-1
-  [k node]
-  (let [[attr _] (first (k node))]
-    (-> node
-        (assoc :mpath [k attr])
-        (assoc-in [k attr :count] 1))))
+(defn- count-node-datoms
+  [db {:keys [free bound] :as node}]
+  (cond-> (assoc node :mcount Long/MAX_VALUE)
+    (< 0 (count bound)) (count-k-datoms db :bound)
+    (< 0 (count free))  (count-k-datoms db :free)))
 
-(defn- count-clause-datoms
+(defn- count-known-e-datoms
+  [db e {:keys [free] :as node}]
+  (reduce-kv
+    (fn [{:keys [mcount] :as node} attr {:keys [pred]}]
+      (let [^long c (cond-> (db/-count db [e attr nil] mcount)
+                      pred (pred-count))]
+        (cond
+          (zero? c)          (reduced (assoc node :mcount 0))
+          (< c ^long mcount) (-> node
+                                 (assoc-in [:free attr :count] c)
+                                 (assoc :mcount c :mpath [:free attr]))
+          :else              (assoc-in node [:free attr :count] c))))
+    (assoc node :mcount Long/MAX_VALUE) free))
+
+(defn- count-datoms*
+  [context src db nodes]
+  (reduce-kv
+    (fn [c e node]
+      (let [node1 (if (int? e)
+                    (count-known-e-datoms db e node)
+                    (count-node-datoms db node))]
+        (if (zero? ^long (:mcount node1))
+          (reduced (assoc c :result-set #{}))
+          (assoc-in c [:graph src e] node1))))
+    context nodes))
+
+(defn- count-datoms
   [{:keys [sources graph] :as context}]
   (reduce-kv
     (fn [c src nodes]
-      (let [db (sources src)
-            nc (count nodes)
-            res
-            (reduce-kv
-              (fn [c e {:keys [free bound]}]
-                (let [fc (count free)
-                      bc (count bound)]
-                  (if (or (< 1 nc) (< 1 (+ fc bc)))
-                    (let [c2 (update c :graph
-                                     (fn [g]
-                                       (cond-> (assoc-in g [src e :mcount]
-                                                         Long/MAX_VALUE)
-                                         (< 0 bc)
-                                         (update-in [src e]
-                                                    #(datom-n db :bound %))
-                                         (< 0 fc)
-                                         (update-in [src e]
-                                                    #(datom-n db :free %)))))]
-                      (if (zero? ^long (get-in c2 [:graph src e :mcount]))
-                        (reduced (assoc c2 :result-set #{}))
-                        c2))
-                    ;; don't count for single clause
-                    (update c :graph
-                            (fn [g]
-                              (cond-> (assoc-in g [src e :mcount] 1)
-                                (< 0 bc)
-                                (update-in [src e] #(datom-1 :bound %))
-                                (< 0 fc)
-                                (update-in [src e] #(datom-1 :free %))))))))
-              c nodes)]
-        (if (= #{} (:result-set res))
-          (reduced res)
-          res)))
+      (let [c1 (count-datoms* c src (sources src) nodes)]
+        (if (= #{} (:result-set c1))
+          (reduced c1)
+          c1)))
     context graph))
 
 (defn- attr-var [[_ {:keys [var]}]] (or var '_))
@@ -1485,7 +1489,7 @@
       split-clauses
       init-graph
       pushdown-predicates
-      count-clause-datoms))
+      count-datoms))
 
 (defn- add-pred
   ([pred] pred)
@@ -1519,18 +1523,17 @@
         know-e? (int? e)
         schema  (db/-schema db)
         init    (cond-> (map->InitStep
-                          {:attr attr :vars [e] :out #{e}
+                          {:attr attr :vars [e] :cols [e] :out #{e}
                            :mcount (:count clause)
                            :save *save-intermediate*})
-                  var     (assoc :pred (attr-pred [attr clause])
-                                 :vars (cond-> [e]
-                                         (not (qu/placeholder? var))
-                                         (conj var))
-                                 :range range)
-                  val     (assoc :val val)
-                  know-e? (assoc :know-e? true)
-                  true    (#(assoc % :cols
-                                   (if (= 1 (count (:vars %))) [e] [e attr]))))
+                  know-e? (assoc :know-e? true :vars [] :cols [])
+                  var     (#(assoc % :pred (attr-pred [attr clause])
+                                   :vars (cond-> (:vars %)
+                                           (not (qu/placeholder? var))
+                                           (conj var))
+                                   :cols (conj (:cols %) attr)
+                                   :range range))
+                  val     (assoc :val val))
         cols    (:cols init)]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
@@ -1662,6 +1665,7 @@
 
 (defn- link-step
   [op last-step index attr tgt new-key]
+  (println "tgt ->" tgt)
   (let [in   (:out last-step)
         cols (conj (:cols last-step) tgt)]
     (case op
@@ -1696,9 +1700,9 @@
 
 (defn- max-domain-cardinality
   [db {:keys [attr attrs]}]
-  (cond
-    attr  (db/-cardinality db attr)
-    attrs (apply max (map #(db/-cardinality db %) (vals attrs)))))
+  (if attr
+    (db/-cardinality db attr)
+    (apply max (map #(db/-cardinality db %) (vals attrs)))))
 
 (defn- estimate-join-size
   [db link prev-size new-base-plan]
@@ -1783,6 +1787,7 @@
                     {:keys [cost] :as new-plan}
                     (binary-plan db nodes (base-plans new-e) prev-plan
                                  (first link-e) (first new-e) new-key)]
+                (println "new plan ->" new-plan)
                 (if (< ^long cost ^long cur-cost)
                   (assoc t new-key new-plan)
                   t))
@@ -1809,6 +1814,7 @@
             tables    (FastList. n)
             n-1       (dec n)
             base-ps   (build-base-plans db nodes component)]
+        (println "base-plans ->" base-ps)
         (.add tables base-ps)
         (dotimes [i n-1]
           (.add tables (plans db nodes connected base-ps (.get tables i))))
@@ -1909,7 +1915,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do  (plan-explain) c)
+          (do (pp/pprint c) (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
@@ -2085,39 +2091,42 @@
            (eduction (filter #(< 1 (count (val %)))))))))
 
 (defn- result-explain
-  [{:keys [graph result-set plan opt-clauses late-clauses run?] :as context}]
-  (when *explain*
-    (let [{:keys [^long planning-time]} @*explain*
+  ([context result]
+   (result-explain context)
+   (when *explain* (vswap! *explain* assoc :result result)))
+  ([{:keys [graph result-set plan opt-clauses late-clauses run?] :as context}]
+   (when *explain*
+     (let [{:keys [^long planning-time]} @*explain*
 
-          et (double (/ (- ^long (System/nanoTime)
-                           (+ ^long *start-time* planning-time))
-                        1000000))
-          pt (double (/ planning-time 1000000))]
-      (vswap! *explain* assoc
-              :actual-result-size (count result-set)
-              :planning-time (str (format "%.3f" pt) " ms")
-              :execution-time (str (format "%.3f" et) " ms")
-              :opt-clauses opt-clauses
-              :query-graph (walk/postwalk
-                             (fn [e]
-                               (if (map? e)
-                                 (apply dissoc e
-                                        (for [[k v] e
-                                              :when (nil? v)] k))
-                                 e)) graph)
-              :plan (walk/postwalk
-                      (fn [e]
-                        (if (instance? Plan e)
-                          (let [{:keys [steps] :as plan} e]
-                            (cond->
-                                (assoc plan :steps
-                                       (mapv #(-explain % context) steps))
-                              run? (assoc :actual-size
-                                          (get-in @(:intermediates context)
-                                                  [(:out (last steps))
-                                                   :tuples-count]))))
-                          e)) plan)
-              :late-clauses late-clauses))))
+           et (double (/ (- ^long (System/nanoTime)
+                            (+ ^long *start-time* planning-time))
+                         1000000))
+           pt (double (/ planning-time 1000000))]
+       (vswap! *explain* assoc
+               :actual-result-size (count result-set)
+               :planning-time (str (format "%.3f" pt) " ms")
+               :execution-time (str (format "%.3f" et) " ms")
+               :opt-clauses opt-clauses
+               :query-graph (walk/postwalk
+                              (fn [e]
+                                (if (map? e)
+                                  (apply dissoc e
+                                         (for [[k v] e
+                                               :when (nil? v)] k))
+                                  e)) graph)
+               :plan (walk/postwalk
+                       (fn [e]
+                         (if (instance? Plan e)
+                           (let [{:keys [steps] :as plan} e]
+                             (cond->
+                                 (assoc plan :steps
+                                        (mapv #(-explain % context) steps))
+                               run? (assoc :actual-size
+                                           (get-in @(:intermediates context)
+                                                   [(:out (last steps))
+                                                    :tuples-count]))))
+                           e)) plan)
+               :late-clauses late-clauses)))))
 
 (defn q
   [q & inputs]
@@ -2148,7 +2157,7 @@
               (some dp/pull? find-elements) (pull find-elements context)
 
               true (-post-process find (:qreturn-map parsed-q)))]
-        (result-explain context)
+        (result-explain context result)
         result))))
 
 (defn- plan-only

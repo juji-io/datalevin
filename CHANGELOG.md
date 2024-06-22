@@ -1,5 +1,13 @@
 # Change Log
 
+## WIP
+
+## Fixed
+- [Datalog] Handle bounded entity IDs in reverse reference and value equality
+  scans, #260
+## Improved
+- [Datalog] Added `:result` to `explain` result map.
+
 ## 0.9.6 (2024-06-21)
 
 ### Added
@@ -28,7 +36,8 @@
 - [KV] Change default initial DB size to 1 GiB.
 
 ### Improved
-- [Platform] Use local LMDB library on FreeBSD if available (thx @markusalbertgraf).
+- [Platform] Use local LMDB library on FreeBSD if available [thx
+@markusalbertgraf].
 - [Datalog] `min` and `max` query predicates handle all comparable data.
 - [Datalog] Port applicable fixes from Datascript up to 1.7.1.
 - update deps.

@@ -56,6 +56,14 @@
        (dotimes [i l2] (aset res (+ l1 i) (get t2 (aget idxs2 i)))))
      res)))
 
+(defn conj-tuple
+  [^objects tuple item]
+  (let [len (alength tuple)
+        res (object-array (inc len))]
+    (System/arraycopy tuple 0 res 0 len)
+    (aset res len item)
+    res))
+
 (defn same-keys?
   [a b]
   (and (= (count a) (count b))

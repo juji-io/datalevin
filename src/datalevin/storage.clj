@@ -279,9 +279,9 @@
     [this tuples eid-idx attrs vpreds skip-attrs]
     "Scan values and merge into tuples using :eav index., assuming attrs are
     already sorted by aid")
-  (vae-scan-e [this tuples veid-idx attr]
+  (vae-scan-e [this tuples veid-idx attr] [this tuples veid-idx attr bound]
     "Return tuples with eid as the last column using :vae index")
-  (val-eq-scan-e [this tuples v-idx attr]
+  (val-eq-scan-e [this tuples v-idx attr] [this tuples v-idx attr bound]
     "Return tuples with eid as the last column for given attribute values"))
 
 (defn e-aid-v->datom
@@ -918,6 +918,32 @@
             :avg)
           res))))
 
+  (vae-scan-e [_ tuples veid-idx attr bound]
+    (when (and (seq tuples) attr bound)
+      (when-let [props (schema attr)]
+        (assert (identical? :db.type/ref (props :db/valueType))
+                (str attr " is not a :db.type/ref"))
+        (let [aid (props :db/aid)
+              res (FastList.)
+              operator
+              (fn [iterable]
+                (let [iter (lmdb/val-iterator iterable)]
+                  (dotimes [i (.size ^List tuples)]
+                    (let [tuple ^objects (.get ^List tuples i)
+                          tv    ^long (aget tuple veid-idx)]
+                      (loop [next? (lmdb/seek-key iter tv :id)]
+                        (when next?
+                          (let [vb ^ByteBuffer (lmdb/next-val iter)
+                                e  (b/read-buffer (.position vb 4) :id)]
+                            (when (= ^long e ^long bound)
+                              (.add res (r/conj-tuple tuple e)))
+                            (recur (lmdb/has-next-val iter)))))))))]
+          (lmdb/operate-list-val-range
+            lmdb c/vae operator
+            [:closed
+             (b/indexable c/e0 aid nil :db.type/ref c/g0)
+             (b/indexable c/emax aid nil :db.type/ref c/gmax)] :ae)
+          res))))
   (vae-scan-e [_ tuples veid-idx attr]
     (when (and (seq tuples) attr)
       (when-let [props (schema attr)]
@@ -955,6 +981,22 @@
              (b/indexable c/emax aid nil :db.type/ref c/gmax)] :ae)
           res))))
 
+  (val-eq-scan-e [_ tuples v-idx attr bound]
+    (when (and (seq tuples) attr)
+      (when-let [props (schema attr)]
+        (let [vt  (value-type props)
+              aid (props :db/aid)
+              res (FastList.)]
+          (dotimes [i (.size ^List tuples)]
+            (let [tuple ^objects (.get ^List tuples i)
+                  v     (aget tuple v-idx)]
+              (lmdb/visit-list
+                lmdb c/ave (fn [kv]
+                             (let [e (b/read-buffer (lmdb/v kv) :id)]
+                               (when (= ^long e ^long bound)
+                                 (.add res (r/conj-tuple tuple e)))))
+                (b/indexable nil aid v vt nil) :av)))
+          res))))
   (val-eq-scan-e [_ tuples v-idx attr]
     (when (and (seq tuples) attr)
       (when-let [props (schema attr)]

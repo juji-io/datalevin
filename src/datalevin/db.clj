@@ -60,8 +60,8 @@
 (defprotocol ITuples
   (-init-tuples [db a mcount v-range pred get-v?])
   (-eav-scan-v [db tuples eid-idx attrs preds skips])
-  (-vae-scan-e [db tuples veid-idx attr])
-  (-val-eq-scan-e [db tuples v-idx attr]))
+  (-vae-scan-e [db tuples veid-idx attr] [db tuples veid-idx attr bound])
+  (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -148,12 +148,22 @@
     (wrap-cache
         store [:vae-scan-e tuples veid-idx attr]
       (s/vae-scan-e store tuples veid-idx attr)))
+  (-vae-scan-e
+    [db tuples veid-idx attr bound]
+    (wrap-cache
+        store [:vae-scan-e tuples veid-idx attr bound]
+      (s/vae-scan-e store tuples veid-idx attr bound)))
 
   (-val-eq-scan-e
     [db tuples v-idx attr]
     (wrap-cache
         store [:val-eq-scan-e tuples v-idx attr]
       (s/val-eq-scan-e store tuples v-idx attr)))
+  (-val-eq-scan-e
+    [db tuples v-idx attr bound]
+    (wrap-cache
+        store [:val-eq-scan-e tuples v-idx attr bound]
+      (s/val-eq-scan-e store tuples v-idx attr bound)))
 
   ISearch
   (-search
@@ -234,7 +244,7 @@
     (.-count db pattern nil))
   (-count
     [db pattern cap]
-    (let [[e a v _] pattern]
+    (let [[e a v] pattern]
       (wrap-cache
           store [:count e a v cap]
         (case-tree
