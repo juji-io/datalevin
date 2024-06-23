@@ -3,12 +3,10 @@
   (:refer-clojure :exclude [update assoc])
   (:require
    [clojure.set :as set]
-   [clojure.pprint :as pp]
    [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.walk :as walk]
    [datalevin.db :as db]
-   [datalevin.rules :as rl]
    [datalevin.query-util :as qu]
    [datalevin.relation :as r]
    [datalevin.built-ins :as built-ins]
@@ -22,10 +20,9 @@
    [datalevin.constants :as c]
    [datalevin.query :as q]
    [datalevin.bits :as b]
-   [clojure.pprint :as pp])
+   )
   (:import
    [java.util Arrays List]
-   [java.nio.charset StandardCharsets]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
    [datalevin.relation Relation]
@@ -1523,17 +1520,18 @@
         know-e? (int? e)
         schema  (db/-schema db)
         init    (cond-> (map->InitStep
-                          {:attr attr :vars [e] :cols [e] :out #{e}
+                          {:attr attr :vars [e] :out #{e}
                            :mcount (:count clause)
                            :save *save-intermediate*})
-                  know-e? (assoc :know-e? true :vars [] :cols [])
-                  var     (#(assoc % :pred (attr-pred [attr clause])
-                                   :vars (cond-> (:vars %)
-                                           (not (qu/placeholder? var))
-                                           (conj var))
-                                   :cols (conj (:cols %) attr)
-                                   :range range))
-                  val     (assoc :val val))
+                  var     (assoc :pred (attr-pred [attr clause])
+                                 :vars (cond-> [e]
+                                         (not (qu/placeholder? var))
+                                         (conj var))
+                                 :range range)
+                  val     (assoc :val val)
+                  know-e? (assoc :know-e? true)
+                  true    (#(assoc % :cols
+                                   (if (= 1 (count (:vars %))) [e] [e attr]))))
         cols    (:cols init)]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
@@ -1665,7 +1663,6 @@
 
 (defn- link-step
   [op last-step index attr tgt new-key]
-  (println "tgt ->" tgt)
   (let [in   (:out last-step)
         cols (conj (:cols last-step) tgt)]
     (case op
@@ -1787,7 +1784,6 @@
                     {:keys [cost] :as new-plan}
                     (binary-plan db nodes (base-plans new-e) prev-plan
                                  (first link-e) (first new-e) new-key)]
-                (println "new plan ->" new-plan)
                 (if (< ^long cost ^long cur-cost)
                   (assoc t new-key new-plan)
                   t))
@@ -1814,7 +1810,6 @@
             tables    (FastList. n)
             n-1       (dec n)
             base-ps   (build-base-plans db nodes component)]
-        (println "base-plans ->" base-ps)
         (.add tables base-ps)
         (dotimes [i n-1]
           (.add tables (plans db nodes connected base-ps (.get tables i))))
@@ -1915,7 +1910,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (pp/pprint c) (plan-explain) c)
+          (do (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 

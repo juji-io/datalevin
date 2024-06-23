@@ -302,7 +302,7 @@
 (deftest test-lookup-refs-query
   (let [schema {:name   { :db/unique :db.unique/identity }
                 :friend { :db/valueType :db.type/ref }}
-        dir    (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
+        dir    (u/tmp-dir (str "lookup-query-" (UUID/randomUUID)))
         db     (d/db-with (d/empty-db dir schema)
                           [{:db/id 1 :id 1 :name "Ivan" :age 11 :friend 2}
                            {:db/id 2 :id 2 :name "Petr" :age 22 :friend 3}
