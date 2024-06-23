@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.7 (2024-06-23)
 
 ## Fixed
 - [Datalog] Handle bounded entity IDs in reverse reference and value equality
