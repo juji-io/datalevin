@@ -1646,20 +1646,31 @@
                      (remove #{(:attr last-step)}))
         skips   (remove nil? (cond-> (conj (:skips s2) skip-attr)
                                bound? (conj attr1)))]
-    (map->MergeScanStep {:attrs attrs
-                         :vars  (->> attrs (replace vars-m) (remove keyword?))
-                         :preds (replace preds-m attrs)
-                         :skips skips
-                         :cols  (into (:cols last-step) (remove (set skips)) attrs)
-                         :save  *save-intermediate*
-                         :index index
-                         :in    (:out last-step)
-                         :out   new-key})))
+    (map->MergeScanStep
+      {:attrs attrs
+       :vars  (->> attrs (replace vars-m) (remove keyword?))
+       :preds (replace preds-m attrs)
+       :skips skips
+       :cols  (into (:cols last-step) (remove (set skips)) attrs)
+       :save  *save-intermediate*
+       :index index
+       :in    (:out last-step)
+       :out   new-key})))
+
+(defn- find-index
+  [a-or-v cols]
+  (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols))
 
 (defn- ref-plan
   [db last-step {:keys [attr]} new-key new-steps]
-  (let [index (u/index-of #(= attr %) (:cols last-step))]
+  (let [index (find-index attr (:cols last-step))
+        #_    (u/index-of #(= attr %) (:cols last-step))]
     [(merge-scan-step db last-step index new-key new-steps nil)]))
+
+(defn- val-eq-cols
+  [cols index attr]
+  (let [pa (cols index)]
+    (replace (if (set? pa) {pa (conj pa attr)} {pa #{pa attr}}) cols)))
 
 (defn- link-step
   [op last-step index attr tgt new-key]
@@ -1669,11 +1680,13 @@
       :vae-scan-e    (RevRefStep. index attr tgt in new-key
                                   cols *save-intermediate*)
       :val-eq-scan-e (ValEqStep. index attr tgt in new-key
-                                 cols *save-intermediate*))))
+                                 (val-eq-cols cols index attr)
+                                 *save-intermediate*))))
 
 (defn- rev-ref-plan
   [db last-step link-e {:keys [attr tgt]} new-key new-steps]
-  (let [index (u/index-of #(= link-e %) (:cols last-step))
+  (let [index (find-index link-e (:cols last-step))
+        #_    (u/index-of #(= link-e %) (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
@@ -1685,8 +1698,9 @@
   [db last-step {:keys [attrs tgt var]} link-e new-key new-steps]
   (let [cols  (:cols last-step)
         index (if (instance? RevRefStep last-step)
-                (u/index-of #(= var %) cols)
-                (u/index-of #(= (attrs link-e) %) cols))
+                (find-index var cols)#_(u/index-of #(= var %) cols)
+                (find-index (attrs link-e) cols)
+                #_(u/index-of #(= (attrs link-e) %) cols))
         attr  (attrs tgt)
         step  (link-step :val-eq-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
@@ -1810,6 +1824,7 @@
             tables    (FastList. n)
             n-1       (dec n)
             base-ps   (build-base-plans db nodes component)]
+        (println "base-ps =>" base-ps)
         (.add tables base-ps)
         (dotimes [i n-1]
           (.add tables (plans db nodes connected base-ps (.get tables i))))
@@ -1910,7 +1925,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (plan-explain) c)
+          (do (println "plan ->" (:plan c)) (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
