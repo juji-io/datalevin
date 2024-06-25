@@ -1169,9 +1169,12 @@
   "predicates that can be pushed down involve only one free variable"
   [where gseq]
   (when (instance? Predicate where)
-    (let [vars (filterv #(instance? Variable %) (:args where))]
-      (when (= 1 (count vars))
-        (let [s (:symbol (first vars))]
+    (let [syms (set (sequence
+                      (comp (filter #(instance? Variable %))
+                         (map :symbol))
+                      (:args where)))]
+      (when (= (count syms) 1)
+        (let [s (first syms)]
           (some #(when (= s (:var %)) s) gseq))))))
 
 (defn- icompare
@@ -1291,7 +1294,7 @@
         match   #(.match fsm (.getBytes ^String %))
         matcher (if not? #(not (match %)) #(match %))
         pstring (like-pattern-as-string pattern escape)]
-    (like-convert-range (update m :pred concatv [matcher]) pstring not?)))
+    (like-convert-range (update m :pred conjv matcher) pstring not?)))
 
 (defn- inequality->range
   [m f args v]
@@ -1663,14 +1666,13 @@
 
 (defn- ref-plan
   [db last-step {:keys [attr]} new-key new-steps]
-  (let [index (find-index attr (:cols last-step))
-        #_    (u/index-of #(= attr %) (:cols last-step))]
+  (let [index (find-index attr (:cols last-step))]
     [(merge-scan-step db last-step index new-key new-steps nil)]))
 
 (defn- val-eq-cols
   [cols index attr]
   (let [pa (cols index)]
-    (replace (if (set? pa) {pa (conj pa attr)} {pa #{pa attr}}) cols)))
+    (replace {pa (if (set? pa) (conj pa attr) (into #{} [pa attr]))} cols)))
 
 (defn- link-step
   [op last-step index attr tgt new-key]
@@ -1686,7 +1688,6 @@
 (defn- rev-ref-plan
   [db last-step link-e {:keys [attr tgt]} new-key new-steps]
   (let [index (find-index link-e (:cols last-step))
-        #_    (u/index-of #(= link-e %) (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
@@ -1697,10 +1698,8 @@
 (defn- val-eq-plan
   [db last-step {:keys [attrs tgt var]} link-e new-key new-steps]
   (let [cols  (:cols last-step)
-        index (if (instance? RevRefStep last-step)
-                (find-index var cols)#_(u/index-of #(= var %) cols)
-                (find-index (attrs link-e) cols)
-                #_(u/index-of #(= (attrs link-e) %) cols))
+        index (or (find-index var cols)
+                  (find-index (attrs link-e) cols))
         attr  (attrs tgt)
         step  (link-step :val-eq-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
