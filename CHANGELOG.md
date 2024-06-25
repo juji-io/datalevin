@@ -1,5 +1,14 @@
 # Change Log
 
+## WIP
+
+## Fixed
+- [Datalog] Attributes for a column should be a set for value equality scan.
+
+## Improved
+- [Datalog] Optimize `and` and `or` query functions that involves only one
+  variable.
+
 ## 0.9.7 (2024-06-23)
 
 ## Fixed

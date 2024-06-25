@@ -1824,7 +1824,6 @@
             tables    (FastList. n)
             n-1       (dec n)
             base-ps   (build-base-plans db nodes component)]
-        (println "base-ps =>" base-ps)
         (.add tables base-ps)
         (dotimes [i n-1]
           (.add tables (plans db nodes connected base-ps (.get tables i))))
@@ -1925,7 +1924,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (println "plan ->" (:plan c)) (plan-explain) c)
+          (do (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
