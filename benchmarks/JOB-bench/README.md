@@ -61,3 +61,12 @@ The clojure-csv library used to load CSV files into Datalevin has some problems 
 ## Queries
 
 The original benchmark contains 113 SQL queries.
+
+## Results
+
+PostgreSQL 16.3 (Ubuntu 16.3-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
+
+For Postgresql, we report the `EXPLAIN` results to remove the impact of
+client/server communication.
+
+* Postgresql's `MIN` function result is not consistent with `>`

@@ -18,9 +18,7 @@
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c]
-   [datalevin.query :as q]
-   [datalevin.bits :as b]
-   )
+   [datalevin.bits :as b])
   (:import
    [java.util Arrays List]
    [clojure.lang ILookup LazilyPersistentVector]
@@ -1325,6 +1323,16 @@
            (= i ac-1) (add-range m [[:closed c/v0] [:closed fa]])
            :else      (add-range m [[:closed pa] [:closed fa]])))))
 
+(defn- range->inequality
+  [v [[so sc :as s] [eo ec :as e]]]
+  (cond
+    (= s [:closed c/v0])
+    (if (identical? eo :open) (list '< v ec) (list '<= v ec))
+    (= e [:closed c/vmax])
+    (if (identical? so :open) (list '< sc v) (list '<= sc v))
+    :else
+    (if (identical? so :open) (list '< sc v ec) (list '<= sc v ec))))
+
 (defn- in-convert-range
   [m [_ coll] not?]
   (apply add-range m
@@ -1616,23 +1624,13 @@
   (into {} (map (fn [e] [#{e} (base-plan db nodes e)])) component))
 
 (defn- add-back-range
-  [v step]
-  (let [p (:pred step)]
-    (if-let [ranges (:range step)]
-      (reduce
-        (fn [p range]
-          (let [[f & r] range
-                c       (first r)
-                c1      (second r)]
-            (add-pred p (activate-pred v (case f
-                                           :less-than    (list '< v c)
-                                           :greater-than (list '> v c)
-                                           :at-most      (list '<= v c)
-                                           :at-least     (list '>= v c)
-                                           :open         (list '< c v c1)
-                                           :closed       (list '<= c v c1))))))
-        p ranges)
-      p)))
+  [v {:keys [pred range]}]
+  (if range
+    (reduce
+      (fn [p r]
+        (add-pred p (activate-pred v (range->inequality v r))))
+      pred range)
+    pred))
 
 (defn- merge-scan-step
   [db last-step index new-key new-steps skip-attr]

@@ -538,7 +538,7 @@
             [?t :title/production-year ?t.production-year]
             ])
 
-(def q-1b '[:find [(min ?mc.note) (min ?t.title) (min ?t.production-year)]
+(def q-1b '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
             :where
             [?ct :company-type/kind "production companies"]
             [?it :info-type/info "bottom 10 rank"]
@@ -550,7 +550,6 @@
             [?mc :movie-companies/movie ?t]
             [?mi :movie-info-idx/movie ?t]
             [?mi :movie-info-idx/info-type ?it]
-            [?t :title/title ?t.title]
-            ])
+            [?t :title/title ?t.title]])
 
 (d/explain {:run? true} q-1b (d/db conn))

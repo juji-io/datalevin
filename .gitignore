@@ -1,5 +1,6 @@
 */JOB-bench/data/*.csv
 */JOB-bench/*.dat
+*/JOB-bench/*.sql
 */JOB-bench/*.out
 */math-bench/*.json
 */search-bench/data
