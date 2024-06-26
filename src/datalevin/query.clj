@@ -1165,14 +1165,18 @@
                                   (map make-nodes))
                                 (group-by get-src patterns)))))
 
+(defn- collect-pred-vars
+  [where]
+  (set (sequence
+         (comp (filter #(instance? Variable %))
+            (map :symbol))
+         (:args where))))
+
 (defn- pushdownable
   "predicates that can be pushed down involve only one free variable"
   [where gseq]
   (when (instance? Predicate where)
-    (let [syms (set (sequence
-                      (comp (filter #(instance? Variable %))
-                         (map :symbol))
-                      (:args where)))]
+    (let [syms (collect-pred-vars where)]
       (when (= (count syms) 1)
         (let [s (first syms)]
           (some #(when (= s (:var %)) s) gseq))))))
