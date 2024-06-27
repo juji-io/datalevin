@@ -655,17 +655,30 @@
 ;;     (d/close-db db)
 ;;     (u/delete-files dir)))
 
-(deftest and-or-pred-test
+(deftest logic-pred-test
   (let [dir (u/tmp-dir (str "and-or-" (UUID/randomUUID)))
-        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
-                (d/db-with [{:db/id 1 :text "床前明月光"}
-                            {:db/id 2 :text "疑是地上霜"}
-                            {:db/id 3 :text "举头望明月"}
-                            {:db/id 4 :text "低头思故乡"}]))]
-    (is (= #{[2] [3]} (d/q '[:find ?e
-                             :where
-                             [()]
-                             ]
-                           db)))
+        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}
+                                 :line {:db/valueType :db.type/long}})
+                (d/db-with [{:db/id 1 :text "床前明月光" :line 1}
+                            {:db/id 2 :text "疑是地上霜" :line 2}
+                            {:db/id 3 :text "举头望明月" :line 3}
+                            {:db/id 4 :text "低头思故乡" :line 4}]))]
+    (is (= #{[3]} (d/q '[:find ?e
+                         :where
+                         [?e :line ?l]
+                         [(and (< 1 ?l) (odd? ?l))]]
+                       db)))
+    (is (= #{[3]} (d/q '[:find ?e
+                         :where
+                         [?e :text ?t]
+                         [(and (like ?t "%月%")
+                               (not-like ?t "%月光%"))]]
+                       db)))
+    (is (= #{[1][3][4]} (d/q '[:find ?e
+                               :where
+                               [?e :text ?t]
+                               [(or (like ?t "%月%")
+                                    (like ?t "%乡%"))]]
+                             db)))
     (d/close-db db)
     (u/delete-files dir)))

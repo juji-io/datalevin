@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.built-ins
+  "built-in query functions"
   (:require
    [clojure.string :as str]
    [datalevin.db :as db]
@@ -6,12 +7,38 @@
    [datalevin.storage :as st]
    [datalevin.search :as s]
    [datalevin.entity :as de]
+   [datalevin.lru :as lru]
    [datalevin.util :as u :refer [raise]])
   (:import
    [datalevin.utl LikeFSM]
    [datalevin.storage Store]
    [datalevin.search SearchEngine]
    [datalevin.db DB]))
+
+(def fn-cache (lru/cache 1000 :fn-cache))
+
+(defn- like
+  ([input pattern]
+   (like input pattern nil false))
+  ([input pattern opts]
+   (like input pattern opts false))
+  ([input pattern {:keys [escape] :as opts} not?]
+   (let [pb      (.getBytes ^String pattern)
+         fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
+         match   #(.match fsm (.getBytes ^String %))
+         matcher (lru/-get fn-cache [pattern opts not?]
+                           (fn [] (if not? #(not (match %)) #(match %))))]
+     (matcher input))))
+
+(defn- not-like
+  ([input pattern]
+   (not-like input pattern nil))
+  ([input pattern opts]
+   (like input pattern opts true)))
+
+(defn- in [input coll] ((set coll) input))
+
+(defn- not-in [input coll] (not (in input coll)))
 
 (defn- -differ?
   [& xs]
@@ -132,7 +159,6 @@
   ([x y & more]
    (reduce largest (largest x y) more)))
 
-;; These are directly called
 (def query-fns
   {'=                           =,
    '==                          ==,
@@ -205,6 +231,10 @@
    'fulltext                    fulltext,
    'tuple                       vector,
    'untuple                     identity
+   'like                        like
+   'not-like                    not-like
+   'in                          in
+   'not-in                      not-in
    'clojure.string/blank?       str/blank?,
    'clojure.string/includes?    str/includes?,
    'clojure.string/starts-with? str/starts-with?,

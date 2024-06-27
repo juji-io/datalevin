@@ -3,11 +3,13 @@
 ## WIP
 
 ## Fixed
-- [Datalog] Attributes for a column should be a set for value equality scan.
+- [Datalog] Planner: attributes should be a set for value equality scan.
+- [Datalog] Planner: convert ranges back to correct predicates.
+- [Datalog] Handle `like`, `in` within complex logic expressions.
 
 ## Improved
-- [Datalog] Optimize `and` and `or` query functions that involves only one
-  variable.
+- [Datalog] Optimize `not`, `and` and `or` logic functions that involve only
+  one variable.
 
 ## 0.9.7 (2024-06-23)
 

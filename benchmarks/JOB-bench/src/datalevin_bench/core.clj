@@ -455,7 +455,7 @@
       cat)
     (d/read-csv reader)))
 
-;; initial loading of data, may take up to half an hour
+;; initial loading of data, may take up to 20 minutes
 #_(def db
     (with-open [movie-info-rdr     (io/reader "data/movie_info.csv")
                 movie-info-idx-rdr (io/reader "data/movie_info_idx.csv")

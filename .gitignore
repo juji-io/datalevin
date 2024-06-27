@@ -2,6 +2,7 @@
 */JOB-bench/*.dat
 */JOB-bench/*.sql
 */JOB-bench/*.out
+*/JOB-bench/*.json
 */math-bench/*.json
 */search-bench/data
 */search-bench/*.json

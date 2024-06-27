@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.lru
+  "LRU cache"
   (:import [clojure.lang Associative]))
 
 (declare assoc-lru dissoc-lru cleanup-lru)

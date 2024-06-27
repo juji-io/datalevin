@@ -3,20 +3,17 @@
 [JOB](https://github.com/gregrahn/join-order-benchmark) is a standard SQL
 benchmark that stresses database query optimizers, as described in the paper:
 
-Viktor Leis, Andrey Gubichev, Atans Mirchev, Peter Boncz, Alfons Kemper, and
-Thomas Neumann. "How Good Are Query Optimizers, Really?" PVLDB Volume 9, No. 3,
-2015 [pdf](http://www.vldb.org/pvldb/vol9/p204-leis.pdf)
+Viktor Leis, et al. "How Good Are Query Optimizers, Really?" PVLDB Volume 9,
+No. 3, 2015 [pdf](http://www.vldb.org/pvldb/vol9/p204-leis.pdf)
 
 ## Data Set
 
-The data set is originally from
+The data set is originally from Internet Movie Database
 [IMDB](https://developer.imdb.com/non-commercial-datasets/), downloaded in
-May 2013.
-
-The exported CSV files of the data set can be downloaded from
+May 2013. The exported CSV files of the data set can be downloaded from
 http://homepages.cwi.nl/~boncz/job/imdb.tgz
 
-Unpack the downloaded `imdb.tgz` into 21 CSV files.
+Unpack the downloaded `imdb.tgz` to obtain 21 CSV files, totaling 3.7 GiB.
 
 ### Postgresql
 
@@ -56,17 +53,76 @@ Finally create foreign key indices: `psql -f data/fkindexes.sql`
 
 ### Datalevin
 
-The clojure-csv library used to load CSV files into Datalevin has some problems dealing with escaped quotation marks mixed with commas in strings, and some manual edits of CSV files are needed.
+We translated the SQL schema to equivalent Datalevin schema, in
+`datalevin-bench.core` namespace. The attribute names follow Clojure convention.
+
+The same set of CSV files are transformed into datoms and loaded into
+Datalevin by uncomment and run `(def db ...)`.
 
 ## Queries
 
-The original benchmark contains 113 SQL queries.
+The `queries` directory contains 113 SQL queries for this benchmark.
+
+We manually translated the SQL queries to equivalent Datalevin queries, and
+manually verified that Postgresql and Datalevin produce the same results (note
+1).
+
+For example, the query 1b of the benchmark:
+
+```SQL
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'bottom 10 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND t.production_year BETWEEN 2005 AND 2010
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```
+is translated into the equivalent Datalevin query:
+
+```Clojure
+'[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+  :where
+  [?ct :company-type/kind "production companies"]
+  [?it :info-type/info "bottom 10 rank"]
+  [?mc :movie-companies/note ?mc.note]
+  [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+  [?t :title/production-year ?t.production-year]
+  [(<= 2005 ?t.production-year 2010)]
+  [?mc :movie-companies/company-type ?ct]
+  [?mc :movie-companies/movie ?t]
+  [?mi :movie-info-idx/movie ?t]
+  [?mi :movie-info-idx/info-type ?it]
+  [?t :title/title ?t.title]]
+```
 
 ## Results
 
-PostgreSQL 16.3 (Ubuntu 16.3-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
+These software were tested on Intel Core i7-6850K CPU @ 3.60GHz, 64GB RAM, 1 TB
+SSD drive, running Ubuntu 22.04:
 
-For Postgresql, we report the `EXPLAIN` results to remove the impact of
-client/server communication.
+* PostgreSQL 16.3 (Ubuntu 16.3-1.pgdg22.04+1) on x86_64-pc-linux-gnu, compiled
+by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
+* Datalevin 0.9.8
 
-* Postgresql's `MIN` function result is not consistent with `>`
+For Postgresql, run `postgres-time` script to run all queries. We report the
+`EXPLAIN ANALYZE` execution time results to remove the impact of client/server
+communication. The results are in `job_onepass_time.csv`.
+
+Note 1: Manual verification is needed because all the queries return `MIN` results,
+  but Postgresql version 16's `MIN` function result is not consistent with its own
+  `<` or `LEAST` function results. For example, for query 1b,
+  Postgresql 16 `MIN(mc_note)` returns `"(as Grosvenor Park)"`, but `"(Set
+  Decoration Rentals)"` should be the correct result based on UTF-8 encoding, as
+  `SELECT LEAST('(as Grosvenor Park)','(Set Decoration Rentals)');` returns
+  `"(Set Decoration Rentals)"`.

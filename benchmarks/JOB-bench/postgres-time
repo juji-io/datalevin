@@ -1,42 +1,20 @@
-# ##############################################################################
-#
-# Make one pass of the Join Order Benchmark over a PostgreSQL instance.
-# Use 5 minutes time limit to break a query if it can't be executed in
-# a reasonable time.
-#
-# Extraction of a value of execution time:
-# sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p'
-# here:
-# -n (with ending symbol /p) - print the only lines where template was matched.
-# '.*' - sequence of any symbols.
-# '[0-9]*\.[0-9]*' - template of floating point value.
-# '\(' and '\)' - boundaries of a value of variable '\1'.
-# use 'echo -e' to include \t symbol as tabulation in a string.
-#
-# Additional PG preferences:
-#	fsync = off
-#
-# ##############################################################################
-
 #!/bin/bash
 
 # Binaries and data dirs
 QUERY_DIR=./queries
 
 echo "The Join Order Benchmark 1Pass test ..."
-echo -e "Query Number\tQuery Name\tExecution Time, ms" > job_onepass_result.dat
-
-filenum=1
+echo -e "Query Name,Execution Time (ms)" > job_onepass_time.csv
 
 for file in $QUERY_DIR/*.sql
 do
   # Get filename
   short_file=$(basename "$file")
+  query_name="${short_file%.*}"
   echo -n "EXPLAIN (ANALYZE, FORMAT JSON) " > test.sql
   cat $file >> test.sql
   result=$(psql -U postgres -p 5434 -f test.sql)
   echo $result > $short_file".json"
   exec_time=$(echo $result | sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p')
-  echo -e "$filenum\t$short_file\t$exec_time" >> job_onepass_result.dat
-  filenum=$((filenum+1))
+  echo -e "$query_name,$exec_time" >> job_onepass_time.csv
 done

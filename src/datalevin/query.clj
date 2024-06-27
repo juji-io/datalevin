@@ -600,20 +600,23 @@
 (defn- dot-form [f] (when (and (symbol? f) (str/starts-with? (name f) ".")) f))
 
 (defn- dot-call
-  [f args]
-  (let [obj   (first args)
-        oc    (.getClass ^Object obj)
-        fname (subs (name f) 1)
-        as    (rest args)
-        res   (if (zero? (count as))
-                (. (.getDeclaredMethod oc fname nil) (invoke obj nil))
-                (. (.getDeclaredMethod
-                     oc fname
-                     (into-array Class (map #(.getClass ^Object %) as)))
-                   (invoke obj (into-array Object as))))]
+  [fname ^objects args]
+  (let [obj (aget args 0)
+        oc  (.getClass ^Object obj)
+        as  (rest args)
+        res (if (zero? (count as))
+              (. (.getDeclaredMethod oc fname nil) (invoke obj nil))
+              (. (.getDeclaredMethod
+                   oc fname
+                   (into-array Class (map #(.getClass ^Object %) as)))
+                 (invoke obj (into-array Object as))))]
     (when (not= res false) res)))
 
-(defn- make-call [f args] (if (dot-form f) (dot-call f args) (apply f args)))
+(defn- make-call
+  [f]
+  (if (dot-form f)
+    (let [fname (subs (name f) 1)] #(dot-call fname %))
+    #(apply f %)))
 
 (defn -call-fn
   [context rel f args]
@@ -621,7 +624,8 @@
         attrs                (:attrs rel)
         len                  (count args)
         ^objects static-args (make-array Object len)
-        ^objects tuples-args (make-array Object len)]
+        ^objects tuples-args (make-array Object len)
+        call                 (make-call f)]
     (dotimes [i len]
       (let [arg (nth args i)]
         (if (symbol? arg)
@@ -636,7 +640,7 @@
           (let [tg (if (u/array? tuple) r/typed-aget get)
                 v  (tg tuple tuple-idx)]
             (aset static-args i v))))
-      (make-call f static-args))))
+      (call static-args))))
 
 (defn- resolve-sym
   [sym]
@@ -1163,12 +1167,23 @@
                                   (map make-nodes))
                                 (group-by get-src patterns)))))
 
+(defn- collect-logic-pred-vars
+  [args]
+  (let [res (volatile! #{})]
+    (walk/postwalk
+      (fn [e]
+        (when (qu/free-var? e) (vswap! res conj e))
+        e) args)
+    @res))
+
 (defn- collect-pred-vars
-  [where]
-  (set (sequence
-         (comp (filter #(instance? Variable %))
-            (map :symbol))
-         (:args where))))
+  [{:keys [fn args]}]
+  (case (:symbol fn)
+    (and not or) (collect-logic-pred-vars args)
+    (set (sequence
+           (comp (filter #(instance? Variable %))
+              (map :symbol))
+           args))))
 
 (defn- pushdownable
   "predicates that can be pushed down involve only one free variable"
@@ -1290,13 +1305,14 @@
       pstring)))
 
 (defn- optimize-like
-  [m [_ ^String pattern {:keys [escape]}] not?]
-  (let [pb      (.getBytes pattern)
-        fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-        match   #(.match fsm (.getBytes ^String %))
-        matcher (if not? #(not (match %)) #(match %))
+  [m [_ ^String pattern {:keys [escape]} :as call] not?]
+  (let [
+        ;; pb      (.getBytes pattern)
+        ;; fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
+        ;; match   #(.match fsm (.getBytes ^String %))
+        ;; matcher (if not? #(not (match %)) #(match %))
         pstring (like-pattern-as-string pattern escape)]
-    (like-convert-range (update m :pred conjv matcher) pstring not?)))
+    (like-convert-range (update m :pred conjv call) pstring not?)))
 
 (defn- inequality->range
   [m f args v]
@@ -1333,11 +1349,39 @@
     :else
     (if (identical? so :open) (list '< sc v ec) (list '<= sc v ec))))
 
+(defn- equality->range
+  [m args]
+  (let [c (some #(when-not (qu/free-var? %) %) args)]
+    (add-range m [[:closed c] [:closed c]])))
+
 (defn- in-convert-range
   [m [_ coll] not?]
   (apply add-range m
          (let [ranges (map (fn [v] [[:closed v] [:closed v]]) (sort coll))]
            (if not? (flip-ranges ranges) ranges))))
+
+(defn- activate-pred
+  [var clause]
+  (when clause
+    (if (fn? clause)
+      clause
+      (let [[f & args] clause
+            fun        (resolve-pred f nil clause)
+            i          (u/index-of #(= var %) args)
+            args-arr   (object-array args)
+            call       (make-call fun)]
+        (fn pred [x] (call (do (aset args-arr i x) args-arr)))))))
+
+(defn- logic-pred
+  [m f args v]
+  (let [args' (walk/postwalk
+                (fn [e] (if (list? e) (activate-pred v e) e))
+                (vec args))
+        fun   (get built-ins/query-fns f)]
+    (update m :pred conjv (fn [x]
+                            (apply fun (walk/postwalk
+                                         (fn [e] (if (fn? e) (e x) e))
+                                         args'))))))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1346,13 +1390,13 @@
       (if (= (:var m) v)
         (let [[f & args :as pred] (first clause)]
           (case f
-            (< <= > >=) (inequality->range m f args v)
-            =           (let [c (some #(when-not (qu/free-var? %) %) args)]
-                          (add-range m [[:closed c] [:closed c]]))
-            like        (optimize-like m args false)
-            not-like    (optimize-like m args true)
-            in          (in-convert-range m args false)
-            not-in      (in-convert-range m args true)
+            (< <= > >=)  (inequality->range m f args v)
+            =            (equality->range m args)
+            like         (optimize-like m args false)
+            not-like     (optimize-like m args true)
+            in           (in-convert-range m args false)
+            not-in       (in-convert-range m args true)
+            (and not or) (logic-pred m f args v)
             (update m :pred conjv pred)))
         m))
     graph))
@@ -1509,17 +1553,6 @@
    (if old-pred
      (fn [x] (and (old-pred x) (new-pred x)))
      new-pred)))
-
-(defn- activate-pred
-  [var clause]
-  (when clause
-    (if (fn? clause)
-      clause
-      (let [[f & args] clause
-            f1         (resolve-pred f nil clause)
-            i          (u/index-of #(= var %) args)
-            args-arr   (object-array args)]
-        (fn pred [x] (make-call f1 (do (aset args-arr i x) args-arr)))))))
 
 (defn- attr-pred
   [[_ {:keys [var pred]}]]
