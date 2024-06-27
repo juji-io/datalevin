@@ -618,14 +618,39 @@
     (let [fname (subs (name f) 1)] #(dot-call fname %))
     #(apply f %)))
 
-(defn -call-fn
+(defn- resolve-sym
+  [sym]
+  (when (symbol? sym)
+    (when-let [v (or (resolve sym)
+                     (when (find-ns 'pod.huahaiy.datalevin)
+                       (ns-resolve 'pod.huahaiy.datalevin sym)))]
+      @v)))
+
+(defonce pod-fns (atom {}))
+
+(defn- resolve-pred
+  [f context]
+  (let [fun (if (fn? f)
+              f
+              (or (get built-ins/query-fns f)
+                  (context-resolve-val context f)
+                  (dot-form f)
+                  (resolve-sym f)
+                  (when (nil? (rel-with-attr context f))
+                    (raise "Unknown function or predicate '" f
+                           {:error :query/where :var f}))))]
+    (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
+      (@pod-fns s)
+      fun)))
+
+(defn- -call-fn*
   [context rel f args]
   (let [sources              (:sources context)
         attrs                (:attrs rel)
         len                  (count args)
         ^objects static-args (make-array Object len)
         ^objects tuples-args (make-array Object len)
-        call                 (make-call f)]
+        call                 (make-call (resolve-pred f context))]
     (dotimes [i len]
       (let [arg (nth args i)]
         (if (symbol? arg)
@@ -642,64 +667,51 @@
             (aset static-args i v))))
       (call static-args))))
 
-(defn- resolve-sym
-  [sym]
-  (when (symbol? sym)
-    (when-let [v (or (resolve sym)
-                     (when (find-ns 'pod.huahaiy.datalevin)
-                       (ns-resolve 'pod.huahaiy.datalevin sym)))]
-      @v)))
-
-(defonce pod-fns (atom {}))
-
-(defn- resolve-pred
-  [f context clause]
-  (let [fun (if (fn? f)
-              f
-              (or (get built-ins/query-fns f)
-                  (context-resolve-val context f)
-                  (dot-form f)
-                  (resolve-sym f)
-                  (when (nil? (rel-with-attr context f))
-                    (raise "Unknown function or predicate '" f " in " clause
-                           {:error :query/where, :form clause,
-                            :var   f}))))]
-    (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
-      (@pod-fns s)
-      fun)))
+(defn -call-fn
+  [context rel f args]
+  (case f
+    (and or not) (let [args' (walk/postwalk
+                               (fn [e]
+                                 (if (list? e)
+                                   (let [[f & args] e]
+                                     (-call-fn context rel f args))
+                                   e))
+                               (vec args))]
+                   (fn [tuple]
+                     (apply (get built-ins/query-fns f)
+                            (walk/postwalk
+                              (fn [e] (if (fn? e) (e tuple) e))
+                              args'))))
+    (-call-fn* context rel f args)))
 
 (defn filter-by-pred
   [context clause]
   (let [[[f & args]]         clause
-        pred                 (resolve-pred f context clause)
-        [context production] (rel-prod-by-attrs context (filter symbol? args))
+        attrs                (qu/collect-vars args)
+        [context production] (rel-prod-by-attrs context attrs)
 
-        new-rel (if pred
-                  (let [tuple-pred (-call-fn context production pred args)]
-                    (update production :tuples #(filter tuple-pred %)))
-                  (assoc production :tuples []))]
+        new-rel (let [tuple-pred (-call-fn context production f args)]
+                  (update production :tuples #(filter tuple-pred %)))]
     (update context :rels conj new-rel)))
 
 (defn bind-by-fn
   [context clause]
   (let [[[f & args] out]     clause
         binding              (dp/parse-binding out)
-        fun                  (resolve-pred f context clause)
-        [context production] (rel-prod-by-attrs context (filter symbol? args))
+        attrs                (qu/collect-vars args)
+        [context production] (rel-prod-by-attrs context attrs)
         new-rel
-        (if fun
-          (let [tuple-fn (-call-fn context production fun args)
-                rels     (for [tuple (:tuples production)
-                               :let  [val (tuple-fn tuple)]
-                               :when (not (nil? val))]
-                           (r/prod-rel
-                             (r/relation! (:attrs production)
-                                          (doto (FastList.) (.add tuple)))
-                             (in->rel binding val)))]
-            (if (empty? rels)
-              (r/prod-rel production (r/empty-rel binding))
-              (reduce r/sum-rel rels)))
-          (r/prod-rel (assoc production :tuples []) (r/empty-rel binding)))]
+        (let [tuple-fn (-call-fn context production f args)
+              rels     (for [tuple (:tuples production)
+                             :let  [val (tuple-fn tuple)]
+                             :when (not (nil? val))]
+                         (r/prod-rel
+                           (r/relation! (:attrs production)
+                                        (doto (FastList.) (.add tuple)))
+                           (in->rel binding val)))]
+          (if (empty? rels)
+            (r/prod-rel production (r/empty-rel binding))
+            (reduce r/sum-rel rels)))]
     (update context :rels collapse-rels new-rel)))
 
 ;;; RULES
@@ -765,11 +777,9 @@
           :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
       [(concatv ['-differ?] call-args prev-args)])))
 
-(defn collect-vars [clause] (set (u/walk-collect clause qu/free-var?)))
-
 (defn split-guards
   [clauses guards]
-  (let [bound-vars (collect-vars clauses)
+  (let [bound-vars (qu/collect-vars clauses)
         pred       (fn [[[_ & vars]]] (every? bound-vars vars))]
     [(filter pred guards)
      (remove pred guards)]))
@@ -1167,19 +1177,10 @@
                                   (map make-nodes))
                                 (group-by get-src patterns)))))
 
-(defn- collect-logic-pred-vars
-  [args]
-  (let [res (volatile! #{})]
-    (walk/postwalk
-      (fn [e]
-        (when (qu/free-var? e) (vswap! res conj e))
-        e) args)
-    @res))
-
 (defn- collect-pred-vars
   [{:keys [fn args]}]
   (case (:symbol fn)
-    (and not or) (collect-logic-pred-vars args)
+    (and not or) (qu/collect-vars args)
     (set (sequence
            (comp (filter #(instance? Variable %))
               (map :symbol))
@@ -1305,14 +1306,9 @@
       pstring)))
 
 (defn- optimize-like
-  [m [_ ^String pattern {:keys [escape]} :as call] not?]
-  (let [
-        ;; pb      (.getBytes pattern)
-        ;; fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-        ;; match   #(.match fsm (.getBytes ^String %))
-        ;; matcher (if not? #(not (match %)) #(match %))
-        pstring (like-pattern-as-string pattern escape)]
-    (like-convert-range (update m :pred conjv call) pstring not?)))
+  [m pred [_ ^String pattern {:keys [escape]}] not?]
+  (let [pstring (like-pattern-as-string pattern escape)]
+    (like-convert-range (update m :pred conjv pred) pstring not?)))
 
 (defn- inequality->range
   [m f args v]
@@ -1366,7 +1362,7 @@
     (if (fn? clause)
       clause
       (let [[f & args] clause
-            fun        (resolve-pred f nil clause)
+            fun        (resolve-pred f nil)
             i          (u/index-of #(= var %) args)
             args-arr   (object-array args)
             call       (make-call fun)]
@@ -1392,8 +1388,8 @@
           (case f
             (< <= > >=)  (inequality->range m f args v)
             =            (equality->range m args)
-            like         (optimize-like m args false)
-            not-like     (optimize-like m args true)
+            like         (optimize-like m pred args false)
+            not-like     (optimize-like m pred args true)
             in           (in-convert-range m args false)
             not-in       (in-convert-range m args true)
             (and not or) (logic-pred m f args v)
