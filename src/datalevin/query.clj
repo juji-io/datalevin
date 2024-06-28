@@ -1689,7 +1689,9 @@
        :vars  (->> attrs (replace vars-m) (remove keyword?))
        :preds (replace preds-m attrs)
        :skips skips
-       :cols  (into (:cols last-step) (remove (set skips)) attrs)
+       :cols  (into (:cols last-step) (comp (remove (set skips))
+                                         (map (fn [attr] #{attr (vars-m attr)})))
+                    attrs)
        :save  *save-intermediate*
        :index index
        :in    (:out last-step)
@@ -1721,7 +1723,7 @@
                                  *save-intermediate*))))
 
 (defn- rev-ref-plan
-  [db last-step link-e {:keys [attr tgt]} new-key new-steps]
+  [db last-step link-e {:keys [attr attrs tgt]} new-key new-steps]
   (let [index (find-index link-e (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))

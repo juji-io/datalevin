@@ -669,4 +669,156 @@
             [?mk :movie-keyword/keyword ?k]
             [?t :title/title ?t.title]])
 
-(d/explain {:run? true} q-3c (d/db conn))
+;; horrible
+(def q-4a '[:find (min ?mi-idx.info) (min ?t.title)
+            :where
+            [?it :info-type/info "rating"]
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi-idx :movie-info-idx/info ?mi-idx.info]
+            [(< "5.0" ?mi-idx.info)]
+            [?t :title/production-year ?t.production-year]
+            [(< 2005 ?t.production-year)]
+            [?mi-idx :movie-info-idx/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?mi-idx :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+(def q-4b '[:find (min ?mi-idx.info) (min ?t.title)
+            :where
+            [?it :info-type/info "rating"]
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi-idx :movie-info-idx/info ?mi-idx.info]
+            [(< "9.0" ?mi-idx.info)]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mi-idx :movie-info-idx/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?mi-idx :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; horrible
+(def q-4c '[:find (min ?mi-idx.info) (min ?t.title)
+            :where
+            [?it :info-type/info "rating"]
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi-idx :movie-info-idx/info ?mi-idx.info]
+            [(< "2.0" ?mi-idx.info)]
+            [?t :title/production-year ?t.production-year]
+            [(< 1990 ?t.production-year)]
+            [?mi-idx :movie-info-idx/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?mi-idx :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+(def q-5a '[:find (min ?t.title)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(theatrical)%")]
+            [(like ?mc.note "%(France)%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2005 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company-type ?ct]
+            [?t :title/title ?t.title]])
+
+(def q-5b '[:find (min ?t.title)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(VHS)%")]
+            [(like ?mc.note "%(USA)%")]
+            [(like ?mc.note "%(1994)%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["USA" "America"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company-type ?ct]
+            [?t :title/title ?t.title]])
+
+(def q-5c '[:find (min ?t.title)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(TV)%")]
+            [(like ?mc.note "%(USA)%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German", "USA", "American"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 1990 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company-type ?ct]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6a '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6b '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(in ?k.keyword ["superhero", "sequel", "second-part", "marvel-comics",
+                             "based-on-comic", "tv-special", "fight", "violence"])]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2014 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6c '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2014 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+(def q-6c '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2014 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+(d/explain {:run? true} q-6c (d/db conn))
