@@ -1374,7 +1374,7 @@
                 (fn [e] (if (list? e) (activate-pred v e) e))
                 (vec args))
         fun   (get built-ins/query-fns f)]
-    (update m :pred conjv (fn [x]
+    (update m :pred conjv (fn logic [x]
                             (apply fun (walk/postwalk
                                          (fn [e] (if (fn? e) (e x) e))
                                          args'))))))
@@ -1546,8 +1546,12 @@
 (defn- add-pred
   ([pred] pred)
   ([old-pred new-pred]
+   (add-pred old-pred new-pred false))
+  ([old-pred new-pred or?]
    (if old-pred
-     (fn [x] (and (old-pred x) (new-pred x)))
+     (if or?
+       (fn [x] (or (old-pred x) (new-pred x)))
+       (fn [x] (and (old-pred x) (new-pred x))))
      new-pred)))
 
 (defn- attr-pred
@@ -1657,7 +1661,7 @@
   (if range
     (reduce
       (fn [p r]
-        (add-pred p (activate-pred v (range->inequality v r))))
+        (add-pred p (activate-pred v (range->inequality v r)) true))
       pred range)
     pred))
 

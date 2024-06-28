@@ -12,7 +12,6 @@
   (:import
    [datalevin.utl LikeFSM]
    [datalevin.storage Store]
-   [datalevin.search SearchEngine]
    [datalevin.db DB]))
 
 (def fn-cache (lru/cache 1000 :fn-cache))
@@ -26,7 +25,7 @@
    (let [pb      (.getBytes ^String pattern)
          fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
          match   #(.match fsm (.getBytes ^String %))
-         matcher (lru/-get fn-cache [pattern opts not?]
+         matcher (lru/-get fn-cache [:like pattern opts not?]
                            (fn [] (if not? #(not (match %)) #(match %))))]
      (matcher input))))
 
@@ -36,9 +35,16 @@
   ([input pattern opts]
    (like input pattern opts true)))
 
-(defn- in [input coll] ((set coll) input))
+(defn- in
+  ([input coll]
+   (in input coll false))
+  ([input coll not?]
+   (let [s       (set coll)
+         checker (lru/-get fn-cache [:in coll not?]
+                           (fn [] (if not? #(not (s %)) #(s %))))]
+     (checker input))))
 
-(defn- not-in [input coll] (not (in input coll)))
+(defn- not-in [input coll] (in input coll true))
 
 (defn- -differ?
   [& xs]
@@ -69,11 +75,11 @@
 
 (defn- and-fn
   [& args]
-  (reduce (fn [a b] (if b b (reduced b))) true args))
+  (reduce (fn [_ b] (if b b (reduced b))) true args))
 
 (defn- or-fn
   [& args]
-  (reduce (fn [a b] (if b (reduced b) b)) nil args))
+  (reduce (fn [_ b] (if b (reduced b) b)) nil args))
 
 (defn- fulltext*
   [store lmdb engines query opts domain]
@@ -106,7 +112,7 @@
        (if (seq domains) domains (keys engines))))))
 
 (defn- less
-  ([x] true)
+  ([_] true)
   ([x y] (neg? ^long (dd/compare-with-type x y)))
   ([x y & more]
    (if (less x y)
@@ -116,7 +122,7 @@
      false)))
 
 (defn- greater
-  ([x] true)
+  ([_] true)
   ([x y] (pos? ^long (dd/compare-with-type x y)))
   ([x y & more]
    (if (greater x y)
@@ -126,7 +132,7 @@
      false)))
 
 (defn- less-equal
-  ([x] true)
+  ([_] true)
   ([x y] (not (pos? ^long (dd/compare-with-type x y))))
   ([x y & more]
    (if (less-equal x y)
@@ -136,7 +142,7 @@
      false)))
 
 (defn- greater-equal
-  ([x] true)
+  ([_] true)
   ([x y] (not (neg? ^long (dd/compare-with-type x y))))
   ([x y & more]
    (if (greater-equal x y)

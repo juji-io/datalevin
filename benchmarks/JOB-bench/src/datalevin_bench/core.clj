@@ -208,7 +208,7 @@
     (comp
       (map
         (fn [[id movie title imdb-index kind production-year phonetic-code
-             episode-of season-nr episode-nr note]]
+              episode-of season-nr episode-nr note]]
           (let [eid (+ aka-title-base (Long/parseLong id))]
             (cond-> [(d/datom eid :aka-title/movie
                               (+ title-base (Long/parseLong movie)))
@@ -365,7 +365,7 @@
     (comp
       (map
         (fn [[id name imdb-index imdb-id gender name-pcode-cf name-pcode-nf
-             surname-pcode]]
+              surname-pcode]]
           (let [eid (+ name-base (Long/parseLong id))]
             (cond-> [(d/datom eid :name/name name)]
               (not (s/blank? imdb-index))
@@ -404,7 +404,7 @@
     (comp
       (map
         (fn [[id title imdb-index kind production-year imdb-id phonetic-code
-             episode-of season-nr episode-nr series-years]]
+              episode-of season-nr episode-nr series-years]]
           (let [eid (+ title-base (Long/parseLong id))]
             (cond-> [(d/datom eid :title/title title)
                      (d/datom eid :title/kind
@@ -520,9 +520,9 @@
 ;; assume data is already loaded into db
 (def conn (d/get-conn "db"))
 
-(d/search-datoms (d/db conn) nil :company-type/kind nil)
+;; queries that beat postgres are labeled 'good plan'
 
-(def q-1a '[:find [(min ?mc.note) (min ?t.title) (min ?t.production-year)]
+(def q-1a '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
             :where
             [?ct :company-type/kind "production companies"]
             [?it :info-type/info "top 250 rank"]
@@ -538,6 +538,7 @@
             [?t :title/production-year ?t.production-year]
             ])
 
+;; good plan
 (def q-1b '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
             :where
             [?ct :company-type/kind "production companies"]
@@ -552,4 +553,120 @@
             [?mi :movie-info-idx/info-type ?it]
             [?t :title/title ?t.title]])
 
-(d/explain {:run? true} q-1b (d/db conn))
+(def q-1c '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?it :info-type/info "top 250 rank"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+            [(like ?mc.note "%(co-production)%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mc :movie-companies/company-type ?ct]
+            [?mc :movie-companies/movie ?t]
+            [?mi :movie-info-idx/movie ?t]
+            [?mi :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-1d '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?it :info-type/info "bottom 10 rank"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mc :movie-companies/company-type ?ct]
+            [?mc :movie-companies/movie ?t]
+            [?mi :movie-info-idx/movie ?t]
+            [?mi :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2a '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[de]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2b '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[nl]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2c '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[sm]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2d '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[us]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+(def q-3a '[:find (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2005 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-3b '[:find (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Bulgaria"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+(def q-3c '[:find (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German", "USA", "American"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 1990 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+(d/explain {:run? true} q-3c (d/db conn))

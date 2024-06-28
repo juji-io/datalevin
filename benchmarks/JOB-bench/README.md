@@ -53,7 +53,7 @@ Finally create foreign key indices: `psql -f data/fkindexes.sql`
 
 ### Datalevin
 
-We translated the SQL schema to equivalent Datalevin schema, in
+We translated the SQL schema to equivalent Datalevin schema, shown in
 `datalevin-bench.core` namespace. The attribute names follow Clojure convention.
 
 The same set of CSV files are transformed into datoms and loaded into
@@ -116,13 +116,17 @@ by gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, 64-bit
 * Datalevin 0.9.8
 
 For Postgresql, run `postgres-time` script to run all queries. We report the
-`EXPLAIN ANALYZE` execution time results to remove the impact of client/server
+`EXPLAIN ANALYZE` execution time in order to remove the impact of client/server
 communication. The results are in `job_onepass_time.csv`.
 
 Note 1: Manual verification is needed because all the queries return `MIN` results,
-  but Postgresql version 16's `MIN` function result is not consistent with its own
-  `<` or `LEAST` function results. For example, for query 1b,
-  Postgresql 16 `MIN(mc_note)` returns `"(as Grosvenor Park)"`, but `"(Set
-  Decoration Rentals)"` should be the correct result based on UTF-8 encoding, as
-  `SELECT LEAST('(as Grosvenor Park)','(Set Decoration Rentals)');` returns
-  `"(Set Decoration Rentals)"`.
+  but Postgresql version 16's `MIN` function result is not consistent with UTF-8
+  encoding, and not even with its own `<` or `LEAST` function results. For
+  example, for query 1b, Postgresql 16 `MIN(mc_note)` returns `"(as Grosvenor
+  Park)"`, but `"(Set Decoration Rentals)"` should be the correct answer based
+  on UTF-8 encoding, as `SELECT LEAST('(as Grosvenor Park)','(Set Decoration
+  Rentals)');` returns `"(Set Decoration Rentals)"`. So we removed `MIN()` to
+  obtain full results in order to verify that Datalevin produces exactly the
+  same results before running `MIN()`, e.g. the `:actual-size` of the last step
+  of Datalevin `explain` call's `:plan` shows exactly the same number of rows of
+  Postgresql results.
