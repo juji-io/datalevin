@@ -1532,7 +1532,8 @@
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
         :mpath [:free :age]
         :free  {:age {:var ?a :count 10890}}}
-   ...}}
+   ...
+   }}
 
   Remaining clauses are in :late-clauses.
   :result-set will be #{} if there is any clause that matches nothing."
@@ -1578,8 +1579,9 @@
                                  :range range)
                   val     (assoc :val val)
                   know-e? (assoc :know-e? true)
-                  true    (#(assoc % :cols
-                                   (if (= 1 (count (:vars %))) [e] [e attr]))))
+                  true    (#(assoc % :cols (if (= 1 (count (:vars %)))
+                                             [e]
+                                             [e #{attr var}]))))
         cols    (:cols init)]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
@@ -1593,13 +1595,16 @@
                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
               attrs  (mapv first all)
               vars   (mapv attr-var all)
+              vars-m (zipmap attrs vars)
               skips  (sequence
                        (comp (map #(when (or (= %2 '_) (qu/placeholder? %2)) %1))
                           (remove nil?))
-                       attrs vars)]
+                       attrs vars)
+              cols   (into cols (comp (remove (set skips))
+                                   (map (fn [attr] #{attr (vars-m attr)})))
+                           attrs)]
           (MergeScanStep. 0 attrs vars (mapv attr-pred all) skips #{e}
-                          #{e} (into cols (remove (set skips)) attrs)
-                          *save-intermediate*))))))
+                          #{e} cols *save-intermediate*))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1706,7 +1711,7 @@
   (let [index (find-index attr (:cols last-step))]
     [(merge-scan-step db last-step index new-key new-steps nil)]))
 
-(defn- val-eq-cols
+(defn- enrich-cols
   [cols index attr]
   (let [pa (cols index)]
     (replace {pa (if (set? pa) (conj pa attr) (into #{} [pa attr]))} cols)))
@@ -1714,16 +1719,17 @@
 (defn- link-step
   [op last-step index attr tgt new-key]
   (let [in   (:out last-step)
-        cols (conj (:cols last-step) tgt)]
+        cols (-> (:cols last-step)
+                 (enrich-cols index attr)
+                 (conj tgt))]
     (case op
       :vae-scan-e    (RevRefStep. index attr tgt in new-key
                                   cols *save-intermediate*)
       :val-eq-scan-e (ValEqStep. index attr tgt in new-key
-                                 (val-eq-cols cols index attr)
-                                 *save-intermediate*))))
+                                 cols *save-intermediate*))))
 
 (defn- rev-ref-plan
-  [db last-step link-e {:keys [attr attrs tgt]} new-key new-steps]
+  [db last-step link-e {:keys [attr tgt]} new-key new-steps]
   (let [index (find-index link-e (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))

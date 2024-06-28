@@ -127,6 +127,4 @@ Note 1: Manual verification is needed because all the queries return `MIN` resul
   on UTF-8 encoding, as `SELECT LEAST('(as Grosvenor Park)','(Set Decoration
   Rentals)');` returns `"(Set Decoration Rentals)"`. So we removed `MIN()` to
   obtain full results in order to verify that Datalevin produces exactly the
-  same results before running `MIN()`, e.g. the `:actual-size` of the last step
-  of Datalevin `explain` call's `:plan` shows exactly the same number of rows of
-  Postgresql results.
+  same results before running `MIN()`.

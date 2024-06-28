@@ -808,17 +808,73 @@
             [?ci :cast-info/person ?n]
             [?t :title/title ?t.title]])
 
-(def q-6c '[:find (min ?n.name) (min ?t.title)
+(def q-6d '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
             :where
-            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?k :keyword/keyword ?k.keyword]
+            [(in ?k.keyword ["superhero", "sequel", "second-part", "marvel-comics",
+                             "based-on-comic", "tv-special", "fight", "violence"])]
             [?n :name/name ?n.name]
             [(like ?n.name "%Downey%Robert%")]
             [?t :title/production-year ?t.production-year]
-            [(< 2014 ?t.production-year)]
+            [(< 2000 ?t.production-year)]
             [?mk :movie-keyword/keyword ?k]
             [?mk :movie-keyword/movie ?t]
             [?ci :cast-info/movie ?t]
             [?ci :cast-info/person ?n]
             [?t :title/title ?t.title]])
 
-(d/explain {:run? true} q-6c (d/db conn))
+;; good plan
+(def q-6e '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6f '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(in ?k.keyword ["superhero", "sequel", "second-part", "marvel-comics",
+                             "based-on-comic", "tv-special", "fight", "violence"])]
+            [?n :name/name ?n.name]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-7a '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?an :aka-name/name ?an.name]
+            [(like ?an.name "%a%")]
+            [?it :info-type/info "mini biography"]
+            [?lt :link-type/link "features"]
+            [?n :name/name-pcode-cf ?n.name-pcode-cf]
+            [(< "A" ?n.name-pcode-cf "F")]
+            [?n :name/gender ?n.gender]
+            [?n :name/name ?n.name]
+            [(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "B%")))]
+            [?pi :person-info/note "Volker Boehm"]
+            [?t :title/production-year ?t.production-year]
+            [(< 1980 ?t.production-year 1995)]
+            [?an :aka-name/person ?n]
+            [?pi :person-info/person ?n]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?ml :movie-link/linked-movie ?t]
+            [?ml :movie-link/link-type ?lt]
+            [?pi :person-info/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; (d/explain {:run? true} q-7a (d/db conn))
+;; => {:planning-time "62.520 ms", :actual-result-size 4, :execution-time "144.394 ms", :opt-clauses [[?an :aka-name/name ?an.name] [?it :info-type/info "mini biography"] [?lt :link-type/link "features"] [?n :name/name-pcode-cf ?n.name-pcode-cf] [?n :name/gender ?n.gender] [?n :name/name ?n.name] [?pi :person-info/note "Volker Boehm"] [?t :title/production-year ?t.production-year] [?an :aka-name/person ?n] [?pi :person-info/person ?n] [?ci :cast-info/person ?n] [?ci :cast-info/movie ?t] [?ml :movie-link/linked-movie ?t] [?ml :movie-link/link-type ?lt] [?pi :person-info/info-type ?it] [?t :title/title ?t.title] [(like ?an.name "%a%")] [(< "A" ?n.name-pcode-cf "F")] [(< 1980 ?t.production-year 1995)]], :query-graph {$ {?an {:links [{:type :ref, :tgt ?n, :attr :aka-name/person} {:type :val-eq, :tgt ?pi, :var ?n, :attrs {?an :aka-name/person, ?pi :person-info/person}} {:type :val-eq, :tgt ?ci, :var ?n, :attrs {?an :aka-name/person, ?ci :cast-info/person}}], :mpath [:free :aka-name/name], :mcount 180269, :free #:aka-name{:name {:var ?an.name, :count 180269, :pred [(like ?an.name "%a%")]}, :person {:var ?n, :count 180270}}}, ?it {:links [{:type :_ref, :tgt ?pi, :attr :person-info/info-type}], :mpath [:bound :info-type/info], :mcount 1, :bound #:info-type{:info {:val "mini biography", :count 1}}}, ?lt {:links [{:type :_ref, :tgt ?ml, :attr :movie-link/link-type}], :mpath [:bound :link-type/link], :mcount 1, :bound #:link-type{:link {:val "features", :count 1}}}, ?n {:links [{:type :_ref, :tgt ?an, :attr :aka-name/person} {:type :_ref, :tgt ?pi, :attr :person-info/person} {:type :_ref, :tgt ?ci, :attr :cast-info/person}], :mpath [:free :name/name-pcode-cf], :mcount 1103278, :free #:name{:name-pcode-cf {:var ?n.name-pcode-cf, :range [[[:open "A"] [:open "F"]]], :count 1103278}, :gender {:var ?n.gender, :count 2701134}, :name {:var ?n.name, :count 1103278}}}, ?pi #datalevin.query.Node{:links [{:type :ref, :tgt ?n, :attr :person-info/person} {:type :ref, :tgt ?it, :attr :person-info/info-type} {:type :val-eq, :tgt ?an, :var ?n, :attrs {?an :aka-name/person, ?pi :person-info/person}} {:type :val-eq, :tgt ?ci, :var ?n, :attrs {?pi :person-info/person, ?ci :cast-info/person}}], :mpath [:bound :person-info/note], :mcount 64, :bound #:person-info{:note {:val "Volker Boehm", :count 64}}, :free #:person-info{:person {:var ?n, :count 74}, :info-type {:var ?it, :count 75258}}}, ?t {:links [{:type :_ref, :tgt ?ci, :attr :cast-info/movie} {:type :_ref, :tgt ?ml, :attr :movie-link/linked-movie}], :mpath [:free :title/production-year], :mcount 340186, :free #:title{:production-year {:var ?t.production-year, :range [[[:open 1980] [:open 1995]]], :count 340186}, :title {:var ?t.title, :count 340202}}}, ?ci {:links [{:type :ref, :tgt ?n, :attr :cast-info/person} {:type :ref, :tgt ?t, :attr :cast-info/movie} {:type :val-eq, :tgt ?an, :var ?n, :attrs {?an :aka-name/person, ?ci :cast-info/person}} {:type :val-eq, :tgt ?pi, :var ?n, :attrs {?pi :person-info/person, ?ci :cast-info/person}} {:type :val-eq, :tgt ?ml, :var ?t, :attrs {?ci :cast-info/movie, ?ml :movie-link/linked-movie}}], :mpath [:free :cast-info/person], :mcount 36244344, :free #:cast-info{:person {:var ?n, :count 36244344}, :movie {:var ?t, :count 36244344}}}, ?ml {:links [{:type :ref, :tgt ?t, :attr :movie-link/linked-movie} {:type :ref, :tgt ?lt, :attr :movie-link/link-type} {:type :val-eq, :tgt ?ci, :var ?t, :attrs {?ci :cast-info/movie, ?ml :movie-link/linked-movie}}], :mpath [:free :movie-link/linked-movie], :mcount 29997, :free #:movie-link{:linked-movie {:var ?t, :count 29997}, :link-type {:var ?lt, :count 29997}}}}}, :plan {$ [(#datalevin.query.Plan{:steps ["Initialize [?it] by :info-type/info = mini biography."], :cost 1, :size 1, :actual-size 1} #datalevin.query.Plan{:steps ["Merge ?pi by scanning reverse reference of :person-info/info-type." "Merge [?n] by scanning [:person-info/note :person-info/person]."], :cost 22, :size 3, :actual-size 64} #datalevin.query.Plan{:steps ["Merge ?an by equal values of :aka-name/person." "Merge [?an.name] by scanning [:aka-name/name]."], :cost 26, :size 1, :actual-size 98} #datalevin.query.Plan{:steps ["Merge ?ci by equal values of :cast-info/person." "Merge [?t] by scanning [:cast-info/movie]."], :cost 44, :size 9, :actual-size 15021} #datalevin.query.Plan{:steps ["Merge ?ml by equal values of :movie-link/linked-movie." "Merge [?lt] by scanning [:movie-link/link-type]."], :cost 46, :size 1, :actual-size 1175} #datalevin.query.Plan{:steps ["Merge [?n.name ?n.gender ?n.name-pcode-cf] by scanning [:name/name :name/gender :name/name-pcode-cf]."], :cost 55, :size 1, :actual-size 663} #datalevin.query.Plan{:steps ["Merge [?t.title ?t.production-year] by scanning [:title/title :title/production-year]."], :cost 61, :size 1, :actual-size 79} #datalevin.query.Plan{:steps ["Merge [] by scanning [:link-type/link]."], :cost 64, :size 1, :actual-size 25})]}, :late-clauses ([(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "B%")))]), :result (["Bancroft, Anne" "Love Potion No. 9"])}
