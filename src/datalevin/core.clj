@@ -285,7 +285,7 @@ Only usable for debug output.
 (u/import-macro l/with-transaction-kv)
 
 (defn datalog-index-cache-limit
-  "Get or set the cache limit of a Datalog DB. Default is 32. Set to 0 to
+  "Get or set the cache limit of a Datalog DB. Default is 256. Set to 0 to
    disable the cache, useful when transacting bulk data as it saves memory."
   ([^DB db]
    (let [^Store store (.-store db)]

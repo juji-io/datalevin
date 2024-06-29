@@ -39,6 +39,8 @@
   ([input coll]
    (in input coll false))
   ([input coll not?]
+   (assert (and (coll? coll) (not (map? coll)))
+           "function `in` expects a collection")
    (let [s       (set coll)
          checker (lru/-get fn-cache [:in coll not?]
                            (fn [] (if not? #(not (s %)) #(s %))))]

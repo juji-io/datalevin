@@ -1254,7 +1254,7 @@
              :where
              [?cn :company-name/country-code "[us]"]
              [?ct :company-type/kind ?ct.kind]
-             [(in ?ct.kind "production companies" "distributors")]
+             [(in ?ct.kind ["production companies" "distributors"])]
              [?it1 :info-type/info "budget"]
              [?it2 :info-type/info "bottom 10 rank"]
              [?t :title/production-year ?t.production-year]
@@ -1268,7 +1268,48 @@
              [?mi-idx :movie-info-idx/info-type ?it2]
              [?mc :movie-companies/movie ?t]
              [?mc :movie-companies/company-type ?ct]
-             [?mc :movie-companies/company ?cn]
-             ])
+             [?mc :movie-companies/company ?cn]])
 
-(d/explain {:run? true} q-12a (d/db conn))
+(def q-12c '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "genres"]
+             [?it2 :info-type/info "rating"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Drama" "Horror" "Western" "Family"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< "7.0" ?mi-idx.info)]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2000 ?t.production-year 2010)]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]])
+
+(def q-13a '[:find (min ?mi.info) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[de]"]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "release dates"]
+             [?kt :kind-type/kind "movie"]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info-type ?it2]
+             [?t :title/kind ?kt]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mc :movie-companies/company-type ?ct]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info-type ?it1]
+             [?mi :movie-info/info ?mi.info]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [?t :title/title ?t.title]])
+
+(d/explain {:run? true} q-13a (d/db conn))
+;; =>

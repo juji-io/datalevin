@@ -1352,6 +1352,8 @@
 
 (defn- in-convert-range
   [m [_ coll] not?]
+  (assert (and (coll? coll) (not (map? coll)))
+          "function `in` expects a collection")
   (apply add-range m
          (let [ranges (map (fn [v] [[:closed v] [:closed v]]) (sort coll))]
            (if not? (flip-ranges ranges) ranges))))
@@ -1855,12 +1857,11 @@
 
 (defn- connected-pairs
   [nodes component]
-  (into #{}
-        (comp
-          (filter (fn [[e1 e2]]
-                    (some #(= % e2) (map :tgt (get-in nodes [e1 :links])))))
-          (map set))
-        (u/combinations component 2)))
+  (let [pairs (volatile! #{})]
+    (doseq [e component]
+      (doseq [link (get-in nodes [e :links])]
+        (vswap! pairs conj #{e (:tgt link)})))
+    @pairs))
 
 (defn- plan-component
   [db nodes component]

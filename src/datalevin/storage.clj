@@ -1270,7 +1270,7 @@
                       :auto-entity-time? false
                       :closed-schema?    false
                       :db-name           (str (UUID/randomUUID))
-                      :cache-limit       100}
+                      :cache-limit       256}
                      opts0)
            opts2   (merge opts1 opts)
            schema  (init-schema lmdb schema)
