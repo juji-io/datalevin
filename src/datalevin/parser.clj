@@ -805,7 +805,7 @@
                  :else           (raise "Query should be a vector or a map"
                                         {:error :parser/query, :form q}))
         find   (:find qm)
-        where  (:where qm [])
+        where  (vec (distinct (:where qm [])))
         qwhere (parse-where where)
         res    (map->Query
                  {:qfind       (parse-find find)

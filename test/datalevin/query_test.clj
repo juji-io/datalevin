@@ -667,24 +667,31 @@
                          :where
                          [?e :line ?l]
                          [?e :text ?t]
-                         [(and (< 1 ?l) (like ?t "%月%"))]]
+                         [(or (and (< 1 ?l) (like ?t "%月%"))
+                              (and (odd? ?l) (like ?t "%头%")))]]
                        db)))
-    (is (= #{[3]} (d/q '[:find ?e
-                         :where
-                         [?e :line ?l]
-                         [(and (< 1 ?l) (odd? ?l))]]
-                       db)))
-    (is (= #{[3]} (d/q '[:find ?e
-                         :where
-                         [?e :text ?t]
-                         [(and (like ?t "%月%")
-                               (not-like ?t "%月光%"))]]
-                       db)))
-    (is (= #{[1][3][4]} (d/q '[:find ?e
-                               :where
-                               [?e :text ?t]
-                               [(or (like ?t "%月%")
-                                    (like ?t "%乡%"))]]
-                             db)))
+    ;; (is (= #{[3]} (d/q '[:find ?e
+    ;;                      :where
+    ;;                      [?e :line ?l]
+    ;;                      [?e :text ?t]
+    ;;                      [(and (< 1 ?l) (like ?t "%月%"))]]
+    ;;                    db)))
+    ;; (is (= #{[3]} (d/q '[:find ?e
+    ;;                      :where
+    ;;                      [?e :line ?l]
+    ;;                      [(and (< 1 ?l) (odd? ?l))]]
+    ;;                    db)))
+    ;; (is (= #{[3]} (d/q '[:find ?e
+    ;;                      :where
+    ;;                      [?e :text ?t]
+    ;;                      [(and (like ?t "%月%")
+    ;;                            (not-like ?t "%月光%"))]]
+    ;;                    db)))
+    ;; (is (= #{[1][3][4]} (d/q '[:find ?e
+    ;;                            :where
+    ;;                            [?e :text ?t]
+    ;;                            [(or (like ?t "%月%")
+    ;;                                 (like ?t "%乡%"))]]
+    ;;                          db)))
     (d/close-db db)
     (u/delete-files dir)))

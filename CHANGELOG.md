@@ -3,7 +3,8 @@
 ## WIP
 
 ## Fixed
-- [Datalog] Planner: attributes should be a set for value equality scan.
+- [Datalog] Planner: column attributes should be a set of equivalent attribute
+  and variable.
 - [Datalog] Planner: convert ranges back to correct predicates.
 - [Datalog] Handle `like`, `in` within complex logic expressions.
 

@@ -1567,6 +1567,7 @@
 
         attr    (peek mpath)
         know-e? (int? e)
+        no-var? (or (not var) (qu/placeholder? var))
         schema  (db/-schema db)
         init    (cond-> (map->InitStep
                           {:attr attr :vars [e] :out #{e}
@@ -1574,8 +1575,7 @@
                            :save *save-intermediate*})
                   var     (assoc :pred (attr-pred [attr clause])
                                  :vars (cond-> [e]
-                                         (not (qu/placeholder? var))
-                                         (conj var))
+                                         (not no-var?) (conj var))
                                  :range range)
                   val     (assoc :val val)
                   know-e? (assoc :know-e? true)
@@ -1596,10 +1596,11 @@
               attrs  (mapv first all)
               vars   (mapv attr-var all)
               vars-m (zipmap attrs vars)
-              skips  (sequence
-                       (comp (map #(when (or (= %2 '_) (qu/placeholder? %2)) %1))
-                          (remove nil?))
-                       attrs vars)
+              skips  (cond-> (sequence
+                               (comp (map #(when (or (= %2 '_) (qu/placeholder? %2)) %1))
+                                  (remove nil?))
+                               attrs vars)
+                       no-var? (conj attr))
               cols   (into cols (comp (remove (set skips))
                                    (map (fn [attr] #{attr (vars-m attr)})))
                            attrs)]
@@ -1676,10 +1677,11 @@
         attr1   (:attr s1)
         val1    (:val s1)
         bound?  (some? val1)
-        v1      (peek (:vars s1))
+        vars1   (:vars s1)
+        v1      (when (< 1 (count vars1)) (peek vars1))
         attrs2  (:attrs s2)
-        vars-m  (let [m (zipmap attrs2 (:vars s2))]
-                  (if bound? m (assoc m attr1 v1)))
+        vars-m  (cond-> (zipmap attrs2 (:vars s2))
+                  v1 (assoc attr1 v1))
         preds-m (assoc (zipmap attrs2 (:preds s2))
                        attr1 (cond-> (add-back-range v1 s1)
                                bound? (add-pred #(= % val1))))
@@ -1695,7 +1697,10 @@
        :preds (replace preds-m attrs)
        :skips skips
        :cols  (into (:cols last-step) (comp (remove (set skips))
-                                         (map (fn [attr] #{attr (vars-m attr)})))
+                                         (map (fn [attr]
+                                                (if-let [v (vars-m attr)]
+                                                  #{attr v}
+                                                  attr))))
                     attrs)
        :save  *save-intermediate*
        :index index

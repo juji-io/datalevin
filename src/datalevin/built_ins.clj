@@ -113,7 +113,8 @@
 
 (defn- less
   ([_] true)
-  ([x y] (neg? ^long (dd/compare-with-type x y)))
+  ([x y]
+   (neg? ^long (dd/compare-with-type x y)))
   ([x y & more]
    (if (less x y)
      (if (next more)
