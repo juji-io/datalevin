@@ -9,6 +9,39 @@
 
 (use-fixtures :each db-fixture)
 
+(deftest test-like-in-or
+  (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
+                (d/db-with
+                  [{:db/id 1, :text "Champions Forever: The Latin Legends"}
+                   {:db/id 2, :text "Champions"}
+                   {:db/id 3, :text "Loser"}
+                   {:db/id 4, :text "Champion"}
+                   {:db/id 5, :text "Champion"}
+                   {:db/id 6, :text "Losers Lounge"}
+                   {:db/id 7, :text "Carman: The Champion"}
+                   {:db/id 8, :text "Losers Take All"}
+                   {:db/id 9, :text "Champion Road: Arena"}
+                   {:db/id 10, :text "Loser's End"}
+                   {:db/id 11, :text "Lucky Losers"}
+                   ]))
+        q   '[:find [?e ...]
+              :in $ ?pat1 ?pat2
+              :where
+              [?e :text ?t]
+              [(or (like ?t ?pat1) (like ?t ?pat2))]]]
+    (testing "like"
+      (are [pat1 pat2 ids] (= (set (d/q q db pat1 pat2)) (set ids))
+        "Champion"   "Loser"   [3 4 5]
+        "Champion%"  "Loser"   [1 2 3 4 5 9]
+        "Champion"   "Loser%"  [3 4 5 6 8 10]
+        "Champion%"  "Loser%"  [1 2 3 4 5 6 8 9 10]
+        "%Champion%" "Loser%"  [1 2 3 4 5 6 7 8 9 10]
+        "%Champion%" "%Loser%" [1 2 3 4 5 6 7 8 9 10 11]
+        ))
+    (d/close-db db)
+    (u/delete-files dir)))
+
 (deftest test-like-fn
   (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})

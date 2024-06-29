@@ -22,12 +22,16 @@
   ([input pattern opts]
    (like input pattern opts false))
   ([input pattern {:keys [escape] :as opts} not?]
-   (let [pb      (.getBytes ^String pattern)
-         fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-         match   #(.match fsm (.getBytes ^String %))
-         matcher (lru/-get fn-cache [:like pattern opts not?]
-                           (fn [] (if not? #(not (match %)) #(match %))))]
-     (matcher input))))
+   (let [matcher (lru/-get
+                   fn-cache [:like pattern opts not?]
+                   (fn []
+                     (let [pb    (.getBytes ^String pattern)
+                           fsm   (if escape (LikeFSM. pb escape) (LikeFSM. pb))
+                           match #(.match fsm (.getBytes ^String %))]
+                       (if not? #(not (match %)) match))))]
+     (let [res (matcher input)]
+       (println "like pattern" pattern "input" input "result" res)
+       res))))
 
 (defn- not-like
   ([input pattern]
@@ -41,9 +45,10 @@
   ([input coll not?]
    (assert (and (coll? coll) (not (map? coll)))
            "function `in` expects a collection")
-   (let [s       (set coll)
-         checker (lru/-get fn-cache [:in coll not?]
-                           (fn [] (if not? #(not (s %)) #(s %))))]
+   (let [checker (lru/-get fn-cache [:in coll not?]
+                           (fn []
+                             (let [s (set coll)]
+                               (if not? #(not (s %)) s))))]
      (checker input))))
 
 (defn- not-in [input coll] (in input coll true))
@@ -81,6 +86,7 @@
 
 (defn- or-fn
   [& args]
+  (println "or-fn args" args)
   (reduce (fn [_ b] (if b (reduced b) b)) nil args))
 
 (defn- fulltext*
