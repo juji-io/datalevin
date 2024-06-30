@@ -1,6 +1,6 @@
 # Change Log
 
-## WIP
+## 0.9.8 (2024-06-29)
 
 ## Fixed
 - [Datalog] Planner: column attributes should be a set of equivalent attribute
