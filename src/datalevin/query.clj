@@ -1364,7 +1364,6 @@
     (if (fn? clause)
       clause
       (let [[f & args] clause
-            _          (println clause)
             fun        (resolve-pred f nil)
             i          (u/index-of #(= var %) args)
             args-arr   (object-array args)
