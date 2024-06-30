@@ -10,6 +10,7 @@
    [datalevin.lru :as lru]
    [datalevin.util :as u :refer [raise]])
   (:import
+   [java.nio.charset StandardCharsets]
    [datalevin.utl LikeFSM]
    [datalevin.storage Store]
    [datalevin.db DB]))
@@ -22,16 +23,16 @@
   ([input pattern opts]
    (like input pattern opts false))
   ([input pattern {:keys [escape] :as opts} not?]
-   (let [matcher (lru/-get
-                   fn-cache [:like pattern opts not?]
-                   (fn []
-                     (let [pb    (.getBytes ^String pattern)
-                           fsm   (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-                           match #(.match fsm (.getBytes ^String %))]
-                       (if not? #(not (match %)) match))))]
-     (let [res (matcher input)]
-       (println "like pattern" pattern "input" input "result" res)
-       res))))
+   (let [matcher
+         (lru/-get
+           fn-cache [:like pattern opts not?]
+           (fn []
+             (let [pb  (.getBytes ^String pattern StandardCharsets/UTF_8)
+                   fsm (if escape (LikeFSM. pb escape) (LikeFSM. pb))
+                   f   #(.match fsm
+                                (.getBytes ^String % StandardCharsets/UTF_8))]
+               (if not? #(not (f %)) f))))]
+     (matcher input))))
 
 (defn- not-like
   ([input pattern]
@@ -86,7 +87,6 @@
 
 (defn- or-fn
   [& args]
-  (println "or-fn args" args)
   (reduce (fn [_ b] (if b (reduced b) b)) nil args))
 
 (defn- fulltext*

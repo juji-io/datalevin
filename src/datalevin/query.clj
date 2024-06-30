@@ -1364,6 +1364,7 @@
     (if (fn? clause)
       clause
       (let [[f & args] clause
+            _          (println clause)
             fun        (resolve-pred f nil)
             i          (u/index-of #(= var %) args)
             args-arr   (object-array args)
@@ -1372,9 +1373,9 @@
 
 (defn- logic-pred
   [m f args v]
-  (let [args' (walk/postwalk
-                (fn [e] (if (list? e) (activate-pred v e) e))
-                (vec args))
+  (let [args' (doall (walk/postwalk
+                       (fn [e] (if (list? e) (activate-pred v e) e))
+                       (vec args)))
         fun   (get built-ins/query-fns f)]
     (update m :pred conjv (fn logic [x]
                             (apply fun (walk/postwalk
@@ -1559,7 +1560,12 @@
 
 (defn- attr-pred
   [[_ {:keys [var pred]}]]
-  (transduce (map #(activate-pred var %)) add-pred nil pred))
+  (reduce
+    (fn [ps p]
+      (add-pred ps (activate-pred var p)))
+    nil pred)
+
+  #_(transduce (map #(activate-pred var %)) add-pred nil pred))
 
 (defn- init-node-steps
   [db [e clauses]]

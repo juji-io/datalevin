@@ -1333,7 +1333,7 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              ])
 
-(def q-13c '[:find (min ?cn.name) (min ?mi-idx.info) ?t.title
+(def q-13c '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
              [?cn :company-name/name ?cn.name]
@@ -1355,5 +1355,196 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              ])
 
-(d/explain {:run? true} q-13c (d/db conn))
-;; => {:planning-time "53.683 ms", :actual-result-size 18, :execution-time "31507.773 ms", :opt-clauses [[?cn :company-name/country-code "[us]"] [?cn :company-name/name ?cn.name] [?ct :company-type/kind "production companies"] [?it1 :info-type/info "rating"] [?it2 :info-type/info "release dates"] [?kt :kind-type/kind "movie"] [?t :title/title ?t.title] [?mi :movie-info/movie ?t] [?mi :movie-info/info-type ?it2] [?t :title/kind ?kt] [?mc :movie-companies/movie ?t] [?mc :movie-companies/company ?cn] [?mc :movie-companies/company-type ?ct] [?mi-idx :movie-info-idx/movie ?t] [?mi-idx :movie-info-idx/info-type ?it1] [?mi-idx :movie-info-idx/info ?mi-idx.info] [(not= ?t.title "")] [(or (like ?t.title "Champion%") (like ?t.title "Loser%"))]], :query-graph {$ {?ct {:links [{:type :_ref, :tgt ?mc, :attr :movie-companies/company-type}], :mpath [:bound :company-type/kind], :mcount 1, :bound #:company-type{:kind {:val "production companies", :count 1}}}, ?it1 {:links [{:type :_ref, :tgt ?mi-idx, :attr :movie-info-idx/info-type}], :mpath [:bound :info-type/info], :mcount 1, :bound #:info-type{:info {:val "rating", :count 1}}}, ?kt {:links [{:type :_ref, :tgt ?t, :attr :title/kind}], :mpath [:bound :kind-type/kind], :mcount 1, :bound #:kind-type{:kind {:val "movie", :count 1}}}, ?mi {:links [{:type :ref, :tgt ?t, :attr :movie-info/movie} {:type :ref, :tgt ?it2, :attr :movie-info/info-type} {:type :val-eq, :tgt ?mi-idx, :var ?t, :attrs {?mi :movie-info/movie, ?mi-idx :movie-info-idx/movie}} {:type :val-eq, :tgt ?mc, :var ?t, :attrs {?mi :movie-info/movie, ?mc :movie-companies/movie}}], :mpath [:free :movie-info/movie], :mcount 14835716, :free #:movie-info{:movie {:var ?t, :count 14835716}, :info-type {:var ?it2, :count 14835716}}}, ?it2 {:links [{:type :_ref, :tgt ?mi, :attr :movie-info/info-type}], :mpath [:bound :info-type/info], :mcount 1, :bound #:info-type{:info {:val "release dates", :count 1}}}, ?mi-idx {:links [{:type :ref, :tgt ?t, :attr :movie-info-idx/movie} {:type :ref, :tgt ?it1, :attr :movie-info-idx/info-type} {:type :val-eq, :tgt ?mi, :var ?t, :attrs {?mi :movie-info/movie, ?mi-idx :movie-info-idx/movie}} {:type :val-eq, :tgt ?mc, :var ?t, :attrs {?mi-idx :movie-info-idx/movie, ?mc :movie-companies/movie}}], :mpath [:free :movie-info-idx/movie], :mcount 1380035, :free #:movie-info-idx{:movie {:var ?t, :count 1380035}, :info-type {:var ?it1, :count 1380035}, :info {:var ?mi-idx.info, :count 1380035}}}, ?mc {:links [{:type :ref, :tgt ?t, :attr :movie-companies/movie} {:type :ref, :tgt ?cn, :attr :movie-companies/company} {:type :ref, :tgt ?ct, :attr :movie-companies/company-type} {:type :val-eq, :tgt ?mi, :var ?t, :attrs {?mi :movie-info/movie, ?mc :movie-companies/movie}} {:type :val-eq, :tgt ?mi-idx, :var ?t, :attrs {?mi-idx :movie-info-idx/movie, ?mc :movie-companies/movie}}], :mpath [:free :movie-companies/movie], :mcount 2609129, :free #:movie-companies{:movie {:var ?t, :count 2609129}, :company {:var ?cn, :count 2609129}, :company-type {:var ?ct, :count 2609129}}}, ?cn #datalevin.query.Node{:links [{:type :_ref, :tgt ?mc, :attr :movie-companies/company}], :mpath [:bound :company-name/country-code], :mcount 84843, :bound #:company-name{:country-code {:val "[us]", :count 84843}}, :free #:company-name{:name {:var ?cn.name, :count 84843}}}, ?t {:links [{:type :_ref, :tgt ?mi, :attr :movie-info/movie} {:type :_ref, :tgt ?mi-idx, :attr :movie-info-idx/movie} {:type :_ref, :tgt ?mc, :attr :movie-companies/movie} {:type :ref, :tgt ?kt, :attr :title/kind}], :mpath [:free :title/title], :mcount 505663, :free #:title{:title {:var ?t.title, :count 505663, :pred [(not= ?t.title "") #function[datalevin.query/logic-pred/logic--67779]]}, :kind {:var ?kt, :count 662825}}}}}, :plan {$ [(#datalevin.query.Plan{:steps ["Initialize [?it2] by :info-type/info = release dates."], :cost 1, :size 1, :actual-size 1} #datalevin.query.Plan{:steps ["Merge ?mi by scanning reverse reference of :movie-info/info-type." "Merge [?t] by scanning [:movie-info/movie]."], :cost 417909, :size 208954, :actual-size 3036719} #datalevin.query.Plan{:steps ["Merge ?mi-idx by equal values of :movie-info-idx/movie." "Merge [?it1 ?mi-idx.info] by scanning [:movie-info-idx/info-type :movie-info-idx/info]."], :cost 768318, :size 116803, :actual-size 3367474} #datalevin.query.Plan{:steps ["Merge [?t.title ?kt] by scanning [:title/title :title/kind]."], :cost 1469136, :size 116803, :actual-size 453} #datalevin.query.Plan{:steps ["Merge [] by scanning [:kind-type/kind]."], :cost 1819545, :size 116803, :actual-size 288} #datalevin.query.Plan{:steps ["Merge [] by scanning [:info-type/info]."], :cost 2169954, :size 116803, :actual-size 96} #datalevin.query.Plan{:steps ["Merge ?mc by equal values of :movie-companies/movie." "Merge [?cn ?ct] by scanning [:movie-companies/company :movie-companies/company-type]."], :cost 2540277, :size 123441, :actual-size 647} #datalevin.query.Plan{:steps ["Merge [?cn.name] by scanning [:company-name/country-code :company-name/name]."], :cost 3280923, :size 123441, :actual-size 231} #datalevin.query.Plan{:steps ["Merge [] by scanning [:company-type/kind]."], :cost 3651246, :size 123441, :actual-size 63})]}, :late-clauses (), :result (["New Champions Inc." "3.3" "Champions Forever: The Latin Legends"] ["Muskat Filmed Properties" "5.4" "Champions"] ["Rogue Arts" "5.5" "Loser"] ["Screen Plays" "7.0" "Champion"] ["DL Sites" "5.8" "Losers Lounge"] ["Code Productions" "5.0" "Carman: The Champion"] ["Losers Take All" "4.7" "Losers Take All"] ["Shadow Motion Pictures" "1.8" "Champion Road: Arena"] ["Reliable Pictures Corporation (I)" "4.1" "Loser's End"] ["Monogram Pictures" "6.9" "Lucky Losers"])}
+(def q-13d '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "release dates"]
+             [?kt :kind-type/kind "movie"]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info-type ?it2]
+             [?t :title/kind ?kt]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mc :movie-companies/company-type ?ct]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info-type ?it1]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             ])
+
+(def q-14a '[:find (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?it1 :info-type/info "countries"]
+             [?it2 :info-type/info "rating"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "murder-in-title", "blood", "violence"])]
+             [?kt :kind-type/kind "movie"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                            "Denish", "Norwegia", "German", "USA", "American"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< ?mi-idx.info "8.5")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2010 ?t.production-year)]
+             [?t :title/kind ?kt]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             ])
+
+;; different result
+(def q-14b '[:find (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?it1 :info-type/info "countries"]
+             [?it2 :info-type/info "rating"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "murder-in-title"])]
+             [?kt :kind-type/kind "movie"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                            "Denish", "Norwegian", "German", "USA", "American"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< "6.0" ?mi-idx.info)]
+             [?t :title/production-year ?t.production-year]
+             [(< 2010 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [(or (like ?t.title "%murder%") (like ?t.title "%Murder%")
+                  (like ?t.title "%Mord%"))]
+             [?t :title/kind ?kt]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             ])
+
+(def q-14c '[:find (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?it1 :info-type/info "countries"]
+             [?it2 :info-type/info "rating"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "murder-in-title", "blood", "violence"])]
+             [?kt :kind-type/kind ?kt.kind]
+             [(in ?kt.kind ["movie" "episode"])]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                            "Denish", "Norwegia", "German", "USA", "American"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< ?mi-idx.info "8.5")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2005 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [?t :title/kind ?kt]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             ])
+
+(def q-15a '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?it1 :info-type/info "release dates"]
+             [?mc :movie-companies/note ?mc.note]
+             [(like ?mc.note "%(200%)%")]
+             [(like ?mc.note "%(worldwide)%")]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [(like ?mi.info "USA:% 200%")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+(def q-15b '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name "YouTube"]
+             [?it1 :info-type/info "release dates"]
+             [?mc :movie-companies/note ?mc.note]
+             [(like ?mc.note "%(200%)%")]
+             [(like ?mc.note "%(worldwide)%")]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [(like ?mi.info "USA:% 200%")]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2005 ?t.production-year 2010)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+;; different result
+(def q-15c '[:find ?mi.info ?t.title
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?it1 :info-type/info "release dates"]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [(and (like ?mi.info "USA:%")
+                   (or (like ?mi.info "%199_") (like ?mi.info "%200_")))]
+             [?t :title/production-year ?t.production-year]
+             [(< 1990 ?t.production-year)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+(def q-15d '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?it1 :info-type/info "release dates"]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [?t :title/production-year ?t.production-year]
+             [(< 1990 ?t.production-year)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+;; (d/explain {:run? true} q-15c (d/db conn))
