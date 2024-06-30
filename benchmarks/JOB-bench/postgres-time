@@ -13,7 +13,7 @@ do
   query_name="${short_file%.*}"
   echo -n "EXPLAIN (ANALYZE, FORMAT JSON) " > test.sql
   cat $file >> test.sql
-  result=$(psql -U postgres -p 5434 -f test.sql)
+  result=$(psql -f test.sql)
   echo $result > $short_file".json"
   exec_time=$(echo $result | sed -n 's/.*"Execution Time": \([0-9]*\.[0-9]*\).*/\1/p')
   echo -e "$query_name,$exec_time" >> job_onepass_time.csv

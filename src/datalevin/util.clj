@@ -351,7 +351,7 @@
 
 (defn index-of
   [pred xs]
-  (some (fn [[x idx]] (when (pred x) idx)) (map vector xs (range))))
+  (some (fn [[x idx]] (when (pred x) idx)) (mapv vector xs (range))))
 
 (defn idxs-of
   [pred coll]

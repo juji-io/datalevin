@@ -1305,10 +1305,37 @@
                (not (str/includes? pstring "_")))
       pstring)))
 
+(defn- activate-pred
+  [var clause]
+  (when clause
+    (if (fn? clause)
+      clause
+      (let [[f & args] clause
+            fun        (resolve-pred f nil)
+            i          (u/index-of #(= var %) args)
+            args-arr   (object-array args)
+            call       (make-call fun)]
+        (fn pred [x]
+          ;; (println "clause" clause "calling x" x)
+          (call (do (aset args-arr i x) args-arr)))))))
+
+(defn- add-pred
+  ([old-pred new-pred]
+   (add-pred old-pred new-pred false))
+  ([old-pred new-pred or?]
+   (if new-pred
+     (if old-pred
+       (if or?
+         (fn [x] (or (old-pred x) (new-pred x)))
+         (fn [x] (and (old-pred x) (new-pred x))))
+       new-pred)
+     old-pred)))
+
 (defn- optimize-like
-  [m pred [_ ^String pattern {:keys [escape]}] not?]
-  (let [pstring (like-pattern-as-string pattern escape)]
-    (like-convert-range (update m :pred conjv pred) pstring not?)))
+  [m pred [_ ^String pattern {:keys [escape]}] v not?]
+  (let [pstring (like-pattern-as-string pattern escape)
+        m'      (update m :pred add-pred (activate-pred v pred))]
+    (like-convert-range m' pstring not?)))
 
 (defn- inequality->range
   [m f args v]
@@ -1358,28 +1385,16 @@
          (let [ranges (map (fn [v] [[:closed v] [:closed v]]) (sort coll))]
            (if not? (flip-ranges ranges) ranges))))
 
-(defn- activate-pred
-  [var clause]
-  (when clause
-    (if (fn? clause)
-      clause
-      (let [[f & args] clause
-            fun        (resolve-pred f nil)
-            i          (u/index-of #(= var %) args)
-            args-arr   (object-array args)
-            call       (make-call fun)]
-        (fn pred [x] (call (do (aset args-arr i x) args-arr)))))))
-
 (defn- logic-pred
   [m f args v]
-  (let [args' (doall (walk/postwalk
-                       (fn [e] (if (list? e) (activate-pred v e) e))
-                       (vec args)))
+  (let [args' (walk/postwalk
+                (fn [e] (if (list? e) (activate-pred v e) e))
+                (vec args))
         fun   (get built-ins/query-fns f)]
-    (update m :pred conjv (fn logic [x]
-                            (apply fun (walk/postwalk
-                                         (fn [e] (if (fn? e) (e x) e))
-                                         args'))))))
+    (update m :pred add-pred (fn logic [x]
+                               (apply fun (walk/postwalk
+                                            (fn [e] (if (fn? e) (e x) e))
+                                            args'))))))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1390,12 +1405,12 @@
           (case f
             (< <= > >=)  (inequality->range m f args v)
             =            (equality->range m args)
-            like         (optimize-like m pred args false)
-            not-like     (optimize-like m pred args true)
+            like         (optimize-like m pred args v false)
+            not-like     (optimize-like m pred args v true)
             in           (in-convert-range m args false)
             not-in       (in-convert-range m args true)
             (and not or) (logic-pred m f args v)
-            (update m :pred conjv pred)))
+            (update m :pred add-pred (activate-pred v pred))))
         m))
     graph))
 
@@ -1546,30 +1561,12 @@
       pushdown-predicates
       count-datoms))
 
-(defn- add-pred
-  ([pred] pred)
-  ([old-pred new-pred]
-   (add-pred old-pred new-pred false))
-  ([old-pred new-pred or?]
-   (if old-pred
-     (if or?
-       (fn [x] (or (old-pred x) (new-pred x)))
-       (fn [x] (and (old-pred x) (new-pred x))))
-     new-pred)))
-
-(defn- attr-pred
-  [[_ {:keys [var pred]}]]
-  (reduce
-    (fn [ps p]
-      (add-pred ps (activate-pred var p)))
-    nil pred)
-
-  #_(transduce (map #(activate-pred var %)) add-pred nil pred))
+(defn- attr-pred [[_ {:keys [pred]}]] pred)
 
 (defn- init-node-steps
   [db [e clauses]]
   (let [{:keys [bound free mpath]} clauses
-        {:keys [var val range] :as clause}
+        {:keys [var val range pred] :as clause}
         (get-in clauses mpath)
 
         attr    (peek mpath)
@@ -1580,7 +1577,7 @@
                           {:attr attr :vars [e] :out #{e}
                            :mcount (:count clause)
                            :save *save-intermediate*})
-                  var     (assoc :pred (attr-pred [attr clause])
+                  var     (assoc :pred pred #_(attr-pred [attr clause])
                                  :vars (cond-> [e]
                                          (not no-var?) (conj var))
                                  :range range)
@@ -1596,7 +1593,7 @@
         (let [bound1 (->> (dissoc bound attr)
                           (mapv (fn [[a {:keys [val] :as b}]]
                                   [a (-> b
-                                         (update :pred conjv #(= val %))
+                                         (update :pred add-pred #(= val %))
                                          (assoc :var (gensym "?bound")))])))
               all    (->> (concatv bound1 (dissoc free attr))
                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
@@ -1674,7 +1671,9 @@
   (if range
     (reduce
       (fn [p r]
-        (add-pred p (activate-pred v (range->inequality v r)) true))
+        (if r
+          (add-pred p (activate-pred v (range->inequality v r)) true)
+          p))
       pred range)
     pred))
 
@@ -1977,7 +1976,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (plan-explain) c)
+          (do (println (:plan c))(plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 

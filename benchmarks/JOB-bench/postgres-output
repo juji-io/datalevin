@@ -29,6 +29,6 @@ for file in $QUERY_DIR/*.sql
 do
   # Get filename
   short_file=$(basename "$file")
-  result=$(psql -U postgres -p 5434 -f $file)
+  result=$(psql -f $file)
   echo $result > $short_file".out"
 done

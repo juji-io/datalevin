@@ -13,7 +13,9 @@ The data set is originally from Internet Movie Database
 May 2013. The exported CSV files of the data set can be downloaded from
 http://homepages.cwi.nl/~boncz/job/imdb.tgz
 
-Unpack the downloaded `imdb.tgz` to obtain 21 CSV files, totaling 3.7 GiB.
+Unpack the downloaded `imdb.tgz` to obtain 21 CSV files, totaling 3.7 GiB. Each
+CSV file is a table, with the biggest table having over 36 million rows, while
+the smallest has only 4 rows.
 
 ### Postgresql
 

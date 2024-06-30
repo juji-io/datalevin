@@ -1,5 +1,10 @@
 # Change Log
 
+## WIP
+
+## Changed
+- [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
+
 ## 0.9.8 (2024-06-29)
 
 ## Fixed

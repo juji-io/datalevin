@@ -350,7 +350,7 @@
 
 (def ^{:dynamic true
        :doc     "batch size (# of datoms) when filling DB"}
-  *fill-db-batch-size* 4194304)
+  *fill-db-batch-size* 1048576)
 
 ;; datalog query engine
 

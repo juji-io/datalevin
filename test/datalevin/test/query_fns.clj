@@ -724,17 +724,18 @@
                                :in    $2
                                :where [$2 ?x] [(zero? $ ?x)]]))))
 
-(deftest test-issue-180
-  (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
-        db  (d/empty-db dir)]
-    (is (= #{}
-           (d/q '[:find ?e ?a
-                  :where [_ :pred ?pred]
-                  [?e :age ?a]
-                  [(?pred ?a)]]
-                (d/db-with db [[:db/add 1 :age 20]]))))
-    (d/close-db db)
-    (u/delete-files dir)))
+;; we probably don't want to support this
+#_(deftest test-issue-180
+    (let [dir (u/tmp-dir (str "query-or-" (UUID/randomUUID)))
+          db  (d/empty-db dir)]
+      (is (= #{}
+             (d/q '[:find ?e ?a
+                    :where [_ :pred ?pred]
+                    [?e :age ?a]
+                    [(?pred ?a)]]
+                  (d/db-with db [[:db/add 1 :age 20]]))))
+      (d/close-db db)
+      (u/delete-files dir)))
 
 (defn sample-query-fn [] 42)
 

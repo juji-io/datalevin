@@ -471,7 +471,7 @@
                       (reset! start now))
                     db)]
         (-> (d/empty-db "db" schema {:closed-schema? true
-                                     :kv-opts        {:mapsize 50000}})
+                                     :kv-opts        {:mapsize 80000}})
             (show "empty db")
             (d/fill-db (add-comp-cast-type))
             (show "comp-cast-type")
@@ -1502,7 +1502,6 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
-;; different result
 (def q-15c '[:find ?mi.info ?t.title
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1547,4 +1546,4 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
-;; (d/explain {:run? true} q-15c (d/db conn))
+(d/explain {:run? true} q-15c (d/db conn))
