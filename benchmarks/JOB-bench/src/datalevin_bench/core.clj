@@ -2,6 +2,7 @@
   (:require
    [datalevin.core :as d]
    [clojure.java.io :as io]
+   [clojure.pprint :as pp]
    [clojure.string :as s]))
 
 (def schema
@@ -1399,7 +1400,7 @@
              [?mi-idx :movie-info-idx/info-type ?it2]
              ])
 
-;; different result
+;; results differ
 (def q-14b '[:find (min ?mi-idx.info) (min ?t.title)
              :where
              [?it1 :info-type/info "countries"]
@@ -1502,7 +1503,7 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
-(def q-15c '[:find ?mi.info ?t.title
+(def q-15c '[:find (min ?mi.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
              [?it1 :info-type/info "release dates"]
@@ -1510,7 +1511,7 @@
              [(like ?mi.note "%internet%")]
              [?mi :movie-info/info ?mi.info]
              [(and (like ?mi.info "USA:%")
-                   (or (like ?mi.info "%199_") (like ?mi.info "%200_")))]
+                   (or (like ?mi.info "%199%") (like ?mi.info "%200%")))]
              [?t :title/production-year ?t.production-year]
              [(< 1990 ?t.production-year)]
              [?at :aka-title/movie ?t]
@@ -1546,4 +1547,4 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
-(d/explain {:run? true} q-15c (d/db conn))
+(d/explain {:run? true} q-14b (d/db conn))

@@ -1316,7 +1316,6 @@
             args-arr   (object-array args)
             call       (make-call fun)]
         (fn pred [x]
-          ;; (println "clause" clause "calling x" x)
           (call (do (aset args-arr i x) args-arr)))))))
 
 (defn- add-pred
@@ -1387,14 +1386,22 @@
 
 (defn- logic-pred
   [m f args v]
-  (let [args' (walk/postwalk
-                (fn [e] (if (list? e) (activate-pred v e) e))
-                (vec args))
-        fun   (get built-ins/query-fns f)]
-    (update m :pred add-pred (fn logic [x]
-                               (apply fun (walk/postwalk
-                                            (fn [e] (if (fn? e) (e x) e))
-                                            args'))))))
+  (let [logic-f (fn [f args]
+                  (fn logic [x]
+                    (apply (get built-ins/query-fns f)
+                           (walk/postwalk
+                             (fn [e] (if (fn? e) (e x) e))
+                             args))))
+        args'   (walk/postwalk
+                  (fn [e]
+                    (if (list? e)
+                      (let [[f & args] e]
+                        (case f
+                          (and or not) (logic-f f args)
+                          (activate-pred v e)))
+                      e))
+                  (vec args))]
+    (update m :pred add-pred (logic-f f args'))))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1976,7 +1983,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (println (:plan c))(plan-explain) c)
+          (do (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 
