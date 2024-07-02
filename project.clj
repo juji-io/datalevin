@@ -1,4 +1,4 @@
-(def version "0.9.8-SNAPSHOT")
+(def version "0.9.8")
 
 (defproject datalevin version
   :description "A simple, fast and versatile Datalog database"
@@ -23,13 +23,13 @@
    [org.clojure/test.check "1.1.1"]
    [org.clojars.huahaiy/dtlvnative-windows-amd64 "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-linux-amd64 "0.9.4"]
-   [io.github.algoflora/dtlvnative-linux-aarch64 "0.9.4-SNAPSHOT"]
+   [org.clojars.huahaiy/dtlvnative-linux-aarch64 "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-macos-amd64 "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64 "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-linux-amd64-shared "0.9.4"]
-   [io.github.algoflora/dtlvnative-linux-aarch64-shared "0.9.4-SNAPSHOT"]
+   [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-macos-amd64-shared "0.9.4"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared "0.9.4"]
    [org.eclipse.collections/eclipse-collections "11.1.0"]
@@ -42,8 +42,8 @@
   [[org.clojure/clojure :scope "provided"]
    [org.clojars.huahaiy/dtlvnative-macos-aarch64-shared]
    [org.clojars.huahaiy/dtlvnative-macos-amd64-shared]
-   [io.github.algoflora/dtlvnative-linux-aarch64-shared]
-   [io.github.algoflora/dtlvnative-linux-aarch64]
+   [org.clojars.huahaiy/dtlvnative-linux-aarch64-shared]
+   [org.clojars.huahaiy/dtlvnative-linux-aarch64]
    [org.clojars.huahaiy/dtlvnative-linux-amd64-shared]
    [org.clojars.huahaiy/dtlvnative-x86_64-windows-gnu]
    [org.clojars.huahaiy/dtlvnative-aarch64-linux-gnu]
