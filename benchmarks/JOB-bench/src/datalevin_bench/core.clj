@@ -208,7 +208,7 @@
     (comp
       (map
         (fn [[id movie title imdb-index kind production-year phonetic-code
-             episode-of season-nr episode-nr note]]
+              episode-of season-nr episode-nr note]]
           (let [eid (+ aka-title-base (Long/parseLong id))]
             (cond-> [(d/datom eid :aka-title/movie
                               (+ title-base (Long/parseLong movie)))
@@ -365,7 +365,7 @@
     (comp
       (map
         (fn [[id name imdb-index imdb-id gender name-pcode-cf name-pcode-nf
-             surname-pcode]]
+              surname-pcode]]
           (let [eid (+ name-base (Long/parseLong id))]
             (cond-> [(d/datom eid :name/name name)]
               (not (s/blank? imdb-index))
@@ -404,7 +404,7 @@
     (comp
       (map
         (fn [[id title imdb-index kind production-year imdb-id phonetic-code
-             episode-of season-nr episode-nr series-years]]
+              episode-of season-nr episode-nr series-years]]
           (let [eid (+ title-base (Long/parseLong id))]
             (cond-> [(d/datom eid :title/title title)
                      (d/datom eid :title/kind
@@ -455,7 +455,7 @@
       cat)
     (d/read-csv reader)))
 
-;; initial loading of data, may take up to half an hour
+;; initial loading of data, may take up to 20 minutes
 #_(def db
     (with-open [movie-info-rdr     (io/reader "data/movie_info.csv")
                 movie-info-idx-rdr (io/reader "data/movie_info_idx.csv")
@@ -520,8 +520,1031 @@
 ;; assume data is already loaded into db
 (def conn (d/get-conn "db"))
 
-(def q-1a (d/q '[:find [?k ...]
-                 :in $
-                 :where
-                 [_ :company-type/kind ?k]]
-               (d/db conn)))
+;; queries that beat postgres are labeled 'good plan'
+
+(def q-1a '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?it :info-type/info "top 250 rank"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+            [(or (like ?mc.note "%(co-production)%")
+                 (like ?mc.note "%(presents)%"))]
+            [?mc :movie-companies/company-type ?ct]
+            [?mc :movie-companies/movie ?t]
+            [?mi :movie-info-idx/movie ?t]
+            [?mi :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]
+            [?t :title/production-year ?t.production-year]
+            ])
+
+;; good plan
+(def q-1b '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?it :info-type/info "bottom 10 rank"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+            [?t :title/production-year ?t.production-year]
+            [(<= 2005 ?t.production-year 2010)]
+            [?mc :movie-companies/company-type ?ct]
+            [?mc :movie-companies/movie ?t]
+            [?mi :movie-info-idx/movie ?t]
+            [?mi :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+(def q-1c '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?it :info-type/info "top 250 rank"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+            [(like ?mc.note "%(co-production)%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mc :movie-companies/company-type ?ct]
+            [?mc :movie-companies/movie ?t]
+            [?mi :movie-info-idx/movie ?t]
+            [?mi :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-1d '[:find (min ?mc.note) (min ?t.title) (min ?t.production-year)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?it :info-type/info "bottom 10 rank"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(as Metro-Goldwyn-Mayer Pictures)%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mc :movie-companies/company-type ?ct]
+            [?mc :movie-companies/movie ?t]
+            [?mi :movie-info-idx/movie ?t]
+            [?mi :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2a '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[de]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2b '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[nl]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2c '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[sm]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-2d '[:find (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[us]"]
+            [?k :keyword/keyword "character-name-in-title"]
+            [?mc :movie-companies/company ?cn]
+            [?mc :movie-companies/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+(def q-3a '[:find (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2005 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-3b '[:find (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Bulgaria"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+(def q-3c '[:find (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German", "USA", "American"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 1990 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?t :title/title ?t.title]])
+
+;; horrible
+(def q-4a '[:find (min ?mi-idx.info) (min ?t.title)
+            :where
+            [?it :info-type/info "rating"]
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi-idx :movie-info-idx/info ?mi-idx.info]
+            [(< "5.0" ?mi-idx.info)]
+            [?t :title/production-year ?t.production-year]
+            [(< 2005 ?t.production-year)]
+            [?mi-idx :movie-info-idx/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?mi-idx :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+(def q-4b '[:find (min ?mi-idx.info) (min ?t.title)
+            :where
+            [?it :info-type/info "rating"]
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi-idx :movie-info-idx/info ?mi-idx.info]
+            [(< "9.0" ?mi-idx.info)]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mi-idx :movie-info-idx/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?mi-idx :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; horrible
+(def q-4c '[:find (min ?mi-idx.info) (min ?t.title)
+            :where
+            [?it :info-type/info "rating"]
+            [?k :keyword/keyword ?k.keyword]
+            [(like ?k.keyword "%sequel%")]
+            [?mi-idx :movie-info-idx/info ?mi-idx.info]
+            [(< "2.0" ?mi-idx.info)]
+            [?t :title/production-year ?t.production-year]
+            [(< 1990 ?t.production-year)]
+            [?mi-idx :movie-info-idx/movie ?t]
+            [?mk :movie-keyword/movie ?t]
+            [?mk :movie-keyword/keyword ?k]
+            [?mi-idx :movie-info-idx/info-type ?it]
+            [?t :title/title ?t.title]])
+
+(def q-5a '[:find (min ?t.title)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(theatrical)%")]
+            [(like ?mc.note "%(France)%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2005 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company-type ?ct]
+            [?t :title/title ?t.title]])
+
+(def q-5b '[:find (min ?t.title)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(VHS)%")]
+            [(like ?mc.note "%(USA)%")]
+            [(like ?mc.note "%(1994)%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["USA" "America"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company-type ?ct]
+            [?t :title/title ?t.title]])
+
+(def q-5c '[:find (min ?t.title)
+            :where
+            [?ct :company-type/kind "production companies"]
+            [?mc :movie-companies/note ?mc.note]
+            [(not-like ?mc.note "%(TV)%")]
+            [(like ?mc.note "%(USA)%")]
+            [?mi :movie-info/info ?mi.info]
+            [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                           "Denish", "Norwegian", "German", "USA", "American"])]
+            [?t :title/production-year ?t.production-year]
+            [(< 1990 ?t.production-year)]
+            [?mi :movie-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company-type ?ct]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6a '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2010 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6b '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(in ?k.keyword ["superhero", "sequel", "second-part", "marvel-comics",
+                             "based-on-comic", "tv-special", "fight", "violence"])]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2014 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6c '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2014 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+(def q-6d '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(in ?k.keyword ["superhero", "sequel", "second-part", "marvel-comics",
+                             "based-on-comic", "tv-special", "fight", "violence"])]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6e '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword "marvel-cinematic-universe"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Downey%Robert%")]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-6f '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
+            :where
+            [?k :keyword/keyword ?k.keyword]
+            [(in ?k.keyword ["superhero", "sequel", "second-part", "marvel-comics",
+                             "based-on-comic", "tv-special", "fight", "violence"])]
+            [?n :name/name ?n.name]
+            [?t :title/production-year ?t.production-year]
+            [(< 2000 ?t.production-year)]
+            [?mk :movie-keyword/keyword ?k]
+            [?mk :movie-keyword/movie ?t]
+            [?ci :cast-info/movie ?t]
+            [?ci :cast-info/person ?n]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-7a '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?an :aka-name/name ?an.name]
+            [(like ?an.name "%a%")]
+            [?it :info-type/info "mini biography"]
+            [?lt :link-type/link "features"]
+            [?n :name/name-pcode-cf ?n.name-pcode-cf]
+            [(< "A" ?n.name-pcode-cf "F")]
+            [?n :name/gender ?n.gender]
+            [?n :name/name ?n.name]
+            [(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "B%")))]
+            [?pi :person-info/note "Volker Boehm"]
+            [?t :title/production-year ?t.production-year]
+            [(<= 1980 ?t.production-year 1995)]
+            [?an :aka-name/person ?n]
+            [?pi :person-info/person ?n]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?ml :movie-link/linked-movie ?t]
+            [?ml :movie-link/link-type ?lt]
+            [?pi :person-info/info-type ?it]
+            [?t :title/title ?t.title]])
+
+;; good plan
+(def q-7b '[:find (min ?n.name) (min ?t.title)
+            :where
+            [?an :aka-name/name ?an.name]
+            [(like ?an.name "%a%")]
+            [?it :info-type/info "mini biography"]
+            [?lt :link-type/link "features"]
+            [?n :name/name-pcode-cf ?n.name-pcode-cf]
+            [(like ?n.name-pcode-cf "D%")]
+            [?n :name/gender "m"]
+            [?n :name/name ?n.name]
+            [?pi :person-info/note "Volker Boehm"]
+            [?t :title/production-year ?t.production-year]
+            [(<= 1980 ?t.production-year 1984)]
+            [?an :aka-name/person ?n]
+            [?pi :person-info/person ?n]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?ml :movie-link/linked-movie ?t]
+            [?ml :movie-link/link-type ?lt]
+            [?pi :person-info/info-type ?it]
+            [?t :title/title ?t.title]])
+
+(def q-7c '[:find (min ?n.name) (min ?pi.info)
+            :where
+            [?an :aka-name/name ?an.name]
+            [(or (like ?an.name "%a%") (like ?an.name "A%"))]
+            [?it :info-type/info "mini biography"]
+            [?lt :link-type/link ?lt.link]
+            [(in ?lt.link ["references", "referenced in", "features",
+                           "featured in"])]
+            [?n :name/name-pcode-cf ?n.name-pcode-cf]
+            [(<= "A" ?n.name-pcode-cf "F")]
+            [?n :name/gender ?n.gender]
+            [(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "A%")))]
+            [?n :name/name ?n.name]
+            [?pi :person-info/note]
+            [?pi :person-info/info ?pi.info]
+            [?t :title/production-year ?t.production-year]
+            [(<= 1980 ?t.production-year 2010)]
+            [?an :aka-name/person ?n]
+            [?pi :person-info/person ?n]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?ml :movie-link/linked-movie ?t]
+            [?ml :movie-link/link-type ?lt]
+            [?pi :person-info/info-type ?it]])
+
+(def q-8a '[:find (min ?an1.name) (min ?t.title)
+            :where
+            [?ci :cast-info/note "(voice: English version)"]
+            [?cn :company-name/country-code "[jp]"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(Japan)%")]
+            [(not-like ?mc.note "%(USA)%")]
+            [?n1 :name/name ?n1.name]
+            [(like ?n1.name "%Yo%")]
+            [(not-like ?n1.name "%Yu%")]
+            [?rt :role-type/role "actress"]
+            [?an1 :aka-name/person ?n1]
+            [?an1 :aka-name/name ?an1.name]
+            [?ci :cast-info/person ?n1]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?t :title/title ?t.title]])
+
+(def q-8b '[:find (min ?an.name) (min ?t.title)
+            :where
+            [?ci :cast-info/note "(voice: English version)"]
+            [?cn :company-name/country-code "[jp]"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(Japan)%")]
+            [(not-like ?mc.note "%(USA)%")]
+            [(or (like ?mc.note "%(2006)%") (like ?mc.note "%(2007)%"))]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Yo%")]
+            [(not-like ?n.name "%Yu%")]
+            [?rt :role-type/role "actress"]
+            [?t :title/production-year ?t.production-year]
+            [(<= 2006 ?t.production-year 2007)]
+            [?t :title/title ?t.title]
+            [(or (like ?t.title "One Piece%") (like ?t.title "Dragon Ball Z%"))]
+            [?an :aka-name/person ?n]
+            [?an :aka-name/name ?an.name]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]])
+
+;; good plan
+(def q-8c '[:find (min ?an.name) (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[us]"]
+            [?rt :role-type/role "writer"]
+            [?an :aka-name/person ?n]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?t :title/title ?t.title]
+            [?an :aka-name/name ?an.name]])
+
+;; good plan
+(def q-8d '[:find (min ?an.name) (min ?t.title)
+            :where
+            [?cn :company-name/country-code "[us]"]
+            [?rt :role-type/role "costume designer"]
+            [?an :aka-name/person ?n]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?t :title/title ?t.title]
+            [?an :aka-name/name ?an.name]])
+
+(def q-9a '[:find (min ?an.name) (min ?chn.name) (min ?t.title)
+            :where
+            [?ci :cast-info/note ?ci.note]
+            [(in ?ci.note ["(voice)", "(voice: Japanese version)",
+                           "(voice) (uncredited)", "(voice: English version)"])]
+            [?cn :company-name/country-code "[us]"]
+            [?mc :movie-companies/note ?mc.note]
+            [(or (like ?mc.note "%(USA)%") (like ?mc.note "%(worldwide)%"))]
+            [?n :name/gender "f"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Ang%")]
+            [?rt :role-type/role "actress"]
+            [?t :title/production-year ?t.production-year]
+            [(<= 2005 ?t.production-year 2015)]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/person-role ?chn]
+            [?chn :char-name/name ?chn.name]
+            [?an :aka-name/person ?n]
+            [?t :title/title ?t.title]
+            [?an :aka-name/name ?an.name]])
+
+(def q-9b '[:find (min ?an.name) (min ?chn.name) (min ?n.name) (min ?t.title)
+            :where
+            [?ci :cast-info/note "(voice)"]
+            [?cn :company-name/country-code "[us]"]
+            [?mc :movie-companies/note ?mc.note]
+            [(like ?mc.note "%(200%)%")]
+            [(or (like ?mc.note "%(USA)%") (like ?mc.note "%(worldwide)%"))]
+            [?n :name/gender "f"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%Ang%")]
+            [?rt :role-type/role "actress"]
+            [?t :title/production-year ?t.production-year]
+            [(<= 2007 ?t.production-year 2010)]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/person-role ?chn]
+            [?chn :char-name/name ?chn.name]
+            [?an :aka-name/person ?n]
+            [?t :title/title ?t.title]
+            [?an :aka-name/name ?an.name]])
+
+(def q-9c '[:find (min ?an.name) (min ?chn.name) (min ?n.name) (min ?t.title)
+            :where
+            [?ci :cast-info/note ?ci.note]
+            [(in ?ci.note ["(voice)", "(voice: Japanese version)",
+                           "(voice) (uncredited)", "(voice: English version)"])]
+            [?cn :company-name/country-code "[us]"]
+            [?n :name/gender "f"]
+            [?n :name/name ?n.name]
+            [(like ?n.name "%An%")]
+            [?rt :role-type/role "actress"]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/person-role ?chn]
+            [?chn :char-name/name ?chn.name]
+            [?an :aka-name/person ?n]
+            [?t :title/title ?t.title]
+            [?an :aka-name/name ?an.name]])
+
+(def q-9d '[:find (min ?an.name) (min ?chn.name) (min ?n.name) (min ?t.title)
+            :where
+            [?ci :cast-info/note ?ci.note]
+            [(in ?ci.note ["(voice)", "(voice: Japanese version)",
+                           "(voice) (uncredited)", "(voice: English version)"])]
+            [?cn :company-name/country-code "[us]"]
+            [?n :name/gender "f"]
+            [?n :name/name ?n.name]
+            [?rt :role-type/role "actress"]
+            [?ci :cast-info/movie ?t]
+            [?mc :movie-companies/movie ?t]
+            [?mc :movie-companies/company ?cn]
+            [?ci :cast-info/role ?rt]
+            [?ci :cast-info/person ?n]
+            [?ci :cast-info/person-role ?chn]
+            [?chn :char-name/name ?chn.name]
+            [?an :aka-name/person ?n]
+            [?t :title/title ?t.title]
+            [?an :aka-name/name ?an.name]])
+
+(def q-10a '[:find (min ?chn.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(like ?ci.note "%(voice)%")]
+             [(like ?ci.note "%(uncredited)%")]
+             [?cn :company-name/country-code "[ru]"]
+             [?rt :role-type/role "actor"]
+             [?t :title/production-year ?t.production-year]
+             [(< 2005 ?t.production-year)]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?ci :cast-info/person-role ?chn]
+             [?ci :cast-info/role ?rt]
+             [?mc :movie-companies/company ?cn]
+             [?chn :char-name/name ?chn.name]
+             [?t :title/title ?t.title]])
+
+;; good plan
+(def q-10b '[:find (min ?chn.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(like ?ci.note "%(producer)%")]
+             [?cn :company-name/country-code "[ru]"]
+             [?rt :role-type/role "actor"]
+             [?t :title/production-year ?t.production-year]
+             [(< 2010 ?t.production-year)]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?ci :cast-info/person-role ?chn]
+             [?ci :cast-info/role ?rt]
+             [?mc :movie-companies/company ?cn]
+             [?chn :char-name/name ?chn.name]
+             [?t :title/title ?t.title]])
+
+;; horrible
+(def q-10c '[:find (min ?chn.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(like ?ci.note "%(producer)%")]
+             [?cn :company-name/country-code "[us]"]
+             [?t :title/production-year ?t.production-year]
+             [(< 1990 ?t.production-year)]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?ci :cast-info/person-role ?chn]
+             [?mc :movie-companies/company ?cn]
+             [?chn :char-name/name ?chn.name]
+             [?t :title/title ?t.title]])
+
+;; good plan
+(def q-11a '[:find (min ?cn.name) (min ?lt.link) (min ?t.title)
+             :where
+             [?cn :company-name/country-code ?cn.country-code]
+             [(not= ?cn.country-code "[pl]")]
+             [?cn :company-name/name ?cn.name]
+             [(or (like ?cn.name "%Film%") (like ?cn.name "%Warner%"))]
+             [?ct :company-type/kind "production companies"]
+             [?k :keyword/keyword "sequel"]
+             [?lt :link-type/link ?lt.link]
+             [(like ?lt.link "%follow%")]
+             [(missing? $ ?mc :movie-companies/note)]
+             [?t :title/production-year ?t.production-year]
+             [(<= 1950 ?t.production-year 2000)]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]])
+
+;; good plan
+(def q-11b '[:find (min ?cn.name) (min ?lt.link) (min ?t.title)
+             :where
+             [?cn :company-name/country-code ?cn.country-code]
+             [(not= ?cn.country-code "[pl]")]
+             [?cn :company-name/name ?cn.name]
+             [(or (like ?cn.name "%Film%") (like ?cn.name "%Warner%"))]
+             [?ct :company-type/kind "production companies"]
+             [?k :keyword/keyword "sequel"]
+             [?lt :link-type/link ?lt.link]
+             [(like ?lt.link "%follow%")]
+             [(missing? $ ?mc :movie-companies/note)]
+             [?t :title/production-year 1998]
+             [?t :title/title ?t.title]
+             [(like ?t.title "%Money%")]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]])
+
+(def q-11c '[:find (min ?cn.name) (min ?mc.note) (min ?t.title)
+             :where
+             [?cn :company-name/country-code ?cn.country-code]
+             [(not= ?cn.country-code "[pl]")]
+             [?cn :company-name/name ?cn.name]
+             [(or (like ?cn.name "20th Century Fox%")
+                  (like ?cn.name "Twentieth Century Fox%"))]
+             [?ct :company-type/kind ?ct.kind]
+             [(not= ?ct.kind "production companies")]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["sequel" "revenge" "based-on-novel"])]
+             [?mc :movie-companies/note ?mc.note]
+             [?t :title/production-year ?t.production-year]
+             [(< 1950 ?t.production-year)]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?lt :link-type/link ?lt.link]])
+
+;; good plan
+(def q-11d '[:find (min ?cn.name) (min ?mc.note) (min ?t.title)
+             :where
+             [?cn :company-name/country-code ?cn.country-code]
+             [(not= ?cn.country-code "[pl]")]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind ?ct.kind]
+             [(not= ?ct.kind "production companies")]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["sequel" "revenge" "based-on-novel"])]
+             [?mc :movie-companies/note ?mc.note]
+             [?t :title/production-year ?t.production-year]
+             [(< 1950 ?t.production-year)]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?lt :link-type/link ?lt.link]])
+
+(def q-12a '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind  "production companies"]
+             [?it1 :info-type/info "genres"]
+             [?it2 :info-type/info "rating"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Drama" "Horror"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< "8.0" ?mi-idx.info)]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2005 ?t.production-year 2008)]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]])
+
+(def q-12b '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?ct :company-type/kind ?ct.kind]
+             [(in ?ct.kind ["production companies" "distributors"])]
+             [?it1 :info-type/info "budget"]
+             [?it2 :info-type/info "bottom 10 rank"]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [(or (like ?t.title "Birdemic%") (like ?t.title "%Movie%"))]
+             [?mi :movie-info/info ?mi.info]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]])
+
+(def q-12c '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "genres"]
+             [?it2 :info-type/info "rating"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Drama" "Horror" "Western" "Family"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< "7.0" ?mi-idx.info)]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2000 ?t.production-year 2010)]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company-type ?ct]
+             [?mc :movie-companies/company ?cn]])
+
+(def q-13a '[:find (min ?mi.info) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[de]"]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "release dates"]
+             [?kt :kind-type/kind "movie"]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info-type ?it2]
+             [?t :title/kind ?kt]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mc :movie-companies/company-type ?ct]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info-type ?it1]
+             [?mi :movie-info/info ?mi.info]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [?t :title/title ?t.title]])
+
+(def q-13b '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "release dates"]
+             [?kt :kind-type/kind "movie"]
+             [?t :title/title ?t.title]
+             [(not= ?t.title "")]
+             [(or (like ?t.title "%Champion%") (like ?t.title "%Loser%"))]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info-type ?it2]
+             [?t :title/kind ?kt]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mc :movie-companies/company-type ?ct]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info-type ?it1]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             ])
+
+(def q-13c '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "release dates"]
+             [?kt :kind-type/kind "movie"]
+             [?t :title/title ?t.title]
+             [(not= ?t.title "")]
+             [(or (like ?t.title "Champion%") (like ?t.title "Loser%"))]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info-type ?it2]
+             [?t :title/kind ?kt]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mc :movie-companies/company-type ?ct]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info-type ?it1]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             ])
+
+(def q-13d '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name ?cn.name]
+             [?ct :company-type/kind "production companies"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "release dates"]
+             [?kt :kind-type/kind "movie"]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info-type ?it2]
+             [?t :title/kind ?kt]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mc :movie-companies/company-type ?ct]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info-type ?it1]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             ])
+
+(def q-14a '[:find (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?it1 :info-type/info "countries"]
+             [?it2 :info-type/info "rating"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "murder-in-title", "blood", "violence"])]
+             [?kt :kind-type/kind "movie"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                            "Denish", "Norwegia", "German", "USA", "American"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< ?mi-idx.info "8.5")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2010 ?t.production-year)]
+             [?t :title/kind ?kt]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             ])
+
+;; different result
+(def q-14b '[:find (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?it1 :info-type/info "countries"]
+             [?it2 :info-type/info "rating"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "murder-in-title"])]
+             [?kt :kind-type/kind "movie"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                            "Denish", "Norwegian", "German", "USA", "American"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< "6.0" ?mi-idx.info)]
+             [?t :title/production-year ?t.production-year]
+             [(< 2010 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [(or (like ?t.title "%murder%") (like ?t.title "%Murder%")
+                  (like ?t.title "%Mord%"))]
+             [?t :title/kind ?kt]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             ])
+
+(def q-14c '[:find (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?it1 :info-type/info "countries"]
+             [?it2 :info-type/info "rating"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "murder-in-title", "blood", "violence"])]
+             [?kt :kind-type/kind ?kt.kind]
+             [(in ?kt.kind ["movie" "episode"])]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
+                            "Denish", "Norwegia", "German", "USA", "American"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< ?mi-idx.info "8.5")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2005 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [?t :title/kind ?kt]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             ])
+
+(def q-15a '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?it1 :info-type/info "release dates"]
+             [?mc :movie-companies/note ?mc.note]
+             [(like ?mc.note "%(200%)%")]
+             [(like ?mc.note "%(worldwide)%")]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [(like ?mi.info "USA:% 200%")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+(def q-15b '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?cn :company-name/name "YouTube"]
+             [?it1 :info-type/info "release dates"]
+             [?mc :movie-companies/note ?mc.note]
+             [(like ?mc.note "%(200%)%")]
+             [(like ?mc.note "%(worldwide)%")]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [(like ?mi.info "USA:% 200%")]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2005 ?t.production-year 2010)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+;; different result
+(def q-15c '[:find ?mi.info ?t.title
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?it1 :info-type/info "release dates"]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [(and (like ?mi.info "USA:%")
+                   (or (like ?mi.info "%199_") (like ?mi.info "%200_")))]
+             [?t :title/production-year ?t.production-year]
+             [(< 1990 ?t.production-year)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+(def q-15d '[:find (min ?mi.info) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?it1 :info-type/info "release dates"]
+             [?mi :movie-info/note ?mi.note]
+             [(like ?mi.note "%internet%")]
+             [?mi :movie-info/info ?mi.info]
+             [?t :title/production-year ?t.production-year]
+             [(< 1990 ?t.production-year)]
+             [?at :aka-title/movie ?t]
+             [?mi :movie-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mi :movie-info/info-type ?it1]
+             [?mc :movie-companies/company ?cn]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/info ?mi.info]
+             [?mc :movie-companies/company-type ?ct]
+             ])
+
+;; (d/explain {:run? true} q-15c (d/db conn))

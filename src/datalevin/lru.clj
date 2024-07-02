@@ -1,4 +1,5 @@
 (ns ^:no-doc datalevin.lru
+  "LRU cache"
   (:import [clojure.lang Associative]))
 
 (declare assoc-lru dissoc-lru cleanup-lru)
@@ -80,8 +81,9 @@
     (reify ICache
       (-get [_ key compute-fn]
         (if-some [cached (get @*impl key nil)]
-          (do (vswap! *impl assoc key cached)
-              cached)
+          (do
+            (vswap! *impl assoc key cached)
+            cached)
           (let [computed (compute-fn)]
             (vswap! *impl assoc key computed)
             computed)))

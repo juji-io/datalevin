@@ -1,5 +1,17 @@
 # Change Log
 
+## 0.9.8 (2024-06-29)
+
+## Fixed
+- [Datalog] Planner: column attributes should be a set of equivalent attribute
+  and variable.
+- [Datalog] Planner: convert ranges back to correct predicates.
+- [Datalog] Handle `like`, `in` within complex logic expressions.
+
+## Improved
+- [Datalog] Optimize `not`, `and` and `or` logic functions that involve only
+  one variable.
+
 ## 0.9.7 (2024-06-23)
 
 ## Fixed

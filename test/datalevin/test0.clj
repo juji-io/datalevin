@@ -5,6 +5,7 @@
    datalevin.lmdb-test
    datalevin.scan-test
    datalevin.storage-test
+   datalevin.query-test
    datalevin.test.transact
    datalevin.remote-withtxn-test
    datalevin.search-test
@@ -18,6 +19,7 @@
           'datalevin.lmdb-test
           'datalevin.scan-test
           'datalevin.storage-test
+          'datalevin.query-test
           'datalevin.test.transact
           'datalevin.remote-withtxn-test
           'datalevin.search-test

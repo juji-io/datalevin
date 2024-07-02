@@ -844,7 +844,7 @@
                             (if next?
                               (let [vb (lmdb/next-val iter)
                                     a  (b/read-buffer vb :int)]
-                                (if (= a (aget aids ai))
+                                (if (== ^int a ^int (aget aids ai))
                                   (let [v    (retrieved->v
                                                lmdb (b/avg->r vb))
                                         pred (aid->pred a)]
@@ -853,7 +853,7 @@
                                       (recur (lmdb/has-next-val iter)
                                              (u/long-inc ai))))
                                   (recur (lmdb/has-next-val iter) ai)))
-                              (when (= ai na)
+                              (when (== ai na)
                                 (if (.isEmpty vs)
                                   (do (.put seen te (r/single-tuples
                                                       (object-array [])))
@@ -877,7 +877,7 @@
                             (if next?
                               (let [vb ^ByteBuffer (lmdb/next-val iter)
                                     a  (b/read-buffer (.rewind vb) :int)]
-                                (if (= a (aget aids ai))
+                                (if (== ^int a ^int (aget aids ai))
                                   (let [v    (retrieved->v
                                                lmdb (b/avg->r vb))
                                         pred (aid->pred a)
@@ -905,7 +905,7 @@
                               (let [ai (if dups (u/long-inc ai) ai)]
                                 (when (and dups (not (true? dups)))
                                   (.add vs dups))
-                                (when (= ai na)
+                                (when (== ^long ai na)
                                   (let [vst (r/many-tuples vs)
                                         new (r/prod-tuples
                                               (r/single-tuples tuple) vst)]
@@ -1270,7 +1270,7 @@
                       :auto-entity-time? false
                       :closed-schema?    false
                       :db-name           (str (UUID/randomUUID))
-                      :cache-limit       100}
+                      :cache-limit       256}
                      opts0)
            opts2   (merge opts1 opts)
            schema  (init-schema lmdb schema)

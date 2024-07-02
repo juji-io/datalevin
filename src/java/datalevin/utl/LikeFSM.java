@@ -154,19 +154,8 @@ public class LikeFSM {
     }
 
     public boolean match(byte[] txt) {
-        int iStart, j;
+        int iStart = 0, j = 0;
         byte sByte = pat[0];
-
-        if ((sByte == M_WILD_BYTE) || (sByte == S_WILD_BYTE)) {
-            iStart = 0;
-            j = 0;
-        } else if ((sByte == txt[0]) ||
-                   (sByte == ESC_S_WILD) && (txt[0] == S_WILD_BYTE) ||
-                   (sByte == ESC_M_WILD) && (txt[0] == M_WILD_BYTE) ||
-                   (sByte == ESC_ESC) && (txt[0] == esc)) {
-            iStart = 1;
-            j = 1;
-        } else return false;
 
         int pLast = M - 1;
         byte eByte = pat[pLast];
@@ -175,6 +164,8 @@ public class LikeFSM {
         for (int i = iStart; i < N; i++) {
 
             j = TF[j][txt[i] & 0xFF];
+
+            if ((j == 0) && (sByte != M_WILD_BYTE)) return false;
 
             if (j == M) {
                 if ((eByte == M_WILD_BYTE) || (i == N - 1)) return true;

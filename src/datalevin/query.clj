@@ -18,9 +18,7 @@
    [datalevin.pull-api :as dpa]
    [datalevin.timeout :as timeout]
    [datalevin.constants :as c]
-   [datalevin.query :as q]
-   [datalevin.bits :as b]
-   )
+   [datalevin.bits :as b])
   (:import
    [java.util Arrays List]
    [clojure.lang ILookup LazilyPersistentVector]
@@ -602,28 +600,57 @@
 (defn- dot-form [f] (when (and (symbol? f) (str/starts-with? (name f) ".")) f))
 
 (defn- dot-call
-  [f args]
-  (let [obj   (first args)
-        oc    (.getClass ^Object obj)
-        fname (subs (name f) 1)
-        as    (rest args)
-        res   (if (zero? (count as))
-                (. (.getDeclaredMethod oc fname nil) (invoke obj nil))
-                (. (.getDeclaredMethod
-                     oc fname
-                     (into-array Class (map #(.getClass ^Object %) as)))
-                   (invoke obj (into-array Object as))))]
+  [fname ^objects args]
+  (let [obj (aget args 0)
+        oc  (.getClass ^Object obj)
+        as  (rest args)
+        res (if (zero? (count as))
+              (. (.getDeclaredMethod oc fname nil) (invoke obj nil))
+              (. (.getDeclaredMethod
+                   oc fname
+                   (into-array Class (map #(.getClass ^Object %) as)))
+                 (invoke obj (into-array Object as))))]
     (when (not= res false) res)))
 
-(defn- make-call [f args] (if (dot-form f) (dot-call f args) (apply f args)))
+(defn- make-call
+  [f]
+  (if (dot-form f)
+    (let [fname (subs (name f) 1)] #(dot-call fname %))
+    #(apply f %)))
 
-(defn -call-fn
+(defn- resolve-sym
+  [sym]
+  (when (symbol? sym)
+    (when-let [v (or (resolve sym)
+                     (when (find-ns 'pod.huahaiy.datalevin)
+                       (ns-resolve 'pod.huahaiy.datalevin sym)))]
+      @v)))
+
+(defonce pod-fns (atom {}))
+
+(defn- resolve-pred
+  [f context]
+  (let [fun (if (fn? f)
+              f
+              (or (get built-ins/query-fns f)
+                  (context-resolve-val context f)
+                  (dot-form f)
+                  (resolve-sym f)
+                  (when (nil? (rel-with-attr context f))
+                    (raise "Unknown function or predicate '" f
+                           {:error :query/where :var f}))))]
+    (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
+      (@pod-fns s)
+      fun)))
+
+(defn- -call-fn*
   [context rel f args]
   (let [sources              (:sources context)
         attrs                (:attrs rel)
         len                  (count args)
         ^objects static-args (make-array Object len)
-        ^objects tuples-args (make-array Object len)]
+        ^objects tuples-args (make-array Object len)
+        call                 (make-call (resolve-pred f context))]
     (dotimes [i len]
       (let [arg (nth args i)]
         (if (symbol? arg)
@@ -638,66 +665,53 @@
           (let [tg (if (u/array? tuple) r/typed-aget get)
                 v  (tg tuple tuple-idx)]
             (aset static-args i v))))
-      (make-call f static-args))))
+      (call static-args))))
 
-(defn- resolve-sym
-  [sym]
-  (when (symbol? sym)
-    (when-let [v (or (resolve sym)
-                     (when (find-ns 'pod.huahaiy.datalevin)
-                       (ns-resolve 'pod.huahaiy.datalevin sym)))]
-      @v)))
-
-(defonce pod-fns (atom {}))
-
-(defn- resolve-pred
-  [f context clause]
-  (let [fun (if (fn? f)
-              f
-              (or (get built-ins/query-fns f)
-                  (context-resolve-val context f)
-                  (dot-form f)
-                  (resolve-sym f)
-                  (when (nil? (rel-with-attr context f))
-                    (raise "Unknown function or predicate '" f " in " clause
-                           {:error :query/where, :form clause,
-                            :var   f}))))]
-    (if-let [s (:pod.huahaiy.datalevin/inter-fn fun)]
-      (@pod-fns s)
-      fun)))
+(defn -call-fn
+  [context rel f args]
+  (case f
+    (and or not) (let [args' (walk/postwalk
+                               (fn [e]
+                                 (if (list? e)
+                                   (let [[f & args] e]
+                                     (-call-fn context rel f args))
+                                   e))
+                               (vec args))]
+                   (fn [tuple]
+                     (apply (get built-ins/query-fns f)
+                            (walk/postwalk
+                              (fn [e] (if (fn? e) (e tuple) e))
+                              args'))))
+    (-call-fn* context rel f args)))
 
 (defn filter-by-pred
   [context clause]
   (let [[[f & args]]         clause
-        pred                 (resolve-pred f context clause)
-        [context production] (rel-prod-by-attrs context (filter symbol? args))
+        attrs                (qu/collect-vars args)
+        [context production] (rel-prod-by-attrs context attrs)
 
-        new-rel (if pred
-                  (let [tuple-pred (-call-fn context production pred args)]
-                    (update production :tuples #(filter tuple-pred %)))
-                  (assoc production :tuples []))]
+        new-rel (let [tuple-pred (-call-fn context production f args)]
+                  (update production :tuples #(filter tuple-pred %)))]
     (update context :rels conj new-rel)))
 
 (defn bind-by-fn
   [context clause]
   (let [[[f & args] out]     clause
         binding              (dp/parse-binding out)
-        fun                  (resolve-pred f context clause)
-        [context production] (rel-prod-by-attrs context (filter symbol? args))
+        attrs                (qu/collect-vars args)
+        [context production] (rel-prod-by-attrs context attrs)
         new-rel
-        (if fun
-          (let [tuple-fn (-call-fn context production fun args)
-                rels     (for [tuple (:tuples production)
-                               :let  [val (tuple-fn tuple)]
-                               :when (not (nil? val))]
-                           (r/prod-rel
-                             (r/relation! (:attrs production)
-                                          (doto (FastList.) (.add tuple)))
-                             (in->rel binding val)))]
-            (if (empty? rels)
-              (r/prod-rel production (r/empty-rel binding))
-              (reduce r/sum-rel rels)))
-          (r/prod-rel (assoc production :tuples []) (r/empty-rel binding)))]
+        (let [tuple-fn (-call-fn context production f args)
+              rels     (for [tuple (:tuples production)
+                             :let  [val (tuple-fn tuple)]
+                             :when (not (nil? val))]
+                         (r/prod-rel
+                           (r/relation! (:attrs production)
+                                        (doto (FastList.) (.add tuple)))
+                           (in->rel binding val)))]
+          (if (empty? rels)
+            (r/prod-rel production (r/empty-rel binding))
+            (reduce r/sum-rel rels)))]
     (update context :rels collapse-rels new-rel)))
 
 ;;; RULES
@@ -763,11 +777,9 @@
           :let      [[call-args prev-args] (remove-pairs call-args prev-args)]]
       [(concatv ['-differ?] call-args prev-args)])))
 
-(defn collect-vars [clause] (set (u/walk-collect clause qu/free-var?)))
-
 (defn split-guards
   [clauses guards]
-  (let [bound-vars (collect-vars clauses)
+  (let [bound-vars (qu/collect-vars clauses)
         pred       (fn [[[_ & vars]]] (every? bound-vars vars))]
     [(filter pred guards)
      (remove pred guards)]))
@@ -1165,13 +1177,22 @@
                                   (map make-nodes))
                                 (group-by get-src patterns)))))
 
+(defn- collect-pred-vars
+  [{:keys [fn args]}]
+  (case (:symbol fn)
+    (and not or) (qu/collect-vars args)
+    (set (sequence
+           (comp (filter #(instance? Variable %))
+              (map :symbol))
+           args))))
+
 (defn- pushdownable
   "predicates that can be pushed down involve only one free variable"
   [where gseq]
   (when (instance? Predicate where)
-    (let [vars (filterv #(instance? Variable %) (:args where))]
-      (when (= 1 (count vars))
-        (let [s (:symbol (first vars))]
+    (let [syms (collect-pred-vars where)]
+      (when (= (count syms) 1)
+        (let [s (first syms)]
           (some #(when (= s (:var %)) s) gseq))))))
 
 (defn- icompare
@@ -1285,13 +1306,9 @@
       pstring)))
 
 (defn- optimize-like
-  [m [_ ^String pattern {:keys [escape]}] not?]
-  (let [pb      (.getBytes pattern)
-        fsm     (if escape (LikeFSM. pb escape) (LikeFSM. pb))
-        match   #(.match fsm (.getBytes ^String %))
-        matcher (if not? #(not (match %)) #(match %))
-        pstring (like-pattern-as-string pattern escape)]
-    (like-convert-range (update m :pred concatv [matcher]) pstring not?)))
+  [m pred [_ ^String pattern {:keys [escape]}] not?]
+  (let [pstring (like-pattern-as-string pattern escape)]
+    (like-convert-range (update m :pred conjv pred) pstring not?)))
 
 (defn- inequality->range
   [m f args v]
@@ -1318,11 +1335,51 @@
            (= i ac-1) (add-range m [[:closed c/v0] [:closed fa]])
            :else      (add-range m [[:closed pa] [:closed fa]])))))
 
+(defn- range->inequality
+  [v [[so sc :as s] [eo ec :as e]]]
+  (cond
+    (= s [:closed c/v0])
+    (if (identical? eo :open) (list '< v ec) (list '<= v ec))
+    (= e [:closed c/vmax])
+    (if (identical? so :open) (list '< sc v) (list '<= sc v))
+    :else
+    (if (identical? so :open) (list '< sc v ec) (list '<= sc v ec))))
+
+(defn- equality->range
+  [m args]
+  (let [c (some #(when-not (qu/free-var? %) %) args)]
+    (add-range m [[:closed c] [:closed c]])))
+
 (defn- in-convert-range
   [m [_ coll] not?]
+  (assert (and (coll? coll) (not (map? coll)))
+          "function `in` expects a collection")
   (apply add-range m
          (let [ranges (map (fn [v] [[:closed v] [:closed v]]) (sort coll))]
            (if not? (flip-ranges ranges) ranges))))
+
+(defn- activate-pred
+  [var clause]
+  (when clause
+    (if (fn? clause)
+      clause
+      (let [[f & args] clause
+            fun        (resolve-pred f nil)
+            i          (u/index-of #(= var %) args)
+            args-arr   (object-array args)
+            call       (make-call fun)]
+        (fn pred [x] (call (do (aset args-arr i x) args-arr)))))))
+
+(defn- logic-pred
+  [m f args v]
+  (let [args' (doall (walk/postwalk
+                       (fn [e] (if (list? e) (activate-pred v e) e))
+                       (vec args)))
+        fun   (get built-ins/query-fns f)]
+    (update m :pred conjv (fn logic [x]
+                            (apply fun (walk/postwalk
+                                         (fn [e] (if (fn? e) (e x) e))
+                                         args'))))))
 
 (defn- add-pred-clause
   [graph clause v]
@@ -1331,13 +1388,13 @@
       (if (= (:var m) v)
         (let [[f & args :as pred] (first clause)]
           (case f
-            (< <= > >=) (inequality->range m f args v)
-            =           (let [c (some #(when-not (qu/free-var? %) %) args)]
-                          (add-range m [[:closed c] [:closed c]]))
-            like        (optimize-like m args false)
-            not-like    (optimize-like m args true)
-            in          (in-convert-range m args false)
-            not-in      (in-convert-range m args true)
+            (< <= > >=)  (inequality->range m f args v)
+            =            (equality->range m args)
+            like         (optimize-like m pred args false)
+            not-like     (optimize-like m pred args true)
+            in           (in-convert-range m args false)
+            not-in       (in-convert-range m args true)
+            (and not or) (logic-pred m f args v)
             (update m :pred conjv pred)))
         m))
     graph))
@@ -1477,7 +1534,8 @@
    ?e0 {:links [{:type :_ref :tgt ?e :attr :friend}]
         :mpath [:free :age]
         :free  {:age {:var ?a :count 10890}}}
-   ...}}
+   ...
+   }}
 
   Remaining clauses are in :late-clauses.
   :result-set will be #{} if there is any clause that matches nothing."
@@ -1491,24 +1549,22 @@
 (defn- add-pred
   ([pred] pred)
   ([old-pred new-pred]
+   (add-pred old-pred new-pred false))
+  ([old-pred new-pred or?]
    (if old-pred
-     (fn [x] (and (old-pred x) (new-pred x)))
+     (if or?
+       (fn [x] (or (old-pred x) (new-pred x)))
+       (fn [x] (and (old-pred x) (new-pred x))))
      new-pred)))
-
-(defn- activate-pred
-  [var clause]
-  (when clause
-    (if (fn? clause)
-      clause
-      (let [[f & args] clause
-            f1         (resolve-pred f nil clause)
-            i          (u/index-of #(= var %) args)
-            args-arr   (object-array args)]
-        (fn pred [x] (make-call f1 (do (aset args-arr i x) args-arr)))))))
 
 (defn- attr-pred
   [[_ {:keys [var pred]}]]
-  (transduce (map #(activate-pred var %)) add-pred nil pred))
+  (reduce
+    (fn [ps p]
+      (add-pred ps (activate-pred var p)))
+    nil pred)
+
+  #_(transduce (map #(activate-pred var %)) add-pred nil pred))
 
 (defn- init-node-steps
   [db [e clauses]]
@@ -1518,6 +1574,7 @@
 
         attr    (peek mpath)
         know-e? (int? e)
+        no-var? (or (not var) (qu/placeholder? var))
         schema  (db/-schema db)
         init    (cond-> (map->InitStep
                           {:attr attr :vars [e] :out #{e}
@@ -1525,13 +1582,13 @@
                            :save *save-intermediate*})
                   var     (assoc :pred (attr-pred [attr clause])
                                  :vars (cond-> [e]
-                                         (not (qu/placeholder? var))
-                                         (conj var))
+                                         (not no-var?) (conj var))
                                  :range range)
                   val     (assoc :val val)
                   know-e? (assoc :know-e? true)
-                  true    (#(assoc % :cols
-                                   (if (= 1 (count (:vars %))) [e] [e attr]))))
+                  true    (#(assoc % :cols (if (= 1 (count (:vars %)))
+                                             [e]
+                                             [e #{attr var}]))))
         cols    (:cols init)]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
@@ -1545,13 +1602,17 @@
                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
               attrs  (mapv first all)
               vars   (mapv attr-var all)
-              skips  (sequence
-                       (comp (map #(when (or (= %2 '_) (qu/placeholder? %2)) %1))
-                          (remove nil?))
-                       attrs vars)]
+              vars-m (zipmap attrs vars)
+              skips  (cond-> (sequence
+                               (comp (map #(when (or (= %2 '_) (qu/placeholder? %2)) %1))
+                                  (remove nil?))
+                               attrs vars)
+                       no-var? (conj attr))
+              cols   (into cols (comp (remove (set skips))
+                                   (map (fn [attr] #{attr (vars-m attr)})))
+                           attrs)]
           (MergeScanStep. 0 attrs vars (mapv attr-pred all) skips #{e}
-                          #{e} (into cols (remove (set skips)) attrs)
-                          *save-intermediate*))))))
+                          #{e} cols *save-intermediate*))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1609,23 +1670,13 @@
   (into {} (map (fn [e] [#{e} (base-plan db nodes e)])) component))
 
 (defn- add-back-range
-  [v step]
-  (let [p (:pred step)]
-    (if-let [ranges (:range step)]
-      (reduce
-        (fn [p range]
-          (let [[f & r] range
-                c       (first r)
-                c1      (second r)]
-            (add-pred p (activate-pred v (case f
-                                           :less-than    (list '< v c)
-                                           :greater-than (list '> v c)
-                                           :at-most      (list '<= v c)
-                                           :at-least     (list '>= v c)
-                                           :open         (list '< c v c1)
-                                           :closed       (list '<= c v c1))))))
-        p ranges)
-      p)))
+  [v {:keys [pred range]}]
+  (if range
+    (reduce
+      (fn [p r]
+        (add-pred p (activate-pred v (range->inequality v r)) true))
+      pred range)
+    pred))
 
 (defn- merge-scan-step
   [db last-step index new-key new-steps skip-attr]
@@ -1633,10 +1684,11 @@
         attr1   (:attr s1)
         val1    (:val s1)
         bound?  (some? val1)
-        v1      (peek (:vars s1))
+        vars1   (:vars s1)
+        v1      (when (< 1 (count vars1)) (peek vars1))
         attrs2  (:attrs s2)
-        vars-m  (let [m (zipmap attrs2 (:vars s2))]
-                  (if bound? m (assoc m attr1 v1)))
+        vars-m  (cond-> (zipmap attrs2 (:vars s2))
+                  v1 (assoc attr1 v1))
         preds-m (assoc (zipmap attrs2 (:preds s2))
                        attr1 (cond-> (add-back-range v1 s1)
                                bound? (add-pred #(= % val1))))
@@ -1646,25 +1698,42 @@
                      (remove #{(:attr last-step)}))
         skips   (remove nil? (cond-> (conj (:skips s2) skip-attr)
                                bound? (conj attr1)))]
-    (map->MergeScanStep {:attrs attrs
-                         :vars  (->> attrs (replace vars-m) (remove keyword?))
-                         :preds (replace preds-m attrs)
-                         :skips skips
-                         :cols  (into (:cols last-step) (remove (set skips)) attrs)
-                         :save  *save-intermediate*
-                         :index index
-                         :in    (:out last-step)
-                         :out   new-key})))
+    (map->MergeScanStep
+      {:attrs attrs
+       :vars  (->> attrs (replace vars-m) (remove keyword?))
+       :preds (replace preds-m attrs)
+       :skips skips
+       :cols  (into (:cols last-step) (comp (remove (set skips))
+                                         (map (fn [attr]
+                                                (if-let [v (vars-m attr)]
+                                                  #{attr v}
+                                                  attr))))
+                    attrs)
+       :save  *save-intermediate*
+       :index index
+       :in    (:out last-step)
+       :out   new-key})))
+
+(defn- find-index
+  [a-or-v cols]
+  (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols))
 
 (defn- ref-plan
   [db last-step {:keys [attr]} new-key new-steps]
-  (let [index (u/index-of #(= attr %) (:cols last-step))]
+  (let [index (find-index attr (:cols last-step))]
     [(merge-scan-step db last-step index new-key new-steps nil)]))
+
+(defn- enrich-cols
+  [cols index attr]
+  (let [pa (cols index)]
+    (replace {pa (if (set? pa) (conj pa attr) (into #{} [pa attr]))} cols)))
 
 (defn- link-step
   [op last-step index attr tgt new-key]
   (let [in   (:out last-step)
-        cols (conj (:cols last-step) tgt)]
+        cols (-> (:cols last-step)
+                 (enrich-cols index attr)
+                 (conj tgt))]
     (case op
       :vae-scan-e    (RevRefStep. index attr tgt in new-key
                                   cols *save-intermediate*)
@@ -1673,7 +1742,7 @@
 
 (defn- rev-ref-plan
   [db last-step link-e {:keys [attr tgt]} new-key new-steps]
-  (let [index (u/index-of #(= link-e %) (:cols last-step))
+  (let [index (find-index link-e (:cols last-step))
         step  (link-step :vae-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
@@ -1684,9 +1753,8 @@
 (defn- val-eq-plan
   [db last-step {:keys [attrs tgt var]} link-e new-key new-steps]
   (let [cols  (:cols last-step)
-        index (if (instance? RevRefStep last-step)
-                (u/index-of #(= var %) cols)
-                (u/index-of #(= (attrs link-e) %) cols))
+        index (or (find-index var cols)
+                  (find-index (attrs link-e) cols))
         attr  (attrs tgt)
         step  (link-step :val-eq-scan-e last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
@@ -1794,12 +1862,11 @@
 
 (defn- connected-pairs
   [nodes component]
-  (into #{}
-        (comp
-          (filter (fn [[e1 e2]]
-                    (some #(= % e2) (map :tgt (get-in nodes [e1 :links])))))
-          (map set))
-        (u/combinations component 2)))
+  (let [pairs (volatile! #{})]
+    (doseq [e component]
+      (doseq [link (get-in nodes [e :links])]
+        (vswap! pairs conj #{e (:tgt link)})))
+    @pairs))
 
 (defn- plan-component
   [db nodes component]
