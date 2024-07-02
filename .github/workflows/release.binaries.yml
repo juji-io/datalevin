@@ -35,13 +35,57 @@ jobs:
         run: |
           lein run
           lein uberjar
+          echo "Generated JAR files:"
+          ls -l target/*.jar
+
+      # - name: Upload Uberjar
+      #   uses: shogo82148/actions-upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
+      #     overwrite: true
+
+      # DEBUG
+
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.3.2
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set release info
+        id: release_info
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "upload_url=${{ steps.get_release.outputs.upload_url }}" >> $GITHUB_OUTPUT
+            echo "tag_name=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "upload_url=" >> $GITHUB_OUTPUT
+            echo "tag_name=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Debug release info
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Upload URL: ${{ steps.release_info.outputs.upload_url }}"
+          echo "Tag name: ${{ steps.release_info.outputs.tag_name }}"
+
+      - name: Check Variables
+        run:
+          echo steps.release_info.outputs.tag_name:${{ steps.release_info.outputs.tag_name }}
+          echo steps.release_info.outputs.tag_name:${{ steps.release_info.outputs.tag_name }}
+
+      # END DEBUG
 
       - name: Upload Uberjar
-        uses: shogo82148/actions-upload-release-asset@v1
+        uses: actions/upload-artifact@v3
+        # with:
+        #   name: datalevin-standalone.jar
+        #   path: target/*-standalone.jar
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: target/datalevin-${{ github.event.release.tag_name }}-standalone.jar
-          overwrite: true
+          name: datalevin-${{ steps.release_info.outputs.tag_name }}-standalone.jar
+          path: target/datalevin-${{ steps.release_info.outputs.tag_name }}-standalone.jar
 
       - name: Setup Graalvm
         uses: DeLaGuardo/setup-graalvm@master
@@ -67,14 +111,45 @@ jobs:
         run: |
           native/dtlv-test0
 
+      # - name: Zip Binary
+      #   run: |
+      #     cd native
+      #     7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
+
       - name: Zip Binary
         run: |
           cd native
-          7z a -tzip dtlv-${{ github.event.release.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
+          7z a -tzip dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os}}-amd64.zip dtlv
 
-      - name: Upload Binary
-        uses: shogo82148/actions-upload-release-asset@v1
+      # - name: Upload Binary
+      #   uses: shogo82148/actions-upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
+      #     overwrite: true
+
+      - name: Upload Binary as Artifact
+        uses: actions/upload-artifact@v3
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: native/dtlv-${{ github.event.release.tag_name }}-${{ matrix.os }}-amd64.zip
+          name: dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os }}-amd64.zip
+          path: native/dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os }}-amd64.zip
+
+      # for Forked
+          
+      - name: Upload Uberjar to Release
+        uses: shogo82148/actions-upload-release-asset@v1
+        if: github.event_name == 'release'
+        with:
+          upload_url: ${{ steps.release_info.outputs.upload_url }}
+          asset_path: target/datalevin-${{ steps.release_info.outputs.tag_name }}-standalone.jar
+          asset_name: datalevin-${{ steps.release_info.outputs.tag_name }}-standalone.jar
+          overwrite: true
+
+      - name: Upload Binary to Release
+        uses: shogo82148/actions-upload-release-asset@v1
+        if: github.event_name == 'release'
+        with:
+          upload_url: ${{ steps.release_info.outputs.upload_url }}
+          asset_path: native/dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os }}-amd64.zip
+          asset_name: dtlv-${{ steps.release_info.outputs.tag_name }}-${{ matrix.os }}-amd64.zip
           overwrite: true

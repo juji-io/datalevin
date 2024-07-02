@@ -3,7 +3,7 @@
  :tasks {:requires ([borkdude.gh-release-artifact :as ghr])
          release-artifact
          (ghr/release-artifact
-           {:org       "juji-io"
+           {:org       "aldebogdanov"
             :repo      "datalevin"
             :tag       (System/getenv "DTLV_TAG")
             :file      (System/getenv "DTLV_ARCHIVE")

@@ -66,7 +66,11 @@ public final class Directives implements CContext.Directives {
             dtlvLibName = "libdtlv.a";
             lmdbLibName = "liblmdb.a";
             myPlatform = "macos-latest-aarch64";
-        } else {
+        } else if (aarch64 && linux) {
+	    dtlvLibName = "libdtlv.a";
+	    lmdbLibName = "liblmdb.a";
+	    myPlatform = "ubuntu-latest-aarch64";
+	} else {
             throw new IllegalStateException("Unsupported platform: "
                                             + os + " on " + arch);
         }
@@ -109,13 +113,12 @@ public final class Directives implements CContext.Directives {
             final String filename = Paths.get(name).toString();
             final File file = new File(parent, filename);
             file.deleteOnExit();
-
-            final ClassLoader cl = currentThread().getContextClassLoader();
-
-            try (InputStream in = cl.getResourceAsStream("dtlvnative/"
+	   
+	    final ClassLoader cl = currentThread().getContextClassLoader();
+	    try (InputStream in = cl.getResourceAsStream("dtlvnative/"
                                                             + platform + "/"
                                                             + name);
-                    OutputStream out = Files.newOutputStream(file.toPath())) {
+		 OutputStream out = Files.newOutputStream(file.toPath())) {
                 requireNonNull(in, "Classpath resource not found");
                 int bytes;
                 final byte[] buffer = new byte[4096];
