@@ -2,6 +2,10 @@
 
 ## WIP
 
+## Fixed
+- [Datalog] Planner: Nested logic expressions.
+- [Datalog] Planner: Multiple predicates turned ranges.
+
 ## Changed
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
 

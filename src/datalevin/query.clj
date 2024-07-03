@@ -1195,34 +1195,49 @@
         (let [s (first syms)]
           (some #(when (= s (:var %)) s) gseq))))))
 
-(defn- icompare
-  [[_ i] [_ j]]
-  (case i
-    :db.value/sysMin -1
-    :db.value/sysMax 1
-    (case j
-      :db.value/sysMax -1
-      :db.value/sysMin 1
-      (compare i j))))
+(defn- range-compare
+  ([r1 r2]
+   (range-compare r1 r2 true))
+  ([[p i] [q j] from?]
+   (case i
+     :db.value/sysMin -1
+     :db.value/sysMax 1
+     (case j
+       :db.value/sysMax -1
+       :db.value/sysMin 1
+       (let [res (compare i j)]
+         (if (zero? res)
+           (if from?
+             (cond
+               (identical? p q)       0
+               (identical? p :closed) -1
+               :else                  1)
+             (cond
+               (identical? p q)     0
+               (identical? p :open) -1
+               :else                1))
+           res))))))
+
+(def range-compare-to #(range-compare %1 %2 false))
 
 (defn- combine-ranges*
   [ranges]
-  (let [orig-from (apply list (sort icompare (map first ranges)))]
+  (let [orig-from (sort range-compare (map first ranges))]
     (loop [intervals (transient [])
-           from      (pop orig-from)
-           to        (apply list (sort icompare (map peek ranges)))
-           thread    (transient [(peek orig-from)])]
+           from      (rest orig-from)
+           to        (sort range-compare-to (map peek ranges))
+           thread    (transient [(first orig-from)])]
       (if (seq to)
-        (let [fc (peek from)
-              tc (peek to)]
+        (let [fc (first from)
+              tc (first to)]
           (if (= (count from) (count to))
-            (recur (conj! intervals (persistent! thread)) (pop from) to
+            (recur (conj! intervals (persistent! thread)) (rest from) to
                    (transient [fc]))
             (if fc
-              (if (< ^long (icompare fc tc) 0)
-                (recur intervals (pop from) to (conj! thread fc))
-                (recur intervals from (pop to) (conj! thread tc)))
-              (recur intervals from (pop to) (conj! thread tc)))))
+              (if (< ^long (range-compare fc tc) 0)
+                (recur intervals (rest from) to (conj! thread fc))
+                (recur intervals from (rest to) (conj! thread tc)))
+              (recur intervals from (rest to) (conj! thread tc)))))
         (mapv (fn [t] [(first t) (peek t)])
               (persistent! (conj! intervals (persistent! thread))))))))
 
@@ -1251,7 +1266,40 @@
      (assoc-in vs [(dec (count vs)) (count (peek vs))]
                [:closed vmax]))))
 
-(defn- add-range [m & rs] (update m :range #(combine-ranges (concatv % rs))))
+(defn intersect-ranges
+  [& ranges]
+  (let [n         (count ranges)
+        ranges    (apply concatv ranges)
+        orig-from (sort range-compare (map first ranges))
+        res
+        (loop [res  []
+               from (rest orig-from)
+               fp   (first orig-from)
+               to   (sort range-compare-to (map peek ranges))
+               i    1
+               j    0]
+          (let [tc (first to)]
+            (if (seq from)
+              (let [fc (first from)]
+                (if (<= 0 ^long (range-compare fc tc))
+                  (if (= i (+ j n))
+                    (recur (conj res [fp tc]) (rest from) fc
+                           (drop n to) (inc i) i)
+                    (recur res (rest from) fc to (inc i) j))
+                  (recur res (rest from) fc to (inc i) j)))
+              (if (and (<= ^long (range-compare fp tc) 0) (= i (+ j n)))
+                (conj res [fp tc])
+                res))))]
+    (when (seq res) res)))
+
+(defn- add-range [m & rs]
+  (let [old-range (:range m)]
+    (assoc m :range
+           (if old-range
+             (if-let [new-range (intersect-ranges old-range rs)]
+               new-range
+               :empty-range)
+             (combine-ranges rs)))))
 
 (defn- prefix-max-string
   [^String prefix]
@@ -1473,12 +1521,14 @@
 
 (defn- range-count
   [db attr ranges ^long cap]
-  (reduce
-    (fn [^long sum range]
-      (let [s (+ sum (let [[lv hv] (range->start-end range)]
-                       ^long (db/-index-range-size db attr lv hv)))]
-        (if (< s cap) s (reduced cap))))
-    0 ranges))
+  (if (identical? ranges :empty-range)
+    0
+    (reduce
+      (fn [^long sum range]
+        (let [s (+ sum (let [[lv hv] (range->start-end range)]
+                         ^long (db/-index-range-size db attr lv hv)))]
+          (if (< s cap) s (reduced cap))))
+      0 ranges)))
 
 (defn- count-k-datoms
   [node db k]

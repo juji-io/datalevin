@@ -548,7 +548,7 @@
     (u/delete-files dir)))
 
 (deftest ranges-test
-  (let [vs       (vec (range 10))
+  (let [vs       (vec (range 20))
         vset     (set vs)
         select   #(into #{}
                         (comp (map (fn [[[_ l] [_ r]]] (subvec vs l r)))
@@ -561,7 +561,7 @@
                 combined (sut/combine-ranges ranges)
                 flipped (walk/postwalk
                           #(case %
-                             :db.value/sysMax 10
+                             :db.value/sysMax 20
                              :db.value/sysMin 0
                              %)
                           (sut/flip-ranges combined))]
@@ -581,7 +581,20 @@
         [[3 5] [2 7] [4 7] [8 9]]
         [[4 5] [1 2] [1 4]]
         [[1 2] [1 2] [4 5] [1 5]]
-        [[7 9] [3 4] [1 2] [2 3]]))))
+        [[7 9] [3 4] [1 2] [2 3]]))
+    (testing "range insersections"
+      (are [vs1 vs2 vs3]
+          (let [r1 (to-range vs1)
+                r2 (to-range vs2)
+                r3 (to-range vs3)]
+            (= (set/intersection (select r1) (select r2) (select r3))
+               (select (sut/intersect-ranges r1 r2 r3))))
+        [[1 6] [7 12]]         [[2 5] [8 11]] [[3 4] [9 10]]
+        [[1 6] [7 12] [13 17]] [[2 5] [8 11]] [[3 4] [9 10]]
+        [[1 3]]                [[1 4]]        [[2 6]]
+        [[1 3]]                [[2 5]]        [[4 6]]
+        [[1 2]]                [[2 3]]        [[3 4]]
+        ))))
 
 (test/defspec random-ranges-test
   100
@@ -589,8 +602,7 @@
     [bases (gen/vector (gen/large-integer* {:min 1 :max 100}) 5)
      offsets (gen/vector (gen/large-integer* {:min 1 :max 50}) 5)
      targets (gen/vector-distinct gen/nat {:num-elements 10})]
-    (let [n         (count bases)
-          ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
+    (let [ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
                           bases offsets)
           combined  (sut/combine-ranges ranges)
           in-range? (fn [ranges target]
@@ -670,28 +682,28 @@
                          [(or (and (< 1 ?l) (like ?t "%月%"))
                               (and (odd? ?l) (like ?t "%头%")))]]
                        db)))
-    ;; (is (= #{[3]} (d/q '[:find ?e
-    ;;                      :where
-    ;;                      [?e :line ?l]
-    ;;                      [?e :text ?t]
-    ;;                      [(and (< 1 ?l) (like ?t "%月%"))]]
-    ;;                    db)))
-    ;; (is (= #{[3]} (d/q '[:find ?e
-    ;;                      :where
-    ;;                      [?e :line ?l]
-    ;;                      [(and (< 1 ?l) (odd? ?l))]]
-    ;;                    db)))
-    ;; (is (= #{[3]} (d/q '[:find ?e
-    ;;                      :where
-    ;;                      [?e :text ?t]
-    ;;                      [(and (like ?t "%月%")
-    ;;                            (not-like ?t "%月光%"))]]
-    ;;                    db)))
-    ;; (is (= #{[1][3][4]} (d/q '[:find ?e
-    ;;                            :where
-    ;;                            [?e :text ?t]
-    ;;                            [(or (like ?t "%月%")
-    ;;                                 (like ?t "%乡%"))]]
-    ;;                          db)))
+    (is (= #{[3]} (d/q '[:find ?e
+                         :where
+                         [?e :line ?l]
+                         [?e :text ?t]
+                         [(and (< 1 ?l) (like ?t "%月%"))]]
+                       db)))
+    (is (= #{[3]} (d/q '[:find ?e
+                         :where
+                         [?e :line ?l]
+                         [(and (< 1 ?l) (odd? ?l))]]
+                       db)))
+    (is (= #{[3]} (d/q '[:find ?e
+                         :where
+                         [?e :text ?t]
+                         [(and (like ?t "%月%")
+                               (not-like ?t "%月光%"))]]
+                       db)))
+    (is (= #{[1][3][4]} (d/q '[:find ?e
+                               :where
+                               [?e :text ?t]
+                               [(or (like ?t "%月%")
+                                    (like ?t "%乡%"))]]
+                             db)))
     (d/close-db db)
     (u/delete-files dir)))

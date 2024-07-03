@@ -1547,4 +1547,74 @@
              [?mc :movie-companies/company-type ?ct]
              ])
 
-(d/explain {:run? true} q-14b (d/db conn))
+;; good plan
+(def q-16a '[:find (min ?an.name) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?k :keyword/keyword "character-name-in-title"]
+             [?t :title/episode-nr ?t.episode-nr]
+             [(<= 50 ?t.episode-nr)]
+             [(< ?t.episode-nr 100)]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?an :aka-name/name ?an.name]
+             [?t :title/title ?t.title]
+             ])
+
+;; good plan
+(def q-16b '[:find (min ?an.name) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?k :keyword/keyword "character-name-in-title"]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?an :aka-name/name ?an.name]
+             [?t :title/title ?t.title]
+             ])
+
+(def q-16c '[:find (min ?an.name) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?k :keyword/keyword "character-name-in-title"]
+             [?t :title/episode-nr ?t.episode-nr]
+             [(< ?t.episode-nr 100) ]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?an :aka-name/name ?an.name]
+             [?t :title/title ?t.title]
+             ])
+
+(def q-16d '[:find (min ?an.name) (min ?t.title)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?k :keyword/keyword "character-name-in-title"]
+             [?t :title/episode-nr ?t.episode-nr]
+             [(<= 5 ?t.episode-nr)]
+             [(< ?t.episode-nr 100)]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?an :aka-name/name ?an.name]
+             [?t :title/title ?t.title]
+             ])
+
+(d/explain {:run? true} q-16d (d/db conn))
