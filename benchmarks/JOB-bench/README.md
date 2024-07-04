@@ -63,7 +63,8 @@ Datalevin by uncomment and run `(def db ...)`.
 
 ## Queries
 
-The `queries` directory contains 113 SQL queries for this benchmark.
+The `queries` directory contains 113 SQL queries for this benchmark. These
+queries all involve more than 5 tables and often have 10 or more where clauses.
 
 We manually translated the SQL queries to equivalent Datalevin queries, and
 manually verified that Postgresql and Datalevin produce the same results (note

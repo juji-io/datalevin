@@ -1617,4 +1617,86 @@
              [?t :title/title ?t.title]
              ])
 
-(d/explain {:run? true} q-16d (d/db conn))
+;; good plan
+(def q-17a '[:find (min ?n.name)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?k :keyword/keyword "character-name-in-title"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "B%")]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             ])
+
+;; good plan
+(def q-17b '[:find (min ?n.name)
+             :where
+             [?k :keyword/keyword "character-name-in-title"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "Z%")]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             ])
+
+;; good plan
+(def q-17c '[:find (min ?n.name)
+             :where
+             [?k :keyword/keyword "character-name-in-title"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "X%")]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             ])
+
+;; good plan
+(def q-17d '[:find (min ?n.name)
+             :where
+             [?k :keyword/keyword "character-name-in-title"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%Bert%")]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             ])
+
+;; good plan
+(def q-17e '[:find (min ?n.name)
+             :where
+             [?cn :company-name/country-code "[us]"]
+             [?k :keyword/keyword "character-name-in-title"]
+             [?n :name/name ?n.name]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             ])
+
+;; good plan
+(def q-17f '[:find (min ?n.name)
+             :where
+             [?k :keyword/keyword "character-name-in-title"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%B%")]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             ])
+
+(d/explain {:run? true} q-17f (d/db conn))
