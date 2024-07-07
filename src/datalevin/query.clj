@@ -63,7 +63,7 @@
     [attr pred val range vars in out know-e? cols save save-in? mcount]
 
   IStep
-  (-execute [_ context db rel]
+  (-execute [this context db rel]
     (let [get-v? (< 1 (count vars))
           e      (first vars)
           v      (peek vars)
@@ -116,7 +116,7 @@
 (defrecord MergeScanStep [index attrs vars preds skips in out cols save]
 
   IStep
-  (-execute [_ context db rel]
+  (-execute [this context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs vars)
@@ -131,7 +131,7 @@
 (defrecord RevRefStep [index attr var in out cols save]
 
   IStep
-  (-execute [_ context db rel]
+  (-execute [this context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
@@ -148,7 +148,7 @@
 (defrecord ValEqStep [index attr var in out cols save]
 
   IStep
-  (-execute [_ context db rel]
+  (-execute [this context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
@@ -165,7 +165,7 @@
 (defrecord HashJoinStep [in out cols save]
 
   IStep
-  (-execute [_ context _ rel]
+  (-execute [this context _ rel]
     (let [rel1    (@(:intermediates context) in)
           out-rel (hash-join rel1 rel)]
       (save-intermediates context save in rel1)
@@ -1827,8 +1827,11 @@
 
 (defn- estimate-join-size
   [db link prev-size new-base-plan]
-  (if (= :ref (:type link))
-    (estimate-scan-v-size db prev-size (:steps new-base-plan))
+  (condp identical? (:type link)
+    :ref  (estimate-scan-v-size db prev-size (:steps new-base-plan))
+    :_ref (estimate-round
+            (/ (* ^long prev-size (db/-count db [nil (:attr link) nil]))
+               ^long (max-domain-cardinality db link)))
     (estimate-round
       (/ (* ^long prev-size ^long (:size new-base-plan))
          ^long (max-domain-cardinality db link)))))

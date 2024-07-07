@@ -826,7 +826,7 @@
               aids      (int-array aids)
               nt        (.size ^List tuples)
               res       (FastList. nt)
-              seen      (LongObjectHashMap. nt)]
+              seen      (LongObjectHashMap.)]
           (lmdb/operate-list-val-range
             lmdb c/eav
             (if no-many?

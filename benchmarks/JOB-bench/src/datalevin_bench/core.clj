@@ -1385,7 +1385,7 @@
              [?kt :kind-type/kind "movie"]
              [?mi :movie-info/info ?mi.info]
              [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
-                            "Denish", "Norwegia", "German", "USA", "American"])]
+                            "Denish", "Norwegian", "German", "USA", "American"])]
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              [(< ?mi-idx.info "8.5")]
              [?t :title/production-year ?t.production-year]
@@ -1437,7 +1437,7 @@
              [(in ?kt.kind ["movie" "episode"])]
              [?mi :movie-info/info ?mi.info]
              [(in ?mi.info ["Sweden", "Norway", "Germany", "Denmark", "Swedish",
-                            "Denish", "Norwegia", "German", "USA", "American"])]
+                            "Denish", "Norwegian", "German", "USA", "American"])]
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              [(< ?mi-idx.info "8.5")]
              [?t :title/production-year ?t.production-year]
@@ -1699,4 +1699,183 @@
              [?mc :movie-companies/company ?cn]
              ])
 
-(d/explain {:run? true} q-17f (d/db conn))
+(def q-18a '[:find (min ?mi.info) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(producer)", "(executive producer)"])]
+             [?it1 :info-type/info "budget"]
+             [?it2 :info-type/info "votes"]
+             [?n :name/gender "m"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%Tim%")]
+             [?mi :movie-info/movie ?t]
+             [?mi :movie-info/info ?mi.info]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [?ci :cast-info/movie ?t]
+             [?ci :cast-info/person ?n]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?t :title/title ?t.title]
+             ])
+
+(def q-18b '[:find (min ?mi.info) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(writer)", "(head writer)" "(written by)"
+                            "(story)" "(story editor)"])]
+             [?it1 :info-type/info "genres"]
+             [?it2 :info-type/info "rating"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Horror" "Thriller"])]
+             [(missing? $ ?mi :movie-info/note)]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [(< "8.0" ?mi-idx.info)]
+             [?n :name/gender "f"]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2008 ?t.production-year 2014)]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?ci :cast-info/person ?n]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?t :title/title ?t.title]
+             ])
+
+(def q-18c '[:find (min ?mi.info) (min ?mi-idx.info) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(writer)", "(head writer)" "(written by)"
+                            "(story)" "(story editor)"])]
+             [?it1 :info-type/info "genres"]
+             [?it2 :info-type/info "votes"]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Horror" "Action" "Sci-Fi" "Thriller"
+                            "Crime" "War"])]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             [?n :name/gender "m"]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?ci :cast-info/person ?n]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?t :title/title ?t.title]
+             ])
+
+(def q-19a '[:find (min ?n.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(voice)", "(voice: Japanese version)"
+                            "(voice) (uncredited)"
+                            "(voice: English version)"])]
+             [?cn :company-name/country-code "[us]"]
+             [?it :info-type/info "release dates"]
+             [?mc :movie-companies/note ?mc.note]
+             [(or (like ?mc.note "%(USA)%") (like ?mc.note "%(worldwide)%"))]
+             [?mi :movie-info/info ?mi.info]
+             [(and (or (like ?mi.info "Japan:%") (like ?mi.info "USA:%"))
+                   (like ?mi.info "%200%"))]
+             [?n :name/gender "f"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%Ang%")]
+             [?rt :role-type/role "actress"]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2005 ?t.production-year 2009)]
+             [?mi :movie-info/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mi :movie-info/info-type ?it]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/role ?rt]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person-role ?chn]
+             [?t :title/title ?t.title]
+             ])
+
+(def q-19b '[:find (min ?n.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note "(voice)"]
+             [?cn :company-name/country-code "[us]"]
+             [?it :info-type/info "release dates"]
+             [?mc :movie-companies/note ?mc.note]
+             [(like ?mc.note "%(200%)%")]
+             [(or (like ?mc.note "%(USA)%") (like ?mc.note "%(worldwide)%"))]
+             [?mi :movie-info/info ?mi.info]
+             [(or (like ?mi.info "Japan:%2007%") (like ?mi.info "USA:%2008%"))]
+             [?n :name/gender "f"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%Angel%")]
+             [?rt :role-type/role "actress"]
+             [?t :title/production-year ?t.production-year]
+             [(<= 2007 ?t.production-year 2008)]
+             [?t :title/title ?t.title]
+             [(like ?t.title "%Kung%Fu%Panda%")]
+             [?mi :movie-info/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mi :movie-info/info-type ?it]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/role ?rt]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person-role ?chn]
+             ])
+
+(def q-19c '[:find (min ?n.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(voice)", "(voice: Japanese version)"
+                            "(voice) (uncredited)"
+                            "(voice: English version)"])]
+             [?cn :company-name/country-code "[us]"]
+             [?it :info-type/info "release dates"]
+             [?mi :movie-info/info ?mi.info]
+             [(and (or (like ?mi.info "Japan:%") (like ?mi.info "USA:%"))
+                   (like ?mi.info "%200%"))]
+             [?n :name/gender "f"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%An%")]
+             [?rt :role-type/role "actress"]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mi :movie-info/info-type ?it]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/role ?rt]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person-role ?chn]
+             ])
+
+(def q-19d '[:find (min ?n.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(voice)", "(voice: Japanese version)"
+                            "(voice) (uncredited)"
+                            "(voice: English version)"])]
+             [?cn :company-name/country-code "[us]"]
+             [?it :info-type/info "release dates"]
+             [?n :name/gender "f"]
+             [?n :name/name ?n.name]
+             [?rt :role-type/role "actress"]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?mc :movie-companies/company ?cn]
+             [?mi :movie-info/info-type ?it]
+             [?ci :cast-info/person ?n]
+             [?ci :cast-info/role ?rt]
+             [?an :aka-name/person ?n]
+             [?ci :cast-info/person-role ?chn]
+             ])
+
+(d/explain {:run? true} q-19d (d/db conn))
