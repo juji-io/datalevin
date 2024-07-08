@@ -1878,4 +1878,87 @@
              [?ci :cast-info/person-role ?chn]
              ])
 
-(d/explain {:run? true} q-19d (d/db conn))
+;; good plan
+(def q-20a '[:find (min ?t.title)
+             :where
+             [?cct1 :comp-cast-type/kind "cast"]
+             [?cct2 :comp-cast-type/kind ?cct2.kind]
+             [(like ?cct2.kind "%complete%")]
+             [?chn :char-name/name ?chn.name]
+             [(not-like ?chn.name "%Sherlock%")]
+             [(or (like ?chn.name "%Tony%Stark%") (like ?chn.name "%Iron%Man%"))]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["superhero", "sequel", "second-part",
+                              "marvel-comics", "based-on-comic",
+                              "tv-special", "fight", "violence"])]
+             [?kt :kind-type/kind "movie"]
+             [?t :title/production-year ?t.production-year]
+             [(< 1950 ?t.production-year)]
+             [?t :title/kind ?kt]
+             [?mk :movie-keyword/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?cc :complete-cast/movie ?t]
+             [?ci :cast-info/person-role ?chn]
+             [?ci :cast-info/person ?n]
+             [?mk :movie-keyword/keyword ?k]
+             [?cc :complete-cast/subject ?cct1]
+             [?cc :complete-cast/status ?cct2]
+             [?t :title/title ?t.title]])
+
+;; good plan
+(def q-20b '[:find (min ?t.title)
+             :where
+             [?cct1 :comp-cast-type/kind "cast"]
+             [?cct2 :comp-cast-type/kind ?cct2.kind]
+             [(like ?cct2.kind "%complete%")]
+             [?chn :char-name/name ?chn.name]
+             [(not-like ?chn.name "%Sherlock%")]
+             [(or (like ?chn.name "%Tony%Stark%") (like ?chn.name "%Iron%Man%"))]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["superhero", "sequel", "second-part",
+                              "marvel-comics", "based-on-comic",
+                              "tv-special", "fight", "violence"])]
+             [?kt :kind-type/kind "movie"]
+             [?n :name/name ?n.name]
+             [(like ?n.name "%Downey%Robert%")]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?t :title/kind ?kt]
+             [?mk :movie-keyword/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?cc :complete-cast/movie ?t]
+             [?ci :cast-info/person-role ?chn]
+             [?ci :cast-info/person ?n]
+             [?mk :movie-keyword/keyword ?k]
+             [?cc :complete-cast/subject ?cct1]
+             [?cc :complete-cast/status ?cct2]
+             [?t :title/title ?t.title]])
+
+(def q-20c '[:find ?chn.name
+             :where
+             [?cct1 :comp-cast-type/kind "cast"]
+             [?cct2 :comp-cast-type/kind ?cct2.kind]
+             [(like ?cct2.kind "%complete%")]
+             [?chn :char-name/name ?chn.name]
+             [(or (like ?chn.name "%man%") (like ?chn.name "%Man%"))]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["superhero", "marvel-comics", "based-on-comic",
+                              "tv-special", "fight", "violence", "magnet",
+                              "web", "claw", "laser"])]
+             [?kt :kind-type/kind "movie"]
+             [?n :name/name ?n.name]
+             [?t :title/production-year ?t.production-year]
+             [(< 2000 ?t.production-year)]
+             [?t :title/kind ?kt]
+             [?mk :movie-keyword/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?cc :complete-cast/movie ?t]
+             [?ci :cast-info/person-role ?chn]
+             [?ci :cast-info/person ?n]
+             [?mk :movie-keyword/keyword ?k]
+             [?cc :complete-cast/subject ?cct1]
+             [?cc :complete-cast/status ?cct2]
+             [?t :title/title ?t.title]])
+
+(with-open [writer (io/writer "20c-test.csv")]
+  (d/write-csv writer (:result (d/explain {:run? true} q-20c (d/db conn)))))

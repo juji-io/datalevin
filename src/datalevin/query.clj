@@ -1828,7 +1828,9 @@
 (defn- estimate-join-size
   [db link prev-size new-base-plan]
   (condp identical? (:type link)
-    :ref  (estimate-scan-v-size db prev-size (:steps new-base-plan))
+    :ref (estimate-scan-v-size db prev-size (:steps new-base-plan))
+    ;; TODO: handle the case where prev-size is 1, so v is known, can use av count.
+    ;; much more accurate when distribution is skewed
     :_ref (estimate-round
             (/ (* ^long prev-size (db/-count db [nil (:attr link) nil]))
                ^long (max-domain-cardinality db link)))

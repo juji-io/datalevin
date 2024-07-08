@@ -74,6 +74,26 @@
   (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
         db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
                 (d/db-with
+                  [{:db/id 1 :text "commander"}
+                   {:db/id 2 :text "manner"}
+                   ]))
+        q   '[:find [?e ...]
+              :in $ ?pat
+              :where
+              [?e :text ?t]
+              [(like ?t ?pat)]]]
+    (testing "like"
+      (are [pattern ids] (= (set (d/q q db pattern)) (set ids))
+        "%man%"  [1 2]
+        "%mman%" [1]
+        ))
+    (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest test-like-fn-1
+  (let [dir (u/tmp-dir (str "fns-test-" (UUID/randomUUID)))
+        db  (-> (d/empty-db dir {:text {:db/valueType :db.type/string}})
+                (d/db-with
                   [
                    {:db/id 1,
                     :text  "is 好 boy"}

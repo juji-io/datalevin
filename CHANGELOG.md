@@ -5,6 +5,7 @@
 ## Fixed
 - [Datalog] Planner: Nested logic expressions.
 - [Datalog] Planner: Multiple predicates turned ranges.
+- [Datalog] `like` function failed to match certain cases.
 
 ## Changed
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.

@@ -154,23 +154,28 @@ public class LikeFSM {
     }
 
     public boolean match(byte[] txt) {
-        int iStart = 0, j = 0;
-        byte sByte = pat[0];
 
         int pLast = M - 1;
         byte eByte = pat[pLast];
+        byte sByte = pat[0];
 
         int N = txt.length;
-        for (int i = iStart; i < N; i++) {
+        int i = 0;
+        int j = 0;
+
+        while (i < N) {
 
             j = TF[j][txt[i] & 0xFF];
 
-            if ((j == 0) && (sByte != M_WILD_BYTE)) return false;
-
-            if (j == M) {
-                if ((eByte == M_WILD_BYTE) || (i == N - 1)) return true;
+            if (j == 0) {
+                if (sByte != M_WILD_BYTE) return false;
                 else continue;
             }
+
+            if ((j == M) && ((eByte == M_WILD_BYTE) || (i == N - 1)))
+                return true;
+
+            i++;
         }
 
         if ((j == pLast) && (eByte == M_WILD_BYTE)) return true;
