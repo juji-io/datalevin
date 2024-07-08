@@ -126,7 +126,9 @@
       out-rel))
 
   (-explain [_ _]
-    (str "Merge " (vec vars) " by scanning " (vec attrs) ".")))
+    (if (seq vars)
+      (str "Merge " (vec vars) " by scanning " (vec attrs) ".")
+      (str "Filter by predicates on " (vec attrs) "."))))
 
 (defrecord RevRefStep [index attr var in out cols save]
 
@@ -1618,7 +1620,18 @@
       pushdown-predicates
       count-datoms))
 
-(defn- attr-pred [[_ {:keys [pred]}]] pred)
+(defn- add-back-range
+  [v {:keys [pred range]}]
+  (if range
+    (reduce
+      (fn [p r]
+        (if r
+          (add-pred p (activate-pred v (range->inequality v r)) true)
+          p))
+      pred range)
+    pred))
+
+(defn- attr-pred [v [_ clause]] (add-back-range v clause))
 
 (defn- init-node-steps
   [db [e clauses]]
@@ -1634,7 +1647,7 @@
                           {:attr attr :vars [e] :out #{e}
                            :mcount (:count clause)
                            :save *save-intermediate*})
-                  var     (assoc :pred pred #_(attr-pred [attr clause])
+                  var     (assoc :pred pred
                                  :vars (cond-> [e]
                                          (not no-var?) (conj var))
                                  :range range)
@@ -1662,11 +1675,12 @@
                                   (remove nil?))
                                attrs vars)
                        no-var? (conj attr))
+              preds  (mapv attr-pred vars all)
               cols   (into cols (comp (remove (set skips))
                                    (map (fn [attr] #{attr (vars-m attr)})))
                            attrs)]
-          (MergeScanStep. 0 attrs vars (mapv attr-pred all) skips #{e}
-                          #{e} cols *save-intermediate*))))))
+          (MergeScanStep. 0 attrs vars preds skips #{e} #{e}
+                          cols *save-intermediate*))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1722,17 +1736,6 @@
 (defn- build-base-plans
   [db nodes component]
   (into {} (map (fn [e] [#{e} (base-plan db nodes e)])) component))
-
-(defn- add-back-range
-  [v {:keys [pred range]}]
-  (if range
-    (reduce
-      (fn [p r]
-        (if r
-          (add-pred p (activate-pred v (range->inequality v r)) true)
-          p))
-      pred range)
-    pred))
 
 (defn- merge-scan-step
   [db last-step index new-key new-steps skip-attr]

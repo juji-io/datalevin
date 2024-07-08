@@ -2,7 +2,6 @@
   (:require
    [datalevin.core :as d]
    [clojure.java.io :as io]
-   [clojure.pprint :as pp]
    [clojure.string :as s]))
 
 (def schema
@@ -1400,8 +1399,7 @@
              [?mi-idx :movie-info-idx/info-type ?it2]
              ])
 
-;; results differ
-(def q-14b '[:find (min ?mi-idx.info) (min ?t.title)
+(def q-14b '[:find ?mi.info ?mi-idx.info ?t.title
              :where
              [?it1 :info-type/info "countries"]
              [?it2 :info-type/info "rating"]
@@ -1934,7 +1932,8 @@
              [?cc :complete-cast/status ?cct2]
              [?t :title/title ?t.title]])
 
-(def q-20c '[:find ?chn.name
+;; good plan
+(def q-20c '[:find (min ?n.name) (min ?t.title)
              :where
              [?cct1 :comp-cast-type/kind "cast"]
              [?cct2 :comp-cast-type/kind ?cct2.kind]
@@ -1960,5 +1959,4 @@
              [?cc :complete-cast/status ?cct2]
              [?t :title/title ?t.title]])
 
-(with-open [writer (io/writer "20c-test.csv")]
-  (d/write-csv writer (:result (d/explain {:run? true} q-20c (d/db conn)))))
+(d/explain {:run? true} q-14b (d/db conn))

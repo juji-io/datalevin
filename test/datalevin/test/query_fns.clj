@@ -38,6 +38,12 @@
               [?e :text ?t]
               [?e1 :same ?e]
               [(or (like ?t ?pat1) (like ?t ?pat2))]]
+        q-t '[:find [?e1 ...]
+              :in $ ?pat1 ?pat2 ?pat3
+              :where
+              [?e :text ?t]
+              [?e1 :same ?e]
+              [(or (like ?t ?pat1) (like ?t ?pat2) (like ?t ?pat3))]]
         q-e '[:find [?e1 ...]
               :in $ ?pat1 ?pat2 ?pat3 ?pat4
               :where
@@ -67,6 +73,8 @@
            (set (d/q q-e db "USA:%" "%199_" "USA:%" "%200_"))))
     (is (= (set [12 14])
            (set (d/q q-a db "USA:%" "%199_" "%200_"))))
+    (is (= (set [3])
+           (set (d/q q-t db "%Lucky%" "%book%" "%random%"))))
     (d/close-db db)
     (u/delete-files dir)))
 
