@@ -3,8 +3,10 @@
 ## WIP
 
 ## Fixed
-- [Datalog] Planner: Nested logic expressions.
-- [Datalog] Planner: Multiple predicates turned ranges.
+- [Datalog] Planner: nested logic expressions.
+- [Datalog] Planner: multiple predicates turned ranges.
+- [Datalog] Planner: missing range turned predicates.
+- [Datalog] Planner: incorrect result columns for certain hash-join step.
 - [Datalog] `like` function failed to match certain cases.
 
 ## Changed

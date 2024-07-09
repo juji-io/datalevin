@@ -429,10 +429,17 @@
 (defn- diff-keys
   "return (- vec2 vec1) elements"
   [vec1 vec2]
-  (let [vec1 (set vec1)]
-    (persistent! (reduce (fn [vec k]
-                           (if (vec1 k) vec (conj! vec k)))
-                         (transient []) vec2))))
+  (persistent!
+    (reduce
+      (fn [vec k]
+        (if (some (fn [e]
+                    (if (set? e)
+                      (e k)
+                      (= e k)))
+                  vec1)
+          vec
+          (conj! vec k)))
+      (transient []) vec2)))
 
 (defn- attr-keys
   "attrs are map, preserve order by val"
