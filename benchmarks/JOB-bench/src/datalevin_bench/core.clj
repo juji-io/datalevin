@@ -3030,4 +3030,209 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              ])
 
-(d/explain {:run? true} q-31b (d/db conn))
+(def q-31c '[:find (min ?mi.info) (min ?mi-idx.info) (min ?n.name) (min ?t.title)
+             :where
+             [?ci :cast-info/note ?ci.note]
+             [(in ?ci.note ["(writer)", "(head writer)", "(written by)",
+                            "(story)", "(story editor)"])]
+             [?cn :company-name/name ?cn.name]
+             [(like ?cn.name "Lionsgate%")]
+             [?it1 :info-type/info "genres"]
+             [?it2 :info-type/info "votes"]
+             [?k :keyword/keyword ?k.keyword]
+             [(in ?k.keyword ["murder", "violence", "blood", "gore", "death",
+                              "female-nudity", "hospital"])]
+             [?mi :movie-info/info ?mi.info]
+             [(in ?mi.info ["Horror", "Action", "Sci-Fi", "Thriller" "Crime",
+                            "War"])]
+             [?t :title/title ?t.title]
+             [?mi :movie-info/movie ?t]
+             [?mi-idx :movie-info-idx/movie ?t]
+             [?ci :cast-info/movie ?t]
+             [?mk :movie-keyword/movie ?t]
+             [?mc :movie-companies/movie ?t]
+             [?ci :cast-info/person ?n]
+             [?mi :movie-info/info-type ?it1]
+             [?mi-idx :movie-info-idx/info-type ?it2]
+             [?mk :movie-keyword/keyword ?k]
+             [?mc :movie-companies/company ?cn]
+             [?n :name/name ?n.name]
+             [?mi-idx :movie-info-idx/info ?mi-idx.info]
+             ])
+
+;; good plan
+(def q-32a '[:find (min ?lt.link) (min ?t1.title) (min ?t2.title)
+             :where
+             [?k :keyword/keyword "10,000-mile-club"]
+             [?mk :movie-keyword/keyword ?k]
+             [?mk :movie-keyword/movie ?t1]
+             [?ml :movie-link/movie ?t1]
+             [?ml :movie-link/linked-movie ?t2]
+             [?ml :movie-link/link-type ?lt]
+             [?t1 :title/title ?t1.title]
+             [?t2 :title/title ?t2.title]
+             [?lt :link-type/link ?lt.link]
+             ])
+
+(def q-32b '[:find (min ?lt.link) (min ?t1.title) (min ?t2.title)
+             :where
+             [?k :keyword/keyword "character-name-in-title"]
+             [?mk :movie-keyword/keyword ?k]
+             [?mk :movie-keyword/movie ?t1]
+             [?ml :movie-link/movie ?t1]
+             [?ml :movie-link/linked-movie ?t2]
+             [?ml :movie-link/link-type ?lt]
+             [?t1 :title/title ?t1.title]
+             [?t2 :title/title ?t2.title]
+             [?lt :link-type/link ?lt.link]
+             ])
+
+(def q-33a '[:find (min ?cn1.name) (min ?cn2.name)
+             (min ?mi-idx1.info) (min ?mi-idx2.info)
+             (min ?t1.title) (min ?t2.title)
+             :where
+             [?cn1 :company-name/country-code "[us]"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "rating"]
+             [?kt1 :kind-type/kind ?kt1.kind]
+             [(in ?kt1.kind ["tv series"])]
+             [?kt2 :kind-type/kind ?kt2.kind]
+             [(in ?kt2.kind ["tv series"])]
+             [?lt :link-type/link ?lt.link]
+             [(in ?lt.link ["sequel", "follows", "followed by"])]
+             [?mi-idx2 :movie-info-idx/info-type ?it2]
+             [?mi-idx2 :movie-info-idx/movie ?t2]
+             [?mi-idx2 :movie-info-idx/info ?mi-idx2.info]
+             [(< ?mi-idx2.info "3.0")]
+             [?t2 :title/production-year ?t2.production-year]
+             [(<= 2005 ?t2.production-year 2008)]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t1]
+             [?ml :movie-link/linked-movie ?t2]
+             [?mi-idx1 :movie-info-idx/info-type ?it1]
+             [?mi-idx1 :movie-info-idx/movie ?t1]
+             [?mi-idx1 :movie-info-idx/info ?mi-idx1.info]
+             [?t1 :title/kind ?kt1]
+             [?mc1 :movie-companies/company ?cn1]
+             [?mc1 :movie-companies/movie ?t1]
+             [?t2 :title/kind ?kt2]
+             [?mc2 :movie-companies/company ?cn2]
+             [?mc2 :movie-companies/movie ?t2]
+             [?t1 :title/title ?t1.title]
+             [?t2 :title/title ?t2.title]
+             [?cn1 :company-name/name ?cn1.name]
+             [?cn2 :company-name/name ?cn2.name]
+             ])
+
+(def q-33b '[:find (min ?cn1.name) (min ?cn2.name)
+             (min ?mi-idx1.info) (min ?mi-idx2.info)
+             (min ?t1.title) (min ?t2.title)
+             :where
+             [?cn1 :company-name/country-code "[nl]"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "rating"]
+             [?kt1 :kind-type/kind ?kt1.kind]
+             [(in ?kt1.kind ["tv series"])]
+             [?kt2 :kind-type/kind ?kt2.kind]
+             [(in ?kt2.kind ["tv series"])]
+             [?lt :link-type/link ?lt.link]
+             [(like ?lt.link "%follow%")]
+             [?mi-idx2 :movie-info-idx/info-type ?it2]
+             [?mi-idx2 :movie-info-idx/movie ?t2]
+             [?mi-idx2 :movie-info-idx/info ?mi-idx2.info]
+             [(< ?mi-idx2.info "3.0")]
+             [?t2 :title/production-year 2007]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t1]
+             [?ml :movie-link/linked-movie ?t2]
+             [?mi-idx1 :movie-info-idx/info-type ?it1]
+             [?mi-idx1 :movie-info-idx/movie ?t1]
+             [?mi-idx1 :movie-info-idx/info ?mi-idx1.info]
+             [?t1 :title/kind ?kt1]
+             [?mc1 :movie-companies/company ?cn1]
+             [?mc1 :movie-companies/movie ?t1]
+             [?t2 :title/kind ?kt2]
+             [?mc2 :movie-companies/company ?cn2]
+             [?mc2 :movie-companies/movie ?t2]
+             [?t1 :title/title ?t1.title]
+             [?t2 :title/title ?t2.title]
+             [?cn1 :company-name/name ?cn1.name]
+             [?cn2 :company-name/name ?cn2.name]
+             ])
+
+(def q-33b '[:find (min ?cn1.name) (min ?cn2.name)
+             (min ?mi-idx1.info) (min ?mi-idx2.info)
+             (min ?t1.title) (min ?t2.title)
+             :where
+             [?cn1 :company-name/country-code "[nl]"]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "rating"]
+             [?kt1 :kind-type/kind ?kt1.kind]
+             [(in ?kt1.kind ["tv series"])]
+             [?kt2 :kind-type/kind ?kt2.kind]
+             [(in ?kt2.kind ["tv series"])]
+             [?lt :link-type/link ?lt.link]
+             [(like ?lt.link "%follow%")]
+             [?mi-idx2 :movie-info-idx/info-type ?it2]
+             [?mi-idx2 :movie-info-idx/movie ?t2]
+             [?mi-idx2 :movie-info-idx/info ?mi-idx2.info]
+             [(< ?mi-idx2.info "3.0")]
+             [?t2 :title/production-year 2007]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t1]
+             [?ml :movie-link/linked-movie ?t2]
+             [?mi-idx1 :movie-info-idx/info-type ?it1]
+             [?mi-idx1 :movie-info-idx/movie ?t1]
+             [?mi-idx1 :movie-info-idx/info ?mi-idx1.info]
+             [?t1 :title/kind ?kt1]
+             [?mc1 :movie-companies/company ?cn1]
+             [?mc1 :movie-companies/movie ?t1]
+             [?t2 :title/kind ?kt2]
+             [?mc2 :movie-companies/company ?cn2]
+             [?mc2 :movie-companies/movie ?t2]
+             [?t1 :title/title ?t1.title]
+             [?t2 :title/title ?t2.title]
+             [?cn1 :company-name/name ?cn1.name]
+             [?cn2 :company-name/name ?cn2.name]
+             ])
+
+;; good plan
+(def q-33c '[:find (min ?cn1.name) (min ?cn2.name)
+             (min ?mi-idx1.info) (min ?mi-idx2.info)
+             (min ?t1.title) (min ?t2.title)
+             :where
+             [?cn1 :company-name/country-code ?cn1.country-code]
+             [(not= ?cn1.country-code "[us]")]
+             [?it1 :info-type/info "rating"]
+             [?it2 :info-type/info "rating"]
+             [?kt1 :kind-type/kind ?kt1.kind]
+             [(in ?kt1.kind ["tv series" "episode"])]
+             [?kt2 :kind-type/kind ?kt2.kind]
+             [(in ?kt2.kind ["tv series" "episode"])]
+             [?lt :link-type/link ?lt.link]
+             [(in ?lt.link ["sequel", "follows", "followed by"])]
+             [?mi-idx2 :movie-info-idx/info-type ?it2]
+             [?mi-idx2 :movie-info-idx/movie ?t2]
+             [?mi-idx2 :movie-info-idx/info ?mi-idx2.info]
+             [(< ?mi-idx2.info "3.5")]
+             [?t2 :title/production-year ?t2.production-year]
+             [(<= 2000 ?t2.production-year 2010)]
+             [?ml :movie-link/link-type ?lt]
+             [?ml :movie-link/movie ?t1]
+             [?ml :movie-link/linked-movie ?t2]
+             [?mi-idx1 :movie-info-idx/info-type ?it1]
+             [?mi-idx1 :movie-info-idx/movie ?t1]
+             [?mi-idx1 :movie-info-idx/info ?mi-idx1.info]
+             [?t1 :title/kind ?kt1]
+             [?mc1 :movie-companies/company ?cn1]
+             [?mc1 :movie-companies/movie ?t1]
+             [?t2 :title/kind ?kt2]
+             [?mc2 :movie-companies/company ?cn2]
+             [?mc2 :movie-companies/movie ?t2]
+             [?t1 :title/title ?t1.title]
+             [?t2 :title/title ?t2.title]
+             [?cn1 :company-name/name ?cn1.name]
+             [?cn2 :company-name/name ?cn2.name]
+             ])
+
+(d/explain {:run? true} q-33c (d/db conn))

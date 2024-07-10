@@ -1782,11 +1782,13 @@
 
 (defn- find-index
   [a-or-v cols]
-  (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols))
+  (when a-or-v
+    (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols)))
 
 (defn- ref-plan
-  [db last-step {:keys [attr]} new-key new-steps]
-  (let [index (find-index attr (:cols last-step))]
+  [db last-step {:keys [attr tgt]} new-key new-steps]
+  (let [index (or (find-index tgt (:cols last-step))
+                  (find-index attr (:cols last-step)))]
     [(merge-scan-step db last-step index new-key new-steps nil)]))
 
 (defn- enrich-cols

@@ -7,6 +7,7 @@
 - [Datalog] Planner: multiple predicates turned ranges.
 - [Datalog] Planner: missing range turned predicates.
 - [Datalog] Planner: incorrect result columns for certain hash-join step.
+- [Datalog] Planner: first use target var to find index for ref-plan.
 - [Datalog] `like` function failed to match certain cases.
 
 ## Changed
