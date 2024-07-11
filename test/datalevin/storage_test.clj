@@ -423,77 +423,111 @@
                            {:flags (conj c/default-env-flags :nosync)}})]
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12])
     (is (= [[5 1]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a]
-                                     [#(< ^long % 5)] []))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [[:a {:pred  #(< ^long % 5)
+                                                           :skip? false}]]))))
     (is (= [[5]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a]
-                                     [#(< ^long % 5)] [:a]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [[:a {:pred  #(< ^long % 5)
+                                                           :skip? true}]]))))
     (is (= [[5 1] [8 7]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                     [(constantly true)
-                                      (constantly true)] [:b]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred (constantly true) :skip? false}]
+                                      [:b {:pred  (constantly true)
+                                           :skip? true}]]))))
     (is (= [[8 7]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                     [(constantly true)
-                                      #(s/starts-with? % "8")] [:b]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred (constantly true) :skip? false}]
+                                      [:b {:pred  #(s/starts-with? % "8")
+                                           :skip? true}]]))))
     (is (= [[5] [8]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                     [(constantly true)
-                                      (constantly true)] [:a :b]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred (constantly true) :skip? true}]
+                                      [:b {:pred  (constantly true)
+                                           :skip? true}]]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                     [(constantly true)
-                                      (constantly true)]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred (constantly true) :skip? false}]
+                                      [:b {:pred  (constantly true)
+                                           :skip? false}]]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [[:a {:skip? false}]
+                                                      [:b {:skip? false}]]))))
     (is (= [[5 1] [8 7]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [nil nil] [:b]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0 [[:a {:skip? false}]
+                                                      [:b {:skip? true}]]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                     [odd? #(s/ends-with? % "b")]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred odd? :skip? false}]
+                                      [:b {:pred  #(s/ends-with? % "b")
+                                           :skip? false}]]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b] [odd? nil]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred odd? :skip? false}]
+                                      [:b {:skip? false}]]))))
     (is (= [[5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                     [odd? (constantly true)]))))
-    (is (= [] (mapv vec (sut/eav-scan-v store tuples0 0 [:a :b]
-                                        [even? (constantly true)]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred odd? :skip? false}]
+                                      [:b {:pred  (constantly true)
+                                           :skip? false}]]))))
+    (is (= [] (mapv vec (sut/eav-scan-v store tuples0 0
+                                        [[:a {:pred even? :skip? false}]
+                                         [:b {:pred  (constantly true)
+                                              :skip? false}]]))))
     (is (= [[0 10]]
-           (mapv vec (sut/eav-scan-v store tuples0 0 [:a] [even?]))))
+           (mapv vec (sut/eav-scan-v store tuples0 0
+                                     [[:a {:pred even? :skip? false}]]))))
     (is (= [[:none 0 10]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:a] [even?]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1
+                                     [[:a {:pred even? :skip? false}]]))))
     (is (= [[:none 0 10] [:nada 8 7]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:a] [nil]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1 [[:a {:skip? false}]]))))
     (is (= [[:zero 10 "10b" :c10]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:b :c] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1 [[:b {:skip? false}]
+                                                      [:c {:skip? false}]]))))
     (is (= [[:zero 10 "Jerry"] [:zero 10 "Mick"] [:zero 10 "Tom"]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [nil]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1 [[:d {:skip? false}]]))))
     (is (= [[:zero 10]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [nil] [:d]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1 [[:d {:skip? true}]]))))
     (is (= [[:zero 10 "Tom"]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:d] [#(< (count %) 4)]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1
+                                     [[:d {:pred  #(< (count %) 4)
+                                           :skip? false}]]))))
     (is (= [[:zero 10 :c10 "Tom"]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:c :d]
-                                     [nil #(< (count %) 4)]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1
+                                     [[:c {:skip? false}]
+                                      [:d {:pred  #(< (count %) 4)
+                                           :skip? false}]]))))
     (is (= [[:zero 10 "Tom"]]
-           (mapv vec (sut/eav-scan-v store tuples1 1 [:c :d]
-                                     [nil #(< (count %) 4)] [:c]))))
+           (mapv vec (sut/eav-scan-v store tuples1 1
+                                     [[:c {:skip? true}]
+                                      [:d {:pred  #(< (count %) 4)
+                                           :skip? false}]]))))
     (is (= [[8 7 "8b"] [5 1 "5b"] [8 7 "8b"]]
-           (mapv vec (sut/eav-scan-v store tuples2 0 [:a :b] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples2 0
+                                     [[:a {:skip? false}]
+                                      [:b {:skip? false}]]))))
     (is (= [[10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]
             [10 :c10 "Jerry"] [10 :c10 "Mick"] [10 :c10 "Tom"]]
-           (mapv vec (sut/eav-scan-v store tuples3 0 [:c :d] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples3 0
+                                     [[:c {:skip? false}]
+                                      [:d {:skip? false}]]))))
     (is (= [[10 "Jerry" "good"] [10 "Jerry" "nice"]
             [10 "Mick" "good"] [10 "Mick" "nice"]
             [10 "Tom" "good"] [10 "Tom" "nice"]]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0
+                                     [[:d {:skip? false}]
+                                      [:e {:skip? false}]]))))
     (is (= [[10 "good"] [10 "nice"]]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil] [:d]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0
+                                     [[:d {:skip? true}]
+                                      [:e {:skip? false}]]))))
     (is (= [[10 "Jerry"] [10 "Mick"] [10 "Tom"] ]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil] [:e]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0
+                                     [[:d {:skip? false}]
+                                      [:e {:skip? true}]]))))
     (is (= [[10]]
-           (mapv vec (sut/eav-scan-v store tuples4 0 [:d :e] [nil nil]
-                                     [:e :d]))))
+           (mapv vec (sut/eav-scan-v store tuples4 0
+                                     [[:d {:skip? true}]
+                                      [:e {:skip? true}]]))))
     (sut/close store)
     (u/delete-files dir)))
 

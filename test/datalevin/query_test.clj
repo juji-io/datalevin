@@ -6,6 +6,7 @@
    [clojure.test.check.clojure-test :as test]
    [clojure.test.check.properties :as prop]
    [clojure.set :as set]
+   [clojure.edn :as edn]
    [clojure.walk :as walk]
    [datalevin.core :as d]
    [datalevin.query :as sut]
@@ -463,12 +464,12 @@
                        [?e :person/school ?s]
                        [?e :person/name ?n]
                        [?e :person/city ?c]
+                       [?e :person/hobby ?h]
                        [?e1 :person/name ?n1]
                        [?e1 :person/school ?s]
                        [?e1 :person/city ?c]
-                       [?e :person/hobby ?h1]
-                       [?e1 :person/hobby ?h2]
-                       [(not= ?h1 ?h2)]]
+                       [?e1 :person/hobby ?h1]
+                       [(not= ?h ?h1)]]
                      db "James"))
            #{["Petr"]}))
     (is (= (set (d/q '[:find ?n1
@@ -614,11 +615,12 @@
 
 (deftest issue-259-260-test
   (let [dir (u/tmp-dir (str "issue-259-" (UUID/randomUUID)))
-        db  (-> (d/empty-db dir {:user/name  {:db/valueType :db.type/string}
-                                 :user/items {:db/valueType   :db.type/ref
-                                              :db/cardinality :db.cardinality/many
-                                              :db/isComponent true}
-                                 :item/name  {:db/valueType :db.type/string}})
+        db  (-> (d/empty-db dir
+                            {:user/name  {:db/valueType :db.type/string}
+                             :user/items {:db/valueType   :db.type/ref
+                                          :db/cardinality :db.cardinality/many
+                                          :db/isComponent true}
+                             :item/name  {:db/valueType :db.type/string}})
                 (d/db-with [{:user/name  "joe"
                              :user/items [{:item/name "pen"}]}
                             {:user/name  "larry"
@@ -706,4 +708,59 @@
                                     (like ?t "%乡%"))]]
                              db)))
     (d/close-db db)
+    (u/delete-files dir)))
+
+(deftest issue-263-test
+  (let [dir    (u/tmp-dir (str "issue-263-" (UUID/randomUUID)))
+        schema {:type
+                #:db{:valueType   :db.type/keyword,
+                     :cardinality :db.cardinality/one,
+                     :aid         3},
+                :d/e
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         4},
+                :c/b
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         5},
+                :f/e
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         6},
+                :d/c
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         7},
+                :a/b
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         8},
+                :f/x
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         9},
+                :a/x
+                #:db{:valueType   :db.type/ref,
+                     :cardinality :db.cardinality/one,
+                     :aid         10}}
+        conn   (d/get-conn dir schema)]
+    (d/transact! conn (edn/read-string (slurp "test/data/dump-maps.txt")))
+    (is (= 89282
+           (-> (d/entity @conn 89569)
+               :a/x
+               :db/id)))
+    (is (= 17
+           (d/q
+             '[:find (count ?f) .
+               :in $
+               :where
+               [89569 :a/x ?x]
+               [89569 :a/b ?b]
+               [?c :c/b ?b]
+               [?d :d/c ?c]
+               [?d :d/e ?e]
+               [?f :f/e ?e]
+               [?f :f/x ?x]] @conn)))
+    (d/close conn)
     (u/delete-files dir)))

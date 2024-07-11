@@ -74,7 +74,7 @@
                          (let [tuples (doto (FastList.)
                                         (.add (object-array [e])))]
                            (if get-v?
-                             (db/-eav-scan-v db tuples 0 [attr] [nil] [])
+                             (db/-eav-scan-v db tuples 0 [[attr {:skip? false}]])
                              tuples)))
             (nil? val)
             (r/relation!
@@ -113,22 +113,21 @@
                   (map-indexed (fn [i v] [v (+ n ^long i)])))
           vars)))
 
-(defrecord MergeScanStep [index attrs vars preds skips in out cols save]
+(defrecord MergeScanStep [index attrs-v vars in out cols save]
 
   IStep
   (-execute [this context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs vars)
-              (assoc :tuples (db/-eav-scan-v
-                               db (:tuples rel) index attrs preds skips)))]
+              (assoc :tuples (db/-eav-scan-v db (:tuples rel) index attrs-v)))]
       (save-intermediates context save out out-rel)
       out-rel))
 
   (-explain [_ _]
     (if (seq vars)
-      (str "Merge " (vec vars) " by scanning " (vec attrs) ".")
-      (str "Filter by predicates on " (vec attrs) "."))))
+      (str "Merge " (vec vars) " by scanning " (mapv first attrs-v) ".")
+      (str "Filter by predicates on " (mapv first attrs-v) "."))))
 
 (defrecord RevRefStep [index attr var in out cols save]
 
@@ -1640,16 +1639,24 @@
 
 (defn- attr-pred [v [_ clause]] (add-back-range v clause))
 
+(defn- attrs-vec
+  [attrs preds skips fidxs]
+  (mapv (fn [a p f]
+          [a (cond-> {:pred p :skip? false :fidx nil}
+               (skips a) (assoc :skip? true)
+               f         (assoc :fidx f :skip? true)
+               )])
+        attrs preds fidxs))
+
 (defn- init-node-steps
   [db [e clauses]]
-  (let [{:keys [bound free mpath]} clauses
-        {:keys [var val range pred] :as clause}
-        (get-in clauses mpath)
+  (let [{:keys [bound free mpath]}              clauses
+        {:keys [var val range pred] :as clause} (get-in clauses mpath)
 
+        schema  (db/-schema db)
         attr    (peek mpath)
         know-e? (int? e)
         no-var? (or (not var) (qu/placeholder? var))
-        schema  (db/-schema db)
         init    (cond-> (map->InitStep
                           {:attr attr :vars [e] :out #{e}
                            :mcount (:count clause)
@@ -1667,27 +1674,31 @@
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
-        (let [bound1 (->> (dissoc bound attr)
-                          (mapv (fn [[a {:keys [val] :as b}]]
-                                  [a (-> b
-                                         (update :pred add-pred #(= val %))
-                                         (assoc :var (gensym "?bound")))])))
-              all    (->> (concatv bound1 (dissoc free attr))
-                          (sort-by (fn [[a _]] (-> a schema :db/aid))))
-              attrs  (mapv first all)
-              vars   (mapv attr-var all)
-              vars-m (zipmap attrs vars)
-              skips  (cond-> (sequence
-                               (comp (map #(when (or (= %2 '_) (qu/placeholder? %2)) %1))
-                                  (remove nil?))
-                               attrs vars)
-                       no-var? (conj attr))
-              preds  (mapv attr-pred vars all)
-              cols   (into cols (comp (remove (set skips))
-                                   (map (fn [attr] #{attr (vars-m attr)})))
-                           attrs)]
-          (MergeScanStep. 0 attrs vars preds skips #{e} #{e}
-                          cols *save-intermediate*))))))
+        (let [bound1  (->> (dissoc bound attr)
+                           (mapv (fn [[a {:keys [val] :as b}]]
+                                   [a (-> b
+                                          (update :pred add-pred #(= val %))
+                                          (assoc :var (gensym "?bound")))])))
+              all     (->> (concatv bound1 (dissoc free attr))
+                           (sort-by (fn [[a _]] (-> a schema :db/aid))))
+              attrs   (mapv first all)
+              vars    (mapv attr-var all)
+              vars-m  (zipmap attrs vars)
+              skips   (cond-> (set (sequence
+                                     (comp (map (fn [a v]
+                                               (when (or (= v '_)
+                                                         (qu/placeholder? v))
+                                                 a)))
+                                        (remove nil?))
+                                     attrs vars))
+                        no-var? (conj attr))
+              preds   (mapv attr-pred vars all)
+              attrs-v (attrs-vec attrs preds skips (repeat nil))
+              cols    (into cols
+                            (comp (remove skips)
+                               (map (fn [attr] #{attr (vars-m attr)})))
+                            attrs)]
+          (MergeScanStep. 0 attrs-v vars #{e} #{e} cols *save-intermediate*))))))
 
 (defn- estimate-scan-v-size
   [db e-size steps]
@@ -1744,46 +1755,50 @@
   [db nodes component]
   (into {} (map (fn [e] [#{e} (base-plan db nodes e)])) component))
 
-(defn- merge-scan-step
-  [db last-step index new-key new-steps skip-attr]
-  (let [[s1 s2] new-steps
-        attr1   (:attr s1)
-        val1    (:val s1)
-        bound?  (some? val1)
-        vars1   (:vars s1)
-        v1      (when (< 1 (count vars1)) (peek vars1))
-        attrs2  (:attrs s2)
-        vars-m  (cond-> (zipmap attrs2 (:vars s2))
-                  v1 (assoc attr1 v1))
-        preds-m (assoc (zipmap attrs2 (:preds s2))
-                       attr1 (cond-> (add-back-range v1 s1)
-                               bound? (add-pred #(= % val1))))
-        schema  (db/-schema db)
-        attrs   (->> (conj attrs2 attr1)
-                     (sort-by #((schema %) :db/aid))
-                     (remove #{(:attr last-step)}))
-        skips   (remove nil? (cond-> (conj (:skips s2) skip-attr)
-                               bound? (conj attr1)))]
-    (map->MergeScanStep
-      {:attrs attrs
-       :vars  (->> attrs (replace vars-m) (remove keyword?))
-       :preds (replace preds-m attrs)
-       :skips skips
-       :cols  (into (:cols last-step) (comp (remove (set skips))
-                                         (map (fn [attr]
-                                                (if-let [v (vars-m attr)]
-                                                  #{attr v}
-                                                  attr))))
-                    attrs)
-       :save  *save-intermediate*
-       :index index
-       :in    (:out last-step)
-       :out   new-key})))
-
 (defn- find-index
   [a-or-v cols]
   (when a-or-v
     (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols)))
+
+(defn- merge-scan-step
+  [db last-step index new-key [s1 s2] skip-attr]
+  (let [attr1    (:attr s1)
+        val1     (:val s1)
+        bound?   (some? val1)
+        vars1    (:vars s1)
+        v1       (when (< 1 (count vars1)) (peek vars1))
+        attrs-v2 (:attrs-v s2)
+        attrs2   (mapv first attrs-v2)
+        vars-m   (cond-> (zipmap attrs2 (:vars s2))
+                   v1 (assoc attr1 v1))
+        preds-m  (assoc (zipmap attrs2 (mapv (comp :pred peek) attrs-v2))
+                        attr1 (cond-> (add-back-range v1 s1)
+                                bound? (add-pred #(= % val1))))
+        schema   (db/-schema db)
+        attrs    (->> (conj attrs2 attr1)
+                      (sort-by #((schema %) :db/aid))
+                      (remove #{(:attr last-step)}))
+        preds    (replace preds-m attrs)
+        skips2   (reduce (fn [ss [a m]] (if (m :skip?) (conj ss a) ss))
+                         #{} attrs-v2)
+        skips    (cond-> (conj skips2 skip-attr)
+                   bound? (conj attr1))
+        vars     (replace vars-m attrs)
+        lcols    (:cols last-step)
+        fidxs    (mapv #(find-index % lcols) vars)
+        attrs-v  (attrs-vec attrs preds skips fidxs)
+        skips    (into #{} (keep (fn [[a m]] (when (m :skip?) a))) attrs-v)
+        skip-vs  (set (mapv vars-m skips))
+        vars     (sequence (comp (remove keyword?) (remove skip-vs)) vars)
+        in       (:out last-step)
+        cols     (into lcols
+                       (comp (remove skips)
+                          (map (fn [attr]
+                                 (if-let [v (vars-m attr)]
+                                   #{attr v}
+                                   attr))))
+                       attrs)]
+    (MergeScanStep. index attrs-v vars in new-key cols *save-intermediate*)))
 
 (defn- ref-plan
   [db last-step {:keys [attr tgt]} new-key new-steps]
@@ -1840,11 +1855,11 @@
 (defn- estimate-join-size
   [db link prev-size new-base-plan]
   (condp identical? (:type link)
-    :ref (estimate-scan-v-size db prev-size (:steps new-base-plan))
+    :ref  (estimate-scan-v-size db prev-size (:steps new-base-plan))
     ;; TODO: handle the case where prev-size is 1, so v is known, can use av count.
     ;; much more accurate when distribution is skewed
     :_ref (estimate-round
-            (/ (* ^long prev-size (db/-count db [nil (:attr link) nil]))
+            (/ (* ^long prev-size ^long (db/-count db [nil (:attr link) nil]))
                ^long (max-domain-cardinality db link)))
     (estimate-round
       (/ (* ^long prev-size ^long (:size new-base-plan))

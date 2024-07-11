@@ -59,7 +59,7 @@
 
 (defprotocol ITuples
   (-init-tuples [db a mcount v-range pred get-v?])
-  (-eav-scan-v [db tuples eid-idx attrs preds skips])
+  (-eav-scan-v [db tuples eid-idx attrs-v])
   (-vae-scan-e [db tuples veid-idx attr] [db tuples veid-idx attr bound])
   (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound]))
 
@@ -138,10 +138,10 @@
       (s/ave-tuples store a mcount v-ranges pred get-v?)))
 
   (-eav-scan-v
-    [db tuples eid-idx attrs preds skips]
+    [db tuples eid-idx attrs-v]
     (wrap-cache
-        store [:eav-scan-v tuples eid-idx attrs preds skips]
-      (s/eav-scan-v store tuples eid-idx attrs preds skips)))
+        store [:eav-scan-v tuples eid-idx attrs-v]
+      (s/eav-scan-v store tuples eid-idx attrs-v)))
 
   (-vae-scan-e
     [db tuples veid-idx attr]

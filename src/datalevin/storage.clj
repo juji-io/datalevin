@@ -275,10 +275,8 @@
     [this attr mcount val-range vpred get-v?]
     "Return tuples of e or e and v using :ave index")
   (eav-scan-v
-    [this tuples eid-idx attrs vpreds]
-    [this tuples eid-idx attrs vpreds skip-attrs]
-    "Scan values and merge into tuples using :eav index., assuming attrs are
-    already sorted by aid")
+    [this tuples eid-idx attrs-v]
+    "Scan values and merge into tuples using :eav index.")
   (vae-scan-e [this tuples veid-idx attr] [this tuples veid-idx attr bound]
     "Return tuples with eid as the last column using :vae index")
   (val-eq-scan-e [this tuples v-idx attr] [this tuples v-idx attr bound]
@@ -810,23 +808,25 @@
             :else
             (ave-tuples-scan-no-v lmdb mcount aid vt val-ranges))))))
 
-  (eav-scan-v [store tuples eid-idx as vpreds]
-    (.eav-scan-v store tuples eid-idx as vpreds []))
   (eav-scan-v
-    [_ tuples eid-idx as vpreds skip-as]
+    [_ tuples eid-idx attrs-v]
     (let [attr->aid #(-> % schema :db/aid)
-          aids      (mapv attr->aid as)]
+          aids      (mapv (comp attr->aid first) attrs-v)]
       (when (and (seq tuples) (seq aids) (not-any? nil? aids))
-        (let [skip-aids (set (mapv attr->aid skip-as))
-              na        (count aids)
-              aid->pred (zipmap aids vpreds)
-              many      (set (filterv #(= (-> % attrs schema :db/cardinality)
-                                          :db.cardinality/many) aids))
-              no-many?  (empty? many)
-              aids      (int-array aids)
-              nt        (.size ^List tuples)
-              res       (FastList. nt)
-              seen      (LongObjectHashMap.)]
+        (let [na       (count aids)
+              maps     (mapv peek attrs-v)
+              skips    (boolean-array (map :skip? maps))
+              preds    (object-array (map :pred maps))
+              fidxs    (object-array (map :fidx maps))
+              manys    (mapv #(identical?
+                                (-> % attrs schema :db/cardinality)
+                                :db.cardinality/many) aids)
+              no-many? (every? false? manys)
+              manys    (boolean-array manys)
+              aids     (int-array aids)
+              nt       (.size ^List tuples)
+              res      (FastList. nt)
+              seen     (LongObjectHashMap.)]
           (lmdb/operate-list-val-range
             lmdb c/eav
             (if no-many?
@@ -847,9 +847,13 @@
                                 (if (== ^int a ^int (aget aids ai))
                                   (let [v    (retrieved->v
                                                lmdb (b/avg->r vb))
-                                        pred (aid->pred a)]
-                                    (when (or (nil? pred) (pred v))
-                                      (when-not (skip-aids a) (.add vs v))
+                                        pred (aget preds ai)
+                                        fidx (aget fidxs ai)]
+                                    (when (and (or (nil? pred) (pred v))
+                                               (or (nil? fidx)
+                                                   (= v
+                                                      (aget tuple (int fidx)))))
+                                      (when-not (aget skips ai) (.add vs v))
                                       (recur (lmdb/has-next-val iter)
                                              (u/long-inc ai))))
                                   (recur (lmdb/has-next-val iter) ai)))
@@ -880,19 +884,23 @@
                                 (if (== ^int a ^int (aget aids ai))
                                   (let [v    (retrieved->v
                                                lmdb (b/avg->r vb))
-                                        pred (aid->pred a)
-                                        go?  (or (nil? pred) (pred v))]
-                                    (if (many a)
+                                        pred (aget preds ai)
+                                        fidx (aget fidxs ai)
+                                        go?  (and (or (nil? pred) (pred v))
+                                                  (or (nil? fidx)
+                                                      (= v (aget tuple
+                                                                 (int fidx)))))]
+                                    (if (aget manys ai)
                                       (recur (lmdb/has-next-val iter)
                                              ai
                                              (when go?
-                                               (if (skip-aids a)
+                                               (if (aget skips ai)
                                                  true
                                                  ((fnil u/list-add
                                                         (FastList.))
                                                   dups v))))
                                       (when go?
-                                        (when-not (skip-aids a) (.add vs v))
+                                        (when-not (aget skips ai) (.add vs v))
                                         (recur (lmdb/has-next-val iter)
                                                (u/long-inc ai)
                                                nil))))

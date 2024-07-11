@@ -3235,4 +3235,4 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(d/explain {:run? true} q-33c (d/db conn))
+(d/explain {:run? true} q-4c (d/db conn))

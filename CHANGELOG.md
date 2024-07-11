@@ -7,8 +7,9 @@
 - [Datalog] Planner: multiple predicates turned ranges.
 - [Datalog] Planner: missing range turned predicates.
 - [Datalog] Planner: incorrect result columns for certain hash-join step.
-- [Datalog] Planner: first use target var to find index for ref-plan.
-- [Datalog] `like` function failed to match certain cases.
+- [Datalog] Planner: first try target var to find index for ref-plan.
+- [Datalog] Planner: fail to unify with existing vars in certain cases. #263
+- [Datalog] `like` function failed to match in certain cases.
 
 ## Changed
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.
