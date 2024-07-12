@@ -9,6 +9,7 @@
 - [Datalog] Planner: incorrect result columns for certain hash-join step.
 - [Datalog] Planner: first try target var to find index for ref-plan.
 - [Datalog] Planner: fail to unify with existing vars in certain cases. #263
+- [Datalog] Planner: skip initial attribute when it does not have a var
 - [Datalog] `like` function failed to match in certain cases.
 
 ## Changed

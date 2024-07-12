@@ -404,11 +404,11 @@
     (comp
       (map
         (fn [[id title imdb-index kind production-year imdb-id phonetic-code
-              episode-of season-nr episode-nr series-years]]
-          (let [eid (+ title-base (Long/parseLong id))]
+             episode-of season-nr episode-nr series-years]]
+          (let [eid (+ ^long title-base (Long/parseLong id))]
             (cond-> [(d/datom eid :title/title title)
                      (d/datom eid :title/kind
-                              (+ kind-type-base (Long/parseLong kind)))]
+                              (+ ^long kind-type-base (Long/parseLong kind)))]
               (not (s/blank? imdb-index))
               (conj (d/datom eid :title/imdb-index imdb-index))
               (not (s/blank? production-year))
@@ -420,7 +420,7 @@
               (conj (d/datom eid :title/phonetic-code phonetic-code))
               (not (s/blank? episode-of))
               (conj (d/datom eid :title/episode-of
-                             (+ title-base (Long/parseLong episode-of))))
+                             (+ ^long title-base (Long/parseLong episode-of))))
               (not (s/blank? season-nr))
               (conj (d/datom eid :title/season-nr (Long/parseLong season-nr)))
               (not (s/blank? episode-nr))
@@ -436,16 +436,16 @@
     (comp
       (map
         (fn [[id person movie person-role note nr-order role]]
-          (let [eid (+ cast-info-base (Long/parseLong id))]
+          (let [eid (+ ^long cast-info-base (Long/parseLong id))]
             (cond-> [(d/datom eid :cast-info/person
-                              (+ name-base (Long/parseLong person)))
+                              (+ ^long name-base (Long/parseLong person)))
                      (d/datom eid :cast-info/movie
-                              (+ title-base (Long/parseLong movie)))
+                              (+ ^long title-base (Long/parseLong movie)))
                      (d/datom eid :cast-info/role
-                              (+ role-type-base (Long/parseLong role)))]
+                              (+ ^long role-type-base (Long/parseLong role)))]
               (not (s/blank? person-role))
               (conj (d/datom eid :cast-info/person-role
-                             (+ char-name-base (Long/parseLong person-role))))
+                             (+ ^long char-name-base (Long/parseLong person-role))))
               (not (s/blank? note))
               (conj (d/datom eid :cast-info/note note))
               (not (s/blank? nr-order))
@@ -669,7 +669,6 @@
             [?mk :movie-keyword/keyword ?k]
             [?t :title/title ?t.title]])
 
-;; horrible
 (def q-4a '[:find (min ?mi-idx.info) (min ?t.title)
             :where
             [?it :info-type/info "rating"]
@@ -700,7 +699,6 @@
             [?mi-idx :movie-info-idx/info-type ?it]
             [?t :title/title ?t.title]])
 
-;; horrible
 (def q-4c '[:find (min ?mi-idx.info) (min ?t.title)
             :where
             [?it :info-type/info "rating"]
@@ -808,6 +806,7 @@
             [?ci :cast-info/person ?n]
             [?t :title/title ?t.title]])
 
+;; good plan
 (def q-6d '[:find (min ?k.keyword) (min ?n.name) (min ?t.title)
             :where
             [?k :keyword/keyword ?k.keyword]
@@ -860,7 +859,7 @@
             [?it :info-type/info "mini biography"]
             [?lt :link-type/link "features"]
             [?n :name/name-pcode-cf ?n.name-pcode-cf]
-            [(< "A" ?n.name-pcode-cf "F")]
+            [(<= "A" ?n.name-pcode-cf "F")]
             [?n :name/gender ?n.gender]
             [?n :name/name ?n.name]
             [(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "B%")))]
@@ -899,6 +898,7 @@
             [?pi :person-info/info-type ?it]
             [?t :title/title ?t.title]])
 
+;; good plan
 (def q-7c '[:find (min ?n.name) (min ?pi.info)
             :where
             [?an :aka-name/name ?an.name]
@@ -910,9 +910,9 @@
             [?n :name/name-pcode-cf ?n.name-pcode-cf]
             [(<= "A" ?n.name-pcode-cf "F")]
             [?n :name/gender ?n.gender]
-            [(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "A%")))]
             [?n :name/name ?n.name]
-            [?pi :person-info/note]
+            [(or (= ?n.gender "m") (and (= ?n.gender "f") (like ?n.name "A%")))]
+            [?pi :person-info/note _]
             [?pi :person-info/info ?pi.info]
             [?t :title/production-year ?t.production-year]
             [(<= 1980 ?t.production-year 2010)]
@@ -3235,4 +3235,4 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(d/explain {:run? true} q-4c (d/db conn))
+(d/explain {:run? true} q-7c (d/db conn))

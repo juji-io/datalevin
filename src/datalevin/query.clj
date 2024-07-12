@@ -1782,7 +1782,7 @@
         skips2   (reduce (fn [ss [a m]] (if (m :skip?) (conj ss a) ss))
                          #{} attrs-v2)
         skips    (cond-> (conj skips2 skip-attr)
-                   bound? (conj attr1))
+                   (or bound? (nil? v1)) (conj attr1))
         vars     (replace vars-m attrs)
         lcols    (:cols last-step)
         fidxs    (mapv #(find-index % lcols) vars)
