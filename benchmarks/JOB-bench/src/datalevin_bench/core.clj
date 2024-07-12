@@ -1120,7 +1120,6 @@
              [?chn :char-name/name ?chn.name]
              [?t :title/title ?t.title]])
 
-;; horrible
 (def q-10c '[:find (min ?chn.name) (min ?t.title)
              :where
              [?ci :cast-info/note ?ci.note]
@@ -1168,7 +1167,7 @@
              [?ct :company-type/kind "production companies"]
              [?k :keyword/keyword "sequel"]
              [?lt :link-type/link ?lt.link]
-             [(like ?lt.link "%follow%")]
+             [(like ?lt.link "%follows%")]
              [(missing? $ ?mc :movie-companies/note)]
              [?t :title/production-year 1998]
              [?t :title/title ?t.title]
@@ -1320,7 +1319,7 @@
              [?it2 :info-type/info "release dates"]
              [?kt :kind-type/kind "movie"]
              [?t :title/title ?t.title]
-             [(not= ?t.title "")]
+             ;; [(not= ?t.title "")]
              [(or (like ?t.title "%Champion%") (like ?t.title "%Loser%"))]
              [?mi :movie-info/movie ?t]
              [?mi :movie-info/info-type ?it2]
@@ -3235,4 +3234,5 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(d/explain {:run? true} q-7c (d/db conn))
+(d/explain {:run? true} q-13b (d/db conn))
+;; =>
