@@ -60,7 +60,6 @@
 (defprotocol ITuples
   (-init-tuples [db a mcount v-range pred get-v?])
   (-eav-scan-v [db tuples eid-idx attrs-v])
-  (-vae-scan-e [db tuples veid-idx attr] [db tuples veid-idx attr bound])
   (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound]))
 
 ;; ----------------------------------------------------------------------------
@@ -142,17 +141,6 @@
     (wrap-cache
         store [:eav-scan-v tuples eid-idx attrs-v]
       (s/eav-scan-v store tuples eid-idx attrs-v)))
-
-  (-vae-scan-e
-    [db tuples veid-idx attr]
-    (wrap-cache
-        store [:vae-scan-e tuples veid-idx attr]
-      (s/vae-scan-e store tuples veid-idx attr)))
-  (-vae-scan-e
-    [db tuples veid-idx attr bound]
-    (wrap-cache
-        store [:vae-scan-e tuples veid-idx attr bound]
-      (s/vae-scan-e store tuples veid-idx attr bound)))
 
   (-val-eq-scan-e
     [db tuples v-idx attr]
@@ -390,7 +378,7 @@
                          #{true false})
 
     ;; tuple should have one of tuple-props
-    (when (and (= :db.type/tuple (:db/valueType kv))
+    (when (and (identical? :db.type/tuple (:db/valueType kv))
                (not (some tuple-props (keys kv))))
       (raise "Bad attribute specification for " a ": {:db/valueType :db.type/tuple} should also have :db/tupleAttrs, :db/tupleTypes, or :db/tupleType"
              {:error     :schema/validation
@@ -402,7 +390,7 @@
       (let [ex-data {:error     :schema/validation
                      :attribute a
                      :key       :db/tupleAttrs}]
-        (when (= :db.cardinality/many (:db/cardinality kv))
+        (when (identical? :db.cardinality/many (:db/cardinality kv))
           (raise a " has :db/tupleAttrs, must be :db.cardinality/one" ex-data))
 
         (let [attrs (:db/tupleAttrs kv)]
@@ -417,7 +405,7 @@
             (when (contains? (get schema attr) :db/tupleAttrs)
               (raise a " :db/tupleAttrs can’t depend on another tuple attribute: " attr ex-data))
 
-            (when (= :db.cardinality/many (:db/cardinality (get schema attr)))
+            (when (identical? :db.cardinality/many (:db/cardinality (get schema attr)))
               (raise a " :db/tupleAttrs can’t depend on :db.cardinality/many attribute: " attr ex-data))))))
 
     (when (contains? kv :db/tupleType)
@@ -427,7 +415,7 @@
             attr    (:db/tupleType kv)]
         (when-not (c/datalog-value-types attr)
           (raise a " :db/tupleType must be a single value type, got: " attr ex-data))
-        (when (= attr :db.type/tuple)
+        (when (identical? attr :db.type/tuple)
           (raise a " :db/tupleType cannot be :db.type/tuple" ex-data))))
 
     (when (contains? kv :db/tupleTypes)
@@ -437,7 +425,7 @@
         (let [attrs (:db/tupleTypes kv)]
           (when-not (and (sequential? attrs) (< 1 (count attrs))
                          (every? c/datalog-value-types attrs)
-                         (not (some #(= :db.type/tuple %) attrs)))
+                         (not (some #(identical? :db.type/tuple %) attrs)))
             (raise a " :db/tupleTypes must be a sequential collection of more than one value types, got: " attrs ex-data)))))
 
     ))
@@ -994,8 +982,8 @@
 
         (sequential? entity)
         (let [[op e _ _] entity]
-          (if (or (= op :db/retractEntity)
-                  (= op :db.fn/retractEntity))
+          (if (or (identical? op :db/retractEntity)
+                  (identical? op :db.fn/retractEntity))
             (recur entities (conj! new-es entity))
             (recur entities (-> new-es
                                 (conj! entity)
@@ -1061,7 +1049,7 @@
              (nil? entity)
              (recur report entities)
 
-             (= ::flush-tuples entity)
+             (identical? ::flush-tuples entity)
              (if (contains? report ::queued-tuples)
                (recur
                  (dissoc report ::queued-tuples)
@@ -1126,7 +1114,7 @@
              (sequential? entity)
              (let [[op e a v] entity]
                (cond
-                 (= op :db.fn/call)
+                 (identical? op :db.fn/call)
                  (let [[_ f & args] entity]
                    (recur report (concat (apply f db args) entities)))
 
@@ -1154,8 +1142,8 @@
                  (raise "Can't use tempid in '" entity "'. Tempids are allowed in :db/add only"
                         { :error :transact/syntax, :op entity })
 
-                 (or (= op :db.fn/cas)
-                     (= op :db/cas))
+                 (or (identical? op :db.fn/cas)
+                     (identical? op :db/cas))
                  (let [[_ e a ov nv] entity
                        e             (entid-strict db e)
                        _             (validate-attr a entity)
@@ -1261,10 +1249,10 @@
                    (recur report' (cons [op e a v'] entities)))
 
 
-                 (= op :db/add)
+                 (identical? op :db/add)
                  (recur (transact-add report entity) entities)
 
-                 (and (= op :db/retract) (some? v))
+                 (and (identical? op :db/retract) (some? v))
                  (if-some [e (entid db e)]
                    (let [v (if (ref? db a) (entid-strict db v) v)]
                      (validate-attr a entity)
@@ -1278,8 +1266,8 @@
                        (recur report entities)))
                    (recur report entities))
 
-                 (or (= op :db.fn/retractAttribute)
-                     (= op :db/retract))
+                 (or (identical? op :db.fn/retractAttribute)
+                     (identical? op :db/retract))
                  (if-some [e (entid db e)]
                    (let [_      (validate-attr a entity)
                          datoms (concatv
@@ -1293,8 +1281,8 @@
                             (concat (retract-components db datoms) entities)))
                    (recur report entities))
 
-                 (or (= op :db.fn/retractEntity)
-                     (= op :db/retractEntity))
+                 (or (identical? op :db.fn/retractEntity)
+                     (identical? op :db/retractEntity))
                  (if-some [e (entid db e)]
                    (let [e-datoms (concatv
                                     (s/e-datoms (:store db) e)

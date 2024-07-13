@@ -53,70 +53,72 @@
 
 (defn- save-intermediates
   [context save out out-rel]
-  (vswap! (:intermediates context) assoc out
-          (case save
-            :count    {:attrs        (:attrs out-rel)
-                       :tuples-count (count (:tuples out-rel))}
-            :relation out-rel)))
+  (when-let [res (:intermediates context)]
+    (vswap! res assoc out
+            (case save
+              :count    {:attrs        (:attrs out-rel)
+                         :tuples-count (count (:tuples out-rel))}
+              :relation out-rel))))
 
 (defrecord InitStep
-    [attr pred val range vars in out know-e? cols save save-in? mcount]
+    [attr pred val range vars in out know-e? cols save save-in? mcount result]
 
   IStep
-  (-execute [this context db rel]
+  (-execute [_ context db rel]
     (let [get-v? (< 1 (count vars))
           e      (first vars)
           v      (peek vars)
           out-rel
-          (cond
-            know-e?
-            (r/relation! (cond-> {'_ 0} get-v? (assoc v 1))
-                         (let [tuples (doto (FastList.)
-                                        (.add (object-array [e])))]
-                           (if get-v?
-                             (db/-eav-scan-v db tuples 0 [[attr {:skip? false}]])
-                             tuples)))
-            (nil? val)
-            (r/relation!
-              (cond-> {e 0} get-v? (assoc v 1))
-              (db/-init-tuples
-                db attr mcount (or range [[[:closed c/v0] [:closed c/vmax]]])
-                pred get-v?))
-            :else
-            (r/relation!
-              {e 0}
-              (db/-init-tuples
-                db attr mcount [[[:closed val] [:closed val]]]
-                nil false)))]
+          (if result
+            result
+            (cond
+              know-e?
+              (r/relation!
+                (cond-> {'_ 0} get-v? (assoc v 1))
+                (let [tuples (doto (FastList.)
+                               (.add (object-array [e])))]
+                  (if get-v?
+                    (db/-eav-scan-v db tuples 0 [[attr {:skip? false}]])
+                    tuples)))
+              (nil? val)
+              (r/relation!
+                (cond-> {e 0} get-v? (assoc v 1))
+                (db/-init-tuples
+                  db attr mcount (or range [[[:closed c/v0] [:closed c/vmax]]])
+                  pred get-v?))
+              :else
+              (r/relation!
+                {e 0}
+                (db/-init-tuples
+                  db attr mcount [[[:closed val] [:closed val]]]
+                  nil false))))]
       (when save-in? (save-intermediates context :relation in rel))
       (save-intermediates context save out out-rel)
       out-rel))
 
   (-explain [_ _]
-    (str "Initialize " vars " "
-         (cond
-           know-e? "by a known entity id."
+    (str "Initialize " vars " " (cond
+                                  know-e? "by a known entity id."
 
-           (nil? val)
-           (if range
-             (str "by range " range " on " attr ".")
-             (str "by " attr "."))
+                                  (nil? val)
+                                  (if range
+                                    (str "by range " range " on " attr ".")
+                                    (str "by " attr "."))
 
-           (some? val)
-           (str "by " attr " = " val ".")))))
+                                  (some? val)
+                                  (str "by " attr " = " val ".")))))
 
 (defn- update-attrs
   [attrs vars]
   (let [n (count attrs)]
-    (into attrs (comp
-                  (remove #{'_})
-                  (map-indexed (fn [i v] [v (+ n ^long i)])))
+    (into attrs (comp (remove #{'_})
+                   (map-indexed (fn [i v] [v (+ n ^long i)])))
           vars)))
 
 (defrecord MergeScanStep [index attrs-v vars in out cols save]
 
   IStep
-  (-execute [this context db rel]
+  (-execute [_ context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs vars)
@@ -129,27 +131,10 @@
       (str "Merge " (vec vars) " by scanning " (mapv first attrs-v) ".")
       (str "Filter by predicates on " (mapv first attrs-v) "."))))
 
-(defrecord RevRefStep [index attr var in out cols save]
+(defrecord LinkStep [type index attr var in out cols save]
 
   IStep
-  (-execute [this context db rel]
-    (let [out-rel
-          (-> rel
-              (update :attrs update-attrs [var])
-              (assoc :tuples
-                     (if (int? var)
-                       (db/-vae-scan-e db (:tuples rel) index attr var)
-                       (db/-vae-scan-e db (:tuples rel) index attr))))]
-      (save-intermediates context save out out-rel)
-      out-rel))
-
-  (-explain [_ _]
-    (str "Merge " var " by scanning reverse reference of " attr ".")) )
-
-(defrecord ValEqStep [index attr var in out cols save]
-
-  IStep
-  (-execute [this context db rel]
+  (-execute [_ context db rel]
     (let [out-rel
           (-> rel
               (update :attrs update-attrs [var])
@@ -161,12 +146,14 @@
       out-rel))
 
   (-explain [_ _]
-    (str "Merge " var " by equal values of " attr ".")))
+    (str "Merge " var " by "
+         (if (identical? type :_ref) "reverse reference " "equal values ")
+         " of " attr ".")))
 
 (defrecord HashJoinStep [in out cols save]
 
   IStep
-  (-execute [this context _ rel]
+  (-execute [_ context _ rel]
     (let [rel1    (@(:intermediates context) in)
           out-rel (hash-join rel1 rel)]
       (save-intermediates context save in rel1)
@@ -1650,7 +1637,7 @@
 
 (defn- init-node-steps
   [db [e clauses]]
-  (let [{:keys [bound free mpath]}              clauses
+  (let [{:keys [bound free mpath mcount]}       clauses
         {:keys [var val range pred] :as clause} (get-in clauses mpath)
 
         schema  (db/-schema db)
@@ -1670,7 +1657,9 @@
                   true    (#(assoc % :cols (if (= 1 (count (:vars %)))
                                              [e]
                                              [e #{attr var}]))))
-        cols    (:cols init)]
+        init    (if (< ^long mcount ^long c/init-pre-exec-size-threshold)
+                  (assoc init :result (-execute init (map->Context {}) db nil))
+                  init)]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
@@ -1694,7 +1683,7 @@
                         no-var? (conj attr))
               preds   (mapv attr-pred vars all)
               attrs-v (attrs-vec attrs preds skips (repeat nil))
-              cols    (into cols
+              cols    (into (:cols init)
                             (comp (remove skips)
                                (map (fn [attr] #{attr (vars-m attr)})))
                             attrs)]
@@ -1719,8 +1708,7 @@
                    (fn [s attr]
                      (cond-> ^long s
                        ;; TODO sample instead
-                       (db/multival? db attr)
-                       (* ^long c/magic-number-many)))
+                       (db/multival? db attr) (* ^long c/magic-number-many)))
                    e-size (set/difference (set attrs) (set skips))))))))
 
 (defn- estimate-scan-v-cost
@@ -1812,21 +1800,17 @@
     (replace {pa (if (set? pa) (conj pa attr) (into #{} [pa attr]))} cols)))
 
 (defn- link-step
-  [op last-step index attr tgt new-key]
+  [type last-step index attr tgt new-key]
   (let [in   (:out last-step)
         cols (-> (:cols last-step)
                  (enrich-cols index attr)
                  (conj tgt))]
-    (case op
-      :vae-scan-e    (RevRefStep. index attr tgt in new-key
-                                  cols *save-intermediate*)
-      :val-eq-scan-e (ValEqStep. index attr tgt in new-key
-                                 cols *save-intermediate*))))
+    (LinkStep. type index attr tgt in new-key cols *save-intermediate*)))
 
 (defn- rev-ref-plan
-  [db last-step link-e {:keys [attr tgt]} new-key new-steps]
+  [db last-step link-e {:keys [type attr tgt]} new-key new-steps]
   (let [index (find-index link-e (:cols last-step))
-        step  (link-step :vae-scan-e last-step index attr tgt new-key)]
+        step  (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step
@@ -1834,12 +1818,12 @@
          db step (dec (count (:cols step))) new-key new-steps attr)])))
 
 (defn- val-eq-plan
-  [db last-step {:keys [attrs tgt var]} link-e new-key new-steps]
+  [db last-step {:keys [type attrs tgt var]} link-e new-key new-steps]
   (let [cols  (:cols last-step)
         index (or (find-index var cols)
                   (find-index (attrs link-e) cols))
         attr  (attrs tgt)
-        step  (link-step :val-eq-scan-e last-step index attr tgt new-key)]
+        step  (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step
@@ -1852,18 +1836,26 @@
     (db/-cardinality db attr)
     (apply max (map #(db/-cardinality db %) (vals attrs)))))
 
+(defn- count-init-follows
+  [db init-ts attr]
+  (reduce
+    (fn [s v] (+ ^long s ^long (db/-count db [nil attr v])))
+    0 (persistent!
+        (reduce
+          (fn [s ^objects t] (conj! s (aget t 0)))
+          (transient #{}) init-ts))))
+
 (defn- estimate-join-size
-  [db link prev-size new-base-plan]
-  (condp identical? (:type link)
-    :ref  (estimate-scan-v-size db prev-size (:steps new-base-plan))
-    ;; TODO: handle the case where prev-size is 1, so v is known, can use av count.
-    ;; much more accurate when distribution is skewed
-    :_ref (estimate-round
-            (/ (* ^long prev-size ^long (db/-count db [nil (:attr link) nil]))
-               ^long (max-domain-cardinality db link)))
-    (estimate-round
-      (/ (* ^long prev-size ^long (:size new-base-plan))
-         ^long (max-domain-cardinality db link)))))
+  [db link prev-plan new-base-plan]
+  (let [prev-size (:size prev-plan)]
+    (if (identical? :ref (:type link))
+      (estimate-scan-v-size db prev-size (:steps new-base-plan))
+      (let [attr (:attr link)]
+        (if-let [init-ts (get-in prev-plan [:steps 0 :result :tuples])]
+          (count-init-follows db init-ts attr)
+          (estimate-round
+            (/ (* ^long prev-size ^long (db/-count db [nil attr nil]))
+               ^long (max-domain-cardinality db link))))))))
 
 (defn- estimate-e-plan-cost
   [{:keys [size]} cur-steps res-size]
@@ -1919,34 +1911,34 @@
 
 (defn- binary-plan
   [db nodes new-base-plan prev-plan link-e new-e new-key]
-  (let [link   (some #(when (= new-e (:tgt %)) %)
-                     (get-in nodes [link-e :links]))
-        size   (estimate-join-size db link (:size prev-plan) new-base-plan)
+  (let [link   (some #(when (= new-e (:tgt %)) %) (get-in nodes [link-e :links]))
+        size   (estimate-join-size db link prev-plan new-base-plan)
         e-plan (e-plan db prev-plan link-e link new-key new-base-plan size)
         h-plan (h-plan prev-plan new-base-plan new-key size)]
     (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
 (defn- plans
   [db nodes connected base-plans prev-table]
-  (reduce-kv
-    (fn [table prev-key prev-plan]
-      (reduce
-        (fn [t pair]
-          (if-let [link-e (not-empty (set/intersection prev-key pair))]
-            (if (= 1 (count link-e))
-              (let [new-key  (set/union prev-key pair)
-                    new-e    (set/difference pair link-e)
-                    cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
-                    {:keys [cost] :as new-plan}
-                    (binary-plan db nodes (base-plans new-e) prev-plan
-                                 (first link-e) (first new-e) new-key)]
-                (if (< ^long cost ^long cur-cost)
-                  (assoc t new-key new-plan)
-                  t))
-              t)
-            t))
-        table connected))
-    {} prev-table))
+  (persistent!
+    (reduce-kv
+      (fn [table prev-key prev-plan]
+        (reduce
+          (fn [t pair]
+            (if-let [link-e (not-empty (set/intersection prev-key pair))]
+              (if (= 1 (count link-e))
+                (let [new-e    (set/difference pair link-e)
+                      new-key  (set/union prev-key new-e)
+                      cur-cost (or (:cost (t new-key)) Long/MAX_VALUE)
+                      {:keys [cost] :as new-plan}
+                      (binary-plan db nodes (base-plans new-e) prev-plan
+                                   (first link-e) (first new-e) new-key)]
+                  (if (< ^long cost ^long cur-cost)
+                    (assoc! t new-key new-plan)
+                    t))
+                t)
+              t))
+          table connected))
+      (transient {}) prev-table)))
 
 (defn- connected-pairs
   [nodes component]
@@ -2030,8 +2022,11 @@
 
 (defn- execute-steps
   [context db [f & r]]
-  (reduce (fn [rel step] (-execute step context db rel))
-          (-execute f context db nil) r))
+  (reduce (fn [rel step]
+            ;; (println "step->" step)
+            (-execute step context db rel))
+          (do ;; (println "init->" f)
+            (-execute f context db nil)) r))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
@@ -2061,11 +2056,12 @@
   [context run?]
   (binding [*implicit-source* (get (:sources context) '$)]
     (let [{:keys [result-set] :as context} (build-graph context)]
+      ;; (println "graph->" (:graph context))
       (if (= result-set #{})
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do (plan-explain) c)
+          (do #_(println "plan->" (:plan c)) (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 

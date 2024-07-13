@@ -277,8 +277,6 @@
   (eav-scan-v
     [this tuples eid-idx attrs-v]
     "Scan values and merge into tuples using :eav index.")
-  (vae-scan-e [this tuples veid-idx attr] [this tuples veid-idx attr bound]
-    "Return tuples with eid as the last column using :vae index")
   (val-eq-scan-e [this tuples v-idx attr] [this tuples v-idx attr bound]
     "Return tuples with eid as the last column for given attribute values"))
 
@@ -825,7 +823,7 @@
               manys    (boolean-array manys)
               aids     (int-array aids)
               nt       (.size ^List tuples)
-              res      (FastList. nt)
+              res      (FastList.)
               seen     (LongObjectHashMap.)]
           (lmdb/operate-list-val-range
             lmdb c/eav
@@ -902,12 +900,10 @@
                                       (when go?
                                         (when-not (aget skips ai) (.add vs v))
                                         (recur (lmdb/has-next-val iter)
-                                               (u/long-inc ai)
-                                               nil))))
+                                               (u/long-inc ai) nil))))
                                   (if dups
-                                    (do
-                                      (when-not (true? dups) (.add vs dups))
-                                      (recur true (u/long-inc ai) nil))
+                                    (do (when-not (true? dups) (.add vs dups))
+                                        (recur true (u/long-inc ai) nil))
                                     (recur (lmdb/has-next-val iter)
                                            ai nil))))
                               (let [ai (if dups (u/long-inc ai) ai)]
@@ -924,69 +920,6 @@
              (b/indexable nil (aget aids (dec (alength aids)))
                           c/vmax nil c/gmax)]
             :avg)
-          res))))
-
-  (vae-scan-e [_ tuples veid-idx attr bound]
-    (when (and (seq tuples) attr bound)
-      (when-let [props (schema attr)]
-        (assert (identical? :db.type/ref (props :db/valueType))
-                (str attr " is not a :db.type/ref"))
-        (let [aid (props :db/aid)
-              res (FastList.)
-              operator
-              (fn [iterable]
-                (let [iter (lmdb/val-iterator iterable)]
-                  (dotimes [i (.size ^List tuples)]
-                    (let [tuple ^objects (.get ^List tuples i)
-                          tv    ^long (aget tuple veid-idx)]
-                      (loop [next? (lmdb/seek-key iter tv :id)]
-                        (when next?
-                          (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                e  (b/read-buffer (.position vb 4) :id)]
-                            (when (= ^long e ^long bound)
-                              (.add res (r/conj-tuple tuple e)))
-                            (recur (lmdb/has-next-val iter)))))))))]
-          (lmdb/operate-list-val-range
-            lmdb c/vae operator
-            [:closed
-             (b/indexable c/e0 aid nil :db.type/ref c/g0)
-             (b/indexable c/emax aid nil :db.type/ref c/gmax)] :ae)
-          res))))
-  (vae-scan-e [_ tuples veid-idx attr]
-    (when (and (seq tuples) attr)
-      (when-let [props (schema attr)]
-        (assert (identical? :db.type/ref (props :db/valueType))
-                (str attr " is not a :db.type/ref"))
-        (let [nt   (.size ^List tuples)
-              aid  (props :db/aid)
-              seen (LongObjectHashMap. nt)
-              res  (FastList. nt)
-              operator
-              (fn [iterable]
-                (let [iter (lmdb/val-iterator iterable)]
-                  (dotimes [i nt]
-                    (let [tuple ^objects (.get ^List tuples i)
-                          tv    ^long (aget tuple veid-idx)]
-                      (if-let [ts (.contains seen tv)]
-                        (.addAll res (r/prod-tuples
-                                       (r/single-tuples tuple) ts))
-                        (let [es (LongArrayList.)]
-                          (loop [next? (lmdb/seek-key iter tv :id)]
-                            (if next?
-                              (let [vb ^ByteBuffer (lmdb/next-val iter)
-                                    e  (b/read-buffer (.position vb 4) :id)]
-                                (.add es ^long e)
-                                (recur (lmdb/has-next-val iter)))
-                              (let [ts (r/vertical-tuples (.toArray es))]
-                                (.put seen tv ts)
-                                (.addAll res (r/prod-tuples
-                                               (r/single-tuples tuple)
-                                               ts)))))))))))]
-          (lmdb/operate-list-val-range
-            lmdb c/vae operator
-            [:closed
-             (b/indexable c/e0 aid nil :db.type/ref c/g0)
-             (b/indexable c/emax aid nil :db.type/ref c/gmax)] :ae)
           res))))
 
   (val-eq-scan-e [_ tuples v-idx attr bound]

@@ -3,14 +3,20 @@
 ## WIP
 
 ## Fixed
-- [Datalog] Planner: nested logic expressions.
+- [Datalog] Planner: nested logic predicates.
 - [Datalog] Planner: multiple predicates turned ranges.
 - [Datalog] Planner: missing range turned predicates.
 - [Datalog] Planner: incorrect result columns for certain hash-join step.
-- [Datalog] Planner: first try target var to find index for ref-plan.
+- [Datalog] Planner: need to first try target var to find index for ref-plan.
 - [Datalog] Planner: fail to unify with existing vars in certain cases. #263
 - [Datalog] Planner: skip initial attribute when it does not have a var
 - [Datalog] `like` function failed to match in certain cases.
+
+## Impproved
+- [Datalog] Planner: execute initial step if its size is small during planning,
+  controlled by dynamic var `init-pre-exec-size-threshold` (default 128),
+  which significantly improved subsequent join size estimation, as these small
+  initial steps tend to happen early and hugely impact the final plan.
 
 ## Changed
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.

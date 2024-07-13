@@ -368,7 +368,11 @@
 
 (def ^{:dynamic true
        :doc     "Cost associated with hash join"}
-  magic-cost-hash 3.0)
+  magic-cost-hash 2.5)
+
+(def ^{:dynamic true
+       :doc     "Size below which initial step will execute during planning"}
+  init-pre-exec-size-threshold 128)
 
 ;; search engine
 

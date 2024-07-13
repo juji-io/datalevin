@@ -531,39 +531,6 @@
     (sut/close store)
     (u/delete-files dir)))
 
-(deftest vae-scan-e-test
-  (let [d0      (d/datom 0 :a 1)
-        d1      (d/datom 5 :a 1)
-        d2      (d/datom 5 :b 2)
-        d3      (d/datom 8 :a 7)
-        d4      (d/datom 8 :b 2)
-        d5      (d/datom 8 :a 3)
-        d6      (d/datom 8 :a 1)
-        tuples0 [(object-array [1]) (object-array [2]) (object-array [3])]
-        tuples1 [(object-array [:none 7])
-                 (object-array [:nada 2])
-                 (object-array [:zero 2])]
-        dir     (u/tmp-dir (str "storage-test-" (UUID/randomUUID)))
-        store   (sut/open dir
-                          {:a {:db/valueType   :db.type/ref
-                               :db/cardinality :db.cardinality/many}
-                           :b {:db/valueType :db.type/ref}}
-                          {:kv-opts
-                           {:flags (conj c/default-env-flags :nosync)}})]
-    (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6])
-    (is (= []
-           (mapv vec (sut/vae-scan-e store tuples0 0 :c))))
-    (is (= [[1 0] [1 5] [1 8] [3 8]]
-           (mapv vec (sut/vae-scan-e store tuples0 0 :a))))
-    (is (= [[2 5] [2 8]]
-           (mapv vec (sut/vae-scan-e store tuples0 0 :b))))
-    (is (= [[:none 7 8]]
-           (mapv vec (sut/vae-scan-e store tuples1 1 :a))))
-    (is (= [[:nada 2 5] [:nada 2 8] [:zero 2 5] [:zero 2 8]]
-           (mapv vec (sut/vae-scan-e store tuples1 1 :b))))
-    (sut/close store)
-    (u/delete-files dir)))
-
 (deftest val-eq-scan-e-test
   (let [d0      (d/datom 0 :b "GPT")
         d1      (d/datom 5 :a 1)
