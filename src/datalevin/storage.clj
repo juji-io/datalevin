@@ -278,7 +278,9 @@
     [this tuples eid-idx attrs-v]
     "Scan values and merge into tuples using :eav index.")
   (val-eq-scan-e [this tuples v-idx attr] [this tuples v-idx attr bound]
-    "Return tuples with eid as the last column for given attribute values"))
+    "Return tuples with eid as the last column for given attribute values")
+  (val-eq-filter-e [this tuples v-idx attr f-idx]
+    "Return tuples filtered by the given attribute values"))
 
 (defn e-aid-v->datom
   [store e-aid-v]
@@ -958,8 +960,25 @@
                     (b/indexable nil aid v vt nil) :av)
                   (let [ts (r/vertical-tuples (.toArray es))]
                     (.put seen v ts)
-                    (.addAll res (r/prod-tuples
-                                   (r/single-tuples tuple) ts)))))))
+                    (.addAll res (r/prod-tuples (r/single-tuples tuple) ts)))))))
+          res))))
+
+  (val-eq-filter-e [_ tuples v-idx attr f-idx]
+    (when (and (seq tuples) attr)
+      (when-let [props (schema attr)]
+        (let [vt  (value-type props)
+              aid (props :db/aid)
+              res (FastList.)]
+          (dotimes [i (.size ^List tuples)]
+            (let [tuple ^objects (.get ^List tuples i)
+                  old-e (aget tuple f-idx)
+                  v     (aget tuple v-idx)]
+              (lmdb/visit-list
+                lmdb c/ave (fn [kv]
+                             (let [e (b/read-buffer (lmdb/v kv) :id)]
+                               (when (= ^long e ^long old-e)
+                                 (.add res tuple))))
+                (b/indexable nil aid v vt nil) :av)))
           res)))))
 
 (defn fulltext-index

@@ -131,17 +131,19 @@
       (str "Merge " (vec vars) " by scanning " (mapv first attrs-v) ".")
       (str "Filter by predicates on " (mapv first attrs-v) "."))))
 
-(defrecord LinkStep [type index attr var in out cols save]
+(defrecord LinkStep [type index attr var fidx in out cols save]
 
   IStep
   (-execute [_ context db rel]
-    (let [out-rel
+    (let [tuples (:tuples rel)
+          out-rel
           (-> rel
               (update :attrs update-attrs [var])
               (assoc :tuples
-                     (if (int? var)
-                       (db/-val-eq-scan-e db (:tuples rel) index attr var)
-                       (db/-val-eq-scan-e db (:tuples rel) index attr))))]
+                     (cond
+                       (int? var) (db/-val-eq-scan-e db tuples index attr var)
+                       fidx       (db/-val-eq-filter-e db tuples index attr fidx)
+                       :else      (db/-val-eq-scan-e db tuples index attr))))]
       (save-intermediates context save out out-rel)
       out-rel))
 
@@ -1789,9 +1791,8 @@
     (MergeScanStep. index attrs-v vars in new-key cols *save-intermediate*)))
 
 (defn- ref-plan
-  [db last-step {:keys [attr tgt]} new-key new-steps]
-  (let [index (or (find-index tgt (:cols last-step))
-                  (find-index attr (:cols last-step)))]
+  [db {:keys [cols] :as last-step} {:keys [attr tgt]} new-key new-steps]
+  (let [index (or (find-index tgt cols) (find-index attr cols))]
     [(merge-scan-step db last-step index new-key new-steps nil)]))
 
 (defn- enrich-cols
@@ -1801,34 +1802,32 @@
 
 (defn- link-step
   [type last-step index attr tgt new-key]
-  (let [in   (:out last-step)
-        cols (-> (:cols last-step)
-                 (enrich-cols index attr)
-                 (conj tgt))]
-    (LinkStep. type index attr tgt in new-key cols *save-intermediate*)))
+  (let [in    (:out last-step)
+        lcols (:cols last-step)
+        fidx  (find-index tgt lcols)
+        cols  (cond-> (enrich-cols lcols index attr)
+                (nil? fidx) (conj tgt))]
+    [(LinkStep. type index attr tgt fidx in new-key cols *save-intermediate*)
+     (or fidx (dec (count cols)))]))
 
 (defn- rev-ref-plan
   [db last-step link-e {:keys [type attr tgt]} new-key new-steps]
-  (let [index (find-index link-e (:cols last-step))
-        step  (link-step type last-step index attr tgt new-key)]
+  (let [index          (find-index link-e (:cols last-step))
+        [step n-index] (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
-      [step
-       (merge-scan-step
-         db step (dec (count (:cols step))) new-key new-steps attr)])))
+      [step (merge-scan-step db step n-index new-key new-steps attr)])))
 
 (defn- val-eq-plan
   [db last-step {:keys [type attrs tgt var]} link-e new-key new-steps]
-  (let [cols  (:cols last-step)
-        index (or (find-index var cols)
-                  (find-index (attrs link-e) cols))
-        attr  (attrs tgt)
-        step  (link-step type last-step index attr tgt new-key)]
+  (let [cols           (:cols last-step)
+        index          (or (find-index var cols)
+                           (find-index (attrs link-e) cols))
+        attr           (attrs tgt)
+        [step n-index] (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
-      [step
-       (merge-scan-step
-         db step (dec (count (:cols step))) new-key new-steps attr)])))
+      [step (merge-scan-step db step n-index new-key new-steps attr)])))
 
 (defn- max-domain-cardinality
   [db {:keys [attr attrs]}]
@@ -2037,14 +2036,13 @@
                              (mapcat :steps (first components)))))
     (reduce
       (fn [c r] (update c :rels collapse-rels r))
-      context
-      (->> plan
-           (mapcat (fn [[src components]]
-                     (let [db (sources src)]
-                       (for [plans components]
-                         [db (mapcat :steps plans)]))))
-           (pmap #(apply execute-steps context %))
-           (sort-by #(count (:tuples %)))))))
+      context (->> plan
+                   (mapcat (fn [[src components]]
+                             (let [db (sources src)]
+                               (for [plans components]
+                                 [db (mapcat :steps plans)]))))
+                   (pmap #(apply execute-steps context %))
+                   (sort-by #(count (:tuples %)))))))
 
 (defn- plan-explain
   []

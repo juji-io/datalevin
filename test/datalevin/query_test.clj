@@ -750,17 +750,17 @@
            (-> (d/entity @conn 89569)
                :a/x
                :db/id)))
-    #_(is (= 17
-             (d/q
-               '[:find (count ?f) .
-                 :in $
-                 :where
-                 [89569 :a/x ?x]
-                 [89569 :a/b ?b]
-                 [?c :c/b ?b]
-                 [?d :d/c ?c]
-                 [?d :d/e ?e]
-                 [?f :f/e ?e]
-                 [?f :f/x ?x]] @conn)))
+    (is (= 17
+           (d/q
+             '[:find (count ?f) .
+               :in $
+               :where
+               [89569 :a/x ?x]
+               [89569 :a/b ?b]
+               [?c :c/b ?b]
+               [?d :d/c ?c]
+               [?d :d/e ?e]
+               [?f :f/e ?e]
+               [?f :f/x ?x]] @conn)))
     (d/close conn)
     (u/delete-files dir)))

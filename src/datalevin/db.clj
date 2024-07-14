@@ -60,7 +60,8 @@
 (defprotocol ITuples
   (-init-tuples [db a mcount v-range pred get-v?])
   (-eav-scan-v [db tuples eid-idx attrs-v])
-  (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound]))
+  (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound])
+  (-val-eq-filter-e [db tuples v-idx attr f-idx]))
 
 ;; ----------------------------------------------------------------------------
 
@@ -152,6 +153,12 @@
     (wrap-cache
         store [:val-eq-scan-e tuples v-idx attr bound]
       (s/val-eq-scan-e store tuples v-idx attr bound)))
+
+  (-val-eq-filter-e
+    [db tuples v-idx attr f-idx]
+    (wrap-cache
+        store [:val-eq-filter-e tuples v-idx attr f-idx]
+      (s/val-eq-filter-e store tuples v-idx attr f-idx)))
 
   ISearch
   (-search
