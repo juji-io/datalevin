@@ -363,6 +363,10 @@
   magic-number-many 2.0)
 
 (def ^{:dynamic true
+       :doc     "Magic number for ratio of attribute presence"}
+  magic-number-presence 0.8)
+
+(def ^{:dynamic true
        :doc     "Cost associated with running a predicate during scan"}
   magic-cost-pred 3.0)
 

@@ -1699,13 +1699,15 @@
     :else
     (let [{:keys [skips attrs preds]} (peek steps)
 
+          n-attrs     (count attrs)
+          attr-factor (Math/pow c/magic-number-presence n-attrs)
           n-preds     (count (remove nil? preds))
           pred-factor (if (zero? n-preds)
                         1.0
                         ;; TODO sample
                         (Math/pow c/magic-number-pred n-preds))]
       (estimate-round
-        (* ^double pred-factor
+        (* ^double pred-factor ^double attr-factor
            ^long (reduce
                    (fn [s attr]
                      (cond-> ^long s
@@ -2054,7 +2056,6 @@
   [context run?]
   (binding [*implicit-source* (get (:sources context) '$)]
     (let [{:keys [result-set] :as context} (build-graph context)]
-      ;; (println "graph->" (:graph context))
       (if (= result-set #{})
         (do (plan-explain) context)
         (as-> context c
