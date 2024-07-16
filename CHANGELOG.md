@@ -12,12 +12,14 @@
 - [Datalog] Planner: skip initial attribute when it does not have a var.
 - [Datalog] Planner: target var may be already bound for link step.
 - [Datalog] `like` function failed to match in certain cases.
+- [Datalog] `clear` function also clear the meta dbi
 
 ## Impproved
 - [Datalog] Planner: execute initial step if its size is small during planning,
-  controlled by dynamic var `init-pre-exec-size-threshold` (default 128),
-  which significantly improved subsequent join size estimation, as these small
-  initial steps tend to happen early and hugely impact the final plan.
+  controlled by dynamic var `init-exec-size-threshold` (default 1024), above
+  which, the same number of samples are collected instead. These significantly
+  improved subsequent join size estimation, as these initial steps hugely impact
+  the final plan.
 
 ## Changed
 - [Datalog] reduce default `*fill-db-batch-size*` to 1 million datoms.

@@ -318,11 +318,9 @@
     (sut/load-datoms store [d0 d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14])
     (is (= 6 (sut/cardinality store :a)))
     (is (= 6 (sut/a-size store :a)))
-    (is (= 4 (sut/a-size store :a 4)))
 
     (is (= 7 (sut/cardinality store :b)))
     (is (= 9 (sut/a-size store :b)))
-    (is (= 4 (sut/a-size store :b 4)))
 
     (is (= 1 (sut/av-size store :a "8a")))
     (is (= 2 (sut/av-size store :b 7)))

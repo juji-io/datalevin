@@ -1310,6 +1310,7 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              [?t :title/title ?t.title]])
 
+;; horrible
 (def q-13b '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -1319,7 +1320,7 @@
              [?it2 :info-type/info "release dates"]
              [?kt :kind-type/kind "movie"]
              [?t :title/title ?t.title]
-             ;; [(not= ?t.title "")]
+             [(not= ?t.title "")]
              [(or (like ?t.title "%Champion%") (like ?t.title "%Loser%"))]
              [?mi :movie-info/movie ?t]
              [?mi :movie-info/info-type ?it2]
@@ -1354,6 +1355,7 @@
              [?mi-idx :movie-info-idx/info ?mi-idx.info]
              ])
 
+;; oom
 (def q-13d '[:find (min ?cn.name) (min ?mi-idx.info) (min ?t.title)
              :where
              [?cn :company-name/country-code "[us]"]
@@ -3234,5 +3236,4 @@
              [?cn2 :company-name/name ?cn2.name]
              ])
 
-(d/explain {:run? true} q-13d (d/db conn))
-;; =>
+(d/explain {:run? true} q-14c (d/db conn))

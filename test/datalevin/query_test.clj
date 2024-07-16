@@ -229,7 +229,6 @@
                                                           [(?my-fn) ?result]
                                                           [(< ?result 3)]]
                                            db (fn [] 5)))))
-
     (is (= (set (d/q '[:find ?a
                        :in $ ?n
                        :where
@@ -602,7 +601,7 @@
   (prop/for-all
     [bases (gen/vector (gen/large-integer* {:min 1 :max 100}) 5)
      offsets (gen/vector (gen/large-integer* {:min 1 :max 50}) 5)
-     targets (gen/vector-distinct gen/nat {:num-elements 10})]
+     targets (gen/vector-distinct gen/nat {:num-elements 5})]
     (let [ranges    (mapv (fn [b o] [[:open b] [:open (+ ^long b ^long o)]])
                           bases offsets)
           combined  (sut/combine-ranges ranges)

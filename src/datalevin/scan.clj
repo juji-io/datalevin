@@ -37,12 +37,11 @@
 (defn get-value
   [lmdb dbi-name k k-type v-type ignore-key?]
   (scan
-    (do
-      (l/put-key rtx k k-type)
-      (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
-        (if ignore-key?
-          (b/read-buffer bb v-type)
-          [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
+    (do (l/put-key rtx k k-type)
+        (when-let [^ByteBuffer bb (l/get-kv dbi rtx)]
+          (if ignore-key?
+            (b/read-buffer bb v-type)
+            [(b/expected-return k k-type) (b/read-buffer bb v-type)])))
     (raise "Fail to get-value: " e
            {:dbi dbi-name :k k :k-type k-type :v-type v-type})))
 
@@ -203,7 +202,7 @@
                 res (if raw-pred?
                       (visitor k)
                       (visitor (b/read-buffer k k-type)))]
-            (when-not (= res :datalevin/terminate-visit)
+            (when-not (identical? res :datalevin/terminate-visit)
               (recur))))))
     (raise "Fail to visit key range: " e
            {:dbi dbi-name :k-range k-range :k-type k-type })))
@@ -383,7 +382,7 @@
                     (visitor kv)
                     (visitor (b/read-buffer (l/k kv) k-type)
                              (b/read-buffer (l/v kv) v-type)))]
-          (when-not (= res :datalevin/terminate-visit)
+          (when-not (identical? res :datalevin/terminate-visit)
             (recur)))))))
 
 (defn visit

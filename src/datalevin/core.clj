@@ -389,7 +389,7 @@ Only usable for debug output.
                   (close conn)
                   (open-kv dir))
                 (.-lmdb ^Store store))]
-    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema]]
+    (doseq [dbi [c/eav c/ave c/vae c/giants c/schema c/meta]]
       (clear-dbi lmdb dbi))
     (close-kv lmdb)))
 
@@ -1309,7 +1309,7 @@ Only usable for debug output.
         ;;==> [1 2]
 
         ;; key doesn't exist
-        (get-value lmdb \"a\" 2)
+        (gkvet-value lmdb \"a\" 2)
         ;;==> nil "}
   get-value l/get-value)
 

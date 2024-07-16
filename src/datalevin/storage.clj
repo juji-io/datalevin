@@ -18,6 +18,7 @@
    [org.eclipse.collections.impl.list.mutable.primitive LongArrayList]
    [org.eclipse.collections.impl.map.mutable UnifiedMap]
    [org.eclipse.collections.impl.map.mutable.primitive LongObjectHashMap]
+   [org.eclipse.collections.impl.map.mutable.primitive IntLongHashMap]
    [org.eclipse.collections.impl.set.mutable UnifiedSet]
    [org.eclipse.collections.impl.set.mutable.primitive LongHashSet]
    [datalevin.datom Datom]
@@ -231,8 +232,8 @@
     "Return the number of datoms within the given range (inclusive)")
   (e-size [this e]
     "Return the numbers of datoms with the given e value")
-  (a-size [this a] [this a cap]
-    "Return the numbers of datoms with the given a value")
+  (a-size [this a]
+    "Return the number of datoms with the given attribute, an estimate")
   (v-size [this v]
     "Return the numbers of ref datoms with the given v value")
   (av-size [this a v]
@@ -273,7 +274,11 @@
     [this attr mcount val-range]
     [this attr mcount val-range vpred]
     [this attr mcount val-range vpred get-v?]
+    [this attr mcount val-range vpred get-v? indices]
     "Return tuples of e or e and v using :ave index")
+  (sample-ave-tuples
+    [this attr mcount val-range vpred get-v?]
+    "Return sampled tuples of e or e and v using :ave index")
   (eav-scan-v
     [this tuples eid-idx attrs-v]
     "Scan values and merge into tuples using :eav index.")
@@ -352,108 +357,131 @@
   (ave-kv->retrieved
     lmdb (b/read-buffer (lmdb/k kv) :av) (b/read-buffer (lmdb/v kv) :eg)))
 
+(defn- sampling
+  [i j ^longs sample-indices work]
+  (fn [kv]
+    (when (= ^long @j (aget sample-indices @i))
+      (vswap! i u/long-inc)
+      (work kv))
+    (vswap! j u/long-inc)
+    (when (= (alength sample-indices) @i) :datalevin/terminate-visit)))
+
+(defn- visitor
+  [sample-indices work]
+  (if sample-indices
+    (let [i (volatile! 0)
+          j (volatile! 0)]
+      (sampling i j sample-indices work))
+    work))
+
 (defn- ave-tuples-scan-need-v-many
-  [lmdb mcount aid vt val-ranges]
-  (let [res (UnifiedSet. ^int mcount)]
+  [lmdb mcount aid vt val-ranges sample-indices]
+  (let [res   (UnifiedSet. ^int mcount)
+        work  (fn [kv]
+                (let [^Retrieved r (retrieve-ave lmdb kv)]
+                  (.add res [(.-e r) (.-v r)])))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave (fn [kv]
-                     (let [^Retrieved r (retrieve-ave lmdb kv)]
-                       (.add res [(.-e r) (.-v r)])))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.iterator res)]
       (while (.hasNext iter) (.add ret (object-array (.next iter))))
       ret)))
 
 (defn- ave-tuples-scan-need-v
-  [lmdb mcount aid vt val-ranges]
-  (let [res (FastList. ^int mcount)]
+  [lmdb mcount aid vt val-ranges sample-indices]
+  (let [res   (FastList. ^int mcount)
+        work  (fn [kv]
+                (let [^Retrieved r (retrieve-ave lmdb kv)]
+                  (.add res (object-array [(.-e r) (.-v r)]))))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave (fn [kv]
-                     (let [^Retrieved r (retrieve-ave lmdb kv)]
-                       (.add res (object-array [(.-e r) (.-v r)]))))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (defn- ave-tuples-scan-need-v-vpred-many
-  [lmdb mcount vpred aid vt val-ranges]
-  (let [res (UnifiedSet. ^int mcount)]
+  [lmdb mcount vpred aid vt val-ranges sample-indices]
+  (let [res   (UnifiedSet. ^int mcount)
+        work  (fn [kv]
+                (let [^Retrieved r (retrieve-ave lmdb kv)
+                      v            (.-v r)]
+                  (when (vpred v) (.add res [(.-e r) v]))))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave (fn [kv]
-                     (let [^Retrieved r (retrieve-ave lmdb kv)
-                           v            (.-v r)]
-                       (when (vpred v) (.add res [(.-e r) v]))))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.iterator res)]
       (while (.hasNext iter) (.add ret (object-array (.next iter))))
       ret)))
 
 (defn- ave-tuples-scan-need-v-vpred
-  [lmdb mcount vpred aid vt val-ranges]
-  (let [res (FastList. ^int mcount)]
+  [lmdb mcount vpred aid vt val-ranges sample-indices]
+  (let [res   (FastList. ^int mcount)
+        work  (fn [kv]
+                (let [^Retrieved r (retrieve-ave lmdb kv)
+                      v            (.-v r)]
+                  (when (vpred v)
+                    (.add res (object-array [(.-e r) v])))))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave (fn [kv]
-                     (let [^Retrieved r (retrieve-ave lmdb kv)
-                           v            (.-v r)]
-                       (when (vpred v)
-                         (.add res (object-array [(.-e r) v])))))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (defn- ave-tuples-scan-no-v-many
-  [lmdb mcount aid vt val-ranges]
-  (let [res (LongHashSet. ^int mcount)]
+  [lmdb mcount aid vt val-ranges sample-indices]
+  (let [res   (LongHashSet. ^int mcount)
+        work  (fn [kv] (.add res (b/read-buffer (lmdb/v kv) :id)))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave (fn [kv] (.add res (b/read-buffer (lmdb/v kv) :id)))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.longIterator res)]
       (while (.hasNext iter) (.add ret (object-array [(.next iter)])))
       ret)))
 
 (defn- ave-tuples-scan-no-v
-  [lmdb mcount aid vt val-ranges]
-  (let [res (FastList. ^int mcount)]
+  [lmdb mcount aid vt val-ranges sample-indices]
+  (let [res   (FastList. ^int mcount)
+        work  (fn [kv]
+                (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave
-        (fn [kv]
-          (.add res (object-array [(b/read-buffer (lmdb/v kv) :id)])))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (defn- ave-tuples-scan-no-v-vpred-many
-  [lmdb mcount vpred aid vt val-ranges]
-  (let [res (LongHashSet. ^int mcount)]
+  [lmdb mcount vpred aid vt val-ranges sample-indices]
+  (let [res   (LongHashSet. ^int mcount)
+        work  (fn [kv]
+                (let [^Retrieved r (retrieve-ave lmdb kv)
+                      v            (.-v r)]
+                  (when (vpred v) (.add res (.-e r)))))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave (fn [kv]
-                     (let [^Retrieved r (retrieve-ave lmdb kv)
-                           v            (.-v r)]
-                       (when (vpred v) (.add res (.-e r)))))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     (let [ret  (FastList. (.size res))
           iter (.longIterator res)]
       (while (.hasNext iter) (.add ret (object-array [(.next iter)])))
       ret)))
 
 (defn- ave-tuples-scan-no-v-vpred
-  [lmdb mcount vpred aid vt val-ranges]
-  (let [res (FastList. ^int mcount)]
+  [lmdb mcount vpred aid vt val-ranges sample-indices]
+  (let [res   (FastList. ^int mcount)
+        work  (fn [kv]
+                (let [^Retrieved r (retrieve-ave lmdb kv)
+                      v            (.-v r)]
+                  (when (vpred v) (.add res (object-array [(.-e r)])))))
+        visit (visitor sample-indices work)]
     (doseq [val-range val-ranges]
       (lmdb/visit-list-range
-        lmdb c/ave
-        (fn [kv]
-          (let [^Retrieved r (retrieve-ave lmdb kv)
-                v            (.-v r)]
-            (when (vpred v) (.add res (object-array [(.-e r)])))))
-        (ave-key-range aid vt val-range) :av [:all] :eg))
+        lmdb c/ave visit (ave-key-range aid vt val-range) :av [:all] :eg))
     res))
 
 (declare insert-datom delete-datom fulltext-index check transact-opts)
@@ -583,17 +611,23 @@
             ;; [:g d [gt v]] or [:r d gt]
             ft-ds  (FastList.)
             txs    (FastList. (* 2 (count datoms)))
-            giants (UnifiedMap.)]
+            giants (UnifiedMap.)
+            counts (IntLongHashMap.)]
         (doseq [datom datoms]
           (if (d/datom-added datom)
-            (insert-datom this datom txs ft-ds giants)
-            (delete-datom this datom txs ft-ds giants)))
-        (lmdb/transact-kv
-          lmdb (doto txs
-                 (.add (lmdb/kv-tx :put c/meta :max-tx
-                                   (advance-max-tx this) :attr :long))
-                 (.add (lmdb/kv-tx :put c/meta :last-modified
-                                   (System/currentTimeMillis) :attr :long))))
+            (insert-datom this datom txs ft-ds giants counts)
+            (delete-datom this datom txs ft-ds giants counts)))
+        (doseq [^int aid (.toArray (.keySet counts))]
+          (.add txs (lmdb/kv-tx :put c/meta aid
+                                (+ ^long (.a-size this (attrs aid))
+                                   (.get counts aid))
+                                :int :id)))
+        (doto txs
+          (.add (lmdb/kv-tx :put c/meta :max-tx
+                            (advance-max-tx this) :attr :long))
+          (.add (lmdb/kv-tx :put c/meta :last-modified
+                            (System/currentTimeMillis) :attr :long)))
+        (lmdb/transact-kv lmdb txs)
         (fulltext-index search-engines ft-ds))))
 
   (fetch [_ datom]
@@ -631,14 +665,14 @@
 
   (e-size [_ e] (lmdb/list-count lmdb c/eav e :id))
 
-  (a-size [this a] (.a-size this a nil))
-  (a-size [_ a cap]
-    (lmdb/key-range-list-count
-      lmdb c/ave
-      [:closed
-       (datom->indexable schema (d/datom c/e0 a nil) false)
-       (datom->indexable schema (d/datom c/emax a nil) true)]
-      :av cap))
+  (a-size [_ a]
+    (or (let [as (lmdb/get-value lmdb c/meta ((schema a) :db/aid) :int :id)]
+          (if (= as 0) 1 as))
+        (lmdb/key-range-list-count
+          lmdb c/ave
+          [:closed
+           (datom->indexable schema (d/datom c/e0 a nil) false)
+           (datom->indexable schema (d/datom c/emax a nil) true)] :av)))
 
   (v-size [_ v] (lmdb/list-count lmdb c/vae v :id))
 
@@ -779,10 +813,12 @@
       (index->vtype index)))
 
   (ave-tuples [store attr mcount val-range]
-    (.ave-tuples store attr mcount val-range nil false))
+    (.ave-tuples store attr mcount val-range nil false nil))
   (ave-tuples [store attr mcount val-range vpred]
-    (.ave-tuples store attr mcount val-range vpred false))
-  (ave-tuples [_ attr mcount val-ranges vpred get-v?]
+    (.ave-tuples store attr mcount val-range vpred false nil))
+  (ave-tuples [store attr mcount val-range vpred get-v?]
+    (.ave-tuples store attr mcount val-range vpred get-v? nil))
+  (ave-tuples [_ attr mcount val-ranges vpred get-v? indices]
     (when-let [props (schema attr)]
       (let [aid (props :db/aid)
             vt  (value-type props)]
@@ -790,23 +826,30 @@
           (cond
             (and get-v? vpred)
             (ave-tuples-scan-need-v-vpred-many
-              lmdb mcount vpred aid vt val-ranges)
+              lmdb mcount vpred aid vt val-ranges indices)
             vpred
             (ave-tuples-scan-no-v-vpred-many
-              lmdb mcount vpred aid vt val-ranges)
+              lmdb mcount vpred aid vt val-ranges indices)
             get-v?
-            (ave-tuples-scan-need-v-many lmdb mcount aid vt val-ranges)
+            (ave-tuples-scan-need-v-many lmdb mcount aid vt val-ranges indices)
             :else
-            (ave-tuples-scan-no-v-many lmdb mcount aid vt val-ranges))
+            (ave-tuples-scan-no-v-many lmdb mcount aid vt val-ranges indices))
           (cond
             (and get-v? vpred)
-            (ave-tuples-scan-need-v-vpred lmdb mcount vpred aid vt val-ranges)
+            (ave-tuples-scan-need-v-vpred
+              lmdb mcount vpred aid vt val-ranges indices)
             vpred
-            (ave-tuples-scan-no-v-vpred lmdb mcount vpred aid vt val-ranges)
+            (ave-tuples-scan-no-v-vpred
+              lmdb mcount vpred aid vt val-ranges indices)
             get-v?
-            (ave-tuples-scan-need-v lmdb mcount aid vt val-ranges)
+            (ave-tuples-scan-need-v lmdb mcount aid vt val-ranges indices)
             :else
-            (ave-tuples-scan-no-v lmdb mcount aid vt val-ranges))))))
+            (ave-tuples-scan-no-v lmdb mcount aid vt val-ranges indices))))))
+
+  (sample-ave-tuples [store attr mcount val-range vpred get-v?]
+    (when mcount
+      (let [indices (u/reservoir-sampling mcount c/init-exec-size-threshold)]
+        (.ave-tuples store attr mcount val-range vpred get-v? indices))))
 
   (eav-scan-v
     [_ tuples eid-idx attrs-v]
@@ -946,8 +989,8 @@
         (let [vt   (value-type props)
               aid  (props :db/aid)
               nt   (.size ^List tuples)
-              seen (UnifiedMap. nt)
-              res  (FastList. nt)]
+              seen (UnifiedMap.)
+              res  (FastList.)]
           (dotimes [i nt]
             (let [tuple ^objects (.get ^List tuples i)
                   v     (aget tuple v-idx)]
@@ -1065,7 +1108,8 @@
            op])))
 
 (defn- insert-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants
+   ^IntLongHashMap counts]
   (let [attr   (.-a d)
         schema (schema store)
         opts   (opts store)
@@ -1084,7 +1128,9 @@
                    (b/valid-data? v vt)
                    (u/raise "Invalid data, expecting" vt " got " v {:input v}))
         i      (b/indexable e aid v vt max-gt)
-        giant? (b/giant? i)]
+        giant? (b/giant? i)
+        old    (.getIfAbsent counts aid 0)]
+    (.put counts aid (unchecked-inc old))
     (.add txs (lmdb/kv-tx :put c/ave i i :av :eg))
     (.add txs (lmdb/kv-tx :put c/eav e i :id :avg))
     (when (identical? :db.type/ref vt)
@@ -1101,7 +1147,8 @@
                           (if giant? [:g [max-gt v]] [:a [e aid v]]))))))
 
 (defn- delete-datom
-  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants]
+  [^Store store ^Datom d ^FastList txs ^FastList ft-ds ^UnifiedMap giants
+   ^IntLongHashMap counts]
   (let [e      (.-e d)
         attr   (.-a d)
         v      (.-v d)
@@ -1122,7 +1169,9 @@
                                 (Indexable. e aid v (.-f i) (.-b i) c/gmax)]
                                :avg)
                              0)]
-                       (.-g r))))]
+                       (.-g r))))
+        old    (.getIfAbsent counts aid 0)]
+    (.put counts aid (unchecked-dec old))
     (when (props :db/fulltext)
       (let [v (str v)]
         (collect-fulltext ft-ds attr props v (if gt [:r gt] [:d [e aid v]]))))

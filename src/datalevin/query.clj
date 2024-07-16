@@ -23,7 +23,6 @@
    [java.util Arrays List]
    [clojure.lang ILookup LazilyPersistentVector]
    [datalevin.utl LikeFSM]
-   [datalevin.relation Relation]
    [datalevin.parser BindColl BindIgnore BindScalar BindTuple Constant
     FindColl FindRel FindScalar FindTuple PlainSymbol RulesVar SrcVar
     Variable Pattern Predicate]
@@ -49,6 +48,7 @@
 
 (defprotocol IStep
   (-execute [step context db rel] "execute the query step")
+  (-sample [step db rel] "sample the query step")
   (-explain [step context] "explain the query step"))
 
 (defn- save-intermediates
@@ -61,7 +61,8 @@
               :relation out-rel))))
 
 (defrecord InitStep
-    [attr pred val range vars in out know-e? cols save save-in? mcount result]
+    [attr pred val range vars in out know-e? cols save save-in? mcount result
+     sample]
 
   IStep
   (-execute [_ context db rel]
@@ -75,8 +76,7 @@
               know-e?
               (r/relation!
                 (cond-> {'_ 0} get-v? (assoc v 1))
-                (let [tuples (doto (FastList.)
-                               (.add (object-array [e])))]
+                (let [tuples (doto (FastList.) (.add (object-array [e])))]
                   (if get-v?
                     (db/-eav-scan-v db tuples 0 [[attr {:skip? false}]])
                     tuples)))
@@ -90,11 +90,25 @@
               (r/relation!
                 {e 0}
                 (db/-init-tuples
-                  db attr mcount [[[:closed val] [:closed val]]]
-                  nil false))))]
+                  db attr mcount [[[:closed val] [:closed val]]] nil false))))]
       (when save-in? (save-intermediates context :relation in rel))
       (save-intermediates context save out out-rel)
       out-rel))
+
+  (-sample [_ db _]
+    (let [get-v? (< 1 (count vars))
+          e      (first vars)
+          v      (peek vars)]
+      (if (nil? val)
+        (r/relation!
+          (cond-> {e 0} get-v? (assoc v 1))
+          (db/-sample-init-tuples
+            db attr mcount (or range [[[:closed c/v0] [:closed c/vmax]]])
+            pred get-v?))
+        (r/relation!
+          {e 0}
+          (db/-sample-init-tuples
+            db attr mcount [[[:closed val] [:closed val]]] nil false)))))
 
   (-explain [_ _]
     (str "Initialize " vars " " (cond
@@ -115,16 +129,28 @@
                    (map-indexed (fn [i v] [v (+ n ^long i)])))
           vars)))
 
-(defrecord MergeScanStep [index attrs-v vars in out cols save]
+(defrecord MergeScanStep [index attrs-v vars in out cols save result sample]
 
   IStep
   (-execute [_ context db rel]
     (let [out-rel
-          (-> rel
-              (update :attrs update-attrs vars)
-              (assoc :tuples (db/-eav-scan-v db (:tuples rel) index attrs-v)))]
+          (if result
+            result
+            (-> rel
+                (update :attrs update-attrs vars)
+                (assoc :tuples
+                       (db/-eav-scan-v db (:tuples rel) index attrs-v))))]
       (save-intermediates context save out out-rel)
       out-rel))
+
+  (-sample [_ db rel]
+    (let [tuples (:tuples rel)
+          tuples (if (< 0 (.size ^List tuples))
+                   (db/-eav-scan-v db tuples index attrs-v)
+                   [])]
+      (-> rel
+          (update :attrs update-attrs vars)
+          (assoc :tuples tuples))))
 
   (-explain [_ _]
     (if (seq vars)
@@ -1510,7 +1536,7 @@
 (defn- estimate-round [x] (long (Math/ceil x)))
 
 ;; TODO sample instead
-(defn- pred-count [^long n] (estimate-round (* ^double c/magic-number-pred n)))
+;; (defn- pred-count [^long n] (estimate-round (* ^double c/magic-number-pred n)))
 
 (defn- nillify [v] (if (or (identical? v c/v0) (identical? v c/vmax)) nil v))
 
@@ -1531,11 +1557,15 @@
   [node db k]
   (reduce-kv
     (fn [{:keys [mcount] :as node} attr {:keys [val range pred]}]
-      (let [^long c (cond->
+      (let [^long c (cond
+                      (some? val) (db/-count db [nil attr val])
+                      range       (range-count db attr range mcount)
+                      :else       (db/-count db [nil attr nil]))
+            #_      (cond->
                         (cond
                           (some? val) (db/-count db [nil attr val] mcount)
                           range       (range-count db attr range mcount)
-                          :else       (db/-count db [nil attr nil] mcount))
+                          :else       (db/-count db [nil attr nil]))
                       pred (pred-count))]
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
@@ -1555,7 +1585,8 @@
   [db e {:keys [free] :as node}]
   (reduce-kv
     (fn [{:keys [mcount] :as node} attr {:keys [pred]}]
-      (let [^long c (cond-> (db/-count db [e attr nil] mcount)
+      (let [^long c (db/-count db [e attr nil] mcount)
+            #_      (cond-> (db/-count db [e attr nil] mcount)
                       pred (pred-count))]
         (cond
           (zero? c)          (reduced (assoc node :mcount 0))
@@ -1659,9 +1690,10 @@
                   true    (#(assoc % :cols (if (= 1 (count (:vars %)))
                                              [e]
                                              [e #{attr var}]))))
-        init    (if (< ^long mcount ^long c/init-pre-exec-size-threshold)
-                  (assoc init :result (-execute init (map->Context {}) db nil))
-                  init)]
+        ectx    (map->Context {})
+        init    (if (< ^long c/init-exec-size-threshold ^long mcount)
+                  (assoc init :sample (-sample init db nil))
+                  (assoc init :result (-execute init ectx db nil)))]
     (cond-> [init]
       (< 1 (+ (count bound) (count free)))
       (conj
@@ -1688,41 +1720,47 @@
               cols    (into (:cols init)
                             (comp (remove skips)
                                (map (fn [attr] #{attr (vars-m attr)})))
-                            attrs)]
-          (MergeScanStep. 0 attrs-v vars #{e} #{e} cols *save-intermediate*))))))
+                            attrs)
+              ires    (:result init)
+              isp     (:sample init)
+              merge   (MergeScanStep. 0 attrs-v vars #{e} #{e} cols
+                                      *save-intermediate* nil nil)]
+          (cond-> merge
+            ires (assoc :result (-execute merge ectx db ires))
+            isp  (assoc :sample (-sample merge db isp))))))))
 
 (defn- estimate-scan-v-size
-  [db e-size steps]
-  (cond
-    (= 1 (count steps))      e-size
-    (:know-e? (first steps)) 1
-    :else
-    (let [{:keys [skips attrs preds]} (peek steps)
-
-          n-attrs     (count attrs)
-          attr-factor (Math/pow c/magic-number-presence n-attrs)
-          n-preds     (count (remove nil? preds))
-          pred-factor (if (zero? n-preds)
-                        1.0
-                        ;; TODO sample
-                        (Math/pow c/magic-number-pred n-preds))]
-      (estimate-round
-        (* ^double pred-factor ^double attr-factor
-           ^long (reduce
-                   (fn [s attr]
-                     (cond-> ^long s
-                       ;; TODO sample instead
-                       (db/multival? db attr) (* ^long c/magic-number-many)))
-                   e-size (set/difference (set attrs) (set skips))))))))
+  [db ^long e-size steps]
+  (let [{:keys [know-e? ^long mcount]} (first steps)]
+    (if know-e?
+      1
+      (let [{:keys [result sample]} (peek steps)
+            ^double selectivity
+            (cond
+              result (let [s (.size ^List (:tuples result))]
+                       (if (< 0 s) (/ s mcount) 0.0009))
+              sample (let [s (.size ^List (:tuples sample))]
+                       (if (< 0 s)
+                         (/ s ^long c/init-exec-size-threshold)
+                         0.0009)))]
+        (estimate-round (* e-size selectivity))))))
 
 (defn- estimate-scan-v-cost
-  [{:keys [attrs preds]} ^long size]
-  (let [n-preds (count (remove nil? preds))]
+  [{:keys [attrs-v]} ^long size]
+  (let [^long n-preds (reduce
+                        (fn [^long c [_ {:keys [pred]}]] (if pred (inc c) c))
+                        0 attrs-v)
+        ^long n-fidx  (reduce
+                        (fn [^long c [_ {:keys [fidx]}]] (if fidx (inc c) c))
+                        0 attrs-v)]
     (* size
-       (count attrs)
+       (count attrs-v)
        (if (zero? n-preds)
          1
-         ^long (estimate-round (* ^double c/magic-cost-pred n-preds))))))
+         ^long (estimate-round (* ^double c/magic-cost-pred n-preds)))
+       (if (zero? n-fidx)
+         1
+         ^long (estimate-round (* ^double c/magic-cost-fidx n-fidx))))))
 
 (defn- estimate-base-cost
   [{:keys [mcount]} steps]
@@ -1738,10 +1776,11 @@
 (defn- base-plan
   [db nodes e]
   (let [[_ node :as kv] (find nodes e)
+        mcount          (:mcount node)
         steps           (init-node-steps db kv)]
     (Plan. steps
            (estimate-base-cost node steps)
-           (estimate-scan-v-size db (:mcount node) steps))))
+           (estimate-scan-v-size db mcount steps))))
 
 (defn- build-base-plans
   [db nodes component]
@@ -1753,8 +1792,9 @@
     (u/index-of (fn [x] (if (set? x) (x a-or-v) (= x a-or-v))) cols)))
 
 (defn- merge-scan-step
-  [db last-step index new-key [s1 s2] skip-attr]
-  (let [attr1    (:attr s1)
+  [db last-step index new-key new-steps skip-attr]
+  (let [[s1 s2]  new-steps
+        attr1    (:attr s1)
         val1     (:val s1)
         bound?   (some? val1)
         vars1    (:vars s1)
@@ -1790,12 +1830,15 @@
                                    #{attr v}
                                    attr))))
                        attrs)]
-    (MergeScanStep. index attrs-v vars in new-key cols *save-intermediate*)))
+    (MergeScanStep. index attrs-v vars in new-key cols *save-intermediate*
+                    nil nil)))
 
-(defn- ref-plan
-  [db {:keys [cols] :as last-step} {:keys [attr tgt]} new-key new-steps]
-  (let [index (or (find-index tgt cols) (find-index attr cols))]
-    [(merge-scan-step db last-step index new-key new-steps nil)]))
+(defn- index-by-link
+  [cols link-e {:keys [type attr attrs tgt var]}]
+  (case type
+    :ref    (or (find-index tgt cols) (find-index attr cols))
+    :_ref   (find-index link-e cols)
+    :val-eq (or (find-index var cols) (find-index (attrs link-e) cols))))
 
 (defn- enrich-cols
   [cols index attr]
@@ -1813,19 +1856,15 @@
      (or fidx (dec (count cols)))]))
 
 (defn- rev-ref-plan
-  [db last-step link-e {:keys [type attr tgt]} new-key new-steps]
-  (let [index          (find-index link-e (:cols last-step))
-        [step n-index] (link-step type last-step index attr tgt new-key)]
+  [db last-step index {:keys [type attr tgt]} new-key new-steps]
+  (let [[step n-index] (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
       [step (merge-scan-step db step n-index new-key new-steps attr)])))
 
 (defn- val-eq-plan
-  [db last-step {:keys [type attrs tgt var]} link-e new-key new-steps]
-  (let [cols           (:cols last-step)
-        index          (or (find-index var cols)
-                           (find-index (attrs link-e) cols))
-        attr           (attrs tgt)
+  [db last-step index {:keys [type attrs tgt]} new-key new-steps]
+  (let [attr           (attrs tgt)
         [step n-index] (link-step type last-step index attr tgt new-key)]
     (if (= 1 (count new-steps))
       [step]
@@ -1838,25 +1877,37 @@
     (apply max (map #(db/-cardinality db %) (vals attrs)))))
 
 (defn- count-init-follows
-  [db init-ts attr]
+  [db {:keys [tuples]} attr index]
   (reduce
     (fn [s v] (+ ^long s ^long (db/-count db [nil attr v])))
     0 (persistent!
         (reduce
-          (fn [s ^objects t] (conj! s (aget t 0)))
-          (transient #{}) init-ts))))
+          (fn [s ^objects t] (conj! s (aget t index)))
+          (transient #{}) tuples))))
+
+(defn- estimate-link-size
+  [db {:keys [attr attrs tgt] :as link} prev-size last-step index]
+  (let [attr                    (or attr (val (first (dissoc attrs tgt))))
+        {:keys [result sample]} last-step]
+    (estimate-round
+      (cond
+        (seq (:tuples sample))
+        (* prev-size
+           (/ (count-init-follows db sample attr index)
+              (.size ^List (:tuples sample))))
+        (seq (:tuples result))
+        (count-init-follows db result attr index)
+        :else (* prev-size
+                 (/ (db/-count db [nil attr nil])
+                    ^long (max-domain-cardinality db link)))))))
 
 (defn- estimate-join-size
-  [db link prev-plan new-base-plan]
-  (let [prev-size (:size prev-plan)]
+  [db link prev-size last-step index new-base-plan]
+  (let [steps (:steps new-base-plan)]
     (if (identical? :ref (:type link))
-      (estimate-scan-v-size db prev-size (:steps new-base-plan))
-      (let [attr (:attr link)]
-        (if-let [init-ts (get-in prev-plan [:steps 0 :result :tuples])]
-          (count-init-follows db init-ts attr)
-          (estimate-round
-            (/ (* ^long prev-size ^long (db/-count db [nil attr nil]))
-               ^long (max-domain-cardinality db link))))))))
+      (estimate-scan-v-size db prev-size steps)
+      (let [e-size (estimate-link-size db link prev-size last-step index)]
+        (estimate-scan-v-size db e-size steps)))))
 
 (defn- estimate-e-plan-cost
   [{:keys [size]} cur-steps res-size]
@@ -1870,14 +1921,14 @@
            ^long (estimate-scan-v-cost (peek cur-steps) res-size))))))
 
 (defn- e-plan
-  [db prev-plan link-e link new-key new-base-plan result-size]
+  [db prev-plan index link new-key new-base-plan result-size]
   (let [new-steps (:steps new-base-plan)
         last-step (peek (:steps prev-plan))
         cur-steps
         (case (:type link)
-          :ref    (ref-plan db last-step link new-key new-steps)
-          :_ref   (rev-ref-plan db last-step link-e link new-key new-steps)
-          :val-eq (val-eq-plan db last-step link link-e new-key new-steps))]
+          :ref    [(merge-scan-step db last-step index new-key new-steps nil)]
+          :_ref   (rev-ref-plan db last-step index link new-key new-steps)
+          :val-eq (val-eq-plan db last-step index link new-key new-steps))]
     (Plan. cur-steps
            (+ ^long (:cost prev-plan)
               ^long (estimate-e-plan-cost prev-plan cur-steps result-size))
@@ -1912,10 +1963,15 @@
 
 (defn- binary-plan
   [db nodes new-base-plan prev-plan link-e new-e new-key]
-  (let [link   (some #(when (= new-e (:tgt %)) %) (get-in nodes [link-e :links]))
-        size   (estimate-join-size db link prev-plan new-base-plan)
-        e-plan (e-plan db prev-plan link-e link new-key new-base-plan size)
-        h-plan (h-plan prev-plan new-base-plan new-key size)]
+  (let [link      (some #(when (= new-e (:tgt %)) %)
+                        (get-in nodes [link-e :links]))
+        last-step (peek (:steps prev-plan))
+        index     (index-by-link (:cols last-step) link-e link)
+        prev-size (:size prev-plan)
+        size      (estimate-join-size db link prev-size last-step index
+                                      new-base-plan)
+        e-plan    (e-plan db prev-plan index link new-key new-base-plan size)
+        h-plan    (h-plan prev-plan new-base-plan new-key size)]
     (if (< ^long (:cost e-plan) ^long (:cost h-plan)) e-plan h-plan)))
 
 (defn- plans
@@ -2023,11 +2079,10 @@
 
 (defn- execute-steps
   [context db [f & r]]
-  (reduce (fn [rel step]
-            ;; (println "step->" step)
-            (-execute step context db rel))
-          (do ;; (println "init->" f)
-            (-execute f context db nil)) r))
+  (reduce
+    (fn [rel step]
+      (-execute step context db rel))
+    (-execute f context db nil) r))
 
 (defn- execute-plan
   [{:keys [plan sources] :as context}]
@@ -2060,7 +2115,7 @@
         (do (plan-explain) context)
         (as-> context c
           (build-plan c)
-          (do #_(println "plan->" (:plan c)) (plan-explain) c)
+          (do (plan-explain) c)
           (if run? (execute-plan c) c)
           (if run? (reduce resolve-clause c (:late-clauses c)) c))))))
 

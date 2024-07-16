@@ -59,6 +59,7 @@
 
 (defprotocol ITuples
   (-init-tuples [db a mcount v-range pred get-v?])
+  (-sample-init-tuples [db a mcount v-range pred get-v?])
   (-eav-scan-v [db tuples eid-idx attrs-v])
   (-val-eq-scan-e [db tuples v-idx attr] [db tuples v-idx attr bound])
   (-val-eq-filter-e [db tuples v-idx attr f-idx]))
@@ -136,6 +137,12 @@
     (wrap-cache
         store [:init-tuples a v-ranges pred get-v?]
       (s/ave-tuples store a mcount v-ranges pred get-v?)))
+
+  (-sample-init-tuples
+    [db a mcount v-ranges pred get-v?]
+    (wrap-cache
+        store [:sample-init-tuples a v-ranges pred get-v?]
+      (s/sample-ave-tuples store a mcount v-ranges pred get-v?)))
 
   (-eav-scan-v
     [db tuples eid-idx attrs-v]
@@ -251,7 +258,7 @@
                           (datom e nil nil) (datom e nil nil) cap)  ; e _ v
            (s/e-size store e) ; e _ _
            (s/av-size store a v) ; _ a v
-           (s/a-size store a cap) ; _ a _
+           (s/a-size store a) ; _ a _
            (s/v-size store v) ; _ _ v, for ref only
            (s/datom-count store :eav)])))) ; _ _ _
 
